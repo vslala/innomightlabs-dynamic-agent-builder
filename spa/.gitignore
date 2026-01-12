@@ -23,5 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
+# Terraform
+.terraform
+
 # Agents Meta
 CLAUDE.md
+
