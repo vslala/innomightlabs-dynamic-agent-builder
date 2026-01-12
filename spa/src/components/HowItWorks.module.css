@@ -1,0 +1,150 @@
+.howItWorks {
+  padding: 6rem 2rem;
+  position: relative;
+  background: linear-gradient(180deg, transparent 0%, rgba(102, 126, 234, 0.05) 50%, transparent 100%);
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 4rem;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(102, 126, 234, 0.2));
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 50px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-cyan);
+  margin-bottom: 1.5rem;
+}
+
+.title {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 800;
+  line-height: 1.2;
+  margin-bottom: 1rem;
+}
+
+.subtitle {
+  font-size: 1.125rem;
+  color: var(--text-secondary);
+  max-width: 550px;
+  margin: 0 auto;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 2rem;
+  position: relative;
+  padding-bottom: 3rem;
+  animation: fadeInUp 0.6s ease-out both;
+}
+
+.step:last-child {
+  padding-bottom: 0;
+}
+
+.stepNumber {
+  flex-shrink: 0;
+  width: 70px;
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-mid));
+  border-radius: 20px;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+}
+
+.stepNumber span {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: white;
+}
+
+.connector {
+  position: absolute;
+  left: 35px;
+  top: 70px;
+  width: 2px;
+  height: calc(100% - 70px);
+  background: linear-gradient(180deg, var(--gradient-start), transparent);
+}
+
+.stepContent {
+  flex: 1;
+  padding-top: 0.75rem;
+}
+
+.stepTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.stepDescription {
+  font-size: 1rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 500px;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .howItWorks {
+    padding: 4rem 1.5rem;
+  }
+
+  .step {
+    gap: 1.25rem;
+  }
+
+  .stepNumber {
+    width: 55px;
+    height: 55px;
+    border-radius: 16px;
+  }
+
+  .stepNumber span {
+    font-size: 1.25rem;
+  }
+
+  .connector {
+    left: 27px;
+    top: 55px;
+    height: calc(100% - 55px);
+  }
+
+  .stepTitle {
+    font-size: 1.25rem;
+  }
+}
