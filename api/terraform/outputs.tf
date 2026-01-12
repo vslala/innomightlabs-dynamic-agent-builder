@@ -17,3 +17,8 @@ output "api_gateway_id" {
   description = "API Gateway HTTP API ID"
   value       = aws_apigatewayv2_api.api.id
 }
+
+output "dynamodb_table_name" {
+  description = "DynamoDB table name"
+  value       = aws_dynamodb_table.main.name
+}

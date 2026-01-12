@@ -63,6 +63,23 @@
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
+.betaLogin {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  padding: 0.625rem 1.25rem;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+.betaLogin:hover {
+  border-color: var(--gradient-start);
+  color: var(--text-primary);
+  transform: translateY(-2px);
+}
+
 @media (max-width: 640px) {
   .navbar {
     padding: 1rem 1.5rem;
@@ -77,6 +94,11 @@
   }
 
   .ctaLink {
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+  }
+
+  .betaLogin {
     font-size: 0.875rem;
     padding: 0.5rem 1rem;
   }

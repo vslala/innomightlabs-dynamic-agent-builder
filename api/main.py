@@ -1,11 +1,15 @@
 from fastapi import FastAPI
 from mangum import Mangum
 
+from src.auth import auth_router
+
 app = FastAPI(
     title="Dynamic Agent Builder API",
     description="API for building dynamic agents with long-term memory",
     version="0.1.0",
 )
+
+app.include_router(auth_router)
 
 
 @app.get("/health")
