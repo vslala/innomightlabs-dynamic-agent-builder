@@ -33,8 +33,14 @@ export function LoginSuccess() {
         name: payload.name,
         picture: payload.picture,
       });
+
+      // Redirect to dashboard after short delay
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 1500);
     } catch {
       console.error('Failed to decode token');
+      navigate('/');
     }
 
     setLoading(false);
@@ -76,13 +82,12 @@ export function LoginSuccess() {
 
         <div className={styles.message}>
           <p>
-            Thank you for joining our beta program! We're still building out the
-            platform and will notify you when new features are available.
+            Redirecting you to your dashboard...
           </p>
         </div>
 
-        <button onClick={() => navigate('/')} className={styles.button}>
-          Back to Home
+        <button onClick={() => navigate('/dashboard')} className={styles.button}>
+          Go to Dashboard
         </button>
       </div>
     </div>

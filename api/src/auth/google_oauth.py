@@ -3,7 +3,9 @@ from urllib.parse import urlencode
 import httpx
 
 from ..config import settings
+import logging
 
+log = logging.getLogger(__name__)
 
 class GoogleOAuth:
     AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -36,6 +38,7 @@ class GoogleOAuth:
         }
 
         url = f"{self.AUTHORIZATION_URL}?{urlencode(params)}"
+        log.debug(f"Authorization URL: {url}")
         return url, state
 
     async def exchange_code_for_tokens(self, code: str) -> dict:

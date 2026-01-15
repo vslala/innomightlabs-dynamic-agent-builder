@@ -6,12 +6,15 @@ credentials*.json
 .env
 .env.local
 .env.*.local
+.envrc
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+CLAUDE.md
+**__pycache__**
 
 # OS
 .DS_Store

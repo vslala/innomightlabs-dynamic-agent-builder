@@ -7,6 +7,10 @@ from ..users import User, UserRepository
 from .google_oauth import GoogleOAuth
 from .jwt_utils import create_access_token, get_current_user
 
+import logging
+
+
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 google_oauth = GoogleOAuth()
