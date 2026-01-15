@@ -132,23 +132,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         new_token = None
 
+        # TODO: Add policy based token refresh here, for now just check token expiration
         if is_expired:
-            # Try to refresh the token
-            new_token = await self._refresh_token(email)
-            if new_token is None:
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Token expired and refresh failed. Please login again."}
-                )
-
-            # Store the new token in request state for downstream use
-            request.state.auth_token = new_token
-            request.state.user_email = email
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Token expired"}
+            )
         else:
             request.state.auth_token = token
             request.state.user_email = email
 
-        # Process the request
         response = await call_next(request)
 
         # Add refreshed token to response header if token was refreshed

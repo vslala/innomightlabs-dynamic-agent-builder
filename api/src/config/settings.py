@@ -13,7 +13,7 @@ class Settings:
     api_base_url: str
     jwt_secret: str
     jwt_algorithm: str = "HS256"
-    jwt_expiration_hours: int = 24
+    jwt_expiration_hours: int = 24 * 7
 
     # Google OAuth
     google_client_id: str = ""

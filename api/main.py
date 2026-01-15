@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
-from src.auth import auth_router
+from src.auth import auth_router, middleware
 import logging
 
 logging.basicConfig(
@@ -26,6 +26,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+app.add_middleware(
+    middleware.AuthMiddleware
 )
 
 app.include_router(auth_router)

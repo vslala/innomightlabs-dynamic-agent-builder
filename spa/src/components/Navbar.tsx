@@ -25,7 +25,7 @@ export function Navbar() {
           <a href="#how-it-works" className={styles.link}>How It Works</a>
           <a href="#waitlist" className={styles.ctaLink}>Join Waitlist</a>
           <a
-            href={`${import.meta.env.VITE_API_BASE_URL}`}
+            href={`${import.meta.env.VITE_API_BASE_URL}/auth/google`}
             className={styles.betaLogin}
           >
             Beta Login
