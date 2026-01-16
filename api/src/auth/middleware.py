@@ -8,7 +8,7 @@ This middleware intercepts all requests and:
 """
 
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple, cast
 import jwt
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -35,7 +35,7 @@ PUBLIC_PATHS = {
 }
 
 
-def decode_token_without_verification(token: str) -> Optional[dict]:
+def decode_token_without_verification(token: str) -> Optional[dict[str, Any]]:
     """Decode JWT token without verifying expiration (to get user email)."""
     try:
         payload = jwt.decode(
@@ -44,7 +44,7 @@ def decode_token_without_verification(token: str) -> Optional[dict]:
             algorithms=[settings.jwt_algorithm],
             options={"verify_exp": False}
         )
-        return payload
+        return cast(dict[str, Any], payload)
     except jwt.InvalidTokenError:
         return None
 

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
 from src.auth import auth_router, middleware
+from src.agents.router import router as agent_router
 import logging
 
 logging.basicConfig(
@@ -32,6 +33,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(router=agent_router)
 
 
 @app.get("/health")

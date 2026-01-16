@@ -1,5 +1,6 @@
 import secrets
 from urllib.parse import urlencode
+from typing import Any, cast
 import httpx
 
 from ..config import settings
@@ -41,7 +42,7 @@ class GoogleOAuth:
         log.debug(f"Authorization URL: {url}")
         return url, state
 
-    async def exchange_code_for_tokens(self, code: str) -> dict:
+    async def exchange_code_for_tokens(self, code: str) -> dict[str, Any]:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 self.TOKEN_URL,
@@ -54,9 +55,9 @@ class GoogleOAuth:
                 },
             )
             response.raise_for_status()
-            return response.json()
+            return cast(dict[str, Any], response.json())
 
-    async def refresh_access_token(self, refresh_token: str) -> dict:
+    async def refresh_access_token(self, refresh_token: str) -> dict[str, Any]:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 self.TOKEN_URL,
@@ -68,13 +69,13 @@ class GoogleOAuth:
                 },
             )
             response.raise_for_status()
-            return response.json()
+            return cast(dict[str, Any], response.json())
 
-    async def get_user_info(self, access_token: str) -> dict:
+    async def get_user_info(self, access_token: str) -> dict[str, Any]:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 self.USERINFO_URL,
                 headers={"Authorization": f"Bearer {access_token}"},
             )
             response.raise_for_status()
-            return response.json()
+            return cast(dict[str, Any], response.json())
