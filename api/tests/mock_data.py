@@ -21,6 +21,19 @@ AGENT_CREATE_REQUEST_2 = {
     "agent_persona": "You are another helpful assistant.",
 }
 
+# Conversation creation request data
+CONVERSATION_CREATE_REQUEST = {
+    "title": "Test Conversation",
+    "description": "A test conversation for unit testing",
+    "agent_id": "test-agent-id",
+}
+
+CONVERSATION_CREATE_REQUEST_2 = {
+    "title": "Another Conversation",
+    "description": "Another test conversation",
+    "agent_id": "test-agent-id",
+}
+
 # DynamoDB table schema
 DYNAMODB_TABLE_NAME = "test-table"
 

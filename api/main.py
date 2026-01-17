@@ -4,6 +4,7 @@ from mangum import Mangum
 
 from src.auth import auth_router, middleware
 from src.agents.router import router as agent_router
+from src.conversations.router import router as conversation_router
 import logging
 
 logging.basicConfig(
@@ -35,6 +36,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(router=agent_router)
+app.include_router(router=conversation_router)
 
 
 @app.get("/health")

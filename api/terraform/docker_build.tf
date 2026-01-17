@@ -1,6 +1,12 @@
 # Get AWS account ID and region for ECR login
 data "aws_caller_identity" "current" {}
 
+# Calculate hash of source directory for change detection
+locals {
+  src_files = fileset("${path.module}/../src", "**/*.py")
+  src_hash  = md5(join("", [for f in local.src_files : filemd5("${path.module}/../src/${f}")]))
+}
+
 # Build and push Docker image to ECR
 resource "null_resource" "docker_build_push" {
   triggers = {
@@ -9,6 +15,7 @@ resource "null_resource" "docker_build_push" {
     main_hash       = filemd5("${path.module}/../main.py")
     pyproject_hash  = filemd5("${path.module}/../pyproject.toml")
     lock_hash       = filemd5("${path.module}/../uv.lock")
+    src_hash        = local.src_hash
   }
 
   provisioner "local-exec" {
@@ -35,4 +42,36 @@ resource "null_resource" "docker_build_push" {
   }
 
   depends_on = [aws_ecr_repository.api]
+}
+
+# Update Lambda function with the new image after Docker push
+resource "null_resource" "lambda_update" {
+  triggers = {
+    # Update Lambda whenever docker_build_push is triggered
+    docker_build_id = null_resource.docker_build_push.id
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+
+      echo "Updating Lambda function with new image..."
+      aws lambda update-function-code \
+        --function-name ${var.project_name}-api \
+        --image-uri ${aws_ecr_repository.api.repository_url}:latest \
+        --region ${var.aws_region}
+
+      echo "Waiting for Lambda update to complete..."
+      aws lambda wait function-updated \
+        --function-name ${var.project_name}-api \
+        --region ${var.aws_region}
+
+      echo "Lambda function updated successfully!"
+    EOT
+  }
+
+  depends_on = [
+    null_resource.docker_build_push,
+    aws_lambda_function.api
+  ]
 }
