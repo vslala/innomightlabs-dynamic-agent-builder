@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot } from "lucide-react";
+import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Send, User, Loader2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -28,7 +28,10 @@ import {
 } from "../../components/ui/select";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
+import { chatService } from "../../services/chat";
+import { authService } from "../../services/auth";
 import type { ConversationResponse } from "../../types/conversation";
+import { SSEEventType, type Message, type SSEEvent } from "../../types/message";
 
 export function ConversationDetail() {
   const { conversationId } = useParams<{ conversationId: string }>();
@@ -37,6 +40,9 @@ export function ConversationDetail() {
   const [agents, setAgents] = useState<AgentResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // User info for displaying profile picture
+  const userInfo = authService.getUserFromToken();
 
   // Edit mode
   const [isEditing, setIsEditing] = useState(false);
@@ -49,21 +55,90 @@ export function ConversationDetail() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Chat state
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputValue, setInputValue] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const streamingContentRef = useRef("");
+
+  // Pagination state for messages
+  const [messagesCursor, setMessagesCursor] = useState<string | null>(null);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [initialMessagesLoaded, setInitialMessagesLoaded] = useState(false);
+
   const loadData = async () => {
     if (!conversationId) return;
     try {
       setError(null);
-      const [conversationData, agentsData] = await Promise.all([
+      const [conversationData, agentsData, messagesData] = await Promise.all([
         conversationApiService.getConversation(conversationId),
         agentApiService.listAgents(),
+        conversationApiService.getMessages(conversationId, 20),
       ]);
       setConversation(conversationData);
       setAgents(agentsData);
+      // Messages come newest-first, reverse for display (oldest at top)
+      setMessages(messagesData.items.reverse());
+      setMessagesCursor(messagesData.next_cursor);
+      setHasMoreMessages(messagesData.has_more);
+      setInitialMessagesLoaded(true);
     } catch (err) {
       setError("Failed to load conversation. It may not exist or you don't have access.");
       console.error("Error loading conversation:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load older messages (for infinite scroll up)
+  const loadOlderMessages = async () => {
+    if (!conversationId || !messagesCursor || isLoadingMessages) return;
+
+    setIsLoadingMessages(true);
+    try {
+      const messagesData = await conversationApiService.getMessages(
+        conversationId,
+        20,
+        messagesCursor
+      );
+
+      // Save scroll position to restore after prepending
+      const container = messagesContainerRef.current;
+      const previousScrollHeight = container?.scrollHeight || 0;
+
+      // Prepend older messages (reverse them for display order)
+      setMessages((prev) => [...messagesData.items.reverse(), ...prev]);
+      setMessagesCursor(messagesData.next_cursor);
+      setHasMoreMessages(messagesData.has_more);
+
+      // Restore scroll position after DOM update
+      requestAnimationFrame(() => {
+        if (container) {
+          const newScrollHeight = container.scrollHeight;
+          container.scrollTop = newScrollHeight - previousScrollHeight;
+        }
+      });
+    } catch (err) {
+      console.error("Error loading older messages:", err);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  };
+
+  // Handle scroll for infinite scroll up
+  const handleScroll = () => {
+    const container = messagesContainerRef.current;
+    if (!container || isLoadingMessages || !hasMoreMessages) return;
+
+    // Load more when scrolled near the top (within 50px)
+    if (container.scrollTop < 50) {
+      loadOlderMessages();
     }
   };
 
@@ -131,6 +206,128 @@ export function ConversationDetail() {
     } catch (err) {
       console.error("Error deleting conversation:", err);
       setIsDeleting(false);
+    }
+  };
+
+  // Scroll to bottom when new messages are added (not when loading older)
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  };
+
+  // Scroll to bottom on initial load
+  useEffect(() => {
+    if (initialMessagesLoaded) {
+      scrollToBottom("instant");
+    }
+  }, [initialMessagesLoaded]);
+
+  // Scroll to bottom when streaming content updates
+  useEffect(() => {
+    if (streamingContent) {
+      scrollToBottom();
+    }
+  }, [streamingContent]);
+
+  // Handle sending a message
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || !conversation || isSending) return;
+
+    const userMessage = inputValue.trim();
+    setInputValue("");
+    setIsSending(true);
+    setChatError(null);
+    setStatusMessage(null);
+    setStreamingContent("");
+    streamingContentRef.current = "";
+
+    // Add user message to the list immediately
+    const userMsg: Message = {
+      message_id: `temp-${Date.now()}`,
+      conversation_id: conversation.conversation_id,
+      role: "user",
+      content: userMessage,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    const handleEvent = (event: SSEEvent) => {
+      switch (event.event_type) {
+        case SSEEventType.LIFECYCLE_NOTIFICATION:
+          setStatusMessage(event.content);
+          break;
+
+        case SSEEventType.AGENT_RESPONSE_TO_USER:
+          setStatusMessage(null);
+          streamingContentRef.current += event.content;
+          setStreamingContent(streamingContentRef.current);
+          break;
+
+        case SSEEventType.MESSAGE_SAVED:
+          // Update user message ID if provided
+          if (event.message_id) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.message_id === userMsg.message_id
+                  ? { ...m, message_id: event.message_id! }
+                  : m
+              )
+            );
+          }
+          break;
+
+        case SSEEventType.STREAM_COMPLETE:
+          // Add assistant message to list using ref value
+          if (streamingContentRef.current) {
+            const assistantMsg: Message = {
+              message_id: event.message_id || `assistant-${Date.now()}`,
+              conversation_id: conversation.conversation_id,
+              role: "assistant",
+              content: streamingContentRef.current,
+              created_at: new Date().toISOString(),
+            };
+            setMessages((msgs) => [...msgs, assistantMsg]);
+          }
+          streamingContentRef.current = "";
+          setStreamingContent("");
+          setIsSending(false);
+          setStatusMessage(null);
+          break;
+
+        case SSEEventType.ERROR:
+          setChatError(event.content);
+          setIsSending(false);
+          setStatusMessage(null);
+          break;
+
+        default:
+          break;
+      }
+    };
+
+    await chatService.sendMessage(
+      conversation.agent_id,
+      conversation.conversation_id,
+      userMessage,
+      {
+        onEvent: handleEvent,
+        onError: (err) => {
+          setChatError(err.message);
+          setIsSending(false);
+          setStatusMessage(null);
+        },
+        onComplete: () => {
+          setIsSending(false);
+          setStatusMessage(null);
+        },
+      }
+    );
+  };
+
+  // Handle Enter key press
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
     }
   };
 
@@ -372,22 +569,225 @@ export function ConversationDetail() {
         </CardContent>
       </Card>
 
-      {/* Chat Placeholder */}
-      <Card>
-        <CardHeader>
+      {/* Chat Section */}
+      <Card style={{ display: "flex", flexDirection: "column", height: "32rem" }}>
+        <CardHeader style={{ borderBottom: "1px solid var(--border-subtle)", flexShrink: 0 }}>
           <CardTitle style={{ fontSize: "1.125rem" }}>Messages</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent style={{ flex: 1, display: "flex", flexDirection: "column", padding: 0, overflow: "hidden" }}>
+          {/* Messages Area */}
+          <div
+            ref={messagesContainerRef}
+            onScroll={handleScroll}
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              padding: "1rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "1rem",
+            }}
+          >
+            {/* Loading indicator for older messages */}
+            {isLoadingMessages && (
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "0.5rem",
+                color: "var(--text-muted)",
+                fontSize: "0.875rem",
+              }}>
+                <Loader2 style={{ height: "1rem", width: "1rem", marginRight: "0.5rem", animation: "spin 1s linear infinite" }} />
+                Loading older messages...
+              </div>
+            )}
+
+            {/* Load more indicator when there are more messages */}
+            {hasMoreMessages && !isLoadingMessages && messages.length > 0 && (
+              <div style={{
+                textAlign: "center",
+                padding: "0.5rem",
+                color: "var(--text-muted)",
+                fontSize: "0.75rem",
+              }}>
+                Scroll up for older messages
+              </div>
+            )}
+
+            {messages.length === 0 && !streamingContent && !statusMessage ? (
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                color: "var(--text-muted)",
+              }}>
+                <MessageSquare style={{ height: "3rem", width: "3rem", marginBottom: "1rem", opacity: 0.5 }} />
+                <p style={{ marginBottom: "0.5rem" }}>No messages yet</p>
+                <p style={{ fontSize: "0.875rem" }}>Send a message to start the conversation</p>
+              </div>
+            ) : (
+              <>
+                {messages.map((msg) => (
+                  <div
+                    key={msg.message_id}
+                    style={{
+                      display: "flex",
+                      gap: "0.75rem",
+                      alignItems: "flex-start",
+                      flexDirection: msg.role === "user" ? "row-reverse" : "row",
+                    }}
+                  >
+                    {msg.role === "user" && userInfo?.picture ? (
+                      <img
+                        src={userInfo.picture}
+                        alt={userInfo.name || "User"}
+                        style={{
+                          width: "2rem",
+                          height: "2rem",
+                          borderRadius: "50%",
+                          flexShrink: 0,
+                          objectFit: "cover",
+                        }}
+                      />
+                    ) : (
+                      <div style={{
+                        width: "2rem",
+                        height: "2rem",
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                        backgroundColor: msg.role === "user"
+                          ? "var(--gradient-start)"
+                          : "rgba(102, 126, 234, 0.1)",
+                      }}>
+                        {msg.role === "user" ? (
+                          <User style={{ height: "1rem", width: "1rem", color: "white" }} />
+                        ) : (
+                          <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
+                        )}
+                      </div>
+                    )}
+                    <div style={{
+                      maxWidth: "70%",
+                      padding: "0.75rem 1rem",
+                      borderRadius: "1rem",
+                      backgroundColor: msg.role === "user"
+                        ? "var(--gradient-start)"
+                        : "var(--bg-secondary)",
+                      color: msg.role === "user" ? "white" : "var(--text-primary)",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      lineHeight: "1.5",
+                    }}>
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Streaming response */}
+                {streamingContent && (
+                  <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+                    <div style={{
+                      width: "2rem",
+                      height: "2rem",
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                      backgroundColor: "rgba(102, 126, 234, 0.1)",
+                    }}>
+                      <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
+                    </div>
+                    <div style={{
+                      maxWidth: "70%",
+                      padding: "0.75rem 1rem",
+                      borderRadius: "1rem",
+                      backgroundColor: "var(--bg-secondary)",
+                      color: "var(--text-primary)",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      lineHeight: "1.5",
+                    }}>
+                      {streamingContent}
+                      <span style={{
+                        display: "inline-block",
+                        width: "0.5rem",
+                        height: "1rem",
+                        marginLeft: "0.125rem",
+                        backgroundColor: "var(--gradient-start)",
+                        animation: "blink 1s infinite",
+                      }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Status message */}
+                {statusMessage && (
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.5rem",
+                    padding: "0.5rem",
+                    color: "var(--text-muted)",
+                    fontSize: "0.875rem",
+                  }}>
+                    <Loader2 style={{ height: "1rem", width: "1rem", animation: "spin 1s linear infinite" }} />
+                    {statusMessage}
+                  </div>
+                )}
+              </>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Error message */}
+          {chatError && (
+            <div style={{
+              margin: "0 1rem",
+              padding: "0.75rem",
+              borderRadius: "0.5rem",
+              backgroundColor: "rgba(239, 68, 68, 0.1)",
+              border: "1px solid rgba(239, 68, 68, 0.2)",
+              color: "#f87171",
+              fontSize: "0.875rem",
+            }}>
+              {chatError}
+            </div>
+          )}
+
+          {/* Input Area */}
           <div style={{
-            textAlign: "center",
-            padding: "3rem 1rem",
-            color: "var(--text-muted)",
+            display: "flex",
+            gap: "0.75rem",
+            padding: "1rem",
+            borderTop: "1px solid var(--border-subtle)",
           }}>
-            <MessageSquare style={{ height: "3rem", width: "3rem", margin: "0 auto", marginBottom: "1rem", opacity: 0.5 }} />
-            <p style={{ marginBottom: "0.5rem" }}>Chat functionality coming soon</p>
-            <p style={{ fontSize: "0.875rem" }}>
-              You'll be able to interact with your agent here
-            </p>
+            <Input
+              placeholder="Type your message..."
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyPress}
+              disabled={isSending}
+              style={{ flex: 1 }}
+            />
+            <Button
+              onClick={handleSendMessage}
+              disabled={!inputValue.trim() || isSending}
+              style={{ flexShrink: 0 }}
+            >
+              {isSending ? (
+                <Loader2 style={{ height: "1rem", width: "1rem", animation: "spin 1s linear infinite" }} />
+              ) : (
+                <Send style={{ height: "1rem", width: "1rem" }} />
+              )}
+            </Button>
           </div>
         </CardContent>
       </Card>

@@ -1,0 +1,161 @@
+"""
+Krishna Mini Agent Architecture.
+
+A simple architecture that:
+- Uses a fixed context window for conversation history
+- Sends messages directly to the LLM without looping
+- No memory blocks or tool usage
+"""
+
+import logging
+from typing import TYPE_CHECKING, AsyncIterator
+
+from src.crypto import decrypt
+from src.llm.conversation_strategy import FixedWindowStrategy
+from src.llm.events import SSEEvent, SSEEventType
+from src.llm.providers import get_llm_provider
+from src.messages.models import Message
+from src.messages.repository import MessageRepository
+
+from .base import AgentArchitecture
+
+if TYPE_CHECKING:
+    from src.agents.models import Agent
+    from src.conversations.models import Conversation
+
+log = logging.getLogger(__name__)
+
+
+class KrishnaMiniArchitecture(AgentArchitecture):
+    """
+    Krishna Mini - A simple conversational agent architecture.
+
+    This architecture:
+    1. Saves user messages to the conversation
+    2. Builds context using FixedWindowStrategy (10,000 word limit)
+    3. Calls the LLM once and streams the response
+    4. Saves the assistant response
+
+    No looping, memory, or tool usage - just straightforward conversation.
+    """
+
+    def __init__(self, max_context_words: int = 10000):
+        """
+        Initialize Krishna Mini architecture.
+
+        Args:
+            max_context_words: Maximum words to include in context window
+        """
+        self.max_context_words = max_context_words
+        self.message_repo = MessageRepository()
+        self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
+
+    @property
+    def name(self) -> str:
+        return "krishna-mini"
+
+    async def handle_message(
+        self,
+        agent: "Agent",
+        conversation: "Conversation",
+        user_message: str,
+    ) -> AsyncIterator[SSEEvent]:
+        """
+        Handle a user message with simple single-turn conversation.
+
+        Args:
+            agent: The agent handling this conversation
+            conversation: The conversation context
+            user_message: The user's message content
+
+        Yields:
+            SSEEvent objects for streaming to the client
+        """
+        try:
+            # 1. Save user message
+            user_msg = Message(
+                conversation_id=conversation.conversation_id,
+                role="user",
+                content=user_message,
+            )
+            self.message_repo.save(user_msg)
+
+            yield SSEEvent(
+                event_type=SSEEventType.MESSAGE_SAVED,
+                content="User message saved",
+                message_id=user_msg.message_id,
+            )
+
+            # 2. Build context
+            yield SSEEvent(
+                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+                content="Building conversation context...",
+            )
+
+            all_messages = self.message_repo.find_by_conversation(
+                conversation.conversation_id
+            )
+            context = self._build_context(all_messages, agent.agent_persona)
+
+            # 3. Get LLM provider and stream response
+            yield SSEEvent(
+                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+                content="Connecting to AI model...",
+            )
+
+            provider = get_llm_provider(agent.agent_provider)
+            api_key = decrypt(agent.agent_provider_api_key)
+
+            # 4. Stream response
+            full_response = ""
+            async for chunk in provider.stream_response(context, api_key):
+                full_response += chunk
+                yield SSEEvent(
+                    event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
+                    content=chunk,
+                )
+
+            # 5. Save assistant message
+            assistant_msg = Message(
+                conversation_id=conversation.conversation_id,
+                role="assistant",
+                content=full_response,
+            )
+            self.message_repo.save(assistant_msg)
+
+            yield SSEEvent(
+                event_type=SSEEventType.STREAM_COMPLETE,
+                content="Response complete",
+                message_id=assistant_msg.message_id,
+            )
+
+        except Exception as e:
+            log.error(f"Error in KrishnaMini handle_message: {e}", exc_info=True)
+            yield SSEEvent(
+                event_type=SSEEventType.ERROR,
+                content=str(e),
+            )
+
+    def _build_context(
+        self, messages: list[Message], system_prompt: str
+    ) -> list[dict]:
+        """
+        Build the full context for LLM.
+
+        For Krishna Mini, this is just the system prompt + conversation messages.
+
+        Args:
+            messages: List of conversation messages
+            system_prompt: The agent's persona
+
+        Returns:
+            List of message dicts ready for LLM API
+        """
+        # Start with system prompt
+        context = [{"role": "system", "content": system_prompt}]
+
+        # Add conversation messages from strategy
+        conversation_messages = self.conversation_strategy.build_context(messages)
+        context.extend(conversation_messages)
+
+        return context

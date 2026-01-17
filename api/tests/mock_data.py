@@ -9,6 +9,7 @@ TEST_USER_EMAIL_2 = "otheruser@example.com"
 # Agent creation request data
 AGENT_CREATE_REQUEST = {
     "agent_name": "Test Agent",
+    "agent_architecture": "krishna-mini",
     "agent_provider": "Bedrock",
     "agent_provider_api_key": "test-api-key-123",
     "agent_persona": "You are a helpful test assistant.",
@@ -16,6 +17,7 @@ AGENT_CREATE_REQUEST = {
 
 AGENT_CREATE_REQUEST_2 = {
     "agent_name": "Another Agent",
+    "agent_architecture": "krishna-mini",
     "agent_provider": "Bedrock",
     "agent_provider_api_key": "another-api-key-456",
     "agent_persona": "You are another helpful assistant.",

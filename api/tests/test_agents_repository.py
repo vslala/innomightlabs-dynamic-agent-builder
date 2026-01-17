@@ -20,6 +20,7 @@ class TestAgentRepository:
         """Test that save() creates a new agent."""
         agent = Agent(
             agent_name=AGENT_CREATE_REQUEST["agent_name"],
+            agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
@@ -36,6 +37,7 @@ class TestAgentRepository:
         """Test that find_agent_by_id() retrieves the correct agent."""
         agent = Agent(
             agent_name=AGENT_CREATE_REQUEST["agent_name"],
+            agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
@@ -54,6 +56,7 @@ class TestAgentRepository:
         # Create two agents for the same user
         agent1 = Agent(
             agent_name=AGENT_CREATE_REQUEST["agent_name"],
+            agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
@@ -61,6 +64,7 @@ class TestAgentRepository:
         )
         agent2 = Agent(
             agent_name=AGENT_CREATE_REQUEST_2["agent_name"],
+            agent_architecture=AGENT_CREATE_REQUEST_2["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST_2["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST_2["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST_2["agent_persona"],
@@ -80,6 +84,7 @@ class TestAgentRepository:
         """Test that find_by_name() finds agent by name for a user."""
         agent = Agent(
             agent_name=AGENT_CREATE_REQUEST["agent_name"],
+            agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
@@ -98,6 +103,7 @@ class TestAgentRepository:
         """Test that find_by_name() returns None for a different user."""
         agent = Agent(
             agent_name=AGENT_CREATE_REQUEST["agent_name"],
+            agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
@@ -115,6 +121,7 @@ class TestAgentRepository:
         """Test that delete_by_id() removes the agent."""
         agent = Agent(
             agent_name=AGENT_CREATE_REQUEST["agent_name"],
+            agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
@@ -131,6 +138,7 @@ class TestAgentRepository:
         """Test that save() updates an existing agent."""
         agent = Agent(
             agent_name=AGENT_CREATE_REQUEST["agent_name"],
+            agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],

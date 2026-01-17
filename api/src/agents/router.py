@@ -1,13 +1,18 @@
 from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
+from pydantic import BaseModel
 from typing import Annotated, Any
 import logging
 
 import src.form_models as form_models
+from src.agents.architectures import get_agent_architecture
 from src.agents.models import Agent, CreateAgentRequest, AgentResponse
 from src.agents.repository import AgentRepository
 from src.agents.schemas import CREATE_AGENT_FORM, UPDATE_AGENT_FORM, get_update_agent_form
+from src.conversations.repository import ConversationRepository
 from src.crypto import encrypt_secret_fields
+from src.llm.events import SSEEvent, SSEEventType
 
 log = logging.getLogger(__name__)
 
@@ -19,6 +24,11 @@ router = APIRouter(
     tags=['agents'],
     dependencies=[Depends(security)]  # Apply to all routes in this router
 )
+
+
+class SendMessageRequest(BaseModel):
+    """Request body for sending a message to an agent."""
+    content: str
 
 
 def get_agent_repository() -> AgentRepository:
@@ -78,6 +88,7 @@ async def create_agent(
     # Create new agent with encrypted secrets
     agent = Agent(
         agent_name=encrypted_data["agent_name"],
+        agent_architecture=encrypted_data["agent_architecture"],
         agent_provider=encrypted_data["agent_provider"],
         agent_provider_api_key=encrypted_data["agent_provider_api_key"],
         agent_persona=encrypted_data["agent_persona"],
@@ -186,3 +197,93 @@ async def delete_agent(
     user_email: str = request.state.user_email
     repo.delete_by_id(agent_id, user_email)
     log.info(f"Deleted agent {agent_id} for user {user_email}")
+
+
+@router.post("/{agent_id}/{conversation_id}/send-message")
+async def send_message(
+    request: Request,
+    agent_id: str,
+    conversation_id: str,
+    body: SendMessageRequest,
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+):
+    """
+    Sends message to the agent along with the conversation id for the context.
+    This endpoint returns a streaming response using Server Side Events.
+    The structure of the event is standard with the payload marshalled into json object.
+
+    Events:
+    - LIFECYCLE_NOTIFICATION: Status updates during processing
+    - AGENT_RESPONSE_TO_USER: Streaming response chunks from the LLM
+    - MESSAGE_SAVED: Confirmation that user/assistant message was saved
+    - STREAM_COMPLETE: Stream has finished
+    - ERROR: An error occurred
+    """
+    user_email: str = request.state.user_email
+    conversation_repo = ConversationRepository()
+
+    async def event_stream():
+        try:
+            # 1. Load and validate agent
+            yield SSEEvent(
+                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+                content="Loading agent information..."
+            ).to_sse()
+
+            agent = agent_repo.find_agent_by_id(agent_id, user_email)
+            if not agent:
+                yield SSEEvent(
+                    event_type=SSEEventType.ERROR,
+                    content="Agent not found"
+                ).to_sse()
+                return
+
+            # 2. Validate conversation ownership
+            yield SSEEvent(
+                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+                content="Validating conversation..."
+            ).to_sse()
+
+            conversation = conversation_repo.find_by_id(conversation_id, user_email)
+            if not conversation:
+                yield SSEEvent(
+                    event_type=SSEEventType.ERROR,
+                    content="Conversation not found"
+                ).to_sse()
+                return
+
+            if conversation.agent_id != agent_id:
+                yield SSEEvent(
+                    event_type=SSEEventType.ERROR,
+                    content="Conversation does not belong to this agent"
+                ).to_sse()
+                return
+
+            # 3. Get architecture and delegate message handling
+            architecture = get_agent_architecture(agent.agent_architecture)
+
+            async for event in architecture.handle_message(
+                agent=agent,
+                conversation=conversation,
+                user_message=body.content,
+            ):
+                yield event.to_sse()
+
+            # 4. Update conversation timestamp after successful handling
+            conversation_repo.save(conversation)
+
+        except Exception as e:
+            log.error(f"Error in send_message stream: {e}", exc_info=True)
+            yield SSEEvent(
+                event_type=SSEEventType.ERROR,
+                content=str(e)
+            ).to_sse()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )

@@ -67,7 +67,7 @@ class TestAgentsRouter:
         data = response.json()
         assert data["form_name"] == "Create Agent Form"
         assert "form_inputs" in data
-        assert len(data["form_inputs"]) == 4
+        assert len(data["form_inputs"]) == 5  # name, architecture, persona, provider, api_key
 
     def test_create_agent_requires_auth(self, test_client: TestClient):
         """Test that creating an agent requires authentication."""

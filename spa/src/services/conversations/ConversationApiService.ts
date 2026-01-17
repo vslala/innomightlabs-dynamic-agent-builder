@@ -9,6 +9,7 @@ import type {
   UpdateConversationRequest,
   PaginatedResponse,
 } from "../../types/conversation";
+import type { Message } from "../../types/message";
 
 class ConversationApiService {
   /**
@@ -64,6 +65,25 @@ class ConversationApiService {
    */
   async deleteConversation(conversationId: string): Promise<void> {
     await httpClient.delete(`/conversations/${conversationId}`);
+  }
+
+  /**
+   * Get messages for a conversation with pagination.
+   * Returns messages newest-first. Use cursor to load older messages.
+   */
+  async getMessages(
+    conversationId: string,
+    limit: number = 20,
+    cursor?: string
+  ): Promise<PaginatedResponse<Message>> {
+    const params = new URLSearchParams();
+    params.append("limit", limit.toString());
+    if (cursor) {
+      params.append("cursor", cursor);
+    }
+    return httpClient.get<PaginatedResponse<Message>>(
+      `/conversations/${conversationId}/messages?${params.toString()}`
+    );
   }
 }
 

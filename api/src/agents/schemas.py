@@ -15,6 +15,12 @@ CREATE_AGENT_FORM = Form(
             input_type=FormInputType.TEXT,
         ),
         FormInput(
+            label="Architecture",
+            name="agent_architecture",
+            values=["krishna-mini"],  # Future: "krishna-memgpt", etc.
+            input_type=FormInputType.SELECT,
+        ),
+        FormInput(
             label="Persona",
             name="agent_persona",
             input_type=FormInputType.TEXT_AREA,
@@ -44,6 +50,12 @@ def get_update_agent_form(agent_id: str) -> Form:
         submit_path=f"/agents/{agent_id}",
         form_inputs=[
             FormInput(
+                label="Architecture",
+                name="agent_architecture",
+                values=["krishna-mini"],  # Future: "krishna-memgpt", etc.
+                input_type=FormInputType.SELECT,
+            ),
+            FormInput(
                 label="Persona",
                 name="agent_persona",
                 input_type=FormInputType.TEXT_AREA,
@@ -68,6 +80,12 @@ UPDATE_AGENT_FORM = Form(
     form_name="Update Agent Form",
     submit_path="/agents/{agent_id}",
     form_inputs=[
+        FormInput(
+            label="Architecture",
+            name="agent_architecture",
+            values=["krishna-mini"],  # Future: "krishna-memgpt", etc.
+            input_type=FormInputType.SELECT,
+        ),
         FormInput(
             label="Persona",
             name="agent_persona",

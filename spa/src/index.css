@@ -10,6 +10,7 @@
   --bg-dark: #0f0f23;
   --bg-card: rgba(255, 255, 255, 0.08);
   --bg-card-hover: rgba(255, 255, 255, 0.12);
+  --bg-secondary: rgba(255, 255, 255, 0.1);
   --border-subtle: rgba(255, 255, 255, 0.1);
   --accent-cyan: #00d4ff;
   --accent-pink: #ff6b9d;
@@ -152,4 +153,16 @@ input {
   .responsive-grid[data-cols-lg="4"] {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+}
+
+/* Spin animation for loading indicators */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Blink animation for typing cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }

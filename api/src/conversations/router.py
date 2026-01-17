@@ -15,12 +15,15 @@ from src.conversations.models import (
     UpdateConversationRequest,
 )
 from src.conversations.repository import ConversationRepository
+from src.messages.models import MessageResponse
+from src.messages.repository import MessageRepository
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 # Initialize repositories
 conversation_repository = ConversationRepository()
 agent_repository = AgentRepository()
+message_repository = MessageRepository()
 
 
 def get_user_email(request: Request) -> str:
@@ -104,6 +107,41 @@ async def get_conversation(request: Request, conversation_id: str):
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     return conversation.to_response()
+
+
+@router.get("/{conversation_id}/messages", response_model=Paginated[MessageResponse])
+async def get_messages(
+    request: Request,
+    conversation_id: str,
+    limit: int = Query(default=20, ge=1, le=100, description="Number of messages per page"),
+    cursor: Optional[str] = Query(default=None, description="Pagination cursor for older messages"),
+):
+    """
+    Get messages for a conversation.
+
+    Returns messages in reverse chronological order (newest first).
+    Use cursor to load older messages (for infinite scroll up).
+
+    The frontend should reverse the returned messages for display
+    (oldest at top, newest at bottom).
+    """
+    user_email = get_user_email(request)
+
+    # Verify conversation exists and belongs to user
+    conversation = conversation_repository.find_by_id(conversation_id, user_email)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Get messages (newest first)
+    messages, next_cursor, has_more = message_repository.find_by_conversation_newest_first(
+        conversation_id=conversation_id, limit=limit, cursor=cursor
+    )
+
+    return Paginated[MessageResponse](
+        items=[m.to_response() for m in messages],
+        next_cursor=next_cursor,
+        has_more=has_more,
+    )
 
 
 @router.put("/{conversation_id}", response_model=ConversationResponse)

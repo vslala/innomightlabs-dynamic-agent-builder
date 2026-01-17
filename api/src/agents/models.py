@@ -7,6 +7,7 @@ from uuid import uuid4
 class CreateAgentRequest(BaseModel):
     """Request model for creating an agent"""
     agent_name: str
+    agent_architecture: str
     agent_provider: str
     agent_provider_api_key: str
     agent_persona: str
@@ -16,6 +17,7 @@ class AgentResponse(BaseModel):
     """Response model for agent (excludes sensitive fields)"""
     agent_id: str
     agent_name: str
+    agent_architecture: str
     agent_provider: str
     agent_persona: str
     created_by: str
@@ -26,6 +28,7 @@ class AgentResponse(BaseModel):
 class Agent(BaseModel):
     agent_id: str = Field(default_factory=lambda: str(uuid4()))
     agent_name: str
+    agent_architecture: str
     agent_provider: str
     agent_provider_api_key: str
     agent_persona: str
@@ -50,6 +53,7 @@ class Agent(BaseModel):
             "sk": self.sk,
             "agent_id": self.agent_id,
             "agent_name": self.agent_name,
+            "agent_architecture": self.agent_architecture,
             "agent_provider": self.agent_provider,
             "agent_provider_api_key": self.agent_provider_api_key,
             "agent_persona": self.agent_persona,
@@ -65,6 +69,7 @@ class Agent(BaseModel):
         return cls(
             agent_id=item["agent_id"],
             agent_name=item["agent_name"],
+            agent_architecture=item.get("agent_architecture", "krishna-mini"),  # Default for backward compat
             agent_provider=item["agent_provider"],
             agent_provider_api_key=item["agent_provider_api_key"],
             agent_persona=item["agent_persona"],
@@ -78,6 +83,7 @@ class Agent(BaseModel):
         return AgentResponse(
             agent_id=self.agent_id,
             agent_name=self.agent_name,
+            agent_architecture=self.agent_architecture,
             agent_provider=self.agent_provider,
             agent_persona=self.agent_persona,
             created_by=self.created_by,
