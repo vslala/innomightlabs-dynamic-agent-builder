@@ -9,6 +9,7 @@ import type { FormSchema } from "../../types/form";
 export interface AgentResponse {
   agent_id: string;
   agent_name: string;
+  agent_architecture: string;
   agent_provider: string;
   agent_persona: string;
   created_by: string;

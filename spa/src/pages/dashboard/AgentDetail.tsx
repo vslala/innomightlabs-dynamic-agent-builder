@@ -9,7 +9,7 @@ import {
 } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Label } from "../../components/ui/label";
-import { SchemaForm } from "../../components/forms";
+import { SchemaForm, SchemaView } from "../../components/forms";
 import {
   agentApiService,
   type AgentResponse,
@@ -121,13 +121,22 @@ export function AgentDetail() {
 
   if (!agent) return null;
 
-  // Get initial values for the form from agent
-  const initialValues: Record<string, string> = {
-    agent_persona: agent.agent_persona,
-    agent_provider: agent.agent_provider,
-    // Note: API key is not returned by backend, so leave empty for update
-    agent_provider_api_key: "",
-  };
+  // Dynamically build initial values from schema fields and agent data
+  const initialValues: Record<string, string> = {};
+  if (updateSchema) {
+    for (const field of updateSchema.form_inputs) {
+      // Get value from agent data, or empty string for password fields
+      const fieldName = field.name;
+      if (field.input_type === "password") {
+        // Password fields are not returned by backend, leave empty
+        initialValues[fieldName] = "";
+      } else {
+        // Dynamically get the value from agent object
+        const value = (agent as unknown as Record<string, unknown>)[fieldName];
+        initialValues[fieldName] = value != null ? String(value) : "";
+      }
+    }
+  }
 
   return (
     <div style={{ maxWidth: "42rem", display: "flex", flexDirection: "column", gap: "2rem" }}>
@@ -186,6 +195,7 @@ export function AgentDetail() {
             />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              {/* Agent name is always shown (not in update schema) */}
               <div>
                 <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
                   Agent Name
@@ -195,35 +205,15 @@ export function AgentDetail() {
                 </p>
               </div>
 
-              <div>
-                <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
-                  Persona
-                </Label>
-                <p style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap", lineHeight: "1.6" }}>
-                  {agent.agent_persona}
-                </p>
-              </div>
+              {/* Dynamically render fields from schema */}
+              {updateSchema && (
+                <SchemaView
+                  schema={updateSchema}
+                  data={agent as unknown as Record<string, unknown>}
+                />
+              )}
 
-              <div>
-                <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
-                  Provider
-                </Label>
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    padding: "0.375rem 0.75rem",
-                    borderRadius: "0.375rem",
-                    fontSize: "0.75rem",
-                    fontWeight: 500,
-                    backgroundColor: "rgba(102, 126, 234, 0.1)",
-                    color: "var(--gradient-start)",
-                  }}
-                >
-                  {agent.agent_provider}
-                </span>
-              </div>
-
+              {/* Timestamps are metadata, always shown */}
               <div
                 style={{
                   display: "grid",
