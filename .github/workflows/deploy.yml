@@ -22,6 +22,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        run: |
+          echo "Validating required secrets..."
+
+          missing_secrets=""
+
+          if [ -z "${{ secrets.VITE_API_BASE_URL }}" ]; then
+            missing_secrets="${missing_secrets}  - VITE_API_BASE_URL\n"
+          fi
+
+          if [ -n "$missing_secrets" ]; then
+            echo "::error::Required secrets are missing. Please add the following secrets in GitHub repository settings (Settings > Secrets and variables > Actions):"
+            echo -e "$missing_secrets"
+            echo ""
+            echo "To add secrets:"
+            echo "1. Go to your repository on GitHub"
+            echo "2. Click Settings > Secrets and variables > Actions"
+            echo "3. Click 'New repository secret'"
+            echo "4. Add each missing secret with its value"
+            exit 1
+          fi
+
+          echo "All required secrets are configured."
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -33,9 +57,35 @@ jobs:
         working-directory: spa
         run: yarn install --frozen-lockfile
 
+      - name: Create environment file
+        working-directory: spa
+        run: |
+          echo "Creating .env.production file..."
+          echo "VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}" > .env.production
+          echo "Environment file created with VITE_API_BASE_URL set"
+
       - name: Build
         working-directory: spa
-        run: yarn build
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+        run: |
+          echo "Building with VITE_API_BASE_URL configured..."
+          yarn build
+
+      - name: Verify build output
+        working-directory: spa
+        run: |
+          echo "Verifying API URL is embedded in build..."
+          if grep -r "undefined/auth" dist/ 2>/dev/null; then
+            echo "::error::Build verification failed! Found 'undefined/auth' in build output. The VITE_API_BASE_URL was not properly injected."
+            exit 1
+          fi
+
+          if grep -r "${{ secrets.VITE_API_BASE_URL }}" dist/ 2>/dev/null | head -1; then
+            echo "Build verification passed. API URL is correctly embedded."
+          else
+            echo "::warning::Could not verify API URL in build output. Please check manually."
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
