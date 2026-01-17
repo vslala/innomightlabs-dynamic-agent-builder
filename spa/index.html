@@ -16,6 +16,23 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- SPA redirect handler for GitHub Pages -->
+    <script>
+      (function() {
+        // Check for redirect parameter in URL (set by 404.html)
+        var params = new URLSearchParams(window.location.search);
+        var redirectPath = params.get('redirect');
+
+        if (redirectPath) {
+          // Get the base path (e.g., /innomightlabs-dynamic-agent-builder)
+          var basePath = window.location.pathname.replace(/\/$/, '');
+          // Build the full URL with basename + redirect path
+          var newUrl = basePath + decodeURIComponent(redirectPath);
+          // Replace the URL without the redirect parameter
+          history.replaceState(null, '', newUrl);
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

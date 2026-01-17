@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Redirecting...</title>
+  <script>
+    // Single Page App redirect for GitHub Pages
+    // Redirects to index.html with the original path encoded in the URL
+    (function() {
+      var location = window.location;
+      // Get the repo name segment (e.g., /innomightlabs-dynamic-agent-builder)
+      var pathSegments = location.pathname.split('/');
+      var repoName = '/' + pathSegments[1]; // e.g., /innomightlabs-dynamic-agent-builder
+
+      // Get the route path (everything after the repo name)
+      var routePath = '/' + pathSegments.slice(2).join('/'); // e.g., /login-success
+
+      // Build redirect URL with path info in query string
+      var redirectUrl = repoName + '/?redirect=' + encodeURIComponent(routePath + location.search + location.hash);
+
+      location.replace(redirectUrl);
+    })();
+  </script>
+</head>
+<body>
+  <p>Redirecting...</p>
+</body>
+</html>
