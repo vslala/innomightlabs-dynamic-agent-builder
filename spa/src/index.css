@@ -128,3 +128,28 @@ input {
     padding: 3rem;
   }
 }
+
+/* Responsive grid */
+@media (min-width: 640px) {
+  .responsive-grid[data-cols-sm="2"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .responsive-grid[data-cols-sm="3"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .responsive-grid[data-cols-sm="4"] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .responsive-grid[data-cols-lg="2"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .responsive-grid[data-cols-lg="3"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .responsive-grid[data-cols-lg="4"] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

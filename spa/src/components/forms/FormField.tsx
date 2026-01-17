@@ -76,17 +76,27 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
 
       case "choice":
         return (
-          <div className="flex flex-wrap gap-2">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
             {field.values?.map((option) => (
               <button
                 key={option}
                 type="button"
                 onClick={() => onChange(option)}
-                className={`px-4 py-2 rounded-lg border transition-all duration-200 ${
-                  value === option
-                    ? "border-[var(--gradient-start)] bg-[var(--gradient-start)]/20 text-[var(--text-primary)]"
-                    : "border-[var(--border-subtle)] bg-white/5 text-[var(--text-secondary)] hover:bg-white/10"
-                }`}
+                style={{
+                  padding: "0.5rem 1rem",
+                  borderRadius: "0.5rem",
+                  border: value === option
+                    ? "1px solid var(--gradient-start)"
+                    : "1px solid var(--border-subtle)",
+                  backgroundColor: value === option
+                    ? "rgba(102, 126, 234, 0.2)"
+                    : "rgba(255, 255, 255, 0.05)",
+                  color: value === option
+                    ? "var(--text-primary)"
+                    : "var(--text-secondary)",
+                  transition: "all 0.2s",
+                  cursor: "pointer",
+                }}
               >
                 {option}
               </button>
@@ -108,7 +118,7 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
   };
 
   return (
-    <div className="space-y-2">
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
       <Label htmlFor={field.name}>{field.label}</Label>
       {renderInput()}
     </div>

@@ -20,12 +20,25 @@ export function Header({ title, user }: HeaderProps) {
     .slice(0, 2);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-dark)]/95 backdrop-blur-md px-6">
-      <h1 className="text-lg font-semibold text-[var(--text-primary)]">
+    <header
+      className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-dark)]/95 backdrop-blur-md"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        height: "4rem",
+        padding: "0 1.5rem",
+      }}
+    >
+      {/* Spacer for balance */}
+      <div style={{ flex: 1 }} />
+
+      {/* Centered title */}
+      <h1 style={{ fontSize: "1.125rem", fontWeight: 600, color: "var(--text-primary)" }}>
         {title}
       </h1>
 
-      <div className="flex items-center gap-3">
+      {/* Right side actions */}
+      <div style={{ flex: 1, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "0.75rem" }}>
         <Button variant="ghost" size="icon" className="relative h-8 w-8">
           <Bell className="h-4 w-4" />
           <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-[var(--gradient-start)] text-[9px] font-medium flex items-center justify-center">

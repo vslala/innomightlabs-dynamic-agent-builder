@@ -19,15 +19,38 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-64 min-w-64 h-screen border-r border-[var(--border-subtle)] bg-[#0a0a1a]">
-      <div className="flex h-full flex-col">
+    <aside
+      style={{
+        width: "16rem",
+        minWidth: "16rem",
+        borderRight: "1px solid var(--border-subtle)",
+        backgroundColor: "#0a0a1a",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          height: "100vh",
+          position: "sticky",
+          top: 0,
+        }}
+      >
         {/* Logo */}
-        <div className="h-16 flex items-center px-4 border-b border-[var(--border-subtle)]">
-          <span className="text-base font-bold gradient-text">InnoMight Labs</span>
+        <div
+          style={{
+            height: "4rem",
+            display: "flex",
+            alignItems: "center",
+            padding: "0 1rem",
+            borderBottom: "1px solid var(--border-subtle)",
+          }}
+        >
+          <span className="gradient-text" style={{ fontSize: "1rem", fontWeight: 700 }}>InnoMight Labs</span>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-1">
+        <nav style={{ flex: 1, padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
           {navItems.map((item) => {
             const isActive =
               item.to === "/dashboard"
@@ -38,11 +61,20 @@ export function Sidebar() {
               <NavLink key={item.to} to={item.to}>
                 <div
                   className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+                    "transition-all duration-200",
                     isActive
                       ? "bg-gradient-to-r from-[var(--gradient-start)]/15 to-[var(--gradient-mid)]/15 text-white"
                       : "text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--text-primary)]"
                   )}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.75rem",
+                    borderRadius: "0.5rem",
+                    padding: "0.625rem 0.75rem",
+                    fontSize: "0.875rem",
+                    fontWeight: 500,
+                  }}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   {item.label}
@@ -53,11 +85,20 @@ export function Sidebar() {
         </nav>
 
         {/* Logout */}
-        <div className="p-3 border-t border-[var(--border-subtle)]">
+        <div style={{ padding: "0.75rem", borderTop: "1px solid var(--border-subtle)" }}>
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start gap-3 h-9 px-3 text-sm text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/10"
+            className="hover:text-red-400 hover:bg-red-500/10"
+            style={{
+              width: "100%",
+              justifyContent: "flex-start",
+              gap: "0.75rem",
+              height: "2.25rem",
+              padding: "0 0.75rem",
+              fontSize: "0.875rem",
+              color: "var(--text-muted)",
+            }}
             onClick={handleLogout}
           >
             <LogOut className="h-4 w-4 shrink-0" />

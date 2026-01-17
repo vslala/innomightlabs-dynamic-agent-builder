@@ -130,7 +130,7 @@ export function AgentDetail() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div style={{ maxWidth: "42rem", display: "flex", flexDirection: "column", gap: "2rem" }}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -185,43 +185,68 @@ export function AgentDetail() {
               isLoading={isSubmitting}
             />
           ) : (
-            <div className="space-y-6">
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
               <div>
-                <Label className="text-[var(--text-muted)]">Agent Name</Label>
-                <p className="mt-1 text-[var(--text-primary)]">
+                <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
+                  Agent Name
+                </Label>
+                <p style={{ color: "var(--text-primary)", fontSize: "1rem" }}>
                   {agent.agent_name}
                 </p>
               </div>
 
               <div>
-                <Label className="text-[var(--text-muted)]">Persona</Label>
-                <p className="mt-1 text-[var(--text-secondary)] whitespace-pre-wrap">
+                <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
+                  Persona
+                </Label>
+                <p style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap", lineHeight: "1.6" }}>
                   {agent.agent_persona}
                 </p>
               </div>
 
               <div>
-                <Label className="text-[var(--text-muted)]">Provider</Label>
-                <p className="mt-1">
-                  <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-[var(--gradient-start)]/10 text-[var(--gradient-start)]">
-                    {agent.agent_provider}
-                  </span>
-                </p>
+                <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
+                  Provider
+                </Label>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    padding: "0.375rem 0.75rem",
+                    borderRadius: "0.375rem",
+                    fontSize: "0.75rem",
+                    fontWeight: 500,
+                    backgroundColor: "rgba(102, 126, 234, 0.1)",
+                    color: "var(--gradient-start)",
+                  }}
+                >
+                  {agent.agent_provider}
+                </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[var(--border-subtle)]">
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "1rem",
+                  paddingTop: "1.5rem",
+                  borderTop: "1px solid var(--border-subtle)",
+                }}
+              >
                 <div>
-                  <Label className="text-[var(--text-muted)]">Created</Label>
-                  <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                  <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
+                    Created
+                  </Label>
+                  <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
                     {new Date(agent.created_at).toLocaleDateString()}
                   </p>
                 </div>
                 {agent.updated_at && (
                   <div>
-                    <Label className="text-[var(--text-muted)]">
+                    <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
                       Last Updated
                     </Label>
-                    <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                    <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
                       {new Date(agent.updated_at).toLocaleDateString()}
                     </p>
                   </div>

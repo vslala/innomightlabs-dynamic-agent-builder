@@ -4,24 +4,22 @@ import { Bot, MessageSquare, Wrench, Brain, Plus, ArrowRight } from "lucide-reac
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Grid, Stack, Center } from "../../components/ui/grid";
-import { getAgentService } from "../../services/agents";
-import type { Agent, Conversation } from "../../types/agent";
+import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
 
 export function Overview() {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [agents, setAgents] = useState<AgentResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
-      const service = getAgentService();
-      const [agentsData, conversationsData] = await Promise.all([
-        service.getAgents(),
-        service.getConversations(),
-      ]);
-      setAgents(agentsData);
-      setConversations(conversationsData);
-      setLoading(false);
+      try {
+        const agentsData = await agentApiService.listAgents();
+        setAgents(agentsData);
+      } catch (err) {
+        console.error("Error loading agents:", err);
+      } finally {
+        setLoading(false);
+      }
     };
 
     loadData();
@@ -36,7 +34,7 @@ export function Overview() {
     },
     {
       label: "Active Conversations",
-      value: conversations.filter((c) => c.messageCount > 0).length,
+      value: 0, // TODO: Implement conversations API
       icon: MessageSquare,
       color: "from-emerald-500 to-teal-500",
     },
@@ -93,7 +91,7 @@ export function Overview() {
       <Grid cols={1} colsLg={2} gap="md">
         {/* Recent Agents */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <CardTitle>Recent Agents</CardTitle>
             <Link to="/dashboard/agents">
               <Button variant="ghost" size="sm">
@@ -104,10 +102,10 @@ export function Overview() {
           </CardHeader>
           <CardContent>
             {agents.length === 0 ? (
-              <Center className="py-16">
-                <Bot className="h-16 w-16 text-[var(--text-muted)] mb-4" />
-                <p className="text-[var(--text-muted)] mb-6">No agents yet</p>
-                <Link to="/dashboard/agents">
+              <Center style={{ padding: "4rem 0" }}>
+                <Bot className="h-16 w-16 text-[var(--text-muted)]" style={{ marginBottom: "1rem" }} />
+                <p style={{ color: "var(--text-muted)", marginBottom: "1.5rem" }}>No agents yet</p>
+                <Link to="/dashboard/agents/new">
                   <Button>
                     <Plus className="h-4 w-4 mr-2" />
                     Create Your First Agent
@@ -116,21 +114,39 @@ export function Overview() {
               </Center>
             ) : (
               <Stack gap="xs">
-                {agents.slice(0, 3).map((agent) => (
+                {agents.slice(0, 5).map((agent) => (
                   <Link
-                    key={agent.id}
-                    to={`/dashboard/agents/${agent.id}`}
-                    className="flex items-center gap-4 p-4 rounded-lg hover:bg-white/5 transition-colors"
+                    key={agent.agent_id}
+                    to={`/dashboard/agents/${agent.agent_id}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "1rem",
+                      padding: "1rem",
+                      borderRadius: "0.5rem",
+                      transition: "background-color 0.2s",
+                    }}
+                    className="hover:bg-white/5"
                   >
-                    <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
+                    <div
+                      className="bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)]"
+                      style={{
+                        height: "3rem",
+                        width: "3rem",
+                        borderRadius: "0.5rem",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
                       <Bot className="h-6 w-6 text-white" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-[var(--text-primary)] truncate">
-                        {agent.name}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {agent.agent_name}
                       </p>
-                      <p className="text-sm text-[var(--text-muted)] truncate mt-1">
-                        {agent.agentModel}
+                      <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: "0.25rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {agent.agent_provider}
                       </p>
                     </div>
                   </Link>
@@ -142,7 +158,7 @@ export function Overview() {
 
         {/* Recent Conversations */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <CardTitle>Recent Conversations</CardTitle>
             <Link to="/dashboard/conversations">
               <Button variant="ghost" size="sm">
@@ -152,43 +168,13 @@ export function Overview() {
             </Link>
           </CardHeader>
           <CardContent>
-            {conversations.filter((c) => c.messageCount > 0).length === 0 ? (
-              <Center className="py-16">
-                <MessageSquare className="h-16 w-16 text-[var(--text-muted)] mb-4" />
-                <p className="text-[var(--text-muted)]">No conversations yet</p>
-                <p className="text-sm text-[var(--text-muted)] mt-2">
-                  Start chatting with your agents
-                </p>
-              </Center>
-            ) : (
-              <Stack gap="xs">
-                {conversations
-                  .filter((c) => c.messageCount > 0)
-                  .slice(0, 3)
-                  .map((conv) => (
-                    <Link
-                      key={conv.id}
-                      to={`/dashboard/conversations?agent=${conv.agentId}`}
-                      className="flex items-center gap-4 p-4 rounded-lg hover:bg-white/5 transition-colors"
-                    >
-                      <div className="h-12 w-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center">
-                        <MessageSquare className="h-6 w-6 text-white" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-[var(--text-primary)] truncate">
-                          {conv.agentName}
-                        </p>
-                        <p className="text-sm text-[var(--text-muted)] truncate mt-1">
-                          {conv.lastMessage || "No messages"}
-                        </p>
-                      </div>
-                      <span className="text-sm text-[var(--text-muted)]">
-                        {conv.messageCount} msgs
-                      </span>
-                    </Link>
-                  ))}
-              </Stack>
-            )}
+            <Center style={{ padding: "4rem 0" }}>
+              <MessageSquare className="h-16 w-16 text-[var(--text-muted)]" style={{ marginBottom: "1rem" }} />
+              <p style={{ color: "var(--text-muted)" }}>No conversations yet</p>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
+                Start chatting with your agents
+              </p>
+            </Center>
           </CardContent>
         </Card>
       </Grid>
@@ -196,16 +182,16 @@ export function Overview() {
       {/* Getting Started */}
       {agents.length === 0 && (
         <Card>
-          <CardContent className="py-20 px-8">
-            <Center className="text-center max-w-2xl mx-auto">
-              <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-4">
+          <CardContent style={{ padding: "5rem 2rem" }}>
+            <Center style={{ maxWidth: "42rem", margin: "0 auto" }}>
+              <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: "1rem" }}>
                 Welcome to InnoMight Labs!
               </h2>
-              <p className="text-[var(--text-secondary)] mb-8 leading-relaxed">
+              <p style={{ color: "var(--text-secondary)", marginBottom: "2rem", lineHeight: 1.6 }}>
                 Get started by creating your first AI agent. You can customize its
                 persona, configure memory blocks, and add tools to make it powerful.
               </p>
-              <Link to="/dashboard/agents">
+              <Link to="/dashboard/agents/new">
                 <Button size="lg">
                   <Plus className="h-5 w-5 mr-2" />
                   Create Your First Agent

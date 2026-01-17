@@ -11,7 +11,7 @@
  * ```
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "../ui/button";
 import { FormField } from "./FormField";
 import type { FormSchema } from "../../types/form";
@@ -26,32 +26,29 @@ interface SchemaFormProps {
   isLoading?: boolean;
 }
 
+// Empty object constant to avoid creating new references
+const EMPTY_INITIAL_VALUES: Record<string, string> = {};
+
 export function SchemaForm({
   schema,
-  initialValues = {},
+  initialValues,
   onSubmit,
   onCancel,
   submitLabel = "Submit",
   cancelLabel = "Cancel",
   isLoading = false,
 }: SchemaFormProps) {
+  // Memoize initial values to avoid reference changes
+  const stableInitialValues = initialValues || EMPTY_INITIAL_VALUES;
+
   // Initialize form state from schema fields
   const [formData, setFormData] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     schema.form_inputs.forEach((field) => {
-      initial[field.name] = initialValues[field.name] || field.value || "";
+      initial[field.name] = stableInitialValues[field.name] || field.value || "";
     });
     return initial;
   });
-
-  // Update form data when initialValues change
-  useEffect(() => {
-    const updated: Record<string, string> = {};
-    schema.form_inputs.forEach((field) => {
-      updated[field.name] = initialValues[field.name] || field.value || "";
-    });
-    setFormData(updated);
-  }, [initialValues, schema.form_inputs]);
 
   const handleFieldChange = (fieldName: string, value: string) => {
     setFormData((prev) => ({
@@ -66,7 +63,7 @@ export function SchemaForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       {schema.form_inputs.map((field) => (
         <FormField
           key={field.name}
@@ -76,7 +73,7 @@ export function SchemaForm({
         />
       ))}
 
-      <div className="flex gap-3 pt-4">
+      <div style={{ display: "flex", gap: "0.75rem", paddingTop: "1rem" }}>
         {onCancel && (
           <Button
             type="button"
@@ -87,7 +84,7 @@ export function SchemaForm({
             {cancelLabel}
           </Button>
         )}
-        <Button type="submit" disabled={isLoading} className="flex-1">
+        <Button type="submit" disabled={isLoading} style={{ flex: 1 }}>
           {isLoading ? "Loading..." : submitLabel}
         </Button>
       </div>

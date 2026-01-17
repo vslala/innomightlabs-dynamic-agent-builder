@@ -30,12 +30,31 @@ export function DashboardLayout() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[var(--bg-dark)]">
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        backgroundColor: "var(--bg-dark)",
+      }}
+    >
       <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          minHeight: "100vh",
+        }}
+      >
         <Header title={getTitle()} user={user || undefined} />
-        <main className="dashboard-main flex-1 overflow-y-auto">
-          <div className="max-w-7xl mx-auto">
+        <main
+          style={{
+            flex: 1,
+            padding: "2rem",
+            overflowY: "auto",
+          }}
+        >
+          <div style={{ maxWidth: "80rem", margin: "0 auto" }}>
             <Outlet context={{ user }} />
           </div>
         </main>
