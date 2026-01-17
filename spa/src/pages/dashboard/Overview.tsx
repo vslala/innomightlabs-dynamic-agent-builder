@@ -5,18 +5,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/ca
 import { Button } from "../../components/ui/button";
 import { Grid, Stack, Center } from "../../components/ui/grid";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
+import { conversationApiService } from "../../services/conversations";
+import type { ConversationResponse } from "../../types/conversation";
 
 export function Overview() {
   const [agents, setAgents] = useState<AgentResponse[]>([]);
+  const [conversations, setConversations] = useState<ConversationResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const agentsData = await agentApiService.listAgents();
+        const [agentsData, conversationsData] = await Promise.all([
+          agentApiService.listAgents(),
+          conversationApiService.listConversations(),
+        ]);
         setAgents(agentsData);
+        setConversations(conversationsData.items);
       } catch (err) {
-        console.error("Error loading agents:", err);
+        console.error("Error loading data:", err);
       } finally {
         setLoading(false);
       }
@@ -24,6 +31,22 @@ export function Overview() {
 
     loadData();
   }, []);
+
+  // Calculate active conversations (updated within a week)
+  const getActiveConversationsCount = (): number => {
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+    return conversations.filter((conv) => {
+      const lastActivity = conv.updated_at || conv.created_at;
+      return new Date(lastActivity) >= oneWeekAgo;
+    }).length;
+  };
+
+  const getAgentName = (agentId: string): string => {
+    const agent = agents.find((a) => a.agent_id === agentId);
+    return agent?.agent_name || "Unknown Agent";
+  };
 
   const stats = [
     {
@@ -34,7 +57,7 @@ export function Overview() {
     },
     {
       label: "Active Conversations",
-      value: 0, // TODO: Implement conversations API
+      value: getActiveConversationsCount(),
       icon: MessageSquare,
       color: "from-emerald-500 to-teal-500",
     },
@@ -168,13 +191,55 @@ export function Overview() {
             </Link>
           </CardHeader>
           <CardContent>
-            <Center style={{ padding: "4rem 0" }}>
-              <MessageSquare className="h-16 w-16 text-[var(--text-muted)]" style={{ marginBottom: "1rem" }} />
-              <p style={{ color: "var(--text-muted)" }}>No conversations yet</p>
-              <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
-                Start chatting with your agents
-              </p>
-            </Center>
+            {conversations.length === 0 ? (
+              <Center style={{ padding: "4rem 0" }}>
+                <MessageSquare className="h-16 w-16 text-[var(--text-muted)]" style={{ marginBottom: "1rem" }} />
+                <p style={{ color: "var(--text-muted)" }}>No conversations yet</p>
+                <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
+                  Start chatting with your agents
+                </p>
+              </Center>
+            ) : (
+              <Stack gap="xs">
+                {conversations.slice(0, 5).map((conversation) => (
+                  <Link
+                    key={conversation.conversation_id}
+                    to={`/dashboard/conversations/${conversation.conversation_id}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "1rem",
+                      padding: "1rem",
+                      borderRadius: "0.5rem",
+                      transition: "background-color 0.2s",
+                    }}
+                    className="hover:bg-white/5"
+                  >
+                    <div
+                      style={{
+                        height: "3rem",
+                        width: "3rem",
+                        borderRadius: "0.5rem",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "linear-gradient(to bottom right, #10b981, #14b8a6)",
+                      }}
+                    >
+                      <MessageSquare className="h-6 w-6 text-white" />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {conversation.title}
+                      </p>
+                      <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: "0.25rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {getAgentName(conversation.agent_id)}
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </Stack>
+            )}
           </CardContent>
         </Card>
       </Grid>

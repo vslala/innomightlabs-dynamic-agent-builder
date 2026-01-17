@@ -8,6 +8,7 @@ import { AgentsList } from './pages/dashboard/AgentsList';
 import { AgentCreate } from './pages/dashboard/AgentCreate';
 import { AgentDetail } from './pages/dashboard/AgentDetail';
 import { Conversations } from './pages/dashboard/Conversations';
+import { ConversationDetail } from './pages/dashboard/ConversationDetail';
 import { Settings } from './pages/dashboard/Settings';
 
 const basename = import.meta.env.BASE_URL;
@@ -34,6 +35,7 @@ function App() {
           <Route path="agents/new" element={<AgentCreate />} />
           <Route path="agents/:agentId" element={<AgentDetail />} />
           <Route path="conversations" element={<Conversations />} />
+          <Route path="conversations/:conversationId" element={<ConversationDetail />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
