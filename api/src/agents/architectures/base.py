@@ -33,6 +33,7 @@ class AgentArchitecture(ABC):
         agent: "Agent",
         conversation: "Conversation",
         user_message: str,
+        user_email: str,
     ) -> AsyncIterator["SSEEvent"]:
         """
         Handle a user message and stream SSE events.
@@ -49,6 +50,7 @@ class AgentArchitecture(ABC):
             agent: The agent handling this conversation
             conversation: The conversation context
             user_message: The user's message content
+            user_email: The authenticated user's email (for provider settings lookup)
 
         Yields:
             SSEEvent objects for streaming to the client

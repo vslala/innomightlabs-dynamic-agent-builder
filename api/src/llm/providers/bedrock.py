@@ -31,29 +31,30 @@ class BedrockProvider(LLMProvider):
     async def stream_response(
         self,
         messages: list[dict],
-        api_key: str,
+        credentials: dict,
     ) -> AsyncIterator[str]:
         """
         Stream response from Bedrock using the Converse API.
 
         Args:
             messages: List of message dicts with 'role' and 'content' keys
-            api_key: AWS credentials in "access_key_id:secret_access_key" format
+            credentials: Dict with 'access_key' and 'secret_key' keys
 
         Yields:
             Text chunks from the model response
         """
-        # Parse access key and secret key
-        if ":" not in api_key:
-            raise ValueError("Invalid API key format. Expected 'access_key_id:secret_access_key'")
+        # Extract credentials
+        access_key = credentials.get("access_key")
+        secret_key = credentials.get("secret_key")
 
-        access_key_id, secret_access_key = api_key.split(":", 1)
+        if not access_key or not secret_key:
+            raise ValueError("Missing required credentials: 'access_key' and 'secret_key'")
 
         client = boto3.client(
             service_name="bedrock-runtime",
             region_name=self.REGION,
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_access_key,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
         )
 
         # Separate system prompt from conversation messages

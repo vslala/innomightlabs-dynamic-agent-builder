@@ -79,19 +79,12 @@ async def create_agent(
         log.info(f"Agent '{create_request.agent_name}' already exists for user {user_email}, returning existing")
         return existing_agent.to_response()
 
-    # Encrypt secret fields based on form schema
-    encrypted_data = encrypt_secret_fields(
-        CREATE_AGENT_FORM,
-        create_request.model_dump()
-    )
-
-    # Create new agent with encrypted secrets
+    # Create new agent (API keys now stored in provider settings)
     agent = Agent(
-        agent_name=encrypted_data["agent_name"],
-        agent_architecture=encrypted_data["agent_architecture"],
-        agent_provider=encrypted_data["agent_provider"],
-        agent_provider_api_key=encrypted_data["agent_provider_api_key"],
-        agent_persona=encrypted_data["agent_persona"],
+        agent_name=create_request.agent_name,
+        agent_architecture=create_request.agent_architecture,
+        agent_provider=create_request.agent_provider,
+        agent_persona=create_request.agent_persona,
         created_by=user_email,
     )
 
@@ -266,6 +259,7 @@ async def send_message(
                 agent=agent,
                 conversation=conversation,
                 user_message=body.content,
+                user_email=user_email,
             ):
                 yield event.to_sse()
 

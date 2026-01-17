@@ -23,7 +23,7 @@ class LLMProvider(ABC):
     async def stream_response(
         self,
         messages: list[dict],
-        api_key: str,
+        credentials: dict,
     ) -> AsyncIterator[str]:
         """
         Stream response chunks from the LLM.
@@ -31,7 +31,7 @@ class LLMProvider(ABC):
         Args:
             messages: List of message dicts with 'role' and 'content' keys.
                      The first message with role='system' is the system prompt.
-            api_key: The API key/bearer token for authentication
+            credentials: Provider-specific credentials dict (e.g., {"access_key": "...", "secret_key": "..."})
 
         Yields:
             String chunks of the response as they arrive

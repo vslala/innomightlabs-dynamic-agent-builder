@@ -9,7 +9,6 @@ class CreateAgentRequest(BaseModel):
     agent_name: str
     agent_architecture: str
     agent_provider: str
-    agent_provider_api_key: str
     agent_persona: str
 
 
@@ -30,7 +29,7 @@ class Agent(BaseModel):
     agent_name: str
     agent_architecture: str
     agent_provider: str
-    agent_provider_api_key: str
+    agent_provider_api_key: Optional[str] = None  # Deprecated: now stored in ProviderSettings
     agent_persona: str
     created_by: str  # User email who created this agent
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -48,20 +47,23 @@ class Agent(BaseModel):
 
     def to_dynamo_item(self) -> dict:
         """Convert to DynamoDB item format"""
-        return {
+        item = {
             "pk": self.pk,
             "sk": self.sk,
             "agent_id": self.agent_id,
             "agent_name": self.agent_name,
             "agent_architecture": self.agent_architecture,
             "agent_provider": self.agent_provider,
-            "agent_provider_api_key": self.agent_provider_api_key,
             "agent_persona": self.agent_persona,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "entity_type": "Agent",  # For easier filtering if needed
+            "entity_type": "Agent",
         }
+        # Only include api_key if present (backward compatibility)
+        if self.agent_provider_api_key:
+            item["agent_provider_api_key"] = self.agent_provider_api_key
+        return item
 
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "Agent":
@@ -71,7 +73,7 @@ class Agent(BaseModel):
             agent_name=item["agent_name"],
             agent_architecture=item.get("agent_architecture", "krishna-mini"),  # Default for backward compat
             agent_provider=item["agent_provider"],
-            agent_provider_api_key=item["agent_provider_api_key"],
+            agent_provider_api_key=item.get("agent_provider_api_key"),  # Optional for backward compat
             agent_persona=item["agent_persona"],
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),

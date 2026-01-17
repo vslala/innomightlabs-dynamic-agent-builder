@@ -31,11 +31,6 @@ CREATE_AGENT_FORM = Form(
             values=["Bedrock"],
             input_type=FormInputType.SELECT,
         ),
-        FormInput(
-            label="Provider API Key",
-            name="agent_provider_api_key",
-            input_type=FormInputType.PASSWORD,
-        ),
     ],
 )
 
@@ -66,11 +61,6 @@ def get_update_agent_form(agent_id: str) -> Form:
                 values=["Bedrock"],
                 input_type=FormInputType.SELECT,
             ),
-            FormInput(
-                label="Provider API Key",
-                name="agent_provider_api_key",
-                input_type=FormInputType.PASSWORD,
-            ),
         ],
     )
 
@@ -96,11 +86,6 @@ UPDATE_AGENT_FORM = Form(
             name="agent_provider",
             values=["Bedrock"],
             input_type=FormInputType.SELECT,
-        ),
-        FormInput(
-            label="Provider API Key",
-            name="agent_provider_api_key",
-            input_type=FormInputType.PASSWORD,
         ),
     ],
 )

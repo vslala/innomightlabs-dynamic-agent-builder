@@ -7,6 +7,7 @@ A simple architecture that:
 - No memory blocks or tool usage
 """
 
+import json
 import logging
 from typing import TYPE_CHECKING, AsyncIterator
 
@@ -16,6 +17,7 @@ from src.llm.events import SSEEvent, SSEEventType
 from src.llm.providers import get_llm_provider
 from src.messages.models import Message
 from src.messages.repository import MessageRepository
+from src.settings.repository import ProviderSettingsRepository
 
 from .base import AgentArchitecture
 
@@ -48,6 +50,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         """
         self.max_context_words = max_context_words
         self.message_repo = MessageRepository()
+        self.provider_settings_repo = ProviderSettingsRepository()
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
 
     @property
@@ -59,6 +62,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         agent: "Agent",
         conversation: "Conversation",
         user_message: str,
+        user_email: str,
     ) -> AsyncIterator[SSEEvent]:
         """
         Handle a user message with simple single-turn conversation.
@@ -67,6 +71,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
             agent: The agent handling this conversation
             conversation: The conversation context
             user_message: The user's message content
+            user_email: The authenticated user's email (for provider settings lookup)
 
         Yields:
             SSEEvent objects for streaming to the client
@@ -86,7 +91,26 @@ class KrishnaMiniArchitecture(AgentArchitecture):
                 message_id=user_msg.message_id,
             )
 
-            # 2. Build context
+            # 2. Look up provider settings
+            yield SSEEvent(
+                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+                content="Loading provider configuration...",
+            )
+
+            provider_settings = self.provider_settings_repo.find_by_provider(
+                user_email, agent.agent_provider
+            )
+            if not provider_settings:
+                yield SSEEvent(
+                    event_type=SSEEventType.ERROR,
+                    content=f"Provider '{agent.agent_provider}' is not configured. Please configure it in Settings > Provider Configuration.",
+                )
+                return
+
+            # Decrypt and parse credentials
+            credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
+
+            # 3. Build context
             yield SSEEvent(
                 event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
                 content="Building conversation context...",
@@ -97,25 +121,24 @@ class KrishnaMiniArchitecture(AgentArchitecture):
             )
             context = self._build_context(all_messages, agent.agent_persona)
 
-            # 3. Get LLM provider and stream response
+            # 4. Get LLM provider and stream response
             yield SSEEvent(
                 event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
                 content="Connecting to AI model...",
             )
 
             provider = get_llm_provider(agent.agent_provider)
-            api_key = decrypt(agent.agent_provider_api_key)
 
-            # 4. Stream response
+            # 5. Stream response
             full_response = ""
-            async for chunk in provider.stream_response(context, api_key):
+            async for chunk in provider.stream_response(context, credentials):
                 full_response += chunk
                 yield SSEEvent(
                     event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
                     content=chunk,
                 )
 
-            # 5. Save assistant message
+            # 6. Save assistant message
             assistant_msg = Message(
                 conversation_id=conversation.conversation_id,
                 role="assistant",
