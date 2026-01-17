@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 import { Overview } from './pages/dashboard/Overview';
 import { AgentsList } from './pages/dashboard/AgentsList';
+import { AgentCreate } from './pages/dashboard/AgentCreate';
 import { AgentDetail } from './pages/dashboard/AgentDetail';
 import { Conversations } from './pages/dashboard/Conversations';
 import { Settings } from './pages/dashboard/Settings';
@@ -30,7 +31,8 @@ function App() {
         >
           <Route index element={<Overview />} />
           <Route path="agents" element={<AgentsList />} />
-          <Route path="agents/:id" element={<AgentDetail />} />
+          <Route path="agents/new" element={<AgentCreate />} />
+          <Route path="agents/:agentId" element={<AgentDetail />} />
           <Route path="conversations" element={<Conversations />} />
           <Route path="settings" element={<Settings />} />
         </Route>

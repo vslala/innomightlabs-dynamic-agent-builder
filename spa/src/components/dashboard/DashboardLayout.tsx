@@ -34,8 +34,10 @@ export function DashboardLayout() {
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header title={getTitle()} user={user || undefined} />
-        <main className="flex-1 overflow-y-auto p-6">
-          <Outlet context={{ user }} />
+        <main className="dashboard-main flex-1 overflow-y-auto">
+          <div className="max-w-7xl mx-auto">
+            <Outlet context={{ user }} />
+          </div>
         </main>
       </div>
     </div>

@@ -117,3 +117,14 @@ input {
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-subtle);
 }
+
+/* Dashboard main content area */
+.dashboard-main {
+  padding: 2.5rem;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-main {
+    padding: 3rem;
+  }
+}
