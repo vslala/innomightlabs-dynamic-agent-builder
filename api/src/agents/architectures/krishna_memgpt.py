@@ -165,7 +165,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
                 async for event in provider.stream_response(
                     context, credentials, NATIVE_TOOLS, agent.agent_model
-                ):
+                ): # pyright: ignore[reportGeneralTypeIssues]
                     if event.type == "text":
                         full_response += event.content
                         iteration_text += event.content
