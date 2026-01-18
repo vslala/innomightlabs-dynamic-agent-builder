@@ -15,7 +15,7 @@ from src.crypto import decrypt
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
 from src.llm.providers import get_llm_provider
-from src.messages.models import Message
+from src.messages.models import Message, Attachment
 from src.messages.repository import MessageRepository
 from src.settings.repository import ProviderSettingsRepository
 
@@ -63,6 +63,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         conversation: "Conversation",
         user_message: str,
         user_email: str,
+        attachments: list[Attachment] | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """
         Handle a user message with simple single-turn conversation.
@@ -72,16 +73,18 @@ class KrishnaMiniArchitecture(AgentArchitecture):
             conversation: The conversation context
             user_message: The user's message content
             user_email: The authenticated user's email (for provider settings lookup)
+            attachments: Optional list of file attachments
 
         Yields:
             SSEEvent objects for streaming to the client
         """
         try:
-            # 1. Save user message
+            # 1. Save user message (with attachments if any)
             user_msg = Message(
                 conversation_id=conversation.conversation_id,
                 role="user",
                 content=user_message,
+                attachments=attachments or [],
             )
             self.message_repo.save(user_msg)
 

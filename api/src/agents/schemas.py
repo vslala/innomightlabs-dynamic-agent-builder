@@ -13,6 +13,15 @@ DEFAULT_MODEL_OPTIONS = [
     SelectOption(value="claude-3-5-sonnet", label="Claude 3.5 Sonnet v2"),
 ]
 
+# Session timeout options
+SESSION_TIMEOUT_OPTIONS = [
+    SelectOption(value="30", label="30 minutes"),
+    SelectOption(value="60", label="1 hour (Default)"),
+    SelectOption(value="120", label="2 hours"),
+    SelectOption(value="240", label="4 hours"),
+    SelectOption(value="0", label="No timeout (load all)"),
+]
+
 
 def get_create_agent_form(model_options: list[dict] | None = None) -> Form:
     """
@@ -60,6 +69,13 @@ def get_create_agent_form(model_options: list[dict] | None = None) -> Form:
                 label="Model",
                 name="agent_model",
                 options=options,
+                input_type=FormInputType.SELECT,
+            ),
+            FormInput(
+                label="Session Timeout",
+                name="session_timeout_minutes",
+                options=SESSION_TIMEOUT_OPTIONS,
+                value="60",  # Default value
                 input_type=FormInputType.SELECT,
             ),
         ],
@@ -114,6 +130,12 @@ def get_update_agent_form(agent_id: str, model_options: list[dict] | None = None
                 options=options,
                 input_type=FormInputType.SELECT,
             ),
+            FormInput(
+                label="Session Timeout",
+                name="session_timeout_minutes",
+                options=SESSION_TIMEOUT_OPTIONS,
+                input_type=FormInputType.SELECT,
+            ),
         ],
     )
 
@@ -144,6 +166,12 @@ UPDATE_AGENT_FORM = Form(
             label="Model",
             name="agent_model",
             options=DEFAULT_MODEL_OPTIONS,
+            input_type=FormInputType.SELECT,
+        ),
+        FormInput(
+            label="Session Timeout",
+            name="session_timeout_minutes",
+            options=SESSION_TIMEOUT_OPTIONS,
             input_type=FormInputType.SELECT,
         ),
     ],

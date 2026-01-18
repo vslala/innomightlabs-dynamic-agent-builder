@@ -231,8 +231,8 @@ export function Conversations() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    style={{ height: "2rem", width: "2rem", color: "#f87171", opacity: 0, transition: "opacity 0.2s" }}
-                    className="group-hover:opacity-100"
+                    style={{ height: "2rem", width: "2rem" }}
+                    className="text-red-400 hover:text-red-500 hover:bg-red-500/10"
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedConversation(conversation);

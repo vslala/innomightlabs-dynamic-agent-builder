@@ -17,7 +17,7 @@ from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
 from src.llm.providers import get_llm_provider
 from src.memory import MemoryRepository, CoreMemory
-from src.messages.models import Message
+from src.messages.models import Message, Attachment
 from src.messages.repository import MessageRepository
 from src.settings.repository import ProviderSettingsRepository
 from src.tools.native import NATIVE_TOOLS, NativeToolHandler
@@ -72,6 +72,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         conversation: "Conversation",
         user_message: str,
         user_email: str,
+        attachments: list[Attachment] | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """
         Handle a user message with memory-augmented conversation.
@@ -81,19 +82,24 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             conversation: The conversation context
             user_message: The user's message content
             user_email: The authenticated user's email
+            attachments: Optional list of file attachments
 
         Yields:
             SSEEvent objects for streaming to the client
         """
         try:
-            # 1. Ensure memory blocks are initialized
+            # 1. Set conversation context for recall_conversation tool
+            self.tool_handler.set_conversation_context(conversation.conversation_id)
+
+            # 2. Ensure memory blocks are initialized
             self._ensure_memory_initialized(agent.agent_id)
 
-            # 2. Save user message
+            # 2. Save user message (with attachments if any)
             user_msg = Message(
                 conversation_id=conversation.conversation_id,
                 role="user",
                 content=user_message,
+                attachments=attachments or [],
             )
             self.message_repo.save(user_msg)
 
@@ -146,7 +152,13 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 conversation.conversation_id
             )
             context = [{"role": "system", "content": system_prompt}]
-            context.extend(self.conversation_strategy.build_context(all_messages))
+            # Pass session_timeout_minutes to filter messages by time gap
+            context.extend(
+                self.conversation_strategy.build_context(
+                    all_messages,
+                    session_timeout_minutes=agent.session_timeout_minutes,
+                )
+            )
 
             # 6. Get LLM provider
             yield SSEEvent(
@@ -338,8 +350,12 @@ You have access to memory tools. Use them to:
 - Store detailed information for later (archival_memory_insert)
 - Recall past information (archival_memory_search)
 - See all available memory blocks (core_memory_list_blocks)
+- Recall earlier parts of this conversation (recall_conversation)
 
 IMPORTANT:
+- If the user references something from earlier in the conversation that you
+  don't see in your current context (e.g., "what we discussed", "as I mentioned"),
+  use recall_conversation to retrieve that context.
 - Block names are LOWERCASE with underscores (e.g., "human", "persona", "important_financial_data")
 - Do NOT use title case or descriptions in block names - just the simple name like "human" not "Human - Facts about the user"
 - Use core_memory_list_blocks if unsure what blocks are available
@@ -392,3 +408,28 @@ IMPORTANT:
             "</memory_warning>",
         ])
         return "\n".join(lines)
+
+    def _format_content_with_attachments(
+        self, content: str, attachments: list[Attachment]
+    ) -> str:
+        """
+        Format message content with attachments for LLM context.
+
+        Args:
+            content: The message text content
+            attachments: List of file attachments
+
+        Returns:
+            Formatted content with attachments prepended
+        """
+        if not attachments:
+            return content
+
+        attachment_sections = []
+        for att in attachments:
+            attachment_sections.append(
+                f'<attached_file name="{att.filename}">\n{att.content}\n</attached_file>'
+            )
+
+        attachments_text = "\n\n".join(attachment_sections)
+        return f"{attachments_text}\n\n{content}"

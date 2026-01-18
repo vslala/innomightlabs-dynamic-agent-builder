@@ -192,10 +192,12 @@ async def delete_conversation(request: Request, conversation_id: str):
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    # Delete all messages in this conversation first
+    deleted_messages = message_repository.delete_by_conversation(conversation_id)
+
     # Delete conversation
     deleted = conversation_repository.delete_by_id(conversation_id, user_email)
     if not deleted:
         raise HTTPException(status_code=500, detail="Failed to delete conversation")
 
-    # Note: In the future, we'll also need to delete all messages in this conversation
     return None

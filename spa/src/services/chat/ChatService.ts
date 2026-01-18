@@ -2,7 +2,7 @@
  * Chat Service - handles SSE streaming for agent conversations.
  */
 
-import type { SSEEvent } from "../../types/message";
+import type { SSEEvent, Attachment } from "../../types/message";
 
 const AUTH_TOKEN_KEY = "auth_token";
 
@@ -28,11 +28,18 @@ class ChatService {
 
   /**
    * Send a message to an agent and stream the response via SSE.
+   *
+   * @param agentId - The agent to send the message to
+   * @param conversationId - The conversation context
+   * @param content - The message text content
+   * @param attachments - Optional file attachments to include
+   * @param options - Stream event handlers
    */
   async sendMessage(
     agentId: string,
     conversationId: string,
     content: string,
+    attachments: Attachment[] | undefined,
     options: ChatStreamOptions
   ): Promise<void> {
     const { onEvent, onError, onComplete } = options;
@@ -45,6 +52,12 @@ class ChatService {
 
     const url = `${this.baseUrl}/agents/${agentId}/${conversationId}/send-message`;
 
+    // Build request body with optional attachments
+    const body: { content: string; attachments?: Attachment[] } = { content };
+    if (attachments && attachments.length > 0) {
+      body.attachments = attachments;
+    }
+
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -52,7 +65,7 @@ class ChatService {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify(body),
         signal: this.abortController.signal,
       });
 

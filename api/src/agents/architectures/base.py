@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from src.agents.models import Agent
     from src.conversations.models import Conversation
     from src.llm.events import SSEEvent
+    from src.messages.models import Attachment
 
 
 class AgentArchitecture(ABC):
@@ -34,6 +35,7 @@ class AgentArchitecture(ABC):
         conversation: "Conversation",
         user_message: str,
         user_email: str,
+        attachments: list["Attachment"] | None = None,
     ) -> AsyncIterator["SSEEvent"]:
         """
         Handle a user message and stream SSE events.
@@ -51,6 +53,7 @@ class AgentArchitecture(ABC):
             conversation: The conversation context
             user_message: The user's message content
             user_email: The authenticated user's email (for provider settings lookup)
+            attachments: Optional list of file attachments
 
         Yields:
             SSEEvent objects for streaming to the client

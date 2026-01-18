@@ -14,6 +14,7 @@ from src.memory import (
     CoreMemory,
     MemoryBlockDefinition,
 )
+from src.messages.repository import MessageRepository
 
 log = logging.getLogger(__name__)
 
@@ -58,9 +59,16 @@ class NativeToolHandler:
     """
 
     CAPACITY_WARNING_THRESHOLD = 0.80  # 80%
+    RECALL_PAGE_SIZE = 10  # Messages per page for recall_conversation
 
     def __init__(self, memory_repo: Optional[MemoryRepository] = None):
         self.memory_repo = memory_repo or MemoryRepository()
+        self.message_repo = MessageRepository()
+        self._conversation_id: Optional[str] = None  # Set per-call by architecture
+
+    def set_conversation_context(self, conversation_id: str) -> None:
+        """Set conversation context for recall_conversation tool."""
+        self._conversation_id = conversation_id
 
     async def execute(
         self, tool_name: str, arguments: dict, agent_id: str
@@ -287,5 +295,62 @@ class NativeToolHandler:
 
         if page < total_pages:
             lines.append(f"\n(Use page={page + 1} for more)")
+
+        return "\n".join(lines)
+
+    # =========================================================================
+    # Conversation Recall Tool
+    # =========================================================================
+
+    async def _handle_recall_conversation(
+        self, args: dict, agent_id: str
+    ) -> str:
+        """
+        Retrieve earlier messages from the current conversation.
+
+        This tool allows the LLM to access messages that are not in its
+        current context due to session timeout boundaries.
+        """
+        if not self._conversation_id:
+            return "Error: No conversation context available"
+
+        page = args.get("page", 1)
+        if page < 1:
+            page = 1
+
+        # Get all messages for this conversation (oldest first)
+        all_messages = self.message_repo.find_by_conversation(self._conversation_id)
+
+        if not all_messages:
+            return "No earlier messages found in this conversation."
+
+        total = len(all_messages)
+        total_pages = (total + self.RECALL_PAGE_SIZE - 1) // self.RECALL_PAGE_SIZE
+
+        # Paginate in reverse chronological order (newest first)
+        # Page 1 = most recent messages, higher pages = older messages
+        start_idx = max(0, total - (page * self.RECALL_PAGE_SIZE))
+        end_idx = max(0, total - ((page - 1) * self.RECALL_PAGE_SIZE))
+
+        page_messages = all_messages[start_idx:end_idx]
+        page_messages.reverse()  # Most recent first within page
+
+        if not page_messages:
+            return "No more messages. You've reached the beginning of this conversation."
+
+        lines = [
+            f"Earlier Conversation (Page {page} of {total_pages}, {total} total messages):\n"
+        ]
+
+        for msg in page_messages:
+            timestamp = msg.created_at.strftime("%I:%M %p, %b %d")
+            role_label = "User" if msg.role == "user" else "Assistant"
+            content_preview = (
+                msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+            )
+            lines.append(f"[{timestamp}] {role_label}: {content_preview}")
+
+        if page < total_pages:
+            lines.append(f"\n(Use page={page + 1} to see older messages)")
 
         return "\n".join(lines)

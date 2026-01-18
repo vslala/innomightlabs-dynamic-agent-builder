@@ -12,6 +12,7 @@ from .definitions import (
     CORE_MEMORY_LIST_BLOCKS,
     ARCHIVAL_MEMORY_INSERT,
     ARCHIVAL_MEMORY_SEARCH,
+    RECALL_CONVERSATION,
 )
 from .handlers import NativeToolHandler
 
@@ -25,5 +26,6 @@ __all__ = [
     "CORE_MEMORY_LIST_BLOCKS",
     "ARCHIVAL_MEMORY_INSERT",
     "ARCHIVAL_MEMORY_SEARCH",
+    "RECALL_CONVERSATION",
     "NativeToolHandler",
 ]

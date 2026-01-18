@@ -92,18 +92,15 @@ erDiagram
     CONVERSATION ||--o{ MESSAGE : contains
 
     USER {
-        string pk "User#{email}"
-        string sk "User#Metadata"
-        string email
+        string email PK
         string name
         string picture
         string refresh_token
     }
 
     AGENT {
-        string pk "User#{created_by}"
-        string sk "Agent#{agent_id}"
-        string agent_id
+        string agent_id PK
+        string created_by FK
         string agent_name
         string agent_architecture
         string agent_provider
@@ -112,56 +109,51 @@ erDiagram
     }
 
     PROVIDER_SETTINGS {
-        string pk "User#{user_email}"
-        string sk "ProviderSettings#{provider_name}"
-        string provider_name
+        string user_email PK
+        string provider_name PK
         string encrypted_credentials
     }
 
     CONVERSATION {
-        string pk "USER#{created_by}"
-        string sk "CONVERSATION#{conversation_id}"
-        string conversation_id
+        string conversation_id PK
+        string created_by FK
         string title
-        string agent_id
+        string agent_id FK
     }
 
     MESSAGE {
-        string pk "CONVERSATION#{conversation_id}"
-        string sk "MESSAGE#{timestamp}#{message_id}"
-        string message_id
+        string message_id PK
+        string conversation_id FK
         string role
         string content
+        datetime created_at
     }
 
     MEMORY_BLOCK_DEF {
-        string pk "Agent#{agent_id}"
-        string sk "MemoryBlockDef#{block_name}"
-        string block_name
+        string agent_id PK
+        string block_name PK
         string description
         int word_limit
         bool is_default
     }
 
     CORE_MEMORY {
-        string pk "Agent#{agent_id}"
-        string sk "CoreMemory#{block_name}"
-        string block_name
+        string agent_id PK
+        string block_name PK
         list lines
         int word_count
     }
 
     ARCHIVAL_MEMORY {
-        string pk "Agent#{agent_id}"
-        string sk "Archival#{timestamp}#{memory_id}"
-        string memory_id
+        string agent_id PK
+        string memory_id PK
         string content
         string content_hash
     }
 
     CAPACITY_WARNING {
-        string pk "Agent#{agent_id}"
-        string sk "CapacityWarning#{block_name}"
+        string agent_id PK
+        string block_name PK
         int warning_turns
     }
 ```

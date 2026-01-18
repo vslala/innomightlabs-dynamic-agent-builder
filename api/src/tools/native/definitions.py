@@ -125,6 +125,27 @@ ARCHIVAL_MEMORY_SEARCH = {
     }
 }
 
+RECALL_CONVERSATION = {
+    "name": "recall_conversation",
+    "description": (
+        "Retrieve earlier messages from this conversation that are not in your "
+        "current context. Use this when the user references something discussed "
+        "earlier, like 'what we talked about before' or 'as I mentioned earlier'. "
+        "Returns messages in reverse chronological order (most recent first)."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "page": {
+                "type": "integer",
+                "description": "Page number (1 = most recent older messages, higher = further back). Default: 1",
+                "default": 1
+            }
+        },
+        "required": []
+    }
+}
+
 
 # All native tools for memGPT architecture
 NATIVE_TOOLS = [
@@ -135,6 +156,7 @@ NATIVE_TOOLS = [
     CORE_MEMORY_LIST_BLOCKS,
     ARCHIVAL_MEMORY_INSERT,
     ARCHIVAL_MEMORY_SEARCH,
+    RECALL_CONVERSATION,
 ]
 
 # Tool name to definition mapping

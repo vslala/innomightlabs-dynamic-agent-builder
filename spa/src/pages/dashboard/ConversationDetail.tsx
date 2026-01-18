@@ -1,6 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Send, User, Loader2, Wrench, CheckCircle2, XCircle, Maximize2, Minimize2 } from "lucide-react";
+import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Send, User, Loader2, Wrench, CheckCircle2, XCircle, Maximize2, Minimize2, Paperclip } from "lucide-react";
+import { AttachmentChip } from "../../components/chat/AttachmentChip";
+import { useFileAttachments } from "../../hooks/useFileAttachments";
+import { ALLOWED_EXTENSIONS } from "../../types/message";
 import {
   Card,
   CardContent,
@@ -70,6 +73,14 @@ export function ConversationDetail() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const streamingContentRef = useRef("");
   const hadToolCallsRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const {
+    attachments,
+    error: attachmentError,
+    addFiles,
+    removeAttachment,
+    clearAttachments,
+  } = useFileAttachments();
 
   // Pagination state for messages
   const [messagesCursor, setMessagesCursor] = useState<string | null>(null);
@@ -247,10 +258,15 @@ export function ConversationDetail() {
   // Handle sending a message
   const handleSendMessage = async (messageOverride?: string) => {
     const messageToSend = messageOverride || inputValue.trim();
-    if (!messageToSend || !conversation || isSending) return;
+    // Allow sending if there's a message OR attachments
+    if ((!messageToSend && attachments.length === 0) || !conversation || isSending) return;
+
+    // Capture attachments before clearing
+    const attachmentsToSend = attachments.length > 0 ? [...attachments] : undefined;
 
     if (!messageOverride) {
       setInputValue("");
+      clearAttachments();
     }
     setIsSending(true);
     setChatError(null);
@@ -267,7 +283,8 @@ export function ConversationDetail() {
       message_id: `temp-${Date.now()}`,
       conversation_id: conversation.conversation_id,
       role: "user",
-      content: messageToSend,
+      content: messageToSend || "(attachments only)",
+      attachments: attachmentsToSend?.map((a) => ({ filename: a.filename, size: a.size })),
       created_at: new Date().toISOString(),
     };
     if (!isRetryMessage) {
@@ -365,7 +382,8 @@ export function ConversationDetail() {
     await chatService.sendMessage(
       conversation.agent_id,
       conversation.conversation_id,
-      messageToSend,
+      messageToSend || "",
+      attachmentsToSend,
       {
         onEvent: handleEvent,
         onError: (err) => {
@@ -803,6 +821,28 @@ export function ConversationDetail() {
                       ) : (
                         msg.content
                       )}
+                      {/* Attachment indicators */}
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: "0.25rem",
+                          marginTop: "0.5rem",
+                          paddingTop: "0.5rem",
+                          borderTop: msg.role === "user"
+                            ? "1px solid rgba(255,255,255,0.2)"
+                            : "1px solid var(--border-subtle)",
+                        }}>
+                          {msg.attachments.map((att, idx) => (
+                            <AttachmentChip
+                              key={idx}
+                              filename={att.filename}
+                              size={att.size}
+                              readonly
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -995,6 +1035,37 @@ export function ConversationDetail() {
             </div>
           )}
 
+          {/* Attachment chips display */}
+          {attachments.length > 0 && (
+            <div style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.5rem",
+              padding: "0.5rem 1rem",
+              borderTop: "1px solid var(--border-subtle)",
+            }}>
+              {attachments.map((att, idx) => (
+                <AttachmentChip
+                  key={idx}
+                  filename={att.filename}
+                  size={att.size}
+                  onRemove={() => removeAttachment(idx)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Attachment error */}
+          {attachmentError && (
+            <div style={{
+              padding: "0.5rem 1rem",
+              color: "#f87171",
+              fontSize: "0.75rem",
+            }}>
+              {attachmentError}
+            </div>
+          )}
+
           {/* Input Area */}
           <div style={{
             display: "flex",
@@ -1003,6 +1074,28 @@ export function ConversationDetail() {
             borderTop: "1px solid var(--border-subtle)",
             alignItems: "flex-end",
           }}>
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ALLOWED_EXTENSIONS.join(",")}
+              onChange={(e) => e.target.files && addFiles(e.target.files)}
+              style={{ display: "none" }}
+            />
+
+            {/* Attachment button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isSending}
+              title="Attach files"
+              style={{ flexShrink: 0, height: "2.5rem", width: "2.5rem" }}
+            >
+              <Paperclip style={{ height: "1rem", width: "1rem" }} />
+            </Button>
+
             <Textarea
               placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
               value={inputValue}
@@ -1025,7 +1118,7 @@ export function ConversationDetail() {
             />
             <Button
               onClick={() => handleSendMessage()}
-              disabled={!inputValue.trim() || isSending}
+              disabled={(!inputValue.trim() && attachments.length === 0) || isSending}
               style={{ flexShrink: 0, height: "2.5rem" }}
             >
               {isSending ? (

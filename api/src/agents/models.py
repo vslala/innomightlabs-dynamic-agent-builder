@@ -11,6 +11,7 @@ class CreateAgentRequest(BaseModel):
     agent_provider: str
     agent_model: Optional[str] = None  # e.g., "claude-sonnet-4", "claude-3.5-haiku"
     agent_persona: str
+    session_timeout_minutes: Optional[int] = None  # None = use default (60 minutes)
 
 
 class AgentResponse(BaseModel):
@@ -21,6 +22,7 @@ class AgentResponse(BaseModel):
     agent_provider: str
     agent_model: Optional[str] = None
     agent_persona: str
+    session_timeout_minutes: int = 60  # Default 60 minutes
     created_by: str
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -34,6 +36,7 @@ class Agent(BaseModel):
     agent_model: Optional[str] = None  # e.g., "claude-sonnet-4", "claude-3.5-haiku"
     agent_provider_api_key: Optional[str] = None  # Deprecated: now stored in ProviderSettings
     agent_persona: str
+    session_timeout_minutes: int = 60  # Session timeout in minutes, 0 = no timeout
     created_by: str  # User email who created this agent
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
@@ -59,6 +62,7 @@ class Agent(BaseModel):
             "agent_provider": self.agent_provider,
             "agent_model": self.agent_model,
             "agent_persona": self.agent_persona,
+            "session_timeout_minutes": self.session_timeout_minutes,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
@@ -80,6 +84,7 @@ class Agent(BaseModel):
             agent_model=item.get("agent_model"),  # Optional, defaults to provider's default
             agent_provider_api_key=item.get("agent_provider_api_key"),  # Optional for backward compat
             agent_persona=item["agent_persona"],
+            session_timeout_minutes=item.get("session_timeout_minutes", 60),  # Default 60 minutes
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
@@ -94,6 +99,7 @@ class Agent(BaseModel):
             agent_provider=self.agent_provider,
             agent_model=self.agent_model,
             agent_persona=self.agent_persona,
+            session_timeout_minutes=self.session_timeout_minutes,
             created_by=self.created_by,
             created_at=self.created_at,
             updated_at=self.updated_at,

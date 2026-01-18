@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Annotated, Any
 import logging
 
@@ -14,6 +14,7 @@ from src.conversations.repository import ConversationRepository
 from src.crypto import encrypt_secret_fields
 from src.llm.events import SSEEvent, SSEEventType
 from src.llm.models import models_service
+from src.messages.models import Attachment, MAX_FILES, MAX_TOTAL_SIZE
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +30,24 @@ router = APIRouter(
 
 class SendMessageRequest(BaseModel):
     """Request body for sending a message to an agent."""
+
     content: str
+    attachments: list[dict[str, Any]] | None = None
+
+    @field_validator("attachments")
+    @classmethod
+    def validate_attachments(cls, v: list[dict[str, Any]] | None) -> list[Attachment]:
+        if v is None:
+            return []
+        if len(v) > MAX_FILES:
+            raise ValueError(f"Maximum {MAX_FILES} files allowed")
+
+        total_size = sum(att.get("size", 0) for att in v)
+        if total_size > MAX_TOTAL_SIZE:
+            raise ValueError(f"Total attachment size exceeds {MAX_TOTAL_SIZE // 1024}KB")
+
+        # Validate and convert each attachment
+        return [Attachment(**att) for att in v]
 
 
 def get_agent_repository() -> AgentRepository:
@@ -274,6 +292,7 @@ async def send_message(
                 conversation=conversation,
                 user_message=body.content,
                 user_email=user_email,
+                attachments=body.attachments or [],
             ):
                 yield event.to_sse()
 
