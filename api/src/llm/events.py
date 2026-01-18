@@ -18,6 +18,10 @@ class SSEEventType(str, Enum):
     AGENT_RESPONSE_TO_USER = "AGENT_RESPONSE_TO_USER"
     AGENT_THOUGHTS = "AGENT_THOUGHTS"
 
+    # Tool call events (for memGPT timeline)
+    TOOL_CALL_START = "TOOL_CALL_START"
+    TOOL_CALL_RESULT = "TOOL_CALL_RESULT"
+
     # Status events
     MESSAGE_SAVED = "MESSAGE_SAVED"
     STREAM_COMPLETE = "STREAM_COMPLETE"
@@ -37,6 +41,11 @@ class SSEEvent(BaseModel):
     event_type: SSEEventType
     content: str
     message_id: Optional[str] = None
+
+    # Tool call event fields (for memGPT timeline)
+    tool_name: Optional[str] = None
+    tool_args: Optional[dict] = None
+    success: Optional[bool] = None
 
     def to_sse(self) -> str:
         """

@@ -9,6 +9,7 @@ class CreateAgentRequest(BaseModel):
     agent_name: str
     agent_architecture: str
     agent_provider: str
+    agent_model: Optional[str] = None  # e.g., "claude-sonnet-4", "claude-3.5-haiku"
     agent_persona: str
 
 
@@ -18,6 +19,7 @@ class AgentResponse(BaseModel):
     agent_name: str
     agent_architecture: str
     agent_provider: str
+    agent_model: Optional[str] = None
     agent_persona: str
     created_by: str
     created_at: datetime
@@ -29,6 +31,7 @@ class Agent(BaseModel):
     agent_name: str
     agent_architecture: str
     agent_provider: str
+    agent_model: Optional[str] = None  # e.g., "claude-sonnet-4", "claude-3.5-haiku"
     agent_provider_api_key: Optional[str] = None  # Deprecated: now stored in ProviderSettings
     agent_persona: str
     created_by: str  # User email who created this agent
@@ -54,6 +57,7 @@ class Agent(BaseModel):
             "agent_name": self.agent_name,
             "agent_architecture": self.agent_architecture,
             "agent_provider": self.agent_provider,
+            "agent_model": self.agent_model,
             "agent_persona": self.agent_persona,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
@@ -73,6 +77,7 @@ class Agent(BaseModel):
             agent_name=item["agent_name"],
             agent_architecture=item.get("agent_architecture", "krishna-mini"),  # Default for backward compat
             agent_provider=item["agent_provider"],
+            agent_model=item.get("agent_model"),  # Optional, defaults to provider's default
             agent_provider_api_key=item.get("agent_provider_api_key"),  # Optional for backward compat
             agent_persona=item["agent_persona"],
             created_by=item["created_by"],
@@ -87,6 +92,7 @@ class Agent(BaseModel):
             agent_name=self.agent_name,
             agent_architecture=self.agent_architecture,
             agent_provider=self.agent_provider,
+            agent_model=self.agent_model,
             agent_persona=self.agent_persona,
             created_by=self.created_by,
             created_at=self.created_at,

@@ -59,15 +59,20 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
         );
 
       case "select":
+        // Support both simple values array and options with value/label pairs
+        const selectOptions = field.options
+          ? field.options.map((opt) => ({ value: opt.value, label: opt.label }))
+          : field.values?.map((v) => ({ value: v, label: v })) || [];
+
         return (
           <Select value={value} onValueChange={onChange}>
             <SelectTrigger>
               <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
             </SelectTrigger>
             <SelectContent>
-              {field.values?.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
+              {selectOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -75,30 +80,35 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
         );
 
       case "choice":
+        // Support both simple values array and options with value/label pairs
+        const choiceOptions = field.options
+          ? field.options.map((opt) => ({ value: opt.value, label: opt.label }))
+          : field.values?.map((v) => ({ value: v, label: v })) || [];
+
         return (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-            {field.values?.map((option) => (
+            {choiceOptions.map((option) => (
               <button
-                key={option}
+                key={option.value}
                 type="button"
-                onClick={() => onChange(option)}
+                onClick={() => onChange(option.value)}
                 style={{
                   padding: "0.5rem 1rem",
                   borderRadius: "0.5rem",
-                  border: value === option
+                  border: value === option.value
                     ? "1px solid var(--gradient-start)"
                     : "1px solid var(--border-subtle)",
-                  backgroundColor: value === option
+                  backgroundColor: value === option.value
                     ? "rgba(102, 126, 234, 0.2)"
                     : "rgba(255, 255, 255, 0.05)",
-                  color: value === option
+                  color: value === option.value
                     ? "var(--text-primary)"
                     : "var(--text-secondary)",
                   transition: "all 0.2s",
                   cursor: "pointer",
                 }}
               >
-                {option}
+                {option.label}
               </button>
             ))}
           </div>

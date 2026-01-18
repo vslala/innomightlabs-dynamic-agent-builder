@@ -6,6 +6,7 @@ Returns the appropriate architecture based on the agent's configuration.
 
 from .base import AgentArchitecture
 from .krishna_mini import KrishnaMiniArchitecture
+from .krishna_memgpt import KrishnaMemGPTArchitecture
 
 
 def get_agent_architecture(architecture_name: str) -> AgentArchitecture:
@@ -23,8 +24,7 @@ def get_agent_architecture(architecture_name: str) -> AgentArchitecture:
     """
     architectures: dict[str, AgentArchitecture] = {
         "krishna-mini": KrishnaMiniArchitecture(),
-        # Future architectures:
-        # "krishna-memgpt": KrishnaMemGPTArchitecture(),
+        "krishna-memgpt": KrishnaMemGPTArchitecture(),
     }
 
     architecture = architectures.get(architecture_name)

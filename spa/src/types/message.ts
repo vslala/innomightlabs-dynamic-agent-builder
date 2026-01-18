@@ -22,6 +22,9 @@ export const SSEEventType = {
   MESSAGE_SAVED: "MESSAGE_SAVED",
   STREAM_COMPLETE: "STREAM_COMPLETE",
   ERROR: "ERROR",
+  // Tool call events for memGPT timeline
+  TOOL_CALL_START: "TOOL_CALL_START",
+  TOOL_CALL_RESULT: "TOOL_CALL_RESULT",
 } as const;
 
 export type SSEEventType = (typeof SSEEventType)[keyof typeof SSEEventType];
@@ -33,6 +36,22 @@ export interface SSEEvent {
   event_type: SSEEventType;
   content: string;
   message_id?: string;
+  // Tool call event fields
+  tool_name?: string;
+  tool_args?: Record<string, unknown>;
+  success?: boolean;
+}
+
+/**
+ * Tool activity item for timeline display.
+ */
+export interface ToolActivity {
+  id: string;
+  timestamp: Date;
+  tool_name: string;
+  status: "running" | "success" | "error";
+  content: string;
+  tool_args?: Record<string, unknown>;
 }
 
 /**

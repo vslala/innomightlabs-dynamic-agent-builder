@@ -11,6 +11,7 @@ export interface AgentResponse {
   agent_name: string;
   agent_architecture: string;
   agent_provider: string;
+  agent_model: string | null;
   agent_persona: string;
   created_by: string;
   created_at: string;

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Send, User, Loader2 } from "lucide-react";
+import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Send, User, Loader2, Wrench, CheckCircle2, XCircle, Maximize2, Minimize2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -30,8 +30,9 @@ import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
 import { chatService } from "../../services/chat";
 import { authService } from "../../services/auth";
+import { MarkdownRenderer } from "../../components/ui/markdown-renderer";
 import type { ConversationResponse } from "../../types/conversation";
-import { SSEEventType, type Message, type SSEEvent } from "../../types/message";
+import { SSEEventType, type Message, type SSEEvent, type ToolActivity } from "../../types/message";
 
 export function ConversationDetail() {
   const { conversationId } = useParams<{ conversationId: string }>();
@@ -62,9 +63,13 @@ export function ConversationDetail() {
   const [streamingContent, setStreamingContent] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
+  const [incompleteResponse, setIncompleteResponse] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const streamingContentRef = useRef("");
+  const hadToolCallsRef = useRef(false);
 
   // Pagination state for messages
   const [messagesCursor, setMessagesCursor] = useState<string | null>(null);
@@ -228,27 +233,46 @@ export function ConversationDetail() {
     }
   }, [streamingContent]);
 
-  // Handle sending a message
-  const handleSendMessage = async () => {
-    if (!inputValue.trim() || !conversation || isSending) return;
+  // Handle Escape key to exit expanded mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isExpanded) {
+        setIsExpanded(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isExpanded]);
 
-    const userMessage = inputValue.trim();
-    setInputValue("");
+  // Handle sending a message
+  const handleSendMessage = async (messageOverride?: string) => {
+    const messageToSend = messageOverride || inputValue.trim();
+    if (!messageToSend || !conversation || isSending) return;
+
+    if (!messageOverride) {
+      setInputValue("");
+    }
     setIsSending(true);
     setChatError(null);
     setStatusMessage(null);
     setStreamingContent("");
+    setToolActivities([]);
+    setIncompleteResponse(false);
     streamingContentRef.current = "";
+    hadToolCallsRef.current = false;
 
-    // Add user message to the list immediately
+    // Add user message to the list immediately (unless it's a retry/continue message)
+    const isRetryMessage = messageOverride?.startsWith("Please continue");
     const userMsg: Message = {
       message_id: `temp-${Date.now()}`,
       conversation_id: conversation.conversation_id,
       role: "user",
-      content: userMessage,
+      content: messageToSend,
       created_at: new Date().toISOString(),
     };
-    setMessages((prev) => [...prev, userMsg]);
+    if (!isRetryMessage) {
+      setMessages((prev) => [...prev, userMsg]);
+    }
 
     const handleEvent = (event: SSEEvent) => {
       switch (event.event_type) {
@@ -286,11 +310,45 @@ export function ConversationDetail() {
               created_at: new Date().toISOString(),
             };
             setMessages((msgs) => [...msgs, assistantMsg]);
+          } else if (hadToolCallsRef.current) {
+            // Had tool calls but no final response - incomplete
+            setIncompleteResponse(true);
           }
           streamingContentRef.current = "";
           setStreamingContent("");
           setIsSending(false);
           setStatusMessage(null);
+          break;
+
+        case SSEEventType.TOOL_CALL_START:
+          hadToolCallsRef.current = true;
+          if (event.tool_name) {
+            const activity: ToolActivity = {
+              id: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              timestamp: new Date(),
+              tool_name: event.tool_name,
+              status: "running",
+              content: event.content,
+              tool_args: event.tool_args,
+            };
+            setToolActivities((prev) => [...prev, activity]);
+          }
+          break;
+
+        case SSEEventType.TOOL_CALL_RESULT:
+          if (event.tool_name) {
+            setToolActivities((prev) =>
+              prev.map((activity) =>
+                activity.tool_name === event.tool_name && activity.status === "running"
+                  ? {
+                      ...activity,
+                      status: event.success ? "success" : "error",
+                      content: event.content,
+                    }
+                  : activity
+              )
+            );
+          }
           break;
 
         case SSEEventType.ERROR:
@@ -307,7 +365,7 @@ export function ConversationDetail() {
     await chatService.sendMessage(
       conversation.agent_id,
       conversation.conversation_id,
-      userMessage,
+      messageToSend,
       {
         onEvent: handleEvent,
         onError: (err) => {
@@ -321,6 +379,12 @@ export function ConversationDetail() {
         },
       }
     );
+  };
+
+  // Handle retry for incomplete responses
+  const handleRetry = () => {
+    setIncompleteResponse(false);
+    handleSendMessage("Please continue your response from where you left off.");
   };
 
   // Handle Enter key press
@@ -569,10 +633,60 @@ export function ConversationDetail() {
         </CardContent>
       </Card>
 
+      {/* Fullscreen backdrop overlay */}
+      {isExpanded && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "#0a0a0f",
+            zIndex: 49,
+          }}
+        />
+      )}
+
       {/* Chat Section */}
-      <Card style={{ display: "flex", flexDirection: "column", height: "32rem" }}>
-        <CardHeader style={{ borderBottom: "1px solid var(--border-subtle)", flexShrink: 0 }}>
+      <Card style={{
+        display: "flex",
+        flexDirection: "column",
+        height: isExpanded ? "100vh" : "32rem",
+        ...(isExpanded ? {
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 50,
+          maxWidth: "100%",
+          borderRadius: 0,
+          margin: 0,
+          background: "#0d0d12",
+        } : {}),
+      }}>
+        <CardHeader style={{
+          borderBottom: "1px solid var(--border-subtle)",
+          flexShrink: 0,
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}>
           <CardTitle style={{ fontSize: "1.125rem" }}>Messages</CardTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsExpanded(!isExpanded)}
+            title={isExpanded ? "Exit fullscreen" : "Expand to fullscreen"}
+          >
+            {isExpanded ? (
+              <Minimize2 style={{ height: "1.125rem", width: "1.125rem" }} />
+            ) : (
+              <Maximize2 style={{ height: "1.125rem", width: "1.125rem" }} />
+            )}
+          </Button>
         </CardHeader>
         <CardContent style={{ flex: 1, display: "flex", flexDirection: "column", padding: 0, overflow: "hidden" }}>
           {/* Messages Area */}
@@ -680,11 +794,15 @@ export function ConversationDetail() {
                         ? "var(--gradient-start)"
                         : "var(--bg-secondary)",
                       color: msg.role === "user" ? "white" : "var(--text-primary)",
-                      whiteSpace: "pre-wrap",
                       wordBreak: "break-word",
                       lineHeight: "1.5",
+                      ...(msg.role === "user" ? { whiteSpace: "pre-wrap" } : {}),
                     }}>
-                      {msg.content}
+                      {msg.role === "assistant" ? (
+                        <MarkdownRenderer content={msg.content} />
+                      ) : (
+                        msg.content
+                      )}
                     </div>
                   </div>
                 ))}
@@ -710,11 +828,10 @@ export function ConversationDetail() {
                       borderRadius: "1rem",
                       backgroundColor: "var(--bg-secondary)",
                       color: "var(--text-primary)",
-                      whiteSpace: "pre-wrap",
                       wordBreak: "break-word",
                       lineHeight: "1.5",
                     }}>
-                      {streamingContent}
+                      <MarkdownRenderer content={streamingContent} />
                       <span style={{
                         display: "inline-block",
                         width: "0.5rem",
@@ -724,6 +841,94 @@ export function ConversationDetail() {
                         animation: "blink 1s infinite",
                       }} />
                     </div>
+                  </div>
+                )}
+
+                {/* Tool Activities Timeline */}
+                {toolActivities.length > 0 && (
+                  <div style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.5rem",
+                    padding: "0.75rem",
+                    margin: "0.5rem 0",
+                    borderRadius: "0.5rem",
+                    backgroundColor: "var(--bg-tertiary)",
+                    border: "1px solid var(--border-subtle)",
+                  }}>
+                    <div style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      paddingBottom: "0.5rem",
+                      borderBottom: "1px solid var(--border-subtle)",
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}>
+                      <Wrench style={{ height: "0.875rem", width: "0.875rem" }} />
+                      Agent Activity
+                    </div>
+                    {toolActivities.map((activity) => (
+                      <div
+                        key={activity.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.5rem",
+                          fontSize: "0.875rem",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {activity.status === "running" ? (
+                          <Loader2 style={{
+                            height: "0.875rem",
+                            width: "0.875rem",
+                            color: "var(--gradient-start)",
+                            animation: "spin 1s linear infinite",
+                            flexShrink: 0,
+                          }} />
+                        ) : activity.status === "success" ? (
+                          <CheckCircle2 style={{
+                            height: "0.875rem",
+                            width: "0.875rem",
+                            color: "#22c55e",
+                            flexShrink: 0,
+                          }} />
+                        ) : (
+                          <XCircle style={{
+                            height: "0.875rem",
+                            width: "0.875rem",
+                            color: "#ef4444",
+                            flexShrink: 0,
+                          }} />
+                        )}
+                        <span style={{
+                          fontFamily: "monospace",
+                          fontSize: "0.75rem",
+                          color: "var(--text-muted)",
+                          flexShrink: 0,
+                        }}>
+                          {activity.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                        </span>
+                        <span style={{
+                          fontWeight: 500,
+                          color: activity.status === "running" ? "var(--gradient-start)" : "var(--text-primary)",
+                        }}>
+                          {activity.tool_name.replace(/_/g, " ")}
+                        </span>
+                        <span style={{
+                          color: "var(--text-muted)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {activity.content}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
 
@@ -762,25 +967,66 @@ export function ConversationDetail() {
             </div>
           )}
 
+          {/* Incomplete response warning with retry */}
+          {incompleteResponse && (
+            <div style={{
+              margin: "0 1rem",
+              padding: "0.75rem",
+              borderRadius: "0.5rem",
+              backgroundColor: "rgba(245, 158, 11, 0.1)",
+              border: "1px solid rgba(245, 158, 11, 0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "0.75rem",
+            }}>
+              <span style={{ color: "#f59e0b", fontSize: "0.875rem" }}>
+                The agent processed your request but didn't finish responding.
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleRetry}
+                disabled={isSending}
+                style={{ flexShrink: 0 }}
+              >
+                {isSending ? "Retrying..." : "Retry"}
+              </Button>
+            </div>
+          )}
+
           {/* Input Area */}
           <div style={{
             display: "flex",
             gap: "0.75rem",
             padding: "1rem",
             borderTop: "1px solid var(--border-subtle)",
+            alignItems: "flex-end",
           }}>
-            <Input
-              placeholder="Type your message..."
+            <Textarea
+              placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyPress}
               disabled={isSending}
-              style={{ flex: 1 }}
+              rows={1}
+              style={{
+                flex: 1,
+                minHeight: "2.5rem",
+                maxHeight: "10rem",
+                resize: "none",
+                overflow: "auto",
+              }}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                target.style.height = "auto";
+                target.style.height = Math.min(target.scrollHeight, 160) + "px";
+              }}
             />
             <Button
-              onClick={handleSendMessage}
+              onClick={() => handleSendMessage()}
               disabled={!inputValue.trim() || isSending}
-              style={{ flexShrink: 0 }}
+              style={{ flexShrink: 0, height: "2.5rem" }}
             >
               {isSending ? (
                 <Loader2 style={{ height: "1rem", width: "1rem", animation: "spin 1s linear infinite" }} />

@@ -131,12 +131,17 @@ class KrishnaMiniArchitecture(AgentArchitecture):
 
             # 5. Stream response
             full_response = ""
-            async for chunk in provider.stream_response(context, credentials):
-                full_response += chunk
-                yield SSEEvent(
-                    event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
-                    content=chunk,
-                )
+            async for event in provider.stream_response(
+                context, credentials, tools=None, model=agent.agent_model
+            ):
+                if event.type == "text":
+                    full_response += event.content
+                    yield SSEEvent(
+                        event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
+                        content=event.content,
+                    )
+                elif event.type == "stop":
+                    pass  # Krishna Mini doesn't use tools, so we just stop
 
             # 6. Save assistant message
             assistant_msg = Message(

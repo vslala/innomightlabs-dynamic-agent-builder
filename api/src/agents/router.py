@@ -9,10 +9,11 @@ import src.form_models as form_models
 from src.agents.architectures import get_agent_architecture
 from src.agents.models import Agent, CreateAgentRequest, AgentResponse
 from src.agents.repository import AgentRepository
-from src.agents.schemas import CREATE_AGENT_FORM, UPDATE_AGENT_FORM, get_update_agent_form
+from src.agents.schemas import get_create_agent_form, get_update_agent_form, UPDATE_AGENT_FORM
 from src.conversations.repository import ConversationRepository
 from src.crypto import encrypt_secret_fields
 from src.llm.events import SSEEvent, SSEEventType
+from src.llm.models import models_service
 
 log = logging.getLogger(__name__)
 
@@ -38,8 +39,14 @@ def get_agent_repository() -> AgentRepository:
 
 @router.get("/supported-models", response_model=form_models.Form, response_model_exclude_none=True)
 async def get_create_agent_schema() -> form_models.Form:
-    """Get the form schema for creating an agent"""
-    return CREATE_AGENT_FORM
+    """Get the form schema for creating an agent with dynamically fetched models."""
+    # Fetch available models from Bedrock with display names
+    bedrock_models = models_service.get_bedrock_models()
+    model_options = [
+        {"value": m.model_name, "label": m.display_name}
+        for m in bedrock_models
+    ]
+    return get_create_agent_form(model_options)
 
 
 @router.post(
@@ -84,6 +91,7 @@ async def create_agent(
         agent_name=create_request.agent_name,
         agent_architecture=create_request.agent_architecture,
         agent_provider=create_request.agent_provider,
+        agent_model=create_request.agent_model,
         agent_persona=create_request.agent_persona,
         created_by=user_email,
     )
@@ -109,8 +117,14 @@ async def list_agents(
 
 @router.get("/update-schema/{agent_id}", response_model=form_models.Form, response_model_exclude_none=True)
 async def get_update_agent_schema(agent_id: str) -> form_models.Form:
-    """Get the form schema for updating an agent"""
-    return get_update_agent_form(agent_id)
+    """Get the form schema for updating an agent with dynamically fetched models."""
+    # Fetch available models from Bedrock with display names
+    bedrock_models = models_service.get_bedrock_models()
+    model_options = [
+        {"value": m.model_name, "label": m.display_name}
+        for m in bedrock_models
+    ]
+    return get_update_agent_form(agent_id, model_options)
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)
