@@ -223,7 +223,7 @@ class BedrockProvider(LLMProvider):
                         )
 
         except Exception as e:
-            log.error(f"Bedrock API error: {e}")
+            log.error(f"Bedrock API error: {e}", exc_info=True)
             raise
 
     def __repr__(self) -> str:

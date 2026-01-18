@@ -34,10 +34,6 @@ class MemoryRepository:
         self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
-    # =========================================================================
-    # Memory Block Definitions
-    # =========================================================================
-
     def get_block_definitions(self, agent_id: str) -> list[MemoryBlockDefinition]:
         """Get all memory block definitions for an agent."""
         response = self.table.query(
@@ -118,10 +114,6 @@ class MemoryRepository:
                 self.save_block_definition(block_def)
         log.info(f"Initialized default memory blocks for agent {agent_id}")
 
-    # =========================================================================
-    # Core Memory
-    # =========================================================================
-
     def get_core_memory(self, agent_id: str, block_name: str) -> Optional[CoreMemory]:
         """Get core memory for a specific block."""
         response = self.table.get_item(
@@ -173,10 +165,6 @@ class MemoryRepository:
                 return i + 1  # 1-indexed
 
         return None
-
-    # =========================================================================
-    # Archival Memory
-    # =========================================================================
 
     def find_archival_by_hash(
         self, agent_id: str, content_hash: str
@@ -311,10 +299,6 @@ class MemoryRepository:
 
         log.info(f"Deleted archival memory: {memory_id}")
         return True
-
-    # =========================================================================
-    # Capacity Warning Tracker
-    # =========================================================================
 
     def get_warning_tracker(
         self, agent_id: str, block_name: str

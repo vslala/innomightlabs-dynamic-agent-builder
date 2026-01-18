@@ -86,7 +86,7 @@ class Message(BaseModel):
 
     def to_dynamo_item(self) -> dict[str, Any]:
         """Convert to DynamoDB item format."""
-        item = {
+        item: dict[str, Any] = {
             "pk": self.pk,
             "sk": self.sk,
             "message_id": self.message_id,

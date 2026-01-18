@@ -105,7 +105,7 @@ class FixedWindowStrategy(ConversationStrategy):
 
         # Work backwards from newest messages
         word_count = 0
-        selected_messages = []
+        selected_messages: list["Message"] = []
 
         for msg in reversed(messages):
             msg_words = len(msg.content.split())

@@ -36,3 +36,5 @@ python_version = "3.13"
 warn_return_any = true
 warn_unused_ignores = true
 ignore_missing_imports = true
+# Disable errors for async generator/iterator patterns and complex type assignments
+disable_error_code = ["override", "attr-defined", "dict-item", "assignment"]

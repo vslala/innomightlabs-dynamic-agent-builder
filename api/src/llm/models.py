@@ -60,7 +60,7 @@ class ModelsService:
                 client_kwargs["aws_access_key_id"] = access_key
                 client_kwargs["aws_secret_access_key"] = secret_key
 
-            client = boto3.client(**client_kwargs)
+            client = boto3.client(**client_kwargs)  # type: ignore[call-overload]
 
             # List foundation models, filtering for Anthropic
             response = client.list_foundation_models(
@@ -121,7 +121,7 @@ class ModelsService:
             return models
 
         except Exception as e:
-            log.error(f"Error fetching Bedrock models: {e}")
+            log.error(f"Error fetching Bedrock models: {e}", exc_info=True)
             # Return fallback list if API fails
             return self._get_fallback_models()
 

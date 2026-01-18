@@ -133,5 +133,5 @@ class AgentRepository:
             log.info(f"Deleted agent {agent_id} for user {created_by}")
             return True
         except Exception as e:
-            log.error(f"Failed to delete agent {agent_id}: {e}")
+            log.error(f"Failed to delete agent {agent_id}: {e}", exc_info=True)
             return False

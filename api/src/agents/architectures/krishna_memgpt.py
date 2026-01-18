@@ -12,6 +12,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, AsyncIterator
 
+from src.common import CAPACITY_WARNING_THRESHOLD, MAX_TOOL_ITERATIONS
 from src.crypto import decrypt
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
@@ -44,9 +45,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
     Memory blocks are persisted in DynamoDB and survive across conversations.
     """
-
-    MAX_TOOL_ITERATIONS = 10  
-    CAPACITY_WARNING_THRESHOLD = 0.80 
 
     def __init__(self, max_context_words: int = 8000):
         """
@@ -170,7 +168,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
             # 7. Agentic loop with tool execution
             full_response = ""
-            for iteration in range(self.MAX_TOOL_ITERATIONS):
+            for iteration in range(MAX_TOOL_ITERATIONS):
                 has_tool_calls = False
                 pending_tool_calls = []
                 iteration_text = ""  # Text generated in this iteration
@@ -376,7 +374,7 @@ IMPORTANT:
             memory = memories.get(block_def.block_name)
             if memory:
                 percent = memory.get_capacity_percent(block_def.word_limit)
-                if percent >= self.CAPACITY_WARNING_THRESHOLD * 100:
+                if percent >= CAPACITY_WARNING_THRESHOLD * 100:
                     warnings.append({
                         "block_name": block_def.block_name,
                         "word_count": memory.word_count,

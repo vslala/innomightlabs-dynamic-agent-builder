@@ -9,6 +9,7 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
+from src.common import CAPACITY_WARNING_THRESHOLD
 from src.memory import (
     MemoryRepository,
     CoreMemory,
@@ -58,7 +59,6 @@ class NativeToolHandler:
     Provides idempotent operations and capacity warnings.
     """
 
-    CAPACITY_WARNING_THRESHOLD = 0.80  # 80%
     RECALL_PAGE_SIZE = 10  # Messages per page for recall_conversation
 
     def __init__(self, memory_repo: Optional[MemoryRepository] = None):
@@ -87,7 +87,25 @@ class NativeToolHandler:
         handler = getattr(self, f"_handle_{tool_name}", None)
         if not handler:
             raise ValueError(f"Unknown tool: {tool_name}")
-        return await handler(arguments, agent_id)
+        result: str = await handler(arguments, agent_id)
+        return result
+
+    def _get_block_or_error(
+        self, args: dict, agent_id: str
+    ) -> tuple[str, Optional[MemoryBlockDefinition], Optional[str]]:
+        """
+        Get block definition or return error message.
+
+        Returns:
+            Tuple of (normalized_block_name, block_def, error_msg).
+            If block exists, error_msg is None.
+            If block doesn't exist, block_def is None and error_msg contains the error.
+        """
+        block_name = normalize_block_name(args["block"])
+        block_def = self.memory_repo.get_block_definition(agent_id, block_name)
+        if not block_def:
+            return block_name, None, f"Error: Block [{block_name}] does not exist."
+        return block_name, block_def, None
 
     def _format_capacity(
         self, memory: CoreMemory, block_def: MemoryBlockDefinition
@@ -95,7 +113,7 @@ class NativeToolHandler:
         """Format capacity info, with warning if above threshold."""
         percent = memory.get_capacity_percent(block_def.word_limit)
         capacity_str = f"{memory.word_count}/{block_def.word_limit} words"
-        if percent >= self.CAPACITY_WARNING_THRESHOLD * 100:
+        if percent >= CAPACITY_WARNING_THRESHOLD * 100:
             return (
                 f"{capacity_str}\n"
                 f"⚠️ WARNING: Block at {percent:.0f}% capacity. "
@@ -103,18 +121,14 @@ class NativeToolHandler:
             )
         return capacity_str
 
-    # =========================================================================
-    # Core Memory Tools
-    # =========================================================================
-
     async def _handle_core_memory_read(self, args: dict, agent_id: str) -> str:
         """Read a core memory block."""
-        block_name = normalize_block_name(args["block"])
-        memory = self.memory_repo.get_core_memory(agent_id, block_name)
-        block_def = self.memory_repo.get_block_definition(agent_id, block_name)
+        block_name, block_def, error = self._get_block_or_error(args, agent_id)
+        if error:
+            return error
+        assert block_def is not None  # Type narrowing: error is None means block_def exists
 
-        if not block_def:
-            return f"Error: Block [{block_name}] does not exist."
+        memory = self.memory_repo.get_core_memory(agent_id, block_name)
 
         if not memory or not memory.lines:
             return f"[{block_name}] Core Memory is empty."
@@ -130,12 +144,12 @@ class NativeToolHandler:
 
     async def _handle_core_memory_append(self, args: dict, agent_id: str) -> str:
         """Append a new line to a memory block (idempotent)."""
-        block_name = normalize_block_name(args["block"])
-        content = args["content"].strip()
+        block_name, block_def, error = self._get_block_or_error(args, agent_id)
+        if error:
+            return error
+        assert block_def is not None  # Type narrowing: error is None means block_def exists
 
-        block_def = self.memory_repo.get_block_definition(agent_id, block_name)
-        if not block_def:
-            return f"Error: Block [{block_name}] does not exist."
+        content = args["content"].strip()
 
         # Idempotency check
         existing_line = self.memory_repo.line_exists(agent_id, block_name, content)
@@ -162,13 +176,13 @@ class NativeToolHandler:
 
     async def _handle_core_memory_replace(self, args: dict, agent_id: str) -> str:
         """Replace a specific line in a memory block (idempotent)."""
-        block_name = normalize_block_name(args["block"])
+        block_name, block_def, error = self._get_block_or_error(args, agent_id)
+        if error:
+            return error
+        assert block_def is not None  # Type narrowing: error is None means block_def exists
+
         line_num = args["line_number"]
         new_content = args["new_content"].strip()
-
-        block_def = self.memory_repo.get_block_definition(agent_id, block_name)
-        if not block_def:
-            return f"Error: Block [{block_name}] does not exist."
 
         memory = self.memory_repo.get_core_memory(agent_id, block_name)
         if not memory or line_num < 1 or line_num > len(memory.lines):
@@ -196,13 +210,12 @@ class NativeToolHandler:
 
     async def _handle_core_memory_delete(self, args: dict, agent_id: str) -> str:
         """Delete a specific line from a memory block (idempotent)."""
-        block_name = normalize_block_name(args["block"])
+        block_name, block_def, error = self._get_block_or_error(args, agent_id)
+        if error:
+            return error
+        assert block_def is not None  # Type narrowing: error is None means block_def exists
+
         line_num = args["line_number"]
-
-        block_def = self.memory_repo.get_block_definition(agent_id, block_name)
-        if not block_def:
-            return f"Error: Block [{block_name}] does not exist."
-
         memory = self.memory_repo.get_core_memory(agent_id, block_name)
         if not memory or line_num < 1 or line_num > len(memory.lines):
             # Idempotent: deleting non-existent line is success
@@ -241,16 +254,12 @@ class NativeToolHandler:
                 if block_def.word_limit > 0
                 else 0
             )
-            warning = " ⚠️" if percent >= self.CAPACITY_WARNING_THRESHOLD * 100 else ""
+            warning = " ⚠️" if percent >= CAPACITY_WARNING_THRESHOLD * 100 else ""
             lines.append(
                 f"- [{block_def.block_name}] {word_count}/{block_def.word_limit} words "
                 f"({percent:.1f}%){warning} - {block_def.description}"
             )
         return "\n".join(lines)
-
-    # =========================================================================
-    # Archival Memory Tools
-    # =========================================================================
 
     async def _handle_archival_memory_insert(
         self, args: dict, agent_id: str
@@ -297,10 +306,6 @@ class NativeToolHandler:
             lines.append(f"\n(Use page={page + 1} for more)")
 
         return "\n".join(lines)
-
-    # =========================================================================
-    # Conversation Recall Tool
-    # =========================================================================
 
     async def _handle_recall_conversation(
         self, args: dict, agent_id: str

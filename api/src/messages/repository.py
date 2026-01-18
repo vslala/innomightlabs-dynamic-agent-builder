@@ -203,7 +203,7 @@ class MessageRepository:
             Select="COUNT",
         )
 
-        return response.get("Count", 0)
+        return int(response.get("Count", 0))
 
     def delete_by_conversation(self, conversation_id: str) -> int:
         """

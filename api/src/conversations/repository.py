@@ -180,7 +180,7 @@ class ConversationRepository:
             log.info(f"Deleted conversation {conversation_id} for user {created_by}")
             return True
         except Exception as e:
-            log.error(f"Failed to delete conversation {conversation_id}: {e}")
+            log.error(f"Failed to delete conversation {conversation_id}: {e}", exc_info=True)
             return False
 
     def exists(self, conversation_id: str, created_by: str) -> bool:

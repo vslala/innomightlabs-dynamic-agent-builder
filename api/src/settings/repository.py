@@ -114,5 +114,5 @@ class ProviderSettingsRepository:
             log.info(f"Deleted provider settings for {provider_name} for user {user_email}")
             return True
         except Exception as e:
-            log.error(f"Failed to delete provider settings {provider_name}: {e}")
+            log.error(f"Failed to delete provider settings {provider_name}: {e}", exc_info=True)
             return False

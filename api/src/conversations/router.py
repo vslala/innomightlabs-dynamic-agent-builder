@@ -31,7 +31,7 @@ def get_user_email(request: Request) -> str:
     user_email = getattr(request.state, "user_email", None)
     if not user_email:
         raise HTTPException(status_code=401, detail="User not authenticated")
-    return user_email
+    return str(user_email)
 
 
 def validate_agent(agent_id: str, user_email: str) -> None:

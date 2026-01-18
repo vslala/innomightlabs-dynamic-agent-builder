@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
+from src.common import CAPACITY_WARNING_THRESHOLD, COMPACTION_TARGET
 from .models import CoreMemory
 from .repository import MemoryRepository
 
@@ -28,8 +29,6 @@ class MemoryCompactionService:
     Tracks warning turns and triggers compaction when LLM doesn't act.
     """
 
-    WARNING_THRESHOLD = 0.80  # 80%
-    COMPACTION_TARGET = 0.50  # Reduce to 50%
     TURNS_BEFORE_AUTO_COMPACT = 3
 
     def __init__(self, memory_repo: Optional[MemoryRepository] = None):
@@ -53,7 +52,7 @@ class MemoryCompactionService:
             memory = memories.get(block_def.block_name)
             if memory:
                 percent = memory.get_capacity_percent(block_def.word_limit)
-                if percent >= self.WARNING_THRESHOLD * 100:
+                if percent >= CAPACITY_WARNING_THRESHOLD * 100:
                     warnings.append({
                         "block_name": block_def.block_name,
                         "word_count": memory.word_count,
@@ -163,7 +162,7 @@ class MemoryCompactionService:
             return f"Block [{block_name}] definition not found."
 
         # Calculate target word count
-        target_words = int(block_def.word_limit * self.COMPACTION_TARGET)
+        target_words = int(block_def.word_limit * COMPACTION_TARGET)
         original_word_count = memory.word_count
 
         # Archive original content
