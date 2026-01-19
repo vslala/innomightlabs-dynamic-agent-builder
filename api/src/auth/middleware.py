@@ -30,6 +30,7 @@ PUBLIC_PATHS = {
     "/auth/google",
     "/auth/callback",
     "/docs",
+    "/test-logging",
     "/openapi.json",
     "/redoc",
 }
@@ -111,15 +112,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # Extract token from Authorization header
+        # Extract token from Authorization header or query param
+        # Query param is needed for SSE endpoints (EventSource doesn't support custom headers)
+        token = None
         auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+        elif "token" in request.query_params:
+            token = request.query_params["token"]
+
+        if not token:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Missing or invalid authorization header"}
             )
-
-        token = auth_header.split(" ")[1]
 
         # Check if token is expired
         is_expired, payload = is_token_expired(token)

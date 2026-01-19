@@ -51,3 +51,21 @@ variable "api_domain" {
   type        = string
   default     = ""
 }
+
+# Pinecone Vector Store
+variable "pinecone_api_key" {
+  description = "Pinecone API key for vector storage"
+  type        = string
+  sensitive   = true
+}
+
+variable "pinecone_host" {
+  description = "Pinecone index host URL"
+  type        = string
+}
+
+variable "pinecone_index" {
+  description = "Pinecone index name"
+  type        = string
+  default     = "innomightlabs-knowledge"
+}

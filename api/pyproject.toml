@@ -18,6 +18,11 @@ dependencies = [
     "pyjwt>=2.10.1",
     "python-dotenv>=1.2.1",
     "uvicorn>=0.40.0",
+    # Crawler dependencies
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    # Vector store dependencies
+    "pinecone>=5.0.0",
 ]
 
 [project.optional-dependencies]

@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Bot, Plus, Trash2, Settings } from "lucide-react";
-import { Card, CardContent } from "../../components/ui/card";
-import { Button } from "../../components/ui/button";
 import {
+  Card,
+  CardContent,
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../../components/ui/dialog";
+  LoadingState,
+  ErrorState,
+  EmptyState,
+} from "../../components/ui";
 import {
   agentApiService,
   type AgentResponse,
@@ -60,25 +64,15 @@ export function AgentsList() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--gradient-start)] border-t-transparent" />
-      </div>
-    );
+    return <LoadingState />;
   }
 
   if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <p className="text-red-400">{error}</p>
-        <Button onClick={loadAgents}>Try Again</Button>
-      </div>
-    );
+    return <ErrorState message={error} onRetry={loadAgents} />;
   }
 
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[var(--text-secondary)] text-base">
@@ -91,26 +85,14 @@ export function AgentsList() {
         </Button>
       </div>
 
-      {/* Agents Grid */}
       {agents.length === 0 ? (
-        <Card>
-          <CardContent className="p-12">
-            <div className="text-center">
-              <Bot className="h-16 w-16 mx-auto text-[var(--text-muted)] mb-4" />
-              <h3 className="text-lg font-medium text-[var(--text-primary)] mb-2">
-                No agents yet
-              </h3>
-              <p className="text-[var(--text-muted)] mb-6 max-w-sm mx-auto">
-                Create your first AI agent to get started. You can customize its
-                persona and connect it to different LLM providers.
-              </p>
-              <Button onClick={() => navigate("/dashboard/agents/new")}>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Your First Agent
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Bot}
+          title="No agents yet"
+          description="Create your first AI agent to get started. You can customize its persona and connect it to different LLM providers."
+          actionLabel="Create Your First Agent"
+          onAction={() => navigate("/dashboard/agents/new")}
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {agents.map((agent) => (
@@ -163,7 +145,6 @@ export function AgentsList() {
         </div>
       )}
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>

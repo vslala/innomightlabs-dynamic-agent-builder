@@ -1,3 +1,3 @@
-from .settings import settings
+from .settings import settings, Settings, ConfigValidationError
 
-__all__ = ["settings"]
+__all__ = ["settings", "Settings", "ConfigValidationError"]

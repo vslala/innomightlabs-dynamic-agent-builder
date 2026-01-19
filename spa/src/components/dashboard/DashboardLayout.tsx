@@ -7,6 +7,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard": "Overview",
   "/dashboard/agents": "Agents",
   "/dashboard/conversations": "Conversations",
+  "/dashboard/knowledge-bases": "Knowledge Bases",
   "/dashboard/settings": "Settings",
 };
 
@@ -25,6 +26,10 @@ export function DashboardLayout() {
     // Check for agent detail page
     if (location.pathname.startsWith("/dashboard/agents/")) {
       return "Agent Details";
+    }
+    // Check for knowledge base detail page
+    if (location.pathname.startsWith("/dashboard/knowledge-bases/")) {
+      return "Knowledge Base";
     }
     return "Dashboard";
   };

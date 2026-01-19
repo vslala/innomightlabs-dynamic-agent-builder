@@ -4,3 +4,8 @@ jwt_secret           = "your-jwt-secret-base64-encoded"
 frontend_url         = "https://your-domain.com"
 widget_cdn_domain    = "cdn.your-domain.com"
 api_domain           = "api.your-domain.com"
+
+# Pinecone Vector Store (required for Knowledge Base features)
+pinecone_api_key     = "pcsk_xxx_your-pinecone-api-key"
+pinecone_host        = "https://your-index-name.svc.region.pinecone.io"
+pinecone_index       = "innomightlabs-knowledge"

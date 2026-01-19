@@ -9,6 +9,8 @@ import { AgentCreate } from './pages/dashboard/AgentCreate';
 import { AgentDetail } from './pages/dashboard/AgentDetail';
 import { Conversations } from './pages/dashboard/Conversations';
 import { ConversationDetail } from './pages/dashboard/ConversationDetail';
+import { KnowledgeBases } from './pages/dashboard/KnowledgeBases';
+import { KnowledgeBaseDetail } from './pages/dashboard/KnowledgeBaseDetail';
 import { Settings } from './pages/dashboard/Settings';
 
 const basename = import.meta.env.BASE_URL;
@@ -36,6 +38,8 @@ function App() {
           <Route path="agents/:agentId" element={<AgentDetail />} />
           <Route path="conversations" element={<Conversations />} />
           <Route path="conversations/:conversationId" element={<ConversationDetail />} />
+          <Route path="knowledge-bases" element={<KnowledgeBases />} />
+          <Route path="knowledge-bases/:kbId" element={<KnowledgeBaseDetail />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

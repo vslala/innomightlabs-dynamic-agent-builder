@@ -11,14 +11,21 @@ from src.conversations.router import router as conversation_router
 from src.settings.router import router as settings_router
 from src.memory.router import router as memory_router
 from src.llm.router import router as llm_router
+from src.knowledge.router import router as knowledge_router, agent_kb_router, sse_router as knowledge_sse_router
 from src.widget import widget_router, WidgetAuthMiddleware
 from src.exceptions import register_exception_handlers
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+logging.getLogger("botocore").setLevel(logging.WARNING)
+logging.getLogger("boto3").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 app = FastAPI(
     title="Dynamic Agent Builder API",
@@ -62,6 +69,9 @@ app.include_router(router=conversation_router)
 app.include_router(router=settings_router)
 app.include_router(router=memory_router)
 app.include_router(router=llm_router)
+app.include_router(router=knowledge_sse_router)
+app.include_router(router=knowledge_router)
+app.include_router(router=agent_kb_router)
 app.include_router(router=widget_router)
 
 

@@ -24,6 +24,16 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
         """Handle HTTP exceptions with consistent JSON format."""
+        # Log client errors (4xx) at warning level, server errors (5xx) at error level
+        if exc.status_code >= 500:
+            log.error(
+                f"HTTP {exc.status_code} on {request.method} {request.url.path}: {exc.detail}"
+            )
+        elif exc.status_code >= 400:
+            log.warning(
+                f"HTTP {exc.status_code} on {request.method} {request.url.path}: {exc.detail}"
+            )
+
         return JSONResponse(
             status_code=exc.status_code,
             content={
