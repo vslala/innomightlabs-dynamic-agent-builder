@@ -235,16 +235,56 @@ async def get_crawl_config_schema(kb_id: str) -> form_models.Form:
     return get_crawl_config_form(kb_id)
 
 
+def _invoke_crawl_async(job_id: str, kb_id: str, user_email: str):
+    """
+    Invoke the crawl job asynchronously using Lambda async invocation.
+
+    This is necessary because FastAPI BackgroundTasks don't work reliably
+    in AWS Lambda - the function can freeze after returning the response.
+    """
+    import os
+    import boto3
+
+    # Check if we're running in Lambda
+    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    if not function_name:
+        # Running locally - use synchronous execution in a thread
+        log.info(f"Running locally - crawl will run in background thread for job {job_id}")
+        return None
+
+    # Invoke Lambda asynchronously
+    lambda_client = boto3.client("lambda", region_name=os.environ.get("AWS_REGION_NAME", "eu-west-2"))
+
+    payload = json.dumps({
+        "crawl_job": {
+            "job_id": job_id,
+            "kb_id": kb_id,
+            "user_email": user_email,
+        }
+    })
+
+    try:
+        response = lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="Event",  # Async invocation
+            Payload=payload,
+        )
+        log.info(f"Invoked Lambda async for crawl job {job_id}, status: {response['StatusCode']}")
+        return response
+    except Exception as e:
+        log.error(f"Failed to invoke Lambda async for crawl job {job_id}: {e}")
+        raise
+
+
 async def _run_crawl_in_background(
     job_id: str,
     kb_id: str,
     user_email: str,
     crawler,  # CrawlerWorker - type annotation omitted to avoid circular import
 ):
-    """Background task to run the crawler."""
+    """Background task to run the crawler (for local development only)."""
     try:
         # Run with a 5 minute timeout for development
-        # In Lambda, this would be adjusted based on remaining execution time
         await crawler.run(
             job_id=job_id,
             kb_id=kb_id,
@@ -311,16 +351,23 @@ async def start_crawl_job(
     saved_job = job_repo.save(job)
     log.info(f"Created crawl job {saved_job.job_id} for KB {kb_id}")
 
-    # Start crawling in background if auto_start is enabled
+    # Start crawling if auto_start is enabled
     if auto_start:
-        background_tasks.add_task(
-            _run_crawl_in_background,
-            saved_job.job_id,
-            kb_id,
-            user_email,
-            crawler,
-        )
-        log.info(f"Queued background crawl for job {saved_job.job_id}")
+        import os
+        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+            # In Lambda - use async invocation
+            _invoke_crawl_async(saved_job.job_id, kb_id, user_email)
+            log.info(f"Invoked async Lambda for crawl job {saved_job.job_id}")
+        else:
+            # Local development - use background task
+            background_tasks.add_task(
+                _run_crawl_in_background,
+                saved_job.job_id,
+                kb_id,
+                user_email,
+                crawler,
+            )
+            log.info(f"Queued background crawl for job {saved_job.job_id}")
 
     return saved_job.to_response()
 
@@ -422,15 +469,22 @@ async def run_crawl_job(
             detail="Vector store is not configured. Set PINECONE_API_KEY, PINECONE_HOST, and PINECONE_INDEX to enable crawling."
         )
 
-    # Start crawling in background
-    background_tasks.add_task(
-        _run_crawl_in_background,
-        job_id,
-        kb_id,
-        user_email,
-        crawler,
-    )
-    log.info(f"Queued background crawl for job {job_id} (manual trigger)")
+    # Start crawling
+    import os
+    if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        # In Lambda - use async invocation
+        _invoke_crawl_async(job_id, kb_id, user_email)
+        log.info(f"Invoked async Lambda for crawl job {job_id} (manual trigger)")
+    else:
+        # Local development - use background task
+        background_tasks.add_task(
+            _run_crawl_in_background,
+            job_id,
+            kb_id,
+            user_email,
+            crawler,
+        )
+        log.info(f"Queued background crawl for job {job_id} (manual trigger)")
 
     return job.to_response()
 

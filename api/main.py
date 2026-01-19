@@ -85,8 +85,77 @@ def root():
     return {"message": "Dynamic Agent Builder API"}
 
 
-# Lambda handler
-handler = Mangum(app, lifespan="off")
+# Mangum handler for HTTP API requests
+_http_handler = Mangum(app, lifespan="off")
+
+log = logging.getLogger(__name__)
+
+
+def handler(event, context):
+    """
+    Lambda handler that routes between HTTP requests and async crawl jobs.
+
+    For async crawl job invocations, the event looks like:
+    {
+        "crawl_job": {
+            "job_id": "...",
+            "kb_id": "...",
+            "user_email": "..."
+        }
+    }
+
+    For HTTP requests (via API Gateway), the event is passed to Mangum.
+    """
+    # Check if this is an async crawl job invocation
+    if "crawl_job" in event:
+        return _handle_crawl_job(event["crawl_job"], context)
+
+    # Otherwise, handle as HTTP request
+    return _http_handler(event, context)
+
+
+def _handle_crawl_job(crawl_job: dict, context):
+    """
+    Handle async crawl job invocation.
+
+    Runs the crawler synchronously since Lambda async invocations
+    can run for up to 15 minutes.
+    """
+    import asyncio
+
+    job_id = crawl_job.get("job_id")
+    kb_id = crawl_job.get("kb_id")
+    user_email = crawl_job.get("user_email")
+
+    if not all([job_id, kb_id, user_email]):
+        log.error(f"Invalid crawl_job payload: {crawl_job}")
+        return {"statusCode": 400, "body": "Invalid crawl_job payload"}
+
+    log.info(f"Processing async crawl job {job_id} for KB {kb_id}")
+
+    try:
+        from src.crawler import get_crawler_worker
+        crawler = get_crawler_worker()
+
+        # Calculate timeout based on Lambda remaining time
+        # Leave 30 seconds buffer for cleanup
+        remaining_ms = context.get_remaining_time_in_millis() - 30000
+        timeout_ms = max(remaining_ms, 60000)  # At least 60 seconds
+
+        # Run crawler synchronously
+        asyncio.run(crawler.run(
+            job_id=job_id,
+            kb_id=kb_id,
+            user_email=user_email,
+            timeout_ms=timeout_ms,
+        ))
+
+        log.info(f"Completed crawl job {job_id}")
+        return {"statusCode": 200, "body": f"Crawl job {job_id} completed"}
+
+    except Exception as e:
+        log.error(f"Crawl job {job_id} failed: {e}")
+        return {"statusCode": 500, "body": f"Crawl job {job_id} failed: {str(e)}"}
 
 
 if __name__ == "__main__":

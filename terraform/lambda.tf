@@ -33,7 +33,9 @@ resource "aws_lambda_function" "api" {
   role          = aws_iam_role.lambda.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.api.repository_url}:latest"
-  timeout       = 30
+  # Timeout increased to 15 minutes to support async crawl jobs
+  # HTTP requests are still bounded by API Gateway's 30 second timeout
+  timeout       = 900
   memory_size   = 256
 
   environment {
@@ -92,6 +94,25 @@ resource "aws_iam_role_policy" "lambda_bedrock" {
           "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.titan-embed-text-v1",
           "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.*"
         ]
+      }
+    ]
+  })
+}
+
+# Lambda self-invoke permission (for async crawl job processing)
+resource "aws_iam_role_policy" "lambda_self_invoke" {
+  name = "${var.project_name}-lambda-self-invoke"
+  role = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = aws_lambda_function.api.arn
       }
     ]
   })
