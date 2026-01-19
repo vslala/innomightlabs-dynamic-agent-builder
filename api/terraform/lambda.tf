@@ -27,14 +27,37 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+# Bedrock access policy for embeddings
+resource "aws_iam_role_policy" "lambda_bedrock" {
+  name = "${var.project_name}-lambda-bedrock"
+  role = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ]
+        Resource = [
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.titan-embed-text-v2:0",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/*"
+        ]
+      }
+    ]
+  })
+}
+
 # Lambda function
 resource "aws_lambda_function" "api" {
   function_name = "${var.project_name}-api"
   role          = aws_iam_role.lambda.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.api.repository_url}:latest"
-  timeout       = 30
-  memory_size   = 256
+  timeout       = 300  # 5 minutes for crawl operations
+  memory_size   = 512  # Increased for embedding operations
 
   environment {
     variables = {
@@ -46,6 +69,9 @@ resource "aws_lambda_function" "api" {
       GOOGLE_CLIENT_ID     = var.google_client_id
       GOOGLE_CLIENT_SECRET = var.google_client_secret
       JWT_SECRET           = var.jwt_secret
+      PINECONE_API_KEY     = var.pinecone_api_key
+      PINECONE_HOST        = var.pinecone_host
+      PINECONE_INDEX       = var.pinecone_index
     }
   }
 

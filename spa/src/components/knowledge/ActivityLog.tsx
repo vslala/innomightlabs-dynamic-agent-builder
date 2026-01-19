@@ -15,7 +15,7 @@ import {
   Flag,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
-import type { CrawlEvent, CrawlEventType } from "../../types/knowledge";
+import type { CrawlEvent } from "../../types/knowledge";
 
 interface ActivityLogProps {
   events: CrawlEvent[];
