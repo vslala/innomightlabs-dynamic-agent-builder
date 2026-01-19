@@ -65,7 +65,7 @@ resource "aws_lambda_function" "api" {
   }
 }
 
-# Bedrock permissions for Lambda (required for model listing and inference)
+# Bedrock permissions for Lambda (required for model listing and embeddings)
 resource "aws_iam_role_policy" "lambda_bedrock" {
   name = "${var.project_name}-lambda-bedrock"
   role = aws_iam_role.lambda.id
@@ -80,6 +80,18 @@ resource "aws_iam_role_policy" "lambda_bedrock" {
           "bedrock:GetFoundationModel"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ]
+        Resource = [
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.titan-embed-text-v2:0",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.titan-embed-text-v1",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.*"
+        ]
       }
     ]
   })

@@ -539,8 +539,10 @@ async def stream_crawl_job(
         event_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "Content-Type": "text/event-stream",
         },
     )
 
@@ -630,8 +632,10 @@ async def run_and_stream_crawl_job(
         event_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "Content-Type": "text/event-stream",
         },
     )
 

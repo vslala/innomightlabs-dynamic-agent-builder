@@ -44,15 +44,15 @@ import {
   PillGroup,
   AlertBanner,
 } from "../../components/ui";
-import { ActivityLog, ActivityLogHeader } from "../../components/knowledge";
 import { knowledgeApiService } from "../../services/knowledge";
 import type {
   KnowledgeBase,
   CrawlJob,
   CrawlJobStatus,
   CrawlSourceType,
-  CrawlEvent,
 } from "../../types/knowledge";
+
+const POLL_INTERVAL_MS = 5000; // 5 seconds
 
 export function KnowledgeBaseDetail() {
   const { kbId } = useParams<{ kbId: string }>();
@@ -78,10 +78,9 @@ export function KnowledgeBaseDetail() {
   const [isStartingCrawl, setIsStartingCrawl] = useState(false);
   const [crawlError, setCrawlError] = useState<string | null>(null);
 
-  const [activeEventSource, setActiveEventSource] = useState<EventSource | null>(null);
-  const [crawlEvents, setCrawlEvents] = useState<Record<string, CrawlEvent[]>>({});
-  const [isStreaming, setIsStreaming] = useState(false);
-  const lastCursorRef = useRef<string | undefined>(undefined);
+  // Polling state
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
 
   const loadKnowledgeBase = async () => {
     if (!kbId) return;
@@ -108,81 +107,63 @@ export function KnowledgeBaseDetail() {
       const jobs = await knowledgeApiService.listCrawlJobs(kbId, 10);
       setCrawlJobs(jobs);
 
-      const inProgressJob = jobs.find((j) => j.status === "in_progress");
-      if (inProgressJob && !activeEventSource) {
-        startEventStream(inProgressJob.job_id);
+      // Check if any job is in progress and start polling
+      const hasInProgressJob = jobs.some((j) => j.status === "in_progress");
+      if (hasInProgressJob && !pollingIntervalRef.current) {
+        startPolling();
+      } else if (!hasInProgressJob && pollingIntervalRef.current) {
+        stopPolling();
       }
     } catch (err) {
       console.error("Error loading crawl jobs:", err);
     } finally {
       setLoadingJobs(false);
     }
-  }, [kbId, activeEventSource]);
+  }, [kbId]);
 
-  const startEventStream = (jobId: string, cursor?: string) => {
+  const pollJobProgress = useCallback(async () => {
     if (!kbId) return;
 
-    if (activeEventSource) {
-      activeEventSource.close();
+    try {
+      const jobs = await knowledgeApiService.listCrawlJobs(kbId, 10);
+      setCrawlJobs(jobs);
+
+      // Check if any job is still in progress
+      const hasInProgressJob = jobs.some((j) => j.status === "in_progress");
+      if (!hasInProgressJob) {
+        stopPolling();
+        // Refresh KB stats when all jobs complete
+        loadKnowledgeBase();
+      }
+    } catch (err) {
+      console.error("Error polling crawl jobs:", err);
     }
+  }, [kbId]);
 
-    setIsStreaming(true);
+  const startPolling = useCallback(() => {
+    if (pollingIntervalRef.current) return; // Already polling
 
-    const eventSource = knowledgeApiService.streamCrawlProgress(
-      kbId,
-      jobId,
-      (event: CrawlEvent) => {
-        if (event.event_type !== "JOB_PROGRESS") {
-          setCrawlEvents((prev) => ({
-            ...prev,
-            [jobId]: [...(prev[jobId] || []), event],
-          }));
-        }
+    setIsPolling(true);
+    pollingIntervalRef.current = setInterval(() => {
+      pollJobProgress();
+    }, POLL_INTERVAL_MS);
+  }, [pollJobProgress]);
 
-        if (event.cursor) {
-          lastCursorRef.current = event.cursor;
-        }
-
-        setCrawlJobs((prev) =>
-          prev.map((job) => {
-            if (job.job_id === event.job_id && event.progress) {
-              return {
-                ...job,
-                status: event.status || job.status,
-                progress: event.progress,
-              };
-            }
-            return job;
-          })
-        );
-
-        if (event.event_type === "JOB_COMPLETED" || event.event_type === "JOB_FAILED") {
-          eventSource.close();
-          setActiveEventSource(null);
-          setIsStreaming(false);
-          loadCrawlJobs();
-          loadKnowledgeBase();
-        }
-      },
-      (err) => {
-        console.error("SSE error:", err);
-        eventSource.close();
-        setActiveEventSource(null);
-        setIsStreaming(false);
-      },
-      cursor
-    );
-
-    setActiveEventSource(eventSource);
-  };
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    setIsPolling(false);
+  }, []);
 
   useEffect(() => {
     loadKnowledgeBase();
     loadCrawlJobs();
+
     return () => {
-      if (activeEventSource) {
-        activeEventSource.close();
-      }
+      // Cleanup polling on unmount
+      stopPolling();
     };
   }, [kbId]);
 
@@ -219,7 +200,7 @@ export function KnowledgeBaseDetail() {
 
       setCrawlJobs((prev) => [job, ...prev]);
       setExpandedJobId(job.job_id);
-      startEventStream(job.job_id);
+      startPolling(); // Start polling for progress
       setIsStartCrawlDialogOpen(false);
       setCrawlSourceUrl("");
       setCrawlError(null);
@@ -252,6 +233,17 @@ export function KnowledgeBaseDetail() {
     }
   };
 
+  const handleRunPendingJob = async (jobId: string) => {
+    if (!kbId) return;
+    try {
+      await knowledgeApiService.runCrawlJob(kbId, jobId);
+      startPolling();
+      loadCrawlJobs();
+    } catch (err) {
+      console.error("Error running crawl job:", err);
+    }
+  };
+
   const mapStatus = (status: CrawlJobStatus) => status as "pending" | "in_progress" | "completed" | "failed" | "cancelled";
 
   const formatDate = (dateString: string | null) => {
@@ -269,6 +261,11 @@ export function KnowledgeBaseDetail() {
     if (ms < 1000) return `${ms}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${(ms / 60000).toFixed(1)}m`;
+  };
+
+  const getProgressPercentage = (job: CrawlJob) => {
+    if (job.progress.discovered_urls === 0) return 0;
+    return Math.round((job.progress.processed_urls / job.progress.discovered_urls) * 100);
   };
 
   if (loading) {
@@ -437,6 +434,9 @@ export function KnowledgeBaseDetail() {
             <div className="flex items-center gap-2">
               <Globe className="h-5 w-5 text-[var(--gradient-start)]" />
               <CardTitle className="text-lg">Web Crawl Jobs</CardTitle>
+              {isPolling && (
+                <Loader2 className="h-4 w-4 animate-spin text-[var(--text-muted)]" />
+              )}
             </div>
             <Button size="sm" onClick={() => setIsStartCrawlDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-1.5" />
@@ -483,6 +483,11 @@ export function KnowledgeBaseDetail() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
+                      {job.status === "in_progress" && (
+                        <span className="text-xs text-[var(--text-muted)]">
+                          {getProgressPercentage(job)}%
+                        </span>
+                      )}
                       <StatusBadge status={mapStatus(job.status)} />
                       {job.status === "in_progress" && (
                         <Button
@@ -502,11 +507,9 @@ export function KnowledgeBaseDetail() {
                           variant="ghost"
                           size="sm"
                           className="text-green-400 hover:text-green-300"
-                          onClick={async (e) => {
+                          onClick={(e) => {
                             e.stopPropagation();
-                            await knowledgeApiService.runCrawlJob(kbId!, job.job_id);
-                            startEventStream(job.job_id);
-                            loadCrawlJobs();
+                            handleRunPendingJob(job.job_id);
                           }}
                         >
                           <Play className="h-4 w-4" />
@@ -517,15 +520,25 @@ export function KnowledgeBaseDetail() {
 
                   {expandedJobId === job.job_id && (
                     <div className="border-t border-[var(--border-subtle)] p-4 bg-[var(--bg-secondary)]">
+                      {/* Progress bar for in-progress and completed jobs */}
                       {(job.status === "in_progress" || job.status === "completed") && (
-                        <ProgressBar
-                          value={job.progress.processed_urls}
-                          max={job.progress.discovered_urls}
-                          label="Progress"
-                          className="mb-4"
-                        />
+                        <div className="mb-4">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm text-[var(--text-muted)]">
+                              {job.status === "in_progress" ? "Crawling..." : "Completed"}
+                            </span>
+                            <span className="text-sm font-medium text-[var(--text-primary)]">
+                              {job.progress.processed_urls} / {job.progress.discovered_urls} pages
+                            </span>
+                          </div>
+                          <ProgressBar
+                            value={job.progress.processed_urls}
+                            max={job.progress.discovered_urls || 1}
+                          />
+                        </div>
                       )}
 
+                      {/* Stats grid */}
                       <StatsGrid columns={4}>
                         <StatItem label="Discovered" value={job.progress.discovered_urls} />
                         <StatItem label="Processed" value={job.progress.processed_urls} />
@@ -540,24 +553,12 @@ export function KnowledgeBaseDetail() {
                         <StatItem label="Avg/Page" value={formatDuration(job.timing.avg_page_duration_ms)} />
                       </StatsGrid>
 
+                      {/* Error message */}
                       {job.error_message && (
                         <AlertBanner message={job.error_message} variant="error" className="mt-4" />
                       )}
 
-                      {(job.status === "in_progress" || crawlEvents[job.job_id]?.length > 0) && (
-                        <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
-                          <ActivityLogHeader
-                            eventCount={crawlEvents[job.job_id]?.length || 0}
-                            isStreaming={isStreaming && job.status === "in_progress"}
-                          />
-                          <ActivityLog
-                            events={crawlEvents[job.job_id] || []}
-                            maxHeight="300px"
-                            className="mt-2 border border-[var(--border-subtle)] rounded-lg bg-[var(--bg-primary)]"
-                          />
-                        </div>
-                      )}
-
+                      {/* Configuration */}
                       <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
                         <p className="text-xs text-[var(--text-muted)] mb-2">Configuration</p>
                         <PillGroup>

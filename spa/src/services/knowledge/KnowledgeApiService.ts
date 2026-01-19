@@ -4,7 +4,6 @@
  * Handles all API communication for Knowledge Base features including:
  * - Knowledge Base CRUD
  * - Crawl Job management
- * - Crawl progress streaming (SSE)
  * - Search
  */
 
@@ -19,7 +18,6 @@ import type {
   CrawlStep,
   CrawledPage,
   SearchResponse,
-  CrawlEvent,
 } from "../../types/knowledge";
 
 class KnowledgeApiService {
@@ -162,80 +160,6 @@ class KnowledgeApiService {
     return httpClient.get<CrawledPage[]>(
       `/knowledge-bases/${kbId}/crawl-jobs/${jobId}/pages?limit=${limit}`
     );
-  }
-
-  // ===========================================================================
-  // SSE Streaming
-  // ===========================================================================
-
-  /**
-   * Stream crawl job progress updates via SSE (polls database)
-   * @param cursor Optional cursor for resuming from last seen step
-   * @returns EventSource that emits CrawlEvent objects
-   */
-  streamCrawlProgress(
-    kbId: string,
-    jobId: string,
-    onEvent: (event: CrawlEvent) => void,
-    onError?: (error: Event) => void,
-    cursor?: string
-  ): EventSource {
-    const baseUrl =
-      import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-    const token = localStorage.getItem("auth_token");
-
-    const params = new URLSearchParams();
-    if (token) params.set("token", token);
-    if (cursor) params.set("cursor", cursor);
-
-    const queryString = params.toString();
-    const url = `${baseUrl}/knowledge-bases/${kbId}/crawl-jobs/${jobId}/stream${
-      queryString ? `?${queryString}` : ""
-    }`;
-
-    const eventSource = new EventSource(url);
-
-    const eventTypes = [
-      "connected",
-      "JOB_STARTED",
-      "JOB_PROGRESS",
-      "JOB_CHECKPOINT",
-      "JOB_COMPLETED",
-      "JOB_FAILED",
-      "URL_DISCOVERED",
-      "URL_SKIPPED",
-      "PAGE_FETCH_START",
-      "PAGE_FETCH_COMPLETE",
-      "PAGE_FETCH_ERROR",
-      "PAGE_PARSE_START",
-      "PAGE_PARSE_COMPLETE",
-      "PAGE_CHUNK_START",
-      "PAGE_CHUNK_COMPLETE",
-      "PAGE_EMBED_START",
-      "PAGE_EMBED_COMPLETE",
-      "PAGE_INGEST_START",
-      "PAGE_INGEST_COMPLETE",
-      "PAGE_ERROR",
-    ];
-
-    eventTypes.forEach((eventType) => {
-      eventSource.addEventListener(eventType, (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(e.data) as CrawlEvent;
-          onEvent(data);
-        } catch (err) {
-          console.error("Failed to parse SSE event:", err);
-        }
-      });
-    });
-
-    eventSource.onerror = (e) => {
-      if (onError) {
-        onError(e);
-      }
-    };
-
-    return eventSource;
   }
 
   // ===========================================================================
