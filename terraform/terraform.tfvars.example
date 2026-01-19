@@ -1,0 +1,5 @@
+google_client_id     = "your-google-client-id.apps.googleusercontent.com"
+google_client_secret = "your-google-client-secret"
+jwt_secret           = "your-jwt-secret-base64-encoded"
+frontend_url         = "https://your-domain.com"
+widget_cdn_domain    = "cdn.your-domain.com"

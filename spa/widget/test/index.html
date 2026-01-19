@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Widget Test Page</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      line-height: 1.6;
+      color: #333;
+    }
+    h1 {
+      color: #6366f1;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+    code {
+      font-family: 'SF Mono', 'Monaco', monospace;
+      font-size: 14px;
+    }
+    .note {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 12px 16px;
+      margin: 16px 0;
+      border-radius: 0 8px 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>InnomightLabs Chat Widget Test</h1>
+
+  <p>This page demonstrates the embeddable chat widget. Look for the chat bubble in the bottom-right corner.</p>
+
+  <div class="note">
+    <strong>Note:</strong> For local testing, you'll need:
+    <ol>
+      <li>Start the API backend: <code>cd api && uv run uvicorn main:app --reload</code></li>
+      <li>Create an agent and generate an API key via the dashboard</li>
+      <li>Update the <code>apiKey</code> below with your generated key</li>
+      <li>Serve this test page: <code>cd spa/widget && npx serve test</code></li>
+    </ol>
+  </div>
+
+  <h2>Usage</h2>
+  <pre><code>&lt;script src="widget.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  InnomightChat.init({
+    apiKey: 'pk_live_your_api_key_here',
+    position: 'bottom-right',  // or 'bottom-left'
+    theme: 'light',            // or 'dark'
+    primaryColor: '#6366f1',   // optional custom color
+    placeholder: 'Type a message...'
+  });
+&lt;/script&gt;</code></pre>
+
+  <h2>API Methods</h2>
+  <ul>
+    <li><code>InnomightChat.init(config)</code> - Initialize the widget</li>
+    <li><code>InnomightChat.open()</code> - Open the chat window</li>
+    <li><code>InnomightChat.close()</code> - Close the chat window</li>
+    <li><code>InnomightChat.destroy()</code> - Remove the widget</li>
+  </ul>
+
+  <h2>Configuration Options</h2>
+  <table style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Option</th>
+      <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Type</th>
+      <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd;">Description</th>
+    </tr>
+    <tr>
+      <td style="padding: 8px;"><code>apiKey</code></td>
+      <td style="padding: 8px;">string</td>
+      <td style="padding: 8px;">Required. Your public API key (pk_live_xxx)</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px;"><code>apiUrl</code></td>
+      <td style="padding: 8px;">string</td>
+      <td style="padding: 8px;">API base URL (defaults to production)</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px;"><code>position</code></td>
+      <td style="padding: 8px;">string</td>
+      <td style="padding: 8px;">'bottom-right' or 'bottom-left'</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px;"><code>theme</code></td>
+      <td style="padding: 8px;">string</td>
+      <td style="padding: 8px;">'light' or 'dark'</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px;"><code>primaryColor</code></td>
+      <td style="padding: 8px;">string</td>
+      <td style="padding: 8px;">Hex color for buttons and accents</td>
+    </tr>
+    <tr>
+      <td style="padding: 8px;"><code>placeholder</code></td>
+      <td style="padding: 8px;">string</td>
+      <td style="padding: 8px;">Input field placeholder text</td>
+    </tr>
+  </table>
+
+  <!-- Widget script -->
+  <script src="../dist/widget.js"></script>
+  <script>
+    // Initialize widget with test config
+    // Replace with your actual API key for testing
+    InnomightChat.init({
+      apiKey: 'pk_live_YOUR_API_KEY_HERE',  // Replace with your API key
+      apiUrl: 'http://localhost:8000',  // Local development
+      position: 'bottom-right',
+      theme: 'light',
+      placeholder: 'Ask me anything...'
+    });
+  </script>
+</body>
+</html>

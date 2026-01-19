@@ -24,13 +24,13 @@ class GoogleOAuth:
         self.client_secret = settings.google_client_secret
         self.redirect_uri = settings.google_redirect_uri
 
-    def get_authorization_url(self, state: str | None = None) -> tuple[str, str]:
+    def get_authorization_url(self, state: str | None = None, redirect_uri: str | None = None) -> tuple[str, str]:
         if state is None:
             state = secrets.token_urlsafe(32)
 
         params = {
             "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
+            "redirect_uri": redirect_uri or self.redirect_uri,
             "response_type": "code",
             "scope": " ".join(self.SCOPES),
             "access_type": "offline",
@@ -42,7 +42,7 @@ class GoogleOAuth:
         log.debug(f"Authorization URL: {url}")
         return url, state
 
-    async def exchange_code_for_tokens(self, code: str) -> dict[str, Any]:
+    async def exchange_code_for_tokens(self, code: str, redirect_uri: str | None = None) -> dict[str, Any]:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 self.TOKEN_URL,
@@ -51,7 +51,7 @@ class GoogleOAuth:
                     "client_secret": self.client_secret,
                     "code": code,
                     "grant_type": "authorization_code",
-                    "redirect_uri": self.redirect_uri,
+                    "redirect_uri": redirect_uri or self.redirect_uri,
                 },
             )
             response.raise_for_status()

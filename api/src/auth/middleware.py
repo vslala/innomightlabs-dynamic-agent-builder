@@ -34,6 +34,9 @@ PUBLIC_PATHS = {
     "/redoc",
 }
 
+# Path prefixes that use different authentication (not JWT)
+WIDGET_PATH_PREFIX = "/widget"
+
 
 def decode_token_without_verification(token: str) -> Optional[dict[str, Any]]:
     """Decode JWT token without verifying expiration (to get user email)."""
@@ -98,6 +101,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         # Skip auth for public paths
         if request.url.path in PUBLIC_PATHS:
+            return await call_next(request)
+
+        # Skip auth for widget routes (handled by WidgetAuthMiddleware)
+        if request.url.path.startswith(WIDGET_PATH_PREFIX):
             return await call_next(request)
 
         # Skip auth for OPTIONS (CORS preflight)

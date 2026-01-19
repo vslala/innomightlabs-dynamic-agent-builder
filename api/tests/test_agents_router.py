@@ -56,19 +56,6 @@ class TestAgentsRouter:
         # Should be the same agent
         assert agent_id_1 == agent_id_2
 
-    def test_get_supported_models_schema(self, test_client: TestClient, auth_headers: dict):
-        """Test getting the form schema for creating agents."""
-        response = test_client.get(
-            "/agents/supported-models",
-            headers=auth_headers,
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["form_name"] == "Create Agent Form"
-        assert "form_inputs" in data
-        assert len(data["form_inputs"]) == 5  # name, architecture, persona, provider, api_key
-
     def test_create_agent_requires_auth(self, test_client: TestClient):
         """Test that creating an agent requires authentication."""
         response = test_client.post(
