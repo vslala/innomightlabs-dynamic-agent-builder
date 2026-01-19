@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Bot, ChevronLeft, Pencil, Plus, Trash2, ChevronDown, ChevronRight, Database, Lock, Key, Copy, Check, Eye, EyeOff, Globe } from "lucide-react";
+import { Bot, ChevronLeft, Pencil, Plus, Trash2, ChevronDown, ChevronRight, Database, Lock, Key, Copy, Check, Eye, EyeOff, Globe, BookOpen, Link2, Unlink } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -33,6 +33,8 @@ import {
   agentApiService,
   type AgentResponse,
 } from "../../services/agents/AgentApiService";
+import { knowledgeApiService } from "../../services/knowledge/KnowledgeApiService";
+import type { KnowledgeBase } from "../../types/knowledge";
 import type { FormSchema } from "../../types/form";
 
 export function AgentDetail() {
@@ -82,6 +84,17 @@ export function AgentDetail() {
   const [isDeletingKey, setIsDeletingKey] = useState(false);
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
   const [visibleKeyId, setVisibleKeyId] = useState<string | null>(null);
+
+  // Knowledge Bases state
+  const [linkedKBs, setLinkedKBs] = useState<KnowledgeBase[]>([]);
+  const [availableKBs, setAvailableKBs] = useState<KnowledgeBase[]>([]);
+  const [loadingKBs, setLoadingKBs] = useState(false);
+  const [isLinkKBDialogOpen, setIsLinkKBDialogOpen] = useState(false);
+  const [selectedKBToLink, setSelectedKBToLink] = useState<string>("");
+  const [isLinkingKB, setIsLinkingKB] = useState(false);
+  const [linkKBError, setLinkKBError] = useState<string | null>(null);
+  const [unlinkingKB, setUnlinkingKB] = useState<KnowledgeBase | null>(null);
+  const [isUnlinkingKB, setIsUnlinkingKB] = useState(false);
 
   const loadAgent = async () => {
     if (!agentId) return;
@@ -294,11 +307,76 @@ export function AgentDetail() {
     setVisibleKeyId((prev) => (prev === keyId ? null : keyId));
   };
 
+  // Knowledge Base handlers
+  const loadLinkedKBs = async () => {
+    if (!agentId) return;
+    setLoadingKBs(true);
+    try {
+      const kbs = await knowledgeApiService.listAgentKnowledgeBases(agentId);
+      setLinkedKBs(kbs);
+    } catch (err) {
+      console.error("Error loading linked knowledge bases:", err);
+    } finally {
+      setLoadingKBs(false);
+    }
+  };
+
+  const loadAvailableKBs = async () => {
+    try {
+      const allKBs = await knowledgeApiService.listKnowledgeBases();
+      // Filter out already linked KBs
+      const linkedIds = new Set(linkedKBs.map((kb) => kb.kb_id));
+      const available = allKBs.filter((kb) => !linkedIds.has(kb.kb_id));
+      setAvailableKBs(available);
+    } catch (err) {
+      console.error("Error loading available knowledge bases:", err);
+    }
+  };
+
+  const handleOpenLinkDialog = async () => {
+    setLinkKBError(null);
+    setSelectedKBToLink("");
+    await loadAvailableKBs();
+    setIsLinkKBDialogOpen(true);
+  };
+
+  const handleLinkKB = async () => {
+    if (!agentId || !selectedKBToLink) return;
+    setIsLinkingKB(true);
+    setLinkKBError(null);
+    try {
+      await knowledgeApiService.linkKnowledgeBaseToAgent(agentId, selectedKBToLink);
+      setIsLinkKBDialogOpen(false);
+      setSelectedKBToLink("");
+      loadLinkedKBs();
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to link knowledge base";
+      setLinkKBError(errorMessage);
+    } finally {
+      setIsLinkingKB(false);
+    }
+  };
+
+  const handleUnlinkKB = async () => {
+    if (!agentId || !unlinkingKB) return;
+    setIsUnlinkingKB(true);
+    try {
+      await knowledgeApiService.unlinkKnowledgeBaseFromAgent(agentId, unlinkingKB.kb_id);
+      setUnlinkingKB(null);
+      setLinkedKBs((prev) => prev.filter((kb) => kb.kb_id !== unlinkingKB.kb_id));
+    } catch (err) {
+      console.error("Error unlinking knowledge base:", err);
+    } finally {
+      setIsUnlinkingKB(false);
+    }
+  };
+
   useEffect(() => {
     loadAgent();
     loadUpdateSchema();
     loadMemoryBlocks();
     loadApiKeys();
+    loadLinkedKBs();
   }, [agentId]);
 
   const handleStartEdit = () => {
@@ -871,6 +949,94 @@ export function AgentDetail() {
         </CardContent>
       </Card>
 
+      {/* Knowledge Bases Section */}
+      <Card>
+        <CardHeader>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <BookOpen style={{ height: "1.25rem", width: "1.25rem", color: "var(--gradient-start)" }} />
+              <CardTitle className="text-lg">Knowledge Bases</CardTitle>
+            </div>
+            <Button size="sm" onClick={handleOpenLinkDialog}>
+              <Link2 style={{ height: "1rem", width: "1rem", marginRight: "0.375rem" }} />
+              Link KB
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+            Link knowledge bases to give this agent access to your crawled content for RAG-powered responses.
+          </p>
+          {loadingKBs ? (
+            <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
+              <div style={{
+                height: "2rem",
+                width: "2rem",
+                animation: "spin 1s linear infinite",
+                borderRadius: "50%",
+                border: "2px solid var(--gradient-start)",
+                borderTopColor: "transparent",
+              }} />
+            </div>
+          ) : linkedKBs.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
+              <BookOpen style={{ height: "3rem", width: "3rem", margin: "0 auto 1rem", opacity: 0.5 }} />
+              <p>No knowledge bases linked</p>
+              <p style={{ fontSize: "0.875rem" }}>Link a knowledge base to enable RAG-powered responses</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {linkedKBs.map((kb) => (
+                <div
+                  key={kb.kb_id}
+                  style={{
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "0.5rem",
+                    padding: "1rem",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+                        <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{kb.name}</span>
+                        <span style={{
+                          fontSize: "0.75rem",
+                          color: kb.status === "active" ? "#10b981" : "var(--text-muted)",
+                          backgroundColor: kb.status === "active" ? "rgba(16, 185, 129, 0.1)" : "var(--bg-tertiary)",
+                          padding: "0.125rem 0.5rem",
+                          borderRadius: "0.25rem",
+                        }}>
+                          {kb.status}
+                        </span>
+                      </div>
+                      {kb.description && (
+                        <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
+                          {kb.description}
+                        </p>
+                      )}
+                      <div style={{ display: "flex", gap: "1rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                        <span>{kb.total_pages} pages</span>
+                        <span>{kb.total_chunks} chunks</span>
+                        <span>{kb.total_vectors} vectors</span>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      style={{ color: "#f87171", height: "2rem", width: "2rem" }}
+                      onClick={() => setUnlinkingKB(kb)}
+                      title="Unlink knowledge base"
+                    >
+                      <Unlink style={{ height: "0.875rem", width: "0.875rem" }} />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Create Block Dialog */}
       <Dialog open={isCreateBlockDialogOpen} onOpenChange={setIsCreateBlockDialogOpen}>
         <DialogContent>
@@ -1065,6 +1231,109 @@ export function AgentDetail() {
             </Button>
             <Button variant="destructive" onClick={handleDeleteApiKey} disabled={isDeletingKey}>
               {isDeletingKey ? "Deleting..." : "Delete Key"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Link Knowledge Base Dialog */}
+      <Dialog open={isLinkKBDialogOpen} onOpenChange={setIsLinkKBDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Link Knowledge Base</DialogTitle>
+            <DialogDescription>
+              Select a knowledge base to link to this agent. The agent will be able to search and retrieve content from linked knowledge bases.
+            </DialogDescription>
+          </DialogHeader>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {linkKBError && (
+              <div style={{
+                padding: "0.75rem",
+                borderRadius: "0.5rem",
+                backgroundColor: "rgba(239, 68, 68, 0.1)",
+                border: "1px solid rgba(239, 68, 68, 0.2)",
+                color: "#f87171",
+                fontSize: "0.875rem",
+              }}>
+                {linkKBError}
+              </div>
+            )}
+            {availableKBs.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "1rem", color: "var(--text-muted)" }}>
+                <BookOpen style={{ height: "2rem", width: "2rem", margin: "0 auto 0.5rem", opacity: 0.5 }} />
+                <p style={{ fontSize: "0.875rem" }}>No knowledge bases available to link</p>
+                <p style={{ fontSize: "0.75rem" }}>
+                  Create a knowledge base first, or all your knowledge bases are already linked.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                <Label>Select Knowledge Base</Label>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", maxHeight: "15rem", overflowY: "auto" }}>
+                  {availableKBs.map((kb) => (
+                    <div
+                      key={kb.kb_id}
+                      onClick={() => setSelectedKBToLink(kb.kb_id)}
+                      style={{
+                        border: selectedKBToLink === kb.kb_id
+                          ? "2px solid var(--gradient-start)"
+                          : "1px solid var(--border-subtle)",
+                        borderRadius: "0.5rem",
+                        padding: "0.75rem",
+                        cursor: "pointer",
+                        backgroundColor: selectedKBToLink === kb.kb_id
+                          ? "rgba(var(--gradient-start-rgb), 0.05)"
+                          : "transparent",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <div style={{ fontWeight: 500, color: "var(--text-primary)", marginBottom: "0.25rem" }}>
+                        {kb.name}
+                      </div>
+                      {kb.description && (
+                        <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>
+                          {kb.description}
+                        </p>
+                      )}
+                      <div style={{ display: "flex", gap: "0.75rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                        <span>{kb.total_pages} pages</span>
+                        <span>{kb.total_chunks} chunks</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsLinkKBDialogOpen(false)} disabled={isLinkingKB}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleLinkKB}
+              disabled={!selectedKBToLink || isLinkingKB || availableKBs.length === 0}
+            >
+              {isLinkingKB ? "Linking..." : "Link Knowledge Base"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unlink Knowledge Base Dialog */}
+      <Dialog open={!!unlinkingKB} onOpenChange={() => setUnlinkingKB(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unlink Knowledge Base</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to unlink "{unlinkingKB?.name}" from this agent? The agent will no longer be able to access content from this knowledge base.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnlinkingKB(null)} disabled={isUnlinkingKB}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleUnlinkKB} disabled={isUnlinkingKB}>
+              {isUnlinkingKB ? "Unlinking..." : "Unlink"}
             </Button>
           </DialogFooter>
         </DialogContent>

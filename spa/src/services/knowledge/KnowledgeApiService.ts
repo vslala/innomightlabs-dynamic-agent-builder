@@ -178,6 +178,50 @@ class KnowledgeApiService {
       `/knowledge-bases/${kbId}/search?query=${encodeURIComponent(query)}&top_k=${topK}`
     );
   }
+
+  // ===========================================================================
+  // Agent Knowledge Base Links
+  // ===========================================================================
+
+  /**
+   * Link a knowledge base to an agent
+   */
+  async linkKnowledgeBaseToAgent(
+    agentId: string,
+    kbId: string
+  ): Promise<{ message: string; kb_id: string; agent_id: string; linked_at: string }> {
+    return httpClient.post(`/agents/${agentId}/knowledge-bases?kb_id=${kbId}`);
+  }
+
+  /**
+   * List knowledge bases linked to an agent
+   */
+  async listAgentKnowledgeBases(agentId: string): Promise<KnowledgeBase[]> {
+    return httpClient.get<KnowledgeBase[]>(`/agents/${agentId}/knowledge-bases`);
+  }
+
+  /**
+   * Unlink a knowledge base from an agent
+   */
+  async unlinkKnowledgeBaseFromAgent(
+    agentId: string,
+    kbId: string
+  ): Promise<void> {
+    return httpClient.delete(`/agents/${agentId}/knowledge-bases/${kbId}`);
+  }
+
+  /**
+   * Search across all knowledge bases linked to an agent
+   */
+  async searchAgentKnowledgeBases(
+    agentId: string,
+    query: string,
+    topK = 5
+  ): Promise<SearchResponse> {
+    return httpClient.post<SearchResponse>(
+      `/agents/${agentId}/knowledge-search?query=${encodeURIComponent(query)}&top_k=${topK}`
+    );
+  }
 }
 
 export const knowledgeApiService = new KnowledgeApiService();
