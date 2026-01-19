@@ -4,19 +4,14 @@
   <meta charset="UTF-8">
   <title>Redirecting...</title>
   <script>
-    // Single Page App redirect for GitHub Pages
+    // Single Page App redirect for GitHub Pages with custom domain
     // Redirects to index.html with the original path encoded in the URL
     (function() {
       var location = window.location;
-      // Get the repo name segment (e.g., /innomightlabs-dynamic-agent-builder)
-      var pathSegments = location.pathname.split('/');
-      var repoName = '/' + pathSegments[1]; // e.g., /innomightlabs-dynamic-agent-builder
+      var path = location.pathname;
 
-      // Get the route path (everything after the repo name)
-      var routePath = '/' + pathSegments.slice(2).join('/'); // e.g., /login-success
-
-      // Build redirect URL with path info in query string
-      var redirectUrl = repoName + '/?redirect=' + encodeURIComponent(routePath + location.search + location.hash);
+      // Redirect to root with path info in query string
+      var redirectUrl = '/?redirect=' + encodeURIComponent(path + location.search + location.hash);
 
       location.replace(redirectUrl);
     })();

@@ -16,7 +16,7 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- SPA redirect handler for GitHub Pages -->
+    <!-- SPA redirect handler for GitHub Pages with custom domain -->
     <script>
       (function() {
         // Check for redirect parameter in URL (set by 404.html)
@@ -24,10 +24,8 @@
         var redirectPath = params.get('redirect');
 
         if (redirectPath) {
-          // Get the base path (e.g., /innomightlabs-dynamic-agent-builder)
-          var basePath = window.location.pathname.replace(/\/$/, '');
-          // Build the full URL with basename + redirect path
-          var newUrl = basePath + decodeURIComponent(redirectPath);
+          // With custom domain, redirect path is the full path
+          var newUrl = decodeURIComponent(redirectPath);
           // Replace the URL without the redirect parameter
           history.replaceState(null, '', newUrl);
         }
