@@ -16,7 +16,8 @@ log = logging.getLogger(__name__)
 
 
 # Default model name when none specified
-DEFAULT_MODEL_NAME = "claude-sonnet-4"
+# Must be a model available in eu-west-2
+DEFAULT_MODEL_NAME = "claude-3-7-sonnet"
 
 
 class BedrockProvider(LLMProvider):
@@ -55,9 +56,9 @@ class BedrockProvider(LLMProvider):
             log.warning(f"Model '{model_name}' not found, using default: {available_models[0].model_name}")
             return available_models[0].model_id
 
-        # Last resort fallback
+        # Last resort fallback - must be a model that exists in eu-west-2
         log.warning(f"No models available, using hardcoded default")
-        return "us.anthropic.claude-sonnet-4-20250514-v1:0"
+        return "anthropic.claude-3-7-sonnet-20250219-v1:0"
 
     async def stream_response(
         self,

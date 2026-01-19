@@ -64,3 +64,23 @@ resource "aws_lambda_function" "api" {
     ignore_changes = [image_uri]
   }
 }
+
+# Bedrock permissions for Lambda (required for model listing and inference)
+resource "aws_iam_role_policy" "lambda_bedrock" {
+  name = "${var.project_name}-lambda-bedrock"
+  role = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:ListFoundationModels",
+          "bedrock:GetFoundationModel"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}

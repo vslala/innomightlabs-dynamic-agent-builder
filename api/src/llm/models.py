@@ -28,11 +28,16 @@ class ModelsService:
 
     # Model name mappings for cleaner display
     MODEL_DISPLAY_NAMES = {
+        # Newer models (may not be available in all regions)
         "claude-sonnet-4": "Claude Sonnet 4 (Latest)",
         "claude-opus-4": "Claude Opus 4",
         "claude-3-5-haiku": "Claude 3.5 Haiku (Fast)",
         "claude-3-5-sonnet": "Claude 3.5 Sonnet v2",
+        # Models available in eu-west-2
         "claude-3-7-sonnet": "Claude 3.7 Sonnet",
+        "claude-3-sonnet": "Claude 3 Sonnet",
+        "claude-3-haiku": "Claude 3 Haiku (Fast)",
+        "claude-3-opus": "Claude 3 Opus",
     }
 
     def get_bedrock_models(
@@ -100,13 +105,16 @@ class ModelsService:
                     provider="bedrock",
                 ))
 
-            # Sort by preference (latest first)
+            # Sort by preference (best available in eu-west-2 first)
             preference_order = [
+                "claude-3-7-sonnet",   # Best available in eu-west-2
                 "claude-sonnet-4",
                 "claude-opus-4",
-                "claude-3-5-haiku",
                 "claude-3-5-sonnet",
-                "claude-3-7-sonnet",
+                "claude-3-5-haiku",
+                "claude-3-sonnet",
+                "claude-3-haiku",
+                "claude-3-opus",
             ]
 
             def sort_key(m: ModelInfo) -> int:
@@ -157,29 +165,24 @@ class ModelsService:
 
     def _get_fallback_models(self) -> list[ModelInfo]:
         """Return fallback model list when API is unavailable."""
+        # Fallback to models available in eu-west-2
         return [
             ModelInfo(
-                model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
-                model_name="claude-sonnet-4",
-                display_name="Claude Sonnet 4 (Latest)",
+                model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+                model_name="claude-3-7-sonnet",
+                display_name="Claude 3.7 Sonnet",
                 provider="bedrock",
             ),
             ModelInfo(
-                model_id="us.anthropic.claude-opus-4-20250514-v1:0",
-                model_name="claude-opus-4",
-                display_name="Claude Opus 4",
+                model_id="anthropic.claude-3-sonnet-20230229-v1:0",
+                model_name="claude-3-sonnet",
+                display_name="Claude 3 Sonnet",
                 provider="bedrock",
             ),
             ModelInfo(
-                model_id="us.anthropic.claude-3-5-haiku-20241022-v1:0",
-                model_name="claude-3-5-haiku",
-                display_name="Claude 3.5 Haiku (Fast)",
-                provider="bedrock",
-            ),
-            ModelInfo(
-                model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-                model_name="claude-3-5-sonnet",
-                display_name="Claude 3.5 Sonnet v2",
+                model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                model_name="claude-3-haiku",
+                display_name="Claude 3 Haiku (Fast)",
                 provider="bedrock",
             ),
         ]

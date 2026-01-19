@@ -6,11 +6,11 @@ from src.form_models import Form, FormInput, FormInputType, SelectOption
 
 
 # Fallback model options if dynamic fetch fails
+# These must be models available in eu-west-2
 DEFAULT_MODEL_OPTIONS = [
-    SelectOption(value="claude-sonnet-4", label="Claude Sonnet 4 (Latest)"),
-    SelectOption(value="claude-opus-4", label="Claude Opus 4"),
-    SelectOption(value="claude-3-5-haiku", label="Claude 3.5 Haiku (Fast)"),
-    SelectOption(value="claude-3-5-sonnet", label="Claude 3.5 Sonnet v2"),
+    SelectOption(value="claude-3-7-sonnet", label="Claude 3.7 Sonnet"),
+    SelectOption(value="claude-3-sonnet", label="Claude 3 Sonnet"),
+    SelectOption(value="claude-3-haiku", label="Claude 3 Haiku (Fast)"),
 ]
 
 # Session timeout options
