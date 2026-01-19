@@ -55,3 +55,60 @@ resource "aws_lambda_permission" "api_gateway" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.api.execution_arn}/*/*"
 }
+
+# =============================================================================
+# Custom Domain for API (api.innomightlabs.com)
+# =============================================================================
+
+# ACM Certificate for API domain (in same region as API Gateway)
+resource "aws_acm_certificate" "api" {
+  count = var.api_domain != "" ? 1 : 0
+
+  domain_name       = var.api_domain
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name        = "${var.project_name}-api-cert"
+    Environment = var.environment
+  }
+}
+
+# Certificate validation
+resource "aws_acm_certificate_validation" "api" {
+  count = var.api_domain != "" ? 1 : 0
+
+  certificate_arn = aws_acm_certificate.api[0].arn
+
+  # DNS validation record must be added manually to Namecheap
+}
+
+# API Gateway custom domain
+resource "aws_apigatewayv2_domain_name" "api" {
+  count = var.api_domain != "" ? 1 : 0
+
+  domain_name = var.api_domain
+
+  domain_name_configuration {
+    certificate_arn = aws_acm_certificate_validation.api[0].certificate_arn
+    endpoint_type   = "REGIONAL"
+    security_policy = "TLS_1_2"
+  }
+
+  tags = {
+    Name        = "${var.project_name}-api-domain"
+    Environment = var.environment
+  }
+}
+
+# API mapping - map custom domain to API
+resource "aws_apigatewayv2_api_mapping" "api" {
+  count = var.api_domain != "" ? 1 : 0
+
+  api_id      = aws_apigatewayv2_api.api.id
+  domain_name = aws_apigatewayv2_domain_name.api[0].id
+  stage       = aws_apigatewayv2_stage.default.id
+}

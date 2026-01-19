@@ -45,3 +45,9 @@ variable "widget_cdn_domain" {
   type        = string
   default     = ""
 }
+
+variable "api_domain" {
+  description = "Custom domain for API (e.g., api.innomightlabs.com)"
+  type        = string
+  default     = ""
+}

@@ -49,12 +49,40 @@ output "widget_custom_domain" {
   value       = var.widget_cdn_domain != "" ? var.widget_cdn_domain : null
 }
 
-# Certificate validation DNS record (add this to GoDaddy)
+# Certificate validation DNS record (add this to Namecheap)
 output "widget_cert_validation_record" {
-  description = "DNS record to add in GoDaddy for certificate validation"
+  description = "DNS record to add in Namecheap for widget certificate validation"
   value = var.widget_cdn_domain != "" ? {
     name  = tolist(aws_acm_certificate.widget[0].domain_validation_options)[0].resource_record_name
     type  = tolist(aws_acm_certificate.widget[0].domain_validation_options)[0].resource_record_type
     value = tolist(aws_acm_certificate.widget[0].domain_validation_options)[0].resource_record_value
   } : null
+}
+
+# =============================================================================
+# API Custom Domain Outputs
+# =============================================================================
+
+output "api_custom_domain" {
+  description = "Custom domain for API (if configured)"
+  value       = var.api_domain != "" ? var.api_domain : null
+}
+
+output "api_domain_target" {
+  description = "Target domain for API CNAME record (add this to Namecheap)"
+  value       = var.api_domain != "" ? aws_apigatewayv2_domain_name.api[0].domain_name_configuration[0].target_domain_name : null
+}
+
+output "api_cert_validation_record" {
+  description = "DNS record to add in Namecheap for API certificate validation"
+  value = var.api_domain != "" ? {
+    name  = tolist(aws_acm_certificate.api[0].domain_validation_options)[0].resource_record_name
+    type  = tolist(aws_acm_certificate.api[0].domain_validation_options)[0].resource_record_type
+    value = tolist(aws_acm_certificate.api[0].domain_validation_options)[0].resource_record_value
+  } : null
+}
+
+output "api_url" {
+  description = "API URL (custom domain if configured, otherwise API Gateway URL)"
+  value       = var.api_domain != "" ? "https://${var.api_domain}" : aws_apigatewayv2_api.api.api_endpoint
 }
