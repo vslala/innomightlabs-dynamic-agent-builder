@@ -146,8 +146,32 @@ RECALL_CONVERSATION = {
     }
 }
 
+KNOWLEDGE_BASE_SEARCH = {
+    "name": "knowledge_base_search",
+    "description": (
+        "Search the linked knowledge bases for relevant information. Use this tool "
+        "when the user asks questions that might be answered by documentation, FAQs, "
+        "product information, or other content that has been crawled into the knowledge base. "
+        "Returns the most relevant text chunks with their source URLs."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The search query - a question or descriptive sentence about what you're looking for"
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "Number of results to return (default: 3, max: 10)",
+                "default": 3
+            }
+        },
+        "required": ["query"]
+    }
+}
 
-# All native tools for memGPT architecture
+
 NATIVE_TOOLS = [
     CORE_MEMORY_READ,
     CORE_MEMORY_APPEND,
@@ -159,5 +183,8 @@ NATIVE_TOOLS = [
     RECALL_CONVERSATION,
 ]
 
-# Tool name to definition mapping
-NATIVE_TOOLS_MAP = {tool["name"]: tool for tool in NATIVE_TOOLS}
+KNOWLEDGE_TOOLS = [
+    KNOWLEDGE_BASE_SEARCH,
+]
+
+NATIVE_TOOLS_MAP = {tool["name"]: tool for tool in NATIVE_TOOLS + KNOWLEDGE_TOOLS}

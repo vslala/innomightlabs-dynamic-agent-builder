@@ -48,6 +48,7 @@ dependencies = [
     { name = "httpx" },
     { name = "lxml" },
     { name = "mangum" },
+    { name = "markdownify" },
     { name = "mypy" },
     { name = "pinecone" },
     { name = "pyjwt" },
@@ -75,6 +76,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "lxml", specifier = ">=5.0.0" },
     { name = "mangum", specifier = ">=0.20.0" },
+    { name = "markdownify", specifier = ">=0.14.1" },
     { name = "moto", extras = ["dynamodb"], marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.19.1" },
     { name = "pinecone", specifier = ">=5.0.0" },
@@ -598,6 +600,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/04/76/03462d8f745a12b40d96b674c6d9c4182594571edc28b47d6ddd9a819ed5/mangum-0.20.0.tar.gz", hash = "sha256:0050447b60d832dcc45cc9d917c9e0f4e9174e2d9630f621d567510d51d286bd", size = 128418, upload-time = "2025-12-27T08:48:37.423Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1d/67/9398a64b5a97a9125fac1b168917cfa7f9d81eddc23bf50dacd4ff999aed/mangum-0.20.0-py3-none-any.whl", hash = "sha256:c945eadc41916f73b6086c0c69935ef4b1d23d27de8dc74ed47b20e204335407", size = 18024, upload-time = "2025-12-27T08:48:35.686Z" },
+]
+
+[[package]]
+name = "markdownify"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3f/bc/c8c8eea5335341306b0fa7e1cb33c5e1c8d24ef70ddd684da65f41c49c92/markdownify-1.2.2.tar.gz", hash = "sha256:b274f1b5943180b031b699b199cbaeb1e2ac938b75851849a31fd0c3d6603d09", size = 18816, upload-time = "2025-11-16T19:21:18.565Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/43/ce/f1e3e9d959db134cedf06825fae8d5b294bd368aacdd0831a3975b7c4d55/markdownify-1.2.2-py3-none-any.whl", hash = "sha256:3f02d3cc52714084d6e589f70397b6fc9f2f3a8531481bf35e8cc39f975e186a", size = 15724, upload-time = "2025-11-16T19:21:17.622Z" },
 ]
 
 [[package]]

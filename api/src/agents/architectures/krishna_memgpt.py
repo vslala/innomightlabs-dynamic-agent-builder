@@ -21,7 +21,8 @@ from src.memory import MemoryRepository, CoreMemory
 from src.messages.models import Message, Attachment
 from src.messages.repository import MessageRepository
 from src.settings.repository import ProviderSettingsRepository
-from src.tools.native import NATIVE_TOOLS, NativeToolHandler
+from src.tools.native import NATIVE_TOOLS, KNOWLEDGE_TOOLS, NativeToolHandler
+from src.knowledge.repository import AgentKnowledgeBaseRepository
 
 from .base import AgentArchitecture
 
@@ -57,6 +58,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         self.message_repo = MessageRepository()
         self.memory_repo = MemoryRepository()
         self.provider_settings_repo = ProviderSettingsRepository()
+        self.agent_kb_repo = AgentKnowledgeBaseRepository()
         self.tool_handler = NativeToolHandler(self.memory_repo)
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
 
@@ -86,10 +88,11 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             SSEEvent objects for streaming to the client
         """
         try:
-            # 1. Set conversation context for recall_conversation tool
             self.tool_handler.set_conversation_context(conversation.conversation_id)
 
-            # 2. Ensure memory blocks are initialized
+            linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
+            self.tool_handler.set_knowledge_base_context(linked_kb_ids)
+
             self._ensure_memory_initialized(agent.agent_id)
 
             # 2. Save user message (with attachments if any)
@@ -134,7 +137,9 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
             system_prompt = self._build_system_prompt(agent)
 
-            # Check for capacity warnings
+            if linked_kb_ids:
+                system_prompt += "\n\n" + self._build_kb_instructions(len(linked_kb_ids))
+
             capacity_warnings = self._check_capacity_warnings(agent.agent_id)
             if capacity_warnings:
                 warning_msg = self._build_warning_message(capacity_warnings)
@@ -158,7 +163,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 )
             )
 
-            # 6. Get LLM provider
             yield SSEEvent(
                 event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
                 content="Connecting to AI model...",
@@ -166,15 +170,18 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
             provider = get_llm_provider(agent.agent_provider)
 
-            # 7. Agentic loop with tool execution
+            tools = NATIVE_TOOLS.copy()
+            if linked_kb_ids:
+                tools.extend(KNOWLEDGE_TOOLS)
+
             full_response = ""
             for iteration in range(MAX_TOOL_ITERATIONS):
                 has_tool_calls = False
                 pending_tool_calls = []
-                iteration_text = ""  # Text generated in this iteration
+                iteration_text = ""
 
                 async for event in provider.stream_response(
-                    context, credentials, NATIVE_TOOLS, agent.agent_model
+                    context, credentials, tools, agent.agent_model
                 ): # pyright: ignore[reportGeneralTypeIssues]
                     if event.type == "text":
                         full_response += event.content
@@ -431,3 +438,26 @@ IMPORTANT:
 
         attachments_text = "\n\n".join(attachment_sections)
         return f"{attachments_text}\n\n{content}"
+
+    def _get_linked_kb_ids(self, agent_id: str) -> list[str]:
+        """Get list of knowledge base IDs linked to this agent."""
+        try:
+            links = self.agent_kb_repo.find_kbs_for_agent(agent_id)
+            return [link.kb_id for link in links]
+        except Exception as e:
+            log.warning(f"Failed to load linked KBs for agent {agent_id}: {e}")
+            return []
+
+    def _build_kb_instructions(self, kb_count: int) -> str:
+        """Build instructions for knowledge base search tool."""
+        return f"""<knowledge_base>
+You have access to {kb_count} knowledge base(s) containing documentation, FAQs, and other content.
+
+Use the knowledge_base_search tool when:
+- The user asks about products, features, or services
+- The user needs information that might be in documentation
+- The user asks "how do I..." or "what is..." questions about topics covered in the knowledge base
+- You're unsure about factual information that the knowledge base might contain
+
+The tool will return relevant text chunks with source URLs. Use these to provide accurate, sourced answers.
+</knowledge_base>"""

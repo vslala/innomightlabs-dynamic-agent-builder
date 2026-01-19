@@ -284,6 +284,8 @@ class KnowledgeBase(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
+    ttl: Optional[int] = None  # Unix timestamp for DynamoDB TTL auto-expiration
 
     def model_post_init(self, __context: Any) -> None:
         """Set pinecone_namespace after init if not already set."""
@@ -299,7 +301,7 @@ class KnowledgeBase(BaseModel):
         return f"KnowledgeBase#{self.kb_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        return {
+        item: dict[str, Any] = {
             "pk": self.pk,
             "sk": self.sk,
             "kb_id": self.kb_id,
@@ -313,8 +315,12 @@ class KnowledgeBase(BaseModel):
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
             "entity_type": "KnowledgeBase",
         }
+        if self.ttl is not None:
+            item["ttl"] = self.ttl
+        return item
 
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "KnowledgeBase":
@@ -330,6 +336,8 @@ class KnowledgeBase(BaseModel):
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
+            deleted_at=datetime.fromisoformat(item["deleted_at"]) if item.get("deleted_at") else None,
+            ttl=item.get("ttl"),
         )
 
     def to_response(self) -> KnowledgeBaseResponse:

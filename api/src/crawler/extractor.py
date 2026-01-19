@@ -2,11 +2,12 @@
 HTML content extractor for web pages.
 
 This module fetches web pages and extracts clean, structured content
-suitable for chunking and embedding.
+by converting HTML to Markdown for reliable text extraction.
 """
 
 import httpx
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup, Tag
+from markdownify import markdownify as md
 from dataclasses import dataclass, field
 from typing import Optional
 import logging
@@ -19,7 +20,7 @@ log = logging.getLogger(__name__)
 class ExtractedSection:
     """A section of extracted content with hierarchy info."""
     heading: Optional[str] = None
-    heading_level: int = 0  # 0 = no heading, 1-6 = h1-h6
+    heading_level: int = 0
     content: str = ""
     word_count: int = 0
 
@@ -43,24 +44,31 @@ class ExtractedContent:
 
 
 class ContentExtractor:
-    """Extracts clean content from HTML pages."""
+    """Extracts clean content from HTML pages using HTML-to-Markdown conversion."""
 
-    # Tags to completely remove (including their content)
-    REMOVE_TAGS = {
-        "script", "style", "noscript", "iframe", "svg", "canvas",
-        "nav", "footer", "header", "aside", "form", "button",
-        "input", "select", "textarea", "label",
-    }
+    REMOVE_TAGS = {"script", "style", "noscript", "iframe", "svg", "canvas"}
 
-    # Tags that typically contain navigation/boilerplate
-    BOILERPLATE_CLASSES = {
-        "nav", "navigation", "menu", "sidebar", "footer", "header",
-        "breadcrumb", "pagination", "social", "share", "comment",
-        "advertisement", "ad", "ads", "promo", "banner",
-    }
-
-    # Heading tags
-    HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
+    BOILERPLATE_SELECTORS = [
+        "nav",
+        "footer",
+        "header",
+        "[role='navigation']",
+        "[role='banner']",
+        "[role='contentinfo']",
+        ".sidebar",
+        ".widget",
+        ".advertisement",
+        ".ads",
+        ".social-share",
+        ".share-buttons",
+        ".comments",
+        ".comment-form",
+        ".breadcrumb",
+        ".pagination",
+        ".related-posts",
+        "#sidebar",
+        "#comments",
+    ]
 
     def __init__(
         self,
@@ -92,7 +100,6 @@ class ContentExtractor:
             )
             response.raise_for_status()
 
-            # Check content type
             content_type = response.headers.get("content-type", "")
             if "text/html" not in content_type:
                 log.warning(f"Non-HTML content type for {url}: {content_type}")
@@ -104,7 +111,7 @@ class ContentExtractor:
 
     def extract(self, url: str, html: str) -> ExtractedContent:
         """
-        Extract content from HTML.
+        Extract content from HTML by converting to Markdown.
 
         Args:
             url: The source URL
@@ -115,225 +122,190 @@ class ContentExtractor:
         """
         soup = BeautifulSoup(html, "lxml")
 
-        # Extract metadata
         title = self._extract_title(soup)
         description = self._extract_description(soup)
 
-        # Remove unwanted elements
-        self._remove_unwanted(soup)
+        self._remove_noise(soup)
 
-        # Find main content area
         main_content = self._find_main_content(soup)
 
-        # Extract structured sections
-        sections = self._extract_sections(main_content)
+        if main_content:
+            markdown = self._html_to_markdown(main_content)
+        else:
+            body = soup.find("body")
+            if body:
+                markdown = self._html_to_markdown(body)
+            else:
+                markdown = ""
 
-        # Build full text
-        full_text = self._build_full_text(sections)
+        markdown = self._clean_markdown(markdown)
+
+        sections = self._split_into_sections(markdown)
 
         return ExtractedContent(
             url=url,
             title=title,
             description=description,
-            full_text=full_text,
+            full_text=markdown,
             sections=sections,
-            word_count=len(full_text.split()),
-            content_length=len(full_text),
+            word_count=len(markdown.split()),
+            content_length=len(markdown),
         )
 
     def _extract_title(self, soup: BeautifulSoup) -> str:
         """Extract page title."""
-        # Try <title> tag
         if soup.title and soup.title.string:
             return soup.title.string.strip()
 
-        # Try og:title
         og_title = soup.find("meta", property="og:title")
-        if og_title and og_title.get("content"):
-            return og_title["content"].strip()
+        if og_title:
+            content = og_title.get("content")
+            if content and isinstance(content, str):
+                return content.strip()
 
-        # Try first h1
         h1 = soup.find("h1")
         if h1:
-            return self._get_text(h1).strip()
+            return h1.get_text(strip=True)
 
         return ""
 
     def _extract_description(self, soup: BeautifulSoup) -> str:
         """Extract page description."""
-        # Try meta description
         meta_desc = soup.find("meta", attrs={"name": "description"})
-        if meta_desc and meta_desc.get("content"):
-            return meta_desc["content"].strip()
+        if meta_desc:
+            content = meta_desc.get("content")
+            if content and isinstance(content, str):
+                return content.strip()
 
-        # Try og:description
         og_desc = soup.find("meta", property="og:description")
-        if og_desc and og_desc.get("content"):
-            return og_desc["content"].strip()
+        if og_desc:
+            content = og_desc.get("content")
+            if content and isinstance(content, str):
+                return content.strip()
 
         return ""
 
-    def _remove_unwanted(self, soup: BeautifulSoup) -> None:
-        """Remove unwanted elements from the soup."""
-        # Remove by tag name
+    def _remove_noise(self, soup: BeautifulSoup) -> None:
+        """Remove scripts, styles, and common boilerplate elements."""
         for tag_name in self.REMOVE_TAGS:
             for element in soup.find_all(tag_name):
                 element.decompose()
 
-        # Collect elements to remove first (to avoid modifying while iterating)
-        elements_to_remove = []
-        for element in soup.find_all(True):
-            if element.name is None:
-                continue
-            classes = element.get("class", []) or []
-            element_id = element.get("id", "") or ""
-
-            all_identifiers = " ".join(classes) + " " + element_id
-            all_identifiers = all_identifiers.lower()
-
-            for pattern in self.BOILERPLATE_CLASSES:
-                if pattern in all_identifiers:
-                    elements_to_remove.append(element)
-                    break
-
-        for element in elements_to_remove:
+        for selector in self.BOILERPLATE_SELECTORS:
             try:
-                element.decompose()
+                for element in soup.select(selector):
+                    if not self._is_main_content(element):
+                        element.decompose()
             except Exception:
                 pass
+
+    def _is_main_content(self, element: Tag) -> bool:
+        """Check if element is or contains the main content area."""
+        if element.name in ("main", "article"):
+            return True
+        if element.find("main") or element.find("article"):
+            return True
+        classes_attr = element.get("class")
+        if classes_attr and isinstance(classes_attr, list):
+            class_str = " ".join(str(c) for c in classes_attr).lower()
+            if any(c in class_str for c in ["content", "post", "entry", "article"]):
+                return True
+        return False
 
     def _find_main_content(self, soup: BeautifulSoup) -> Optional[Tag]:
         """Find the main content area of the page."""
         if soup is None:
             return None
 
-        # Try <main> tag
         main = soup.find("main")
         if main:
             return main
 
-        # Try <article> tag
         article = soup.find("article")
         if article:
             return article
 
-        # Try common content class names
-        content_patterns = [
-            {"class_": re.compile(r"(^|\s)(content|main|article|post|entry)(\s|$)", re.I)},
-            {"id": re.compile(r"^(content|main|article|post|entry)$", re.I)},
-            {"role": "main"},
-        ]
+        for selector in [
+            "[role='main']",
+            ".post-content",
+            ".entry-content",
+            ".article-content",
+            ".content",
+            "#content",
+            ".post",
+            ".entry",
+        ]:
+            try:
+                element = soup.select_one(selector)
+                if element:
+                    return element
+            except Exception:
+                pass
 
-        for pattern in content_patterns:
-            element = soup.find("div", **pattern)
-            if element:
-                return element
+        return soup.find("body")
 
-        # Fall back to body
-        body = soup.find("body")
-        return body if body else soup
+    def _html_to_markdown(self, element: Tag) -> str:
+        """Convert HTML element to Markdown."""
+        html_str = str(element)
+        markdown = md(
+            html_str,
+            heading_style="ATX",
+            bullets="-",
+            strip=["a", "img"],
+            newline_style="backslash",
+        )
+        return markdown
 
-    def _extract_sections(self, element: Optional[Tag]) -> list[ExtractedSection]:
-        """Extract content sections based on headings."""
-        if element is None:
-            return []
-
-        sections: list[ExtractedSection] = []
-        current_section = ExtractedSection()
-        current_content: list[str] = []
-
-        def flush_section():
-            """Save current section if it has content."""
-            nonlocal current_section, current_content
-            content = " ".join(current_content).strip()
-            content = self._clean_text(content)
-            if content:
-                current_section.content = content
-                current_section.word_count = len(content.split())
-                sections.append(current_section)
-            current_section = ExtractedSection()
-            current_content = []
-
-        def process_element(elem):
-            """Recursively process an element."""
-            nonlocal current_section, current_content
-
-            if isinstance(elem, NavigableString):
-                text = str(elem).strip()
-                if text:
-                    current_content.append(text)
-                return
-
-            if not isinstance(elem, Tag):
-                return
-
-            if elem.name is None:
-                return
-
-            tag_name = elem.name.lower()
-
-            # Check if this is a heading
-            if tag_name in self.HEADING_TAGS:
-                # Flush previous section
-                flush_section()
-
-                # Start new section with this heading
-                heading_text = self._get_text(elem).strip()
-                heading_level = int(tag_name[1])
-                current_section.heading = heading_text
-                current_section.heading_level = heading_level
-                return
-
-            # Process child elements
-            for child in elem.children:
-                process_element(child)
-
-            # Add line breaks after block elements
-            if tag_name in {"p", "div", "br", "li", "tr"}:
-                current_content.append("\n")
-
-        process_element(element)
-
-        # Flush final section
-        flush_section()
-
-        # If no sections with headings, create one section with all content
-        if not sections:
-            full_text = self._get_text(element)
-            full_text = self._clean_text(full_text)
-            if full_text:
-                sections.append(ExtractedSection(
-                    content=full_text,
-                    word_count=len(full_text.split()),
-                ))
-
-        return sections
-
-    def _get_text(self, element: Tag) -> str:
-        """Get text content from an element."""
-        return element.get_text(separator=" ", strip=True)
-
-    def _clean_text(self, text: str) -> str:
-        """Clean extracted text."""
-        # Normalize whitespace
-        text = re.sub(r"\s+", " ", text)
-
-        # Remove multiple newlines
-        text = re.sub(r"\n\s*\n", "\n\n", text)
-
-        # Strip leading/trailing whitespace
+    def _clean_markdown(self, text: str) -> str:
+        """Clean up the extracted markdown text."""
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r" *\n *", "\n", text)
+        lines = text.split("\n")
+        cleaned_lines = [line.strip() for line in lines]
+        text = "\n".join(cleaned_lines)
+        text = re.sub(r"\n{3,}", "\n\n", text)
         text = text.strip()
-
         return text
 
-    def _build_full_text(self, sections: list[ExtractedSection]) -> str:
-        """Build full text from sections."""
-        parts = []
-        for section in sections:
-            if section.heading:
-                parts.append(f"## {section.heading}")
-            if section.content:
-                parts.append(section.content)
-            parts.append("")  # Empty line between sections
+    def _split_into_sections(self, markdown: str) -> list[ExtractedSection]:
+        """Split markdown into sections based on headings."""
+        if not markdown:
+            return []
 
-        return "\n".join(parts).strip()
+        heading_pattern = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
+        matches = list(heading_pattern.finditer(markdown))
+
+        if not matches:
+            return [ExtractedSection(
+                content=markdown,
+                word_count=len(markdown.split()),
+            )]
+
+        sections = []
+
+        if matches[0].start() > 0:
+            intro_content = markdown[:matches[0].start()].strip()
+            if intro_content:
+                sections.append(ExtractedSection(
+                    content=intro_content,
+                    word_count=len(intro_content.split()),
+                ))
+
+        for i, match in enumerate(matches):
+            heading_level = len(match.group(1))
+            heading_text = match.group(2).strip()
+
+            start = match.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(markdown)
+
+            content = markdown[start:end].strip()
+
+            sections.append(ExtractedSection(
+                heading=heading_text,
+                heading_level=heading_level,
+                content=content,
+                word_count=len(content.split()),
+            ))
+
+        return sections

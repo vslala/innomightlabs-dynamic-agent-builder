@@ -62,6 +62,7 @@ from src.knowledge.repository import (
     AgentKnowledgeBaseRepository,
 )
 from src.knowledge.schemas import get_crawl_config_form, get_create_knowledge_base_form
+from src.knowledge.service import get_knowledge_base_service, KnowledgeBaseService
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +113,10 @@ def get_crawled_page_repository() -> CrawledPageRepository:
 
 def get_agent_kb_repository() -> AgentKnowledgeBaseRepository:
     return AgentKnowledgeBaseRepository()
+
+
+def get_kb_service() -> KnowledgeBaseService:
+    return get_knowledge_base_service()
 
 
 def get_crawler():
@@ -212,12 +217,28 @@ async def update_knowledge_base(
 async def delete_knowledge_base(
     request: Request,
     kb_id: str,
-    repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
+    service: Annotated[KnowledgeBaseService, Depends(get_kb_service)],
 ) -> None:
-    """Soft delete a knowledge base."""
+    """
+    Soft delete a knowledge base.
+
+    This operation:
+    1. Immediately deletes all vectors from Pinecone
+    2. Immediately deletes all content chunks from DynamoDB
+    3. Unlinks the KB from all agents
+    4. Marks the KB as deleted with 30-day TTL for auto-expiration
+    """
     user_email: str = request.state.user_email
-    repo.soft_delete(kb_id, user_email)
-    log.info(f"Soft deleted knowledge base {kb_id} for user {user_email}")
+    result = service.soft_delete(kb_id, user_email)
+
+    if not result.success:
+        raise HTTPException(status_code=404, detail=result.error or "Failed to delete knowledge base")
+
+    log.info(
+        f"Soft deleted knowledge base {kb_id}: "
+        f"chunks={result.chunks_deleted}, vectors={result.vectors_deleted}, "
+        f"agents_unlinked={result.agents_unlinked}"
+    )
 
 
 # =============================================================================

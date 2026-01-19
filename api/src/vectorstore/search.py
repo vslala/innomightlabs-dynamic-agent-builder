@@ -206,7 +206,6 @@ class SemanticSearch:
             for c in chunks:
                 all_chunks[c.chunk_id] = c
 
-        # Build enriched results
         results = []
         for r in filtered_results:
             chunk = all_chunks.get(r.id)
@@ -219,6 +218,17 @@ class SemanticSearch:
                     score=r.score,
                     level=chunk.level,
                     word_count=chunk.word_count,
+                ))
+            else:
+                log.warning(f"Chunk {r.id} not found in DynamoDB for KB {r.metadata.kb_id}")
+                results.append(SearchResult(
+                    chunk_id=r.id,
+                    content="[Content not available - chunk not found in database]",
+                    source_url=r.metadata.source_url,
+                    page_title=r.metadata.page_title,
+                    score=r.score,
+                    level=r.metadata.level,
+                    word_count=r.metadata.word_count,
                 ))
 
         return results

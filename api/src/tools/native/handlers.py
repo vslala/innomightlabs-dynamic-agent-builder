@@ -16,6 +16,7 @@ from src.memory import (
     MemoryBlockDefinition,
 )
 from src.messages.repository import MessageRepository
+from src.vectorstore.search import get_search_service
 
 log = logging.getLogger(__name__)
 
@@ -59,16 +60,22 @@ class NativeToolHandler:
     Provides idempotent operations and capacity warnings.
     """
 
-    RECALL_PAGE_SIZE = 10  # Messages per page for recall_conversation
+    RECALL_PAGE_SIZE = 10
+    KB_SEARCH_MAX_RESULTS = 10
 
     def __init__(self, memory_repo: Optional[MemoryRepository] = None):
         self.memory_repo = memory_repo or MemoryRepository()
         self.message_repo = MessageRepository()
-        self._conversation_id: Optional[str] = None  # Set per-call by architecture
+        self._conversation_id: Optional[str] = None
+        self._linked_kb_ids: list[str] = []
 
     def set_conversation_context(self, conversation_id: str) -> None:
         """Set conversation context for recall_conversation tool."""
         self._conversation_id = conversation_id
+
+    def set_knowledge_base_context(self, kb_ids: list[str]) -> None:
+        """Set linked knowledge base IDs for knowledge_base_search tool."""
+        self._linked_kb_ids = kb_ids
 
     async def execute(
         self, tool_name: str, arguments: dict, agent_id: str
@@ -359,3 +366,47 @@ class NativeToolHandler:
             lines.append(f"\n(Use page={page + 1} to see older messages)")
 
         return "\n".join(lines)
+
+    async def _handle_knowledge_base_search(
+        self, args: dict, agent_id: str
+    ) -> str:
+        """Search linked knowledge bases for relevant content."""
+        if not self._linked_kb_ids:
+            return "No knowledge bases are linked to this agent."
+
+        query = args.get("query", "").strip()
+        if not query:
+            return "Error: Query is required for knowledge base search."
+
+        top_k = min(args.get("top_k", 3), self.KB_SEARCH_MAX_RESULTS)
+
+        try:
+            search_service = get_search_service()
+            results = await search_service.search_multiple_kbs(
+                query=query,
+                kb_ids=self._linked_kb_ids,
+                top_k=top_k,
+                min_score=0.3,
+            )
+
+            if not results:
+                return f'No relevant content found for: "{query}"'
+
+            lines = [f'Knowledge Base Search Results for "{query}":\n']
+
+            for i, result in enumerate(results, start=1):
+                content_preview = result.content[:500]
+                if len(result.content) > 500:
+                    content_preview += "..."
+
+                lines.append(
+                    f"[{i}] (Score: {result.score:.2f}) {result.page_title}\n"
+                    f"    Source: {result.source_url}\n"
+                    f"    Content: {content_preview}\n"
+                )
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            log.error(f"Knowledge base search failed: {e}", exc_info=True)
+            return f"Error searching knowledge bases: {str(e)}"

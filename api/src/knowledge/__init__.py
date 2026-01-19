@@ -52,6 +52,12 @@ from src.knowledge.schemas import (
 
 from src.knowledge.router import router, agent_kb_router
 
+from src.knowledge.service import (
+    KnowledgeBaseService,
+    get_knowledge_base_service,
+    DeleteResult,
+)
+
 __all__ = [
     # Enums
     "KnowledgeBaseStatus",
@@ -99,4 +105,8 @@ __all__ = [
     # Routers
     "router",
     "agent_kb_router",
+    # Service
+    "KnowledgeBaseService",
+    "get_knowledge_base_service",
+    "DeleteResult",
 ]

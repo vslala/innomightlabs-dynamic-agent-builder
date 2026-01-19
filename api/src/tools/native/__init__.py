@@ -5,6 +5,7 @@ Native tools for the memGPT architecture.
 from .definitions import (
     NATIVE_TOOLS,
     NATIVE_TOOLS_MAP,
+    KNOWLEDGE_TOOLS,
     CORE_MEMORY_READ,
     CORE_MEMORY_APPEND,
     CORE_MEMORY_REPLACE,
@@ -13,12 +14,14 @@ from .definitions import (
     ARCHIVAL_MEMORY_INSERT,
     ARCHIVAL_MEMORY_SEARCH,
     RECALL_CONVERSATION,
+    KNOWLEDGE_BASE_SEARCH,
 )
 from .handlers import NativeToolHandler
 
 __all__ = [
     "NATIVE_TOOLS",
     "NATIVE_TOOLS_MAP",
+    "KNOWLEDGE_TOOLS",
     "CORE_MEMORY_READ",
     "CORE_MEMORY_APPEND",
     "CORE_MEMORY_REPLACE",
@@ -27,5 +30,6 @@ __all__ = [
     "ARCHIVAL_MEMORY_INSERT",
     "ARCHIVAL_MEMORY_SEARCH",
     "RECALL_CONVERSATION",
+    "KNOWLEDGE_BASE_SEARCH",
     "NativeToolHandler",
 ]
