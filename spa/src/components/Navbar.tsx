@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import styles from './Navbar.module.css';
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const location = useLocation();
+  const isDocsPage = location.pathname.startsWith('/docs');
 
   useEffect(() => {
     const handleScroll = () => {
@@ -14,16 +17,23 @@ export function Navbar() {
   }, []);
 
   return (
-    <nav className={`${styles.navbar} ${scrolled ? styles.scrolled : ''}`}>
+    <nav className={`${styles.navbar} ${scrolled || isDocsPage ? styles.scrolled : ''}`}>
       <div className={styles.container}>
-        <a href="#" className={styles.logo}>
+        <Link to="/" className={styles.logo}>
           InnoMight Labs
-        </a>
+        </Link>
 
         <div className={styles.links}>
-          <a href="#features" className={styles.link}>Features</a>
-          <a href="#how-it-works" className={styles.link}>How It Works</a>
-          <a href="#waitlist" className={styles.ctaLink}>Join Waitlist</a>
+          {!isDocsPage && (
+            <>
+              <a href="#features" className={styles.link}>Features</a>
+              <a href="#how-it-works" className={styles.link}>How It Works</a>
+            </>
+          )}
+          <Link to="/docs/quick-start" className={styles.link}>Docs</Link>
+          {!isDocsPage && (
+            <a href="#waitlist" className={styles.ctaLink}>Join Waitlist</a>
+          )}
           <a
             href={`${import.meta.env.VITE_API_BASE_URL}/auth/google`}
             className={styles.betaLogin}

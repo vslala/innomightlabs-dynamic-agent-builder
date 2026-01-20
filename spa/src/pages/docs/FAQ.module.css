@@ -1,0 +1,202 @@
+.section {
+  margin-bottom: 3rem;
+}
+
+.section h2 {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  scroll-margin-top: 100px;
+}
+
+.accordionGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.accordion {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.accordion:hover {
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.accordionOpen {
+  border-color: var(--gradient-start);
+}
+
+.accordionTrigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  gap: 1rem;
+  transition: background 0.2s ease;
+}
+
+.accordionTrigger:hover {
+  background: var(--bg-card-hover);
+}
+
+.accordionIcon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.3s ease;
+}
+
+.accordionOpen .accordionIcon {
+  transform: rotate(180deg);
+}
+
+.accordionContent {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+
+.accordionOpen .accordionContent {
+  grid-template-rows: 1fr;
+}
+
+.accordionInner {
+  overflow: hidden;
+  padding: 0 1.5rem;
+}
+
+.accordionOpen .accordionInner {
+  padding-bottom: 1.5rem;
+}
+
+.accordionInner p {
+  margin-bottom: 1rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.accordionInner p:last-child {
+  margin-bottom: 0;
+}
+
+.accordionInner ul,
+.accordionInner ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+  color: var(--text-secondary);
+}
+
+.accordionInner li {
+  margin-bottom: 0.5rem;
+  line-height: 1.6;
+}
+
+.accordionInner strong {
+  color: var(--text-primary);
+}
+
+.accordionInner code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.875em;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  color: var(--accent-cyan);
+}
+
+.accordionInner pre {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.accordionInner a {
+  color: var(--gradient-start);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.accordionInner a:hover {
+  color: var(--gradient-mid);
+}
+
+.contactSection {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.contactSection h2 {
+  margin-bottom: 0.75rem;
+}
+
+.contactSection > p {
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+}
+
+.contactOptions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+@media (min-width: 640px) {
+  .contactOptions {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.contactCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-decoration: none;
+  transition: all 0.3s ease;
+}
+
+.contactCard:hover {
+  border-color: var(--gradient-start);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.15);
+}
+
+.contactIcon {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.contactCard h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+  margin-top: 0;
+}
+
+.contactCard p {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 0;
+}

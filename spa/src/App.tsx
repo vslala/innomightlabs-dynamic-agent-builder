@@ -1,6 +1,8 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { LandingPage } from './pages/LandingPage';
 import { LoginSuccess } from './pages/LoginSuccess';
+import { QuickStart } from './pages/docs/QuickStart';
+import { FAQ } from './pages/docs/FAQ';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 import { Overview } from './pages/dashboard/Overview';
@@ -22,6 +24,8 @@ function App() {
         {/* Public routes */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/login-success" element={<LoginSuccess />} />
+        <Route path="/docs/quick-start" element={<QuickStart />} />
+        <Route path="/docs/faq" element={<FAQ />} />
 
         {/* Protected dashboard routes */}
         <Route
