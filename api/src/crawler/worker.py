@@ -14,12 +14,16 @@ Supports Lambda continuation via checkpoints for long-running crawls.
 
 import asyncio
 import hashlib
+import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, AsyncIterator, Callable
 from urllib.parse import urlparse
+
+import boto3
 
 from src.config import settings
 from src.knowledge.models import (
@@ -291,7 +295,14 @@ class CrawlerWorker:
         if job.checkpoint:
             ctx.discovered_urls = job.checkpoint.pending_urls
             ctx.current_url_index = job.checkpoint.current_url_index
-            log.info(f"Resuming from checkpoint at index {ctx.current_url_index}")
+            # Restore progress counters from previous run
+            if job.progress:
+                ctx.processed_count = job.progress.processed_urls
+                ctx.successful_count = job.progress.successful_urls
+                ctx.failed_count = job.progress.failed_urls
+                ctx.total_chunks = job.progress.total_chunks
+                ctx.total_embeddings = job.progress.total_embeddings
+            log.info(f"Resuming from checkpoint at index {ctx.current_url_index}, previously processed {ctx.processed_count} URLs")
 
         try:
             job.status = CrawlJobStatus.IN_PROGRESS
@@ -714,6 +725,36 @@ class CrawlerWorker:
         ))
 
         log.info(f"Crawl job {job.job_id} checkpointed at index {ctx.current_url_index}")
+
+        # Self-invoke Lambda to continue processing
+        self._invoke_continuation(job.job_id, ctx.kb.kb_id, ctx.user_email)
+
+    def _invoke_continuation(self, job_id: str, kb_id: str, user_email: str) -> None:
+        """Invoke Lambda asynchronously to continue crawl from checkpoint."""
+        function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+        if not function_name:
+            log.warning("Not running in Lambda, skipping self-invocation")
+            return
+
+        payload = {
+            "crawl_job": {
+                "job_id": job_id,
+                "kb_id": kb_id,
+                "user_email": user_email,
+            }
+        }
+
+        try:
+            client = boto3.client("lambda", region_name=settings.aws_region)
+            response = client.invoke(
+                FunctionName=function_name,
+                InvocationType="Event",  # Async invocation
+                Payload=json.dumps(payload).encode("utf-8"),
+            )
+            log.info(f"Self-invoked Lambda for continuation, status: {response['StatusCode']}")
+        except Exception as e:
+            log.error(f"Failed to self-invoke Lambda: {e}")
+            # Don't raise - the checkpoint is saved, manual retry is possible
 
     async def _fail_job(self, ctx: CrawlContext, error: str) -> None:
         """Mark job as failed."""

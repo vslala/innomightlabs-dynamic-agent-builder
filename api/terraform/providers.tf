@@ -22,3 +22,9 @@ terraform {
 provider "aws" {
   region = var.aws_region
 }
+
+# Temporary provider for orphaned resources cleanup
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}

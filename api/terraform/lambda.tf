@@ -50,13 +50,34 @@ resource "aws_iam_role_policy" "lambda_bedrock" {
   })
 }
 
+# Lambda self-invoke policy for crawl continuation
+resource "aws_iam_role_policy" "lambda_self_invoke" {
+  name = "${var.project_name}-lambda-self-invoke"
+  role = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = [
+          aws_lambda_function.api.arn
+        ]
+      }
+    ]
+  })
+}
+
 # Lambda function
 resource "aws_lambda_function" "api" {
   function_name = "${var.project_name}-api"
   role          = aws_iam_role.lambda.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.api.repository_url}:latest"
-  timeout       = 300  # 5 minutes for crawl operations
+  timeout       = 900  # 15 minutes (max) for crawl operations
   memory_size   = 512  # Increased for embedding operations
 
   environment {
