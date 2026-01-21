@@ -13,9 +13,9 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "innomightlabs-terraform-state"
+    bucket = "innomightlabs-terraform-statee"
     key    = "dynamic-agent-builder/terraform.tfstate"
-    region = "eu-west-2"
+    region = "us-east-1"
   }
 }
 

@@ -40,7 +40,7 @@ resource "aws_acm_certificate_validation" "widget" {
 
 # S3 bucket for widget static files (no versioning to save costs)
 resource "aws_s3_bucket" "widget" {
-  bucket = "${var.project_name}-widget-cdn"
+  bucket = "${var.project_name}-widget-cdn-bucket"
 
   tags = {
     Name        = "${var.project_name}-widget-cdn"
