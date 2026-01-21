@@ -29,6 +29,10 @@ class UserRepository:
         if existing:
             user.created_at = existing.created_at
             user.updated_at = datetime.utcnow().isoformat()
+            if user.stripe_customer_id is None:
+                user.stripe_customer_id = existing.stripe_customer_id
+            if user.refresh_token is None:
+                user.refresh_token = existing.refresh_token
 
         self.table.put_item(Item=user.to_dynamo_item())
         return user
@@ -57,6 +61,23 @@ class UserRepository:
                     "pk": f"User#{email}",
                     "sk": "User#Metadata",
                 }
+            )
+            return True
+        except Exception:
+            return False
+
+    def update_stripe_customer_id(self, email: str, customer_id: str) -> bool:
+        try:
+            self.table.update_item(
+                Key={
+                    "pk": f"User#{email}",
+                    "sk": "User#Metadata",
+                },
+                UpdateExpression="SET stripe_customer_id = :cid, updated_at = :ua",
+                ExpressionAttributeValues={
+                    ":cid": customer_id,
+                    ":ua": datetime.utcnow().isoformat(),
+                },
             )
             return True
         except Exception:

@@ -37,6 +37,12 @@ export function Navbar() {
             <a href="#waitlist" className={styles.ctaLink}>Join Waitlist</a>
           )}
           <a
+            href={`${import.meta.env.VITE_API_BASE_URL}/auth/cognito`}
+            className={styles.link}
+          >
+            Email Login
+          </a>
+          <a
             href={`${import.meta.env.VITE_API_BASE_URL}/auth/google`}
             className={styles.betaLogin}
           >

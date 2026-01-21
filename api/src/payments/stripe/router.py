@@ -330,13 +330,16 @@ def _subscription_from_stripe(
     )
 
 
-def _ensure_user(email: str, name_hint: Optional[str] = None) -> None:
+def _ensure_user(email: str, name_hint: Optional[str] = None, customer_id: Optional[str] = None) -> None:
     repo = UserRepository()
     existing = repo.get_by_email(email)
     if existing:
+        if customer_id:
+            repo.update_stripe_customer_id(email, customer_id)
         return
     name = name_hint or email.split("@")[0]
-    repo.create_or_update(User(email=email, name=name))
+    user = User(email=email, name=name, stripe_customer_id=customer_id)
+    repo.create_or_update(user)
 
 @router.post("/webhook")
 async def handle_payment_events(request: Request):
@@ -374,7 +377,7 @@ async def handle_payment_events(request: Request):
                 plan_key,
                 billing_cycle,
             )
-            _ensure_user(customer_email)
+            _ensure_user(customer_email, customer_id=customer_id)
             repo.upsert(subscription)
 
     if event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
@@ -396,7 +399,7 @@ async def handle_payment_events(request: Request):
                     plan_key,
                     billing_cycle,
                 )
-                _ensure_user(customer_email)
+                _ensure_user(customer_email, customer_id=customer_id)
                 repo.upsert(subscription)
 
     return {"status": "ok"}

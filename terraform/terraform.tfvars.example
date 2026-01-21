@@ -9,3 +9,17 @@ api_domain           = "api.your-domain.com"
 pinecone_api_key     = "pcsk_xxx_your-pinecone-api-key"
 pinecone_host        = "https://your-index-name.svc.region.pinecone.io"
 pinecone_index       = "innomightlabs-knowledge"
+
+# Cognito Hosted UI
+cognito_domain_prefix = "innomightlabs-auth"
+cognito_callback_urls = ["http://localhost:8000/auth/callback/cognito"]
+cognito_logout_urls = ["http://localhost:5173/"]
+
+# Stripe
+stripe_secret_key            = "sk_test_xxx"
+stripe_publishable_key       = "pk_test_xxx"
+stripe_webhook_secret        = "whsec_xxx"
+stripe_price_starter_monthly = "price_xxx"
+stripe_price_starter_annual  = "price_xxx"
+stripe_price_pro_monthly     = "price_xxx"
+stripe_price_pro_annual      = "price_xxx"

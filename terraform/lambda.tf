@@ -48,10 +48,23 @@ resource "aws_lambda_function" "api" {
       GOOGLE_CLIENT_ID     = var.google_client_id
       GOOGLE_CLIENT_SECRET = var.google_client_secret
       JWT_SECRET           = var.jwt_secret
+      # Cognito Hosted UI
+      COGNITO_DOMAIN        = "https://${aws_cognito_user_pool_domain.hosted_ui.domain}.auth.${var.aws_region}.amazoncognito.com"
+      COGNITO_CLIENT_ID     = aws_cognito_user_pool_client.hosted_ui.id
+      COGNITO_CLIENT_SECRET = aws_cognito_user_pool_client.hosted_ui.client_secret
+      COGNITO_REDIRECT_URI  = "${var.api_domain != "" ? "https://${var.api_domain}" : aws_apigatewayv2_api.api.api_endpoint}/auth/callback/cognito"
       # Pinecone Vector Store
       PINECONE_API_KEY     = var.pinecone_api_key
       PINECONE_HOST        = var.pinecone_host
       PINECONE_INDEX       = var.pinecone_index
+      # Stripe
+      STRIPE_SECRET_KEY            = var.stripe_secret_key
+      STRIPE_PUBLISHABLE_KEY       = var.stripe_publishable_key
+      STRIPE_WEBHOOK_SECRET        = var.stripe_webhook_secret
+      STRIPE_PRICE_STARTER_MONTHLY = var.stripe_price_starter_monthly
+      STRIPE_PRICE_STARTER_ANNUAL  = var.stripe_price_starter_annual
+      STRIPE_PRICE_PRO_MONTHLY     = var.stripe_price_pro_monthly
+      STRIPE_PRICE_PRO_ANNUAL      = var.stripe_price_pro_annual
     }
   }
 

@@ -85,6 +85,7 @@ erDiagram
     USER ||--o{ AGENT : creates
     USER ||--o{ CONVERSATION : creates
     USER ||--o{ PROVIDER_SETTINGS : configures
+    USER ||--o{ SUBSCRIPTION : subscribes
     AGENT ||--o{ MEMORY_BLOCK_DEF : has
     AGENT ||--o{ CORE_MEMORY : has
     AGENT ||--o{ ARCHIVAL_MEMORY : has
@@ -96,6 +97,7 @@ erDiagram
         string name
         string picture
         string refresh_token
+        string stripe_customer_id
     }
 
     AGENT {
@@ -112,6 +114,18 @@ erDiagram
         string user_email PK
         string provider_name PK
         string encrypted_credentials
+    }
+
+    SUBSCRIPTION {
+        string subscription_id PK
+        string user_email FK
+        string customer_id
+        string status
+        string plan_name
+        string price_id
+        string billing_cycle
+        datetime current_period_end
+        string latest_invoice_id
     }
 
     CONVERSATION {
@@ -165,6 +179,7 @@ erDiagram
 | **User** | `User#{email}` | `User#Metadata` | Get user by email |
 | **Agent** | `User#{created_by}` | `Agent#{agent_id}` | List agents by user, Get agent by ID |
 | **ProviderSettings** | `User#{user_email}` | `ProviderSettings#{provider_name}` | Get provider config for user |
+| **Subscription** | `User#{user_email}` | `Subscription#{subscription_id}` | Get subscriptions by user, Get subscription by ID |
 | **Conversation** | `USER#{created_by}` | `CONVERSATION#{conversation_id}` | List conversations by user |
 | **Message** | `CONVERSATION#{conversation_id}` | `MESSAGE#{timestamp}#{message_id}` | List messages in conversation (chronological) |
 | **MemoryBlockDef** | `Agent#{agent_id}` | `MemoryBlockDef#{block_name}` | List memory block definitions for agent |
@@ -177,6 +192,32 @@ erDiagram
 - **Archival Memory**: Uses `content_hash` (SHA256) stored in a separate index item for deduplication
 - **Core Memory Append**: Checks if exact line content already exists before adding
 - **Agent Creation**: Checks for existing agent with same name for user
+
+---
+
+## Stripe Payments Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant SPA as SPA (Pricing)
+    participant API as API (/payments/stripe)
+    participant Stripe
+    participant DB as DynamoDB
+
+    User->>SPA: Select plan + billing cycle
+    SPA->>API: POST /checkout-session (planKey, billingCycle, customerEmail?)
+    API->>Stripe: Create checkout session
+    Stripe-->>API: session.url
+    API-->>SPA: session.url
+    SPA-->>User: Redirect to Stripe Checkout
+    Stripe-->>User: Collect payment + email
+    Stripe-->>API: webhook checkout.session.completed
+    API->>Stripe: Fetch subscription/customer
+    API->>DB: Upsert User + Subscription (invoice/customer ids)
+    Stripe-->>API: subscription.updated (future updates)
+    API->>DB: Update subscription status/period
+```
 
 ---
 

@@ -68,6 +68,12 @@ class Settings:
     stripe_price_pro_monthly: str = ""
     stripe_price_pro_annual: str = ""
 
+    # Cognito Hosted UI (optional; for native email/password)
+    cognito_domain: str = ""
+    cognito_client_id: str = ""
+    cognito_client_secret: str = ""
+    cognito_redirect_uri: str = ""
+
     def validate_core(self) -> None:
         """
         Validate core configuration required for the app to start.
@@ -209,6 +215,11 @@ class Settings:
             stripe_price_starter_annual=os.getenv("STRIPE_PRICE_STARTER_ANNUAL", ""),
             stripe_price_pro_monthly=os.getenv("STRIPE_PRICE_PRO_MONTHLY", ""),
             stripe_price_pro_annual=os.getenv("STRIPE_PRICE_PRO_ANNUAL", ""),
+            # Cognito Hosted UI
+            cognito_domain=os.getenv("COGNITO_DOMAIN", ""),
+            cognito_client_id=os.getenv("COGNITO_CLIENT_ID", ""),
+            cognito_client_secret=os.getenv("COGNITO_CLIENT_SECRET", ""),
+            cognito_redirect_uri=os.getenv("COGNITO_REDIRECT_URI", f"{api_base_url}/auth/callback/cognito"),
         )
 
 

@@ -69,3 +69,64 @@ variable "pinecone_index" {
   type        = string
   default     = "innomightlabs-knowledge"
 }
+
+variable "cognito_domain_prefix" {
+  description = "Cognito Hosted UI domain prefix (e.g., innomightlabs-auth)"
+  type        = string
+  default     = "innomightlabs-auth"
+}
+
+variable "cognito_callback_urls" {
+  description = "Allowed callback URLs for Cognito Hosted UI"
+  type        = list(string)
+  default     = ["http://localhost:8000/auth/callback/cognito"]
+}
+
+variable "cognito_logout_urls" {
+  description = "Allowed logout URLs for Cognito Hosted UI"
+  type        = list(string)
+  default     = ["http://localhost:5173/"]
+}
+
+# Stripe
+variable "stripe_secret_key" {
+  description = "Stripe secret key"
+  type        = string
+  sensitive   = true
+}
+
+variable "stripe_publishable_key" {
+  description = "Stripe publishable key"
+  type        = string
+  sensitive   = true
+}
+
+variable "stripe_webhook_secret" {
+  description = "Stripe webhook signing secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "stripe_price_starter_monthly" {
+  description = "Stripe price ID for Starter monthly"
+  type        = string
+  sensitive   = true
+}
+
+variable "stripe_price_starter_annual" {
+  description = "Stripe price ID for Starter annual"
+  type        = string
+  sensitive   = true
+}
+
+variable "stripe_price_pro_monthly" {
+  description = "Stripe price ID for Pro monthly"
+  type        = string
+  sensitive   = true
+}
+
+variable "stripe_price_pro_annual" {
+  description = "Stripe price ID for Pro annual"
+  type        = string
+  sensitive   = true
+}

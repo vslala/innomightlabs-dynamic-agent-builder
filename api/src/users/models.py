@@ -9,6 +9,7 @@ class User:
     name: str
     picture: Optional[str] = None
     refresh_token: Optional[str] = None
+    stripe_customer_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -35,6 +36,7 @@ class User:
             "name": self.name,
             "picture": self.picture,
             "refresh_token": self.refresh_token,
+            "stripe_customer_id": self.stripe_customer_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -46,6 +48,7 @@ class User:
             name=item["name"],
             picture=item.get("picture"),
             refresh_token=item.get("refresh_token"),
+            stripe_customer_id=item.get("stripe_customer_id"),
             created_at=item.get("created_at"),
             updated_at=item.get("updated_at"),
         )

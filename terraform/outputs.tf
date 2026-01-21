@@ -86,3 +86,28 @@ output "api_url" {
   description = "API URL (custom domain if configured, otherwise API Gateway URL)"
   value       = var.api_domain != "" ? "https://${var.api_domain}" : aws_apigatewayv2_api.api.api_endpoint
 }
+
+# =============================================================================
+# Cognito Outputs
+# =============================================================================
+
+output "cognito_user_pool_id" {
+  description = "Cognito User Pool ID"
+  value       = aws_cognito_user_pool.main.id
+}
+
+output "cognito_user_pool_client_id" {
+  description = "Cognito User Pool Client ID"
+  value       = aws_cognito_user_pool_client.hosted_ui.id
+}
+
+output "cognito_user_pool_client_secret" {
+  description = "Cognito User Pool Client Secret"
+  value       = aws_cognito_user_pool_client.hosted_ui.client_secret
+  sensitive   = true
+}
+
+output "cognito_domain_url" {
+  description = "Cognito Hosted UI domain URL"
+  value       = "https://${aws_cognito_user_pool_domain.hosted_ui.domain}.auth.${var.aws_region}.amazoncognito.com"
+}
