@@ -65,6 +65,9 @@ resource "aws_lambda_function" "api" {
       STRIPE_PRICE_STARTER_ANNUAL  = var.stripe_price_starter_annual
       STRIPE_PRICE_PRO_MONTHLY     = var.stripe_price_pro_monthly
       STRIPE_PRICE_PRO_ANNUAL      = var.stripe_price_pro_annual
+      # SES
+      SES_FROM_EMAIL     = var.ses_from_email
+      SES_REPLY_TO_EMAIL = var.ses_reply_to_email
     }
   }
 
@@ -94,6 +97,9 @@ resource "aws_lambda_function" "usage_events" {
       ENVIRONMENT     = var.environment
       DYNAMODB_TABLE  = aws_dynamodb_table.main.name
       AWS_REGION_NAME = var.aws_region
+      STRIPE_SECRET_KEY = var.stripe_secret_key
+      SES_FROM_EMAIL     = var.ses_from_email
+      SES_REPLY_TO_EMAIL = var.ses_reply_to_email
     }
   }
 
@@ -166,6 +172,26 @@ resource "aws_iam_role_policy" "lambda_self_invoke" {
           "lambda:InvokeFunction"
         ]
         Resource = aws_lambda_function.api.arn
+      }
+    ]
+  })
+}
+
+# SES permissions for Lambda (send emails)
+resource "aws_iam_role_policy" "lambda_ses" {
+  name = "${var.project_name}-lambda-ses"
+  role = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ses:SendEmail",
+          "ses:SendRawEmail"
+        ]
+        Resource = "*"
       }
     ]
   })

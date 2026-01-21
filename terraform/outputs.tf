@@ -111,3 +111,17 @@ output "cognito_domain_url" {
   description = "Cognito Hosted UI domain URL"
   value       = "https://${aws_cognito_user_pool_domain.hosted_ui.domain}.auth.${var.aws_region}.amazoncognito.com"
 }
+
+# =============================================================================
+# SES Outputs
+# =============================================================================
+
+output "ses_domain_verification_token" {
+  description = "SES domain verification token (add as TXT record)"
+  value       = aws_ses_domain_identity.primary.verification_token
+}
+
+output "ses_domain_dkim_tokens" {
+  description = "SES DKIM tokens (add as CNAME records)"
+  value       = aws_ses_domain_dkim.primary.dkim_tokens
+}

@@ -476,6 +476,7 @@ async def handle_webhook(request: Request):
             price_id=price_id,
             billing_cycle=billing_cycle,
             current_period_end=str(stripe_sub.get("current_period_end")),
+            latest_invoice_id=stripe_sub.get("latest_invoice"),
         )
 
         _ensure_user_exists(customer_email, customer_id)
@@ -511,6 +512,7 @@ async def handle_webhook(request: Request):
             price_id=price_id,
             billing_cycle=billing_cycle,
             current_period_end=str(data.get("current_period_end")),
+            latest_invoice_id=data.get("latest_invoice"),
         )
 
         _ensure_user_exists(customer_email, customer_id)

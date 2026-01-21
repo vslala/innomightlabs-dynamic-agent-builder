@@ -74,6 +74,10 @@ class Settings:
     cognito_client_secret: str = ""
     cognito_redirect_uri: str = ""
 
+    # SES (optional; for outbound email)
+    ses_from_email: str = ""
+    ses_reply_to_email: str = ""
+
     def validate_core(self) -> None:
         """
         Validate core configuration required for the app to start.
@@ -220,6 +224,9 @@ class Settings:
             cognito_client_id=os.getenv("COGNITO_CLIENT_ID", ""),
             cognito_client_secret=os.getenv("COGNITO_CLIENT_SECRET", ""),
             cognito_redirect_uri=os.getenv("COGNITO_REDIRECT_URI", f"{api_base_url}/auth/callback/cognito"),
+            # SES
+            ses_from_email=os.getenv("SES_FROM_EMAIL", ""),
+            ses_reply_to_email=os.getenv("SES_REPLY_TO_EMAIL", ""),
         )
 
 

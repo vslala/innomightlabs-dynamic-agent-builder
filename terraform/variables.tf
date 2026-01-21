@@ -130,3 +130,28 @@ variable "stripe_price_pro_annual" {
   type        = string
   sensitive   = true
 }
+
+# SES
+variable "ses_domain" {
+  description = "SES domain identity (e.g., innomightlabs.com)"
+  type        = string
+  default     = "innomightlabs.com"
+}
+
+variable "ses_from_email" {
+  description = "From email address for SES (e.g., noreply@innomightlabs.com)"
+  type        = string
+  default     = "noreply@innomightlabs.com"
+}
+
+variable "ses_reply_to_email" {
+  description = "Reply-to email address for SES (optional)"
+  type        = string
+  default     = ""
+}
+
+variable "ses_verification_email" {
+  description = "Email identity to verify for SES sandbox/testing"
+  type        = string
+  default     = ""
+}
