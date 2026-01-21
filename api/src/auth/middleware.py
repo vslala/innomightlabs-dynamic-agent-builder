@@ -107,7 +107,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
         # Skip auth for public paths
-        if request.url.path in PUBLIC_PATHS:
+        if request.url.path in PUBLIC_PATHS or request.url.path.startswith("/payments/stripe/session/"):
             return await call_next(request)
 
         # Skip auth for widget routes (handled by WidgetAuthMiddleware)

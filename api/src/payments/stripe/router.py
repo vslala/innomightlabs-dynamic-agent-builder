@@ -211,6 +211,130 @@ async def create_checkout_session(payload: CheckoutRequest):
 
 
 # ============================================================================
+# Session Exchange (Get JWT After Payment)
+# ============================================================================
+
+
+class SessionAuthResponse(BaseModel):
+    token: str
+    email: str
+    subscription_status: Optional[str] = None
+
+
+@router.get("/session/{session_id}", response_model=SessionAuthResponse)
+async def exchange_session_for_auth(session_id: str):
+    """
+    Exchange Stripe session ID for JWT token.
+
+    Flow:
+    1. User completes payment, redirected to /payments/success?session_id=xyz
+    2. Frontend calls this endpoint with session_id
+    3. We fetch session from Stripe, get customer email
+    4. Create user if doesn't exist
+    5. Return JWT token
+    6. Frontend saves JWT and polls for subscription to appear
+
+    This allows anonymous users to checkout and automatically get authenticated.
+    """
+    _require_stripe_config()
+
+    # Fetch session from Stripe
+    try:
+        session = await _stripe_get(f"/checkout/sessions/{session_id}")
+    except HTTPException as e:
+        log.error(f"Failed to fetch session {session_id}: {e}")
+        raise HTTPException(status_code=404, detail="Session not found or expired")
+
+    # Verify session is actually completed
+    payment_status = session.get("payment_status")
+    if payment_status != "paid":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Payment not completed. Status: {payment_status}",
+        )
+
+    # Get customer email
+    customer_email = session.get("customer_details", {}).get("email")
+    if not customer_email:
+        customer_id = session.get("customer")
+        if customer_id:
+            customer = await _stripe_get(f"/customers/{customer_id}")
+            customer_email = customer.get("email")
+
+    if not customer_email:
+        raise HTTPException(status_code=400, detail="No email found in session")
+
+    # Create or get user
+    from ...auth.jwt_utils import create_access_token
+
+    _ensure_user_exists(customer_email, customer_id=session.get("customer"))
+
+    user_repo = UserRepository()
+    user = user_repo.get_by_email(customer_email)
+
+    if not user:
+        raise HTTPException(status_code=500, detail="Failed to create user")
+
+    # Generate JWT token
+    jwt_token = create_access_token(user)
+
+    # Check if subscription exists yet (webhook might not have fired)
+    subscription_repo = SubscriptionRepository()
+    subscription = subscription_repo.get_active_for_user(customer_email)
+
+    return SessionAuthResponse(
+        token=jwt_token,
+        email=customer_email,
+        subscription_status=subscription.status if subscription else None,
+    )
+
+
+# ============================================================================
+# Subscription Status
+# ============================================================================
+
+
+class SubscriptionStatusResponse(BaseModel):
+    tier: str
+    status: Optional[str] = None
+    current_period_end: Optional[str] = None
+    is_active: bool
+
+
+@router.get("/subscription/status")
+async def get_subscription_status(request: Request):
+    """
+    Get current subscription status for authenticated user.
+
+    Used by frontend to:
+    1. Poll after payment until subscription appears
+    2. Display subscription info in dashboard
+    """
+    # Get user email from request state (set by auth middleware)
+    user_email = getattr(request.state, "user_email", None)
+    if not user_email:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    subscription_repo = SubscriptionRepository()
+    subscription = subscription_repo.get_active_for_user(user_email)
+
+    if subscription:
+        return SubscriptionStatusResponse(
+            tier=subscription.plan_name or "free",
+            status=subscription.status,
+            current_period_end=subscription.current_period_end,
+            is_active=True,
+        )
+    else:
+        return SubscriptionStatusResponse(
+            tier="free",
+            status=None,
+            current_period_end=None,
+            is_active=False,
+        )
+
+
+# ============================================================================
 # Webhook Handler
 # ============================================================================
 
