@@ -116,3 +116,7 @@ class ProviderSettingsRepository:
         except Exception as e:
             log.error(f"Failed to delete provider settings {provider_name}: {e}", exc_info=True)
             return False
+
+def get_provider_settings_repository() -> ProviderSettingsRepository:
+    """Dependency for ProviderSettingsRepository"""
+    return ProviderSettingsRepository()

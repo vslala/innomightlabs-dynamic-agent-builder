@@ -2,12 +2,16 @@
 LLM Models service - fetches available models from providers.
 """
 
+import json
 import logging
 from typing import Optional
 from functools import lru_cache
 
 import boto3
 from pydantic import BaseModel
+
+from src.crypto import decrypt
+from src.settings.models import ProviderSettings
 
 log = logging.getLogger(__name__)
 
@@ -101,13 +105,13 @@ class ModelsService:
                 models.append(ModelInfo(
                     model_id=model_id,
                     model_name=clean_name,
-                    display_name=display_name,
+                    display_name=f"[Bedrock] {display_name}",
                     provider="bedrock",
                 ))
 
             # Sort by preference (best available in eu-west-2 first)
             preference_order = [
-                "claude-3-7-sonnet",   # Best available in eu-west-2
+                "claude-3-7-sonnet",
                 "claude-sonnet-4",
                 "claude-opus-4",
                 "claude-3-5-sonnet",
@@ -187,6 +191,22 @@ class ModelsService:
             ),
         ]
 
+    def get_anthropic_models(self, provider_settings: ProviderSettings) -> list[ModelInfo]:
+        from anthropic import Anthropic
+        
+        credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
+        client = Anthropic(api_key=credentials["api_key"])
+        models = client.models.list()
+        
+        return [
+            ModelInfo(
+                model_id=m.id,
+                model_name=m.id,
+                display_name=f"[Anthropic] {m.display_name}",
+                provider="anthropic"
+            )
+            for m in models
+        ]
 
 # Singleton instance
 models_service = ModelsService()

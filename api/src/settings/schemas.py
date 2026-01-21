@@ -25,9 +25,22 @@ BEDROCK_PROVIDER_FORM = Form(
     ],
 )
 
+ANTHROPIC_PROVIDER_FORM = Form(
+    form_name="Anthropic Configuration",
+    submit_path="/settings/providers/Anthropic",
+    form_inputs=[
+        FormInput(
+            input_type=FormInputType.PASSWORD,
+            name="api_key",
+            label="Anthropic API Key"
+        )
+    ]
+)
+
 # Map of provider name -> form schema
 PROVIDER_SCHEMAS: dict[str, Form] = {
     "Bedrock": BEDROCK_PROVIDER_FORM,
+    "Anthropic": ANTHROPIC_PROVIDER_FORM
 }
 
 # List of all supported provider names

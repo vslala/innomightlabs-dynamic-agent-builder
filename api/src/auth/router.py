@@ -78,6 +78,7 @@ async def oauth_callback(
         return RedirectResponse(url=redirect_url)
 
     except Exception as e:
+        log.error(f"OAuth callback error: {e}", exc_info=True)
         # Redirect to frontend with error
         frontend_error_url = f"{settings.frontend_url}/login?error=auth_failed"
         return RedirectResponse(url=frontend_error_url)

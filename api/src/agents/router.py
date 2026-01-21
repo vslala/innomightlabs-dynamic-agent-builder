@@ -15,6 +15,8 @@ from src.crypto import encrypt_secret_fields
 from src.llm.events import SSEEvent, SSEEventType
 from src.llm.models import models_service
 from src.messages.models import Attachment, MAX_FILES, MAX_TOTAL_SIZE
+from src.settings.models import ProviderSettings
+from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 
 log = logging.getLogger(__name__)
 
@@ -27,12 +29,12 @@ router = APIRouter(
     dependencies=[Depends(security)]  # Apply to all routes in this router
 )
 
-
 class SendMessageRequest(BaseModel):
     """Request body for sending a message to an agent."""
 
     content: str
     attachments: list[dict[str, Any]] | None = None
+    
 
     @field_validator("attachments")
     @classmethod
@@ -56,15 +58,32 @@ def get_agent_repository() -> AgentRepository:
 
 
 @router.get("/supported-models", response_model=form_models.Form, response_model_exclude_none=True)
-async def get_create_agent_schema() -> form_models.Form:
+async def get_create_agent_schema(
+    request: Request,
+    providers_settings_repo: Annotated[ProviderSettingsRepository, Depends(get_provider_settings_repository)]) -> form_models.Form:
     """Get the form schema for creating an agent with dynamically fetched models."""
     # Fetch available models from Bedrock with display names
+    user_email = request.state.user_email
+    
     bedrock_models = models_service.get_bedrock_models()
+    model_providers = ["Bedrock"]
     model_options = [
         {"value": m.model_name, "label": m.display_name}
         for m in bedrock_models
     ]
-    return get_create_agent_form(model_options)
+    
+    
+    provider_settings = providers_settings_repo.find_by_provider(user_email=user_email, provider_name="Anthropic")
+    
+    if provider_settings:
+        anthropic_models = models_service.get_anthropic_models(provider_settings=provider_settings)
+        model_providers.append("Anthropic")
+        model_options.extend([
+            {"value": m.model_name, "label": m.display_name}
+            for m in anthropic_models
+        ])
+    
+    return get_create_agent_form(model_providers, model_options)
 
 
 @router.post(

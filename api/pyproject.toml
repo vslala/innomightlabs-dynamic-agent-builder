@@ -24,6 +24,7 @@ dependencies = [
     "markdownify>=0.14.1",
     # Vector store dependencies
     "pinecone>=5.0.0",
+    "anthropic>=0.76.0",
 ]
 
 [project.optional-dependencies]
@@ -44,3 +45,9 @@ warn_unused_ignores = true
 ignore_missing_imports = true
 # Disable errors for async generator/iterator patterns and complex type assignments
 disable_error_code = ["override", "attr-defined", "dict-item", "assignment"]
+
+[dependency-groups]
+dev = [
+    "moto>=5.1.19",
+    "pytest>=9.0.2",
+]

@@ -17,7 +17,7 @@ from src.llm.events import SSEEvent, SSEEventType
 from src.llm.providers import get_llm_provider
 from src.messages.models import Message, Attachment
 from src.messages.repository import MessageRepository
-from src.settings.repository import ProviderSettingsRepository
+from src.settings.repository import get_provider_settings_repository
 
 from .base import AgentArchitecture
 
@@ -50,7 +50,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         """
         self.max_context_words = max_context_words
         self.message_repo = MessageRepository()
-        self.provider_settings_repo = ProviderSettingsRepository()
+        self.provider_settings_repo = get_provider_settings_repository()
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
 
     @property

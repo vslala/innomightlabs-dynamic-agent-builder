@@ -23,7 +23,7 @@ SESSION_TIMEOUT_OPTIONS = [
 ]
 
 
-def get_create_agent_form(model_options: list[dict] | None = None) -> Form:
+def get_create_agent_form(model_providers: list[str], model_options: list[dict] | None = None) -> Form:
     """
     Get the form schema for creating an agent.
 
@@ -62,7 +62,7 @@ def get_create_agent_form(model_options: list[dict] | None = None) -> Form:
             FormInput(
                 label="Provider Name",
                 name="agent_provider",
-                values=["Bedrock"],
+                values=model_providers,
                 input_type=FormInputType.SELECT,
             ),
             FormInput(
@@ -80,10 +80,6 @@ def get_create_agent_form(model_options: list[dict] | None = None) -> Form:
             ),
         ],
     )
-
-
-# Static version for backward compatibility
-CREATE_AGENT_FORM = get_create_agent_form()
 
 
 def get_update_agent_form(agent_id: str, model_options: list[dict] | None = None) -> Form:

@@ -10,7 +10,7 @@ An architecture with memory capabilities:
 
 import json
 import logging
-from typing import TYPE_CHECKING, AsyncIterator
+from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from src.common import CAPACITY_WARNING_THRESHOLD, MAX_TOOL_ITERATIONS
 from src.crypto import decrypt
@@ -20,7 +20,7 @@ from src.llm.providers import get_llm_provider
 from src.memory import MemoryRepository, CoreMemory
 from src.messages.models import Message, Attachment
 from src.messages.repository import MessageRepository
-from src.settings.repository import ProviderSettingsRepository
+from src.settings.repository import get_provider_settings_repository
 from src.tools.native import NATIVE_TOOLS, KNOWLEDGE_TOOLS, NativeToolHandler
 from src.knowledge.repository import AgentKnowledgeBaseRepository
 
@@ -57,7 +57,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         self.max_context_words = max_context_words
         self.message_repo = MessageRepository()
         self.memory_repo = MemoryRepository()
-        self.provider_settings_repo = ProviderSettingsRepository()
+        self.provider_settings_repo = get_provider_settings_repository()
         self.agent_kb_repo = AgentKnowledgeBaseRepository()
         self.tool_handler = NativeToolHandler(self.memory_repo)
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
@@ -154,7 +154,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             all_messages = self.message_repo.find_by_conversation(
                 conversation.conversation_id
             )
-            context = [{"role": "system", "content": system_prompt}]
+            context: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
             # Pass session_timeout_minutes to filter messages by time gap
             context.extend(
                 self.conversation_strategy.build_context(

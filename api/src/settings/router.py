@@ -11,7 +11,7 @@ import logging
 
 import src.form_models as form_models
 from src.settings.models import ProviderSettings, ProviderSettingsResponse
-from src.settings.repository import ProviderSettingsRepository
+from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.settings.schemas import PROVIDER_SCHEMAS, SUPPORTED_PROVIDERS, get_provider_schema
 from src.crypto import encrypt, decrypt
 
@@ -32,11 +32,6 @@ class ProviderWithStatus(BaseModel):
     provider_name: str
     form: form_models.Form
     is_configured: bool
-
-
-def get_provider_settings_repository() -> ProviderSettingsRepository:
-    """Dependency for ProviderSettingsRepository"""
-    return ProviderSettingsRepository()
 
 
 @router.get("/providers", response_model=list[ProviderWithStatus])
