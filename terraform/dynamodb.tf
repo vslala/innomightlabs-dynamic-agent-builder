@@ -6,6 +6,8 @@ resource "aws_dynamodb_table" "main" {
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "pk"
   range_key    = "sk"
+  stream_enabled   = true
+  stream_view_type = "NEW_AND_OLD_IMAGES"
 
   attribute {
     name = "pk"
@@ -62,11 +64,16 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
           "dynamodb:Query",
           "dynamodb:Scan",
           "dynamodb:BatchGetItem",
-          "dynamodb:BatchWriteItem"
+          "dynamodb:BatchWriteItem",
+          "dynamodb:DescribeStream",
+          "dynamodb:GetRecords",
+          "dynamodb:GetShardIterator",
+          "dynamodb:ListStreams"
         ]
         Resource = [
           aws_dynamodb_table.main.arn,
-          "${aws_dynamodb_table.main.arn}/index/*"
+          "${aws_dynamodb_table.main.arn}/index/*",
+          aws_dynamodb_table.main.stream_arn
         ]
       }
     ]

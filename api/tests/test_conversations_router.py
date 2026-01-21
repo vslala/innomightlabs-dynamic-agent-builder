@@ -177,6 +177,16 @@ class TestConversationsRouter:
         self, test_client: TestClient, auth_headers: dict
     ):
         """Test updating conversation's agent."""
+        from src.payments.subscriptions import Subscription, SubscriptionRepository
+
+        SubscriptionRepository().upsert(
+            Subscription(
+                subscription_id="sub-test-pro",
+                user_email=TEST_USER_EMAIL,
+                status="active",
+                plan_name="pro",
+            )
+        )
         # Create a second agent
         agent2_request = {
             **AGENT_CREATE_REQUEST,

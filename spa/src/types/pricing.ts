@@ -13,12 +13,6 @@ export interface PricingTier {
   features: string[];
 }
 
-export interface PricingAddOn {
-  title: string;
-  price: string;
-  description: string;
-}
-
 export interface PricingFaq {
   question: string;
   answer: string;
@@ -26,6 +20,5 @@ export interface PricingFaq {
 
 export interface PricingResponse {
   tiers: PricingTier[];
-  addOns: PricingAddOn[];
   faqs: PricingFaq[];
 }

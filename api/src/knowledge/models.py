@@ -499,6 +499,7 @@ class CrawledPage(BaseModel):
     """Record of a crawled page with analytics."""
 
     job_id: str
+    created_by: str
     url: str
     url_hash: str = ""  # Set from URL if not provided
     status: CrawledPageStatus = CrawledPageStatus.PENDING
@@ -526,6 +527,7 @@ class CrawledPage(BaseModel):
             "pk": self.pk,
             "sk": self.sk,
             "job_id": self.job_id,
+            "created_by": self.created_by,
             "url": self.url,
             "url_hash": self.url_hash,
             "status": self.status.value,
@@ -541,6 +543,7 @@ class CrawledPage(BaseModel):
     def from_dynamo_item(cls, item: dict[str, Any]) -> "CrawledPage":
         return cls(
             job_id=item["job_id"],
+            created_by=item.get("created_by", ""),
             url=item["url"],
             url_hash=item["url_hash"],
             status=CrawledPageStatus(item["status"]),

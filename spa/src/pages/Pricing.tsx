@@ -170,35 +170,6 @@ export function Pricing() {
           )}
         </section>
 
-        <section className={styles.addOnsSection}>
-          <div className={styles.sectionHeader}>
-            <span className={styles.tag}>Usage Add-ons</span>
-            <h2 className={styles.sectionTitle}>
-              Scale with usage-based
-              <span className="gradient-text"> add-ons</span>
-            </h2>
-            <p className={styles.sectionSubtitle}>
-              Keep your base plan predictable, then add only what you need.
-            </p>
-          </div>
-
-          {pricing && (
-            <div className={styles.addOnsGrid}>
-              {pricing.addOns.map((addOn, index) => (
-                <div
-                  key={addOn.title}
-                  className={styles.addOnCard}
-                  style={{ animationDelay: `${index * 0.1}s` }}
-                >
-                  <h3>{addOn.title}</h3>
-                  <p className={styles.addOnPrice}>{addOn.price}</p>
-                  <p className={styles.addOnDescription}>{addOn.description}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
         <section className={styles.faqSection}>
           <div className={styles.sectionHeader}>
             <span className={styles.tag}>FAQ</span>

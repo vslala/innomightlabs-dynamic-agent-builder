@@ -14,6 +14,7 @@ ENV PYTHONPATH="${LAMBDA_TASK_ROOT}/.venv/lib/python3.13/site-packages"
 
 # Copy application code
 COPY main.py ./
+COPY usage_stream_handler.py ./
 COPY src ./src
 
 # Set the handler

@@ -531,6 +531,7 @@ class CrawlerWorker:
         # Save crawled page record
         page = CrawledPage(
             job_id=job_id,
+            created_by=ctx.user_email,
             url=url,
             status=CrawledPageStatus.SUCCESS,
             page_metadata=PageMetadata(

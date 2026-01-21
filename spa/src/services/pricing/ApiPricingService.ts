@@ -10,11 +10,11 @@ export class ApiPricingService implements IPricingService {
   async createCheckoutSession(
     planKey: string,
     billingCycle: string,
-    customerEmail?: string
+    userEmail?: string
   ): Promise<{ url: string }> {
     return httpClient.post<{ url: string }>(
-      '/payments/stripe/checkout-session',
-      { planKey, billingCycle, customerEmail, clientReferenceId: customerEmail },
+      '/payments/stripe/checkout',
+      { planKey, billingCycle, userEmail },
       { skipAuth: true }
     );
   }

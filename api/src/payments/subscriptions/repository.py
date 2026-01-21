@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import boto3
@@ -28,3 +28,49 @@ class SubscriptionRepository:
         if item:
             return Subscription.from_dynamo_item(item)
         return None
+
+    def list_by_user(self, user_email: str) -> list[Subscription]:
+        response = self.table.query(
+            KeyConditionExpression="pk = :pk AND begins_with(sk, :sk_prefix)",
+            ExpressionAttributeValues={
+                ":pk": f"User#{user_email}",
+                ":sk_prefix": "Subscription#",
+            },
+        )
+        items = response.get("Items", [])
+        return [Subscription.from_dynamo_item(item) for item in items]
+
+    def get_active_for_user(self, user_email: str) -> Optional[Subscription]:
+        subscriptions = self.list_by_user(user_email)
+        if not subscriptions:
+            return None
+        active_statuses = {"active", "trialing", "past_due"}
+        active = [
+            s for s in subscriptions
+            if (s.status or "").lower() in active_statuses and not _is_subscription_expired(s)
+        ]
+        if not active:
+            return None
+        active.sort(key=lambda s: s.updated_at or s.created_at or "", reverse=True)
+        return active[0]
+
+
+def _is_subscription_expired(subscription: Subscription) -> bool:
+    period_end = _parse_period_end(subscription.current_period_end)
+    if not period_end:
+        return False
+    return datetime.now(timezone.utc) >= period_end
+
+
+def _parse_period_end(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    if value.isdigit():
+        return datetime.fromtimestamp(int(value), tz=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)

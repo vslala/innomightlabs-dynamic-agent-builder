@@ -69,6 +69,7 @@ class Message(BaseModel):
 
     message_id: str = Field(default_factory=lambda: str(uuid4()))
     conversation_id: str
+    created_by: str = ""
     role: Literal["user", "assistant", "system"]
     content: str
     attachments: list[Attachment] = Field(default_factory=list)
@@ -91,6 +92,7 @@ class Message(BaseModel):
             "sk": self.sk,
             "message_id": self.message_id,
             "conversation_id": self.conversation_id,
+            "created_by": self.created_by,
             "role": self.role,
             "content": self.content,
             "created_at": self.created_at.isoformat(),
@@ -109,6 +111,7 @@ class Message(BaseModel):
         return cls(
             message_id=item["message_id"],
             conversation_id=item["conversation_id"],
+            created_by=item.get("created_by", ""),
             role=item["role"],
             content=item["content"],
             attachments=attachments,

@@ -98,6 +98,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             # 2. Save user message (with attachments if any)
             user_msg = Message(
                 conversation_id=conversation.conversation_id,
+                created_by=user_email,
                 role="user",
                 content=user_message,
                 attachments=attachments or [],
@@ -274,6 +275,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             if full_response.strip():
                 assistant_msg = Message(
                     conversation_id=conversation.conversation_id,
+                    created_by=user_email,
                     role="assistant",
                     content=full_response,
                 )

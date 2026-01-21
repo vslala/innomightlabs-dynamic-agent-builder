@@ -180,6 +180,9 @@ erDiagram
 | **Agent** | `User#{created_by}` | `Agent#{agent_id}` | List agents by user, Get agent by ID |
 | **ProviderSettings** | `User#{user_email}` | `ProviderSettings#{provider_name}` | Get provider config for user |
 | **Subscription** | `User#{user_email}` | `Subscription#{subscription_id}` | Get subscriptions by user, Get subscription by ID |
+| **Usage** | `User#{user_email}` | `Usage#{YYYY-MM}` | Track monthly usage counters |
+| **Usage (Active)** | `User#{user_email}` | `Usage#active` | Track current active agent count |
+| **Usage Event** | `User#{user_email}` | `UsageEvent#{event_id}` | Deduplicate usage stream events |
 | **Conversation** | `USER#{created_by}` | `CONVERSATION#{conversation_id}` | List conversations by user |
 | **Message** | `CONVERSATION#{conversation_id}` | `MESSAGE#{timestamp}#{message_id}` | List messages in conversation (chronological) |
 | **MemoryBlockDef** | `Agent#{agent_id}` | `MemoryBlockDef#{block_name}` | List memory block definitions for agent |
@@ -206,7 +209,7 @@ sequenceDiagram
     participant DB as DynamoDB
 
     User->>SPA: Select plan + billing cycle
-    SPA->>API: POST /checkout-session (planKey, billingCycle, customerEmail?)
+    SPA->>API: POST /checkout (planKey, billingCycle, userEmail?)
     API->>Stripe: Create checkout session
     Stripe-->>API: session.url
     API-->>SPA: session.url
@@ -214,10 +217,44 @@ sequenceDiagram
     Stripe-->>User: Collect payment + email
     Stripe-->>API: webhook checkout.session.completed
     API->>Stripe: Fetch subscription/customer
-    API->>DB: Upsert User + Subscription (invoice/customer ids)
+    API->>DB: Upsert User + Subscription (plan, period end, customer ids)
     Stripe-->>API: subscription.updated (future updates)
     API->>DB: Update subscription status/period
 ```
+
+---
+
+## Rate Limits and Usage
+
+### Enforcement Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as API (RateLimitMiddleware)
+    participant RL as RateLimitService
+    participant DB as DynamoDB
+
+    Client->>API: Request (agents/messages/crawl)
+    API->>RL: Check limits (tier + usage)
+    RL->>DB: Read Subscription + Usage
+    DB-->>RL: Active subscription + usage counters
+    RL-->>API: Allow or 429
+    API-->>Client: Proceed or rate limit error
+```
+
+### How Limits Are Checked
+
+- Active tier is resolved from `SubscriptionRepository.get_active_for_user()` using status + `current_period_end`.
+- Tier limits are loaded from `pricing_config.json`.
+- Message and KB limits use monthly usage records in DynamoDB: `Usage#YYYY-MM`.
+- Agent limits are checked against current agent count (query by `created_by`).
+
+### Usage Counters
+
+- Messages: `messages_used` on `Usage#YYYY-MM` (incremented after successful send).
+- KB pages: `kb_pages_used` on `Usage#YYYY-MM` (incremented after successful crawl).
+- Agents: derived from agents table (not a counter).
 
 ---
 

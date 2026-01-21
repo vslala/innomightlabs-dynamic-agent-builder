@@ -80,6 +80,46 @@ resource "aws_lambda_function" "api" {
   }
 }
 
+# Lambda for DynamoDB stream usage updates
+resource "aws_lambda_function" "usage_events" {
+  function_name = "${var.project_name}-usage-events"
+  role          = aws_iam_role.lambda.arn
+  package_type  = "Image"
+  image_uri     = "${aws_ecr_repository.api.repository_url}:latest"
+  timeout       = 60
+  memory_size   = 256
+
+  environment {
+    variables = {
+      ENVIRONMENT     = var.environment
+      DYNAMODB_TABLE  = aws_dynamodb_table.main.name
+      AWS_REGION_NAME = var.aws_region
+    }
+  }
+
+  image_config {
+    command = ["usage_stream_handler.handler"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-usage-events"
+    Environment = var.environment
+  }
+
+  depends_on = [null_resource.docker_build_push]
+
+  lifecycle {
+    ignore_changes = [image_uri]
+  }
+}
+
+resource "aws_lambda_event_source_mapping" "usage_events" {
+  event_source_arn  = aws_dynamodb_table.main.stream_arn
+  function_name     = aws_lambda_function.usage_events.arn
+  starting_position = "LATEST"
+  batch_size        = 100
+}
+
 # Bedrock permissions for Lambda (required for model listing and embeddings)
 resource "aws_iam_role_policy" "lambda_bedrock" {
   name = "${var.project_name}-lambda-bedrock"

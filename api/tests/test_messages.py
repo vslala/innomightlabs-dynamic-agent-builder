@@ -242,6 +242,7 @@ class TestMessageRepository:
             message_repository.save(
                 Message(
                     conversation_id="conv-123",
+                    created_by=TEST_USER_EMAIL,
                     role="user",
                     content=f"Message {i}",
                 )
@@ -251,6 +252,7 @@ class TestMessageRepository:
         message_repository.save(
             Message(
                 conversation_id="conv-456",
+                created_by=TEST_USER_EMAIL,
                 role="user",
                 content="Other message",
             )
@@ -275,6 +277,7 @@ class TestMessageRepository:
             message_repository.save(
                 Message(
                     conversation_id="conv-123",
+                    created_by=TEST_USER_EMAIL,
                     role="user",
                     content=f"Message {i}",
                 )
@@ -294,6 +297,7 @@ class TestMessageRepository:
         message_repository.save(
             Message(
                 conversation_id="conv-123",
+                created_by=TEST_USER_EMAIL,
                 role="user",
                 content="Message for conv-123",
             )
@@ -301,6 +305,7 @@ class TestMessageRepository:
         message_repository.save(
             Message(
                 conversation_id="conv-456",
+                created_by=TEST_USER_EMAIL,
                 role="user",
                 content="Message for conv-456",
             )

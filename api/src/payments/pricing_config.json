@@ -1,0 +1,131 @@
+{
+  "tiers": [
+    {
+      "key": "free",
+      "name": "Free",
+      "badge": "Free forever",
+      "description": "Get started with core memory features for personal projects.",
+      "prices": {
+        "monthly": "$0",
+        "annual": "$0"
+      },
+      "cta": {
+        "label": "Start Free",
+        "href": "/#waitlist"
+      },
+      "highlighted": false,
+      "features": [
+        "1 agent",
+        "100 messages / month",
+        "10 KB pages",
+        "5 memory blocks",
+        "Community support"
+      ],
+      "limits": {
+        "agents": 1,
+        "messages_per_month": 100,
+        "kb_pages": 10,
+        "memory_blocks": 5
+      },
+      "stripe_price_ids": {
+        "monthly": "price_1SryDo9vlzhgFql1Mg7bGavm",
+        "annual": "price_1Ss27B9vlzhgFql1CgyciXXf"
+      }
+    },
+    {
+      "key": "starter",
+      "name": "Starter",
+      "badge": "For growing teams",
+      "description": "Scale your first production agents with more capacity.",
+      "prices": {
+        "monthly": "$29",
+        "annual": "$290"
+      },
+      "cta": {
+        "label": "Start with Starter",
+        "href": "/#waitlist"
+      },
+      "highlighted": false,
+      "features": [
+        "3 agents",
+        "2,000 messages / month",
+        "100 KB pages",
+        "20 memory blocks",
+        "Email support"
+      ],
+      "limits": {
+        "agents": 3,
+        "messages_per_month": 2000,
+        "kb_pages": 100,
+        "memory_blocks": 20
+      },
+      "stripe_price_ids": {
+        "monthly": "price_1SryFk9vlzhgFql1rJtn4zIY",
+        "annual": "price_1SryFk9vlzhgFql1QdZ59teQ"
+      }
+    },
+    {
+      "key": "pro",
+      "name": "Pro",
+      "badge": "Most popular",
+      "description": "Everything you need for serious agent workflows.",
+      "prices": {
+        "monthly": "$99",
+        "annual": "$990"
+      },
+      "cta": {
+        "label": "Go Pro",
+        "href": "/#waitlist"
+      },
+      "highlighted": true,
+      "features": [
+        "10 agents",
+        "10,000 messages / month",
+        "1,000 KB pages",
+        "Unlimited memory blocks",
+        "Priority support"
+      ],
+      "limits": {
+        "agents": 10,
+        "messages_per_month": 10000,
+        "kb_pages": 1000,
+        "memory_blocks": 0
+      },
+      "stripe_price_ids": {
+        "monthly": "price_1Ss0eT9vlzhgFql18yPLfyrz",
+        "annual": "price_1Ss0eT9vlzhgFql1jP31gyGu"
+      }
+    },
+    {
+      "key": "enterprise",
+      "name": "Enterprise",
+      "badge": "Custom",
+      "description": "Dedicated support and limitless scale for large teams.",
+      "prices": {
+        "monthly": "Custom",
+        "annual": "Custom"
+      },
+      "cta": {
+        "label": "Contact Sales",
+        "href": "/#waitlist"
+      },
+      "highlighted": false,
+      "features": [
+        "Unlimited agents",
+        "Unlimited messages",
+        "Unlimited KB pages",
+        "Unlimited memory blocks",
+        "Dedicated support"
+      ],
+      "limits": {
+        "agents": 0,
+        "messages_per_month": 0,
+        "kb_pages": 0,
+        "memory_blocks": 0
+      },
+      "stripe_price_ids": {}
+    }
+  ],
+  "addons": [],
+  "updated_at": "2025-01-01"
+}

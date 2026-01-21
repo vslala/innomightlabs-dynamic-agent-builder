@@ -92,6 +92,16 @@ class HttpClient {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        if (response.status === 429 && errorData?.detail?.message) {
+          window.dispatchEvent(
+            new CustomEvent("rate-limit", {
+              detail: {
+                message: errorData.detail.message,
+                upgradeUrl: errorData.detail.upgrade_url,
+              },
+            })
+          );
+        }
         throw new HttpError(
           response.status,
           errorData.detail || errorData.message || "Request failed"

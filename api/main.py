@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
 from src.auth import auth_router, middleware
+from src.rate_limits.middleware import RateLimitMiddleware
 from src.agents.router import router as agent_router
 from src.apikeys.router import router as apikeys_router
 from src.conversations.router import router as conversation_router
@@ -45,6 +46,9 @@ dashboard_origins = [
 
 # Middleware order matters! Last added = first to run.
 # Order of execution: CORSMiddleware -> WidgetAuthMiddleware -> AuthMiddleware -> Route
+
+# Rate limit middleware - runs after auth (added first)
+app.add_middleware(RateLimitMiddleware)
 
 # Dashboard auth middleware (JWT validation) - added first, runs last
 app.add_middleware(middleware.AuthMiddleware)

@@ -1,21 +1,36 @@
-import json
-import hmac
+"""
+Simplified Stripe payments integration.
+
+Handles:
+- Pricing plans display
+- Checkout session creation
+- Webhook events for subscription updates
+"""
+
 import hashlib
+import hmac
+import json
+import logging
 import time
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-import logging
 from pydantic import BaseModel
 
 from ...config import settings
+from ..pricing_config import get_pricing_config
 from ...users import User, UserRepository
 from ..subscriptions import Subscription, SubscriptionRepository
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/payments/stripe", tags=["payments", "stripe"])
+router = APIRouter(prefix="/payments/stripe", tags=["payments"])
+
+
+# ============================================================================
+# Response Models
+# ============================================================================
 
 
 class PricingTier(BaseModel):
@@ -30,12 +45,6 @@ class PricingTier(BaseModel):
     features: list[str]
 
 
-class PricingAddOn(BaseModel):
-    title: str
-    price: str
-    description: str
-
-
 class PricingFaq(BaseModel):
     question: str
     answer: str
@@ -43,237 +52,215 @@ class PricingFaq(BaseModel):
 
 class PricingResponse(BaseModel):
     tiers: list[PricingTier]
-    addOns: list[PricingAddOn]
     faqs: list[PricingFaq]
 
 
-PRICING_RESPONSE = PricingResponse(
-    tiers=[
-        PricingTier(
-            name="Free",
-            badge="Free forever",
-            description="Get started with core memory features for personal projects.",
-            prices={"monthly": "$0", "annual": "$0"},
-            planKey=None,
-            ctaLabel="Join the Waitlist",
-            ctaHref="/#waitlist",
-            features=[
-                "1 agent",
-                "100 messages / month",
-                "10 KB pages",
-                "5 memory blocks",
-                "Community support",
-            ],
-        ),
-        PricingTier(
-            name="Starter",
-            badge="For growing teams",
-            description="Scale your first production agents with more capacity.",
-            prices={"monthly": "$29", "annual": "$290"},
-            planKey="starter",
-            ctaLabel="Start with Starter",
-            ctaHref="/#waitlist",
-            features=[
-                "3 agents",
-                "2,000 messages / month",
-                "100 KB pages",
-                "20 memory blocks",
-                "Email support",
-            ],
-        ),
-        PricingTier(
-            name="Pro",
-            badge="Most popular",
-            description="Everything you need for serious agent workflows.",
-            prices={"monthly": "$99", "annual": "$990"},
-            planKey="pro",
-            ctaLabel="Go Pro",
-            ctaHref="/#waitlist",
-            highlighted=True,
-            features=[
-                "10 agents",
-                "10,000 messages / month",
-                "1,000 KB pages",
-                "Unlimited memory blocks",
-                "Priority support",
-            ],
-        ),
-        PricingTier(
-            name="Enterprise",
-            badge="Custom",
-            description="Dedicated support and limitless scale for large teams.",
-            prices={"monthly": "Custom", "annual": "Custom"},
-            planKey=None,
-            ctaLabel="Contact Sales",
-            ctaHref="/#waitlist",
-            features=[
-                "Unlimited agents",
-                "Unlimited messages",
-                "Unlimited KB pages",
-                "Unlimited memory blocks",
-                "Dedicated support",
-            ],
-        ),
-    ],
-    addOns=[
-        PricingAddOn(
-            title="Extra Messages",
-            price="$5 per 1,000",
-            description="Top up monthly message limits as usage grows.",
-        ),
-        PricingAddOn(
-            title="Extra Agent",
-            price="$15 per agent",
-            description="Add more agents beyond your plan limit.",
-        ),
-        PricingAddOn(
-            title="Extra KB Pages",
-            price="$3 per 100 pages",
-            description="Expand knowledge base capacity on demand.",
-        ),
-        PricingAddOn(
-            title="API Access",
-            price="$8 per 1,000 calls",
-            description="Metered API usage for Pro and above.",
-        ),
-    ],
-    faqs=[
-        PricingFaq(
-            question="Do annual plans include a discount?",
-            answer="Yes. Annual billing saves 17%, which is equivalent to two months free.",
-        ),
-        PricingFaq(
-            question="What happens if I exceed my plan limits?",
-            answer="You can add usage-based add-ons for messages, agents, and KB pages.",
-        ),
-        PricingFaq(
-            question="Can I change plans later?",
-            answer="Absolutely. You can upgrade or downgrade at any time from the billing page.",
-        ),
-    ],
-)
+class CheckoutRequest(BaseModel):
+    planKey: str
+    billingCycle: str  # 'monthly' or 'annual'
+    userEmail: Optional[str] = None
+
+
+class CheckoutResponse(BaseModel):
+    url: str
+
+
+# ============================================================================
+# Pricing Endpoint (Public)
+# ============================================================================
 
 
 @router.get("/pricing", response_model=PricingResponse)
 async def get_pricing():
-    return PRICING_RESPONSE
+    """Get pricing tiers and FAQs."""
+    config = get_pricing_config()
+
+    tiers = [
+        PricingTier(
+            name=tier.name,
+            badge=tier.badge,
+            description=tier.description,
+            prices=tier.prices,
+            planKey=tier.key if tier.stripe_price_ids else None,
+            ctaLabel=tier.cta.label,
+            ctaHref=tier.cta.href,
+            highlighted=tier.highlighted,
+            features=tier.features,
+        )
+        for tier in config.tiers
+    ]
+
+    faqs = [
+        PricingFaq(
+            question="Do annual plans include a discount?",
+            answer="Yes. Annual billing saves 17%, equivalent to two months free.",
+        ),
+        PricingFaq(
+            question="Can I change plans later?",
+            answer="Absolutely. Upgrade or downgrade anytime from your dashboard.",
+        ),
+        PricingFaq(
+            question="What happens if I exceed my limits?",
+            answer="You'll be prompted to upgrade. No overages - your usage is capped at your plan limits.",
+        ),
+    ]
+
+    return PricingResponse(tiers=tiers, faqs=faqs)
 
 
-class CheckoutSessionRequest(BaseModel):
-    planKey: str
-    billingCycle: str
-    customerEmail: Optional[str] = None
-    clientReferenceId: Optional[str] = None
-
-
-class CheckoutSessionResponse(BaseModel):
-    id: str
-    url: str
+# ============================================================================
+# Checkout Session Creation
+# ============================================================================
 
 
 def _require_stripe_config() -> None:
-    missing = []
+    """Verify Stripe is configured."""
     if not settings.stripe_secret_key:
-        missing.append("STRIPE_SECRET_KEY")
+        raise HTTPException(status_code=500, detail="Stripe is not configured")
+
+
+def _require_webhook_config() -> None:
+    """Verify webhook secret is configured."""
+    _require_stripe_config()
     if not settings.stripe_webhook_secret:
-        missing.append("STRIPE_WEBHOOK_SECRET")
-    if missing:
-        raise HTTPException(status_code=500, detail=f"Missing Stripe configuration: {', '.join(missing)}")
+        raise HTTPException(status_code=500, detail="Stripe webhook secret not configured")
 
 
-def _price_id_for(plan_key: str, billing_cycle: str) -> str:
-    billing_cycle = billing_cycle.lower()
-    if plan_key == "starter":
-        return (
-            settings.stripe_price_starter_monthly
-            if billing_cycle == "monthly"
-            else settings.stripe_price_starter_annual
-        )
-    if plan_key == "pro":
-        return (
-            settings.stripe_price_pro_monthly
-            if billing_cycle == "monthly"
-            else settings.stripe_price_pro_annual
-        )
-    return ""
-
-
-def _price_env_for(plan_key: str, billing_cycle: str) -> str:
-    if plan_key == "starter" and billing_cycle == "monthly":
-        return "STRIPE_PRICE_STARTER_MONTHLY"
-    if plan_key == "starter" and billing_cycle == "annual":
-        return "STRIPE_PRICE_STARTER_ANNUAL"
-    if plan_key == "pro" and billing_cycle == "monthly":
-        return "STRIPE_PRICE_PRO_MONTHLY"
-    if plan_key == "pro" and billing_cycle == "annual":
-        return "STRIPE_PRICE_PRO_ANNUAL"
-    return "STRIPE_PRICE_UNKNOWN"
-
-
-def _plan_from_price_id(price_id: Optional[str]) -> Optional[str]:
-    if not price_id:
-        return None
-    mapping = {
-        settings.stripe_price_starter_monthly: "starter",
-        settings.stripe_price_starter_annual: "starter",
-        settings.stripe_price_pro_monthly: "pro",
-        settings.stripe_price_pro_annual: "pro",
-    }
-    return mapping.get(price_id)
-
-
-async def _stripe_request(method: str, path: str, data: Optional[dict] = None) -> dict:
+async def _stripe_post(path: str, data: dict) -> dict:
+    """Make a POST request to Stripe API."""
     url = f"https://api.stripe.com/v1{path}"
     headers = {"Authorization": f"Bearer {settings.stripe_secret_key}"}
+
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.request(method, url, data=data, headers=headers)
+        response = await client.post(url, data=data, headers=headers)
+
     if response.status_code >= 400:
-        log.error("Stripe API error %s: %s", response.status_code, response.text)
+        log.error(f"Stripe API error {response.status_code}: {response.text}")
         raise HTTPException(status_code=502, detail="Stripe API request failed")
+
     return response.json()
 
 
-@router.post("/checkout-session", response_model=CheckoutSessionResponse)
-async def create_checkout_session(payload: CheckoutSessionRequest, request: Request):
+async def _stripe_get(path: str) -> dict:
+    """Make a GET request to Stripe API."""
+    url = f"https://api.stripe.com/v1{path}"
+    headers = {"Authorization": f"Bearer {settings.stripe_secret_key}"}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(url, headers=headers)
+
+    if response.status_code >= 400:
+        log.error(f"Stripe API error {response.status_code}: {response.text}")
+        raise HTTPException(status_code=502, detail="Stripe API request failed")
+
+    return response.json()
+
+
+def _get_price_id(plan_key: str, billing_cycle: str) -> str:
+    """Get Stripe price ID for a plan and billing cycle."""
+    config = get_pricing_config()
+
+    for tier in config.tiers:
+        if tier.key == plan_key:
+            return tier.stripe_price_ids.get(billing_cycle, "")
+
+    return ""
+
+
+@router.post("/checkout", response_model=CheckoutResponse)
+async def create_checkout_session(payload: CheckoutRequest):
+    """
+    Create a Stripe checkout session.
+
+    Simple flow:
+    1. Get price ID from config
+    2. Create checkout session
+    3. Return checkout URL
+    """
     _require_stripe_config()
 
-    plan_key = payload.planKey.lower()
-    billing_cycle = payload.billingCycle.lower()
-    price_id = _price_id_for(plan_key, billing_cycle)
+    price_id = _get_price_id(payload.planKey, payload.billingCycle)
     if not price_id:
-        env_key = _price_env_for(plan_key, billing_cycle)
-        raise HTTPException(status_code=500, detail=f"Missing Stripe price configuration: {env_key}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Plan '{payload.planKey}' with '{payload.billingCycle}' billing not found",
+        )
 
     success_url = f"{settings.frontend_url}/payments/success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{settings.frontend_url}/payments/cancel"
 
-    data = {
+    session_data = {
         "mode": "subscription",
         "success_url": success_url,
         "cancel_url": cancel_url,
         "line_items[0][price]": price_id,
         "line_items[0][quantity]": "1",
         "allow_promotion_codes": "true",
-        "metadata[plan_key]": plan_key,
-        "metadata[billing_cycle]": billing_cycle,
-        "subscription_data[metadata][plan_key]": plan_key,
-        "subscription_data[metadata][billing_cycle]": billing_cycle,
+        "subscription_data[metadata][plan_key]": payload.planKey,
+        "subscription_data[metadata][billing_cycle]": payload.billingCycle,
     }
-    if payload.customerEmail:
-        data["customer_email"] = payload.customerEmail
-        data["metadata[user_email]"] = payload.customerEmail
-        data["subscription_data[metadata][user_email]"] = payload.customerEmail
-    if payload.clientReferenceId:
-        data["client_reference_id"] = payload.clientReferenceId
 
-    response = await _stripe_request("POST", "/checkout/sessions", data=data)
-    return CheckoutSessionResponse(id=response["id"], url=response["url"])
+    # Add customer email if provided
+    if payload.userEmail:
+        session_data["customer_email"] = payload.userEmail
+        session_data["subscription_data[metadata][user_email]"] = payload.userEmail
+
+    response = await _stripe_post("/checkout/sessions", session_data)
+
+    return CheckoutResponse(url=response["url"])
 
 
-def _verify_signature(payload: str, signature_header: str) -> None:
+# ============================================================================
+# Webhook Handler
+# ============================================================================
+
+
+def _extract_subscription_data(stripe_sub: dict) -> tuple[str, str, str]:
+    """
+    Extract plan info from Stripe subscription.
+
+    Returns:
+        (plan_key, billing_cycle, price_id)
+    """
+    metadata = stripe_sub.get("metadata", {})
+    plan_key = metadata.get("plan_key", "free")
+    billing_cycle = metadata.get("billing_cycle", "monthly")
+
+    items = stripe_sub.get("items", {}).get("data", [])
+    price_id = items[0].get("price", {}).get("id") if items else None
+
+    return plan_key, billing_cycle, price_id
+
+
+def _ensure_user_exists(email: str, customer_id: Optional[str] = None) -> None:
+    """Create user if doesn't exist, update customer_id if provided."""
+    repo = UserRepository()
+    user = repo.get_by_email(email)
+
+    if user:
+        if customer_id:
+            repo.update_stripe_customer_id(email, customer_id)
+    else:
+        name = email.split("@")[0]
+        new_user = User(email=email, name=name, stripe_customer_id=customer_id)
+        repo.create_or_update(new_user)
+
+
+def _verify_webhook_signature(payload: bytes, signature_header: str) -> None:
+    """
+    Verify Stripe webhook signature.
+
+    Args:
+        payload: Raw request body
+        signature_header: Value of 'stripe-signature' header
+
+    Raises:
+        HTTPException: If signature is invalid or timestamp is too old
+    """
     if not signature_header:
-        raise HTTPException(status_code=400, detail="Missing Stripe signature")
+        raise HTTPException(status_code=400, detail="Missing stripe-signature header")
 
+    # Parse signature header
     timestamp = None
     signatures = []
     for part in signature_header.split(","):
@@ -284,122 +271,127 @@ def _verify_signature(payload: str, signature_header: str) -> None:
             signatures.append(value)
 
     if not timestamp or not signatures:
-        raise HTTPException(status_code=400, detail="Invalid Stripe signature header")
+        raise HTTPException(status_code=400, detail="Invalid signature header format")
 
-    signed_payload = f"{timestamp}.{payload}".encode("utf-8")
-    expected = hmac.new(
+    # Compute expected signature
+    signed_payload = f"{timestamp}.{payload.decode('utf-8')}".encode("utf-8")
+    expected_sig = hmac.new(
         settings.stripe_webhook_secret.encode("utf-8"),
         signed_payload,
         hashlib.sha256,
     ).hexdigest()
 
-    if not any(hmac.compare_digest(expected, sig) for sig in signatures):
-        raise HTTPException(status_code=400, detail="Invalid Stripe signature")
+    # Compare signatures (constant-time comparison)
+    if not any(hmac.compare_digest(expected_sig, sig) for sig in signatures):
+        raise HTTPException(status_code=400, detail="Invalid signature")
 
-    tolerance = 300
-    if abs(time.time() - int(timestamp)) > tolerance:
-        raise HTTPException(status_code=400, detail="Stripe signature timestamp out of tolerance")
+    # Check timestamp tolerance (5 minutes)
+    tolerance = 300  # seconds
+    try:
+        timestamp_int = int(timestamp)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid timestamp in signature")
 
+    if abs(time.time() - timestamp_int) > tolerance:
+        raise HTTPException(status_code=400, detail="Signature timestamp too old")
 
-def _subscription_from_stripe(
-    stripe_subscription: dict,
-    user_email: str,
-    plan_name: Optional[str],
-    billing_cycle: Optional[str],
-) -> Subscription:
-    price_id = None
-    items = stripe_subscription.get("items", {}).get("data", [])
-    if items:
-        price_id = items[0].get("price", {}).get("id")
-
-    current_period_end = stripe_subscription.get("current_period_end")
-    current_period_end_iso = None
-    if current_period_end:
-        current_period_end_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(current_period_end))
-
-    return Subscription(
-        subscription_id=stripe_subscription["id"],
-        user_email=user_email,
-        customer_id=stripe_subscription.get("customer"),
-        status=stripe_subscription.get("status"),
-        plan_name=plan_name,
-        price_id=price_id,
-        billing_cycle=billing_cycle,
-        current_period_end=current_period_end_iso,
-        latest_invoice_id=stripe_subscription.get("latest_invoice"),
-    )
-
-
-def _ensure_user(email: str, name_hint: Optional[str] = None, customer_id: Optional[str] = None) -> None:
-    repo = UserRepository()
-    existing = repo.get_by_email(email)
-    if existing:
-        if customer_id:
-            repo.update_stripe_customer_id(email, customer_id)
-        return
-    name = name_hint or email.split("@")[0]
-    user = User(email=email, name=name, stripe_customer_id=customer_id)
-    repo.create_or_update(user)
 
 @router.post("/webhook")
-async def handle_payment_events(request: Request):
-    _require_stripe_config()
-    payload_bytes = await request.body()
-    payload = payload_bytes.decode("utf-8")
+async def handle_webhook(request: Request):
+    """
+    Handle Stripe webhooks.
+
+    Processes:
+    - checkout.session.completed: New subscription created
+    - customer.subscription.updated: Subscription changed
+    - customer.subscription.deleted: Subscription cancelled
+    """
+    _require_webhook_config()
+
+    # Get raw payload and signature
+    payload = await request.body()
     signature = request.headers.get("stripe-signature", "")
 
+    # Verify signature
+    _verify_webhook_signature(payload, signature)
+
+    # Parse event
     try:
-        _verify_signature(payload, signature)
-        event = json.loads(payload)
+        event = json.loads(payload.decode("utf-8"))
     except json.JSONDecodeError:
-        log.error("Invalid JSON payload")
-        raise HTTPException(status_code=400, detail="Invalid payload")
+        raise HTTPException(status_code=400, detail="Invalid JSON")
 
     event_type = event.get("type")
-    event_data = event.get("data", {}).get("object", {})
-    log.info("Received Stripe event: %s", event_type)
+    data = event.get("data", {}).get("object", {})
+
+    log.info(f"Received Stripe webhook: {event_type}")
 
     repo = SubscriptionRepository()
 
+    # Handle checkout completion
     if event_type == "checkout.session.completed":
-        subscription_id = event_data.get("subscription")
-        customer_id = event_data.get("customer")
-        metadata = event_data.get("metadata") or {}
-        customer_email = metadata.get("user_email") or (event_data.get("customer_details") or {}).get("email")
-        if subscription_id and customer_id and customer_email:
-            stripe_subscription = await _stripe_request("GET", f"/subscriptions/{subscription_id}")
-            subscription_metadata = stripe_subscription.get("metadata") or {}
-            plan_key = subscription_metadata.get("plan_key") or metadata.get("plan_key")
-            billing_cycle = subscription_metadata.get("billing_cycle") or metadata.get("billing_cycle")
-            subscription = _subscription_from_stripe(
-                stripe_subscription,
-                customer_email,
-                plan_key,
-                billing_cycle,
-            )
-            _ensure_user(customer_email, customer_id=customer_id)
-            repo.upsert(subscription)
+        subscription_id = data.get("subscription")
+        customer_id = data.get("customer")
+        customer_email = data.get("customer_details", {}).get("email")
 
-    if event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
-        customer_id = event_data.get("customer")
-        if customer_id:
-            customer = await _stripe_request("GET", f"/customers/{customer_id}")
-            customer_email = customer.get("email")
-            if customer_email:
-                metadata = event_data.get("metadata") or {}
-                price_id = None
-                items = event_data.get("items", {}).get("data", [])
-                if items:
-                    price_id = items[0].get("price", {}).get("id")
-                plan_key = metadata.get("plan_key") or _plan_from_price_id(price_id)
-                billing_cycle = metadata.get("billing_cycle")
-                subscription = _subscription_from_stripe(
-                    event_data,
-                    customer_email,
-                    plan_key,
-                    billing_cycle,
-                )
-                _ensure_user(customer_email, customer_id=customer_id)
-                repo.upsert(subscription)
+        if not all([subscription_id, customer_id, customer_email]):
+            log.warning("Incomplete checkout session data")
+            return {"status": "ignored"}
+
+        # Fetch full subscription details
+        stripe_sub = await _stripe_get(f"/subscriptions/{subscription_id}")
+
+        plan_key, billing_cycle, price_id = _extract_subscription_data(stripe_sub)
+
+        subscription = Subscription(
+            subscription_id=subscription_id,
+            user_email=customer_email,
+            customer_id=customer_id,
+            status=stripe_sub.get("status"),
+            plan_name=plan_key,
+            price_id=price_id,
+            billing_cycle=billing_cycle,
+            current_period_end=str(stripe_sub.get("current_period_end")),
+        )
+
+        _ensure_user_exists(customer_email, customer_id)
+        repo.upsert(subscription)
+
+        log.info(f"Created subscription {subscription_id} for {customer_email}")
+
+    # Handle subscription updates
+    elif event_type in {"customer.subscription.updated", "customer.subscription.deleted"}:
+        subscription_id = data.get("id")
+        customer_id = data.get("customer")
+
+        if not customer_id:
+            log.warning("No customer ID in subscription event")
+            return {"status": "ignored"}
+
+        # Get customer email
+        customer = await _stripe_get(f"/customers/{customer_id}")
+
+        customer_email = customer.get("email")
+        if not customer_email:
+            log.warning(f"No email for customer {customer_id}")
+            return {"status": "ignored"}
+
+        plan_key, billing_cycle, price_id = _extract_subscription_data(data)
+
+        subscription = Subscription(
+            subscription_id=subscription_id,
+            user_email=customer_email,
+            customer_id=customer_id,
+            status=data.get("status"),
+            plan_name=plan_key,
+            price_id=price_id,
+            billing_cycle=billing_cycle,
+            current_period_end=str(data.get("current_period_end")),
+        )
+
+        _ensure_user_exists(customer_email, customer_id)
+        repo.upsert(subscription)
+
+        log.info(f"Updated subscription {subscription_id} for {customer_email}")
 
     return {"status": "ok"}

@@ -5,6 +5,6 @@ export interface IPricingService {
   createCheckoutSession(
     planKey: string,
     billingCycle: string,
-    customerEmail?: string
+    userEmail?: string
   ): Promise<{ url: string }>;
 }

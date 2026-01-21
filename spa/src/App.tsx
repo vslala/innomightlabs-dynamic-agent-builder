@@ -8,6 +8,7 @@ import { QuickStart } from './pages/docs/QuickStart';
 import { FAQ } from './pages/docs/FAQ';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
+import { RateLimitBanner } from './components/RateLimitBanner';
 import { Overview } from './pages/dashboard/Overview';
 import { AgentsList } from './pages/dashboard/AgentsList';
 import { AgentCreate } from './pages/dashboard/AgentCreate';
@@ -23,6 +24,7 @@ const basename = import.meta.env.BASE_URL;
 function App() {
   return (
     <BrowserRouter basename={basename}>
+      <RateLimitBanner />
       <Routes>
         {/* Public routes */}
         <Route path="/" element={<LandingPage />} />
