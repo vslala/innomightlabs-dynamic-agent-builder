@@ -1,6 +1,9 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { LandingPage } from './pages/LandingPage';
 import { LoginSuccess } from './pages/LoginSuccess';
+import { Pricing } from './pages/Pricing';
+import { PaymentSuccess } from './pages/PaymentSuccess';
+import { PaymentCancel } from './pages/PaymentCancel';
 import { QuickStart } from './pages/docs/QuickStart';
 import { FAQ } from './pages/docs/FAQ';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
@@ -23,6 +26,9 @@ function App() {
       <Routes>
         {/* Public routes */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/pricing" element={<Pricing />} />
+        <Route path="/payments/success" element={<PaymentSuccess />} />
+        <Route path="/payments/cancel" element={<PaymentCancel />} />
         <Route path="/login-success" element={<LoginSuccess />} />
         <Route path="/docs/quick-start" element={<QuickStart />} />
         <Route path="/docs/faq" element={<FAQ />} />

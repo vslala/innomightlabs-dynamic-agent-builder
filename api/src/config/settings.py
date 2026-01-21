@@ -59,6 +59,15 @@ class Settings:
     # Feature flags
     _validated_features: set = field(default_factory=set)
 
+    # Stripe (optional; only required for billing features)
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_starter_monthly: str = ""
+    stripe_price_starter_annual: str = ""
+    stripe_price_pro_monthly: str = ""
+    stripe_price_pro_annual: str = ""
+
     def validate_core(self) -> None:
         """
         Validate core configuration required for the app to start.
@@ -192,6 +201,14 @@ class Settings:
             # Bedrock - has sensible defaults
             bedrock_embedding_model=os.getenv("BEDROCK_EMBEDDING_MODEL", "amazon.titan-embed-text-v2:0"),
             bedrock_embedding_dimension=int(os.getenv("BEDROCK_EMBEDDING_DIMENSION", "1024")),
+            # Stripe - optional, used for billing
+            stripe_secret_key=os.getenv("STRIPE_SECRET_KEY", ""),
+            stripe_publishable_key=os.getenv("STRIPE_PUBLISHABLE_KEY", ""),
+            stripe_webhook_secret=os.getenv("STRIPE_WEBHOOK_SECRET", ""),
+            stripe_price_starter_monthly=os.getenv("STRIPE_PRICE_STARTER_MONTHLY", ""),
+            stripe_price_starter_annual=os.getenv("STRIPE_PRICE_STARTER_ANNUAL", ""),
+            stripe_price_pro_monthly=os.getenv("STRIPE_PRICE_PRO_MONTHLY", ""),
+            stripe_price_pro_annual=os.getenv("STRIPE_PRICE_PRO_ANNUAL", ""),
         )
 
 

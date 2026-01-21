@@ -33,6 +33,9 @@ PUBLIC_PATHS = {
     "/test-logging",
     "/openapi.json",
     "/redoc",
+    "/payments/stripe/webhook",
+    "/payments/stripe/pricing",
+    "/payments/stripe/checkout-session",
 }
 
 # Path prefixes that use different authentication (not JWT)

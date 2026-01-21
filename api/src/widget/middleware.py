@@ -39,7 +39,7 @@ class WidgetAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Skip auth for OAuth routes (they handle their own auth via state)
-        if request.url.path in ["/widget/auth/google", "/widget/auth/callback", "/widget/auth/callback-page"]:
+        if request.url.path in ["/widget/auth/google", "/widget/auth/callback", "/widget/auth/callback-page", "/payments/stripe/webhook"]:
             return await call_next(request)
 
         # Validate API key for all widget routes (including /widget/config)

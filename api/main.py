@@ -12,6 +12,7 @@ from src.settings.router import router as settings_router
 from src.memory.router import router as memory_router
 from src.llm.router import router as llm_router
 from src.knowledge.router import router as knowledge_router, agent_kb_router, sse_router as knowledge_sse_router
+from src.payments.stripe.router import router as stripe_payments_router
 from src.widget import widget_router, WidgetAuthMiddleware
 from src.exceptions import register_exception_handlers
 
@@ -73,6 +74,7 @@ app.include_router(router=knowledge_sse_router)
 app.include_router(router=knowledge_router)
 app.include_router(router=agent_kb_router)
 app.include_router(router=widget_router)
+app.include_router(router=stripe_payments_router)
 
 
 @app.get("/health")
