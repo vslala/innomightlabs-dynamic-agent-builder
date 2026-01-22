@@ -6,6 +6,8 @@ import { PaymentSuccess } from './pages/PaymentSuccess';
 import { PaymentCancel } from './pages/PaymentCancel';
 import { QuickStart } from './pages/docs/QuickStart';
 import { FAQ } from './pages/docs/FAQ';
+import { Terms } from './pages/legal/Terms';
+import { PricingPolicy } from './pages/legal/PricingPolicy';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 import { RateLimitBanner } from './components/RateLimitBanner';
@@ -34,6 +36,8 @@ function App() {
         <Route path="/login-success" element={<LoginSuccess />} />
         <Route path="/docs/quick-start" element={<QuickStart />} />
         <Route path="/docs/faq" element={<FAQ />} />
+        <Route path="/legal/terms" element={<Terms />} />
+        <Route path="/legal/pricing" element={<PricingPolicy />} />
 
         {/* Protected dashboard routes */}
         <Route

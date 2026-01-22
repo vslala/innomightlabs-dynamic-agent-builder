@@ -1,4 +1,5 @@
 import { Bell } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { Button } from "../ui/button";
 
@@ -47,7 +48,10 @@ export function Header({ title, user }: HeaderProps) {
         </Button>
 
         {user && (
-          <div className="flex items-center gap-2.5 pl-3 border-l border-[var(--border-subtle)]">
+          <Link
+            to="/dashboard/settings"
+            className="flex items-center gap-2.5 pl-3 border-l border-[var(--border-subtle)]"
+          >
             <div className="text-right hidden sm:block">
               <p className="text-[13px] font-medium text-[var(--text-primary)] leading-tight">
                 {user.name}
@@ -58,7 +62,7 @@ export function Header({ title, user }: HeaderProps) {
               <AvatarImage src={user.picture} alt={user.name} />
               <AvatarFallback className="text-[10px]">{initials || "U"}</AvatarFallback>
             </Avatar>
-          </div>
+          </Link>
         )}
       </div>
     </header>
