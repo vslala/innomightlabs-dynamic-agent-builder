@@ -60,7 +60,7 @@ export function LoginSuccess() {
     <div className={styles.container}>
       <div className={styles.card}>
         <div className={styles.header}>
-          <h1>Welcome to Beta!</h1>
+          <h1>Welcome to InnoMight Labs</h1>
           <p className={styles.subtitle}>You have successfully logged in</p>
         </div>
 

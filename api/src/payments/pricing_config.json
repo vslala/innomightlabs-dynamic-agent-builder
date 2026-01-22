@@ -28,8 +28,8 @@
         "memory_blocks": 5
       },
       "stripe_price_ids": {
-        "monthly": "price_1SryDo9vlzhgFql1Mg7bGavm",
-        "annual": "price_1Ss27B9vlzhgFql1CgyciXXf"
+        "monthly": "price_1SsQp394EtooRMivbzMTeQNB",
+        "annual": "price_1SsQp394EtooRMivJq6Xf2Tt"
       }
     },
     {
@@ -48,20 +48,20 @@
       "highlighted": false,
       "features": [
         "3 agents",
-        "2,000 messages / month",
+        "10,000 messages / month",
         "100 KB pages",
         "20 memory blocks",
         "Email support"
       ],
       "limits": {
         "agents": 3,
-        "messages_per_month": 2000,
+        "messages_per_month": 10000,
         "kb_pages": 100,
         "memory_blocks": 20
       },
       "stripe_price_ids": {
-        "monthly": "price_1SryFk9vlzhgFql1rJtn4zIY",
-        "annual": "price_1SryFk9vlzhgFql1QdZ59teQ"
+        "monthly": "price_1SsQp494EtooRMivaJtqPUM0",
+        "annual": "price_1SsQp594EtooRMivDqgGsh1l"
       }
     },
     {
@@ -87,13 +87,13 @@
       ],
       "limits": {
         "agents": 10,
-        "messages_per_month": 10000,
+        "messages_per_month": 50000,
         "kb_pages": 1000,
         "memory_blocks": 0
       },
       "stripe_price_ids": {
-        "monthly": "price_1Ss0eT9vlzhgFql18yPLfyrz",
-        "annual": "price_1Ss0eT9vlzhgFql1jP31gyGu"
+        "monthly": "price_1SsQp694EtooRMiv7csmGkuB",
+        "annual": "price_1SsQp694EtooRMivS8wR9cMO"
       }
     },
     {

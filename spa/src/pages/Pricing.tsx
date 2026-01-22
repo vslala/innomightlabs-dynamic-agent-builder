@@ -78,7 +78,7 @@ export function Pricing() {
               <span className="gradient-text">memory-first agents</span>
             </h1>
             <p className={styles.subtitle}>
-              Start free, then scale with usage-based add-ons as your agents grow.
+              Start free, then scale with higher limits as your agents grow.
               Annual billing saves 17% across paid plans.
             </p>
 

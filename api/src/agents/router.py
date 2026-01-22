@@ -153,15 +153,34 @@ async def list_agents(
 
 
 @router.get("/update-schema/{agent_id}", response_model=form_models.Form, response_model_exclude_none=True)
-async def get_update_agent_schema(agent_id: str) -> form_models.Form:
+async def get_update_agent_schema(
+    request: Request,
+    agent_id: str,
+    providers_settings_repo: Annotated[ProviderSettingsRepository, Depends(get_provider_settings_repository)]
+) -> form_models.Form:
     """Get the form schema for updating an agent with dynamically fetched models."""
-    # Fetch available models from Bedrock with display names
+    user_email = request.state.user_email
+
     bedrock_models = models_service.get_bedrock_models()
+    model_providers = ["Bedrock"]
     model_options = [
         {"value": m.model_name, "label": m.display_name}
         for m in bedrock_models
     ]
-    return get_update_agent_form(agent_id, model_options)
+
+    provider_settings = providers_settings_repo.find_by_provider(
+        user_email=user_email,
+        provider_name="Anthropic"
+    )
+    if provider_settings:
+        anthropic_models = models_service.get_anthropic_models(provider_settings=provider_settings)
+        model_providers.append("Anthropic")
+        model_options.extend([
+            {"value": m.model_name, "label": m.display_name}
+            for m in anthropic_models
+        ])
+
+    return get_update_agent_form(agent_id, model_providers, model_options)
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)

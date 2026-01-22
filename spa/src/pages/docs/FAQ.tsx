@@ -73,10 +73,9 @@ const faqSections: FAQSection[] = [
         question: 'Is there a free trial?',
         answer: (
           <p>
-            We're currently in beta! During the beta period, you can explore the platform
-            with generous usage limits. You'll need to configure your own LLM provider
-            (like AWS Bedrock) for inference costs. Stay tuned for our official pricing
-            plans launching soon.
+            Yes. We offer a free tier so you can get started right away. You'll need to
+            configure your own LLM provider (like AWS Bedrock) for inference costs, and
+            you can upgrade your plan as your usage grows.
           </p>
         ),
       },
@@ -389,10 +388,9 @@ const faqSections: FAQSection[] = [
         question: 'What are the usage limits during beta?',
         answer: (
           <p>
-            During beta, we offer generous usage limits to help you explore the platform.
-            You're responsible for LLM inference costs through your own provider (e.g., AWS Bedrock).
-            Specific limits on agents, conversations, and knowledge bases will be finalized
-            with our official pricing plans.
+            Usage limits are tied to your subscription tier. You can see current limits
+            on the pricing page and in your account settings. LLM inference costs are
+            billed directly by your provider (e.g., AWS Bedrock).
           </p>
         ),
       },
@@ -400,10 +398,8 @@ const faqSections: FAQSection[] = [
         question: 'How is pricing calculated?',
         answer: (
           <p>
-            Our pricing model is being finalized. It will likely include a platform fee
-            based on the number of agents and usage volume. LLM inference costs are separate
-            and billed directly by your provider (AWS, etc.). Join our waitlist to be notified
-            when official pricing is announced.
+            Pricing is based on subscription tiers with defined usage limits. LLM inference
+            costs are separate and billed directly by your provider (AWS, etc.).
           </p>
         ),
       },

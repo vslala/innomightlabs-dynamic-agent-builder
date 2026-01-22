@@ -82,7 +82,11 @@ def get_create_agent_form(model_providers: list[str], model_options: list[dict] 
     )
 
 
-def get_update_agent_form(agent_id: str, model_options: list[dict] | None = None) -> Form:
+def get_update_agent_form(
+    agent_id: str,
+    model_providers: list[str] | None = None,
+    model_options: list[dict] | None = None,
+) -> Form:
     """
     Get the update form schema for a specific agent.
 
@@ -98,6 +102,8 @@ def get_update_agent_form(agent_id: str, model_options: list[dict] | None = None
         if model_options
         else DEFAULT_MODEL_OPTIONS
     )
+
+    providers = model_providers or ["Bedrock"]
 
     return Form(
         form_name="Update Agent Form",
@@ -117,7 +123,7 @@ def get_update_agent_form(agent_id: str, model_options: list[dict] | None = None
             FormInput(
                 label="Provider Name",
                 name="agent_provider",
-                values=["Bedrock"],
+                values=providers,
                 input_type=FormInputType.SELECT,
             ),
             FormInput(
@@ -155,7 +161,7 @@ UPDATE_AGENT_FORM = Form(
         FormInput(
             label="Provider Name",
             name="agent_provider",
-            values=["Bedrock"],
+            values=["Bedrock", "Anthropic"],
             input_type=FormInputType.SELECT,
         ),
         FormInput(

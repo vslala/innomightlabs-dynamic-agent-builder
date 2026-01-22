@@ -12,7 +12,7 @@ export function Hero() {
       <div className={styles.content}>
         <div className={styles.badge}>
           <span className={styles.badgeDot} />
-          Coming Soon
+          Now Live
         </div>
 
         <h1 className={styles.title}>

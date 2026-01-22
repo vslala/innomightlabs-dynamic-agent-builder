@@ -76,7 +76,10 @@ resource "aws_lambda_function" "api" {
     Environment = var.environment
   }
 
-  depends_on = [null_resource.docker_build_push]
+  depends_on = [
+    null_resource.docker_build_push,
+    null_resource.stripe_pricing_sync,
+  ]
 
   lifecycle {
     ignore_changes = [image_uri]
@@ -112,7 +115,10 @@ resource "aws_lambda_function" "usage_events" {
     Environment = var.environment
   }
 
-  depends_on = [null_resource.docker_build_push]
+  depends_on = [
+    null_resource.docker_build_push,
+    null_resource.stripe_pricing_sync,
+  ]
 
   lifecycle {
     ignore_changes = [image_uri]
@@ -124,6 +130,25 @@ resource "aws_lambda_event_source_mapping" "usage_events" {
   function_name     = aws_lambda_function.usage_events.arn
   starting_position = "LATEST"
   batch_size        = 100
+}
+
+# Sync Stripe products/prices from pricing config before lambda deploys
+resource "null_resource" "stripe_pricing_sync" {
+  triggers = {
+    pricing_config_hash = filesha256("${path.module}/../api/src/payments/pricing_config.json")
+    stripe_secret_key   = var.stripe_secret_key
+    environment         = var.environment
+  }
+
+  provisioner "local-exec" {
+    working_dir = "${path.module}/../api"
+    command = <<-EOT
+      STRIPE_API_KEY="${var.stripe_secret_key}" \
+      STRIPE_CURRENCY="gbp" \
+      PRICING_CONFIG_PATH="${path.module}/../api/src/payments/pricing_config.json" \
+      uv run "${path.module}/../scripts/stripe_pricing_sync.py"
+    EOT
+  }
 }
 
 # Bedrock permissions for Lambda (required for model listing and embeddings)
