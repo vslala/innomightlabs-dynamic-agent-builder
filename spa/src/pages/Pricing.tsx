@@ -133,6 +133,11 @@ export function Pricing() {
                         {price === 'Custom' ? "Let's talk" : `per ${billingCycle === 'monthly' ? 'month' : 'year'}`}
                       </span>
                     </div>
+                    {tier.planKey === 'free' && (
+                      <p className={styles.tierNote}>
+                        Free plan with a required card on file to protect the platform.
+                      </p>
+                    )}
 
                     {canCheckout ? (
                       <button
@@ -193,10 +198,17 @@ export function Pricing() {
         <section className={styles.ctaSection}>
           <div className={styles.ctaContent}>
             <h2>Ready to build agents with long-term memory?</h2>
-            <p>Start free today and upgrade when you need more capacity.</p>
-            <a href={`${import.meta.env.VITE_API_BASE_URL}/auth/cognito`} className={styles.ctaButton}>
-              Start Free
-            </a>
+            <p>Start free today with a card on file, then upgrade when you need more capacity.</p>
+            <button
+              type="button"
+              className={styles.ctaButton}
+              onClick={() => handleCheckout('free')}
+              disabled={checkoutStatus === 'loading' && activeCheckout === 'free'}
+            >
+              {checkoutStatus === 'loading' && activeCheckout === 'free'
+                ? 'Redirecting...'
+                : 'Start Free'}
+            </button>
           </div>
         </section>
       </main>

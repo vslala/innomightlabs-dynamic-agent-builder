@@ -12,15 +12,25 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { SchemaForm } from "../../components/forms";
 import { authService } from "../../services/auth";
+import { httpClient } from "../../services/http";
 import {
   providerSettingsService,
   type ProviderWithStatus,
 } from "../../services/settings/ProviderSettingsService";
 
+type SubscriptionStatus = {
+  tier: string;
+  status?: string | null;
+  current_period_end?: string | null;
+  is_active: boolean;
+};
+
 export function Settings() {
   const [providers, setProviders] = useState<ProviderWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
 
   // Track which provider is being configured
   const [configuringProvider, setConfiguringProvider] = useState<string | null>(null);
@@ -31,6 +41,7 @@ export function Settings() {
 
   useEffect(() => {
     loadProviders();
+    loadSubscription();
   }, []);
 
   const loadProviders = async () => {
@@ -71,6 +82,27 @@ export function Settings() {
     }
   };
 
+  const loadSubscription = async () => {
+    try {
+      const data = await httpClient.get<SubscriptionStatus>("/payments/stripe/subscription/status");
+      setSubscription(data);
+    } catch {
+      setSubscription(null);
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  };
+
+  const formatPeriodEnd = (value?: string | null) => {
+    if (!value) return "—";
+    if (/^\d+$/.test(value)) {
+      const date = new Date(Number(value) * 1000);
+      return isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
+    }
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "42rem" }}>
       {/* Profile Section */}
@@ -106,6 +138,49 @@ export function Settings() {
               Profile settings are managed through your Google account
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Subscription</CardTitle>
+          <CardDescription>
+            Your current plan, billing status, and renewal date.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {subscriptionLoading ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--gradient-start)" }} />
+              <span style={{ color: "var(--text-muted)" }}>Loading subscription...</span>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>Plan</span>
+                <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                  {subscription?.tier ?? "free"}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>Status</span>
+                <span style={{ color: "var(--text-primary)" }}>
+                  {subscription?.status ?? "free"}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--text-muted)" }}>Renewal date</span>
+                <span style={{ color: "var(--text-primary)" }}>
+                  {formatPeriodEnd(subscription?.current_period_end)}
+                </span>
+              </div>
+              <div>
+                <a href="/pricing" style={{ color: "var(--text-primary)", textDecoration: "underline" }}>
+                  Manage plan
+                </a>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
