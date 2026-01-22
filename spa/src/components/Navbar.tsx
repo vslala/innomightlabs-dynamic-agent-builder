@@ -7,7 +7,6 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const isDocsPage = location.pathname.startsWith('/docs');
-  const isLandingPage = location.pathname === '/';
   const isAuthenticated = authService.isAuthenticated();
 
   useEffect(() => {
@@ -27,12 +26,8 @@ export function Navbar() {
         </Link>
 
         <div className={styles.links}>
-          {isLandingPage && (
-            <>
-              <a href="#features" className={styles.link}>Features</a>
-              <a href="#how-it-works" className={styles.link}>How It Works</a>
-            </>
-          )}
+          <a href={`${import.meta.env.BASE_URL}#features`} className={styles.link}>Features</a>
+          <a href={`${import.meta.env.BASE_URL}#how-it-works`} className={styles.link}>How It Works</a>
           <Link to="/pricing" className={styles.link}>Pricing</Link>
           <Link to="/docs/quick-start" className={styles.link}>Docs</Link>
           {isAuthenticated ? (

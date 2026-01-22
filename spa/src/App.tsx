@@ -1,4 +1,5 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { LandingPage } from './pages/LandingPage';
 import { LoginSuccess } from './pages/LoginSuccess';
 import { Pricing } from './pages/Pricing';
@@ -23,9 +24,29 @@ import { Settings } from './pages/dashboard/Settings';
 
 const basename = import.meta.env.BASE_URL;
 
+function ScrollToHash() {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!location.hash) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const id = location.hash.replace('#', '');
+    const target = document.getElementById(id);
+    if (!target) {
+      return;
+    }
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [location]);
+
+  return null;
+}
+
 function App() {
   return (
     <BrowserRouter basename={basename}>
+      <ScrollToHash />
       <RateLimitBanner />
       <Routes>
         {/* Public routes */}

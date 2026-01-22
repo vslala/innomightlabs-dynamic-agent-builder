@@ -1,5 +1,4 @@
 import json
-from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -41,7 +40,6 @@ def _config_path() -> Path:
     return Path(__file__).with_name("pricing_config.json")
 
 
-@lru_cache(maxsize=1)
 def get_pricing_config() -> PricingConfig:
     path = _config_path()
     data = json.loads(path.read_text())
