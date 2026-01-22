@@ -53,6 +53,13 @@ class WidgetTokenResponse(BaseModel):
     visitor: WidgetVisitor
 
 
+class WidgetMessageResponse(BaseModel):
+    message_id: str
+    role: str
+    content: str
+    created_at: str
+
+
 def get_widget_conversation_repository() -> WidgetConversationRepository:
     """Dependency for WidgetConversationRepository."""
     return WidgetConversationRepository()
@@ -520,3 +527,36 @@ async def send_message(
             "Connection": "keep-alive",
         }
     )
+
+
+@router.get("/conversations/{conversation_id}/messages", response_model=list[WidgetMessageResponse])
+async def list_messages(
+    request: Request,
+    conversation_id: str,
+    api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
+    visitor: Annotated[WidgetVisitor, Depends(get_visitor_from_request)],
+    conv_repo: Annotated[WidgetConversationRepository, Depends(get_widget_conversation_repository)],
+    message_repo: Annotated[MessageRepository, Depends(get_message_repository)],
+):
+    """
+    List messages for a widget conversation.
+
+    Requires X-API-Key header and visitor Authorization token.
+    """
+    conversation = conv_repo.find_by_id(api_key.agent_id, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if conversation.visitor_id != visitor.visitor_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    messages = message_repo.find_by_conversation(conversation_id)
+    return [
+        WidgetMessageResponse(
+            message_id=message.message_id,
+            role=message.role,
+            content=message.content,
+            created_at=message.created_at.isoformat(),
+        )
+        for message in messages
+        if message.role in {"user", "assistant"}
+    ]

@@ -322,7 +322,7 @@ async def get_subscription_status(request: Request):
         return SubscriptionStatusResponse(
             tier=subscription.plan_name or "free",
             status=subscription.status,
-            current_period_end=subscription.current_period_end,
+            current_period_end=_normalize_period_end(subscription.current_period_end),
             is_active=True,
         )
     else:
@@ -354,6 +354,14 @@ def _extract_subscription_data(stripe_sub: dict) -> tuple[str, str, str]:
     price_id = items[0].get("price", {}).get("id") if items else None
 
     return plan_key, billing_cycle, price_id
+
+
+def _normalize_period_end(value: Optional[object]) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str) and value.lower() in {"none", "null", ""}:
+        return None
+    return str(value)
 
 
 def _ensure_user_exists(email: str, customer_id: Optional[str] = None) -> None:
@@ -475,7 +483,7 @@ async def handle_webhook(request: Request):
             plan_name=plan_key,
             price_id=price_id,
             billing_cycle=billing_cycle,
-            current_period_end=str(stripe_sub.get("current_period_end")),
+            current_period_end=_normalize_period_end(stripe_sub.get("current_period_end")),
             latest_invoice_id=stripe_sub.get("latest_invoice"),
         )
 
@@ -511,7 +519,7 @@ async def handle_webhook(request: Request):
             plan_name=plan_key,
             price_id=price_id,
             billing_cycle=billing_cycle,
-            current_period_end=str(data.get("current_period_end")),
+            current_period_end=_normalize_period_end(data.get("current_period_end")),
             latest_invoice_id=data.get("latest_invoice"),
         )
 
