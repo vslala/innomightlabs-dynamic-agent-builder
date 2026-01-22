@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 import { useState, useEffect, useCallback } from 'preact/hooks';
 import { WidgetConfig, WidgetState, Message, Conversation, Visitor } from '../types';
-import { configureApi, fetchConfig, getOAuthUrl, createConversation, listConversations } from '../api';
+import { configureApi, fetchConfig, getOAuthUrl, createConversation, listConversations, listMessages } from '../api';
 import {
   getVisitorToken,
   setVisitorToken,
@@ -67,7 +67,25 @@ export function Widget({ config }: WidgetProps) {
           if (visitor) {
             try {
               const conversations = await listConversations();
-              setState((prev) => ({ ...prev, conversations }));
+              let activeConversation = conversation;
+              if (!activeConversation && conversations.length > 0) {
+                activeConversation = conversations[0];
+                setCurrentConversation(activeConversation);
+              }
+              let messages: Message[] = [];
+              if (activeConversation?.conversationId) {
+                try {
+                  messages = await listMessages(activeConversation.conversationId);
+                } catch {
+                  messages = [];
+                }
+              }
+              setState((prev) => ({
+                ...prev,
+                conversations,
+                currentConversation: activeConversation,
+                messages,
+              }));
             } catch {
               // Ignore error, user can still chat
             }
@@ -119,6 +137,7 @@ export function Widget({ config }: WidgetProps) {
         ...prev,
         currentConversation: conversation,
         conversations: [conversation, ...prev.conversations],
+        messages: [],
       }));
     } catch (error) {
       setState((prev) => ({

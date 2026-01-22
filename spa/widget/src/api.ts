@@ -2,7 +2,7 @@
  * API client for widget backend communication.
  */
 
-import { Conversation, SSEEvent } from './types';
+import { Conversation, Message, SSEEvent } from './types';
 import { getVisitorToken } from './storage';
 
 const DEFAULT_API_URL = 'https://api.innomightlabs.com';
@@ -117,6 +117,27 @@ export async function listConversations(): Promise<Conversation[]> {
     createdAt: item.created_at,
     updatedAt: item.updated_at,
     messageCount: item.message_count,
+  }));
+}
+
+/**
+ * List messages for a conversation.
+ */
+export async function listMessages(conversationId: string): Promise<Message[]> {
+  const response = await fetch(`${apiUrl}/widget/conversations/${conversationId}/messages`, {
+    headers: getHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to list messages');
+  }
+
+  const data = await response.json();
+  return data.map((item: Record<string, unknown>) => ({
+    id: String(item.message_id),
+    role: item.role as Message['role'],
+    content: String(item.content),
+    timestamp: new Date(String(item.created_at)),
   }));
 }
 

@@ -1,4 +1,5 @@
 import resolve from '@rollup/plugin-node-resolve';
+import commonjs from '@rollup/plugin-commonjs';
 import replace from '@rollup/plugin-replace';
 import typescript from '@rollup/plugin-typescript';
 import { terser } from 'rollup-plugin-terser';
@@ -18,6 +19,7 @@ export default {
     resolve({
       browser: true,
     }),
+    commonjs(),
     replace({
       preventAssignment: true,
       'process.env.NODE_ENV': JSON.stringify(production ? 'production' : 'development'),

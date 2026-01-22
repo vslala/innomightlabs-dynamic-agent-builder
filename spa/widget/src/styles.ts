@@ -147,10 +147,22 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
 
     /* Message bubble */
     .innomight-message {
-      max-width: 80%;
-      padding: 10px 14px;
-      border-radius: 16px;
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 18px;
       word-wrap: break-word;
+      animation: innomight-message-in 0.2s ease-out;
+    }
+
+    @keyframes innomight-message-in {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .innomight-message-user {
@@ -160,11 +172,30 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       border-bottom-right-radius: 4px;
     }
 
+    .innomight-message-user .innomight-inline-code {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
     .innomight-message-assistant {
       align-self: flex-start;
       background: ${colors.assistantBubble};
       color: ${colors.text};
       border-bottom-left-radius: 4px;
+    }
+
+    .innomight-message-assistant .innomight-markdown a {
+      color: ${colors.primary};
+    }
+
+    .innomight-message-user .innomight-markdown a {
+      color: white;
+      border-bottom-color: rgba(255, 255, 255, 0.5);
+    }
+
+    .innomight-message-user .innomight-markdown a:hover {
+      border-bottom-color: white;
     }
 
     /* Input area */
@@ -318,6 +349,266 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       30% { transform: translateY(-4px); }
     }
 
+    /* Markdown styles */
+    .innomight-markdown {
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .innomight-markdown p {
+      margin: 0 0 12px 0;
+    }
+
+    .innomight-markdown p:last-child {
+      margin-bottom: 0;
+    }
+
+    .innomight-markdown h1,
+    .innomight-markdown h2,
+    .innomight-markdown h3,
+    .innomight-markdown h4,
+    .innomight-markdown h5,
+    .innomight-markdown h6 {
+      margin: 16px 0 8px 0;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    .innomight-markdown h1 { font-size: 24px; }
+    .innomight-markdown h2 { font-size: 20px; }
+    .innomight-markdown h3 { font-size: 18px; }
+    .innomight-markdown h4 { font-size: 16px; }
+    .innomight-markdown h5 { font-size: 14px; }
+    .innomight-markdown h6 { font-size: 13px; }
+
+    .innomight-markdown a {
+      color: ${colors.primary};
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+
+    .innomight-markdown a:hover {
+      border-bottom-color: ${colors.primary};
+    }
+
+    .innomight-markdown strong {
+      font-weight: 600;
+    }
+
+    .innomight-markdown em {
+      font-style: italic;
+    }
+
+    .innomight-markdown ul,
+    .innomight-markdown ol {
+      margin: 8px 0 12px 0;
+      padding-left: 24px;
+    }
+
+    .innomight-markdown li {
+      margin: 4px 0;
+    }
+
+    .innomight-markdown blockquote {
+      margin: 12px 0;
+      padding: 8px 16px;
+      border-left: 3px solid ${colors.primary};
+      background: ${colors.surface};
+      border-radius: 4px;
+    }
+
+    .innomight-markdown blockquote p {
+      margin: 0;
+    }
+
+    .innomight-markdown table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 13px;
+    }
+
+    .innomight-markdown th,
+    .innomight-markdown td {
+      border: 1px solid ${colors.border};
+      padding: 8px 12px;
+      text-align: left;
+    }
+
+    .innomight-markdown th {
+      background: ${colors.surface};
+      font-weight: 600;
+    }
+
+    .innomight-markdown tr:nth-child(even) {
+      background: ${colors.surface};
+    }
+
+    .innomight-markdown hr {
+      border: none;
+      border-top: 1px solid ${colors.border};
+      margin: 16px 0;
+    }
+
+    /* Inline code */
+    .innomight-inline-code {
+      background: ${colors.surface};
+      color: ${colors.text};
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 13px;
+      border: 1px solid ${colors.border};
+    }
+
+    /* Code blocks */
+    .innomight-code-block {
+      margin: 12px 0;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid ${colors.border};
+      background: #282c34;
+    }
+
+    .innomight-code-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: #21252b;
+      border-bottom: 1px solid #181a1f;
+    }
+
+    .innomight-code-language {
+      font-size: 12px;
+      font-weight: 500;
+      color: #abb2bf;
+      text-transform: uppercase;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    }
+
+    .innomight-copy-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: transparent;
+      border: 1px solid #3e4451;
+      color: #abb2bf;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .innomight-copy-btn:hover {
+      background: #2c313a;
+      border-color: #4b5263;
+    }
+
+    .innomight-copy-btn.innomight-copied {
+      color: #98c379;
+      border-color: #98c379;
+    }
+
+    .innomight-copy-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .innomight-code-block pre {
+      margin: 0;
+      padding: 16px;
+      overflow-x: auto;
+      background: #282c34;
+    }
+
+    .innomight-code-block code {
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #abb2bf;
+      display: block;
+    }
+
+    /* Highlight.js One Dark theme colors */
+    .hljs {
+      color: #abb2bf;
+      background: #282c34;
+    }
+
+    .hljs-comment,
+    .hljs-quote {
+      color: #5c6370;
+      font-style: italic;
+    }
+
+    .hljs-doctag,
+    .hljs-keyword,
+    .hljs-formula {
+      color: #c678dd;
+    }
+
+    .hljs-section,
+    .hljs-name,
+    .hljs-selector-tag,
+    .hljs-deletion,
+    .hljs-subst {
+      color: #e06c75;
+    }
+
+    .hljs-literal {
+      color: #56b6c2;
+    }
+
+    .hljs-string,
+    .hljs-regexp,
+    .hljs-addition,
+    .hljs-attribute,
+    .hljs-meta .hljs-string {
+      color: #98c379;
+    }
+
+    .hljs-attr,
+    .hljs-variable,
+    .hljs-template-variable,
+    .hljs-type,
+    .hljs-selector-class,
+    .hljs-selector-attr,
+    .hljs-selector-pseudo,
+    .hljs-number {
+      color: #d19a66;
+    }
+
+    .hljs-symbol,
+    .hljs-bullet,
+    .hljs-link,
+    .hljs-meta,
+    .hljs-selector-id,
+    .hljs-title {
+      color: #61aeee;
+    }
+
+    .hljs-built_in,
+    .hljs-title.class_,
+    .hljs-class .hljs-title {
+      color: #e6c07b;
+    }
+
+    .hljs-emphasis {
+      font-style: italic;
+    }
+
+    .hljs-strong {
+      font-weight: bold;
+    }
+
+    .hljs-link {
+      text-decoration: underline;
+    }
+
     /* Position variants */
     .innomight-widget-container.bottom-right {
       bottom: 20px;
@@ -348,6 +639,66 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
         height: calc(100vh - 100px);
         max-height: none;
       }
+
+      .innomight-message {
+        max-width: 90%;
+      }
+
+      .innomight-code-block {
+        font-size: 12px;
+      }
+
+      .innomight-code-block pre {
+        padding: 12px;
+      }
+
+      .innomight-code-block code {
+        font-size: 12px;
+      }
+
+      .innomight-markdown table {
+        font-size: 11px;
+      }
+
+      .innomight-markdown th,
+      .innomight-markdown td {
+        padding: 6px 8px;
+      }
+    }
+
+    /* Scrollbar styling */
+    .innomight-messages::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .innomight-messages::-webkit-scrollbar-track {
+      background: ${colors.surface};
+    }
+
+    .innomight-messages::-webkit-scrollbar-thumb {
+      background: ${colors.border};
+      border-radius: 3px;
+    }
+
+    .innomight-messages::-webkit-scrollbar-thumb:hover {
+      background: ${colors.textSecondary};
+    }
+
+    .innomight-code-block pre::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    .innomight-code-block pre::-webkit-scrollbar-track {
+      background: #21252b;
+    }
+
+    .innomight-code-block pre::-webkit-scrollbar-thumb {
+      background: #3e4451;
+      border-radius: 3px;
+    }
+
+    .innomight-code-block pre::-webkit-scrollbar-thumb:hover {
+      background: #4b5263;
     }
   `;
 }

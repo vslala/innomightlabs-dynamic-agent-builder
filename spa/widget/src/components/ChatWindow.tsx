@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'preact/hooks';
 import { Message, Conversation } from '../types';
 import { sendMessage } from '../api';
 import { SendIcon } from './Icons';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface ChatWindowProps {
   conversation: Conversation;
@@ -98,14 +99,14 @@ export function ChatWindow({
             key={msg.id}
             className={`innomight-message innomight-message-${msg.role}`}
           >
-            {msg.content}
+            <MarkdownRenderer content={msg.content} />
           </div>
         ))}
 
         {/* Streaming response */}
         {streamingContent && (
           <div className="innomight-message innomight-message-assistant">
-            {streamingContent}
+            <MarkdownRenderer content={streamingContent} />
           </div>
         )}
 
