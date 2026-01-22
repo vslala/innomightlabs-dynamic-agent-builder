@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { authService } from '../services/auth';
 import styles from './Navbar.module.css';
 
 export function Navbar() {
@@ -7,6 +8,7 @@ export function Navbar() {
   const location = useLocation();
   const isDocsPage = location.pathname.startsWith('/docs');
   const isLandingPage = location.pathname === '/';
+  const isAuthenticated = authService.isAuthenticated();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -33,21 +35,24 @@ export function Navbar() {
           )}
           <Link to="/pricing" className={styles.link}>Pricing</Link>
           <Link to="/docs/quick-start" className={styles.link}>Docs</Link>
-          {isLandingPage && (
-            <a href="#waitlist" className={styles.ctaLink}>Join Waitlist</a>
+          {isAuthenticated ? (
+            <Link to="/dashboard" className={styles.ctaLink}>Dashboard</Link>
+          ) : (
+            <>
+              <a
+                href={`${import.meta.env.VITE_API_BASE_URL}/auth/cognito`}
+                className={styles.link}
+              >
+                Email Login
+              </a>
+              <a
+                href={`${import.meta.env.VITE_API_BASE_URL}/auth/google`}
+                className={styles.betaLogin}
+              >
+                Beta Login
+              </a>
+            </>
           )}
-          <a
-            href={`${import.meta.env.VITE_API_BASE_URL}/auth/cognito`}
-            className={styles.link}
-          >
-            Email Login
-          </a>
-          <a
-            href={`${import.meta.env.VITE_API_BASE_URL}/auth/google`}
-            className={styles.betaLogin}
-          >
-            Beta Login
-          </a>
         </div>
       </div>
     </nav>

@@ -28,8 +28,8 @@ export function Hero() {
         </p>
 
         <div className={styles.cta}>
-          <a href="#waitlist" className={styles.primaryBtn}>
-            Join the Waitlist
+          <a href="/pricing" className={styles.primaryBtn}>
+            Start Free
           </a>
           <a href="#features" className={styles.secondaryBtn}>
             Learn More

@@ -193,9 +193,9 @@ export function Pricing() {
         <section className={styles.ctaSection}>
           <div className={styles.ctaContent}>
             <h2>Ready to build agents with long-term memory?</h2>
-            <p>Join the waitlist to get early access and launch credits.</p>
-            <a href="/#waitlist" className={styles.ctaButton}>
-              Join the Waitlist
+            <p>Start free today and upgrade when you need more capacity.</p>
+            <a href={`${import.meta.env.VITE_API_BASE_URL}/auth/cognito`} className={styles.ctaButton}>
+              Start Free
             </a>
           </div>
         </section>

@@ -18,8 +18,8 @@ export function PaymentCancel() {
             <a href="/pricing" className={styles.primary}>
               Back to Pricing
             </a>
-            <a href="/#waitlist" className={styles.secondary}>
-              Join the Waitlist
+            <a href="/" className={styles.secondary}>
+              Back to Home
             </a>
           </div>
         </div>
