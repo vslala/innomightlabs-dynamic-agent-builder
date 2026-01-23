@@ -3,12 +3,17 @@
     {
       "key": "free",
       "name": "Free",
-      "badge": "Free forever",
-      "description": "Get started with core memory features for personal projects.",
       "prices": {
         "monthly": "$0",
         "annual": "$0"
       },
+      "stripe_price_ids": {
+        "monthly": "price_1SskOC94EtooRMiv72Iyowwi",
+        "annual": "price_1SskOD94EtooRMivpUCsplJJ"
+      },
+      "stripe_product_id": "prod_TqRGdPq1lE1o1K",
+      "badge": "Free forever",
+      "description": "Get started with core memory features for personal projects.",
       "cta": {
         "label": "Start Free",
         "href": "/#waitlist"
@@ -26,21 +31,22 @@
         "messages_per_month": 100,
         "kb_pages": 10,
         "memory_blocks": 5
-      },
-      "stripe_price_ids": {
-        "monthly": "price_1SsQp394EtooRMivbzMTeQNB",
-        "annual": "price_1SsQp394EtooRMivJq6Xf2Tt"
       }
     },
     {
       "key": "starter",
       "name": "Starter",
-      "badge": "For growing teams",
-      "description": "Scale your first production agents with more capacity.",
       "prices": {
         "monthly": "$29",
         "annual": "$290"
       },
+      "stripe_price_ids": {
+        "monthly": "price_1SskOE94EtooRMiv4FxwTu9m",
+        "annual": "price_1SskOF94EtooRMivJwyL2mUE"
+      },
+      "stripe_product_id": "prod_TqRG3FXdG8mp6T",
+      "badge": "For growing teams",
+      "description": "Scale your first production agents with more capacity.",
       "cta": {
         "label": "Start with Starter",
         "href": "/#waitlist"
@@ -58,21 +64,22 @@
         "messages_per_month": 10000,
         "kb_pages": 100,
         "memory_blocks": 20
-      },
-      "stripe_price_ids": {
-        "monthly": "price_1SsQp494EtooRMivaJtqPUM0",
-        "annual": "price_1SsQp594EtooRMivDqgGsh1l"
       }
     },
     {
       "key": "pro",
       "name": "Pro",
-      "badge": "Most popular",
-      "description": "Everything you need for serious agent workflows.",
       "prices": {
         "monthly": "$99",
         "annual": "$990"
       },
+      "stripe_price_ids": {
+        "monthly": "price_1SskOG94EtooRMiv6KbVFaCd",
+        "annual": "price_1SskOH94EtooRMivFWZGBaFG"
+      },
+      "stripe_product_id": "prod_TqRGUcB6bFqqVI",
+      "badge": "Most popular",
+      "description": "Everything you need for serious agent workflows.",
       "cta": {
         "label": "Go Pro",
         "href": "/#waitlist"
@@ -90,21 +97,18 @@
         "messages_per_month": 50000,
         "kb_pages": 1000,
         "memory_blocks": 0
-      },
-      "stripe_price_ids": {
-        "monthly": "price_1SsQp694EtooRMiv7csmGkuB",
-        "annual": "price_1SsQp694EtooRMivS8wR9cMO"
       }
     },
     {
       "key": "enterprise",
       "name": "Enterprise",
-      "badge": "Custom",
-      "description": "Dedicated support and limitless scale for large teams.",
       "prices": {
         "monthly": "Custom",
         "annual": "Custom"
       },
+      "stripe_price_ids": {},
+      "badge": "Custom",
+      "description": "Dedicated support and limitless scale for large teams.",
       "cta": {
         "label": "Contact Sales",
         "href": "/#waitlist"
@@ -122,8 +126,7 @@
         "messages_per_month": 0,
         "kb_pages": 0,
         "memory_blocks": 0
-      },
-      "stripe_price_ids": {}
+      }
     }
   ],
   "addons": [],

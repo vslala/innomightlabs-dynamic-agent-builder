@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -37,7 +38,7 @@ class PricingConfig(BaseModel):
 
 
 def _config_path() -> Path:
-    return Path(__file__).with_name("pricing_config.json")
+    return Path(__file__).with_name(f"{os.getenv("ENVIRONMENT", "dev")}_pricing_config.json")
 
 
 def get_pricing_config() -> PricingConfig:

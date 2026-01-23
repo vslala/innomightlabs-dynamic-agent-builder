@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -12,13 +12,19 @@ class Subscription:
     plan_name: Optional[str] = None
     price_id: Optional[str] = None
     billing_cycle: Optional[str] = None
+    current_period_start: Optional[str] = None
     current_period_end: Optional[str] = None
+    cancel_at_period_end: Optional[bool] = None
+    canceled_at: Optional[str] = None
+    trial_end: Optional[str] = None
+    currency: Optional[str] = None
+    amount: Optional[int] = None
     latest_invoice_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
     def __post_init__(self) -> None:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         if self.created_at is None:
             self.created_at = now
         if self.updated_at is None:
@@ -43,7 +49,13 @@ class Subscription:
             "plan_name": self.plan_name,
             "price_id": self.price_id,
             "billing_cycle": self.billing_cycle,
+            "current_period_start": self.current_period_start,
             "current_period_end": self.current_period_end,
+            "cancel_at_period_end": self.cancel_at_period_end,
+            "canceled_at": self.canceled_at,
+            "trial_end": self.trial_end,
+            "currency": self.currency,
+            "amount": self.amount,
             "latest_invoice_id": self.latest_invoice_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -59,7 +71,13 @@ class Subscription:
             plan_name=item.get("plan_name"),
             price_id=item.get("price_id"),
             billing_cycle=item.get("billing_cycle"),
+            current_period_start=item.get("current_period_start"),
             current_period_end=item.get("current_period_end"),
+            cancel_at_period_end=item.get("cancel_at_period_end"),
+            canceled_at=item.get("canceled_at"),
+            trial_end=item.get("trial_end"),
+            currency=item.get("currency"),
+            amount=item.get("amount"),
             latest_invoice_id=item.get("latest_invoice_id"),
             created_at=item.get("created_at"),
             updated_at=item.get("updated_at"),
