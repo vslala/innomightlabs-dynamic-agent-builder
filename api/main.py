@@ -1,5 +1,5 @@
+import os
 import logging
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
@@ -17,10 +17,12 @@ from src.payments.stripe.router import router as stripe_payments_router
 from src.widget import widget_router, WidgetAuthMiddleware
 from src.exceptions import register_exception_handlers
 
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,  # Lambda base image preconfigures logging; force replaces it so INFO shows up
 )
 
 logging.getLogger("botocore").setLevel(logging.WARNING)

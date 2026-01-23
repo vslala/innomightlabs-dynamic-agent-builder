@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from ..payments.subscriptions import SubscriptionRepository
 from ..payments.pricing_config import get_pricing_config, PricingTierLimits
 from ..agents.repository import AgentRepository
+from ..config import settings
 from .repository import UsageRepository
 
 
@@ -68,6 +69,7 @@ class RateLimitService:
                     "limit": limits.agents,
                     "current": len(current_agents),
                     "tier": tier,
+                    "upgrade_url": f"{settings.frontend_url}/pricing",
                 },
             )
 
@@ -96,6 +98,7 @@ class RateLimitService:
                     "limit": limits.messages_per_month,
                     "current": current,
                     "tier": tier,
+                    "upgrade_url": f"{settings.frontend_url}/pricing",
                 },
             )
 
@@ -127,6 +130,7 @@ class RateLimitService:
                     "current": current,
                     "remaining": remaining,
                     "tier": tier,
+                    "upgrade_url": f"{settings.frontend_url}/pricing",
                 },
             )
 

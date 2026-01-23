@@ -74,14 +74,17 @@ async def get_create_agent_schema(
     
     
     provider_settings = providers_settings_repo.find_by_provider(user_email=user_email, provider_name="Anthropic")
-    
+
     if provider_settings:
-        anthropic_models = models_service.get_anthropic_models(provider_settings=provider_settings)
-        model_providers.append("Anthropic")
-        model_options.extend([
-            {"value": m.model_name, "label": m.display_name}
-            for m in anthropic_models
-        ])
+        try:
+            anthropic_models = models_service.get_anthropic_models(provider_settings=provider_settings)
+            model_providers.append("Anthropic")
+            model_options.extend([
+                {"value": m.model_name, "label": m.display_name}
+                for m in anthropic_models
+            ])
+        except Exception as e:
+            log.warning(f"Failed to load Anthropic models for user {user_email}: {e}")
     
     return get_create_agent_form(model_providers, model_options)
 

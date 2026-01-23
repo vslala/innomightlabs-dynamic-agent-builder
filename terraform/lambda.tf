@@ -44,7 +44,7 @@ resource "aws_lambda_function" "api" {
       DYNAMODB_TABLE       = aws_dynamodb_table.main.name
       AWS_REGION_NAME      = var.aws_region
       FRONTEND_URL         = var.frontend_url
-      API_BASE_URL         = var.api_domain != "" ? "https://${var.api_domain}" : aws_apigatewayv2_api.api.api_endpoint
+      API_BASE_URL         = aws_apigatewayv2_api.api.api_endpoint
       GOOGLE_CLIENT_ID     = var.google_client_id
       GOOGLE_CLIENT_SECRET = var.google_client_secret
       JWT_SECRET           = var.jwt_secret
@@ -52,7 +52,10 @@ resource "aws_lambda_function" "api" {
       COGNITO_DOMAIN        = "https://${aws_cognito_user_pool_domain.hosted_ui.domain}.auth.${var.aws_region}.amazoncognito.com"
       COGNITO_CLIENT_ID     = aws_cognito_user_pool_client.hosted_ui.id
       COGNITO_CLIENT_SECRET = aws_cognito_user_pool_client.hosted_ui.client_secret
-      COGNITO_REDIRECT_URI  = "${var.api_domain != "" ? "https://${var.api_domain}" : aws_apigatewayv2_api.api.api_endpoint}/auth/callback/cognito"
+      COGNITO_REDIRECT_URI = coalesce(
+        var.cognito_redirect_uri,
+        "${aws_apigatewayv2_api.api.api_endpoint}/auth/callback/cognito"
+      )
       # Pinecone Vector Store
       PINECONE_API_KEY     = var.pinecone_api_key
       PINECONE_HOST        = var.pinecone_host
@@ -61,10 +64,6 @@ resource "aws_lambda_function" "api" {
       STRIPE_SECRET_KEY            = var.stripe_secret_key
       STRIPE_PUBLISHABLE_KEY       = var.stripe_publishable_key
       STRIPE_WEBHOOK_SECRET        = var.stripe_webhook_secret
-      STRIPE_PRICE_STARTER_MONTHLY = var.stripe_price_starter_monthly
-      STRIPE_PRICE_STARTER_ANNUAL  = var.stripe_price_starter_annual
-      STRIPE_PRICE_PRO_MONTHLY     = var.stripe_price_pro_monthly
-      STRIPE_PRICE_PRO_ANNUAL      = var.stripe_price_pro_annual
       # SES
       SES_FROM_EMAIL     = var.ses_from_email
       SES_REPLY_TO_EMAIL = var.ses_reply_to_email
@@ -107,7 +106,7 @@ resource "aws_lambda_function" "usage_events" {
   }
 
   image_config {
-    command = ["usage_stream_handler.handler"]
+    command = ["lambdas.usage_stream_handler.handler.handler"]
   }
 
   tags = {
@@ -135,7 +134,7 @@ resource "aws_lambda_event_source_mapping" "usage_events" {
 # Sync Stripe products/prices from pricing config before lambda deploys
 resource "null_resource" "stripe_pricing_sync" {
   triggers = {
-    pricing_config_hash = filesha256("${path.module}/../api/src/payments/pricing_config.json")
+    pricing_config_hash = filesha256("${path.module}/../api/src/payments/${var.environment}_pricing_config.json")
     stripe_secret_key   = var.stripe_secret_key
     environment         = var.environment
   }
@@ -145,8 +144,8 @@ resource "null_resource" "stripe_pricing_sync" {
     command = <<-EOT
       STRIPE_API_KEY="${var.stripe_secret_key}" \
       STRIPE_CURRENCY="gbp" \
-      PRICING_CONFIG_PATH="${path.module}/../api/src/payments/pricing_config.json" \
-      uv run "${path.module}/../scripts/stripe_pricing_sync.py"
+      PRICING_CONFIG_PATH="${path.module}/../api/src/payments/${var.environment}_pricing_config.json" \
+      uv run scripts/stripe_pricing_sync.py
     EOT
   }
 }

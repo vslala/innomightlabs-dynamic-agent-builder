@@ -6,7 +6,9 @@ import httpx
 
 from ..config import settings
 from .google_oauth import GoogleOAuth
+import logging
 
+log = logging.getLogger(__name__)
 
 class OAuthProvider(Protocol):
     name: str
@@ -64,6 +66,7 @@ class CognitoOAuthProvider:
             "state": state,
         }
         url = f"{self.domain}{self.AUTHORIZATION_PATH}?{urlencode(params)}"
+        log.info(f"Redirecting to cognito: {url}")
         return url, state
 
     async def exchange_code_for_tokens(self, code: str) -> dict[str, Any]:

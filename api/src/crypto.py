@@ -10,6 +10,9 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from src.form_models import Form, FormInputType
 
+import logging
+
+log = logging.getLogger(__name__)
 
 def _get_fernet() -> Fernet:
     """
@@ -19,6 +22,7 @@ def _get_fernet() -> Fernet:
     """
     secret = os.getenv("ENCRYPTION_KEY", os.getenv("JWT_SECRET", "dev-secret"))
     salt = b"innomightlabs_salt"  # Static salt for deterministic key derivation
+    log.info(f"SECRET: {secret}")    
 
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),

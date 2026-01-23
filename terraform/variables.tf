@@ -76,6 +76,12 @@ variable "cognito_domain_prefix" {
   default     = "innomightlabs-auth"
 }
 
+variable "cognito_redirect_uri" {
+  description = "Redirect after login url"
+  type        = string
+  default     = "https://api.innomight.com/auth/callback/cognito"
+}
+
 variable "cognito_callback_urls" {
   description = "Allowed callback URLs for Cognito Hosted UI"
   type        = list(string)
@@ -103,30 +109,6 @@ variable "stripe_publishable_key" {
 
 variable "stripe_webhook_secret" {
   description = "Stripe webhook signing secret"
-  type        = string
-  sensitive   = true
-}
-
-variable "stripe_price_starter_monthly" {
-  description = "Stripe price ID for Starter monthly"
-  type        = string
-  sensitive   = true
-}
-
-variable "stripe_price_starter_annual" {
-  description = "Stripe price ID for Starter annual"
-  type        = string
-  sensitive   = true
-}
-
-variable "stripe_price_pro_monthly" {
-  description = "Stripe price ID for Pro monthly"
-  type        = string
-  sensitive   = true
-}
-
-variable "stripe_price_pro_annual" {
-  description = "Stripe price ID for Pro annual"
   type        = string
   sensitive   = true
 }
