@@ -175,9 +175,27 @@ export function Settings() {
                 </span>
               </div>
               <div>
-                <a href="/pricing" style={{ color: "var(--text-primary)", textDecoration: "underline" }}>
-                  Manage plan
+                <a
+                  href="/pricing"
+                  style={{
+                    color: "var(--text-primary)",
+                    textDecoration: "underline"
+                  }}
+                >
+                  {subscription?.is_active
+                    ? `Upgrade plan (current: ${subscription.tier})`
+                    : "Choose a plan"
+                  }
                 </a>
+                {subscription?.is_active && (
+                  <p style={{
+                    fontSize: "0.75rem",
+                    color: "var(--text-muted)",
+                    marginTop: "0.25rem"
+                  }}>
+                    To downgrade or cancel, contact support
+                  </p>
+                )}
               </div>
             </div>
           )}

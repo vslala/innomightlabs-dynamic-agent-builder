@@ -168,6 +168,50 @@ def verify_webhook_signature(payload: bytes, signature_header: str) -> None:
     except ValueError:
         raise HTTPException(400, "Invalid timestamp in signature")
 
+def validate_checkout_request(user_email: str, plan_key: str) -> Optional[str]:
+    """
+    Validate checkout request against existing subscriptions.
+
+    Rules:
+    - Block if user already has same plan active
+    - Block downgrades (direct to Settings for subscription modification)
+    - Allow upgrades to higher tiers
+    - Allow if no active subscription
+
+    Returns:
+        Error message if validation fails, None if valid.
+    """
+    repo = SubscriptionRepository()
+    active_sub = repo.get_active_for_user(user_email)
+
+    if not active_sub:
+        return None  # No active subscription, allow checkout
+
+    current_plan = active_sub.plan_name
+
+    # Block same plan purchase
+    if current_plan == plan_key:
+        return (
+            f"You already have an active {plan_key} subscription. "
+            f"Visit Settings to manage your subscription."
+        )
+
+    # Define tier hierarchy
+    tier_order = {"free": 0, "starter": 1, "pro": 2, "enterprise": 3}
+    current_tier = tier_order.get(current_plan, 0)
+    requested_tier = tier_order.get(plan_key, 0)
+
+    # Block downgrades
+    if requested_tier < current_tier:
+        return (
+            f"To downgrade from {current_plan} to {plan_key}, "
+            f"please visit Settings → Manage Subscription to modify your plan. "
+            f"Your {current_plan} plan will continue until the end of your billing period."
+        )
+
+    # Allow upgrades (higher tier)
+    return None
+
 # ============================================================================
 # Endpoints
 # ============================================================================
@@ -198,14 +242,32 @@ async def get_pricing():
     return PricingResponse(tiers=tiers, faqs=faqs)
 
 @router.post("/checkout", response_model=CheckoutResponse)
-async def create_checkout_session(payload: CheckoutRequest):
-    """Create Stripe checkout session and return URL."""
+async def create_checkout_session(payload: CheckoutRequest, request: Request):
+    """Create Stripe checkout session with validation."""
     stripe = StripeClient()
-    
+
+    # Extract authenticated user email from middleware
+    user_email = getattr(request.state, "user_email", None)
+    if not user_email:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required. Please log in to continue."
+        )
+
+    # Validate against existing subscriptions
+    validation_error = validate_checkout_request(user_email, payload.planKey)
+    if validation_error:
+        raise HTTPException(status_code=400, detail=validation_error)
+
+    # Get price ID from config
     price_id = get_price_id(payload.planKey, payload.billingCycle)
     if not price_id:
-        raise HTTPException(400, f"Plan '{payload.planKey}' with '{payload.billingCycle}' billing not found")
-    
+        raise HTTPException(
+            status_code=400,
+            detail=f"Plan '{payload.planKey}' with '{payload.billingCycle}' billing not found in pricing config"
+        )
+
+    # Create Stripe session with authenticated email
     session_data = {
         "mode": "subscription",
         "success_url": f"{settings.frontend_url}/payments/success?session_id={{CHECKOUT_SESSION_ID}}",
@@ -213,16 +275,12 @@ async def create_checkout_session(payload: CheckoutRequest):
         "line_items[0][price]": price_id,
         "line_items[0][quantity]": "1",
         "allow_promotion_codes": "true",
+        "customer_email": user_email,  # Use authenticated email
         "subscription_data[metadata][plan_key]": payload.planKey,
         "subscription_data[metadata][billing_cycle]": payload.billingCycle,
+        "subscription_data[metadata][user_email]": user_email,  # Store in metadata for webhook
     }
-    
-    if payload.userEmail:
-        session_data.update({
-            "customer_email": payload.userEmail,
-            "subscription_data[metadata][user_email]": payload.userEmail,
-        })
-    
+
     response = await stripe.post("/checkout/sessions", session_data)
     return CheckoutResponse(url=response["url"])
 
@@ -272,9 +330,9 @@ async def get_subscription_status(request: Request):
     user_email = getattr(request.state, "user_email", None)
     if not user_email:
         raise HTTPException(401, "Not authenticated")
-    
+
     subscription = SubscriptionRepository().get_active_for_user(user_email)
-    
+
     if subscription:
         return SubscriptionStatusResponse(
             tier=subscription.plan_name or "free",
@@ -282,7 +340,46 @@ async def get_subscription_status(request: Request):
             current_period_end=normalize_value(subscription.current_period_end),
             is_active=True,
         )
-    
+
+    # Fallback: Check Stripe directly if no subscription in DB (webhook may not have fired yet)
+    try:
+        stripe = StripeClient()
+        user_repo = UserRepository()
+        user = user_repo.get_by_email(user_email)
+
+        customer_id = user.stripe_customer_id if user else None
+
+        # If no customer_id stored, search for customer by email
+        if not customer_id:
+            customers_response = await stripe.get(f"/customers?email={user_email}&limit=1")
+            customers = customers_response.get("data", [])
+            if customers:
+                customer_id = customers[0].get("id")
+                # Update user record with customer_id
+                if user and customer_id:
+                    user_repo.update_stripe_customer_id(user_email, customer_id)
+
+        # Search for active subscriptions
+        if customer_id:
+            subscriptions_response = await stripe.get(
+                f"/subscriptions?customer={customer_id}&status=active&limit=1"
+            )
+
+            subscriptions = subscriptions_response.get("data", [])
+            if subscriptions:
+                stripe_sub = subscriptions[0]
+                plan_key, _ = extract_subscription_metadata(stripe_sub)
+
+                # Return the Stripe subscription data
+                return SubscriptionStatusResponse(
+                    tier=plan_key or "free",
+                    status=stripe_sub.get("status"),
+                    current_period_end=normalize_value(stripe_sub.get("current_period_end")),
+                    is_active=True,
+                )
+    except Exception as e:
+        log.warning(f"Failed to fetch subscription from Stripe for {user_email}: {e}")
+
     return SubscriptionStatusResponse(tier="free", status=None, current_period_end=None, is_active=False)
 
 # ============================================================================

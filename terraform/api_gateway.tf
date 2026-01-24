@@ -82,8 +82,6 @@ resource "aws_acm_certificate_validation" "api" {
   count = var.api_domain != "" ? 1 : 0
 
   certificate_arn = aws_acm_certificate.api[0].arn
-
-  # DNS validation record must be added manually to Namecheap
 }
 
 # API Gateway custom domain

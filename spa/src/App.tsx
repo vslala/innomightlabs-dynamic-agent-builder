@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { LandingPage } from './pages/LandingPage';
+import { Login } from './pages/Login';
 import { LoginSuccess } from './pages/LoginSuccess';
 import { Pricing } from './pages/Pricing';
 import { PaymentSuccess } from './pages/PaymentSuccess';
@@ -51,6 +52,7 @@ function App() {
       <Routes>
         {/* Public routes */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<Login />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/payments/success" element={<PaymentSuccess />} />
         <Route path="/payments/cancel" element={<PaymentCancel />} />

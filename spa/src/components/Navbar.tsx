@@ -33,20 +33,7 @@ export function Navbar() {
           {isAuthenticated ? (
             <Link to="/dashboard" className={styles.ctaLink}>Dashboard</Link>
           ) : (
-            <>
-              <a
-                href={`${import.meta.env.VITE_API_BASE_URL}/auth/cognito`}
-                className={styles.link}
-              >
-                Email Login
-              </a>
-              <a
-                href={`${import.meta.env.VITE_API_BASE_URL}/auth/google`}
-                className={styles.betaLogin}
-              >
-                Beta Login
-              </a>
-            </>
+            <Link to="/login" className={styles.ctaLink}>Login</Link>
           )}
         </div>
       </div>

@@ -10,12 +10,12 @@ export class ApiPricingService implements IPricingService {
   async createCheckoutSession(
     planKey: string,
     billingCycle: string,
-    userEmail?: string
+    userEmail?: string  // Keep parameter but won't be used by backend
   ): Promise<{ url: string }> {
     return httpClient.post<{ url: string }>(
       '/payments/stripe/checkout',
-      { planKey, billingCycle, userEmail },
-      { skipAuth: true }
+      { planKey, billingCycle, userEmail }
+      // Removed: skipAuth: true - now requires authentication
     );
   }
 }

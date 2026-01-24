@@ -1,14 +1,24 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { pricingService } from '../services/pricing';
 import { authService } from '../services/auth';
+import { httpClient } from '../services/http';
 import type { PricingResponse } from '../types/pricing';
 import styles from './Pricing.module.css';
 
 type BillingCycle = 'monthly' | 'annual';
 
+type SubscriptionStatus = {
+  tier: string;
+  status?: string | null;
+  current_period_end?: string | null;
+  is_active: boolean;
+};
+
 export function Pricing() {
+  const navigate = useNavigate();
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [pricing, setPricing] = useState<PricingResponse | null>(null);
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -46,16 +56,85 @@ export function Pricing() {
     try {
       setCheckoutStatus('loading');
       setActiveCheckout(planKey);
+
+      // Check if user is authenticated
       const user = authService.getUserFromToken();
+      if (!user) {
+        // Store checkout intent so we can complete it after login
+        sessionStorage.setItem('pendingCheckout', JSON.stringify({
+          planKey,
+          billingCycle,
+          timestamp: Date.now()
+        }));
+
+        // Redirect to login page where user can choose between Google or Email
+        navigate('/login');
+        return;
+      }
+
+      // Fetch current subscription to validate
+      try {
+        const currentSub = await httpClient.get<SubscriptionStatus>(
+          '/payments/stripe/subscription/status'
+        );
+
+        // Client-side validation for better UX
+        if (currentSub.is_active) {
+          const currentTier = currentSub.tier || 'free';
+
+          // Check for duplicate plan
+          if (currentTier === planKey) {
+            alert(
+              `You already have an active ${planKey} plan.\n` +
+              `Visit Settings to manage your subscription.`
+            );
+            setCheckoutStatus('idle');
+            setActiveCheckout(null);
+            return;
+          }
+
+          // Check for downgrade attempt
+          const tierOrder: Record<string, number> = {
+            free: 0, starter: 1, pro: 2, enterprise: 3
+          };
+          if (tierOrder[planKey] < tierOrder[currentTier]) {
+            alert(
+              `To downgrade from ${currentTier} to ${planKey}, ` +
+              `please visit Settings → Manage Subscription.`
+            );
+            setCheckoutStatus('idle');
+            setActiveCheckout(null);
+            return;
+          }
+        }
+      } catch (error) {
+        // No subscription or error fetching - proceed with checkout
+        console.log('No active subscription found, proceeding with checkout');
+      }
+
+      // Proceed with checkout
       const response = await pricingService.createCheckoutSession(
         planKey,
         billingCycle,
-        user?.email
+        user.email
       );
+
       window.location.href = response.url;
-    } catch {
+    } catch (error: unknown) {
       setCheckoutStatus('error');
       setActiveCheckout(null);
+
+      // Show backend error message if available
+      if (error && typeof error === 'object' && 'response' in error) {
+        const httpError = error as { response?: { data?: { detail?: string } } };
+        if (httpError.response?.data?.detail) {
+          alert(httpError.response.data.detail);
+        } else {
+          alert('Failed to start checkout. Please try again.');
+        }
+      } else {
+        alert('Failed to start checkout. Please try again.');
+      }
     }
   };
 
