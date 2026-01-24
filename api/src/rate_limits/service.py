@@ -4,6 +4,7 @@ Simplified rate limiting service.
 Design: Get user tier → Get tier limits → Check usage → Enforce limits
 """
 
+import logging
 from datetime import datetime, timezone
 from fastapi import HTTPException
 
@@ -12,6 +13,8 @@ from ..payments.pricing_config import get_pricing_config, PricingTierLimits
 from ..agents.repository import AgentRepository
 from ..config import settings
 from .repository import UsageRepository
+
+log = logging.getLogger(__name__)
 
 
 class RateLimitService:
@@ -59,15 +62,31 @@ class RateLimitService:
         if limits.agents == 0:
             return
 
-        current_agents = self.agent_repo.find_all_by_created_by(user_email)
+        usage = self.usage_repo.get_usage(user_email, "active")
+        current_agents = usage.agents_active if usage else 0
 
-        if len(current_agents) >= limits.agents:
+        if not usage:
+            actual_agents = self.agent_repo.find_all_by_created_by(user_email)
+            current_agents = len(actual_agents)
+            if current_agents > 0:
+                self.usage_repo.adjust_active_agents(user_email, current_agents)
+
+        if current_agents >= limits.agents:
+            log.info(
+                "Agent limit reached",
+                extra={
+                    "user": user_email,
+                    "tier": tier,
+                    "limit": limits.agents,
+                    "current": current_agents,
+                },
+            )
             raise HTTPException(
                 status_code=429,
                 detail={
                     "message": f"Agent limit reached ({limits.agents}). Upgrade to create more.",
                     "limit": limits.agents,
-                    "current": len(current_agents),
+                    "current": current_agents,
                     "tier": tier,
                     "upgrade_url": f"{settings.frontend_url}/pricing",
                 },
@@ -91,6 +110,15 @@ class RateLimitService:
         current = usage.messages_used if usage else 0
 
         if current >= limits.messages_per_month:
+            log.info(
+                "Message limit reached",
+                extra={
+                    "user": user_email,
+                    "tier": tier,
+                    "limit": limits.messages_per_month,
+                    "current": current,
+                },
+            )
             raise HTTPException(
                 status_code=429,
                 detail={
@@ -122,6 +150,17 @@ class RateLimitService:
         remaining = limits.kb_pages - current
 
         if requested_pages > remaining:
+            log.info(
+                "Knowledge base page limit reached",
+                extra={
+                    "user": user_email,
+                    "tier": tier,
+                    "limit": limits.kb_pages,
+                    "current": current,
+                    "requested": requested_pages,
+                    "remaining": remaining,
+                },
+            )
             raise HTTPException(
                 status_code=429,
                 detail={

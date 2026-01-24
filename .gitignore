@@ -9,6 +9,7 @@ credentials*.json
 .envrc
 
 # IDE
+.claude
 .idea/
 .vscode/
 *.swp

@@ -51,9 +51,6 @@ class UsageRepository:
         )
         return UsageRecord.from_dynamo_item(response["Attributes"])
 
-    def increment_messages_for_period(self, user_email: str, period_key: str, count: int) -> UsageRecord:
-        return self.increment_messages(user_email, period_key, count)
-
     def increment_kb_pages(self, user_email: str, period_key: str, count: int) -> UsageRecord:
         now = datetime.utcnow().isoformat()
         response = self.table.update_item(
@@ -80,9 +77,6 @@ class UsageRepository:
             ReturnValues="ALL_NEW",
         )
         return UsageRecord.from_dynamo_item(response["Attributes"])
-
-    def increment_kb_pages_for_period(self, user_email: str, period_key: str, count: int) -> UsageRecord:
-        return self.increment_kb_pages(user_email, period_key, count)
 
     def adjust_active_agents(self, user_email: str, delta: int) -> UsageRecord:
         now = datetime.utcnow().isoformat()

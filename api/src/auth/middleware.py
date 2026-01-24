@@ -17,6 +17,7 @@ from starlette.responses import Response
 
 from ..config import settings
 from ..users import User, UserRepository
+from ..users.models import UserStatus
 from .google_oauth import GoogleOAuth
 
 
@@ -147,6 +148,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid token payload"}
+            )
+
+        # Check if user is inactive
+        user = self.user_repository.get_by_email(email)
+        if user and user.status in [UserStatus.INACTIVE.value, UserStatus.PENDING_DELETION.value]:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Account has been deactivated", "code": "ACCOUNT_INACTIVE"}
             )
 
         new_token = None

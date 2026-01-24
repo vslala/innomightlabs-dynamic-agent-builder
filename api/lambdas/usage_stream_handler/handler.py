@@ -28,6 +28,7 @@ def _period_key(iso_date: str) -> str:
     try:
         dt = datetime.fromisoformat(iso_date)
     except ValueError:
+        log.warning("Invalid timestamp format: %s, using current time", iso_date)
         dt = datetime.now(timezone.utc)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -182,6 +183,10 @@ def handler(event, context):  # noqa: ARG001
             continue
 
         if not _dedupe_event(table, user_email, event_id, entity_type):
+            log.warning(
+                "Duplicate usage event skipped",
+                extra={"user": user_email, "event_id": event_id, "entity_type": entity_type},
+            )
             continue
 
         if entity_type == "Agent":
@@ -195,16 +200,37 @@ def handler(event, context):  # noqa: ARG001
             created_at = image.get("created_at")
             if created_at:
                 period_key = _period_key(created_at)
-                usage_repo.increment_messages_for_period(user_email, period_key, 1)
+                usage_repo.increment_messages(user_email, period_key, 1)
+                log.debug(
+                    "Incremented messages usage",
+                    extra={"user": user_email, "period": period_key},
+                )
             continue
 
-        if entity_type == "CrawledPage" and event_name == "INSERT":
-            status = image.get("status")
-            if status != "success":
-                continue
-            crawled_at = image.get("crawled_at")
-            if crawled_at:
-                period_key = _period_key(crawled_at)
-                usage_repo.increment_kb_pages_for_period(user_email, period_key, 1)
+        if entity_type == "CrawledPage":
+            if event_name == "INSERT":
+                status = image.get("status")
+                if status != "success":
+                    continue
+                crawled_at = image.get("crawled_at")
+                if crawled_at:
+                    period_key = _period_key(crawled_at)
+                    usage_repo.increment_kb_pages(user_email, period_key, 1)
+                    log.debug(
+                        "Incremented kb pages usage",
+                        extra={"user": user_email, "period": period_key},
+                    )
+            elif event_name == "MODIFY":
+                old_status = old_image.get("status")
+                new_status = new_image.get("status")
+                if old_status != "success" and new_status == "success":
+                    crawled_at = new_image.get("crawled_at")
+                    if crawled_at:
+                        period_key = _period_key(crawled_at)
+                        usage_repo.increment_kb_pages(user_email, period_key, 1)
+                        log.debug(
+                            "Incremented kb pages usage after status transition",
+                            extra={"user": user_email, "period": period_key},
+                        )
 
     return {"status": "ok"}
