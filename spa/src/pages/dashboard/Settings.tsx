@@ -279,29 +279,6 @@ export function Settings() {
           )}
         </CardContent>
       </Card>
-
-      {/* Danger Zone */}
-      <Card>
-        <CardHeader>
-          <CardTitle style={{ color: "#f87171" }}>Danger Zone</CardTitle>
-          <CardDescription>
-            Irreversible actions for your account
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div>
-              <p style={{ fontWeight: 500, color: "var(--text-primary)" }}>Delete Account</p>
-              <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
-                Permanently delete your account and all data
-              </p>
-            </div>
-            <Button variant="destructive" disabled>
-              Delete Account
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

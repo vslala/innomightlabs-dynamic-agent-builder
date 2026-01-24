@@ -2,7 +2,7 @@ import boto3
 from typing import Optional
 from datetime import datetime
 
-from .models import User
+from .models import User, UserStatus
 from ..config import settings
 
 
@@ -76,6 +76,27 @@ class UserRepository:
                 UpdateExpression="SET stripe_customer_id = :cid, updated_at = :ua",
                 ExpressionAttributeValues={
                     ":cid": customer_id,
+                    ":ua": datetime.utcnow().isoformat(),
+                },
+            )
+            return True
+        except Exception:
+            return False
+
+    def mark_inactive(self, email: str) -> bool:
+        try:
+            self.table.update_item(
+                Key={
+                    "pk": f"User#{email}",
+                    "sk": "User#Metadata",
+                },
+                UpdateExpression="SET #status = :status, deletion_requested_at = :timestamp, updated_at = :ua",
+                ExpressionAttributeNames={
+                    "#status": "status"
+                },
+                ExpressionAttributeValues={
+                    ":status": UserStatus.INACTIVE.value,
+                    ":timestamp": datetime.utcnow().isoformat(),
                     ":ua": datetime.utcnow().isoformat(),
                 },
             )

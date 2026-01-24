@@ -113,6 +113,13 @@ class AuthService {
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
     return `${apiBaseUrl}/auth/google`;
   }
+
+  /**
+   * Delete user account - marks user inactive and triggers cascade deletion.
+   */
+  async deleteAccount(): Promise<{ message: string; status: string }> {
+    return httpClient.delete<{ message: string; status: string }>("/users/me");
+  }
 }
 
 export const authService = new AuthService();

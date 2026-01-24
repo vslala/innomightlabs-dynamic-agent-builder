@@ -1,6 +1,13 @@
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional
+from enum import Enum
+
+
+class UserStatus(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    PENDING_DELETION = "pending_deletion"
 
 
 @dataclass
@@ -10,6 +17,8 @@ class User:
     picture: Optional[str] = None
     refresh_token: Optional[str] = None
     stripe_customer_id: Optional[str] = None
+    status: str = UserStatus.ACTIVE.value
+    deletion_requested_at: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -37,6 +46,8 @@ class User:
             "picture": self.picture,
             "refresh_token": self.refresh_token,
             "stripe_customer_id": self.stripe_customer_id,
+            "status": self.status,
+            "deletion_requested_at": self.deletion_requested_at,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -49,6 +60,8 @@ class User:
             picture=item.get("picture"),
             refresh_token=item.get("refresh_token"),
             stripe_customer_id=item.get("stripe_customer_id"),
+            status=item.get("status", UserStatus.ACTIVE.value),
+            deletion_requested_at=item.get("deletion_requested_at"),
             created_at=item.get("created_at"),
             updated_at=item.get("updated_at"),
         )
