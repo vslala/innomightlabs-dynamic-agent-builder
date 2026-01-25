@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { pricingService } from '../services/pricing';
-import { authService } from '../services/auth';
 import styles from './LoginSuccess.module.css';
 
 interface UserInfo {

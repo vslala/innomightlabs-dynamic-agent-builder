@@ -1,13 +1,22 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/auth';
+import { httpClient } from '../services/http';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
+import { Input } from '../components/ui/input';
+import { Button } from '../components/ui/button';
 import styles from './Login.module.css';
+
+const isLocalhost = window.location.hostname === 'localhost';
 
 export function Login() {
   const navigate = useNavigate();
   const isAuthenticated = authService.isAuthenticated();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -21,6 +30,56 @@ export function Login() {
 
   const handleEmailLogin = () => {
     window.location.href = `${import.meta.env.VITE_API_BASE_URL}/auth/cognito`;
+  };
+
+  const handleLocalAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      // Try signup first
+      const response = await httpClient.post<{ token: string; email: string; name: string }>(
+        '/auth/local/signup',
+        { username, password },
+        { skipAuth: true }
+      );
+
+      localStorage.setItem('auth_token', response.token);
+      navigate('/dashboard');
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'response' in err) {
+        const httpError = err as { response?: { data?: { detail?: string }; status?: number } };
+
+        // If username already taken, try login instead
+        if (httpError.response?.data?.detail === 'Username already taken') {
+          try {
+            const loginResponse = await httpClient.post<{ token: string; email: string; name: string }>(
+              '/auth/local/login',
+              { username, password },
+              { skipAuth: true }
+            );
+
+            localStorage.setItem('auth_token', loginResponse.token);
+            navigate('/dashboard');
+            return;
+          } catch (loginErr: unknown) {
+            if (loginErr && typeof loginErr === 'object' && 'response' in loginErr) {
+              const loginHttpError = loginErr as { response?: { data?: { detail?: string } } };
+              setError(loginHttpError.response?.data?.detail || 'Invalid username or password.');
+            } else {
+              setError('Invalid username or password.');
+            }
+          }
+        } else {
+          setError(httpError.response?.data?.detail || 'Failed to authenticate. Please try again.');
+        }
+      } else {
+        setError('Failed to authenticate. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -80,6 +139,53 @@ export function Login() {
             </svg>
             Continue with Email
           </button>
+
+          {isLocalhost && (
+            <>
+              <div className={styles.divider}>
+                <span>or</span>
+              </div>
+
+              <form onSubmit={handleLocalAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {error && (
+                  <div
+                    style={{
+                      padding: '0.75rem',
+                      borderRadius: '0.5rem',
+                      backgroundColor: 'rgba(248, 113, 113, 0.1)',
+                      border: '1px solid rgba(248, 113, 113, 0.2)',
+                      color: '#f87171',
+                      fontSize: '0.875rem',
+                    }}
+                  >
+                    {error}
+                  </div>
+                )}
+                <Input
+                  type="text"
+                  placeholder="Username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  disabled={loading}
+                />
+                <Input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                />
+                <Button type="submit" disabled={loading}>
+                  {loading ? 'Authenticating...' : 'Login / Sign Up (Dev Only)'}
+                </Button>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                  Local development only - auto-creates {username || 'username'}@example.com
+                </p>
+              </form>
+            </>
+          )}
         </div>
 
         <p className={styles.terms}>

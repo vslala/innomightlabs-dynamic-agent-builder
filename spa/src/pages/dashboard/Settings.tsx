@@ -11,6 +11,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { SchemaForm } from "../../components/forms";
+import { ConfirmationDialog } from "../../components/ui/confirmation-dialog";
 import { authService } from "../../services/auth";
 import { httpClient } from "../../services/http";
 import {
@@ -21,8 +22,10 @@ import {
 type SubscriptionStatus = {
   tier: string;
   status?: string | null;
+  current_period_start?: string | null;
   current_period_end?: string | null;
   is_active: boolean;
+  cancel_at_period_end?: boolean | null;
 };
 
 export function Settings() {
@@ -31,6 +34,8 @@ export function Settings() {
   const [error, setError] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+  const [cancellingSubscription, setCancellingSubscription] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   // Track which provider is being configured
   const [configuringProvider, setConfiguringProvider] = useState<string | null>(null);
@@ -93,6 +98,29 @@ export function Settings() {
     }
   };
 
+  const handleCancelSubscription = async () => {
+    if (!subscription?.is_active) return;
+
+    setCancellingSubscription(true);
+    setError(null);
+    try {
+      await httpClient.post("/payments/stripe/subscription/cancel", {});
+      // Reload subscription to reflect cancellation status
+      await loadSubscription();
+      setShowCancelConfirm(false);
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'response' in err) {
+        const httpError = err as { response?: { data?: { detail?: string } } };
+        setError(httpError.response?.data?.detail || "Failed to cancel subscription. Please try again.");
+      } else {
+        setError("Failed to cancel subscription. Please try again.");
+      }
+      console.error("Error cancelling subscription:", err);
+    } finally {
+      setCancellingSubscription(false);
+    }
+  };
+
   const formatPeriodEnd = (value?: string | null) => {
     if (!value) return "—";
     if (/^\d+$/.test(value)) {
@@ -101,6 +129,17 @@ export function Settings() {
     }
     const date = new Date(value);
     return isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
+  };
+
+  const formatBillingPeriod = (start?: string | null, end?: string | null) => {
+    const startFormatted = formatPeriodEnd(start);
+    const endFormatted = formatPeriodEnd(end);
+
+    if (startFormatted === "—" && endFormatted === "—") return "—";
+    if (startFormatted === "—") return endFormatted;
+    if (endFormatted === "—") return startFormatted;
+
+    return `${startFormatted} - ${endFormatted}`;
   };
 
   return (
@@ -169,34 +208,73 @@ export function Settings() {
                 </span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--text-muted)" }}>Renewal date</span>
+                <span style={{ color: "var(--text-muted)" }}>Billing period</span>
                 <span style={{ color: "var(--text-primary)" }}>
-                  {formatPeriodEnd(subscription?.current_period_end)}
+                  {formatBillingPeriod(subscription?.current_period_start, subscription?.current_period_end)}
                 </span>
               </div>
-              <div>
-                <a
-                  href="/pricing"
-                  style={{
-                    color: "var(--text-primary)",
-                    textDecoration: "underline"
-                  }}
-                >
-                  {subscription?.is_active
-                    ? `Upgrade plan (current: ${subscription.tier})`
-                    : "Choose a plan"
-                  }
-                </a>
-                {subscription?.is_active && (
-                  <p style={{
-                    fontSize: "0.75rem",
-                    color: "var(--text-muted)",
-                    marginTop: "0.25rem"
-                  }}>
-                    To downgrade or cancel, contact support
+              {subscription?.cancel_at_period_end ? (
+                <div style={{
+                  padding: "0.75rem",
+                  backgroundColor: "rgba(251, 191, 36, 0.1)",
+                  border: "1px solid rgba(251, 191, 36, 0.3)",
+                  borderRadius: "0.5rem",
+                  marginTop: "0.5rem"
+                }}>
+                  <p style={{ fontSize: "0.875rem", color: "#fbbf24", fontWeight: 500 }}>
+                    {subscription?.current_period_end
+                      ? `Subscription will be cancelled on ${formatPeriodEnd(subscription.current_period_end)}`
+                      : "Subscription is scheduled for cancellation"
+                    }
                   </p>
-                )}
-              </div>
+                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                    {subscription?.current_period_end
+                      ? "You'll continue to have access until the end of your billing period."
+                      : "You'll continue to have access until the end of your current billing period."
+                    }
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}>
+                    <a
+                      href="/pricing"
+                      style={{
+                        color: "var(--text-primary)",
+                        textDecoration: "underline"
+                      }}
+                    >
+                      {subscription?.is_active
+                        ? `Upgrade plan (current: ${subscription.tier})`
+                        : "Choose a plan"
+                      }
+                    </a>
+                    {subscription?.is_active && subscription.tier !== "free" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowCancelConfirm(true)}
+                        disabled={cancellingSubscription}
+                        style={{
+                          color: "#ef4444",
+                          borderColor: "#ef4444"
+                        }}
+                      >
+                        Cancel Subscription
+                      </Button>
+                    )}
+                  </div>
+                  {subscription?.is_active && (
+                    <p style={{
+                      fontSize: "0.75rem",
+                      color: "var(--text-muted)",
+                      marginTop: "0.25rem"
+                    }}>
+                      To downgrade, contact support
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           )}
         </CardContent>
@@ -297,6 +375,20 @@ export function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {/* Cancel Subscription Confirmation Dialog */}
+      <ConfirmationDialog
+        open={showCancelConfirm}
+        onOpenChange={setShowCancelConfirm}
+        title="Cancel Subscription"
+        description={`Are you sure you want to cancel your ${subscription?.tier} subscription? You'll continue to have access until ${formatPeriodEnd(subscription?.current_period_end)}.`}
+        confirmText="Yes, Cancel"
+        cancelText="Keep Subscription"
+        onConfirm={handleCancelSubscription}
+        variant="destructive"
+        loading={cancellingSubscription}
+        loadingText="Cancelling..."
+      />
     </div>
   );
 }

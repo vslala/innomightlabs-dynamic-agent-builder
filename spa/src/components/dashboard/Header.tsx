@@ -1,7 +1,5 @@
-import { Bell } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
-import { Button } from "../ui/button";
 
 interface HeaderProps {
   title: string;
@@ -40,13 +38,6 @@ export function Header({ title, user }: HeaderProps) {
 
       {/* Right side actions */}
       <div style={{ flex: 1, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "0.75rem" }}>
-        <Button variant="ghost" size="icon" className="relative h-8 w-8">
-          <Bell className="h-4 w-4" />
-          <span className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-[var(--gradient-start)] text-[9px] font-medium flex items-center justify-center">
-            3
-          </span>
-        </Button>
-
         {user && (
           <Link
             to="/dashboard/settings"

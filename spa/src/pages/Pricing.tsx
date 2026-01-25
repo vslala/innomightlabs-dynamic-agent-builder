@@ -13,6 +13,7 @@ type BillingCycle = 'monthly' | 'annual';
 type SubscriptionStatus = {
   tier: string;
   status?: string | null;
+  current_period_start?: string | null;
   current_period_end?: string | null;
   is_active: boolean;
 };
