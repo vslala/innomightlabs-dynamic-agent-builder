@@ -28,6 +28,7 @@ dependencies = [
     "anthropic>=0.76.0",
     # Email service
     "mailjet-rest>=1.3.4",
+    "email-validator>=2.3.0",
 ]
 
 [project.optional-dependencies]
