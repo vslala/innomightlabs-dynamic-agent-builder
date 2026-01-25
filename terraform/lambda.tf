@@ -44,7 +44,7 @@ resource "aws_lambda_function" "api" {
       DYNAMODB_TABLE       = aws_dynamodb_table.main.name
       AWS_REGION_NAME      = var.aws_region
       FRONTEND_URL         = var.frontend_url
-      API_BASE_URL         = aws_apigatewayv2_api.api.api_endpoint
+      API_BASE_URL         = var.api_domain != "" ? "https://${var.api_domain}" : aws_apigatewayv2_api.api.api_endpoint
       GOOGLE_CLIENT_ID     = var.google_client_id
       GOOGLE_CLIENT_SECRET = var.google_client_secret
       JWT_SECRET           = var.jwt_secret
@@ -54,7 +54,7 @@ resource "aws_lambda_function" "api" {
       COGNITO_CLIENT_SECRET = aws_cognito_user_pool_client.hosted_ui.client_secret
       COGNITO_REDIRECT_URI = coalesce(
         var.cognito_redirect_uri,
-        "${aws_apigatewayv2_api.api.api_endpoint}/auth/callback/cognito"
+        var.api_domain != "" ? "https://${var.api_domain}/auth/callback/cognito" : "${aws_apigatewayv2_api.api.api_endpoint}/auth/callback/cognito"
       )
       # Pinecone Vector Store
       PINECONE_API_KEY     = var.pinecone_api_key

@@ -1,5 +1,5 @@
 resource "aws_cognito_user_pool" "main" {
-  name                     = "${var.project_name}-${var.environment}-user-pool"
+  name                     = "${var.project_name}-user-pool"
   username_attributes      = ["email"]
   auto_verified_attributes = ["email"]
 
@@ -13,7 +13,7 @@ resource "aws_cognito_user_pool" "main" {
 }
 
 resource "aws_cognito_user_pool_client" "hosted_ui" {
-  name                                 = "${var.project_name}-${var.environment}-web-client"
+  name                                 = "${var.project_name}-web-client"
   user_pool_id                         = aws_cognito_user_pool.main.id
   generate_secret                      = true
   allowed_oauth_flows_user_pool_client = true
