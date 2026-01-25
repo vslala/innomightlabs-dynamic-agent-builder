@@ -1,133 +1,128 @@
 # Debug Scripts
 
-Collection of debug scripts for inspecting database state and troubleshooting issues.
+Utility scripts for debugging and inspecting the database.
 
-## Prerequisites
+## check_user.py
 
-These scripts work with both local DynamoDB and AWS DynamoDB. Set environment variables to control which database to use:
+Check if a user exists in the database and view their details.
+
+### Usage
 
 ```bash
-# For local DynamoDB
-export DYNAMODB_ENDPOINT=http://localhost:8001
-export DYNAMODB_TABLE=dynamic-agent-builder-local
+# Check specific user
+DYNAMODB_ENDPOINT=http://localhost:8001 \
+DYNAMODB_TABLE=dynamic-agent-builder-local \
+uv run python scripts/debug/check_user.py testuser@example.com
 
-# For AWS DynamoDB (default)
-# Just don't set DYNAMODB_ENDPOINT
-export DYNAMODB_TABLE=dynamic-agent-builder-main
+# List all users in local database
+DYNAMODB_ENDPOINT=http://localhost:8001 \
+DYNAMODB_TABLE=dynamic-agent-builder-local \
+uv run python scripts/debug/check_user.py --all
+
+# Check user in production (careful!)
+uv run python scripts/debug/check_user.py user@example.com
 ```
 
-## Available Scripts
+### Output
 
-### 1. Check User Subscription
+For a specific user:
+```
+Checking user: testuser@example.com
+============================================================
+✓ User found:
+  Email: testuser@example.com
+  Name: Test User
+  Stripe Customer ID: cus_xxxxx
+  Status: active
+  Picture: https://...
+  Created: 2026-01-25T12:00:00
+  Updated: 2026-01-25T12:00:00
+```
 
-Check subscription details for a specific user:
+For all users:
+```
+Listing all users from: dynamic-agent-builder-local
+Endpoint: http://localhost:8001
+============================================================
+Found 3 users:
+
+  • testuser1@example.com
+    Name: Test User 1
+    Status: active
+    Created: 2026-01-25T10:00:00
+    Stripe: cus_xxxxx1
+
+  • testuser2@example.com
+    Name: Test User 2
+    Status: active
+    Created: 2026-01-25T11:00:00
+```
+
+## check_user_subscription.py
+
+Check a user's subscription details.
 
 ```bash
-# Basic usage
+DYNAMODB_ENDPOINT=http://localhost:8001 \
+DYNAMODB_TABLE=dynamic-agent-builder-local \
 uv run python scripts/debug/check_user_subscription.py testuser@example.com
-
-# With local DynamoDB
-DYNAMODB_ENDPOINT=http://localhost:8001 DYNAMODB_TABLE=dynamic-agent-builder-local \
-    uv run python scripts/debug/check_user_subscription.py testuser@example.com
 ```
 
-**Output:**
-- Subscription ID
-- Plan name (starter, pro, etc.)
-- Status (active, canceled, etc.)
-- Billing period dates
-- Cancellation status
+## scan_db.py
 
-### 2. Check User
-
-Check user details from database:
+Scan the entire database and show all items (use with caution).
 
 ```bash
-uv run python scripts/debug/check_user.py testuser@example.com
-```
-
-**Output:**
-- User email and name
-- Stripe customer ID
-- Account status
-- Creation/update timestamps
-- TTL (for local dev users)
-
-### 3. Scan Database
-
-Get overview of what's in the database:
-
-```bash
-# Show counts only
+DYNAMODB_ENDPOINT=http://localhost:8001 \
+DYNAMODB_TABLE=dynamic-agent-builder-local \
 uv run python scripts/debug/scan_db.py
-
-# Show all items (verbose)
-uv run python scripts/debug/scan_db.py --verbose
 ```
 
-**Output:**
-- Total item count
-- Breakdown by entity type (User, Subscription, WebhookEvent, etc.)
-- With `--verbose`: full list of all items
+## list_webhook_events.py
 
-### 4. List Webhook Events
-
-Show recent webhook events:
+List recent webhook events.
 
 ```bash
-# Show last 10 (default)
+DYNAMODB_ENDPOINT=http://localhost:8001 \
+DYNAMODB_TABLE=dynamic-agent-builder-local \
 uv run python scripts/debug/list_webhook_events.py
-
-# Show last 20
-uv run python scripts/debug/list_webhook_events.py --limit 20
 ```
 
-**Output:**
-- Event IDs
-- Event types
-- Timestamps
+## Environment Variables
 
-## Common Use Cases
+All scripts respect these environment variables:
 
-### Troubleshooting Subscription Issues
-
-1. **Check if user exists:**
-   ```bash
-   uv run python scripts/debug/check_user.py user@example.com
-   ```
-
-2. **Check subscription status:**
-   ```bash
-   uv run python scripts/debug/check_user_subscription.py user@example.com
-   ```
-
-3. **Verify webhook processing:**
-   ```bash
-   uv run python scripts/debug/list_webhook_events.py
-   ```
-
-### Debugging Local Development
-
-When using local DynamoDB, always prefix commands with environment variables:
-
-```bash
-DYNAMODB_ENDPOINT=http://localhost:8001 DYNAMODB_TABLE=dynamic-agent-builder-local \
-    uv run python scripts/debug/check_user_subscription.py testuser@example.com
-```
-
-Or export them once:
-```bash
-export DYNAMODB_ENDPOINT=http://localhost:8001
-export DYNAMODB_TABLE=dynamic-agent-builder-local
-
-# Now all scripts use local DB
-uv run python scripts/debug/scan_db.py
-uv run python scripts/debug/check_user.py testuser@example.com
-```
+- `DYNAMODB_ENDPOINT` - DynamoDB endpoint (use `http://localhost:8001` for local)
+- `DYNAMODB_TABLE` - Table name (e.g., `dynamic-agent-builder-local`)
+- `ENVIRONMENT` - Environment name (defaults to value in script)
 
 ## Tips
 
-- **Use `scan_db.py` first** to get an overview of what's in the database
-- **Check user before subscription** to ensure the user record exists
-- **Use `--verbose` mode** on scan_db.py to see detailed item data
-- **Check webhook events** if subscriptions aren't being created after checkout
+### Create Shell Aliases
+
+Add to your `.bashrc` or `.zshrc`:
+
+```bash
+alias check-user-local='DYNAMODB_ENDPOINT=http://localhost:8001 DYNAMODB_TABLE=dynamic-agent-builder-local uv run python scripts/debug/check_user.py'
+alias list-users-local='check-user-local --all'
+```
+
+Then use:
+```bash
+check-user-local testuser@example.com
+list-users-local
+```
+
+### Quick Local Setup
+
+If using local DynamoDB:
+
+```bash
+# In one terminal
+docker-compose -f docker-compose.local.yml up
+
+# In another terminal
+export DYNAMODB_ENDPOINT=http://localhost:8001
+export DYNAMODB_TABLE=dynamic-agent-builder-local
+uv run python scripts/debug/check_user.py --all
+```
