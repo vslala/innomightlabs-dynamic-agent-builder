@@ -1,14 +1,14 @@
-import boto3
 from typing import Optional
 from datetime import datetime
 
 from .models import User, UserStatus
 from ..config import settings
+from ..db import get_dynamodb_resource
 
 
 class UserRepository:
     def __init__(self):
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def get_by_email(self, email: str) -> Optional[User]:

@@ -14,10 +14,13 @@ from pydantic import BaseModel
 from src.payments.stripe.models import (
     CheckoutRequest,
     CheckoutResponse,
+    InvoicePeriod,
+    PriceInfo,
     PricingFaq,
     PricingResponse,
     PricingTier,
     SessionAuthResponse,
+    SubscriptionMetadata,
     SubscriptionStatusResponse,
 )
 
@@ -25,6 +28,7 @@ from ...config import settings
 from ..pricing_config import get_pricing_config
 from ...users import User, UserRepository
 from ..subscriptions import Subscription, SubscriptionRepository
+from ..subscriptions.repository import WebhookEventRepository
 from ...auth.jwt_utils import create_access_token
 
 log = logging.getLogger(__name__)
@@ -93,19 +97,37 @@ def ensure_user_exists(email: str, customer_id: Optional[str] = None) -> None:
         new_user = User(email=email, name=email.split("@")[0], stripe_customer_id=customer_id)
         repo.create_or_update(new_user)
 
-def extract_subscription_metadata(stripe_sub: dict) -> tuple[str, str]:
-    """Extract (plan_key, billing_cycle) from Stripe subscription metadata."""
+def extract_subscription_metadata(stripe_sub: dict) -> SubscriptionMetadata:
+    """Extract plan_key and billing_cycle from Stripe subscription metadata."""
     metadata = stripe_sub.get("metadata", {})
-    return metadata.get("plan_key", "free"), metadata.get("billing_cycle", "monthly")
+    return SubscriptionMetadata(
+        plan_key=metadata.get("plan_key", "free"),
+        billing_cycle=metadata.get("billing_cycle", "monthly"),
+    )
 
-def extract_price_info(stripe_data: dict) -> tuple[Optional[str], Optional[str], Optional[int]]:
-    """Extract (price_id, currency, amount) from Stripe data."""
+def extract_price_info(stripe_data: dict) -> PriceInfo:
+    """Extract price_id, currency, amount from Stripe data."""
     items = stripe_data.get("items", {}).get("data", [])
     if not items:
-        return None, None, None
+        return PriceInfo()
     
     price = items[0].get("price", {}) or {}
-    return price.get("id"), price.get("currency"), price.get("unit_amount")
+    return PriceInfo(
+        price_id=price.get("id"),
+        currency=price.get("currency"),
+        amount=price.get("unit_amount"),
+    )
+
+def extract_invoice_period(invoice_data: dict) -> InvoicePeriod:
+    """Extract period start/end from invoice line items if present."""
+    lines = invoice_data.get("lines", {}).get("data", [])
+    if not lines:
+        return InvoicePeriod()
+    period = (lines[0] or {}).get("period", {}) or {}
+    return InvoicePeriod(
+        start=normalize_value(period.get("start")),
+        end=normalize_value(period.get("end")),
+    )
 
 def create_subscription_from_stripe(
     stripe_sub: dict,
@@ -114,25 +136,101 @@ def create_subscription_from_stripe(
     customer_id: str,
 ) -> Subscription:
     """Create Subscription object from Stripe subscription data."""
-    plan_key, billing_cycle = extract_subscription_metadata(stripe_sub)
-    price_id, currency, amount = extract_price_info(stripe_sub)
+    metadata = extract_subscription_metadata(stripe_sub)
+    price_info = extract_price_info(stripe_sub)
     
     return Subscription(
         subscription_id=subscription_id,
         user_email=customer_email,
         customer_id=customer_id,
         status=stripe_sub.get("status"),
-        plan_name=plan_key,
-        price_id=price_id,
-        billing_cycle=billing_cycle,
+        plan_name=metadata.plan_key,
+        price_id=price_info.price_id,
+        billing_cycle=metadata.billing_cycle,
         current_period_start=normalize_value(stripe_sub.get("current_period_start")),
         current_period_end=normalize_value(stripe_sub.get("current_period_end")),
         cancel_at_period_end=stripe_sub.get("cancel_at_period_end"),
         canceled_at=normalize_value(stripe_sub.get("canceled_at")),
         trial_end=normalize_value(stripe_sub.get("trial_end")),
-        currency=currency,
-        amount=amount,
+        currency=price_info.currency,
+        amount=price_info.amount,
         latest_invoice_id=stripe_sub.get("latest_invoice"),
+    )
+
+async def get_customer_email(customer_id: str) -> Optional[str]:
+    """Get customer email from Stripe, returns None if not found."""
+    stripe = StripeClient()
+    customer = await stripe.get(f"/customers/{customer_id}")
+    email = customer.get("email")
+    if not email:
+        log.error(f"No email for customer {customer_id}")
+    return email
+
+async def sync_subscription_to_db(
+    subscription_data: dict,
+    subscription_id: str,
+    customer_id: str,
+    invoice_data: Optional[dict] = None,
+) -> Optional[Subscription]:
+    """
+    Sync Stripe subscription to database.
+    Ensures user exists, extracts invoice periods, and upserts subscription.
+    """
+    log.info(f"Syncing subscription {subscription_id} to database")
+
+    customer_email = await get_customer_email(customer_id)
+    if not customer_email:
+        log.error(f"Cannot sync subscription {subscription_id}: no customer email for {customer_id}")
+        return None
+
+    log.info(f"Customer email: {customer_email}")
+
+    ensure_user_exists(customer_email, customer_id)
+
+    subscription = create_subscription_from_stripe(
+        subscription_data, subscription_id, customer_email, customer_id
+    )
+
+    log.info(f"Created subscription object: plan={subscription.plan_name}, status={subscription.status}")
+
+    if invoice_data:
+        period = extract_invoice_period(invoice_data)
+        if period.start or period.end:
+            subscription.current_period_start = period.start or subscription.current_period_start
+            subscription.current_period_end = period.end or subscription.current_period_end
+            log.info(f"Extracted period: start={period.start}, end={period.end}")
+
+    SubscriptionRepository().upsert(subscription)
+    log.info(f"✓ Subscription {subscription_id} synced to database successfully")
+    return subscription
+
+async def get_active_stripe_subscription(customer_id: str) -> Optional[SubscriptionStatusResponse]:
+    """Fetch active Stripe subscription for a customer_id and map to status response."""
+    stripe = StripeClient()
+    subscriptions_response = await stripe.get(
+        f"/subscriptions?customer={customer_id}&status=active&limit=1"
+    )
+    subscriptions = subscriptions_response.get("data", [])
+    if not subscriptions:
+        return None
+    stripe_sub = subscriptions[0]
+    metadata = extract_subscription_metadata(stripe_sub)
+
+    # Extract period dates from subscription items (Stripe's new structure)
+    period_start = None
+    period_end = None
+    items = stripe_sub.get("items", {}).get("data", [])
+    if items:
+        period_start = items[0].get("current_period_start")
+        period_end = items[0].get("current_period_end")
+
+    return SubscriptionStatusResponse(
+        tier=metadata.plan_key or "free",
+        status=stripe_sub.get("status"),
+        current_period_start=normalize_value(period_start),
+        current_period_end=normalize_value(period_end),
+        is_active=True,
+        cancel_at_period_end=stripe_sub.get("cancel_at_period_end"),
     )
 
 def verify_webhook_signature(payload: bytes, signature_header: str) -> None:
@@ -337,50 +435,84 @@ async def get_subscription_status(request: Request):
         return SubscriptionStatusResponse(
             tier=subscription.plan_name or "free",
             status=subscription.status,
+            current_period_start=normalize_value(subscription.current_period_start),
             current_period_end=normalize_value(subscription.current_period_end),
             is_active=True,
+            cancel_at_period_end=subscription.cancel_at_period_end,
         )
 
-    # Fallback: Check Stripe directly if no subscription in DB (webhook may not have fired yet)
     try:
-        stripe = StripeClient()
         user_repo = UserRepository()
         user = user_repo.get_by_email(user_email)
 
         customer_id = user.stripe_customer_id if user else None
-
-        # If no customer_id stored, search for customer by email
-        if not customer_id:
-            customers_response = await stripe.get(f"/customers?email={user_email}&limit=1")
-            customers = customers_response.get("data", [])
-            if customers:
-                customer_id = customers[0].get("id")
-                # Update user record with customer_id
-                if user and customer_id:
-                    user_repo.update_stripe_customer_id(user_email, customer_id)
-
-        # Search for active subscriptions
         if customer_id:
-            subscriptions_response = await stripe.get(
-                f"/subscriptions?customer={customer_id}&status=active&limit=1"
-            )
-
-            subscriptions = subscriptions_response.get("data", [])
-            if subscriptions:
-                stripe_sub = subscriptions[0]
-                plan_key, _ = extract_subscription_metadata(stripe_sub)
-
-                # Return the Stripe subscription data
-                return SubscriptionStatusResponse(
-                    tier=plan_key or "free",
-                    status=stripe_sub.get("status"),
-                    current_period_end=normalize_value(stripe_sub.get("current_period_end")),
-                    is_active=True,
-                )
+            stripe_subscription = await get_active_stripe_subscription(customer_id)
+            if stripe_subscription:
+                return stripe_subscription
     except Exception as e:
-        log.warning(f"Failed to fetch subscription from Stripe for {user_email}: {e}")
+        log.warning(f"Stripe fallback failed for {user_email}: {e}")
 
-    return SubscriptionStatusResponse(tier="free", status=None, current_period_end=None, is_active=False)
+    return SubscriptionStatusResponse(
+        tier="free",
+        status=None,
+        current_period_start=None,
+        current_period_end=None,
+        is_active=False,
+    )
+
+@router.post("/subscription/cancel")
+async def cancel_subscription(request: Request):
+    """Cancel subscription at the end of the current billing period."""
+    user_email = getattr(request.state, "user_email", None)
+    if not user_email:
+        raise HTTPException(401, "Not authenticated")
+
+    # Get active subscription from database
+    repo = SubscriptionRepository()
+    subscription = repo.get_active_for_user(user_email)
+    if not subscription:
+        raise HTTPException(
+            404,
+            "No active subscription found. If you just signed up, please wait 30 seconds for processing.",
+        )
+
+    if subscription.user_email != user_email:
+        log.error(f"Subscription ownership mismatch: {subscription.subscription_id} vs {user_email}")
+        raise HTTPException(403, "Unauthorized")
+
+    # Check if already scheduled for cancellation (from DB)
+    if subscription and subscription.cancel_at_period_end:
+        raise HTTPException(400, "Subscription is already scheduled for cancellation")
+
+    try:
+        stripe = StripeClient()
+
+        # Update subscription to cancel at period end
+        update_response = await stripe.post(
+            f"/subscriptions/{subscription.subscription_id}",
+            {"cancel_at_period_end": "true"}
+        )
+
+        # Log what we got from Stripe for debugging
+        log.info(f"Stripe cancel response - current_period_end: {update_response.get('current_period_end')}, "
+                f"cancel_at_period_end: {update_response.get('cancel_at_period_end')}, "
+                f"canceled_at: {update_response.get('canceled_at')}")
+
+        subscription.cancel_at_period_end = True
+        subscription.canceled_at = normalize_value(update_response.get("canceled_at"))
+        subscription.current_period_end = normalize_value(update_response.get("current_period_end"))
+        repo.upsert(subscription)
+
+        return {
+            "success": True,
+            "message": "Subscription will be cancelled at the end of the current billing period",
+            "current_period_end": normalize_value(update_response.get("current_period_end"))
+        }
+
+    except Exception as e:
+        log.error(f"Failed to cancel subscription for {user_email}: {e}")
+        raise HTTPException(500, "Failed to cancel subscription")
 
 # ============================================================================
 # Webhook Handler
@@ -390,39 +522,63 @@ async def get_subscription_status(request: Request):
 async def handle_webhook(request: Request):
     """
     Handle Stripe webhooks for subscription lifecycle events.
-    
+
     Key events processed:
-    - invoice.payment_succeeded: Payment successful → activate subscription
+    - invoice.payment_succeeded / invoice.paid: Payment successful → activate subscription
     - invoice.payment_failed: Payment failed → notify/retry
     - customer.subscription.updated: Subscription changed → update DB
     - customer.subscription.deleted: Subscription cancelled → revoke access
     """
     payload = await request.body()
     verify_webhook_signature(payload, request.headers.get("stripe-signature", ""))
-    
+
     try:
         event = json.loads(payload.decode("utf-8"))
     except json.JSONDecodeError:
         raise HTTPException(400, "Invalid JSON")
-    
+
+    log.debug("Webhook payload: %s", json.dumps(event, indent=2, default=str))
+
+    event_id = event.get("id")
     event_type = event.get("type")
+
+    # Check deduplication BEFORE processing
+    if event_id:
+        webhook_repo = WebhookEventRepository()
+        if webhook_repo.has_processed(event_id):
+            log.info(f"Webhook event {event_id} already processed, skipping")
+            return {"status": "ok"}
+
     data = event.get("data", {}).get("object", {})
-    
-    log.info(f"Webhook received: {event_type}")
-    
-    # Route to appropriate handler
-    if event_type == "invoice.payment_succeeded":
-        await handle_invoice_payment_succeeded(data)
-    elif event_type == "invoice.payment_failed":
-        await handle_invoice_payment_failed(data)
-    elif event_type == "customer.subscription.updated":
-        await handle_subscription_updated(data)
-    elif event_type == "customer.subscription.deleted":
-        await handle_subscription_deleted(data)
-    else:
-        log.info(f"Unhandled event type: {event_type}")
-    
-    return {"status": "ok"}
+
+    log.info(f"Processing webhook: {event_type} (event_id: {event_id})")
+
+    # Route to appropriate handler - wrap in try-catch to ensure we only mark as processed if successful
+    try:
+        if event_type in ("invoice.payment_succeeded", "invoice.paid", "invoice_payment.paid"):
+            await handle_invoice_payment_succeeded(data)
+        elif event_type == "invoice.payment_failed":
+            await handle_invoice_payment_failed(data)
+        elif event_type == "customer.subscription.updated":
+            await handle_subscription_updated(data)
+        elif event_type == "customer.subscription.deleted":
+            await handle_subscription_deleted(data)
+        else:
+            log.info(f"Unhandled event type: {event_type}")
+
+        # ONLY mark as processed if handler succeeded without exception
+        if event_id:
+            webhook_repo = WebhookEventRepository()
+            webhook_repo.mark_processed(event_id)
+            log.info(f"✓ Successfully processed webhook event {event_id} ({event_type})")
+
+        return {"status": "ok"}
+
+    except Exception as e:
+        # Log error but don't mark as processed - Stripe will retry
+        log.error(f"✗ Failed to process webhook event {event_id} ({event_type}): {e}", exc_info=True)
+        # Re-raise so Stripe knows to retry
+        raise HTTPException(500, f"Webhook processing failed: {str(e)}")
 
 # ============================================================================
 # Webhook Event Handlers
@@ -431,43 +587,60 @@ async def handle_webhook(request: Request):
 async def handle_invoice_payment_succeeded(invoice_data: dict) -> None:
     """
     Handle successful payment - this is the PRIMARY event for activating subscriptions.
-    
+
     Event flow:
     1. Customer completes checkout
     2. Stripe charges card
-    3. invoice.payment_succeeded fires → WE ARE HERE
+    3. invoice.payment_succeeded (or invoice.paid) fires → WE ARE HERE
     4. We create/update subscription in DB with status 'active'
+
+    Note: Handles both 'invoice.payment_succeeded' and 'invoice.paid' events
+    Also handles 'invoice_payment' objects by fetching the actual invoice
     """
+    # Check if this is an invoice_payment object (needs to fetch the invoice)
+    if invoice_data.get("object") == "invoice_payment":
+        invoice_id = invoice_data.get("invoice")
+        if not invoice_id:
+            log.warning("invoice_payment object missing invoice reference")
+            return
+
+        log.info(f"Fetching invoice {invoice_id} from invoice_payment event")
+        stripe = StripeClient()
+        invoice_data = await stripe.get(f"/invoices/{invoice_id}")
+
+    # Extract subscription_id - handle both old and new Stripe API structures
+    # Old API: invoice.subscription (direct)
+    # New API (2025-12-15+): invoice.parent.subscription_details.subscription (nested)
     subscription_id = invoice_data.get("subscription")
+    if not subscription_id:
+        parent = invoice_data.get("parent", {})
+        if parent.get("type") == "subscription_details":
+            subscription_details = parent.get("subscription_details", {})
+            subscription_id = subscription_details.get("subscription")
+
     customer_id = invoice_data.get("customer")
-    
+
     if not subscription_id or not customer_id:
-        log.warning("invoice.payment_succeeded missing subscription or customer")
+        log.warning(
+            f"Invoice data missing subscription or customer: {invoice_data.get('id')} "
+            f"(subscription={subscription_id}, customer={customer_id})"
+        )
         return
-    
-    stripe = StripeClient()
-    
-    # Get customer email
-    customer = await stripe.get(f"/customers/{customer_id}")
-    customer_email = customer.get("email")
-    
-    if not customer_email:
-        log.error(f"No email for customer {customer_id}")
-        return
-    
+
     # Fetch full subscription details
+    stripe = StripeClient()
     stripe_sub = await stripe.get(f"/subscriptions/{subscription_id}")
     
-    # Create subscription record
-    subscription = create_subscription_from_stripe(
-        stripe_sub, subscription_id, customer_email, customer_id
+    subscription = await sync_subscription_to_db(
+        stripe_sub,
+        subscription_id,
+        customer_id,
+        invoice_data=invoice_data,
     )
+    if not subscription:
+        return
     
-    # Ensure user exists and save subscription
-    ensure_user_exists(customer_email, customer_id)
-    SubscriptionRepository().upsert(subscription)
-    
-    log.info(f"✓ Payment succeeded - activated subscription {subscription_id} for {customer_email}")
+    log.info(f"✓ Payment succeeded - activated subscription {subscription_id} for {subscription.user_email}")
 
 async def handle_invoice_payment_failed(invoice_data: dict) -> None:
     """
@@ -487,27 +660,21 @@ async def handle_invoice_payment_failed(invoice_data: dict) -> None:
     
     stripe = StripeClient()
     
-    # Get customer email
-    customer = await stripe.get(f"/customers/{customer_id}")
-    customer_email = customer.get("email")
-    
-    if not customer_email:
-        log.error(f"No email for customer {customer_id}")
-        return
-    
     # Fetch subscription to get current status
     stripe_sub = await stripe.get(f"/subscriptions/{subscription_id}")
     
-    # Update subscription with failed status
-    subscription = create_subscription_from_stripe(
-        stripe_sub, subscription_id, customer_email, customer_id
+    subscription = await sync_subscription_to_db(
+        stripe_sub,
+        subscription_id,
+        customer_id,
+        invoice_data=invoice_data,
     )
-    
-    SubscriptionRepository().upsert(subscription)
+    if not subscription:
+        return
     
     log.warning(
         f"✗ Payment failed (attempt {attempt_count}) - subscription {subscription_id} "
-        f"for {customer_email} status: {subscription.status}"
+        f"for {subscription.user_email} status: {subscription.status}"
     )
     
     # TODO: Send email notification to customer
@@ -528,25 +695,16 @@ async def handle_subscription_updated(subscription_data: dict) -> None:
     if not subscription_id or not customer_id:
         log.warning("customer.subscription.updated missing id or customer")
         return
-    
-    stripe = StripeClient()
-    
-    # Get customer email
-    customer = await stripe.get(f"/customers/{customer_id}")
-    customer_email = customer.get("email")
-    
-    if not customer_email:
-        log.error(f"No email for customer {customer_id}")
-        return
-    
-    # Create subscription record
-    subscription = create_subscription_from_stripe(
-        subscription_data, subscription_id, customer_email, customer_id
+
+    subscription = await sync_subscription_to_db(
+        subscription_data, subscription_id, customer_id
     )
-    
-    SubscriptionRepository().upsert(subscription)
-    
-    log.info(f"↻ Subscription updated {subscription_id} for {customer_email} - status: {subscription.status}")
+    if not subscription:
+        return
+
+    log.info(
+        f"↻ Subscription updated {subscription_id} for {subscription.user_email} - status: {subscription.status}"
+    )
 
 async def handle_subscription_deleted(subscription_data: dict) -> None:
     """
@@ -562,25 +720,14 @@ async def handle_subscription_deleted(subscription_data: dict) -> None:
     if not subscription_id or not customer_id:
         log.warning("customer.subscription.deleted missing id or customer")
         return
-    
-    stripe = StripeClient()
-    
-    # Get customer email
-    customer = await stripe.get(f"/customers/{customer_id}")
-    customer_email = customer.get("email")
-    
-    if not customer_email:
-        log.error(f"No email for customer {customer_id}")
-        return
-    
-    # Mark subscription as cancelled in DB
-    subscription = create_subscription_from_stripe(
-        subscription_data, subscription_id, customer_email, customer_id
+
+    subscription = await sync_subscription_to_db(
+        subscription_data, subscription_id, customer_id
     )
-    
-    SubscriptionRepository().upsert(subscription)
-    
-    log.info(f"✗ Subscription deleted {subscription_id} for {customer_email}")
+    if not subscription:
+        return
+
+    log.info(f"✗ Subscription deleted {subscription_id} for {subscription.user_email}")
     
     # TODO: Revoke product access
     # TODO: Send cancellation confirmation email

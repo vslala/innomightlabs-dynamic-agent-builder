@@ -2,7 +2,7 @@
 Repository for ProviderSettings entity using DynamoDB single table design.
 """
 
-import boto3
+from ..db import get_dynamodb_resource
 from boto3.dynamodb.conditions import Key
 from datetime import datetime, timezone
 from typing import Optional
@@ -30,7 +30,7 @@ class ProviderSettingsRepository:
     """
 
     def __init__(self):
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, provider_settings: ProviderSettings) -> ProviderSettings:

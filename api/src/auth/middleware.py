@@ -33,6 +33,8 @@ PUBLIC_PATHS = {
     "/auth/callback/google",
     "/auth/callback/cognito",
     "/auth/cognito",
+    "/auth/local/signup",
+    "/auth/local/login",
     "/docs",
     "/test-logging",
     "/openapi.json",

@@ -27,3 +27,6 @@ Thumbs.db
 .terraform/
 .terraform.lock.hcl
 *.tfvars
+
+# Local Development
+dynamodb-data/

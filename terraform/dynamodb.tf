@@ -40,6 +40,12 @@ resource "aws_dynamodb_table" "main" {
     projection_type = "ALL"
   }
 
+  # TTL for automatic expiration of records (used for local dev users, soft-deleted items, etc.)
+  ttl {
+    enabled        = true
+    attribute_name = "ttl"
+  }
+
   tags = {
     Name        = "${var.project_name}-main"
     Environment = var.environment

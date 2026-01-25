@@ -32,7 +32,7 @@ AgentKnowledgeBase:
     - Link/Unlink: PutItem/DeleteItem
 """
 
-import boto3
+from ..db import get_dynamodb_resource
 from boto3.dynamodb.conditions import Key
 from datetime import datetime, timezone
 from typing import Optional
@@ -56,7 +56,7 @@ class KnowledgeBaseRepository:
     """Repository for KnowledgeBase entity."""
 
     def __init__(self):
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, kb: KnowledgeBase) -> KnowledgeBase:
@@ -147,7 +147,7 @@ class CrawlJobRepository:
     """Repository for CrawlJob entity."""
 
     def __init__(self):
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, job: CrawlJob) -> CrawlJob:
@@ -265,7 +265,7 @@ class CrawlStepRepository:
     """Repository for CrawlStep (audit log) entity."""
 
     def __init__(self):
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, step: CrawlStep) -> CrawlStep:
@@ -330,7 +330,7 @@ class CrawledPageRepository:
     """Repository for CrawledPage entity."""
 
     def __init__(self):
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, page: CrawledPage) -> CrawledPage:
@@ -384,7 +384,7 @@ class ContentChunkRepository:
     """Repository for ContentChunk entity."""
 
     def __init__(self):
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, chunk: ContentChunk) -> ContentChunk:
@@ -478,7 +478,7 @@ class AgentKnowledgeBaseRepository:
     """Repository for AgentKnowledgeBase link entity."""
 
     def __init__(self):
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def link(self, agent_id: str, kb_id: str, linked_by: str) -> AgentKnowledgeBase:

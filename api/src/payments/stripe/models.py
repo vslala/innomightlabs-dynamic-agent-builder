@@ -38,5 +38,20 @@ class SessionAuthResponse(BaseModel):
 class SubscriptionStatusResponse(BaseModel):
     tier: str
     status: Optional[str] = None
+    current_period_start: Optional[str] = None
     current_period_end: Optional[str] = None
     is_active: bool
+    cancel_at_period_end: Optional[bool] = None
+
+class InvoicePeriod(BaseModel):
+    start: Optional[str] = None
+    end: Optional[str] = None
+
+class SubscriptionMetadata(BaseModel):
+    plan_key: str = "free"
+    billing_cycle: str = "monthly"
+
+class PriceInfo(BaseModel):
+    price_id: Optional[str] = None
+    currency: Optional[str] = None
+    amount: Optional[int] = None

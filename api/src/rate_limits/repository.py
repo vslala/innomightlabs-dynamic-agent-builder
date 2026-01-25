@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-import boto3
+from ..db import get_dynamodb_resource
 
 from ..config import settings
 from .models import UsageRecord
@@ -9,7 +9,7 @@ from .models import UsageRecord
 
 class UsageRepository:
     def __init__(self) -> None:
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def get_usage(self, user_email: str, period_key: str) -> Optional[UsageRecord]:

@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
-import boto3
+from ..db import get_dynamodb_resource
 from boto3.dynamodb.conditions import Key
 
 from src.config import settings
@@ -34,7 +34,7 @@ class ConversationRepository:
     """
 
     def __init__(self):
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, conversation: Conversation) -> Conversation:

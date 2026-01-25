@@ -42,6 +42,9 @@ class Settings:
     jwt_algorithm: str = "HS256"
     jwt_expiration_hours: int = 24 * 7
 
+    # DynamoDB endpoint (optional, for local development)
+    dynamodb_endpoint: Optional[str] = None
+
     # Google OAuth (required for authentication)
     google_client_id: str = ""
     google_client_secret: str = ""
@@ -198,6 +201,7 @@ class Settings:
             environment=environment,
             dynamodb_table=os.getenv("DYNAMODB_TABLE", "dynamic-agent-builder-main" if environment == "dev" else ""),
             aws_region=os.getenv("AWS_REGION_NAME", "eu-west-2"),
+            dynamodb_endpoint=os.getenv("DYNAMODB_ENDPOINT"),
             frontend_url=os.getenv("FRONTEND_URL", "http://localhost:5173" if environment == "dev" else ""),
             api_base_url=api_base_url,
             jwt_secret=os.getenv("JWT_SECRET", "dev-secret-change-in-production" if environment == "dev" else ""),

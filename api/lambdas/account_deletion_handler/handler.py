@@ -36,7 +36,11 @@ log = logging.getLogger(__name__)
 
 class AccountDeletionHandler:
     def __init__(self):
-        dynamodb = boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION", "eu-west-2"))
+        kwargs = {"region_name": os.getenv("AWS_REGION", "eu-west-2")}
+        endpoint = os.getenv("DYNAMODB_ENDPOINT")
+        if endpoint:
+            kwargs["endpoint_url"] = endpoint
+        dynamodb = boto3.resource("dynamodb", **kwargs)
         self.table = dynamodb.Table(os.getenv("DYNAMODB_TABLE", ""))
 
     def delete_user_entities(self, user_email: str) -> Dict[str, int]:

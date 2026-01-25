@@ -3,12 +3,12 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-import boto3
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 import httpx
 
 from src.config import settings
+from src.db import get_dynamodb_resource
 from src.notifications.email import send_email
 from src.rate_limits.repository import UsageRepository
 
@@ -139,7 +139,7 @@ def _is_subscription_record(image: dict[str, Any]) -> bool:
 
 
 def handler(event, context):  # noqa: ARG001
-    dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+    dynamodb = get_dynamodb_resource()
     table = dynamodb.Table(settings.dynamodb_table)
     usage_repo = UsageRepository()
 

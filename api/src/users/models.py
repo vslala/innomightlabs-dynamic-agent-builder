@@ -21,6 +21,9 @@ class User:
     deletion_requested_at: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    password_hash: Optional[str] = None
+    password_salt: Optional[str] = None
+    ttl: Optional[int] = None
 
     def __post_init__(self):
         now = datetime.utcnow().isoformat()
@@ -38,7 +41,7 @@ class User:
         return "User#Metadata"
 
     def to_dynamo_item(self) -> dict:
-        return {
+        item = {
             "pk": self.pk,
             "sk": self.sk,
             "email": self.email,
@@ -50,7 +53,12 @@ class User:
             "deletion_requested_at": self.deletion_requested_at,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "password_hash": self.password_hash,
+            "password_salt": self.password_salt,
         }
+        if self.ttl is not None:
+            item["ttl"] = self.ttl
+        return item
 
     @classmethod
     def from_dynamo_item(cls, item: dict) -> "User":
@@ -64,6 +72,9 @@ class User:
             deletion_requested_at=item.get("deletion_requested_at"),
             created_at=item.get("created_at"),
             updated_at=item.get("updated_at"),
+            password_hash=item.get("password_hash"),
+            password_salt=item.get("password_salt"),
+            ttl=item.get("ttl"),
         )
 
     def to_dict(self) -> dict:

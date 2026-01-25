@@ -1,6 +1,10 @@
 from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
+import hashlib
+import secrets
+import time
 
 from ..config import settings
 from ..users import User, UserRepository
@@ -150,3 +154,137 @@ async def get_current_user_info(
         "name": user.name,
         "picture": user.picture,
     }
+
+
+class LocalSignupRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LocalLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LocalAuthResponse(BaseModel):
+    token: str
+    email: str
+    name: str
+
+
+def _hash_password(password: str, salt: bytes = None) -> tuple[str, str]:
+    """Hash password using PBKDF2-SHA256."""
+    if salt is None:
+        salt = secrets.token_bytes(32)
+
+    hashed = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
+    return hashed.hex(), salt.hex()
+
+
+def _verify_password(password: str, hashed_password: str, salt: str) -> bool:
+    """Verify password against stored hash."""
+    salt_bytes = bytes.fromhex(salt)
+    computed_hash, _ = _hash_password(password, salt_bytes)
+    return computed_hash == hashed_password
+
+
+@router.post("/local/signup", response_model=LocalAuthResponse)
+async def local_signup(payload: LocalSignupRequest):
+    """
+    Dev-only endpoint for local testing with username/password.
+
+    Creates a user with email format: {username}@example.com
+    Only available when ENVIRONMENT is 'dev' or 'local'.
+    """
+    if settings.environment not in ["dev", "local"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Local signup is only available in development environment"
+        )
+
+    # Create email from username using example.com (RFC 2606 reserved domain)
+    email = f"{payload.username}@example.com"
+
+    # Check if user already exists
+    existing_user = user_repository.get_by_email(email)
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already taken"
+        )
+
+    # Hash password
+    hashed_password, salt = _hash_password(payload.password)
+
+    # Calculate TTL: 7 days from now (Unix timestamp in seconds)
+    ttl_timestamp = int(time.time() + (7 * 24 * 60 * 60))
+
+    # Create user in DynamoDB with TTL for auto-expiration
+    user = User(
+        email=email,
+        name=payload.username,
+        picture=None,
+        refresh_token=None,
+        password_hash=hashed_password,
+        password_salt=salt,
+        ttl=ttl_timestamp,
+    )
+
+    user = user_repository.create_or_update(user)
+
+    # Generate JWT token
+    jwt_token = create_access_token(user)
+
+    return LocalAuthResponse(
+        token=jwt_token,
+        email=user.email,
+        name=user.name
+    )
+
+
+@router.post("/local/login", response_model=LocalAuthResponse)
+async def local_login(payload: LocalLoginRequest):
+    """
+    Dev-only endpoint for logging in with username/password.
+
+    Only available when ENVIRONMENT is 'dev' or 'local'.
+    """
+    if settings.environment not in ["dev", "local"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Local login is only available in development environment"
+        )
+
+    # Create email from username
+    email = f"{payload.username}@example.com"
+
+    # Get user from database
+    user = user_repository.get_by_email(email)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password"
+        )
+
+    # Check if user has password (is a local dev user)
+    if not user.password_hash or not user.password_salt:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password"
+        )
+
+    # Verify password
+    if not _verify_password(payload.password, user.password_hash, user.password_salt):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password"
+        )
+
+    # Generate JWT token
+    jwt_token = create_access_token(user)
+
+    return LocalAuthResponse(
+        token=jwt_token,
+        email=user.email,
+        name=user.name
+    )

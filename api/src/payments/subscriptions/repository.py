@@ -1,15 +1,14 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-import boto3
-
-from .models import Subscription
+from ...db import get_dynamodb_resource
 from ...config import settings
+from .models import Subscription
 
 
 class SubscriptionRepository:
     def __init__(self) -> None:
-        self.dynamodb = boto3.resource("dynamodb", region_name=settings.aws_region)
+        self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def upsert(self, subscription: Subscription) -> Subscription:
@@ -53,6 +52,31 @@ class SubscriptionRepository:
             return None
         active.sort(key=lambda s: s.updated_at or s.created_at or "", reverse=True)
         return active[0]
+
+
+class WebhookEventRepository:
+    def __init__(self) -> None:
+        self.dynamodb = get_dynamodb_resource()
+        self.table = self.dynamodb.Table(settings.dynamodb_table)
+
+    def has_processed(self, event_id: str) -> bool:
+        response = self.table.get_item(
+            Key={
+                "pk": f"WebhookEvent#{event_id}",
+                "sk": f"WebhookEvent#{event_id}",
+            }
+        )
+        return "Item" in response
+
+    def mark_processed(self, event_id: str) -> None:
+        self.table.put_item(
+            Item={
+                "pk": f"WebhookEvent#{event_id}",
+                "sk": f"WebhookEvent#{event_id}",
+                "event_id": event_id,
+                "created_at": datetime.utcnow().isoformat(),
+            }
+        )
 
 
 def _is_subscription_expired(subscription: Subscription) -> bool:
