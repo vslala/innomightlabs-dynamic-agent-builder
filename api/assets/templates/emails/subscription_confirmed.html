@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Confirmed</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .content h2 {
+            color: #10b981;
+            margin-top: 0;
+            font-size: 22px;
+        }
+        .content p {
+            margin: 16px 0;
+            color: #555;
+        }
+        .subscription-details {
+            background: #f0fdf4;
+            border-left: 4px solid #10b981;
+            border-radius: 6px;
+            padding: 24px;
+            margin: 24px 0;
+        }
+        .subscription-details h3 {
+            margin-top: 0;
+            color: #059669;
+            font-size: 18px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #d1fae5;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #333;
+        }
+        .detail-value {
+            color: #555;
+        }
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 6px;
+            font-weight: 600;
+            margin: 24px 0;
+            text-align: center;
+        }
+        .footer {
+            background: #f8f9fa;
+            padding: 24px 30px;
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+            border-top: 1px solid #e9ecef;
+        }
+        .footer a {
+            color: #10b981;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Subscription Confirmed! ✓</h1>
+        </div>
+
+        <div class="content">
+            <h2>Hi {{user_name}},</h2>
+
+            <p>Thank you for subscribing! Your payment has been processed successfully, and your subscription is now active.</p>
+
+            <div class="subscription-details">
+                <h3>Subscription Details</h3>
+                <div class="detail-row">
+                    <span class="detail-label">Plan:</span>
+                    <span class="detail-value">{{plan_name}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Amount:</span>
+                    <span class="detail-value">{{amount}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Billing Period:</span>
+                    <span class="detail-value">{{billing_period}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Next Charge:</span>
+                    <span class="detail-value">{{next_charge_date}}</span>
+                </div>
+            </div>
+
+            <p>You now have access to all the features included in your {{plan_name}} plan. Start exploring and make the most of your subscription!</p>
+
+            <div style="text-align: center;">
+                <a href="{{dashboard_url}}" class="cta-button">Go to Dashboard</a>
+            </div>
+
+            <p style="margin-top: 32px;">You can manage your subscription, update payment methods, or view invoices anytime from your <a href="{{settings_url}}" style="color: #10b981; text-decoration: none;">account settings</a>.</p>
+
+            <p>Thank you for choosing InnomightLabs!<br>
+            The InnomightLabs Team</p>
+        </div>
+
+        <div class="footer">
+            <p>InnomightLabs - AI-Powered Agent Platform</p>
+            <p>
+                <a href="{{dashboard_url}}">Dashboard</a> •
+                <a href="{{settings_url}}">Settings</a> •
+                <a href="https://innomightlabs.com">Website</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

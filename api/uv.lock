@@ -67,6 +67,7 @@ dependencies = [
     { name = "google-auth-oauthlib" },
     { name = "httpx" },
     { name = "lxml" },
+    { name = "mailjet-rest" },
     { name = "mangum" },
     { name = "markdownify" },
     { name = "mypy" },
@@ -103,6 +104,7 @@ requires-dist = [
     { name = "google-auth-oauthlib", specifier = ">=1.2.2" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "lxml", specifier = ">=5.0.0" },
+    { name = "mailjet-rest", specifier = ">=1.3.4" },
     { name = "mangum", specifier = ">=0.20.0" },
     { name = "markdownify", specifier = ">=0.14.1" },
     { name = "moto", extras = ["dynamodb"], marker = "extra == 'dev'", specifier = ">=5.0.0" },
@@ -692,6 +694,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/0f/85/86766dfebfa87bea0ab78e9ff7a4b4b45225df4b4d3b8cc3c03c5cd68464/lxml-6.0.2-cp314-cp314t-win32.whl", hash = "sha256:da08e7bb297b04e893d91087df19638dc7a6bb858a954b0cc2b9f5053c922312", size = 3911420, upload-time = "2025-09-22T04:03:32.198Z" },
     { url = "https://files.pythonhosted.org/packages/fe/1a/b248b355834c8e32614650b8008c69ffeb0ceb149c793961dd8c0b991bb3/lxml-6.0.2-cp314-cp314t-win_amd64.whl", hash = "sha256:252a22982dca42f6155125ac76d3432e548a7625d56f5a273ee78a5057216eca", size = 4406837, upload-time = "2025-09-22T04:03:34.027Z" },
     { url = "https://files.pythonhosted.org/packages/92/aa/df863bcc39c5e0946263454aba394de8a9084dbaff8ad143846b0d844739/lxml-6.0.2-cp314-cp314t-win_arm64.whl", hash = "sha256:bb4c1847b303835d89d785a18801a883436cdfd5dc3d62947f9c49e24f0f5a2c", size = 3822205, upload-time = "2025-09-22T04:03:36.249Z" },
+]
+
+[[package]]
+name = "mailjet-rest"
+version = "1.5.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/41/76/047f63be44f14bd9d84153bf355d8cfb32571052f0bf386fb45bed9bee1f/mailjet_rest-1.5.1.tar.gz", hash = "sha256:8705efb05ca2faab4be93c490296855182ca08a2e7deb86bf25c8a38f39804d9", size = 42445, upload-time = "2025-07-14T15:51:18.464Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/57/c3/571e92ccb6edcda528f14864b04111adc2e19ab500f12a4ec4628176bc3e/mailjet_rest-1.5.1-py3-none-any.whl", hash = "sha256:4473ac614142e1bbd50f18c485cff4ec032f7d864cf1c9ac8d675830da579288", size = 28664, upload-time = "2025-07-14T15:51:17.119Z" },
 ]
 
 [[package]]

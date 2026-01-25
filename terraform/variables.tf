@@ -137,3 +137,18 @@ variable "ses_verification_email" {
   type        = string
   default     = ""
 }
+
+# Mailjet
+variable "mailjet_api_key" {
+  description = "Mailjet API key for email delivery"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "mailjet_secret_key" {
+  description = "Mailjet secret key for email delivery"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

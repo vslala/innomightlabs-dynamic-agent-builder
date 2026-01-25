@@ -30,6 +30,7 @@ export function Navbar() {
           <a href={`${import.meta.env.BASE_URL}#how-it-works`} className={styles.link}>How It Works</a>
           <Link to="/pricing" className={styles.link}>Pricing</Link>
           <Link to="/docs/quick-start" className={styles.link}>Docs</Link>
+          <Link to="/contact" className={styles.link}>Contact</Link>
           {isAuthenticated ? (
             <Link to="/dashboard" className={styles.ctaLink}>Dashboard</Link>
           ) : (

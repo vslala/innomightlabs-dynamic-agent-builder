@@ -10,9 +10,11 @@ import { QuickStart } from './pages/docs/QuickStart';
 import { FAQ } from './pages/docs/FAQ';
 import { Terms } from './pages/legal/Terms';
 import { PricingPolicy } from './pages/legal/PricingPolicy';
+import { Contact } from './pages/Contact';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 import { RateLimitBanner } from './components/RateLimitBanner';
+import BetaBanner from './components/BetaBanner';
 import { Overview } from './pages/dashboard/Overview';
 import { AgentsList } from './pages/dashboard/AgentsList';
 import { AgentCreate } from './pages/dashboard/AgentCreate';
@@ -48,6 +50,7 @@ function App() {
   return (
     <BrowserRouter basename={basename}>
       <ScrollToHash />
+      <BetaBanner />
       <RateLimitBanner />
       <Routes>
         {/* Public routes */}
@@ -61,6 +64,7 @@ function App() {
         <Route path="/docs/faq" element={<FAQ />} />
         <Route path="/legal/terms" element={<Terms />} />
         <Route path="/legal/pricing" element={<PricingPolicy />} />
+        <Route path="/contact" element={<Contact />} />
 
         {/* Protected dashboard routes */}
         <Route

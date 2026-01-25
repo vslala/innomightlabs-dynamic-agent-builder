@@ -166,7 +166,7 @@ write_kv "stripe_publishable_key" "$(get_var 'STRIPE_PUBLISHABLE_KEY')"
 write_kv "stripe_webhook_secret" "$(get_var 'STRIPE_WEBHOOK_SECRET')"
 
 # ============================================================================
-# SES Configuration (common)
+# SES Configuration (common) - DEPRECATED: Use Mailjet instead
 # ============================================================================
 {
   echo ""
@@ -177,6 +177,17 @@ write_kv "ses_domain" "$SES_DOMAIN"
 write_kv "ses_from_email" "$SES_FROM_EMAIL"
 write_kv "ses_reply_to_email" "$SES_REPLY_TO_EMAIL"
 write_kv "ses_verification_email" "$SES_VERIFICATION_EMAIL"
+
+# ============================================================================
+# Mailjet Configuration (common)
+# ============================================================================
+{
+  echo ""
+  echo "# Mailjet Configuration"
+} >> "$TFVARS_PATH"
+
+write_kv "mailjet_api_key" "$MAILJET_API_KEY"
+write_kv "mailjet_secret_key" "$MAILJET_SECRET_KEY"
 
 echo ""
 echo "✅ Generated terraform.tfvars for environment: $ENVIRONMENT"

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Cancelled</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .content h2 {
+            color: #64748b;
+            margin-top: 0;
+            font-size: 22px;
+        }
+        .content p {
+            margin: 16px 0;
+            color: #555;
+        }
+        .subscription-details {
+            background: #f8fafc;
+            border-left: 4px solid #64748b;
+            border-radius: 6px;
+            padding: 24px;
+            margin: 24px 0;
+        }
+        .subscription-details h3 {
+            margin-top: 0;
+            color: #475569;
+            font-size: 18px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #333;
+        }
+        .detail-value {
+            color: #555;
+        }
+        .info-box {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            border-radius: 6px;
+            padding: 16px 20px;
+            margin: 24px 0;
+        }
+        .info-box p {
+            margin: 0;
+            color: #92400e;
+        }
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 6px;
+            font-weight: 600;
+            margin: 24px 0;
+            text-align: center;
+        }
+        .footer {
+            background: #f8f9fa;
+            padding: 24px 30px;
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+            border-top: 1px solid #e9ecef;
+        }
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Subscription Cancelled</h1>
+        </div>
+
+        <div class="content">
+            <h2>Hi {{user_name}},</h2>
+
+            <p>Your subscription has been cancelled as requested. We're sorry to see you go!</p>
+
+            <div class="subscription-details">
+                <h3>Cancellation Details</h3>
+                <div class="detail-row">
+                    <span class="detail-label">Plan:</span>
+                    <span class="detail-value">{{plan_name}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Access Until:</span>
+                    <span class="detail-value">{{access_until}}</span>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <p><strong>Important:</strong> You'll continue to have access to all your {{plan_name}} features until {{access_until}}. After that, your account will revert to the free plan.</p>
+            </div>
+
+            <p>Your data, agents, and conversations will remain safe. You can reactivate your subscription anytime from your account settings.</p>
+
+            <div style="text-align: center;">
+                <a href="{{settings_url}}" class="cta-button">Manage Subscription</a>
+            </div>
+
+            <p style="margin-top: 32px;">We'd love to hear your feedback on how we can improve. If you have a moment, please let us know what led to your cancellation.</p>
+
+            <p>We hope to see you again soon!<br>
+            The InnomightLabs Team</p>
+        </div>
+
+        <div class="footer">
+            <p>InnomightLabs - AI-Powered Agent Platform</p>
+            <p>
+                <a href="{{dashboard_url}}">Dashboard</a> •
+                <a href="{{settings_url}}">Settings</a> •
+                <a href="https://innomightlabs.com">Website</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

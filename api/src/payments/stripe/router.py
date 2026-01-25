@@ -28,6 +28,12 @@ from ...config import settings
 from ..pricing_config import get_pricing_config
 from ...users import User, UserRepository
 from ..subscriptions import Subscription, SubscriptionRepository
+from ...email import (
+    send_subscription_confirmed_email_safe,
+    send_payment_failed_email_safe,
+    send_subscription_upgraded_email_safe,
+    send_subscription_cancelled_email_safe,
+)
 from ..subscriptions.repository import WebhookEventRepository
 from ...auth.jwt_utils import create_access_token
 
@@ -639,8 +645,17 @@ async def handle_invoice_payment_succeeded(invoice_data: dict) -> None:
     )
     if not subscription:
         return
-    
+
     log.info(f"✓ Payment succeeded - activated subscription {subscription_id} for {subscription.user_email}")
+
+    # Send subscription confirmed email
+    await send_subscription_confirmed_email_safe(
+        user_email=subscription.user_email,
+        plan_name=subscription.plan_name,
+        amount_cents=invoice_data.get("amount_paid", 0),
+        currency=invoice_data.get("currency", "usd"),
+        current_period_end=subscription.current_period_end,
+    )
 
 async def handle_invoice_payment_failed(invoice_data: dict) -> None:
     """
@@ -676,9 +691,14 @@ async def handle_invoice_payment_failed(invoice_data: dict) -> None:
         f"✗ Payment failed (attempt {attempt_count}) - subscription {subscription_id} "
         f"for {subscription.user_email} status: {subscription.status}"
     )
-    
-    # TODO: Send email notification to customer
-    # TODO: Implement custom retry logic if needed
+
+    # Send payment failed email
+    await send_payment_failed_email_safe(
+        user_email=subscription.user_email,
+        plan_name=subscription.plan_name,
+        amount_cents=invoice_data.get("amount_due", 0),
+        currency=invoice_data.get("currency", "usd"),
+    )
 
 async def handle_subscription_updated(subscription_data: dict) -> None:
     """
@@ -706,6 +726,27 @@ async def handle_subscription_updated(subscription_data: dict) -> None:
         f"↻ Subscription updated {subscription_id} for {subscription.user_email} - status: {subscription.status}"
     )
 
+    # Send subscription upgraded email (only for plan changes, not cancellations)
+    if not subscription_data.get("cancel_at_period_end"):
+        # Get latest invoice to get amount
+        stripe = StripeClient()
+        try:
+            latest_invoice_id = subscription_data.get("latest_invoice")
+            if latest_invoice_id:
+                invoice = await stripe.get(f"/invoices/{latest_invoice_id}")
+                amount_cents = invoice.get("amount_paid", 0)
+                currency = invoice.get("currency", "usd")
+
+                await send_subscription_upgraded_email_safe(
+                    user_email=subscription.user_email,
+                    plan_name=subscription.plan_name,
+                    amount_cents=amount_cents,
+                    currency=currency,
+                    current_period_end=subscription.current_period_end,
+                )
+        except Exception as e:
+            log.warning(f"Could not send subscription upgraded email (missing invoice): {e}")
+
 async def handle_subscription_deleted(subscription_data: dict) -> None:
     """
     Handle subscription deletion - revoke access.
@@ -728,6 +769,10 @@ async def handle_subscription_deleted(subscription_data: dict) -> None:
         return
 
     log.info(f"✗ Subscription deleted {subscription_id} for {subscription.user_email}")
-    
-    # TODO: Revoke product access
-    # TODO: Send cancellation confirmation email
+
+    # Send subscription cancelled email
+    await send_subscription_cancelled_email_safe(
+        user_email=subscription.user_email,
+        plan_name=subscription.plan_name,
+        current_period_end=subscription.current_period_end,
+    )

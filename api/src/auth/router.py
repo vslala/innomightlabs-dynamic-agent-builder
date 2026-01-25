@@ -10,6 +10,7 @@ from ..config import settings
 from ..users import User, UserRepository
 from .oauth_providers import CognitoOAuthProvider, GoogleOAuthProvider, OAuthProvider
 from .jwt_utils import create_access_token, get_current_user
+from ..email import send_welcome_email_safe
 
 import logging
 
@@ -91,6 +92,10 @@ async def _oauth_callback(
         if not email:
             raise HTTPException(status_code=400, detail="Failed to get user email")
 
+        # Check if user exists (for welcome email)
+        existing_user = user_repository.get_by_email(email)
+        is_new_user = existing_user is None
+
         # Create or update user in DynamoDB
         user = User(
             email=email,
@@ -99,6 +104,10 @@ async def _oauth_callback(
             refresh_token=refresh_token,
         )
         user = user_repository.create_or_update(user)
+
+        # Send welcome email for new users
+        if is_new_user:
+            await send_welcome_email_safe(email)
 
         # Generate JWT token for our app
         jwt_token = create_access_token(user)

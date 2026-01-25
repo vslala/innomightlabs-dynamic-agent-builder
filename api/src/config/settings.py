@@ -77,9 +77,16 @@ class Settings:
     cognito_client_secret: str = ""
     cognito_redirect_uri: str = ""
 
-    # SES (optional; for outbound email)
+    # SES (optional; for outbound email) - DEPRECATED: Use Mailjet instead
     ses_from_email: str = ""
     ses_reply_to_email: str = ""
+
+    # Mailjet (optional; for outbound email)
+    mailjet_api_key: str = ""
+    mailjet_secret_key: str = ""
+
+    # GitHub (optional; for issue creation from contact form)
+    github_token: str = ""
 
     def validate_core(self) -> None:
         """
@@ -228,9 +235,14 @@ class Settings:
             cognito_client_id=os.getenv("COGNITO_CLIENT_ID", ""),
             cognito_client_secret=os.getenv("COGNITO_CLIENT_SECRET", ""),
             cognito_redirect_uri=os.getenv("COGNITO_REDIRECT_URI", f"{api_base_url}/auth/callback/cognito"),
-            # SES
+            # SES - DEPRECATED: Use Mailjet instead
             ses_from_email=os.getenv("SES_FROM_EMAIL", ""),
             ses_reply_to_email=os.getenv("SES_REPLY_TO_EMAIL", ""),
+            # Mailjet
+            mailjet_api_key=os.getenv("MAILJET_API_KEY", ""),
+            mailjet_secret_key=os.getenv("MAILJET_SECRET_KEY", ""),
+            # GitHub
+            github_token=os.getenv("GITHUB_TOKEN", ""),
         )
 
 

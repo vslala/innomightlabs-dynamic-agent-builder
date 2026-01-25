@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to InnomightLabs</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .content h2 {
+            color: #667eea;
+            margin-top: 0;
+            font-size: 22px;
+        }
+        .content p {
+            margin: 16px 0;
+            color: #555;
+        }
+        .features {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 24px;
+            margin: 24px 0;
+        }
+        .features ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        .features li {
+            margin: 12px 0;
+            color: #555;
+        }
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 6px;
+            font-weight: 600;
+            margin: 24px 0;
+            text-align: center;
+        }
+        .footer {
+            background: #f8f9fa;
+            padding: 24px 30px;
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+            border-top: 1px solid #e9ecef;
+        }
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Welcome to InnomightLabs! 🎉</h1>
+        </div>
+
+        <div class="content">
+            <h2>Hi {{user_name}},</h2>
+
+            <p>We're thrilled to have you on board! Your account has been successfully created, and you're all set to start building amazing AI-powered agents.</p>
+
+            <div class="features">
+                <h3 style="margin-top: 0; color: #667eea;">What you can do:</h3>
+                <ul>
+                    <li><strong>Create Agents:</strong> Build intelligent agents tailored to your needs</li>
+                    <li><strong>Manage Conversations:</strong> View and track all your agent interactions</li>
+                    <li><strong>Knowledge Bases:</strong> Upload and manage content for your agents</li>
+                    <li><strong>Analytics:</strong> Monitor usage and performance metrics</li>
+                </ul>
+            </div>
+
+            <p>Ready to get started? Head to your dashboard and create your first agent!</p>
+
+            <div style="text-align: center;">
+                <a href="{{dashboard_url}}" class="cta-button">Go to Dashboard</a>
+            </div>
+
+            <p style="margin-top: 32px;">If you have any questions or need assistance, feel free to explore our documentation or reach out to our team.</p>
+
+            <p>Happy building!<br>
+            The InnomightLabs Team</p>
+        </div>
+
+        <div class="footer">
+            <p>InnomightLabs - AI-Powered Agent Platform</p>
+            <p>
+                <a href="{{dashboard_url}}">Dashboard</a> •
+                <a href="https://innomightlabs.com">Website</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

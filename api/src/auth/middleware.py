@@ -41,6 +41,7 @@ PUBLIC_PATHS = {
     "/redoc",
     "/payments/stripe/webhook",
     "/payments/stripe/pricing",
+    "/contact/submit",
 }
 
 # Path prefixes that use different authentication (not JWT)

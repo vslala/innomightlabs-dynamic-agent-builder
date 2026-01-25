@@ -16,6 +16,7 @@ from src.knowledge.router import router as knowledge_router, agent_kb_router, ss
 from src.payments.stripe.router import router as stripe_payments_router
 from src.users import users_router
 from src.widget import widget_router, WidgetAuthMiddleware
+from src.contact.router import router as contact_router
 from src.exceptions import register_exception_handlers
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -83,6 +84,7 @@ app.include_router(router=agent_kb_router)
 app.include_router(router=widget_router)
 app.include_router(router=stripe_payments_router)
 app.include_router(router=users_router)
+app.include_router(router=contact_router)
 
 
 @app.get("/health")
