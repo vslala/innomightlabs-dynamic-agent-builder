@@ -1,0 +1,189 @@
+{
+  "object": "event",
+  "api_version": "2025-12-15.clover",
+  "created": 1769459263,
+  "data": {
+    "object": {
+      "id": "in_1StwNs9vlzhgFql13YkkvuP6",
+      "object": "invoice",
+      "account_country": "GB",
+      "account_name": "Payments Sandbox",
+      "account_tax_ids": null,
+      "amount_due": 2900,
+      "amount_overpaid": 0,
+      "amount_paid": 2900,
+      "amount_remaining": 0,
+      "amount_shipping": 0,
+      "application": null,
+      "attempt_count": 0,
+      "attempted": true,
+      "auto_advance": false,
+      "automatic_tax": {
+        "disabled_reason": null,
+        "enabled": false,
+        "liability": null,
+        "provider": null,
+        "status": null
+      },
+      "automatically_finalizes_at": null,
+      "billing_reason": "subscription_create",
+      "collection_method": "charge_automatically",
+      "created": 1769459260,
+      "currency": "gbp",
+      "custom_fields": null,
+      "customer": "cus_TrfjTkkqS2abOr",
+      "customer_account": "acct_1StwNr9vlzYr7AYo",
+      "customer_address": {
+        "city": null,
+        "country": "GB",
+        "line1": null,
+        "line2": null,
+        "postal_code": null,
+        "state": null
+      },
+      "customer_email": "testuser@example.com",
+      "customer_name": "Test User",
+      "customer_phone": null,
+      "customer_shipping": null,
+      "customer_tax_exempt": "none",
+      "customer_tax_ids": [],
+      "default_payment_method": null,
+      "default_source": null,
+      "default_tax_rates": [],
+      "description": null,
+      "discounts": [],
+      "due_date": null,
+      "effective_at": 1769459260,
+      "ending_balance": 0,
+      "footer": null,
+      "from_invoice": null,
+      "hosted_invoice_url": "https://invoice.stripe.com/i/acct_1SrxnY9vlzhgFql1/test_YWNjdF8xU3J4blk5dmx6aGdGcWwxLF9UcmZqcFp3aFFPcmE4aXZNRHBHdjNlWVp2Y2JjcGN5LDE2MDAwMDA2NQ0200gBucv0kS?s=ap",
+      "invoice_pdf": "https://pay.stripe.com/invoice/acct_1SrxnY9vlzhgFql1/test_YWNjdF8xU3J4blk5dmx6aGdGcWwxLF9UcmZqcFp3aFFPcmE4aXZNRHBHdjNlWVp2Y2JjcGN5LDE2MDAwMDA2NQ0200gBucv0kS/pdf?s=ap",
+      "issuer": {
+        "type": "self"
+      },
+      "last_finalization_error": null,
+      "latest_revision": null,
+      "lines": {
+        "object": "list",
+        "data": [
+          {
+            "id": "il_1StwNs9vlzhgFql1hJkWAZ8y",
+            "object": "line_item",
+            "amount": 2900,
+            "currency": "gbp",
+            "description": "1 \u00d7 Starter (at \u00a329.00 / month)",
+            "discount_amounts": [],
+            "discountable": true,
+            "discounts": [],
+            "invoice": "in_1StwNs9vlzhgFql13YkkvuP6",
+            "livemode": false,
+            "metadata": {
+              "plan_key": "starter",
+              "user_email": "testuser@example.com",
+              "billing_cycle": "monthly"
+            },
+            "parent": {
+              "invoice_item_details": null,
+              "subscription_item_details": {
+                "invoice_item": null,
+                "proration": false,
+                "proration_details": {
+                  "credited_items": null
+                },
+                "subscription": "sub_1StwNu9vlzhgFql1HkCOfmOe",
+                "subscription_item": "si_TrfjgnhCPANOxt"
+              },
+              "type": "subscription_item_details"
+            },
+            "period": {
+              "end": 1772137660,
+              "start": 1769459260
+            },
+            "pretax_credit_amounts": [],
+            "pricing": {
+              "price_details": {
+                "price": "price_1Ssjtc9vlzhgFql1IKssHUrQ",
+                "product": "prod_TqQl2bKPJs5AWz"
+              },
+              "type": "price_details",
+              "unit_amount_decimal": "2900"
+            },
+            "quantity": 1,
+            "subtotal": 2900,
+            "taxes": []
+          }
+        ],
+        "has_more": false,
+        "total_count": 1,
+        "url": "/v1/invoices/in_1StwNs9vlzhgFql13YkkvuP6/lines"
+      },
+      "livemode": false,
+      "metadata": {},
+      "next_payment_attempt": null,
+      "number": "CSMTBFCV-0053",
+      "on_behalf_of": null,
+      "parent": {
+        "quote_details": null,
+        "subscription_details": {
+          "metadata": {
+            "plan_key": "starter",
+            "user_email": "testuser@example.com",
+            "billing_cycle": "monthly"
+          },
+          "subscription": "sub_1StwNu9vlzhgFql1HkCOfmOe"
+        },
+        "type": "subscription_details"
+      },
+      "payment_settings": {
+        "default_mandate": null,
+        "payment_method_options": {
+          "acss_debit": null,
+          "bancontact": null,
+          "card": {
+            "request_three_d_secure": "automatic"
+          },
+          "customer_balance": null,
+          "konbini": null,
+          "payto": null,
+          "sepa_debit": null,
+          "us_bank_account": null
+        },
+        "payment_method_types": null
+      },
+      "period_end": 1769459260,
+      "period_start": 1769459260,
+      "post_payment_credit_notes_amount": 0,
+      "pre_payment_credit_notes_amount": 0,
+      "receipt_number": null,
+      "rendering": null,
+      "shipping_cost": null,
+      "shipping_details": null,
+      "starting_balance": 0,
+      "statement_descriptor": null,
+      "status": "paid",
+      "status_transitions": {
+        "finalized_at": 1769459260,
+        "marked_uncollectible_at": null,
+        "paid_at": 1769459261,
+        "voided_at": null
+      },
+      "subtotal": 2900,
+      "subtotal_excluding_tax": 2900,
+      "test_clock": null,
+      "total": 2900,
+      "total_discount_amounts": [],
+      "total_excluding_tax": 2900,
+      "total_pretax_credit_amounts": [],
+      "total_taxes": [],
+      "webhooks_delivered_at": null
+    }
+  },
+  "livemode": false,
+  "pending_webhooks": 3,
+  "request": {
+    "id": null,
+    "idempotency_key": "353cf087-65f1-4419-97ee-735b904108b4"
+  },
+  "type": "invoice.payment_succeeded"
+}

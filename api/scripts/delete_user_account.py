@@ -83,12 +83,12 @@ class UserAccountDeleter:
 
         # 1. Find User record
         print(f"  • Scanning User record...")
-        user_items = self._query_items(f"USER#{self.email}")
+        user_items = self._query_items(f"User#{self.email}")
         all_data["user"].extend(user_items)
 
         # 2. Find Conversations
         print(f"  • Scanning Conversations...")
-        conversation_items = self._query_items(f"USER#{self.email}", sk_prefix="CONVERSATION#")
+        conversation_items = self._query_items(f"User#{self.email}", sk_prefix="CONVERSATION#")
         all_data["conversations"].extend(conversation_items)
 
         # Get conversation IDs for message queries
@@ -102,7 +102,7 @@ class UserAccountDeleter:
 
         # 4. Find Agents
         print(f"  • Scanning Agents...")
-        agent_items = self._query_items(f"USER#{self.email}", sk_prefix="AGENT#")
+        agent_items = self._query_items(f"User#{self.email}", sk_prefix="AGENT#")
         all_data["agents"].extend(agent_items)
 
         # Get agent IDs for related data queries
@@ -138,7 +138,7 @@ class UserAccountDeleter:
 
         # 6. Find Knowledge Bases
         print(f"  • Scanning Knowledge Bases...")
-        kb_items = self._query_items(f"USER#{self.email}", sk_prefix="KB#")
+        kb_items = self._query_items(f"User#{self.email}", sk_prefix="KB#")
         all_data["knowledge_bases"].extend(kb_items)
 
         # Get KB IDs for related data queries
@@ -170,31 +170,31 @@ class UserAccountDeleter:
 
         # 8. Find Provider Settings
         print(f"  • Scanning Provider Settings...")
-        provider_items = self._query_items(f"USER#{self.email}", sk_prefix="PROVIDER#")
+        provider_items = self._query_items(f"User#{self.email}", sk_prefix="PROVIDER#")
         all_data["provider_settings"].extend(provider_items)
 
         # 9. Find Subscriptions
         print(f"  • Scanning Subscriptions...")
-        subscription_items = self._query_items(f"USER#{self.email}", sk_prefix="SUBSCRIPTION#")
+        subscription_items = self._query_items(f"User#{self.email}", sk_prefix="SUBSCRIPTION#")
         all_data["subscriptions"].extend(subscription_items)
 
         # 10. Find Usage Records
         print(f"  • Scanning Usage Records...")
-        usage_items = self._query_items(f"USER#{self.email}", sk_prefix="USAGE#")
+        usage_items = self._query_items(f"User#{self.email}", sk_prefix="USAGE#")
         all_data["usage_records"].extend(usage_items)
 
         # Also check for active usage counter
-        active_usage = self._query_items(f"USER#{self.email}", sk_prefix="ACTIVE_USAGE")
+        active_usage = self._query_items(f"User#{self.email}", sk_prefix="ACTIVE_USAGE")
         all_data["usage_records"].extend(active_usage)
 
         # 11. Find Email Events
         print(f"  • Scanning Email Events...")
-        email_items = self._query_items(f"USER#{self.email}", sk_prefix="EMAIL_EVENT#")
+        email_items = self._query_items(f"User#{self.email}", sk_prefix="EMAIL_EVENT#")
         all_data["email_events"].extend(email_items)
 
         # 12. Find Webhook Events (if any tied to user)
         print(f"  • Scanning Webhook Events...")
-        webhook_items = self._query_items(f"USER#{self.email}", sk_prefix="WEBHOOK_EVENT#")
+        webhook_items = self._query_items(f"User#{self.email}", sk_prefix="WEBHOOK_EVENT#")
         all_data["webhook_events"].extend(webhook_items)
 
         return all_data

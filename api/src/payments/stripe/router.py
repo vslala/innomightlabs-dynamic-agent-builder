@@ -1,13 +1,11 @@
 """Stripe payments integration - optimized for correct webhook event handling."""
 
-import hashlib
-import hmac
 import json
 import logging
-import time
 from typing import Optional
 
 import httpx
+import stripe
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -239,38 +237,6 @@ async def get_active_stripe_subscription(customer_id: str) -> Optional[Subscript
         cancel_at_period_end=stripe_sub.get("cancel_at_period_end"),
     )
 
-def verify_webhook_signature(payload: bytes, signature_header: str) -> None:
-    """Verify Stripe webhook signature."""
-    if not settings.stripe_webhook_secret:
-        raise HTTPException(500, "Webhook secret not configured")
-    
-    if not signature_header:
-        raise HTTPException(400, "Missing stripe-signature header")
-    
-    # Parse signature
-    parts = dict(item.partition("=")[::2] for item in signature_header.split(","))
-    timestamp, signatures = parts.get("t"), [v for k, v in parts.items() if k == "v1"]
-    
-    if not timestamp or not signatures:
-        raise HTTPException(400, "Invalid signature header format")
-    
-    # Verify signature
-    signed_payload = f"{timestamp}.{payload.decode('utf-8')}".encode("utf-8")
-    expected_sig = hmac.new(
-        settings.stripe_webhook_secret.encode("utf-8"),
-        signed_payload,
-        hashlib.sha256,
-    ).hexdigest()
-    
-    if not any(hmac.compare_digest(expected_sig, sig) for sig in signatures):
-        raise HTTPException(400, "Invalid signature")
-    
-    # Check timestamp (5 min tolerance)
-    try:
-        if abs(time.time() - int(timestamp)) > 300:
-            raise HTTPException(400, "Signature timestamp too old")
-    except ValueError:
-        raise HTTPException(400, "Invalid timestamp in signature")
 
 def validate_checkout_request(user_email: str, plan_key: str) -> Optional[str]:
     """
@@ -536,17 +502,29 @@ async def handle_webhook(request: Request):
     - customer.subscription.deleted: Subscription cancelled → revoke access
     """
     payload = await request.body()
-    verify_webhook_signature(payload, request.headers.get("stripe-signature", ""))
+    sig = request.headers.get("stripe-signature")
 
+    if not sig:
+        raise HTTPException(400, "Missing stripe-signature header")
+
+    # Use Stripe's construct_event for signature verification + parsing
     try:
-        event = json.loads(payload.decode("utf-8"))
-    except json.JSONDecodeError:
-        raise HTTPException(400, "Invalid JSON")
+        webhook_event = stripe.Webhook.construct_event(
+            payload=payload,
+            sig_header=sig,
+            secret=settings.stripe_webhook_secret
+        )
+    except stripe.SignatureVerificationError as e:
+        log.error(f"Invalid webhook signature: {e}")
+        raise HTTPException(400, "Invalid signature")
+    except Exception as e:
+        log.error(f"Error constructing webhook event: {e}")
+        raise HTTPException(400, "Invalid webhook event")
 
-    log.debug("Webhook payload: %s", json.dumps(event, indent=2, default=str))
+    log.debug("Webhook payload: %s", json.dumps(dict(webhook_event), indent=2, default=str))
 
-    event_id = event.get("id")
-    event_type = event.get("type")
+    event_id = webhook_event.id
+    event_type = webhook_event.type
 
     # Check deduplication BEFORE processing
     if event_id:
@@ -555,7 +533,7 @@ async def handle_webhook(request: Request):
             log.info(f"Webhook event {event_id} already processed, skipping")
             return {"status": "ok"}
 
-    data = event.get("data", {}).get("object", {})
+    data = webhook_event.data.object
 
     log.info(f"Processing webhook: {event_type} (event_id: {event_id})")
 
@@ -660,24 +638,47 @@ async def handle_invoice_payment_succeeded(invoice_data: dict) -> None:
 async def handle_invoice_payment_failed(invoice_data: dict) -> None:
     """
     Handle failed payment - update subscription status and trigger retry logic.
-    
+
     This fires when:
     - Initial payment fails (subscription stays in 'incomplete')
     - Renewal payment fails (subscription goes to 'past_due')
     """
+    # Check if this is an invoice_payment object (needs to fetch the invoice)
+    if invoice_data.get("object") == "invoice_payment":
+        invoice_id = invoice_data.get("invoice")
+        if not invoice_id:
+            log.warning("invoice_payment object missing invoice reference")
+            return
+
+        log.info(f"Fetching invoice {invoice_id} from invoice_payment event")
+        stripe = StripeClient()
+        invoice_data = await stripe.get(f"/invoices/{invoice_id}")
+
+    # Extract subscription_id - handle both old and new Stripe API structures
+    # Old API: invoice.subscription (direct)
+    # New API (2025-12-15+): invoice.parent.subscription_details.subscription (nested)
     subscription_id = invoice_data.get("subscription")
+    if not subscription_id:
+        parent = invoice_data.get("parent", {})
+        if parent.get("type") == "subscription_details":
+            subscription_details = parent.get("subscription_details", {})
+            subscription_id = subscription_details.get("subscription")
+
     customer_id = invoice_data.get("customer")
     attempt_count = invoice_data.get("attempt_count", 0)
-    
+
     if not subscription_id or not customer_id:
-        log.warning("invoice.payment_failed missing subscription or customer")
+        log.warning(
+            f"invoice.payment_failed missing subscription or customer: {invoice_data.get('id')} "
+            f"(subscription={subscription_id}, customer={customer_id})"
+        )
         return
-    
+
     stripe = StripeClient()
-    
+
     # Fetch subscription to get current status
     stripe_sub = await stripe.get(f"/subscriptions/{subscription_id}")
-    
+
     subscription = await sync_subscription_to_db(
         stripe_sub,
         subscription_id,
@@ -686,7 +687,7 @@ async def handle_invoice_payment_failed(invoice_data: dict) -> None:
     )
     if not subscription:
         return
-    
+
     log.warning(
         f"✗ Payment failed (attempt {attempt_count}) - subscription {subscription_id} "
         f"for {subscription.user_email} status: {subscription.status}"
