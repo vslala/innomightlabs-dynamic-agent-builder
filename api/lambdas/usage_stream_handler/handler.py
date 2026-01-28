@@ -9,7 +9,7 @@ import httpx
 
 from src.config import settings
 from src.db import get_dynamodb_resource
-from src.notifications.email import send_email
+from src.email import send_email
 from src.rate_limits.repository import UsageRepository
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "ERROR").upper())

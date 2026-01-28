@@ -76,6 +76,11 @@ class Agent(BaseModel):
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "Agent":
         """Create Agent from DynamoDB item"""
+        from src.utils.dynamodb import convert_decimals
+
+        # Convert all Decimals to int/float (DynamoDB returns numbers as Decimal)
+        item = convert_decimals(item)
+
         return cls(
             agent_id=item["agent_id"],
             agent_name=item["agent_name"],
@@ -84,7 +89,7 @@ class Agent(BaseModel):
             agent_model=item.get("agent_model"),  # Optional, defaults to provider's default
             agent_provider_api_key=item.get("agent_provider_api_key"),  # Optional for backward compat
             agent_persona=item["agent_persona"],
-            session_timeout_minutes=item.get("session_timeout_minutes", 60),  # Default 60 minutes
+            session_timeout_minutes=item.get("session_timeout_minutes", 60),
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,

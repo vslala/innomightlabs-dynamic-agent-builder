@@ -3,9 +3,11 @@ data "aws_caller_identity" "current" {}
 
 # Path to API directory (terraform is now at root level)
 locals {
-  api_dir   = "${path.module}/../api"
-  src_files = fileset("${local.api_dir}/src", "**/*.py")
-  src_hash  = md5(join("", [for f in local.src_files : filemd5("${local.api_dir}/src/${f}")]))
+  api_dir       = "${path.module}/../api"
+  src_files     = fileset("${local.api_dir}/src", "**/*.py")
+  src_hash      = md5(join("", [for f in local.src_files : filemd5("${local.api_dir}/src/${f}")]))
+  lambdas_files = fileset("${local.api_dir}/lambdas", "**/*.py")
+  lambdas_hash  = md5(join("", [for f in local.lambdas_files : filemd5("${local.api_dir}/lambdas/${f}")]))
 }
 
 # Build and push Docker image to ECR
@@ -17,6 +19,7 @@ resource "null_resource" "docker_build_push" {
     pyproject_hash  = filemd5("${local.api_dir}/pyproject.toml")
     lock_hash       = filemd5("${local.api_dir}/uv.lock")
     src_hash        = local.src_hash
+    lambdas_hash    = local.lambdas_hash
   }
 
   provisioner "local-exec" {
@@ -56,23 +59,35 @@ resource "null_resource" "lambda_update" {
     command = <<-EOT
       set -e
 
-      echo "Updating Lambda function with new image..."
+      echo "Updating API Lambda function with new image..."
       aws lambda update-function-code \
         --function-name ${var.project_name}-api \
         --image-uri ${aws_ecr_repository.api.repository_url}:latest \
         --region ${var.aws_region}
 
-      echo "Waiting for Lambda update to complete..."
+      echo "Updating usage_events Lambda function with new image..."
+      aws lambda update-function-code \
+        --function-name ${var.project_name}-usage-events \
+        --image-uri ${aws_ecr_repository.api.repository_url}:latest \
+        --region ${var.aws_region}
+
+      echo "Waiting for API Lambda update to complete..."
       aws lambda wait function-updated \
         --function-name ${var.project_name}-api \
         --region ${var.aws_region}
 
-      echo "Lambda function updated successfully!"
+      echo "Waiting for usage_events Lambda update to complete..."
+      aws lambda wait function-updated \
+        --function-name ${var.project_name}-usage-events \
+        --region ${var.aws_region}
+
+      echo "Both Lambda functions updated successfully!"
     EOT
   }
 
   depends_on = [
     null_resource.docker_build_push,
-    aws_lambda_function.api
+    aws_lambda_function.api,
+    aws_lambda_function.usage_events
   ]
 }

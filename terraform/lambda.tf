@@ -102,6 +102,7 @@ resource "aws_lambda_function" "usage_events" {
       ENVIRONMENT     = var.environment
       DYNAMODB_TABLE  = aws_dynamodb_table.main.name
       AWS_REGION_NAME = var.aws_region
+      PYTHONPATH      = "/var/task/.venv/lib/python3.13/site-packages:/var/task"
       STRIPE_SECRET_KEY = var.stripe_secret_key
       # SES - DEPRECATED: Use Mailjet instead
       SES_FROM_EMAIL     = var.ses_from_email

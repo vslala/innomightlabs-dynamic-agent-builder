@@ -1,7 +1,9 @@
 import os
 import logging
+from decimal import Decimal
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from mangum import Mangum
 
 from src.auth import auth_router, middleware
@@ -18,21 +20,55 @@ from src.users import users_router
 from src.widget import widget_router, WidgetAuthMiddleware
 from src.contact.router import router as contact_router
 from src.exceptions import register_exception_handlers
+from src.logging_config import configure_cloudwatch_logging
+
+
+# Custom JSON encoder for DynamoDB Decimal types
+def decimal_default(obj):
+    """Convert Decimal to int or float for JSON serialization."""
+    if isinstance(obj, Decimal):
+        return int(obj) if obj % 1 == 0 else float(obj)
+    raise TypeError
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    force=True,  # Lambda base image preconfigures logging; force replaces it so INFO shows up
-)
 
-logging.getLogger("botocore").setLevel(logging.WARNING)
-logging.getLogger("boto3").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
+# Use JSON logging for CloudWatch, regular logging for local development
+if os.getenv("AWS_EXECUTION_ENV"):
+    # Running in Lambda - use JSON logging for CloudWatch
+    configure_cloudwatch_logging(LOG_LEVEL)
+else:
+    # Running locally - use human-readable logging
+    logging.basicConfig(
+        level=getattr(logging, LOG_LEVEL, logging.INFO),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,
+    )
+    logging.getLogger("botocore").setLevel(logging.WARNING)
+    logging.getLogger("boto3").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
+# Override JSONResponse to handle Decimal serialization from DynamoDB
+import json as stdlib_json
+from starlette.responses import JSONResponse as StarletteJSONResponse
+
+original_render = StarletteJSONResponse.render
+
+def patched_render(self, content):
+    return stdlib_json.dumps(
+        content,
+        ensure_ascii=False,
+        allow_nan=False,
+        indent=None,
+        separators=(",", ":"),
+        default=decimal_default,
+    ).encode("utf-8")
+
+StarletteJSONResponse.render = patched_render
+
+# Configure FastAPI
 app = FastAPI(
     title="Dynamic Agent Builder API",
     description="API for building dynamic agents with long-term memory",

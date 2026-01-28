@@ -9,8 +9,8 @@ COPY pyproject.toml uv.lock ./
 # Install dependencies into the Lambda task root
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Set PYTHONPATH to include the virtual environment site-packages
-ENV PYTHONPATH="${LAMBDA_TASK_ROOT}/.venv/lib/python3.13/site-packages"
+# Set PYTHONPATH to include the virtual environment site-packages and task root
+ENV PYTHONPATH="${LAMBDA_TASK_ROOT}/.venv/lib/python3.13/site-packages:${LAMBDA_TASK_ROOT}"
 
 # Copy application code
 COPY main.py ./
