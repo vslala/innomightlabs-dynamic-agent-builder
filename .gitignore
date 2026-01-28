@@ -15,6 +15,7 @@ credentials*.json
 *.swp
 *.swo
 CLAUDE.md
+AGENTS.md
 **__pycache__**
 
 # OS
