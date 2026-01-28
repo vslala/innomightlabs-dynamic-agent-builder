@@ -63,4 +63,6 @@ class LLMProvider(ABC):
         Raises:
             Exception: If the API call fails
         """
-        pass
+        if False:
+            yield LLMEvent(type="stop")
+        raise NotImplementedError

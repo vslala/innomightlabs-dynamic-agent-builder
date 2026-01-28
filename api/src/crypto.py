@@ -22,8 +22,6 @@ def _get_fernet() -> Fernet:
     """
     secret = os.getenv("ENCRYPTION_KEY", os.getenv("JWT_SECRET", "dev-secret"))
     salt = b"innomightlabs_salt"  # Static salt for deterministic key derivation
-    log.info(f"SECRET: {secret}")    
-
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,

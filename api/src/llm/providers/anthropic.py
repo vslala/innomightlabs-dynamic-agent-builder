@@ -8,6 +8,38 @@ import logging
 log = logging.getLogger(__name__)
 
 class AnthropicProvider(LLMProvider):
+
+    def _normalize_tools(self, tools: list[dict]) -> list[dict]:
+        normalized = []
+        for tool in tools:
+            if tool.get("type") and tool.get("type") != "custom":
+                normalized.append(tool)
+                continue
+
+            custom = tool.get("custom") or {}
+            name = custom.get("name") or tool.get("name")
+            if not name:
+                log.warning("Skipping tool without name: %s", tool)
+                continue
+
+            input_schema = (
+                custom.get("input_schema")
+                or custom.get("inputSchema")
+                or custom.get("parameters")
+                or tool.get("input_schema")
+                or tool.get("inputSchema")
+                or tool.get("parameters")
+            )
+            if not input_schema:
+                input_schema = {"type": "object", "properties": {}}
+
+            normalized.append({
+                "name": name,
+                "description": custom.get("description") or tool.get("description", ""),
+                "input_schema": input_schema,
+            })
+
+        return normalized
     
     async def stream_response(
         self,
@@ -72,7 +104,7 @@ class AnthropicProvider(LLMProvider):
 
         # Add tools if provided
         if tools:
-            request_params["tools"] = tools
+            request_params["tools"] = self._normalize_tools(tools)
 
         log.info(
             f"Calling Anthropic API with model {model_id}, "
@@ -88,11 +120,15 @@ class AnthropicProvider(LLMProvider):
                 async for event in stream:
                     # Handle text deltas
                     if event.type == "content_block_delta":
-                        if hasattr(event.delta, "text"):
-                            yield LLMEvent(type="text", content=event.delta.text)
-                        
+                        delta = event.delta
+                        if not isinstance(delta, dict):
+                            delta = dict(delta.__dict__) if hasattr(delta, "__dict__") else {}
+                        text_delta = delta.get("text")
+                        if text_delta is not None:
+                            yield LLMEvent(type="text", content=text_delta)
+
                         # Handle tool input deltas
-                        elif hasattr(event.delta, "partial_json"):
+                        elif delta.get("partial_json") is not None:
                             # Tool input is being streamed as partial JSON
                             pass  # Accumulate in content_block_stop
 
