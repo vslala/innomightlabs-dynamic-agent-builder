@@ -34,17 +34,17 @@ class MemoryCompactionService:
     def __init__(self, memory_repo: Optional[MemoryRepository] = None):
         self.memory_repo = memory_repo or MemoryRepository()
 
-    def check_capacity_warnings(self, agent_id: str) -> list[dict]:
+    def check_capacity_warnings(self, agent_id: str, user_id: str) -> list[dict]:
         """
         Check all memory blocks for capacity warnings.
 
         Returns:
             List of dicts with block info for blocks at/above warning threshold
         """
-        block_defs = self.memory_repo.get_block_definitions(agent_id)
+        block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
         memories = {
             m.block_name: m
-            for m in self.memory_repo.get_all_core_memories(agent_id)
+            for m in self.memory_repo.get_all_core_memories(agent_id, user_id)
         }
 
         warnings = []
@@ -96,7 +96,9 @@ class MemoryCompactionService:
         ])
         return "\n".join(lines)
 
-    def process_turn_warnings(self, agent_id: str, warnings: list[dict]) -> list[str]:
+    def process_turn_warnings(
+        self, agent_id: str, user_id: str, warnings: list[dict]
+    ) -> list[str]:
         """
         Process warnings for a turn, incrementing counters.
 
@@ -107,7 +109,7 @@ class MemoryCompactionService:
 
         for warning in warnings:
             block_name = warning["block_name"]
-            turns = self.memory_repo.increment_warning_turns(agent_id, block_name)
+            turns = self.memory_repo.increment_warning_turns(agent_id, user_id, block_name)
 
             if turns >= self.TURNS_BEFORE_AUTO_COMPACT:
                 blocks_to_compact.append(block_name)
@@ -117,13 +119,13 @@ class MemoryCompactionService:
 
         # Reset warning turns for blocks that are now below threshold
         current_warning_blocks = {w["block_name"] for w in warnings}
-        block_defs = self.memory_repo.get_block_definitions(agent_id)
+        block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
 
         for block_def in block_defs:
             if block_def.block_name not in current_warning_blocks:
                 # Check if we had warnings before
-                if self.memory_repo.get_warning_turns(agent_id, block_def.block_name) > 0:
-                    self.memory_repo.reset_warning_turns(agent_id, block_def.block_name)
+                if self.memory_repo.get_warning_turns(agent_id, user_id, block_def.block_name) > 0:
+                    self.memory_repo.reset_warning_turns(agent_id, user_id, block_def.block_name)
                     log.info(f"Reset warning turns for [{block_def.block_name}]")
 
         return blocks_to_compact
@@ -131,6 +133,7 @@ class MemoryCompactionService:
     async def auto_compact_block(
         self,
         agent_id: str,
+        user_id: str,
         block_name: str,
         provider: "LLMProvider",
         credentials: dict,
@@ -145,6 +148,7 @@ class MemoryCompactionService:
 
         Args:
             agent_id: Agent ID
+            user_id: User ID
             block_name: Name of the block to compact
             provider: LLM provider for summarization
             credentials: Provider credentials
@@ -152,8 +156,8 @@ class MemoryCompactionService:
         Returns:
             Status message describing the compaction
         """
-        memory = self.memory_repo.get_core_memory(agent_id, block_name)
-        block_def = self.memory_repo.get_block_definition(agent_id, block_name)
+        memory = self.memory_repo.get_core_memory(agent_id, user_id, block_name)
+        block_def = self.memory_repo.get_block_definition(agent_id, user_id, block_name)
 
         if not memory or not memory.lines:
             return f"Block [{block_name}] is empty, no compaction needed."
@@ -171,6 +175,7 @@ class MemoryCompactionService:
         )
         self.memory_repo.insert_archival(
             agent_id,
+            user_id,
             f"[Auto-archived from {block_name} compaction on "
             f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}]\n\n{original_content}"
         )
@@ -203,7 +208,7 @@ Output the summarized facts, one per line:"""
         self.memory_repo.save_core_memory(memory)
 
         # Reset warning turns after compaction
-        self.memory_repo.reset_warning_turns(agent_id, block_name)
+        self.memory_repo.reset_warning_turns(agent_id, user_id, block_name)
 
         log.info(
             f"Compacted [{block_name}] from {original_word_count} to {memory.word_count} words"

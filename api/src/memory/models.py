@@ -15,6 +15,10 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 
+def build_block_id(agent_id: str, user_id: str, block_name: str) -> str:
+    return f"{agent_id}:{user_id}:{block_name}"
+
+
 class MemoryBlockDefinition(BaseModel):
     """
     Defines a memory block available to an agent.
@@ -23,25 +27,34 @@ class MemoryBlockDefinition(BaseModel):
     Users can create custom blocks with configurable word limits.
     """
     agent_id: str
+    user_id: str
+    block_id: str = ""
     block_name: str
     description: str
     word_limit: int = 5000
     is_default: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    def __init__(self, **data):
+        super().__init__(**data)
+        if not self.block_id:
+            self.block_id = build_block_id(self.agent_id, self.user_id, self.block_name)
+
     @property
     def pk(self) -> str:
-        return f"Agent#{self.agent_id}"
+        return f"Agent#{self.agent_id}#User#{self.user_id}"
 
     @property
     def sk(self) -> str:
-        return f"MemoryBlockDef#{self.block_name}"
+        return f"MemoryBlockDef#{self.block_id}"
 
     def to_dynamo_item(self) -> dict:
         return {
             "pk": self.pk,
             "sk": self.sk,
             "agent_id": self.agent_id,
+            "user_id": self.user_id,
+            "block_id": self.block_id,
             "block_name": self.block_name,
             "description": self.description,
             "word_limit": self.word_limit,
@@ -53,6 +66,9 @@ class MemoryBlockDefinition(BaseModel):
     def from_dynamo_item(cls, item: dict) -> "MemoryBlockDefinition":
         return cls(
             agent_id=item["agent_id"],
+            user_id=item["user_id"],
+            block_id=item.get("block_id")
+            or build_block_id(item["agent_id"], item["user_id"], item["block_name"]),
             block_name=item["block_name"],
             description=item["description"],
             word_limit=item.get("word_limit", 5000),
@@ -69,19 +85,26 @@ class CoreMemory(BaseModel):
     Tracks word count for capacity management.
     """
     agent_id: str
+    user_id: str
+    block_id: str = ""
     block_name: str
     lines: list[str] = Field(default_factory=list)
     word_count: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
+    def __init__(self, **data):
+        super().__init__(**data)
+        if not self.block_id:
+            self.block_id = build_block_id(self.agent_id, self.user_id, self.block_name)
+
     @property
     def pk(self) -> str:
-        return f"Agent#{self.agent_id}"
+        return f"Agent#{self.agent_id}#User#{self.user_id}"
 
     @property
     def sk(self) -> str:
-        return f"CoreMemory#{self.block_name}"
+        return f"CoreMemory#{self.block_id}"
 
     def compute_word_count(self) -> int:
         """Calculate total word count across all lines."""
@@ -96,6 +119,8 @@ class CoreMemory(BaseModel):
             "pk": self.pk,
             "sk": self.sk,
             "agent_id": self.agent_id,
+            "user_id": self.user_id,
+            "block_id": self.block_id,
             "block_name": self.block_name,
             "lines": self.lines,
             "word_count": self.word_count,
@@ -109,6 +134,9 @@ class CoreMemory(BaseModel):
     def from_dynamo_item(cls, item: dict) -> "CoreMemory":
         return cls(
             agent_id=item["agent_id"],
+            user_id=item["user_id"],
+            block_id=item.get("block_id")
+            or build_block_id(item["agent_id"], item["user_id"], item["block_name"]),
             block_name=item["block_name"],
             lines=item.get("lines", []),
             word_count=item.get("word_count", 0),
@@ -125,6 +153,7 @@ class ArchivalMemory(BaseModel):
     Supports paginated search results.
     """
     agent_id: str
+    user_id: str
     memory_id: str = Field(default_factory=lambda: str(uuid4()))
     content: str
     content_hash: str = ""
@@ -137,7 +166,7 @@ class ArchivalMemory(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"Agent#{self.agent_id}"
+        return f"Agent#{self.agent_id}#User#{self.user_id}"
 
     @property
     def sk(self) -> str:
@@ -146,7 +175,7 @@ class ArchivalMemory(BaseModel):
     @property
     def hash_pk(self) -> str:
         """PK for content hash lookup (idempotency)."""
-        return f"Agent#{self.agent_id}#Hash#{self.content_hash}"
+        return f"Agent#{self.agent_id}#User#{self.user_id}#Hash#{self.content_hash}"
 
     @property
     def hash_sk(self) -> str:
@@ -158,6 +187,7 @@ class ArchivalMemory(BaseModel):
             "pk": self.pk,
             "sk": self.sk,
             "agent_id": self.agent_id,
+            "user_id": self.user_id,
             "memory_id": self.memory_id,
             "content": self.content,
             "content_hash": self.content_hash,
@@ -171,12 +201,14 @@ class ArchivalMemory(BaseModel):
             "sk": self.hash_sk,
             "memory_id": self.memory_id,
             "agent_id": self.agent_id,
+            "user_id": self.user_id,
         }
 
     @classmethod
     def from_dynamo_item(cls, item: dict) -> "ArchivalMemory":
         return cls(
             agent_id=item["agent_id"],
+            user_id=item["user_id"],
             memory_id=item["memory_id"],
             content=item["content"],
             content_hash=item.get("content_hash", ""),
@@ -191,23 +223,32 @@ class CapacityWarningTracker(BaseModel):
     Used for auto-compaction: if warning_turns >= 3, trigger compaction.
     """
     agent_id: str
+    user_id: str
+    block_id: str = ""
     block_name: str
     warning_turns: int = 0
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    def __init__(self, **data):
+        super().__init__(**data)
+        if not self.block_id:
+            self.block_id = build_block_id(self.agent_id, self.user_id, self.block_name)
+
     @property
     def pk(self) -> str:
-        return f"Agent#{self.agent_id}"
+        return f"Agent#{self.agent_id}#User#{self.user_id}"
 
     @property
     def sk(self) -> str:
-        return f"CapacityWarning#{self.block_name}"
+        return f"CapacityWarning#{self.block_id}"
 
     def to_dynamo_item(self) -> dict:
         return {
             "pk": self.pk,
             "sk": self.sk,
             "agent_id": self.agent_id,
+            "user_id": self.user_id,
+            "block_id": self.block_id,
             "block_name": self.block_name,
             "warning_turns": self.warning_turns,
             "updated_at": self.updated_at.isoformat(),
@@ -217,6 +258,9 @@ class CapacityWarningTracker(BaseModel):
     def from_dynamo_item(cls, item: dict) -> "CapacityWarningTracker":
         return cls(
             agent_id=item["agent_id"],
+            user_id=item["user_id"],
+            block_id=item.get("block_id")
+            or build_block_id(item["agent_id"], item["user_id"], item["block_name"]),
             block_name=item["block_name"],
             warning_turns=item.get("warning_turns", 0),
             updated_at=datetime.fromisoformat(item["updated_at"]),

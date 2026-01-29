@@ -54,4 +54,5 @@ disable_error_code = ["override", "attr-defined", "dict-item", "assignment"]
 dev = [
     "moto>=5.1.19",
     "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
 ]

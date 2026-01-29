@@ -81,23 +81,23 @@ async def list_memory_blocks(
 
     Returns both default blocks (human, persona) and any custom blocks.
     """
-    user_email: str = request.state.user_email
+    user_id: str = request.state.user_email
 
     # Verify agent ownership
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
+    agent = agent_repo.find_agent_by_id(agent_id, user_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     # Get block definitions
-    block_defs = memory_repo.get_block_definitions(agent_id)
+    block_defs = memory_repo.get_block_definitions(agent_id, user_id)
     if not block_defs:
         # Initialize default blocks if none exist
-        memory_repo.initialize_default_blocks(agent_id)
-        block_defs = memory_repo.get_block_definitions(agent_id)
+        memory_repo.initialize_default_blocks(agent_id, user_id)
+        block_defs = memory_repo.get_block_definitions(agent_id, user_id)
 
     # Get memory content for capacity info
     memories = {
-        m.block_name: m for m in memory_repo.get_all_core_memories(agent_id)
+        m.block_name: m for m in memory_repo.get_all_core_memories(agent_id, user_id)
     }
 
     result = []
@@ -143,15 +143,15 @@ async def create_memory_block(
     Block names must be lowercase with underscores, e.g., "projects", "goals".
     Default word limit is 5000.
     """
-    user_email: str = request.state.user_email
+    user_id: str = request.state.user_email
 
     # Verify agent ownership
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
+    agent = agent_repo.find_agent_by_id(agent_id, user_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     # Check if block already exists
-    existing = memory_repo.get_block_definition(agent_id, body.name)
+    existing = memory_repo.get_block_definition(agent_id, user_id, body.name)
     if existing:
         raise HTTPException(
             status_code=400,
@@ -168,6 +168,7 @@ async def create_memory_block(
     # Create block definition
     block_def = MemoryBlockDefinition(
         agent_id=agent_id,
+        user_id=user_id,
         block_name=body.name,
         description=body.description,
         word_limit=body.word_limit,
@@ -202,15 +203,15 @@ async def delete_memory_block(
     Cannot delete default blocks (human, persona).
     This is idempotent - returns success even if block doesn't exist.
     """
-    user_email: str = request.state.user_email
+    user_id: str = request.state.user_email
 
     # Verify agent ownership
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
+    agent = agent_repo.find_agent_by_id(agent_id, user_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     # Check if it's a default block
-    block_def = memory_repo.get_block_definition(agent_id, block_name)
+    block_def = memory_repo.get_block_definition(agent_id, user_id, block_name)
     if block_def and block_def.is_default:
         raise HTTPException(
             status_code=400,
@@ -218,7 +219,7 @@ async def delete_memory_block(
         )
 
     # Delete (idempotent)
-    memory_repo.delete_block_definition(agent_id, block_name)
+    memory_repo.delete_block_definition(agent_id, user_id, block_name)
     log.info(f"Deleted memory block '{block_name}' for agent {agent_id}")
 
 
@@ -235,20 +236,20 @@ async def get_memory_block_content(
 
     Returns the actual memory content stored in the block.
     """
-    user_email: str = request.state.user_email
+    user_id: str = request.state.user_email
 
     # Verify agent ownership
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
+    agent = agent_repo.find_agent_by_id(agent_id, user_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     # Get block definition
-    block_def = memory_repo.get_block_definition(agent_id, block_name)
+    block_def = memory_repo.get_block_definition(agent_id, user_id, block_name)
     if not block_def:
         raise HTTPException(status_code=404, detail=f"Memory block '{block_name}' not found")
 
     # Get memory content
-    memory = memory_repo.get_core_memory(agent_id, block_name)
+    memory = memory_repo.get_core_memory(agent_id, user_id, block_name)
     lines = memory.lines if memory else []
     word_count = memory.word_count if memory else 0
     capacity_percent = (
@@ -281,15 +282,15 @@ async def update_memory_block_content(
 
     Users can only edit custom blocks they created, not default blocks (human, persona).
     """
-    user_email: str = request.state.user_email
+    user_id: str = request.state.user_email
 
     # Verify agent ownership
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
+    agent = agent_repo.find_agent_by_id(agent_id, user_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     # Get block definition
-    block_def = memory_repo.get_block_definition(agent_id, block_name)
+    block_def = memory_repo.get_block_definition(agent_id, user_id, block_name)
     if not block_def:
         raise HTTPException(status_code=404, detail=f"Memory block '{block_name}' not found")
 
@@ -302,9 +303,9 @@ async def update_memory_block_content(
 
     # Get or create memory content
     from .models import CoreMemory
-    memory = memory_repo.get_core_memory(agent_id, block_name)
+    memory = memory_repo.get_core_memory(agent_id, user_id, block_name)
     if not memory:
-        memory = CoreMemory(agent_id=agent_id, block_name=block_name)
+        memory = CoreMemory(agent_id=agent_id, user_id=user_id, block_name=block_name)
 
     # Update content
     memory.lines = body.lines

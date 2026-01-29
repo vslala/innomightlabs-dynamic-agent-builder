@@ -72,6 +72,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         conversation: "Conversation",
         user_message: str,
         user_email: str,
+        user_id: str,
         attachments: list[Attachment] | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """
@@ -82,6 +83,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             conversation: The conversation context
             user_message: The user's message content
             user_email: The authenticated user's email
+            user_id: The authenticated user's ID (for memory scoping)
             attachments: Optional list of file attachments
 
         Yields:
@@ -89,11 +91,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         """
         try:
             self.tool_handler.set_conversation_context(conversation.conversation_id)
+            self.tool_handler.set_user_context(user_id)
 
             linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
             self.tool_handler.set_knowledge_base_context(linked_kb_ids)
 
-            self._ensure_memory_initialized(agent.agent_id)
+            self._ensure_memory_initialized(agent.agent_id, user_id)
 
             # 2. Save user message (with attachments if any)
             user_msg = Message(
@@ -136,12 +139,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 content="Loading memory...",
             )
 
-            system_prompt = self._build_system_prompt(agent)
+            system_prompt = self._build_system_prompt(agent, user_id)
 
             if linked_kb_ids:
                 system_prompt += "\n\n" + self._build_kb_instructions(len(linked_kb_ids))
 
-            capacity_warnings = self._check_capacity_warnings(agent.agent_id)
+            capacity_warnings = self._check_capacity_warnings(agent.agent_id, user_id)
             if capacity_warnings:
                 warning_msg = self._build_warning_message(capacity_warnings)
                 system_prompt += "\n\n" + warning_msg
@@ -299,14 +302,14 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 content=str(e),
             )
 
-    def _ensure_memory_initialized(self, agent_id: str) -> None:
+    def _ensure_memory_initialized(self, agent_id: str, user_id: str) -> None:
         """Ensure default memory blocks exist for this agent."""
-        block_defs = self.memory_repo.get_block_definitions(agent_id)
+        block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
         if not block_defs:
-            self.memory_repo.initialize_default_blocks(agent_id)
+            self.memory_repo.initialize_default_blocks(agent_id, user_id)
             log.info(f"Initialized default memory blocks for agent {agent_id}")
 
-    def _build_system_prompt(self, agent: "Agent") -> str:
+    def _build_system_prompt(self, agent: "Agent", user_id: str) -> str:
         """
         Build system prompt with core memory included.
 
@@ -323,10 +326,10 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         timestamp_str = current_time.strftime("%A, %B %d, %Y at %I:%M %p UTC")
 
         # Get all block definitions and their content
-        block_defs = self.memory_repo.get_block_definitions(agent.agent_id)
+        block_defs = self.memory_repo.get_block_definitions(agent.agent_id, user_id)
         memories = {
             m.block_name: m
-            for m in self.memory_repo.get_all_core_memories(agent.agent_id)
+            for m in self.memory_repo.get_all_core_memories(agent.agent_id, user_id)
         }
 
         # Build memory sections
@@ -387,12 +390,12 @@ MEMORY GUIDELINES:
 - Core memory is for key facts; archival is for detailed information
 </memory_tools>"""
 
-    def _check_capacity_warnings(self, agent_id: str) -> list[dict]:
+    def _check_capacity_warnings(self, agent_id: str, user_id: str) -> list[dict]:
         """Check for memory blocks at or above warning threshold."""
-        block_defs = self.memory_repo.get_block_definitions(agent_id)
+        block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
         memories = {
             m.block_name: m
-            for m in self.memory_repo.get_all_core_memories(agent_id)
+            for m in self.memory_repo.get_all_core_memories(agent_id, user_id)
         }
 
         warnings = []

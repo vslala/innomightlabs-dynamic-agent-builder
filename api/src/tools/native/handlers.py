@@ -62,12 +62,14 @@ class NativeToolHandler:
 
     RECALL_PAGE_SIZE = 10
     KB_SEARCH_MAX_RESULTS = 10
+    MEMORY_TOOL_PREFIXES = ("core_memory_", "archival_memory_")
 
     def __init__(self, memory_repo: Optional[MemoryRepository] = None):
         self.memory_repo = memory_repo or MemoryRepository()
         self.message_repo = MessageRepository()
         self._conversation_id: Optional[str] = None
         self._linked_kb_ids: list[str] = []
+        self._user_id: Optional[str] = None
 
     def set_conversation_context(self, conversation_id: str) -> None:
         """Set conversation context for recall_conversation tool."""
@@ -76,6 +78,10 @@ class NativeToolHandler:
     def set_knowledge_base_context(self, kb_ids: list[str]) -> None:
         """Set linked knowledge base IDs for knowledge_base_search tool."""
         self._linked_kb_ids = kb_ids
+
+    def set_user_context(self, user_id: str) -> None:
+        """Set user context for memory scoping."""
+        self._user_id = user_id
 
     async def execute(
         self, tool_name: str, arguments: dict, agent_id: str
@@ -94,11 +100,18 @@ class NativeToolHandler:
         handler = getattr(self, f"_handle_{tool_name}", None)
         if not handler:
             raise ValueError(f"Unknown tool: {tool_name}")
-        result: str = await handler(arguments, agent_id)
+
+        if tool_name.startswith(self.MEMORY_TOOL_PREFIXES):
+            if self._user_id is None:
+                raise ValueError("Missing user context")
+            result: str = await handler(arguments, agent_id, self._user_id)
+            return result
+
+        result = await handler(arguments, agent_id)
         return result
 
     def _get_block_or_error(
-        self, args: dict, agent_id: str
+        self, args: dict, agent_id: str, user_id: str
     ) -> tuple[str, Optional[MemoryBlockDefinition], Optional[str]]:
         """
         Get block definition or return error message.
@@ -109,7 +122,7 @@ class NativeToolHandler:
             If block doesn't exist, block_def is None and error_msg contains the error.
         """
         block_name = normalize_block_name(args["block"])
-        block_def = self.memory_repo.get_block_definition(agent_id, block_name)
+        block_def = self.memory_repo.get_block_definition(agent_id, user_id, block_name)
         if not block_def:
             return block_name, None, f"Error: Block [{block_name}] does not exist."
         return block_name, block_def, None
@@ -128,14 +141,14 @@ class NativeToolHandler:
             )
         return capacity_str
 
-    async def _handle_core_memory_read(self, args: dict, agent_id: str) -> str:
+    async def _handle_core_memory_read(self, args: dict, agent_id: str, user_id: str) -> str:
         """Read a core memory block."""
-        block_name, block_def, error = self._get_block_or_error(args, agent_id)
+        block_name, block_def, error = self._get_block_or_error(args, agent_id, user_id)
         if error:
             return error
         assert block_def is not None  # Type narrowing: error is None means block_def exists
 
-        memory = self.memory_repo.get_core_memory(agent_id, block_name)
+        memory = self.memory_repo.get_core_memory(agent_id, user_id, block_name)
 
         if not memory or not memory.lines:
             return f"[{block_name}] Core Memory is empty."
@@ -149,9 +162,9 @@ class NativeToolHandler:
             f"{lines_str}"
         )
 
-    async def _handle_core_memory_append(self, args: dict, agent_id: str) -> str:
+    async def _handle_core_memory_append(self, args: dict, agent_id: str, user_id: str) -> str:
         """Append a new line to a memory block (idempotent)."""
-        block_name, block_def, error = self._get_block_or_error(args, agent_id)
+        block_name, block_def, error = self._get_block_or_error(args, agent_id, user_id)
         if error:
             return error
         assert block_def is not None  # Type narrowing: error is None means block_def exists
@@ -159,7 +172,7 @@ class NativeToolHandler:
         content = args["content"].strip()
 
         # Idempotency check
-        existing_line = self.memory_repo.line_exists(agent_id, block_name, content)
+        existing_line = self.memory_repo.line_exists(agent_id, user_id, block_name, content)
         if existing_line is not None:
             return (
                 f"Line already exists in [{block_name}] at line {existing_line}: "
@@ -167,9 +180,9 @@ class NativeToolHandler:
             )
 
         # Get or create memory
-        memory = self.memory_repo.get_core_memory(agent_id, block_name)
+        memory = self.memory_repo.get_core_memory(agent_id, user_id, block_name)
         if not memory:
-            memory = CoreMemory(agent_id=agent_id, block_name=block_name)
+            memory = CoreMemory(agent_id=agent_id, user_id=user_id, block_name=block_name)
 
         memory.lines.append(content)
         memory.word_count = memory.compute_word_count()
@@ -181,9 +194,9 @@ class NativeToolHandler:
             f"({memory.word_count}/{block_def.word_limit} words)"
         )
 
-    async def _handle_core_memory_replace(self, args: dict, agent_id: str) -> str:
+    async def _handle_core_memory_replace(self, args: dict, agent_id: str, user_id: str) -> str:
         """Replace a specific line in a memory block (idempotent)."""
-        block_name, block_def, error = self._get_block_or_error(args, agent_id)
+        block_name, block_def, error = self._get_block_or_error(args, agent_id, user_id)
         if error:
             return error
         assert block_def is not None  # Type narrowing: error is None means block_def exists
@@ -191,7 +204,7 @@ class NativeToolHandler:
         line_num = args["line_number"]
         new_content = args["new_content"].strip()
 
-        memory = self.memory_repo.get_core_memory(agent_id, block_name)
+        memory = self.memory_repo.get_core_memory(agent_id, user_id, block_name)
         if not memory or line_num < 1 or line_num > len(memory.lines):
             return f"Error: Line {line_num} does not exist in [{block_name}]"
 
@@ -215,15 +228,15 @@ class NativeToolHandler:
             f'  New: "{new_content}"'
         )
 
-    async def _handle_core_memory_delete(self, args: dict, agent_id: str) -> str:
+    async def _handle_core_memory_delete(self, args: dict, agent_id: str, user_id: str) -> str:
         """Delete a specific line from a memory block (idempotent)."""
-        block_name, block_def, error = self._get_block_or_error(args, agent_id)
+        block_name, block_def, error = self._get_block_or_error(args, agent_id, user_id)
         if error:
             return error
         assert block_def is not None  # Type narrowing: error is None means block_def exists
 
         line_num = args["line_number"]
-        memory = self.memory_repo.get_core_memory(agent_id, block_name)
+        memory = self.memory_repo.get_core_memory(agent_id, user_id, block_name)
         if not memory or line_num < 1 or line_num > len(memory.lines):
             # Idempotent: deleting non-existent line is success
             return f"Line {line_num} does not exist in [{block_name}] (no change)"
@@ -240,13 +253,13 @@ class NativeToolHandler:
         )
 
     async def _handle_core_memory_list_blocks(
-        self, args: dict, agent_id: str
+        self, args: dict, agent_id: str, user_id: str
     ) -> str:
         """List all available memory blocks."""
-        block_defs = self.memory_repo.get_block_definitions(agent_id)
+        block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
         memories = {
             m.block_name: m
-            for m in self.memory_repo.get_all_core_memories(agent_id)
+            for m in self.memory_repo.get_all_core_memories(agent_id, user_id)
         }
 
         if not block_defs:
@@ -269,11 +282,11 @@ class NativeToolHandler:
         return "\n".join(lines)
 
     async def _handle_archival_memory_insert(
-        self, args: dict, agent_id: str
+        self, args: dict, agent_id: str, user_id: str
     ) -> str:
         """Insert into archival memory (idempotent)."""
         content = args["content"]
-        memory, is_new = self.memory_repo.insert_archival(agent_id, content)
+        memory, is_new = self.memory_repo.insert_archival(agent_id, user_id, content)
 
         if is_new:
             return f"Stored in archival memory (id: {memory.memory_id})"
@@ -284,7 +297,7 @@ class NativeToolHandler:
             )
 
     async def _handle_archival_memory_search(
-        self, args: dict, agent_id: str
+        self, args: dict, agent_id: str, user_id: str
     ) -> str:
         """Search archival memory with pagination."""
         query = args["query"]
@@ -292,7 +305,7 @@ class NativeToolHandler:
         page_size = 5
 
         results, total = self.memory_repo.search_archival(
-            agent_id, query, page, page_size
+            agent_id, user_id, query, page, page_size
         )
         total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 

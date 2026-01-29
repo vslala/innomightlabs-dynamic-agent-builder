@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field, field_validator
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 import logging
 
 import src.form_models as form_models
@@ -119,6 +119,7 @@ async def create_agent(
     """
     # Get user email from auth middleware
     user_email: str = request.state.user_email
+    user_id = user_email
 
     # Idempotency check: look for existing agent with same name for this user
     existing_agent = repo.find_by_name(create_request.agent_name, user_email)
@@ -286,6 +287,7 @@ async def send_message(
     - ERROR: An error occurred
     """
     user_email: str = request.state.user_email
+    user_id = user_email
     conversation_repo = ConversationRepository()
 
     async def event_stream():
@@ -328,12 +330,13 @@ async def send_message(
             # 3. Get architecture and delegate message handling
             architecture = get_agent_architecture(agent.agent_architecture)
 
-            async for event in architecture.handle_message(
+            async for event in architecture.handle_message(  # pyright: ignore[reportGeneralTypeIssues]
                 agent=agent,
                 conversation=conversation,
                 user_message=body.content,
                 user_email=user_email,
-                attachments=body.attachments or [],
+                user_id=user_id,
+                attachments=cast(list[Attachment], body.attachments or []),
             ):
                 yield event.to_sse()
 

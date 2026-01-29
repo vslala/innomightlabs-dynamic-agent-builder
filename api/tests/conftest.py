@@ -11,6 +11,7 @@ os.environ["AWS_REGION_NAME"] = "us-east-1"
 os.environ["AWS_ACCESS_KEY_ID"] = "testing"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
 os.environ["JWT_SECRET"] = "test-secret"
+os.environ.pop("DYNAMODB_ENDPOINT", None)
 
 import pytest
 import boto3

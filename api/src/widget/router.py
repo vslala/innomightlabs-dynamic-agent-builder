@@ -500,11 +500,12 @@ async def send_message(
                 created_by=visitor.email,  # Use visitor email
             )
 
-            async for event in architecture.handle_message(
+            async for event in architecture.handle_message(  # pyright: ignore[reportGeneralTypeIssues]
                 agent=agent,
                 conversation=mock_conversation,
                 user_message=body.content,
                 user_email=visitor.email,
+                user_id=visitor.visitor_id,
                 attachments=[],  # Widget doesn't support attachments yet
             ):
                 yield event.to_sse()

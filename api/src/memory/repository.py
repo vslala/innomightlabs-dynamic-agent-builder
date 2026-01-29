@@ -22,9 +22,14 @@ from .models import (
     CoreMemory,
     ArchivalMemory,
     CapacityWarningTracker,
+    build_block_id,
 )
 
 log = logging.getLogger(__name__)
+
+
+def build_agent_user_pk(agent_id: str, user_id: str) -> str:
+    return f"Agent#{agent_id}#User#{user_id}"
 
 
 class MemoryRepository:
@@ -34,10 +39,10 @@ class MemoryRepository:
         self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
-    def get_block_definitions(self, agent_id: str) -> list[MemoryBlockDefinition]:
-        """Get all memory block definitions for an agent."""
+    def get_block_definitions(self, agent_id: str, user_id: str) -> list[MemoryBlockDefinition]:
+        """Get all memory block definitions for an agent and user."""
         response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"Agent#{agent_id}")
+            KeyConditionExpression=Key("pk").eq(build_agent_user_pk(agent_id, user_id))
             & Key("sk").begins_with("MemoryBlockDef#")
         )
         return [
@@ -46,13 +51,14 @@ class MemoryRepository:
         ]
 
     def get_block_definition(
-        self, agent_id: str, block_name: str
+        self, agent_id: str, user_id: str, block_name: str
     ) -> Optional[MemoryBlockDefinition]:
         """Get a specific memory block definition."""
+        block_id = build_block_id(agent_id, user_id, block_name)
         response = self.table.get_item(
             Key={
-                "pk": f"Agent#{agent_id}",
-                "sk": f"MemoryBlockDef#{block_name}",
+                "pk": build_agent_user_pk(agent_id, user_id),
+                "sk": f"MemoryBlockDef#{block_id}",
             }
         )
         item = response.get("Item")
@@ -66,35 +72,37 @@ class MemoryRepository:
         log.info(f"Saved block definition: {block_def.block_name} for agent {block_def.agent_id}")
         return block_def
 
-    def delete_block_definition(self, agent_id: str, block_name: str) -> bool:
+    def delete_block_definition(self, agent_id: str, user_id: str, block_name: str) -> bool:
         """Delete a memory block definition (only custom blocks)."""
-        block_def = self.get_block_definition(agent_id, block_name)
+        block_def = self.get_block_definition(agent_id, user_id, block_name)
         if not block_def:
             return True  # Idempotent
         if block_def.is_default:
             raise ValueError(f"Cannot delete default block: {block_name}")
 
+        block_id = build_block_id(agent_id, user_id, block_name)
         self.table.delete_item(
             Key={
-                "pk": f"Agent#{agent_id}",
-                "sk": f"MemoryBlockDef#{block_name}",
+                "pk": build_agent_user_pk(agent_id, user_id),
+                "sk": f"MemoryBlockDef#{block_id}",
             }
         )
         # Also delete the core memory content
         self.table.delete_item(
             Key={
-                "pk": f"Agent#{agent_id}",
-                "sk": f"CoreMemory#{block_name}",
+                "pk": build_agent_user_pk(agent_id, user_id),
+                "sk": f"CoreMemory#{block_id}",
             }
         )
         log.info(f"Deleted block definition: {block_name} for agent {agent_id}")
         return True
 
-    def initialize_default_blocks(self, agent_id: str) -> None:
+    def initialize_default_blocks(self, agent_id: str, user_id: str) -> None:
         """Create default 'human' and 'persona' blocks for an agent."""
         defaults = [
             MemoryBlockDefinition(
                 agent_id=agent_id,
+                user_id=user_id,
                 block_name="human",
                 description="Facts about the user",
                 word_limit=5000,
@@ -102,6 +110,7 @@ class MemoryRepository:
             ),
             MemoryBlockDefinition(
                 agent_id=agent_id,
+                user_id=user_id,
                 block_name="persona",
                 description="Your traits and characteristics",
                 word_limit=5000,
@@ -110,25 +119,26 @@ class MemoryRepository:
         ]
         for block_def in defaults:
             # Only create if doesn't exist (idempotent)
-            if not self.get_block_definition(agent_id, block_def.block_name):
+            if not self.get_block_definition(agent_id, user_id, block_def.block_name):
                 self.save_block_definition(block_def)
         log.info(f"Initialized default memory blocks for agent {agent_id}")
 
-    def get_core_memory(self, agent_id: str, block_name: str) -> Optional[CoreMemory]:
+    def get_core_memory(self, agent_id: str, user_id: str, block_name: str) -> Optional[CoreMemory]:
         """Get core memory for a specific block."""
+        block_id = build_block_id(agent_id, user_id, block_name)
         response = self.table.get_item(
             Key={
-                "pk": f"Agent#{agent_id}",
-                "sk": f"CoreMemory#{block_name}",
+                "pk": build_agent_user_pk(agent_id, user_id),
+                "sk": f"CoreMemory#{block_id}",
             }
         )
         item = response.get("Item")
         return CoreMemory.from_dynamo_item(item) if item else None
 
-    def get_all_core_memories(self, agent_id: str) -> list[CoreMemory]:
-        """Get all core memories for an agent."""
+    def get_all_core_memories(self, agent_id: str, user_id: str) -> list[CoreMemory]:
+        """Get all core memories for an agent and user."""
         response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"Agent#{agent_id}")
+            KeyConditionExpression=Key("pk").eq(build_agent_user_pk(agent_id, user_id))
             & Key("sk").begins_with("CoreMemory#")
         )
         return [CoreMemory.from_dynamo_item(item) for item in response.get("Items", [])]
@@ -146,7 +156,7 @@ class MemoryRepository:
         return memory
 
     def line_exists(
-        self, agent_id: str, block_name: str, content: str
+        self, agent_id: str, user_id: str, block_name: str, content: str
     ) -> Optional[int]:
         """
         Check if a line with this content already exists.
@@ -154,7 +164,7 @@ class MemoryRepository:
         Returns:
             Line number (1-indexed) if exists, None otherwise.
         """
-        memory = self.get_core_memory(agent_id, block_name)
+        memory = self.get_core_memory(agent_id, user_id, block_name)
         if not memory:
             return None
 
@@ -167,12 +177,14 @@ class MemoryRepository:
         return None
 
     def find_archival_by_hash(
-        self, agent_id: str, content_hash: str
+        self, agent_id: str, user_id: str, content_hash: str
     ) -> Optional[ArchivalMemory]:
         """Find archival memory by content hash (for idempotency)."""
         # Query using the hash PK pattern
         response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"Agent#{agent_id}#Hash#{content_hash}")
+            KeyConditionExpression=Key("pk").eq(
+                f"Agent#{agent_id}#User#{user_id}#Hash#{content_hash}"
+            )
         )
         items = response.get("Items", [])
         if not items:
@@ -185,7 +197,7 @@ class MemoryRepository:
 
         # Query for the actual archival item
         archival_response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"Agent#{agent_id}")
+            KeyConditionExpression=Key("pk").eq(build_agent_user_pk(agent_id, user_id))
             & Key("sk").begins_with(f"Archival#"),
             FilterExpression=Attr("memory_id").eq(memory_id),
         )
@@ -195,7 +207,7 @@ class MemoryRepository:
         return None
 
     def insert_archival(
-        self, agent_id: str, content: str
+        self, agent_id: str, user_id: str, content: str
     ) -> tuple[ArchivalMemory, bool]:
         """
         Insert archival memory with idempotency.
@@ -207,7 +219,7 @@ class MemoryRepository:
         content_hash = hashlib.sha256(content.encode()).hexdigest()
 
         # Check if already exists
-        existing = self.find_archival_by_hash(agent_id, content_hash)
+        existing = self.find_archival_by_hash(agent_id, user_id, content_hash)
         if existing:
             log.info(f"Archival memory already exists: {existing.memory_id}")
             return existing, False
@@ -215,6 +227,7 @@ class MemoryRepository:
         # Create new archival memory
         memory = ArchivalMemory(
             agent_id=agent_id,
+            user_id=user_id,
             content=content,
             content_hash=content_hash,
         )
@@ -229,7 +242,7 @@ class MemoryRepository:
         return memory, True
 
     def search_archival(
-        self, agent_id: str, query: str, page: int = 1, page_size: int = 5
+        self, agent_id: str, user_id: str, query: str, page: int = 1, page_size: int = 5
     ) -> tuple[list[ArchivalMemory], int]:
         """
         Search archival memory by query string.
@@ -242,7 +255,7 @@ class MemoryRepository:
         """
         # Query all archival memories for this agent
         response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"Agent#{agent_id}")
+            KeyConditionExpression=Key("pk").eq(build_agent_user_pk(agent_id, user_id))
             & Key("sk").begins_with("Archival#"),
             ScanIndexForward=False,  # Most recent first
         )
@@ -265,11 +278,11 @@ class MemoryRepository:
 
         return [ArchivalMemory.from_dynamo_item(item) for item in page_items], total
 
-    def delete_archival(self, agent_id: str, memory_id: str) -> bool:
+    def delete_archival(self, agent_id: str, user_id: str, memory_id: str) -> bool:
         """Delete an archival memory by ID."""
         # First find the memory to get its sort key
         response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"Agent#{agent_id}")
+            KeyConditionExpression=Key("pk").eq(build_agent_user_pk(agent_id, user_id))
             & Key("sk").begins_with("Archival#"),
             FilterExpression=Attr("memory_id").eq(memory_id),
         )
@@ -292,7 +305,7 @@ class MemoryRepository:
         if content_hash:
             self.table.delete_item(
                 Key={
-                    "pk": f"Agent#{agent_id}#Hash#{content_hash}",
+                    "pk": f"Agent#{agent_id}#User#{user_id}#Hash#{content_hash}",
                     "sk": f"Archival#{memory_id}",
                 }
             )
@@ -301,27 +314,29 @@ class MemoryRepository:
         return True
 
     def get_warning_tracker(
-        self, agent_id: str, block_name: str
+        self, agent_id: str, user_id: str, block_name: str
     ) -> Optional[CapacityWarningTracker]:
         """Get capacity warning tracker for a block."""
+        block_id = build_block_id(agent_id, user_id, block_name)
         response = self.table.get_item(
             Key={
-                "pk": f"Agent#{agent_id}",
-                "sk": f"CapacityWarning#{block_name}",
+                "pk": build_agent_user_pk(agent_id, user_id),
+                "sk": f"CapacityWarning#{block_id}",
             }
         )
         item = response.get("Item")
         return CapacityWarningTracker.from_dynamo_item(item) if item else None
 
-    def increment_warning_turns(self, agent_id: str, block_name: str) -> int:
+    def increment_warning_turns(self, agent_id: str, user_id: str, block_name: str) -> int:
         """Increment warning turns and return new count."""
-        tracker = self.get_warning_tracker(agent_id, block_name)
+        tracker = self.get_warning_tracker(agent_id, user_id, block_name)
         if tracker:
             tracker.warning_turns += 1
             tracker.updated_at = datetime.now(timezone.utc)
         else:
             tracker = CapacityWarningTracker(
                 agent_id=agent_id,
+                user_id=user_id,
                 block_name=block_name,
                 warning_turns=1,
             )
@@ -330,17 +345,18 @@ class MemoryRepository:
         log.info(f"Warning turns for [{block_name}]: {tracker.warning_turns}")
         return tracker.warning_turns
 
-    def reset_warning_turns(self, agent_id: str, block_name: str) -> None:
+    def reset_warning_turns(self, agent_id: str, user_id: str, block_name: str) -> None:
         """Reset warning turns when capacity drops below threshold."""
+        block_id = build_block_id(agent_id, user_id, block_name)
         self.table.delete_item(
             Key={
-                "pk": f"Agent#{agent_id}",
-                "sk": f"CapacityWarning#{block_name}",
+                "pk": build_agent_user_pk(agent_id, user_id),
+                "sk": f"CapacityWarning#{block_id}",
             }
         )
         log.info(f"Reset warning turns for [{block_name}]")
 
-    def get_warning_turns(self, agent_id: str, block_name: str) -> int:
+    def get_warning_turns(self, agent_id: str, user_id: str, block_name: str) -> int:
         """Get current warning turns count."""
-        tracker = self.get_warning_tracker(agent_id, block_name)
+        tracker = self.get_warning_tracker(agent_id, user_id, block_name)
         return tracker.warning_turns if tracker else 0

@@ -57,12 +57,13 @@ class KrishnaMiniArchitecture(AgentArchitecture):
     def name(self) -> str:
         return "krishna-mini"
 
-    async def handle_message(
+    async def handle_message( # pyright: ignore[reportIncompatibleMethodOverride]
         self,
         agent: "Agent",
         conversation: "Conversation",
         user_message: str,
         user_email: str,
+        user_id: str,
         attachments: list[Attachment] | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """
@@ -73,6 +74,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
             conversation: The conversation context
             user_message: The user's message content
             user_email: The authenticated user's email (for provider settings lookup)
+            user_id: The authenticated user's ID (unused in Krishna Mini)
             attachments: Optional list of file attachments
 
         Yields:

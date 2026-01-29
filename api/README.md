@@ -153,13 +153,16 @@ erDiagram
 
     CORE_MEMORY {
         string agent_id PK
-        string block_name PK
+        string user_id PK
+        string block_id PK
+        string block_name
         list lines
         int word_count
     }
 
     ARCHIVAL_MEMORY {
         string agent_id PK
+        string user_id PK
         string memory_id PK
         string content
         string content_hash
@@ -167,7 +170,9 @@ erDiagram
 
     CAPACITY_WARNING {
         string agent_id PK
-        string block_name PK
+        string user_id PK
+        string block_id PK
+        string block_name
         int warning_turns
     }
 ```
@@ -185,10 +190,10 @@ erDiagram
 | **Usage Event** | `User#{user_email}` | `UsageEvent#{event_id}` | Deduplicate usage stream events |
 | **Conversation** | `USER#{created_by}` | `CONVERSATION#{conversation_id}` | List conversations by user |
 | **Message** | `CONVERSATION#{conversation_id}` | `MESSAGE#{timestamp}#{message_id}` | List messages in conversation (chronological) |
-| **MemoryBlockDef** | `Agent#{agent_id}` | `MemoryBlockDef#{block_name}` | List memory block definitions for agent |
-| **CoreMemory** | `Agent#{agent_id}` | `CoreMemory#{block_name}` | Get/update memory block content |
-| **ArchivalMemory** | `Agent#{agent_id}` | `Archival#{timestamp}#{memory_id}` | Search archival memories (chronological) |
-| **CapacityWarning** | `Agent#{agent_id}` | `CapacityWarning#{block_name}` | Track memory capacity warnings |
+| **MemoryBlockDef** | `Agent#{agent_id}#User#{user_id}` | `MemoryBlockDef#{block_id}` | List memory block definitions for agent + user |
+| **CoreMemory** | `Agent#{agent_id}#User#{user_id}` | `CoreMemory#{block_id}` | Get/update memory block content |
+| **ArchivalMemory** | `Agent#{agent_id}#User#{user_id}` | `Archival#{timestamp}#{memory_id}` | Search archival memories (chronological) |
+| **CapacityWarning** | `Agent#{agent_id}#User#{user_id}` | `CapacityWarning#{block_id}` | Track memory capacity warnings |
 
 ### Idempotency Patterns
 

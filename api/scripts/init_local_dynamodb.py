@@ -33,7 +33,8 @@ def create_table():
         print(f"✓ Table '{TABLE_NAME}' already exists")
         return
     except ClientError as e:
-        if e.response["Error"]["Code"] != "ResourceNotFoundException":
+        error_code = e.response.get("Error", {}).get("Code")
+        if error_code != "ResourceNotFoundException":
             raise
 
     # Create table with the same schema as production
@@ -50,6 +51,8 @@ def create_table():
             {"AttributeName": "entity_type", "AttributeType": "S"},
             {"AttributeName": "user_email", "AttributeType": "S"},
             {"AttributeName": "created_at", "AttributeType": "S"},
+            {"AttributeName": "gsi2_pk", "AttributeType": "S"},
+            {"AttributeName": "gsi2_sk", "AttributeType": "S"},
         ],
         GlobalSecondaryIndexes=[
             {
@@ -69,6 +72,18 @@ def create_table():
                 "KeySchema": [
                     {"AttributeName": "user_email", "KeyType": "HASH"},
                     {"AttributeName": "created_at", "KeyType": "RANGE"},
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+                "ProvisionedThroughput": {
+                    "ReadCapacityUnits": 5,
+                    "WriteCapacityUnits": 5,
+                },
+            },
+            {
+                "IndexName": "gsi2",
+                "KeySchema": [
+                    {"AttributeName": "gsi2_pk", "KeyType": "HASH"},
+                    {"AttributeName": "gsi2_sk", "KeyType": "RANGE"},
                 ],
                 "Projection": {"ProjectionType": "ALL"},
                 "ProvisionedThroughput": {
