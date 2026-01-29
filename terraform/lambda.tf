@@ -64,9 +64,6 @@ resource "aws_lambda_function" "api" {
       STRIPE_SECRET_KEY            = var.stripe_secret_key
       STRIPE_PUBLISHABLE_KEY       = var.stripe_publishable_key
       STRIPE_WEBHOOK_SECRET        = var.stripe_webhook_secret
-      # SES - DEPRECATED: Use Mailjet instead
-      SES_FROM_EMAIL     = var.ses_from_email
-      SES_REPLY_TO_EMAIL = var.ses_reply_to_email
       # Mailjet
       MAILJET_API_KEY    = var.mailjet_api_key
       MAILJET_SECRET_KEY = var.mailjet_secret_key
