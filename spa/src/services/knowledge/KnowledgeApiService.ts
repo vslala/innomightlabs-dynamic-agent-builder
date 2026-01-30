@@ -18,6 +18,9 @@ import type {
   CrawlStep,
   CrawledPage,
   SearchResponse,
+  ContentUploadResponse,
+  ContentUploadItem,
+  PaginatedResponse,
 } from "../../types/knowledge";
 
 class KnowledgeApiService {
@@ -82,6 +85,47 @@ class KnowledgeApiService {
   async getCrawlConfigSchema(kbId: string): Promise<FormSchema> {
     return httpClient.get<FormSchema>(
       `/knowledge-bases/${kbId}/crawl-config-schema`
+    );
+  }
+
+  /**
+   * Get the form schema for content uploads
+   */
+  async getContentUploadSchema(kbId: string): Promise<FormSchema> {
+    return httpClient.get<FormSchema>(
+      `/knowledge-bases/${kbId}/forms/content-upload`
+    );
+  }
+
+  /**
+   * Upload a single content file to a knowledge base
+   */
+  async uploadContentFile(
+    kbId: string,
+    payload: { metadata?: string; file: File }
+  ): Promise<ContentUploadResponse> {
+    const formData = new FormData();
+    formData.append("attachment", payload.file);
+    if (payload.metadata) {
+      formData.append("metadata", payload.metadata);
+    }
+    return httpClient.postForm<ContentUploadResponse>(
+      `/knowledge-bases/${kbId}/content-upload`,
+      formData
+    );
+  }
+
+  /**
+   * List content uploads for a knowledge base
+   */
+  async listContentUploads(
+    kbId: string,
+    limit = 10,
+    cursor?: string | null
+  ): Promise<PaginatedResponse<ContentUploadItem>> {
+    const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+    return httpClient.get<PaginatedResponse<ContentUploadItem>>(
+      `/knowledge-bases/${kbId}/uploads?limit=${limit}${cursorParam}`
     );
   }
 

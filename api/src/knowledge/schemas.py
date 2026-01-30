@@ -3,6 +3,8 @@ Knowledge Base and Crawl Job form schemas.
 """
 
 from src.form_models import Form, FormInput, FormInputType, SelectOption
+from src.messages.models import ALLOWED_EXTENSIONS as CONTENT_UPLOAD_ALLOWED_EXTENSIONS
+from src.knowledge.models import KnowledgeBase
 
 
 # Source type options
@@ -15,6 +17,8 @@ SOURCE_TYPE_OPTIONS = [
 CHUNKING_STRATEGY_OPTIONS = [
     SelectOption(value="hierarchical", label="Hierarchical (Recommended)"),
 ]
+
+CONTENT_UPLOAD_ACCEPT = ",".join(sorted(CONTENT_UPLOAD_ALLOWED_EXTENSIONS))
 
 
 def get_crawl_config_form(kb_id: str) -> Form:
@@ -164,6 +168,38 @@ def get_create_knowledge_base_form() -> Form:
                 },
             ),
         ],
+    )
+    
+def get_content_upload_form_schema(kb: KnowledgeBase) -> Form:
+    """
+    Get the form for uploading content for a knowledge base
+
+    Returns:
+        Form: content upload form for knowledge base
+    """
+    return Form(
+        form_name="content-upload-form",
+        submit_path=f"/knowledge-bases/{kb.kb_id}/content-upload",
+        form_inputs=[
+            FormInput(
+                input_type=FormInputType.TEXT_AREA,
+                name="metadata",
+                label="Meta Data to associate with this content",
+                attr={
+                    "placeholder": "Optional metadata to tag this upload",
+                    "rows": "3",
+                },
+            ),
+            FormInput(
+                input_type=FormInputType.FILE_UPLOAD,
+                name="attachment",
+                label="Attachment",
+                attr={
+                    "accept": CONTENT_UPLOAD_ACCEPT,
+                    "multiple": "true",
+                },
+            )
+        ]
     )
 
 

@@ -17,6 +17,39 @@ export type CrawlJobStatus =
 
 export type CrawlSourceType = "sitemap" | "url";
 
+// =============================================================================
+// Content Upload
+// =============================================================================
+
+export const KB_UPLOAD_ALLOWED_EXTENSIONS = [
+  ".txt",
+  ".md",
+  ".csv",
+  ".json",
+  ".py",
+  ".js",
+  ".ts",
+  ".tsx",
+  ".jsx",
+  ".java",
+  ".go",
+  ".rs",
+  ".rb",
+  ".php",
+  ".html",
+  ".css",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".sh",
+  ".sql",
+  ".c",
+  ".cpp",
+  ".h",
+];
+
+export const KB_UPLOAD_MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB per file
+
 export type CrawlStepType =
   | "JOB_STARTED"
   | "JOB_COMPLETED"
@@ -54,6 +87,35 @@ export interface KnowledgeBase {
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface ContentUploadResponse {
+  kb_id: string;
+  filename: string;
+  chunk_count: number;
+  vector_count: number;
+  total_pages: number;
+  total_chunks: number;
+  total_vectors: number;
+}
+
+export interface ContentUploadItem {
+  upload_id: string;
+  kb_id: string;
+  filename: string;
+  content_type?: string | null;
+  size_bytes: number;
+  metadata?: string | null;
+  chunk_count: number;
+  vector_count: number;
+  created_by: string;
+  created_at: string;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  next_cursor: string | null;
+  has_more: boolean;
 }
 
 export interface CreateKnowledgeBaseInput {
@@ -179,4 +241,3 @@ export interface SearchResponse {
   results: SearchResult[];
   query: string;
 }
-

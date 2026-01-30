@@ -86,11 +86,15 @@ erDiagram
     USER ||--o{ CONVERSATION : creates
     USER ||--o{ PROVIDER_SETTINGS : configures
     USER ||--o{ SUBSCRIPTION : subscribes
+    USER ||--o{ KNOWLEDGE_BASE : owns
     AGENT ||--o{ MEMORY_BLOCK_DEF : has
     AGENT ||--o{ CORE_MEMORY : has
     AGENT ||--o{ ARCHIVAL_MEMORY : has
     AGENT ||--o{ CAPACITY_WARNING : tracks
     CONVERSATION ||--o{ MESSAGE : contains
+    KNOWLEDGE_BASE ||--o{ CRAWL_JOB : runs
+    KNOWLEDGE_BASE ||--o{ CONTENT_CHUNK : stores
+    KNOWLEDGE_BASE ||--o{ CONTENT_UPLOAD : receives
 
     USER {
         string email PK
@@ -143,6 +147,21 @@ erDiagram
         datetime created_at
     }
 
+    KNOWLEDGE_BASE {
+        string kb_id PK
+        string created_by FK
+        string name
+        string status
+    }
+
+    CONTENT_UPLOAD {
+        string upload_id PK
+        string kb_id FK
+        string filename
+        int size_bytes
+        datetime created_at
+    }
+
     MEMORY_BLOCK_DEF {
         string agent_id PK
         string block_name PK
@@ -190,6 +209,10 @@ erDiagram
 | **Usage Event** | `User#{user_email}` | `UsageEvent#{event_id}` | Deduplicate usage stream events |
 | **Conversation** | `USER#{created_by}` | `CONVERSATION#{conversation_id}` | List conversations by user |
 | **Message** | `CONVERSATION#{conversation_id}` | `MESSAGE#{timestamp}#{message_id}` | List messages in conversation (chronological) |
+| **KnowledgeBase** | `User#{created_by}` | `KnowledgeBase#{kb_id}` | List KBs by user, Get KB by ID |
+| **CrawlJob** | `KnowledgeBase#{kb_id}` | `CrawlJob#{job_id}` | List crawl jobs for KB |
+| **ContentChunk** | `KnowledgeBase#{kb_id}` | `Chunk#{chunk_id}` | Get chunk by ID, batch save |
+| **ContentUpload** | `KnowledgeBase#{kb_id}` | `Upload#{created_at}#{upload_id}` | List uploads by KB (cursor-based) |
 | **MemoryBlockDef** | `Agent#{agent_id}#User#{user_id}` | `MemoryBlockDef#{block_id}` | List memory block definitions for agent + user |
 | **CoreMemory** | `Agent#{agent_id}#User#{user_id}` | `CoreMemory#{block_id}` | Get/update memory block content |
 | **ArchivalMemory** | `Agent#{agent_id}#User#{user_id}` | `Archival#{timestamp}#{memory_id}` | Search archival memories (chronological) |

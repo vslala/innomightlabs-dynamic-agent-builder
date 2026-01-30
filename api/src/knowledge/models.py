@@ -206,6 +206,33 @@ class CrawlJobResponse(BaseModel):
     created_at: datetime
 
 
+class ContentUploadResponse(BaseModel):
+    """Response model for content upload."""
+
+    kb_id: str
+    filename: str
+    chunk_count: int
+    vector_count: int
+    total_pages: int
+    total_chunks: int
+    total_vectors: int
+
+
+class ContentUploadItemResponse(BaseModel):
+    """Response model for content upload list item."""
+
+    upload_id: str
+    kb_id: str
+    filename: str
+    content_type: Optional[str] = None
+    size_bytes: int
+    metadata: Optional[str] = None
+    chunk_count: int
+    vector_count: int
+    created_by: str
+    created_at: datetime
+
+
 class PageTiming(BaseModel):
     """Timing information for a crawled page."""
     fetch_duration_ms: Optional[int] = None
@@ -636,6 +663,75 @@ class ContentChunk(BaseModel):
             "level": self.level,
             "word_count": self.word_count,
         }
+
+
+class ContentUpload(BaseModel):
+    """Represents a content upload for a knowledge base."""
+
+    upload_id: str = Field(default_factory=lambda: str(uuid4()))
+    kb_id: str
+    created_by: str
+    filename: str
+    content_type: Optional[str] = None
+    size_bytes: int = 0
+    metadata: Optional[str] = None
+    chunk_count: int = 0
+    vector_count: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def pk(self) -> str:
+        return f"KnowledgeBase#{self.kb_id}"
+
+    @property
+    def sk(self) -> str:
+        return f"Upload#{self.created_at.isoformat()}#{self.upload_id}"
+
+    def to_dynamo_item(self) -> dict[str, Any]:
+        return {
+            "pk": self.pk,
+            "sk": self.sk,
+            "upload_id": self.upload_id,
+            "kb_id": self.kb_id,
+            "created_by": self.created_by,
+            "filename": self.filename,
+            "content_type": self.content_type,
+            "size_bytes": self.size_bytes,
+            "metadata": self.metadata,
+            "chunk_count": self.chunk_count,
+            "vector_count": self.vector_count,
+            "created_at": self.created_at.isoformat(),
+            "entity_type": "ContentUpload",
+        }
+
+    @classmethod
+    def from_dynamo_item(cls, item: dict[str, Any]) -> "ContentUpload":
+        return cls(
+            upload_id=item["upload_id"],
+            kb_id=item["kb_id"],
+            created_by=item.get("created_by", ""),
+            filename=item.get("filename", ""),
+            content_type=item.get("content_type"),
+            size_bytes=item.get("size_bytes", 0),
+            metadata=item.get("metadata"),
+            chunk_count=item.get("chunk_count", 0),
+            vector_count=item.get("vector_count", 0),
+            created_at=datetime.fromisoformat(item["created_at"]),
+        )
+
+    def to_response(self) -> ContentUploadItemResponse:
+        return ContentUploadItemResponse(
+            upload_id=self.upload_id,
+            kb_id=self.kb_id,
+            filename=self.filename,
+            content_type=self.content_type,
+            size_bytes=self.size_bytes,
+            metadata=self.metadata,
+            chunk_count=self.chunk_count,
+            vector_count=self.vector_count,
+            created_by=self.created_by,
+            created_at=self.created_at,
+        )
 
 
 class AgentKnowledgeBase(BaseModel):

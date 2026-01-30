@@ -122,7 +122,7 @@ This exports `LOCAL_*` values into the active shell session.
 - The backend expects some variables like `AWS_REGION_NAME` (see `api/src/config/settings.py`).
 - Stripe pricing IDs and other billing settings are required only if billing is enabled.
 
+
 ## Next Steps
 - Read `api/README.md` for backend architecture details.
 - Inspect `spa/src/pages/LandingPage.tsx` and related components for the marketing copy.
-

@@ -14,12 +14,12 @@
 import { useState } from "react";
 import { Button } from "../ui/button";
 import { FormField } from "./FormField";
-import type { FormSchema } from "../../types/form";
+import type { FormSchema, FormValue } from "../../types/form";
 
 interface SchemaFormProps {
   schema: FormSchema;
-  initialValues?: Record<string, string>;
-  onSubmit: (data: Record<string, string>) => void | Promise<void>;
+  initialValues?: Record<string, FormValue>;
+  onSubmit: (data: Record<string, FormValue>) => void | Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
   cancelLabel?: string;
@@ -27,7 +27,7 @@ interface SchemaFormProps {
 }
 
 // Empty object constant to avoid creating new references
-const EMPTY_INITIAL_VALUES: Record<string, string> = {};
+const EMPTY_INITIAL_VALUES: Record<string, FormValue> = {};
 
 export function SchemaForm({
   schema,
@@ -42,15 +42,19 @@ export function SchemaForm({
   const stableInitialValues = initialValues || EMPTY_INITIAL_VALUES;
 
   // Initialize form state from schema fields
-  const [formData, setFormData] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
+  const [formData, setFormData] = useState<Record<string, FormValue>>(() => {
+    const initial: Record<string, FormValue> = {};
     schema.form_inputs.forEach((field) => {
-      initial[field.name] = stableInitialValues[field.name] || field.value || "";
+      if (field.input_type === "file_upload") {
+        initial[field.name] = stableInitialValues[field.name] || null;
+      } else {
+        initial[field.name] = stableInitialValues[field.name] || field.value || "";
+      }
     });
     return initial;
   });
 
-  const handleFieldChange = (fieldName: string, value: string) => {
+  const handleFieldChange = (fieldName: string, value: FormValue) => {
     setFormData((prev) => ({
       ...prev,
       [fieldName]: value,

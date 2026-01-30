@@ -60,8 +60,9 @@ class HttpClient {
   ): Promise<T> {
     const { skipAuth = false, headers: customHeaders, ...restOptions } = options;
 
+    const isFormData = restOptions.body instanceof FormData;
     const headers: HeadersInit = {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...customHeaders,
     };
 
@@ -135,6 +136,18 @@ class HttpClient {
       ...options,
       method: "POST",
       body: data ? JSON.stringify(data) : undefined,
+    });
+  }
+
+  async postForm<T>(
+    endpoint: string,
+    formData: FormData,
+    options?: RequestOptions
+  ): Promise<T> {
+    return this.request<T>(endpoint, {
+      ...options,
+      method: "POST",
+      body: formData,
     });
   }
 

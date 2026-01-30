@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  FileText,
 } from "lucide-react";
 import {
   Card,
@@ -44,13 +45,19 @@ import {
   PillGroup,
   AlertBanner,
 } from "../../components/ui";
+import { SchemaForm } from "../../components/forms";
 import { knowledgeApiService } from "../../services/knowledge";
+import { KB_UPLOAD_ALLOWED_EXTENSIONS, KB_UPLOAD_MAX_FILE_SIZE } from "../../types/knowledge";
 import type {
   KnowledgeBase,
   CrawlJob,
   CrawlJobStatus,
   CrawlSourceType,
+  ContentUploadResponse,
+  ContentUploadItem,
 } from "../../types/knowledge";
+import type { FormSchema, FormValue } from "../../types/form";
+import styles from "./KnowledgeBaseDetail.module.css";
 
 const POLL_INTERVAL_MS = 5000; // 5 seconds
 
@@ -77,6 +84,19 @@ export function KnowledgeBaseDetail() {
   const [crawlMaxDepth, setCrawlMaxDepth] = useState(3);
   const [isStartingCrawl, setIsStartingCrawl] = useState(false);
   const [crawlError, setCrawlError] = useState<string | null>(null);
+
+  const [contentUploadSchema, setContentUploadSchema] = useState<FormSchema | null>(null);
+  const [loadingContentSchema, setLoadingContentSchema] = useState(false);
+  const [contentUploadError, setContentUploadError] = useState<string | null>(null);
+  const [contentUploadNotice, setContentUploadNotice] = useState<string | null>(null);
+  const [isUploadingContent, setIsUploadingContent] = useState(false);
+  const [contentFormKey, setContentFormKey] = useState(0);
+
+  const [uploads, setUploads] = useState<ContentUploadItem[]>([]);
+  const [uploadsCursor, setUploadsCursor] = useState<string | null>(null);
+  const [hasMoreUploads, setHasMoreUploads] = useState(false);
+  const [loadingUploads, setLoadingUploads] = useState(false);
+  const [uploadsError, setUploadsError] = useState<string | null>(null);
 
   // Polling state
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -121,6 +141,49 @@ export function KnowledgeBaseDetail() {
     }
   }, [kbId]);
 
+  const loadContentUploadSchema = useCallback(async () => {
+    if (!kbId) return;
+    setLoadingContentSchema(true);
+    try {
+      const schema = await knowledgeApiService.getContentUploadSchema(kbId);
+      setContentUploadSchema(schema);
+    } catch (err) {
+      console.error("Error loading content upload schema:", err);
+      setContentUploadError("Failed to load content upload form.");
+    } finally {
+      setLoadingContentSchema(false);
+    }
+  }, [kbId]);
+
+  const loadUploads = useCallback(
+    async (options?: { cursor?: string | null; reset?: boolean }) => {
+      if (!kbId) return;
+      setLoadingUploads(true);
+      setUploadsError(null);
+      try {
+        const response = await knowledgeApiService.listContentUploads(
+          kbId,
+          10,
+          options?.cursor
+        );
+        setUploads((prev) => {
+          const merged = options?.reset ? response.items : [...prev, ...response.items];
+          return [...merged].sort(
+            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
+        });
+        setUploadsCursor(response.next_cursor);
+        setHasMoreUploads(response.has_more);
+      } catch (err) {
+        console.error("Error loading uploads:", err);
+        setUploadsError("Failed to load uploads.");
+      } finally {
+        setLoadingUploads(false);
+      }
+    },
+    [kbId]
+  );
+
   const pollJobProgress = useCallback(async () => {
     if (!kbId) return;
 
@@ -160,6 +223,8 @@ export function KnowledgeBaseDetail() {
   useEffect(() => {
     loadKnowledgeBase();
     loadCrawlJobs();
+    loadContentUploadSchema();
+    loadUploads({ reset: true });
 
     return () => {
       // Cleanup polling on unmount
@@ -244,6 +309,91 @@ export function KnowledgeBaseDetail() {
     }
   };
 
+  const getFileExtension = (filename: string) => {
+    const idx = filename.lastIndexOf(".");
+    return idx >= 0 ? filename.slice(idx).toLowerCase() : "";
+  };
+
+  const validateFilesForUpload = (files: File[]) => {
+    for (const file of files) {
+      const ext = getFileExtension(file.name);
+      if (!KB_UPLOAD_ALLOWED_EXTENSIONS.includes(ext)) {
+        return `File type '${ext || "unknown"}' is not supported.`;
+      }
+      if (file.size > KB_UPLOAD_MAX_FILE_SIZE) {
+        return `${file.name} exceeds 5MB per file limit.`;
+      }
+    }
+    return null;
+  };
+
+  const handleContentUpload = async (data: Record<string, FormValue>) => {
+    if (!kbId) return;
+
+    const metadata = typeof data.metadata === "string" ? data.metadata.trim() : "";
+    const attachmentValue = data.attachment;
+    const files = attachmentValue instanceof FileList
+      ? Array.from(attachmentValue)
+      : Array.isArray(attachmentValue)
+        ? attachmentValue
+        : [];
+
+    if (files.length === 0) {
+      setContentUploadError("Select at least one file to upload.");
+      return;
+    }
+
+    const validationError = validateFilesForUpload(files);
+    if (validationError) {
+      setContentUploadError(validationError);
+      return;
+    }
+
+    setIsUploadingContent(true);
+    setContentUploadError(null);
+    setContentUploadNotice(null);
+
+    let uploadedCount = 0;
+    let lastResponse: ContentUploadResponse | null = null;
+
+    try {
+      for (const file of files) {
+        lastResponse = await knowledgeApiService.uploadContentFile(kbId, {
+          file,
+          metadata: metadata || undefined,
+        });
+        uploadedCount += 1;
+      }
+
+      if (uploadedCount > 0) {
+        setContentUploadNotice(`Uploaded ${uploadedCount} file${uploadedCount === 1 ? "" : "s"} successfully.`);
+        setContentFormKey((prev) => prev + 1);
+        if (lastResponse) {
+          setKb((prev) =>
+            prev
+              ? {
+                ...prev,
+                total_pages: lastResponse.total_pages,
+                total_chunks: lastResponse.total_chunks,
+                total_vectors: lastResponse.total_vectors,
+              }
+              : prev
+          );
+        }
+        loadUploads({ reset: true });
+      }
+    } catch (err: unknown) {
+      console.error("Error uploading content:", err);
+      if (err instanceof Error) {
+        setContentUploadError(err.message);
+      } else {
+        setContentUploadError("Failed to upload content. Please try again.");
+      }
+    } finally {
+      setIsUploadingContent(false);
+    }
+  };
+
   const mapStatus = (status: CrawlJobStatus) => status as "pending" | "in_progress" | "completed" | "failed" | "cancelled";
 
   const formatDate = (dateString: string | null) => {
@@ -261,6 +411,12 @@ export function KnowledgeBaseDetail() {
     if (ms < 1000) return `${ms}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${(ms / 60000).toFixed(1)}m`;
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
   const getProgressPercentage = (job: CrawlJob) => {
@@ -344,7 +500,7 @@ export function KnowledgeBaseDetail() {
             {isEditing ? "Edit Knowledge Base" : "Details"}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className={styles.uploadsContent}>
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
               {error}
@@ -569,6 +725,119 @@ export function KnowledgeBaseDetail() {
                       </div>
                     </div>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Database className="h-5 w-5 text-[var(--gradient-start)]" />
+            <CardTitle className="text-lg">Upload Content</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className={styles.uploadContent}>
+          <p className={styles.uploadLead}>
+            Upload text-based files (max 5MB per file). Multiple files will upload one by one.
+          </p>
+          <p className={styles.uploadSupport}>
+            Supported: {KB_UPLOAD_ALLOWED_EXTENSIONS.join(" ")}
+          </p>
+
+          {contentUploadError && (
+            <AlertBanner message={contentUploadError} variant="error" className={styles.uploadAlert} />
+          )}
+          {contentUploadNotice && (
+            <AlertBanner message={contentUploadNotice} variant="success" className={styles.uploadAlert} />
+          )}
+
+          {loadingContentSchema ? (
+            <LoadingState className="h-24" size="default" />
+          ) : contentUploadSchema ? (
+            <div className={styles.uploadForm}>
+              <SchemaForm
+                key={contentFormKey}
+                schema={contentUploadSchema}
+                onSubmit={handleContentUpload}
+                submitLabel="Upload Files"
+                isLoading={isUploadingContent}
+              />
+            </div>
+          ) : (
+            <InlineEmptyState
+              icon={Database}
+              title="Upload form unavailable"
+              description="We couldn't load the upload form. Please refresh the page."
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-[var(--gradient-start)]" />
+              <CardTitle className="text-lg">Recent Uploads</CardTitle>
+            </div>
+            {hasMoreUploads && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => loadUploads({ cursor: uploadsCursor })}
+                disabled={loadingUploads}
+              >
+                {loadingUploads ? "Loading..." : "Load More"}
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {uploadsError && (
+            <AlertBanner message={uploadsError} variant="error" className="mb-4" />
+          )}
+          {loadingUploads && uploads.length === 0 ? (
+            <LoadingState className="h-24" size="default" />
+          ) : uploads.length === 0 ? (
+            <InlineEmptyState
+              icon={FileText}
+              title="No uploads yet"
+              description="Upload a file to start building your knowledge base"
+            />
+          ) : (
+            <div className={styles.uploadsList}>
+              {uploads.map((upload) => (
+                <div
+                  key={upload.upload_id}
+                  className={styles.uploadItem}
+                >
+                  <div className={styles.uploadRow}>
+                    <div className={styles.uploadInfo}>
+                      <div className={styles.uploadIcon}>
+                        <FileText className="h-4 w-4 text-[var(--text-muted)]" />
+                      </div>
+                      <div>
+                        <p className={styles.uploadTitle}>
+                          {upload.filename}
+                        </p>
+                        <p className={styles.uploadMeta}>
+                          {formatFileSize(upload.size_bytes)} • {formatDate(upload.created_at)}
+                        </p>
+                        {upload.metadata && (
+                          <p className={styles.uploadMetadata}>
+                            {upload.metadata}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className={styles.uploadStats}>
+                      <div>{upload.chunk_count} chunks</div>
+                      <div>{upload.vector_count} vectors</div>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

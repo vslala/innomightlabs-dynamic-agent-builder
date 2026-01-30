@@ -32,10 +32,11 @@ Endpoints:
 """
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from typing import Annotated, Optional
+import os
 import logging
 import asyncio
 import json
@@ -53,6 +54,9 @@ from src.knowledge.models import (
     StartCrawlJobRequest,
     CrawlStepResponse,
     CrawledPageResponse,
+    ContentUploadResponse,
+    ContentUploadItemResponse,
+    ContentUpload,
 )
 from src.knowledge.repository import (
     KnowledgeBaseRepository,
@@ -60,11 +64,20 @@ from src.knowledge.repository import (
     CrawlStepRepository,
     CrawledPageRepository,
     AgentKnowledgeBaseRepository,
+    ContentUploadRepository,
 )
-from src.knowledge.schemas import get_crawl_config_form, get_create_knowledge_base_form
+from src.knowledge.schemas import (
+    get_content_upload_form_schema,
+    get_crawl_config_form,
+    get_create_knowledge_base_form,
+    CONTENT_UPLOAD_ALLOWED_EXTENSIONS,
+)
 from src.knowledge.service import get_knowledge_base_service, KnowledgeBaseService
+from src.common.pagination import Paginated
 
 log = logging.getLogger(__name__)
+
+MAX_CONTENT_UPLOAD_BYTES = 5 * 1024 * 1024
 
 # Security scheme for Swagger UI
 security = HTTPBearer()
@@ -109,6 +122,10 @@ def get_crawl_step_repository() -> CrawlStepRepository:
 
 def get_crawled_page_repository() -> CrawledPageRepository:
     return CrawledPageRepository()
+
+
+def get_content_upload_repository() -> ContentUploadRepository:
+    return ContentUploadRepository()
 
 
 def get_agent_kb_repository() -> AgentKnowledgeBaseRepository:
@@ -805,9 +822,9 @@ async def list_crawled_pages(
 async def search_knowledge_base(
     request: Request,
     kb_id: str,
+    kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     query: str = Query(..., description="Search query"),
     top_k: int = Query(default=5, ge=1, le=20),
-    kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)] = None,
 ) -> dict:
     """
     Search a knowledge base for relevant content.
@@ -856,10 +873,10 @@ async def search_knowledge_base(
 async def search_agent_knowledge_bases(
     request: Request,
     agent_id: str,
+    kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
+    agent_kb_repo: Annotated[AgentKnowledgeBaseRepository, Depends(get_agent_kb_repository)],
     query: str = Query(..., description="Search query"),
     top_k: int = Query(default=5, ge=1, le=20),
-    kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)] = None,
-    agent_kb_repo: Annotated[AgentKnowledgeBaseRepository, Depends(get_agent_kb_repository)] = None,
 ) -> dict:
     """
     Search across all knowledge bases linked to an agent.
@@ -925,9 +942,9 @@ async def search_agent_knowledge_bases(
 async def link_knowledge_base(
     request: Request,
     agent_id: str,
+    kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
+    agent_kb_repo: Annotated[AgentKnowledgeBaseRepository, Depends(get_agent_kb_repository)],
     kb_id: str = Query(..., description="Knowledge base ID to link"),
-    kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)] = None,
-    agent_kb_repo: Annotated[AgentKnowledgeBaseRepository, Depends(get_agent_kb_repository)] = None,
 ) -> dict:
     """Link a knowledge base to an agent."""
     user_email: str = request.state.user_email
@@ -989,3 +1006,146 @@ async def unlink_knowledge_base(
     """Unlink a knowledge base from an agent."""
     agent_kb_repo.unlink(agent_id, kb_id)
     log.info(f"Unlinked KB {kb_id} from agent {agent_id}")
+
+
+@router.get("/{kb_id}/forms/content-upload", response_model=form_models.Form, status_code=status.HTTP_200_OK)
+async def kb_content_upload(
+    request: Request,
+    kb_id: str,
+    kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)]
+):
+    user_email: str = request.state.user_email
+    knowledge_base = kb_repo.find_by_id(kb_id=kb_id, user_email=user_email)
+    if not knowledge_base:
+        raise HTTPException(404, f"Knowledge base not found: {kb_id}")
+    
+    return get_content_upload_form_schema(knowledge_base)
+
+
+@router.post(
+    "/{kb_id}/content-upload",
+    response_model=ContentUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_kb_content(
+    request: Request,
+    kb_id: str,
+    kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
+    upload_repo: Annotated[ContentUploadRepository, Depends(get_content_upload_repository)],
+    service: Annotated[KnowledgeBaseService, Depends(get_kb_service)],
+    attachment: UploadFile = File(...),
+    metadata: Optional[str] = Form(default=None),
+) -> ContentUploadResponse:
+    """Upload a text-based file and ingest it into the knowledge base."""
+    from src.config import settings
+
+    user_email: str = request.state.user_email
+    knowledge_base = kb_repo.find_by_id(kb_id=kb_id, user_email=user_email)
+    if not knowledge_base:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+
+    if not settings.is_pinecone_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Vector store is not configured. Set PINECONE_API_KEY, PINECONE_HOST, and PINECONE_INDEX."
+        )
+
+    filename = attachment.filename or ""
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in CONTENT_UPLOAD_ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"File type '{ext or 'unknown'}' not allowed")
+
+    raw_bytes = await attachment.read()
+    if len(raw_bytes) > MAX_CONTENT_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File exceeds 5MB limit")
+
+    try:
+        content = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        content = raw_bytes.decode("utf-8", errors="replace")
+
+    ingest_result = await service.ingest_text_content(
+        kb=knowledge_base,
+        user_email=user_email,
+        filename=filename,
+        content=content,
+        metadata=metadata,
+    )
+
+    upload_record = upload_repo.save(
+        ContentUpload(
+            kb_id=knowledge_base.kb_id,
+            created_by=user_email,
+            filename=filename,
+            content_type=attachment.content_type,
+            size_bytes=len(raw_bytes),
+            metadata=metadata,
+            chunk_count=ingest_result.chunk_count,
+            vector_count=ingest_result.vector_count,
+        )
+    )
+
+    total_pages = knowledge_base.total_pages + 1
+    total_chunks = knowledge_base.total_chunks + ingest_result.chunk_count
+    total_vectors = knowledge_base.total_vectors + ingest_result.vector_count
+
+    kb_repo.update_stats(
+        knowledge_base.kb_id,
+        user_email,
+        total_pages=total_pages,
+        total_chunks=total_chunks,
+        total_vectors=total_vectors,
+    )
+
+    log.info(
+        f"Uploaded content to KB {knowledge_base.kb_id}: {upload_record.filename} "
+        f"chunks={ingest_result.chunk_count} vectors={ingest_result.vector_count}"
+    )
+
+    return ContentUploadResponse(
+        kb_id=knowledge_base.kb_id,
+        filename=upload_record.filename,
+        chunk_count=ingest_result.chunk_count,
+        vector_count=ingest_result.vector_count,
+        total_pages=total_pages,
+        total_chunks=total_chunks,
+        total_vectors=total_vectors,
+    )
+
+
+@router.get(
+    "/{kb_id}/uploads",
+    response_model=Paginated[ContentUploadItemResponse],
+    status_code=status.HTTP_200_OK,
+)
+async def list_kb_uploads(
+    request: Request,
+    kb_id: str,
+    kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
+    upload_repo: Annotated[ContentUploadRepository, Depends(get_content_upload_repository)],
+    limit: int = Query(default=10, ge=1, le=50),
+    cursor: Optional[str] = Query(default=None, description="Pagination cursor"),
+) -> Paginated[ContentUploadItemResponse]:
+    """List content uploads for a knowledge base (most recent page, ordered oldest to newest)."""
+    user_email: str = request.state.user_email
+    knowledge_base = kb_repo.find_by_id(kb_id=kb_id, user_email=user_email)
+    if not knowledge_base:
+        raise HTTPException(status_code=404, detail="Knowledge base not found")
+
+    uploads, next_cursor, has_more = upload_repo.list_by_kb_paginated(
+        kb_id=kb_id,
+        limit=limit,
+        cursor=cursor,
+        newest_first=True,
+    )
+
+    # Return in chronological order (oldest to newest) within the page
+    uploads.sort(key=lambda u: u.created_at)
+
+    return Paginated[
+        ContentUploadItemResponse
+    ](
+        items=[upload.to_response() for upload in uploads],
+        next_cursor=next_cursor,
+        has_more=has_more,
+    )

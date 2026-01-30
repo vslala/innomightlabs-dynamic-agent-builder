@@ -33,6 +33,8 @@ AgentKnowledgeBase:
 """
 
 from ..db import get_dynamodb_resource
+import base64
+import json
 from boto3.dynamodb.conditions import Key
 from datetime import datetime, timezone
 from typing import Optional
@@ -46,6 +48,7 @@ from src.knowledge.models import (
     CrawlStep,
     CrawledPage,
     ContentChunk,
+    ContentUpload,
     AgentKnowledgeBase,
 )
 
@@ -472,6 +475,64 @@ class ContentChunkRepository:
 
         log.info(f"Deleted {deleted_count} chunks for KB {kb_id}")
         return deleted_count
+
+
+class ContentUploadRepository:
+    """Repository for ContentUpload entity."""
+
+    def __init__(self):
+        self.dynamodb = get_dynamodb_resource()
+        self.table = self.dynamodb.Table(settings.dynamodb_table)
+
+    def save(self, upload: ContentUpload) -> ContentUpload:
+        """Save a content upload record."""
+        self.table.put_item(Item=upload.to_dynamo_item())
+        log.info(f"Saved content upload {upload.upload_id} for KB {upload.kb_id}")
+        return upload
+
+    def list_by_kb_paginated(
+        self,
+        kb_id: str,
+        limit: int = 10,
+        cursor: Optional[str] = None,
+        newest_first: bool = True,
+    ) -> tuple[list[ContentUpload], Optional[str], bool]:
+        """
+        List content uploads for a knowledge base with pagination.
+
+        Returns uploads ordered by created_at (newest_first by default).
+        """
+        query_params = {
+            "KeyConditionExpression": (
+                Key("pk").eq(f"KnowledgeBase#{kb_id}")
+                & Key("sk").begins_with("Upload#")
+            ),
+            "Limit": limit,
+            "ScanIndexForward": not newest_first,
+        }
+
+        if cursor:
+            try:
+                cursor_data = json.loads(base64.b64decode(cursor).decode("utf-8"))
+                query_params["ExclusiveStartKey"] = cursor_data
+            except Exception:
+                log.warning(f"Invalid cursor: {cursor}")
+
+        response = self.table.query(**query_params)
+
+        items = response.get("Items", [])
+        uploads = [ContentUpload.from_dynamo_item(item) for item in items]
+
+        last_evaluated_key = response.get("LastEvaluatedKey")
+        has_more = last_evaluated_key is not None
+
+        next_cursor = None
+        if has_more and last_evaluated_key:
+            next_cursor = base64.b64encode(
+                json.dumps(last_evaluated_key).encode("utf-8")
+            ).decode("utf-8")
+
+        return uploads, next_cursor, has_more
 
 
 class AgentKnowledgeBaseRepository:

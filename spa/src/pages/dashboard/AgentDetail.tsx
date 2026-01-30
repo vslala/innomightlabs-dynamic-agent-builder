@@ -35,7 +35,7 @@ import {
 } from "../../services/agents/AgentApiService";
 import { knowledgeApiService } from "../../services/knowledge/KnowledgeApiService";
 import type { KnowledgeBase } from "../../types/knowledge";
-import type { FormSchema } from "../../types/form";
+import type { FormSchema, FormValue } from "../../types/form";
 
 export function AgentDetail() {
   const { agentId } = useParams<{ agentId: string }>();
@@ -387,12 +387,18 @@ export function AgentDetail() {
     setIsEditing(false);
   };
 
-  const handleUpdate = async (data: Record<string, string>) => {
+  const handleUpdate = async (data: Record<string, FormValue>) => {
     if (!agentId) return;
     setIsSubmitting(true);
     setError(null);
     try {
-      const updated = await agentApiService.updateAgent(agentId, data);
+      const payload: Record<string, string> = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (typeof value === "string") {
+          payload[key] = value;
+        }
+      }
+      const updated = await agentApiService.updateAgent(agentId, payload);
       setAgent(updated);
       setIsEditing(false);
     } catch (err) {

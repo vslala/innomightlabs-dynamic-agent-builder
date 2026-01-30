@@ -9,6 +9,7 @@ class FormInputType(Enum):
     PASSWORD = "password"
     SELECT = "select"
     CHOICE = "choice"
+    FILE_UPLOAD = "file_upload"
 
 
 class SelectOption(BaseModel):

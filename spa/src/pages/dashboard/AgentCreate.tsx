@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/ca
 import { Button } from "../../components/ui/button";
 import { SchemaForm } from "../../components/forms";
 import { agentApiService } from "../../services/agents/AgentApiService";
-import type { FormSchema } from "../../types/form";
+import type { FormSchema, FormValue } from "../../types/form";
 
 export function AgentCreate() {
   const navigate = useNavigate();
@@ -30,11 +30,17 @@ export function AgentCreate() {
     loadSchema();
   }, []);
 
-  const handleSubmit = async (data: Record<string, string>) => {
+  const handleSubmit = async (data: Record<string, FormValue>) => {
     setIsSubmitting(true);
     setError(null);
     try {
-      await agentApiService.createAgent(data);
+      const payload: Record<string, string> = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (typeof value === "string") {
+          payload[key] = value;
+        }
+      }
+      await agentApiService.createAgent(payload);
       navigate("/dashboard/agents");
     } catch (err) {
       setError("Failed to create agent. Please try again.");

@@ -11,6 +11,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { SchemaForm } from "../../components/forms";
+import type { FormValue } from "../../types/form";
 import { ConfirmationDialog } from "../../components/ui/confirmation-dialog";
 import { authService } from "../../services/auth";
 import { httpClient } from "../../services/http";
@@ -71,11 +72,17 @@ export function Settings() {
     setConfiguringProvider(null);
   };
 
-  const handleSaveProvider = async (providerName: string, data: Record<string, string>) => {
+  const handleSaveProvider = async (providerName: string, data: Record<string, FormValue>) => {
     setSavingProvider(true);
     setError(null);
     try {
-      await providerSettingsService.saveProviderSettings(providerName, data);
+      const payload: Record<string, string> = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (typeof value === "string") {
+          payload[key] = value;
+        }
+      }
+      await providerSettingsService.saveProviderSettings(providerName, payload);
       // Refresh providers list to update status
       await loadProviders();
       setConfiguringProvider(null);

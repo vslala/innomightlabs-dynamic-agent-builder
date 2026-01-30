@@ -29,6 +29,7 @@ dependencies = [
     # Email service
     "mailjet-rest>=1.3.4",
     "email-validator>=2.3.0",
+    "python-multipart>=0.0.22",
 ]
 
 [project.optional-dependencies]

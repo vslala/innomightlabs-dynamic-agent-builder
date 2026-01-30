@@ -12,15 +12,42 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import type { FormInput } from "../../types/form";
+import type { FormInput, FormValue } from "../../types/form";
+import { AttachmentChip } from "../chat/AttachmentChip";
 
 interface FormFieldProps {
   field: FormInput;
-  value: string;
-  onChange: (value: string) => void;
+  value: FormValue;
+  onChange: (value: FormValue) => void;
 }
 
 export function FormField({ field, value, onChange }: FormFieldProps) {
+  const fieldAttributes = field.attr || {};
+  const placeholderText = fieldAttributes.placeholder || `Enter ${field.label.toLowerCase()}`;
+
+  const renderFileList = () => {
+    const files = value instanceof FileList
+      ? Array.from(value)
+      : Array.isArray(value)
+        ? value
+        : [];
+
+    if (files.length === 0) return null;
+
+    return (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+        {files.map((file) => (
+          <AttachmentChip
+            key={`${file.name}-${file.size}-${file.lastModified}`}
+            filename={file.name}
+            size={file.size}
+            readonly
+          />
+        ))}
+      </div>
+    );
+  };
+
   const renderInput = () => {
     switch (field.input_type) {
       case "text":
@@ -28,9 +55,12 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
           <Input
             id={field.name}
             name={field.name}
-            value={value}
+            value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={`Enter ${field.label.toLowerCase()}`}
+            placeholder={placeholderText}
+            type={fieldAttributes.type || "text"}
+            min={fieldAttributes.min}
+            max={fieldAttributes.max}
           />
         );
 
@@ -39,10 +69,10 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
           <Textarea
             id={field.name}
             name={field.name}
-            value={value}
+            value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={`Enter ${field.label.toLowerCase()}`}
-            rows={4}
+            placeholder={placeholderText}
+            rows={fieldAttributes.rows ? parseInt(fieldAttributes.rows, 10) : 4}
           />
         );
 
@@ -52,9 +82,9 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
             id={field.name}
             name={field.name}
             type="password"
-            value={value}
+            value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={`Enter ${field.label.toLowerCase()}`}
+            placeholder={placeholderText}
           />
         );
 
@@ -114,14 +144,29 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
           </div>
         );
 
+      case "file_upload":
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <Input
+              id={field.name}
+              name={field.name}
+              type="file"
+              accept={fieldAttributes.accept}
+              multiple={fieldAttributes.multiple === "true"}
+              onChange={(e) => onChange(e.target.files)}
+            />
+            {renderFileList()}
+          </div>
+        );
+
       default:
         return (
           <Input
             id={field.name}
             name={field.name}
-            value={value}
+            value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={`Enter ${field.label.toLowerCase()}`}
+            placeholder={placeholderText}
           />
         );
     }
