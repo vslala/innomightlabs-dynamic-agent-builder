@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export TF_DATA_DIR=".terraform-dev"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TERRAFORM_DIR="$PROJECT_ROOT/terraform"
-
 echo "=========================================="
 echo "Deploying to DEV environment"
 echo "=========================================="
@@ -17,12 +18,11 @@ echo "📝 Generating terraform.tfvars for DEV..."
 # Change to terraform directory
 cd "$TERRAFORM_DIR"
 
-# Initialize terraform if needed
-if [[ ! -d ".terraform" ]]; then
-  echo ""
-  echo "🔧 Initializing Terraform..."
-  terraform init
-fi
+# Initialize terraform (always needed since we are dealing with multiple backends)
+echo ""
+echo "🔧 Initializing Terraform..."
+terraform init --backend-config=backend-eu-west-2.hcl
+
 
 # Run terraform plan
 echo ""

@@ -12,11 +12,7 @@ terraform {
     }
   }
 
-  backend "s3" {
-    bucket = "innomightlabs-terraform-statee"
-    key    = "dynamic-agent-builder/terraform.tfstate"
-    region = "us-east-1"
-  }
+  backend "s3" {}
 }
 
 provider "aws" {

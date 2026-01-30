@@ -102,10 +102,12 @@ rm -f "$TFVARS_PATH"
   echo "# Environment Configuration"
 } >> "$TFVARS_PATH"
 
+write_kv "aws_region" "$(get_var 'AWS_REGION')"
 write_kv "environment" "$(get_var 'ENVIRONMENT')"
+write_kv "project_name" "$(get_var 'PROJECT_NAME')"
 write_kv "frontend_url" "$(get_var 'FRONTEND_URL')"
 write_kv "api_domain" "$(get_var 'API_DOMAIN')"
-write_kv "widget_cdn_domain" "$WIDGET_CDN_DOMAIN"
+write_kv "widget_cdn_domain" "$(get_var 'WIDGET_CDN_DOMAIN')"
 
 # ============================================================================
 # Pinecone Vector Store (common)
@@ -115,9 +117,9 @@ write_kv "widget_cdn_domain" "$WIDGET_CDN_DOMAIN"
   echo "# Pinecone Vector Store"
 } >> "$TFVARS_PATH"
 
-write_kv "pinecone_api_key" "$PINECONE_API_KEY"
-write_kv "pinecone_host" "$PINECONE_HOST"
-write_kv "pinecone_index" "$PINECONE_INDEX"
+write_kv "pinecone_api_key" "$(get_var 'PINECONE_API_KEY')"
+write_kv "pinecone_host" "$(get_var 'PINECONE_HOST')"
+write_kv "pinecone_index" "$(get_var 'PINECONE_INDEX')"
 
 # ============================================================================
 # Google OAuth (common)
@@ -127,8 +129,8 @@ write_kv "pinecone_index" "$PINECONE_INDEX"
   echo "# Google OAuth"
 } >> "$TFVARS_PATH"
 
-write_kv "google_client_id" "$GOOGLE_CLIENT_ID"
-write_kv "google_client_secret" "$GOOGLE_CLIENT_SECRET"
+write_kv "google_client_id" "$(get_var 'GOOGLE_CLIENT_ID')"
+write_kv "google_client_secret" "$(get_var 'GOOGLE_CLIENT_SECRET')"
 
 # ============================================================================
 # JWT (common)
@@ -148,10 +150,10 @@ write_kv "jwt_secret" "$JWT_SECRET"
   echo "# Cognito Hosted UI"
 } >> "$TFVARS_PATH"
 
-write_kv "cognito_domain_prefix" "$COGNITO_DOMAIN_PREFIX"
+write_kv "cognito_domain_prefix" "$(get_var 'COGNITO_DOMAIN_PREFIX')"
 write_kv "cognito_redirect_uri" "$(get_var 'COGNITO_REDIRECT_URI')"
-write_list "cognito_callback_urls" "$COGNITO_CALLBACK_URLS"
-write_list "cognito_logout_urls" "$COGNITO_LOGOUT_URLS"
+write_list "cognito_callback_urls" "$(get_var 'COGNITO_CALLBACK_URLS')"
+write_list "cognito_logout_urls" "$(get_var 'COGNITO_LOGOUT_URLS')"
 
 # ============================================================================
 # Stripe Configuration (environment-specific keys, common prices)
@@ -173,10 +175,10 @@ write_kv "stripe_webhook_secret" "$(get_var 'STRIPE_WEBHOOK_SECRET')"
   echo "# SES Configuration"
 } >> "$TFVARS_PATH"
 
-write_kv "ses_domain" "$SES_DOMAIN"
-write_kv "ses_from_email" "$SES_FROM_EMAIL"
-write_kv "ses_reply_to_email" "$SES_REPLY_TO_EMAIL"
-write_kv "ses_verification_email" "$SES_VERIFICATION_EMAIL"
+write_kv "ses_domain" "$(get_var 'SES_DOMAIN')"
+write_kv "ses_from_email" "$(get_var 'SES_FROM_EMAIL')"
+write_kv "ses_reply_to_email" "$(get_var 'SES_REPLY_TO_EMAIL')"
+write_kv "ses_verification_email" "$(get_var 'SES_VERIFICATION_EMAIL')"
 
 # ============================================================================
 # Mailjet Configuration (common)
@@ -186,8 +188,8 @@ write_kv "ses_verification_email" "$SES_VERIFICATION_EMAIL"
   echo "# Mailjet Configuration"
 } >> "$TFVARS_PATH"
 
-write_kv "mailjet_api_key" "$MAILJET_API_KEY"
-write_kv "mailjet_secret_key" "$MAILJET_SECRET_KEY"
+write_kv "mailjet_api_key" "$(get_var 'MAILJET_API_KEY')"
+write_kv "mailjet_secret_key" "$(get_var 'MAILJET_SECRET_KEY')"
 
 echo ""
 echo "✅ Generated terraform.tfvars for environment: $ENVIRONMENT"
