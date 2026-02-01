@@ -95,7 +95,10 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
           : field.values?.map((v) => ({ value: v, label: v })) || [];
 
         return (
-          <Select value={value} onValueChange={onChange}>
+          <Select
+            value={typeof value === "string" ? value : undefined}
+            onValueChange={onChange}
+          >
             <SelectTrigger>
               <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
             </SelectTrigger>

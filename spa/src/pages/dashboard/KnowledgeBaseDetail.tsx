@@ -368,14 +368,15 @@ export function KnowledgeBaseDetail() {
       if (uploadedCount > 0) {
         setContentUploadNotice(`Uploaded ${uploadedCount} file${uploadedCount === 1 ? "" : "s"} successfully.`);
         setContentFormKey((prev) => prev + 1);
-        if (lastResponse) {
+        const response = lastResponse;
+        if (response) {
           setKb((prev) =>
             prev
               ? {
                 ...prev,
-                total_pages: lastResponse.total_pages,
-                total_chunks: lastResponse.total_chunks,
-                total_vectors: lastResponse.total_vectors,
+                total_pages: response.total_pages,
+                total_chunks: response.total_chunks,
+                total_vectors: response.total_vectors,
               }
               : prev
           );
