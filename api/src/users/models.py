@@ -1,5 +1,5 @@
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from enum import Enum
 
@@ -26,7 +26,7 @@ class User:
     ttl: Optional[int] = None
 
     def __post_init__(self):
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         if self.created_at is None:
             self.created_at = now
         if self.updated_at is None:

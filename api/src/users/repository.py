@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .models import User, UserStatus
 from ..config import settings
@@ -28,7 +28,7 @@ class UserRepository:
 
         if existing:
             user.created_at = existing.created_at
-            user.updated_at = datetime.utcnow().isoformat()
+            user.updated_at = datetime.now(timezone.utc).isoformat()
             if user.stripe_customer_id is None:
                 user.stripe_customer_id = existing.stripe_customer_id
             if user.refresh_token is None:
@@ -47,7 +47,7 @@ class UserRepository:
                 UpdateExpression="SET refresh_token = :rt, updated_at = :ua",
                 ExpressionAttributeValues={
                     ":rt": refresh_token,
-                    ":ua": datetime.utcnow().isoformat(),
+                    ":ua": datetime.now(timezone.utc).isoformat(),
                 },
             )
             return True
@@ -76,7 +76,7 @@ class UserRepository:
                 UpdateExpression="SET stripe_customer_id = :cid, updated_at = :ua",
                 ExpressionAttributeValues={
                     ":cid": customer_id,
-                    ":ua": datetime.utcnow().isoformat(),
+                    ":ua": datetime.now(timezone.utc).isoformat(),
                 },
             )
             return True
@@ -96,8 +96,8 @@ class UserRepository:
                 },
                 ExpressionAttributeValues={
                     ":status": UserStatus.INACTIVE.value,
-                    ":timestamp": datetime.utcnow().isoformat(),
-                    ":ua": datetime.utcnow().isoformat(),
+                    ":timestamp": datetime.now(timezone.utc).isoformat(),
+                    ":ua": datetime.now(timezone.utc).isoformat(),
                 },
             )
             return True

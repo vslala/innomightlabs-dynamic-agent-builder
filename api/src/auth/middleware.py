@@ -7,7 +7,7 @@ This middleware intercepts all requests and:
 3. Adds new JWT token to response headers if refreshed
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Tuple, cast
 import jwt
 from fastapi import Request, HTTPException
@@ -85,8 +85,8 @@ def create_access_token(user: User) -> str:
         "sub": user.email,
         "name": user.name,
         "picture": user.picture,
-        "exp": datetime.utcnow() + timedelta(hours=settings.jwt_expiration_hours),
-        "iat": datetime.utcnow(),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=settings.jwt_expiration_hours),
+        "iat": datetime.now(timezone.utc),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 

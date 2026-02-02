@@ -12,7 +12,7 @@ class SubscriptionRepository:
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def upsert(self, subscription: Subscription) -> Subscription:
-        subscription.updated_at = datetime.utcnow().isoformat()
+        subscription.updated_at = datetime.now(timezone.utc).isoformat()
         self.table.put_item(Item=subscription.to_dynamo_item())
         return subscription
 
@@ -74,7 +74,7 @@ class WebhookEventRepository:
                 "pk": f"WebhookEvent#{event_id}",
                 "sk": f"WebhookEvent#{event_id}",
                 "event_id": event_id,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
 

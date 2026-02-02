@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -14,7 +14,7 @@ class UsageRecord:
     updated_at: Optional[str] = None
 
     def __post_init__(self) -> None:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         if self.created_at is None:
             self.created_at = now
         if self.updated_at is None:

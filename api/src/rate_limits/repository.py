@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from ..db import get_dynamodb_resource
@@ -25,7 +25,7 @@ class UsageRepository:
         return None
 
     def increment_messages(self, user_email: str, period_key: str, count: int) -> UsageRecord:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         response = self.table.update_item(
             Key={
                 "pk": f"User#{user_email}",
@@ -52,7 +52,7 @@ class UsageRepository:
         return UsageRecord.from_dynamo_item(response["Attributes"])
 
     def increment_kb_pages(self, user_email: str, period_key: str, count: int) -> UsageRecord:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         response = self.table.update_item(
             Key={
                 "pk": f"User#{user_email}",
@@ -79,7 +79,7 @@ class UsageRepository:
         return UsageRecord.from_dynamo_item(response["Attributes"])
 
     def adjust_active_agents(self, user_email: str, delta: int) -> UsageRecord:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         response = self.table.update_item(
             Key={
                 "pk": f"User#{user_email}",
