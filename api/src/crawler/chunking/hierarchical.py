@@ -54,12 +54,26 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
         page_title: str,
         sections: Optional[list[ExtractedSection]] = None,
     ) -> list[ContentChunkData]:
+        # Ensure we always return at least one chunk.
+        # Tests (and downstream ingestion) expect a document-level chunk even when
+        # content is empty (e.g., fetch succeeded but body is blank).
+        if not content.strip():
+            chunk = ContentChunkData(
+                content="",
+                chunk_index=0,
+                level=0,
+                source_url=source_url,
+                page_title=page_title,
+            )
+            self._ensure_chunk_id(chunk)
+            return [chunk]
+
         chunks: list[ContentChunkData] = []
         chunk_index = 0
 
         # Level 0: Document overview (optional)
         doc_chunk_id: Optional[str] = None
-        if self._cfg("create_document_summary", default=False) and content.strip():
+        if self._cfg("create_document_summary", default=True) and content.strip():
             doc_chunk = self._create_document_chunk(
                 content=content,
                 source_url=source_url,

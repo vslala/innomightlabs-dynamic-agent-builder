@@ -405,3 +405,61 @@ class TestWidgetRouter:
         assert "text/html" in response.headers["content-type"]
         assert "innomight-oauth-callback" in response.text
         assert "postMessage" in response.text
+
+    def test_widget_send_message_uses_owner_provider_credentials(
+        self,
+        test_client: TestClient,
+        auth_headers: dict,
+        monkeypatch,
+    ):
+        """Widget chats must load provider credentials from the agent owner, not the visitor."""
+
+        agent_id, public_key = self._create_agent_and_api_key(test_client, auth_headers)
+        visitor_token = self._create_visitor_token("visitor-123", agent_id)
+        headers = {
+            "X-API-Key": public_key,
+            "Authorization": f"Bearer {visitor_token}",
+        }
+
+        # Create a widget conversation
+        create_response = test_client.post(
+            "/widget/conversations",
+            json={"title": "My Chat"},
+            headers=headers,
+        )
+        assert create_response.status_code == 201
+        conversation_id = create_response.json()["conversation_id"]
+
+        # Patch architecture resolution to a fake that captures the call args
+        captured: dict = {}
+
+        class FakeArchitecture:
+            async def handle_message(self, **kwargs):
+                captured.update(kwargs)
+                if False:  # pragma: no cover (keeps this as an async generator)
+                    yield None
+
+        import src.widget.router as widget_router
+
+        monkeypatch.setattr(
+            widget_router,
+            "get_agent_architecture",
+            lambda _name: FakeArchitecture(),
+        )
+
+        # Trigger message send; consume the stream to execute server-side generator
+        with test_client.stream(
+            "POST",
+            f"/widget/conversations/{conversation_id}/messages",
+            json={"content": "Hello"},
+            headers=headers,
+        ) as resp:
+            assert resp.status_code == 200
+            # Read at least one line to ensure generator runs
+            for _ in resp.iter_lines():
+                break
+
+        # Owner should be the API key creator; actor should be the visitor
+        assert captured["owner_email"] == TEST_USER_EMAIL
+        assert captured["actor_email"] == "visitor@example.com"
+        assert captured["actor_id"] == "visitor-123"

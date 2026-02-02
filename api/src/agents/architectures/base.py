@@ -34,8 +34,9 @@ class AgentArchitecture(ABC):
         agent: "Agent",
         conversation: "Conversation",
         user_message: str,
-        user_email: str,
-        user_id: str,
+        owner_email: str,
+        actor_email: str,
+        actor_id: str,
         attachments: list["Attachment"] | None = None,
     ) -> AsyncIterator["SSEEvent"]:
         """
@@ -53,8 +54,9 @@ class AgentArchitecture(ABC):
             agent: The agent handling this conversation
             conversation: The conversation context
             user_message: The user's message content
-            user_email: The authenticated user's email (for provider settings lookup)
-            user_id: The authenticated user's ID (for memory scoping)
+            owner_email: The agent owner's email (tenant context; used for provider settings lookup)
+            actor_email: The end-user's email (who is speaking)
+            actor_id: The end-user's ID (used for memory scoping)
             attachments: Optional list of file attachments
 
         Yields:

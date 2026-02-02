@@ -138,7 +138,7 @@ def get_kb_service() -> KnowledgeBaseService:
 
 def get_crawler():
     """Lazy import crawler worker to avoid circular import."""
-    from src.crawler import get_crawler_worker
+    from src.crawler.worker import get_crawler_worker
     return get_crawler_worker()
 
 

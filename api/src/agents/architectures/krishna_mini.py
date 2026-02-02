@@ -62,8 +62,9 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         agent: "Agent",
         conversation: "Conversation",
         user_message: str,
-        user_email: str,
-        user_id: str,
+        owner_email: str,
+        actor_email: str,
+        actor_id: str,
         attachments: list[Attachment] | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """
@@ -73,8 +74,9 @@ class KrishnaMiniArchitecture(AgentArchitecture):
             agent: The agent handling this conversation
             conversation: The conversation context
             user_message: The user's message content
-            user_email: The authenticated user's email (for provider settings lookup)
-            user_id: The authenticated user's ID (unused in Krishna Mini)
+            owner_email: The agent owner's email (used for provider settings lookup)
+            actor_email: The end-user's email (who is speaking)
+            actor_id: The end-user's ID (unused in Krishna Mini)
             attachments: Optional list of file attachments
 
         Yields:
@@ -84,7 +86,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
             # 1. Save user message (with attachments if any)
             user_msg = Message(
                 conversation_id=conversation.conversation_id,
-                created_by=user_email,
+                created_by=actor_email,
                 role="user",
                 content=user_message,
                 attachments=attachments or [],
@@ -104,7 +106,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
             )
 
             provider_settings = self.provider_settings_repo.find_by_provider(
-                user_email, agent.agent_provider
+                owner_email, agent.agent_provider
             )
             if not provider_settings:
                 yield SSEEvent(
@@ -152,7 +154,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
             # 6. Save assistant message
             assistant_msg = Message(
                 conversation_id=conversation.conversation_id,
-                created_by=user_email,
+                created_by=actor_email,
                 role="assistant",
                 content=full_response,
             )

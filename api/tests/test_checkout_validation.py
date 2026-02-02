@@ -1,6 +1,22 @@
 from fastapi import status
 from tests.mock_data import TEST_USER_EMAIL
 import time
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _configure_stripe_for_tests(monkeypatch):
+    """Ensure Stripe is considered configured during unit tests.
+
+    These tests mock out StripeClient calls but the router still enforces
+    that STRIPE_SECRET_KEY (and friends) exist.
+    """
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "sk_test_dummy", raising=False)
+    monkeypatch.setattr(settings, "stripe_publishable_key", "pk_test_dummy", raising=False)
+    monkeypatch.setattr(settings, "stripe_webhook_secret", "whsec_dummy", raising=False)
+
 
 
 def test_checkout_requires_authentication(test_client):

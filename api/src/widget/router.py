@@ -504,8 +504,9 @@ async def send_message(
                 agent=agent,
                 conversation=mock_conversation,
                 user_message=body.content,
-                user_email=visitor.email,
-                user_id=visitor.visitor_id,
+                owner_email=api_key.created_by,
+                actor_email=visitor.email,
+                actor_id=visitor.visitor_id,
                 attachments=[],  # Widget doesn't support attachments yet
             ):
                 yield event.to_sse()

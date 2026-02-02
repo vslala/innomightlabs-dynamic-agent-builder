@@ -44,11 +44,7 @@ from src.crawler.chunking import (
     get_chunking_strategy,
 )
 
-from src.crawler.worker import (
-    CrawlerWorker,
-    CrawlContext,
-    get_crawler_worker,
-)
+# NOTE: worker imports removed to avoid circular import during test collection
 
 __all__ = [
     # Events
@@ -88,8 +84,5 @@ __all__ = [
     "ContentChunkData",
     "HierarchicalChunking",
     "get_chunking_strategy",
-    # Worker
-    "CrawlerWorker",
-    "CrawlContext",
-    "get_crawler_worker",
+    # Worker (imported from src.crawler.worker directly; not re-exported here to avoid circular imports)
 ]

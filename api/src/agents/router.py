@@ -334,8 +334,9 @@ async def send_message(
                 agent=agent,
                 conversation=conversation,
                 user_message=body.content,
-                user_email=user_email,
-                user_id=user_id,
+                owner_email=user_email,
+                actor_email=user_email,
+                actor_id=user_id,
                 attachments=cast(list[Attachment], body.attachments or []),
             ):
                 yield event.to_sse()

@@ -71,8 +71,9 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         agent: "Agent",
         conversation: "Conversation",
         user_message: str,
-        user_email: str,
-        user_id: str,
+        owner_email: str,
+        actor_email: str,
+        actor_id: str,
         attachments: list[Attachment] | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """
@@ -82,8 +83,9 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             agent: The agent handling this conversation
             conversation: The conversation context
             user_message: The user's message content
-            user_email: The authenticated user's email
-            user_id: The authenticated user's ID (for memory scoping)
+            owner_email: The agent owner's email (used for provider settings lookup)
+            actor_email: The end-user's email (who is speaking)
+            actor_id: The end-user's ID (for memory scoping)
             attachments: Optional list of file attachments
 
         Yields:
@@ -91,17 +93,17 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         """
         try:
             self.tool_handler.set_conversation_context(conversation.conversation_id)
-            self.tool_handler.set_user_context(user_id)
+            self.tool_handler.set_user_context(actor_id)
 
             linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
             self.tool_handler.set_knowledge_base_context(linked_kb_ids)
 
-            self._ensure_memory_initialized(agent.agent_id, user_id)
+            self._ensure_memory_initialized(agent.agent_id, actor_id)
 
             # 2. Save user message (with attachments if any)
             user_msg = Message(
                 conversation_id=conversation.conversation_id,
-                created_by=user_email,
+                created_by=actor_email,
                 role="user",
                 content=user_message,
                 attachments=attachments or [],
@@ -121,7 +123,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             )
 
             provider_settings = self.provider_settings_repo.find_by_provider(
-                user_email, agent.agent_provider
+                owner_email, agent.agent_provider
             )
             if not provider_settings:
                 yield SSEEvent(
@@ -139,12 +141,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 content="Loading memory...",
             )
 
-            system_prompt = self._build_system_prompt(agent, user_id)
+            system_prompt = self._build_system_prompt(agent, actor_id)
 
             if linked_kb_ids:
                 system_prompt += "\n\n" + self._build_kb_instructions(len(linked_kb_ids))
 
-            capacity_warnings = self._check_capacity_warnings(agent.agent_id, user_id)
+            capacity_warnings = self._check_capacity_warnings(agent.agent_id, actor_id)
             if capacity_warnings:
                 warning_msg = self._build_warning_message(capacity_warnings)
                 system_prompt += "\n\n" + warning_msg
@@ -278,7 +280,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             if full_response.strip():
                 assistant_msg = Message(
                     conversation_id=conversation.conversation_id,
-                    created_by=user_email,
+                    created_by=actor_email,
                     role="assistant",
                     content=full_response,
                 )
