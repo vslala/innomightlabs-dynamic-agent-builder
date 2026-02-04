@@ -32,6 +32,8 @@ class MemoryBlockDefinition(BaseModel):
     block_name: str
     description: str
     word_limit: int = 5000
+    # Overflow handling policy for this block (strategy pattern): none|lru|fifo|compact
+    eviction_policy: str = "none"
     is_default: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -58,6 +60,7 @@ class MemoryBlockDefinition(BaseModel):
             "block_name": self.block_name,
             "description": self.description,
             "word_limit": self.word_limit,
+            "eviction_policy": self.eviction_policy,
             "is_default": self.is_default,
             "created_at": self.created_at.isoformat(),
         }
@@ -72,9 +75,17 @@ class MemoryBlockDefinition(BaseModel):
             block_name=item["block_name"],
             description=item["description"],
             word_limit=item.get("word_limit", 5000),
+            eviction_policy=item.get("eviction_policy", "none"),
             is_default=item.get("is_default", False),
             created_at=datetime.fromisoformat(item["created_at"]),
         )
+
+
+class CoreMemoryLineMeta(BaseModel):
+    """Per-line metadata for core memory to support eviction policies (LRU/FIFO)."""
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_accessed_at: Optional[datetime] = None
 
 
 class CoreMemory(BaseModel):
@@ -89,6 +100,8 @@ class CoreMemory(BaseModel):
     block_id: str = ""
     block_name: str
     lines: list[str] = Field(default_factory=list)
+    # Metadata aligned by index with `lines`
+    line_meta: list[CoreMemoryLineMeta] = Field(default_factory=list)
     word_count: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
@@ -110,6 +123,30 @@ class CoreMemory(BaseModel):
         """Calculate total word count across all lines."""
         return sum(len(line.split()) for line in self.lines)
 
+    def ensure_line_meta(self, now: Optional[datetime] = None) -> None:
+        """Ensure line_meta exists and is aligned with lines."""
+        if now is None:
+            now = datetime.now(timezone.utc)
+
+        if self.line_meta is None:
+            self.line_meta = []
+
+        # Extend meta for any missing entries
+        while len(self.line_meta) < len(self.lines):
+            self.line_meta.append(CoreMemoryLineMeta(created_at=now, last_accessed_at=None))
+
+        # Trim meta if lines were trimmed elsewhere
+        if len(self.line_meta) > len(self.lines):
+            self.line_meta = self.line_meta[: len(self.lines)]
+
+    def touch_all_lines(self, now: Optional[datetime] = None) -> None:
+        """Mark all lines as accessed (used by LRU policy)."""
+        if now is None:
+            now = datetime.now(timezone.utc)
+        self.ensure_line_meta(now=now)
+        for meta in self.line_meta:
+            meta.last_accessed_at = now
+
     def get_capacity_percent(self, word_limit: int) -> float:
         """Calculate capacity percentage based on word limit."""
         return (self.word_count / word_limit) * 100 if word_limit > 0 else 0
@@ -123,6 +160,7 @@ class CoreMemory(BaseModel):
             "block_id": self.block_id,
             "block_name": self.block_name,
             "lines": self.lines,
+            "line_meta": [m.model_dump() for m in self.line_meta] if self.line_meta else [],
             "word_count": self.word_count,
             "created_at": self.created_at.isoformat(),
         }
@@ -139,6 +177,7 @@ class CoreMemory(BaseModel):
             or build_block_id(item["agent_id"], item["user_id"], item["block_name"]),
             block_name=item["block_name"],
             lines=item.get("lines", []),
+            line_meta=[CoreMemoryLineMeta(**m) for m in (item.get("line_meta") or [])],
             word_count=item.get("word_count", 0),
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,

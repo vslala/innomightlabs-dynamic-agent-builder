@@ -15,6 +15,7 @@ from src.memory import (
     CoreMemory,
     MemoryBlockDefinition,
 )
+from src.memory.eviction import MemoryEvictionService
 from src.messages.repository import MessageRepository
 from src.vectorstore.search import get_search_service
 
@@ -66,6 +67,7 @@ class NativeToolHandler:
 
     def __init__(self, memory_repo: Optional[MemoryRepository] = None):
         self.memory_repo = memory_repo or MemoryRepository()
+        self.eviction_service = MemoryEvictionService()
         self.message_repo = MessageRepository()
         self._conversation_id: Optional[str] = None
         self._linked_kb_ids: list[str] = []
@@ -153,6 +155,11 @@ class NativeToolHandler:
         if not memory or not memory.lines:
             return f"[{block_name}] Core Memory is empty."
 
+        # For LRU policy, treat a read as access.
+        if getattr(block_def, "eviction_policy", "none") == "lru":
+            memory.touch_all_lines(now=datetime.now(timezone.utc))
+            self.memory_repo.save_core_memory(memory)
+
         capacity = self._format_capacity(memory, block_def)
         lines_str = "\n".join(
             f"{i+1}: {line}" for i, line in enumerate(memory.lines)
@@ -185,13 +192,29 @@ class NativeToolHandler:
             memory = CoreMemory(agent_id=agent_id, user_id=user_id, block_name=block_name)
 
         memory.lines.append(content)
+        memory.ensure_line_meta(now=datetime.now(timezone.utc))
+        # Mark appended line as recently accessed
+        if memory.line_meta:
+            memory.line_meta[-1].last_accessed_at = datetime.now(timezone.utc)
+
+        # Apply overflow policy (LRU/FIFO/etc)
+        eviction = self.eviction_service.apply_if_needed(
+            memory=memory,
+            block_def=block_def,
+            now=datetime.now(timezone.utc),
+        )
+
         memory.word_count = memory.compute_word_count()
         memory.updated_at = datetime.now(timezone.utc)
         self.memory_repo.save_core_memory(memory)
 
+        eviction_note = (
+            f" (evicted {eviction.evicted_count} older lines to fit limit)" if eviction.evicted_count else ""
+        )
+
         return (
             f'Appended to [{block_name}] at line {len(memory.lines)}: "{content}" '
-            f"({memory.word_count}/{block_def.word_limit} words)"
+            f"({memory.word_count}/{block_def.word_limit} words){eviction_note}"
         )
 
     async def _handle_core_memory_replace(self, args: dict, agent_id: str, user_id: str) -> str:
@@ -218,14 +241,29 @@ class NativeToolHandler:
             )
 
         memory.lines[line_num - 1] = new_content
+        memory.ensure_line_meta(now=datetime.now(timezone.utc))
+        if memory.line_meta and 0 <= (line_num - 1) < len(memory.line_meta):
+            memory.line_meta[line_num - 1].last_accessed_at = datetime.now(timezone.utc)
+
+        eviction = self.eviction_service.apply_if_needed(
+            memory=memory,
+            block_def=block_def,
+            now=datetime.now(timezone.utc),
+        )
+
         memory.word_count = memory.compute_word_count()
         memory.updated_at = datetime.now(timezone.utc)
         self.memory_repo.save_core_memory(memory)
+
+        eviction_note = (
+            f"\nEvicted {eviction.evicted_count} older lines to fit limit." if eviction.evicted_count else ""
+        )
 
         return (
             f"Replaced line {line_num} in [{block_name}]:\n"
             f'  Old: "{old_content}"\n'
             f'  New: "{new_content}"'
+            f"{eviction_note}"
         )
 
     async def _handle_core_memory_delete(self, args: dict, agent_id: str, user_id: str) -> str:
@@ -242,6 +280,10 @@ class NativeToolHandler:
             return f"Line {line_num} does not exist in [{block_name}] (no change)"
 
         deleted = memory.lines.pop(line_num - 1)
+        memory.ensure_line_meta(now=datetime.now(timezone.utc))
+        if memory.line_meta and (line_num - 1) < len(memory.line_meta):
+            memory.line_meta.pop(line_num - 1)
+
         memory.word_count = memory.compute_word_count()
         memory.updated_at = datetime.now(timezone.utc)
         self.memory_repo.save_core_memory(memory)

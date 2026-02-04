@@ -33,6 +33,11 @@ class CreateMemoryBlockRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(..., min_length=1, max_length=200)
     word_limit: int = Field(default=5000, ge=100, le=50000)
+    eviction_policy: str = Field(
+        default="none",
+        description="Overflow policy: none|lru|fifo (future: compact)",
+        pattern=r"^(none|lru|fifo)$",
+    )
 
 
 class MemoryBlockResponse(BaseModel):
@@ -40,6 +45,7 @@ class MemoryBlockResponse(BaseModel):
     block_name: str
     description: str
     word_limit: int
+    eviction_policy: str
     is_default: bool
     word_count: int
     capacity_percent: float
@@ -115,6 +121,7 @@ async def list_memory_blocks(
                 block_name=block_def.block_name,
                 description=block_def.description,
                 word_limit=block_def.word_limit,
+                eviction_policy=getattr(block_def, "eviction_policy", "none"),
                 is_default=block_def.is_default,
                 word_count=word_count,
                 capacity_percent=capacity_percent,
@@ -172,6 +179,7 @@ async def create_memory_block(
         block_name=body.name,
         description=body.description,
         word_limit=body.word_limit,
+        eviction_policy=body.eviction_policy,
         is_default=False,
     )
     memory_repo.save_block_definition(block_def)
@@ -182,6 +190,7 @@ async def create_memory_block(
         block_name=block_def.block_name,
         description=block_def.description,
         word_limit=block_def.word_limit,
+        eviction_policy=getattr(block_def, "eviction_policy", "none"),
         is_default=block_def.is_default,
         word_count=0,
         capacity_percent=0,

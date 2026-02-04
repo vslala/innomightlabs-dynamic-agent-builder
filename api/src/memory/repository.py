@@ -146,6 +146,7 @@ class MemoryRepository:
     def save_core_memory(self, memory: CoreMemory) -> CoreMemory:
         """Save core memory content."""
         # Ensure word count is current
+        memory.ensure_line_meta(now=datetime.now(timezone.utc))
         memory.word_count = memory.compute_word_count()
         memory.updated_at = datetime.now(timezone.utc)
         self.table.put_item(Item=memory.to_dynamo_item())
