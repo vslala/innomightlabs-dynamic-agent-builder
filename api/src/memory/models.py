@@ -11,12 +11,20 @@ import hashlib
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
 
 def build_block_id(agent_id: str, user_id: str, block_name: str) -> str:
     return f"{agent_id}:{user_id}:{block_name}"
+
+
+class EvictionPolicy(str, Enum):
+    NONE = "none"
+    LRU = "lru"
+    FIFO = "fifo"
+    # Future: COMPACT = "compact"
 
 
 class MemoryBlockDefinition(BaseModel):
@@ -32,8 +40,8 @@ class MemoryBlockDefinition(BaseModel):
     block_name: str
     description: str
     word_limit: int = 5000
-    # Overflow handling policy for this block (strategy pattern): none|lru|fifo|compact
-    eviction_policy: str = "none"
+    # Overflow handling policy for this block (strategy pattern)
+    eviction_policy: EvictionPolicy = EvictionPolicy.NONE
     is_default: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -60,7 +68,7 @@ class MemoryBlockDefinition(BaseModel):
             "block_name": self.block_name,
             "description": self.description,
             "word_limit": self.word_limit,
-            "eviction_policy": self.eviction_policy,
+            "eviction_policy": self.eviction_policy.value,
             "is_default": self.is_default,
             "created_at": self.created_at.isoformat(),
         }
@@ -75,7 +83,7 @@ class MemoryBlockDefinition(BaseModel):
             block_name=item["block_name"],
             description=item["description"],
             word_limit=item.get("word_limit", 5000),
-            eviction_policy=item.get("eviction_policy", "none"),
+            eviction_policy=EvictionPolicy(item.get("eviction_policy", "none")),
             is_default=item.get("is_default", False),
             created_at=datetime.fromisoformat(item["created_at"]),
         )

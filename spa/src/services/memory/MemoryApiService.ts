@@ -3,12 +3,14 @@
  */
 
 import { httpClient } from "../http/client";
+import type { FormSchema } from "../../types/form";
 
 // Memory block metadata response
 export interface MemoryBlockResponse {
   block_name: string;
   description: string;
   word_limit: number;
+  eviction_policy: string;
   is_default: boolean;
   word_count: number;
   capacity_percent: number;
@@ -30,6 +32,7 @@ export interface CreateMemoryBlockRequest {
   name: string;
   description: string;
   word_limit?: number;
+  eviction_policy?: string;
 }
 
 // Request to update memory block content
@@ -38,6 +41,13 @@ export interface UpdateMemoryBlockContentRequest {
 }
 
 class MemoryApiService {
+  /**
+   * Get schema for create memory block form
+   */
+  async getCreateSchema(agentId: string): Promise<FormSchema> {
+    return httpClient.get<FormSchema>(`/agents/${agentId}/memory-blocks/create-schema`);
+  }
+
   /**
    * List all memory blocks for an agent
    */

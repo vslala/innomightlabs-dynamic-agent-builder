@@ -13,8 +13,10 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
 from src.agents.repository import AgentRepository
-from .models import MemoryBlockDefinition
+from src import form_models
+from .models import MemoryBlockDefinition, EvictionPolicy
 from .repository import MemoryRepository
+from .schemas import get_create_memory_block_form
 
 log = logging.getLogger(__name__)
 
@@ -33,10 +35,9 @@ class CreateMemoryBlockRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(..., min_length=1, max_length=200)
     word_limit: int = Field(default=5000, ge=100, le=50000)
-    eviction_policy: str = Field(
-        default="none",
-        description="Overflow policy: none|lru|fifo (future: compact)",
-        pattern=r"^(none|lru|fifo)$",
+    eviction_policy: EvictionPolicy = Field(
+        default=EvictionPolicy.NONE,
+        description="Overflow policy",
     )
 
 
@@ -73,6 +74,12 @@ def get_memory_repository() -> MemoryRepository:
 
 def get_agent_repository() -> AgentRepository:
     return AgentRepository()
+
+
+@router.get("/create-schema", response_model=form_models.Form, response_model_exclude_none=True)
+async def get_create_memory_block_schema(agent_id: str) -> form_models.Form:
+    """Get the form schema for creating a memory block."""
+    return get_create_memory_block_form(agent_id)
 
 
 @router.get("", response_model=list[MemoryBlockResponse])
@@ -121,7 +128,7 @@ async def list_memory_blocks(
                 block_name=block_def.block_name,
                 description=block_def.description,
                 word_limit=block_def.word_limit,
-                eviction_policy=getattr(block_def, "eviction_policy", "none"),
+                eviction_policy=getattr(block_def, "eviction_policy", EvictionPolicy.NONE).value if getattr(block_def, "eviction_policy", None) else EvictionPolicy.NONE.value,
                 is_default=block_def.is_default,
                 word_count=word_count,
                 capacity_percent=capacity_percent,
@@ -190,7 +197,7 @@ async def create_memory_block(
         block_name=block_def.block_name,
         description=block_def.description,
         word_limit=block_def.word_limit,
-        eviction_policy=getattr(block_def, "eviction_policy", "none"),
+        eviction_policy=getattr(block_def, "eviction_policy", EvictionPolicy.NONE).value if getattr(block_def, "eviction_policy", None) else EvictionPolicy.NONE.value,
         is_default=block_def.is_default,
         word_count=0,
         capacity_percent=0,

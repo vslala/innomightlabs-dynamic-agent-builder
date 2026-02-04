@@ -57,9 +57,7 @@ export function AgentDetail() {
 
   // Create block dialog
   const [isCreateBlockDialogOpen, setIsCreateBlockDialogOpen] = useState(false);
-  const [newBlockName, setNewBlockName] = useState("");
-  const [newBlockDescription, setNewBlockDescription] = useState("");
-  const [newBlockWordLimit, setNewBlockWordLimit] = useState(5000);
+  const [createBlockSchema, setCreateBlockSchema] = useState<FormSchema | null>(null);
   const [isCreatingBlock, setIsCreatingBlock] = useState(false);
   const [createBlockError, setCreateBlockError] = useState<string | null>(null);
 
@@ -139,6 +137,21 @@ export function AgentDetail() {
     }
   };
 
+  useEffect(() => {
+    const loadCreateSchema = async () => {
+      if (!agentId || !isCreateBlockDialogOpen) return;
+      try {
+        const schema = await memoryApiService.getCreateSchema(agentId);
+        setCreateBlockSchema(schema);
+      } catch (err) {
+        console.error("Error loading create memory block schema:", err);
+        setCreateBlockError("Failed to load form schema");
+      }
+    };
+
+    loadCreateSchema();
+  }, [agentId, isCreateBlockDialogOpen]);
+
   const toggleBlockExpansion = async (blockName: string) => {
     const newExpanded = new Set(expandedBlocks);
     if (expandedBlocks.has(blockName)) {
@@ -158,20 +171,23 @@ export function AgentDetail() {
     setExpandedBlocks(newExpanded);
   };
 
-  const handleCreateBlock = async () => {
-    if (!agentId || !newBlockName.trim() || !newBlockDescription.trim()) return;
+  const handleCreateBlockFromSchema = async (payload: {
+    name: string;
+    description: string;
+    word_limit: number;
+    eviction_policy: string;
+  }) => {
+    if (!agentId || !payload.name.trim() || !payload.description.trim()) return;
     setIsCreatingBlock(true);
     setCreateBlockError(null);
     try {
       await memoryApiService.createMemoryBlock(agentId, {
-        name: newBlockName.trim().toLowerCase().replace(/\s+/g, "_"),
-        description: newBlockDescription.trim(),
-        word_limit: newBlockWordLimit,
+        name: payload.name.trim(),
+        description: payload.description.trim(),
+        word_limit: payload.word_limit,
+        eviction_policy: payload.eviction_policy,
       });
       setIsCreateBlockDialogOpen(false);
-      setNewBlockName("");
-      setNewBlockDescription("");
-      setNewBlockWordLimit(5000);
       loadMemoryBlocks();
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to create memory block";
@@ -1052,63 +1068,43 @@ export function AgentDetail() {
               Create a new custom memory block for this agent. The agent can store and recall information in this block.
             </DialogDescription>
           </DialogHeader>
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            {createBlockError && (
-              <div style={{
-                padding: "0.75rem",
-                borderRadius: "0.5rem",
-                backgroundColor: "rgba(239, 68, 68, 0.1)",
-                border: "1px solid rgba(239, 68, 68, 0.2)",
-                color: "#f87171",
-                fontSize: "0.875rem",
-              }}>
-                {createBlockError}
-              </div>
-            )}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <Label htmlFor="block-name">Block Name *</Label>
-              <Input
-                id="block-name"
-                placeholder="e.g., projects, goals, preferences"
-                value={newBlockName}
-                onChange={(e) => setNewBlockName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
-              />
-              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                Lowercase letters, numbers, and underscores only
-              </p>
+
+          {createBlockError && (
+            <div style={{
+              padding: "0.75rem",
+              borderRadius: "0.5rem",
+              backgroundColor: "rgba(239, 68, 68, 0.1)",
+              border: "1px solid rgba(239, 68, 68, 0.2)",
+              color: "#f87171",
+              fontSize: "0.875rem",
+            }}>
+              {createBlockError}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <Label htmlFor="block-description">Description *</Label>
-              <Input
-                id="block-description"
-                placeholder="What information will be stored in this block?"
-                value={newBlockDescription}
-                onChange={(e) => setNewBlockDescription(e.target.value)}
-              />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <Label htmlFor="block-limit">Word Limit</Label>
-              <Input
-                id="block-limit"
-                type="number"
-                min={100}
-                max={50000}
-                value={newBlockWordLimit}
-                onChange={(e) => setNewBlockWordLimit(parseInt(e.target.value) || 5000)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateBlockDialogOpen(false)} disabled={isCreatingBlock}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateBlock}
-              disabled={!newBlockName.trim() || !newBlockDescription.trim() || isCreatingBlock}
-            >
-              {isCreatingBlock ? "Creating..." : "Create Block"}
-            </Button>
-          </DialogFooter>
+          )}
+
+          {createBlockSchema ? (
+            <SchemaForm
+              schema={createBlockSchema}
+              onCancel={() => setIsCreateBlockDialogOpen(false)}
+              onSubmit={async (data) => {
+                const name = String(data.name || "").toLowerCase().replace(/[^a-z0-9_]/g, "");
+                const description = String(data.description || "");
+                const wordLimit = parseInt(String(data.word_limit || "5000"), 10) || 5000;
+                const evictionPolicy = String(data.eviction_policy || "none");
+
+                await handleCreateBlockFromSchema({
+                  name,
+                  description,
+                  word_limit: wordLimit,
+                  eviction_policy: evictionPolicy,
+                });
+              }}
+              submitLabel={isCreatingBlock ? "Creating..." : "Create Block"}
+              isLoading={isCreatingBlock}
+            />
+          ) : (
+            <p style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>Loading form…</p>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from .models import CoreMemory, MemoryBlockDefinition
+from .models import CoreMemory, MemoryBlockDefinition, EvictionPolicy
 
 log = logging.getLogger(__name__)
 
@@ -117,7 +117,7 @@ class MemoryEvictionService:
         # Ensure metadata exists
         memory.ensure_line_meta(now=now)
 
-        policy = (block_def.eviction_policy or "none").lower()
+        policy = block_def.eviction_policy.value if isinstance(block_def.eviction_policy, EvictionPolicy) else str(block_def.eviction_policy)
         strat = get_eviction_strategy(policy)
 
         # Ensure word_count is fresh before applying policy
