@@ -168,7 +168,7 @@ class CoreMemory(BaseModel):
             "block_id": self.block_id,
             "block_name": self.block_name,
             "lines": self.lines,
-            "line_meta": [m.model_dump() for m in self.line_meta] if self.line_meta else [],
+            "line_meta": [m.model_dump(mode="json") for m in self.line_meta] if self.line_meta else [],
             "word_count": self.word_count,
             "created_at": self.created_at.isoformat(),
         }
