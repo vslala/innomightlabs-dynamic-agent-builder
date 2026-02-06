@@ -1,5 +1,11 @@
 # =============================================================================
-# Skills Storage - S3 bucket for tenant-uploaded skill packages (zip) and assets
+# S3 Buckets
+#
+# Keep ALL S3 buckets in this file.
+# =============================================================================
+
+# =============================================================================
+# Skills Storage - tenant-uploaded skill packages (zip) and assets
 # =============================================================================
 
 # NOTE: S3 bucket names are globally unique. The default below is "innomightlabs"
