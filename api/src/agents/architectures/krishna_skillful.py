@@ -39,6 +39,9 @@ from src.tools.native.handlers import NativeToolHandler
 
 from src.runtime_events.models import RuntimeEvent, RuntimeEventType
 from src.runtime_events.repository import RuntimeEventRepository
+from src.memory.repository import MemoryRepository
+from src.memory.models import MemoryBlockDefinition, EvictionPolicy, CoreMemory
+from src.memory.eviction import MemoryEvictionService
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +75,8 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
         self.provider_settings_repo = get_provider_settings_repository()
         self.tool_handler = NativeToolHandler()
         self.events_repo = RuntimeEventRepository()
+        self.memory_repo = MemoryRepository()
+        self.memory_eviction = MemoryEvictionService()
 
     @property
     def name(self) -> str:
@@ -92,6 +97,10 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
         # Initialize tool handler context (memory scoped per actor_id)
         self.tool_handler.set_conversation_context(conversation.conversation_id)
         self.tool_handler.set_user_context(actor_id)
+
+        # Ensure default memory blocks exist + initialize loaded skills block
+        self._ensure_memory_initialized(agent_id=agent.agent_id, actor_id=actor_id)
+        self._ensure_loaded_skills_block(agent_id=agent.agent_id, actor_id=actor_id)
 
         # Persist turn started
         self._append_event(
@@ -334,6 +343,7 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
                 if not skill_id:
                     return "Error: missing skill_id", False
 
+                # Persist durable event
                 self._append_event(
                     agent_id=agent_id,
                     conversation_id=conversation_id,
@@ -342,9 +352,17 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
                     event_type=RuntimeEventType.SKILL_LOADED,
                     payload={"skill_id": skill_id},
                 )
+
+                # Update [loaded_skills] core memory with a compact record (LRU block)
+                self._upsert_loaded_skill_record(
+                    agent_id=agent_id,
+                    actor_id=actor_id,
+                    skill_id=skill_id,
+                )
+
                 return (
-                    f"Loaded skill '{skill_id}' (Phase 1 stub). "
-                    "In next phase, this will activate the skill tools for use.",
+                    f"Loaded skill '{skill_id}'. Added to [loaded_skills] memory. "
+                    "You may now use the skill's tools (activation comes next phase).",
                     True,
                 )
 
@@ -355,6 +373,63 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
         except Exception as e:
             log.error(f"Tool execution error ({tool_name}): {e}", exc_info=True)
             return f"Error: {str(e)}", False
+
+    def _upsert_loaded_skill_record(self, agent_id: str, actor_id: str, skill_id: str) -> None:
+        """Upsert a compact loaded skill record into core memory block [loaded_skills].
+
+        Stored as a single JSON line per skill_id for deterministic parsing.
+        Applies the block's eviction policy after update.
+        """
+        now = datetime.now(timezone.utc)
+
+        block_def = self.memory_repo.get_block_definition(agent_id, actor_id, "loaded_skills")
+        if not block_def:
+            # Should exist via init, but keep it safe
+            self._ensure_loaded_skills_block(agent_id, actor_id)
+            block_def = self.memory_repo.get_block_definition(agent_id, actor_id, "loaded_skills")
+
+        memory = self.memory_repo.get_core_memory(agent_id, actor_id, "loaded_skills")
+        if not memory:
+            memory = CoreMemory(agent_id=agent_id, user_id=actor_id, block_name="loaded_skills")
+
+        memory.ensure_line_meta(now=now)
+
+        # Parse existing lines and replace if skill_id exists
+        new_line_obj = {
+            "skill_id": skill_id,
+            "version": "0.0.0",
+            "tools": [],
+            "allowed_hosts": [],
+            "manifest_key": None,
+            "skill_md_key": None,
+            "last_used_at": now.isoformat(),
+        }
+        new_line = json.dumps(new_line_obj, ensure_ascii=False)
+
+        replaced = False
+        for i, line in enumerate(list(memory.lines)):
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(obj, dict) and obj.get("skill_id") == skill_id:
+                memory.lines[i] = new_line
+                if i < len(memory.line_meta):
+                    memory.line_meta[i].last_accessed_at = now
+                replaced = True
+                break
+
+        if not replaced:
+            memory.lines.append(new_line)
+            memory.ensure_line_meta(now=now)
+            if memory.line_meta:
+                memory.line_meta[-1].last_accessed_at = now
+
+        # Apply eviction strategy (LRU) if needed
+        assert block_def is not None
+        self.memory_eviction.apply_if_needed(memory=memory, block_def=block_def, now=now)
+
+        self.memory_repo.save_core_memory(memory)
 
     def _append_event(
         self,
@@ -405,6 +480,36 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
         lines.append("</runtime_events>")
         return "\n".join(lines)
 
+    def _ensure_memory_initialized(self, agent_id: str, actor_id: str) -> None:
+        """Ensure default memory blocks exist for this agent+actor."""
+        block_defs = self.memory_repo.get_block_definitions(agent_id, actor_id)
+        if not block_defs:
+            self.memory_repo.initialize_default_blocks(agent_id, actor_id)
+
+    def _ensure_loaded_skills_block(self, agent_id: str, actor_id: str) -> None:
+        """Ensure the per-actor loaded_skills core memory block exists.
+
+        This block is LRU-evicted so the agent can load skills without bloating context.
+        """
+        existing = self.memory_repo.get_block_definition(agent_id, actor_id, "loaded_skills")
+        if not existing:
+            block_def = MemoryBlockDefinition(
+                agent_id=agent_id,
+                user_id=actor_id,
+                block_name="loaded_skills",
+                description="Skills loaded for this conversation/user (LRU)",
+                word_limit=2500,
+                eviction_policy=EvictionPolicy.LRU,
+                is_default=True,
+            )
+            self.memory_repo.save_block_definition(block_def)
+
+        core = self.memory_repo.get_core_memory(agent_id, actor_id, "loaded_skills")
+        if not core:
+            self.memory_repo.save_core_memory(
+                CoreMemory(agent_id=agent_id, user_id=actor_id, block_name="loaded_skills")
+            )
+
     def _build_system_prompt(self, agent: "Agent") -> str:
         return (
             "<identity>\n"
@@ -415,6 +520,7 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
             "<skills_usage>\n"
             "- Use skills_list to see available skills (id + description).\n"
             "- Use skills_load(skill_id) to load a skill before using its tools.\n"
+            "- Loaded skills are tracked in your [loaded_skills] memory block.\n"
             "- Prefer memory tools to store stable facts.\n"
             "</skills_usage>"
         )
