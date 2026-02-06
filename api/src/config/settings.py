@@ -88,6 +88,9 @@ class Settings:
     # GitHub (optional; for issue creation from contact form)
     github_token: str = ""
 
+    # Skills (optional; required only when using skill upload/registry)
+    skills_bucket_name: str = ""
+
     def validate_core(self) -> None:
         """
         Validate core configuration required for the app to start.
@@ -243,6 +246,8 @@ class Settings:
             mailjet_secret_key=os.getenv("MAILJET_SECRET_KEY", ""),
             # GitHub
             github_token=os.getenv("GITHUB_TOKEN", ""),
+            # Skills
+            skills_bucket_name=os.getenv("SKILLS_BUCKET_NAME", ""),
         )
 
 

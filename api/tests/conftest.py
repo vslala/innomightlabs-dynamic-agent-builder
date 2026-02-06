@@ -11,6 +11,7 @@ os.environ["AWS_REGION_NAME"] = "us-east-1"
 os.environ["AWS_ACCESS_KEY_ID"] = "testing"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
 os.environ["JWT_SECRET"] = "test-secret"
+os.environ["SKILLS_BUCKET_NAME"] = "innomightlabs-test-skills"
 os.environ.pop("DYNAMODB_ENDPOINT", None)
 
 import pytest
@@ -41,6 +42,15 @@ def dynamodb_table(mock_aws_context):
     # Wait for table to be active
     table.meta.client.get_waiter('table_exists').wait(TableName=DYNAMODB_TABLE_NAME)
     return table
+
+
+@pytest.fixture
+def skills_s3_bucket(mock_aws_context):
+    """Create mocked skills S3 bucket."""
+    s3 = boto3.client("s3", region_name="us-east-1")
+    bucket = os.environ["SKILLS_BUCKET_NAME"]
+    s3.create_bucket(Bucket=bucket)
+    return bucket
 
 
 @pytest.fixture

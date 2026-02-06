@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Bot, MessageSquare, Settings, LogOut, Home, Database } from "lucide-react";
+import { Bot, MessageSquare, Settings, LogOut, Home, Database, Package } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { authService } from "../../services/auth";
@@ -9,6 +9,7 @@ const navItems = [
   { to: "/dashboard/agents", icon: Bot, label: "Agents" },
   { to: "/dashboard/conversations", icon: MessageSquare, label: "Conversations" },
   { to: "/dashboard/knowledge-bases", icon: Database, label: "Knowledge Bases" },
+  { to: "/dashboard/skills", icon: Package, label: "Skills" },
   { to: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
 

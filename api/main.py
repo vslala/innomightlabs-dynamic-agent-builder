@@ -20,6 +20,7 @@ from src.users import users_router
 from src.widget import widget_router, WidgetAuthMiddleware
 from src.contact.router import router as contact_router
 from src.runtime_events import runtime_events_router
+from src.skills import skills_router
 from src.exceptions import register_exception_handlers
 from src.logging_config import configure_cloudwatch_logging
 
@@ -120,6 +121,7 @@ app.include_router(router=knowledge_router)
 app.include_router(router=agent_kb_router)
 app.include_router(router=widget_router)
 app.include_router(router=runtime_events_router)
+app.include_router(router=skills_router)
 app.include_router(router=stripe_payments_router)
 app.include_router(router=users_router)
 app.include_router(router=contact_router)

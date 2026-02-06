@@ -21,6 +21,7 @@ locals {
     LOG_LEVEL                    = "INFO"
     SES_FROM_EMAIL     = var.ses_from_email
     SES_REPLY_TO_EMAIL = var.ses_reply_to_email
+    SKILLS_BUCKET_NAME = var.skills_bucket_name
   }
 
   usage_env_vars = {

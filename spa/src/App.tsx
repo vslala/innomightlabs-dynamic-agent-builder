@@ -23,6 +23,7 @@ import { Conversations } from './pages/dashboard/Conversations';
 import { ConversationDetail } from './pages/dashboard/ConversationDetail';
 import { KnowledgeBases } from './pages/dashboard/KnowledgeBases';
 import { KnowledgeBaseDetail } from './pages/dashboard/KnowledgeBaseDetail';
+import { Skills } from './pages/dashboard/Skills';
 import { Settings } from './pages/dashboard/Settings';
 
 const basename = import.meta.env.BASE_URL;
@@ -83,6 +84,7 @@ function App() {
           <Route path="conversations/:conversationId" element={<ConversationDetail />} />
           <Route path="knowledge-bases" element={<KnowledgeBases />} />
           <Route path="knowledge-bases/:kbId" element={<KnowledgeBaseDetail />} />
+          <Route path="skills" element={<Skills />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
