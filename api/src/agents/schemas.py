@@ -22,6 +22,12 @@ SESSION_TIMEOUT_OPTIONS = [
     SelectOption(value="0", label="No timeout (load all)"),
 ]
 
+ARCHITECTURE_OPTIONS = [
+    "krishna-mini",
+    "krishna-memgpt",
+    "krishna-skillful",
+]
+
 
 def get_create_agent_form(model_providers: list[str], model_options: list[dict] | None = None) -> Form:
     """
@@ -51,7 +57,7 @@ def get_create_agent_form(model_providers: list[str], model_options: list[dict] 
             FormInput(
                 label="Architecture",
                 name="agent_architecture",
-                values=["krishna-mini", "krishna-memgpt"],
+                values=ARCHITECTURE_OPTIONS,
                 input_type=FormInputType.SELECT,
             ),
             FormInput(
@@ -112,7 +118,7 @@ def get_update_agent_form(
             FormInput(
                 label="Architecture",
                 name="agent_architecture",
-                values=["krishna-mini", "krishna-memgpt"],
+                values=ARCHITECTURE_OPTIONS,
                 input_type=FormInputType.SELECT,
             ),
             FormInput(
@@ -150,7 +156,7 @@ UPDATE_AGENT_FORM = Form(
         FormInput(
             label="Architecture",
             name="agent_architecture",
-            values=["krishna-mini", "krishna-memgpt"],
+            values=ARCHITECTURE_OPTIONS,
             input_type=FormInputType.SELECT,
         ),
         FormInput(
