@@ -219,6 +219,27 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
                         tool_args=tool_args,
                     )
 
+                    # IMPORTANT (Bedrock Converse protocol):
+                    # When the model emits a toolUse block, the next turn must include:
+                    # 1) an assistant message containing the toolUse block(s)
+                    # 2) a user message containing the matching toolResult block(s)
+                    # If we omit (1), Bedrock raises:
+                    # "toolResult blocks ... exceeds ... toolUse blocks of previous turn".
+                    context.append(
+                        {
+                            "role": "assistant",
+                            "content": [
+                                {
+                                    "toolUse": {
+                                        "toolUseId": ev.tool_use_id,
+                                        "name": tool_name,
+                                        "input": tool_args,
+                                    }
+                                }
+                            ],
+                        }
+                    )
+
                     # Execute tool
                     result, success = await self._execute_tool(
                         tool_name=tool_name,
