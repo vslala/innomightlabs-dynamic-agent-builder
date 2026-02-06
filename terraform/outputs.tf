@@ -39,6 +39,11 @@ output "widget_s3_bucket" {
   value       = aws_s3_bucket.widget.id
 }
 
+output "skills_s3_bucket" {
+  description = "S3 bucket name for skills storage"
+  value       = aws_s3_bucket.skills.id
+}
+
 output "widget_embed_url" {
   description = "URL to embed the widget script"
   value       = var.widget_cdn_domain != "" ? "https://${var.widget_cdn_domain}/widget.js" : "https://${aws_cloudfront_distribution.widget.domain_name}/widget.js"

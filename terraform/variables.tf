@@ -152,3 +152,10 @@ variable "mailjet_secret_key" {
   sensitive   = true
   default     = ""
 }
+
+# Skills bucket
+variable "skills_bucket_name" {
+  description = "S3 bucket name for skill packages (zip) and related assets"
+  type        = string
+  default     = "innomightlabs"
+}
