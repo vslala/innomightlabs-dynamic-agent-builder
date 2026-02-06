@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
-import { Upload, ToggleLeft, ToggleRight } from "lucide-react";
+import { ToggleLeft, ToggleRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
+import { SchemaForm } from "../../components/forms";
 import { skillsApiService, type SkillDefinitionResponse } from "../../services/skills";
+import type { FormSchema, FormValue } from "../../types/form";
 
 export function Skills() {
   const [skills, setSkills] = useState<SkillDefinitionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadSchema, setUploadSchema] = useState<FormSchema | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -30,6 +33,15 @@ export function Skills() {
 
   useEffect(() => {
     load();
+    const loadSchema = async () => {
+      try {
+        const schema = await skillsApiService.getUploadSchema();
+        setUploadSchema(schema);
+      } catch (e) {
+        console.error("Failed to load skills upload schema", e);
+      }
+    };
+    void loadSchema();
   }, []);
 
   const handleUpload = async (file: File) => {
@@ -67,25 +79,39 @@ export function Skills() {
             Upload skill zips and activate/deactivate which skills are visible to the LLM.
           </p>
         </div>
-
-        <label style={{ display: "inline-flex" }}>
-          <input
-            type="file"
-            accept=".zip"
-            style={{ display: "none" }}
-            disabled={uploading}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleUpload(f);
-              e.currentTarget.value = "";
-            }}
-          />
-          <Button disabled={uploading}>
-            <Upload style={{ height: 16, width: 16, marginRight: 8 }} />
-            {uploading ? "Uploading..." : "Upload Skill (.zip)"}
-          </Button>
-        </label>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Upload Skill</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {uploadSchema ? (
+            <SchemaForm
+              schema={uploadSchema}
+              submitLabel={uploading ? "Uploading..." : "Upload"}
+              isLoading={uploading}
+              onSubmit={async (data: Record<string, FormValue>) => {
+                const fileValue = data.file;
+                const file = Array.isArray(fileValue)
+                  ? fileValue[0]
+                  : fileValue instanceof FileList
+                    ? fileValue.item(0)
+                    : null;
+
+                if (!file) {
+                  setError("Please select a .zip file");
+                  return;
+                }
+
+                await handleUpload(file);
+              }}
+            />
+          ) : (
+            <p style={{ color: "var(--text-muted)" }}>Loading upload form…</p>
+          )}
+        </CardContent>
+      </Card>
 
       {error && (
         <div style={{

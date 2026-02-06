@@ -16,6 +16,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.security import HTTPBearer
 
+from src import form_models
 from src.skills.models import SkillDefinition, SkillDefinitionResponse, SkillStatus
 from src.skills.repository import SkillsRepository
 from src.skills.s3_store import SkillsS3Store
@@ -25,6 +26,14 @@ log = logging.getLogger(__name__)
 security = HTTPBearer()
 
 router = APIRouter(prefix="/skills", tags=["skills"], dependencies=[Depends(security)])
+
+
+@router.get("/forms/upload", response_model=form_models.Form, response_model_exclude_none=True)
+async def get_upload_skill_form_schema() -> form_models.Form:
+    """Get schema form for skill upload."""
+    from src.skills.schemas import get_skill_upload_form
+
+    return get_skill_upload_form()
 
 
 def get_skills_repo() -> SkillsRepository:

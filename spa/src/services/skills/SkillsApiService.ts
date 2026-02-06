@@ -17,12 +17,14 @@ class SkillsApiService {
     return httpClient.get<SkillDefinitionResponse[]>("/skills");
   }
 
+  async getUploadSchema(): Promise<import("../../types/form").FormSchema> {
+    return httpClient.get<import("../../types/form").FormSchema>("/skills/forms/upload");
+  }
+
   async uploadSkillZip(file: File): Promise<SkillDefinitionResponse> {
     const form = new FormData();
     form.append("file", file);
-    return httpClient.post<SkillDefinitionResponse>("/skills/upload", form, {
-      headers: { "Content-Type": "multipart/form-data" },
-    } as any);
+    return httpClient.postForm<SkillDefinitionResponse>("/skills/upload", form);
   }
 
   async activateSkill(skillId: string, version: string): Promise<SkillDefinitionResponse> {
