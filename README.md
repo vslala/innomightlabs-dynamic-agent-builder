@@ -117,6 +117,75 @@ source scripts/deploy_local.sh
 ```
 This exports `LOCAL_*` values into the active shell session.
 
+## Skills (Manifest Tools)
+
+This repo supports **tenant-defined skills** where each skill provides a `manifest.json` describing tool schemas and how to execute them via the **generic HTTP executor**.
+
+### Creating a skill via Manifest JSON
+In the dashboard go to **Skills → Create Skill (Manifest JSON)**.
+
+- Paste `manifest.json`
+- Add **Secret variables** (optional) as key/value pairs
+  - Reference them in the manifest using placeholders like `{{secret:wp_token}}`
+  - Secrets are encrypted before storing in DynamoDB and are linked to the **skill_id** (version-agnostic)
+
+Example `manifest.json` (HTTP tool):
+
+```json
+{
+  "skill_id": "wordpress",
+  "name": "WordPress",
+  "version": "1.0.0",
+  "description": "Search posts",
+  "allowed_hosts": ["www.bemyaficionado.com"],
+  "tools": [
+    {
+      "name": "wp_search_posts",
+      "description": "Search posts",
+      "parameters": {
+        "type": "object",
+        "properties": { "query": { "type": "string" } },
+        "required": ["query"]
+      },
+      "executor": "http",
+      "http": {
+        "method": "GET",
+        "url": "https://www.bemyaficionado.com/wp-json/wp/v2/posts",
+        "query": { "search": "{{query}}" },
+        "headers": { "Authorization": "Bearer {{secret:wp_token}}" }
+      }
+    }
+  ]
+}
+```
+
+### Running skills locally (filesystem store)
+To avoid S3 in local development, you can store skill artifacts on disk:
+
+```bash
+export ENVIRONMENT=dev
+export SKILLS_STORE_BACKEND=local
+export SKILLS_LOCAL_ROOT=./.skills
+```
+
+### Running skills with S3 store
+In environments where S3 is used:
+
+```bash
+export SKILLS_STORE_BACKEND=s3
+export SKILLS_BUCKET_NAME=your-bucket-name
+```
+
+### HTTP executor dev vs prod
+By default, the HTTP executor blocks localhost/private targets for safety.
+
+- In `ENVIRONMENT=dev`, localhost/private calls are allowed to make testing easy.
+- You can also force it with:
+
+```bash
+export HTTP_EXECUTOR_ALLOW_LOCAL=true
+```
+
 ## Notes
 - **Secrets live in `.envrc`**: keep them private and avoid committing real values.
 - The backend expects some variables like `AWS_REGION_NAME` (see `api/src/config/settings.py`).

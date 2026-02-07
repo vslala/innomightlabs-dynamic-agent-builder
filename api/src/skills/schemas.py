@@ -35,6 +35,14 @@ def get_skill_manifest_form() -> Form:
                 },
             ),
             FormInput(
+                input_type=FormInputType.DYNAMIC_METADATA_SECRET,
+                name="secrets",
+                label="Secret variables",
+                attr={
+                    "placeholder": "Add secrets referenced by {{secret:NAME}} in manifest",
+                },
+            ),
+            FormInput(
                 input_type=FormInputType.TEXT_AREA,
                 name="skill_md",
                 label="SKILL.md (optional)",

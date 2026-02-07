@@ -23,6 +23,10 @@ from typing import Any, Optional
 from src.skills.models import SkillDefinition, SkillManifest, SkillToolDefinition
 from src.skills.repository import SkillsRepository
 from src.skills.store import SkillsStore
+import re
+
+from src.crypto import decrypt
+from src.skills.secrets_repository import SkillSecretsRepository
 from src.tools.http_executor import HttpExecutor, HttpExecutorError
 
 
@@ -34,15 +38,19 @@ class ResolvedTool:
 
 
 class SkillToolRuntime:
+    SECRET_PATTERN = re.compile(r"\{\{secret:([a-zA-Z0-9_\-]+)\}\}")
+
     def __init__(
         self,
         repo: Optional[SkillsRepository] = None,
         store: Optional[SkillsStore] = None,
         http_executor: Optional[HttpExecutor] = None,
+        secrets_repo: Optional[SkillSecretsRepository] = None,
     ):
         self.repo = repo or SkillsRepository()
         self.store = store or __import__("src.skills.store", fromlist=["get_skills_store"]).get_skills_store()
         self.http = http_executor or HttpExecutor()
+        self.secrets_repo = secrets_repo or SkillSecretsRepository()
 
     def _tool_schema_from_tool_def(self, tool_def: SkillToolDefinition) -> dict[str, Any]:
         # Only expose OpenAI-compatible schema fields to the model.
@@ -89,8 +97,24 @@ class SkillToolRuntime:
 
         return None
 
-    def _render_template_obj(self, obj: Any, args: dict[str, Any]) -> Any:
-        """Render a template object replacing {{var}} in strings.
+    def _inject_secrets(self, *, owner_email: str, skill_id: str, text: str) -> str:
+        matches = list(self.SECRET_PATTERN.finditer(text))
+        if not matches:
+            return text
+
+        # Load secrets once per execution
+        secrets = {s.name: decrypt(s.encrypted_value) for s in self.secrets_repo.list_for_skill(owner_email, skill_id)}
+
+        def repl(m: re.Match) -> str:
+            key = m.group(1)
+            if key not in secrets:
+                raise ValueError(f"Missing secret '{key}' for skill '{skill_id}'")
+            return str(secrets[key])
+
+        return self.SECRET_PATTERN.sub(repl, text)
+
+    def _render_template_obj(self, obj: Any, args: dict[str, Any], *, owner_email: str, skill_id: str) -> Any:
+        """Render a template object replacing {{var}} and {{secret:name}} in strings.
 
         This is intentionally minimal (no expressions).
         """
@@ -98,36 +122,39 @@ class SkillToolRuntime:
             out = obj
             for k, v in args.items():
                 out = out.replace("{{" + str(k) + "}}", str(v))
+            out = self._inject_secrets(owner_email=owner_email, skill_id=skill_id, text=out)
             return out
         if isinstance(obj, dict):
-            return {k: self._render_template_obj(v, args) for k, v in obj.items()}
+            return {k: self._render_template_obj(v, args, owner_email=owner_email, skill_id=skill_id) for k, v in obj.items()}
         if isinstance(obj, list):
-            return [self._render_template_obj(v, args) for v in obj]
+            return [self._render_template_obj(v, args, owner_email=owner_email, skill_id=skill_id) for v in obj]
         return obj
 
     async def execute_tool(self, resolved: ResolvedTool, args: dict[str, Any]) -> str:
         tool_def = resolved.tool_def
         executor = tool_def.executor.value
+        owner_email = resolved.skill.owner_email
+        skill_id = resolved.skill.skill_id
 
         if executor != "http":
             return json.dumps({"ok": False, "error": f"Unsupported executor '{executor}'"}, ensure_ascii=False)
 
         assert tool_def.http is not None
         method = tool_def.http.method
-        url = self._render_template_obj(tool_def.http.url, args)
-        headers = self._render_template_obj(tool_def.http.headers, args)
-        query = self._render_template_obj(tool_def.http.query, args)
+        url = self._render_template_obj(tool_def.http.url, args, owner_email=owner_email, skill_id=skill_id)
+        headers = self._render_template_obj(tool_def.http.headers, args, owner_email=owner_email, skill_id=skill_id)
+        query = self._render_template_obj(tool_def.http.query, args, owner_email=owner_email, skill_id=skill_id)
 
         # Body can come from tool call args OR template; template wins if provided
         json_body = tool_def.http.json_body
         if json_body is None:
             json_body = args.get("json_body")
-        json_body = self._render_template_obj(json_body, args)
+        json_body = self._render_template_obj(json_body, args, owner_email=owner_email, skill_id=skill_id)
 
         text_body = tool_def.http.text_body
         if text_body is None:
             text_body = args.get("text_body")
-        text_body = self._render_template_obj(text_body, args)
+        text_body = self._render_template_obj(text_body, args, owner_email=owner_email, skill_id=skill_id)
 
         try:
             res = await self.http.request(

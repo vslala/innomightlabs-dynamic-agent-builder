@@ -25,7 +25,11 @@ class SkillsApiService {
     return httpClient.get<import("../../types/form").FormSchema>("/skills/forms/manifest");
   }
 
-  async createFromManifest(data: { manifest_json: string; skill_md?: string }): Promise<SkillDefinitionResponse> {
+  async createFromManifest(data: {
+    manifest_json: string;
+    skill_md?: string;
+    secrets?: Array<{ name: string; value: string }>;
+  }): Promise<SkillDefinitionResponse> {
     return httpClient.post<SkillDefinitionResponse>("/skills/manifest", data);
   }
 

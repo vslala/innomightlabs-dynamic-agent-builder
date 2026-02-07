@@ -64,6 +64,7 @@ async def create_skill_from_manifest(
 
     manifest_json = str(body.get("manifest_json", "") or "").strip()
     skill_md = str(body.get("skill_md", "") or "").strip()
+    secrets_raw = body.get("secrets") or []
 
     if not manifest_json:
         raise HTTPException(status_code=400, detail="manifest_json is required")
@@ -94,6 +95,29 @@ async def create_skill_from_manifest(
     )
 
     repo.upsert(skill_def)
+
+    # Store provided secrets (version-agnostic; linked to skill_id only)
+    try:
+        from src.skills.secrets_repository import SkillSecretsRepository
+
+        secrets_repo = SkillSecretsRepository()
+        if isinstance(secrets_raw, list):
+            for item in secrets_raw:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name", "") or "").strip()
+                value = str(item.get("value", "") or "")
+                if not name:
+                    continue
+                secrets_repo.upsert_plaintext(
+                    owner_email=owner_email,
+                    skill_id=skill_def.skill_id,
+                    name=name,
+                    value=value,
+                )
+    except Exception as e:
+        log.error(f"Failed to save skill secrets: {e}", exc_info=True)
+        # Do not fail skill creation; user can retry
 
     return SkillDefinitionResponse(
         skill_id=skill_def.skill_id,

@@ -17,6 +17,7 @@ import {
 } from "../ui/select";
 import type { FormInput, FormValue } from "../../types/form";
 import { AttachmentChip } from "../chat/AttachmentChip";
+import { DynamicSecretsField } from "./DynamicSecretsField";
 
 interface FormFieldProps {
   field: FormInput;
@@ -32,7 +33,7 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
     const files = value instanceof FileList
       ? Array.from(value)
       : Array.isArray(value)
-        ? value
+        ? value.filter((v): v is File => v instanceof File)
         : [];
 
     if (files.length === 0) return null;
@@ -102,6 +103,14 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
           </div>
         );
       }
+
+      case "dynamic_metadata_secret":
+        return (
+          <DynamicSecretsField
+            value={value}
+            onChange={onChange}
+          />
+        );
 
       case "password":
         return (

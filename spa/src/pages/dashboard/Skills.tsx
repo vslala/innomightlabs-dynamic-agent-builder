@@ -99,7 +99,7 @@ export function Skills() {
                 onSubmit={async (data: Record<string, FormValue>) => {
                   const fileValue = data.file;
                   const file = Array.isArray(fileValue)
-                    ? fileValue[0]
+                    ? fileValue.find((v): v is File => v instanceof File) || null
                     : fileValue instanceof FileList
                       ? fileValue.item(0)
                       : null;
@@ -131,10 +131,12 @@ export function Skills() {
                 onSubmit={async (data: Record<string, FormValue>) => {
                   const manifest_json = String(data.manifest_json || "");
                   const skill_md = String(data.skill_md || "");
+                  const secrets = Array.isArray(data.secrets) ? data.secrets : [];
+
                   setCreatingFromManifest(true);
                   setError(null);
                   try {
-                    await skillsApiService.createFromManifest({ manifest_json, skill_md });
+                    await skillsApiService.createFromManifest({ manifest_json, skill_md, secrets: secrets as any });
                     await load();
                   } catch (e) {
                     setError(e instanceof Error ? e.message : "Failed to create skill");

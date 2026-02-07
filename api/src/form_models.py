@@ -11,6 +11,7 @@ class FormInputType(Enum):
     CHOICE = "choice"
     FILE_UPLOAD = "file_upload"
     JSON = "json"
+    DYNAMIC_METADATA_SECRET = "dynamic_metadata_secret"
 
 
 class SelectOption(BaseModel):

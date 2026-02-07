@@ -45,11 +45,19 @@ export function SchemaForm({
   const [formData, setFormData] = useState<Record<string, FormValue>>(() => {
     const initial: Record<string, FormValue> = {};
     schema.form_inputs.forEach((field) => {
+      const provided = stableInitialValues[field.name];
+
       if (field.input_type === "file_upload") {
-        initial[field.name] = stableInitialValues[field.name] || null;
-      } else {
-        initial[field.name] = stableInitialValues[field.name] || field.value || "";
+        initial[field.name] = provided ?? null;
+        return;
       }
+
+      if (field.input_type === "dynamic_metadata_secret") {
+        initial[field.name] = provided ?? [];
+        return;
+      }
+
+      initial[field.name] = provided ?? field.value ?? "";
     });
     return initial;
   });
@@ -72,7 +80,7 @@ export function SchemaForm({
         <FormField
           key={field.name}
           field={field}
-          value={formData[field.name] || ""}
+          value={formData[field.name] ?? ""}
           onChange={(value) => handleFieldChange(field.name, value)}
         />
       ))}

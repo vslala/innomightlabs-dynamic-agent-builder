@@ -335,7 +335,7 @@ export function KnowledgeBaseDetail() {
     const files = attachmentValue instanceof FileList
       ? Array.from(attachmentValue)
       : Array.isArray(attachmentValue)
-        ? attachmentValue
+        ? attachmentValue.filter((v): v is File => v instanceof File)
         : [];
 
     if (files.length === 0) {
