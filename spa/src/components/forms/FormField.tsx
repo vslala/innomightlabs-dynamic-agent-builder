@@ -5,6 +5,9 @@
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
+import CodeMirror from "@uiw/react-codemirror";
+import { json as jsonLang } from "@codemirror/lang-json";
+import { oneDark } from "@codemirror/theme-one-dark";
 import {
   Select,
   SelectContent,
@@ -65,7 +68,6 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
         );
 
       case "text_area":
-      case "json":
         return (
           <Textarea
             id={field.name}
@@ -74,9 +76,32 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholderText}
             rows={fieldAttributes.rows ? parseInt(fieldAttributes.rows, 10) : 6}
-            style={field.input_type === "json" ? { fontFamily: "monospace", fontSize: "0.875rem" } : undefined}
           />
         );
+
+      case "json": {
+        const rows = fieldAttributes.rows ? parseInt(fieldAttributes.rows, 10) : 14;
+        const heightPx = Math.max(240, rows * 18);
+
+        return (
+          <div
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              overflow: "hidden",
+            }}
+          >
+            <CodeMirror
+              value={typeof value === "string" ? value : ""}
+              height={`${heightPx}px`}
+              theme={oneDark}
+              extensions={[jsonLang()]}
+              basicSetup={{ lineNumbers: true, foldGutter: true }}
+              onChange={(val) => onChange(val)}
+            />
+          </div>
+        );
+      }
 
       case "password":
         return (
