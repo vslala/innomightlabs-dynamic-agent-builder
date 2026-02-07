@@ -21,6 +21,14 @@ class SkillsApiService {
     return httpClient.get<import("../../types/form").FormSchema>("/skills/forms/upload");
   }
 
+  async getManifestSchema(): Promise<import("../../types/form").FormSchema> {
+    return httpClient.get<import("../../types/form").FormSchema>("/skills/forms/manifest");
+  }
+
+  async createFromManifest(data: { manifest_json: string; skill_md?: string }): Promise<SkillDefinitionResponse> {
+    return httpClient.post<SkillDefinitionResponse>("/skills/manifest", data);
+  }
+
   async uploadSkillZip(file: File): Promise<SkillDefinitionResponse> {
     const form = new FormData();
     form.append("file", file);

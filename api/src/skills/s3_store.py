@@ -25,8 +25,18 @@ class UploadedSkillArtifact:
 
 class SkillsS3Store:
     def __init__(self):
+        if not settings.skills_bucket_name:
+            raise ValueError("SKILLS_BUCKET_NAME is not configured")
         self.bucket = settings.skills_bucket_name
         self.s3 = boto3.client("s3", region_name=settings.aws_region)
+
+    def upload_skill_manifest(self, owner_email: str, manifest: SkillManifest, skill_md: str) -> UploadedSkillArtifact:
+        """Create a zip from manifest + SKILL.md and upload using the same layout as zip upload."""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("manifest.json", manifest.model_dump_json())
+            z.writestr("SKILL.md", skill_md or "")
+        return self.upload_skill_zip(owner_email=owner_email, zip_bytes=buf.getvalue())
 
     def _tenant_prefix(self, owner_email: str, skill_id: str, version: str) -> str:
         return f"innomightlabs/tenants/{owner_email}/skills/{skill_id}/{version}".rstrip("/")

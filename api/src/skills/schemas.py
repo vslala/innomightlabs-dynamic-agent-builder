@@ -5,7 +5,7 @@ from src.form_models import Form, FormInput, FormInputType
 
 def get_skill_upload_form() -> Form:
     return Form(
-        form_name="Upload Skill",
+        form_name="Upload Skill (.zip)",
         submit_path="/skills/upload",
         form_inputs=[
             FormInput(
@@ -16,5 +16,32 @@ def get_skill_upload_form() -> Form:
                     "accept": ".zip",
                 },
             )
+        ],
+    )
+
+
+def get_skill_manifest_form() -> Form:
+    return Form(
+        form_name="Create Skill (Manifest JSON)",
+        submit_path="/skills/manifest",
+        form_inputs=[
+            FormInput(
+                input_type=FormInputType.JSON,
+                name="manifest_json",
+                label="manifest.json",
+                attr={
+                    "placeholder": "Paste your manifest.json here",
+                    "rows": "14",
+                },
+            ),
+            FormInput(
+                input_type=FormInputType.TEXT_AREA,
+                name="skill_md",
+                label="SKILL.md (optional)",
+                attr={
+                    "placeholder": "Optional instructions/examples for the LLM",
+                    "rows": "8",
+                },
+            ),
         ],
     )

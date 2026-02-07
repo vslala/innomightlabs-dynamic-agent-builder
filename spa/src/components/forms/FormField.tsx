@@ -65,6 +65,7 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
         );
 
       case "text_area":
+      case "json":
         return (
           <Textarea
             id={field.name}
@@ -72,7 +73,8 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
             value={typeof value === "string" ? value : ""}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholderText}
-            rows={fieldAttributes.rows ? parseInt(fieldAttributes.rows, 10) : 4}
+            rows={fieldAttributes.rows ? parseInt(fieldAttributes.rows, 10) : 6}
+            style={field.input_type === "json" ? { fontFamily: "monospace", fontSize: "0.875rem" } : undefined}
           />
         );
 

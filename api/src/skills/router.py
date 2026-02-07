@@ -30,10 +30,18 @@ router = APIRouter(prefix="/skills", tags=["skills"], dependencies=[Depends(secu
 
 @router.get("/forms/upload", response_model=form_models.Form, response_model_exclude_none=True)
 async def get_upload_skill_form_schema() -> form_models.Form:
-    """Get schema form for skill upload."""
+    """Get schema form for skill zip upload."""
     from src.skills.schemas import get_skill_upload_form
 
     return get_skill_upload_form()
+
+
+@router.get("/forms/manifest", response_model=form_models.Form, response_model_exclude_none=True)
+async def get_manifest_skill_form_schema() -> form_models.Form:
+    """Get schema form for creating a skill from manifest JSON."""
+    from src.skills.schemas import get_skill_manifest_form
+
+    return get_skill_manifest_form()
 
 
 def get_skills_repo() -> SkillsRepository:
@@ -42,6 +50,60 @@ def get_skills_repo() -> SkillsRepository:
 
 def get_s3_store() -> SkillsS3Store:
     return SkillsS3Store()
+
+
+@router.post("/manifest", response_model=SkillDefinitionResponse, status_code=status.HTTP_201_CREATED)
+async def create_skill_from_manifest(
+    request: Request,
+    body: dict,
+    repo: Annotated[SkillsRepository, Depends(get_skills_repo)] = None,  # type: ignore
+    store: Annotated[SkillsS3Store, Depends(get_s3_store)] = None,  # type: ignore
+) -> SkillDefinitionResponse:
+    """Create a skill from manifest JSON text (no zip upload required)."""
+    owner_email: str = request.state.user_email
+
+    manifest_json = str(body.get("manifest_json", "") or "").strip()
+    skill_md = str(body.get("skill_md", "") or "").strip()
+
+    if not manifest_json:
+        raise HTTPException(status_code=400, detail="manifest_json is required")
+
+    try:
+        from src.skills.models import SkillManifest
+
+        manifest = SkillManifest.model_validate_json(manifest_json)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid manifest_json: {e}")
+
+    try:
+        artifact = store.upload_skill_manifest(owner_email=owner_email, manifest=manifest, skill_md=skill_md)
+    except Exception as e:
+        log.error(f"Failed to store manifest-based skill: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
+
+    skill_def = SkillDefinition(
+        owner_email=owner_email,
+        skill_id=artifact.manifest.skill_id,
+        version=artifact.manifest.version,
+        name=artifact.manifest.name,
+        description=artifact.manifest.description,
+        status=SkillStatus.INACTIVE,
+        s3_zip_key=artifact.zip_key,
+        s3_manifest_key=artifact.manifest_key,
+        s3_skill_md_key=artifact.skill_md_key,
+    )
+
+    repo.upsert(skill_def)
+
+    return SkillDefinitionResponse(
+        skill_id=skill_def.skill_id,
+        version=skill_def.version,
+        name=skill_def.name,
+        description=skill_def.description,
+        status=skill_def.status,
+        created_at=skill_def.created_at,
+        updated_at=skill_def.updated_at,
+    )
 
 
 @router.get("", response_model=list[SkillDefinitionResponse])

@@ -12,6 +12,8 @@ export function Skills() {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadSchema, setUploadSchema] = useState<FormSchema | null>(null);
+  const [manifestSchema, setManifestSchema] = useState<FormSchema | null>(null);
+  const [creatingFromManifest, setCreatingFromManifest] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -37,8 +39,10 @@ export function Skills() {
       try {
         const schema = await skillsApiService.getUploadSchema();
         setUploadSchema(schema);
+        const m = await skillsApiService.getManifestSchema();
+        setManifestSchema(m);
       } catch (e) {
-        console.error("Failed to load skills upload schema", e);
+        console.error("Failed to load skills schemas", e);
       }
     };
     void loadSchema();
@@ -81,37 +85,70 @@ export function Skills() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Upload Skill</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {uploadSchema ? (
-            <SchemaForm
-              schema={uploadSchema}
-              submitLabel={uploading ? "Uploading..." : "Upload"}
-              isLoading={uploading}
-              onSubmit={async (data: Record<string, FormValue>) => {
-                const fileValue = data.file;
-                const file = Array.isArray(fileValue)
-                  ? fileValue[0]
-                  : fileValue instanceof FileList
-                    ? fileValue.item(0)
-                    : null;
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Upload Skill (.zip)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {uploadSchema ? (
+              <SchemaForm
+                schema={uploadSchema}
+                submitLabel={uploading ? "Uploading..." : "Upload"}
+                isLoading={uploading}
+                onSubmit={async (data: Record<string, FormValue>) => {
+                  const fileValue = data.file;
+                  const file = Array.isArray(fileValue)
+                    ? fileValue[0]
+                    : fileValue instanceof FileList
+                      ? fileValue.item(0)
+                      : null;
 
-                if (!file) {
-                  setError("Please select a .zip file");
-                  return;
-                }
+                  if (!file) {
+                    setError("Please select a .zip file");
+                    return;
+                  }
 
-                await handleUpload(file);
-              }}
-            />
-          ) : (
-            <p style={{ color: "var(--text-muted)" }}>Loading upload form…</p>
-          )}
-        </CardContent>
-      </Card>
+                  await handleUpload(file);
+                }}
+              />
+            ) : (
+              <p style={{ color: "var(--text-muted)" }}>Loading upload form…</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Create Skill (Manifest JSON)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {manifestSchema ? (
+              <SchemaForm
+                schema={manifestSchema}
+                submitLabel={creatingFromManifest ? "Creating..." : "Create"}
+                isLoading={creatingFromManifest}
+                onSubmit={async (data: Record<string, FormValue>) => {
+                  const manifest_json = String(data.manifest_json || "");
+                  const skill_md = String(data.skill_md || "");
+                  setCreatingFromManifest(true);
+                  setError(null);
+                  try {
+                    await skillsApiService.createFromManifest({ manifest_json, skill_md });
+                    await load();
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : "Failed to create skill");
+                  } finally {
+                    setCreatingFromManifest(false);
+                  }
+                }}
+              />
+            ) : (
+              <p style={{ color: "var(--text-muted)" }}>Loading manifest form…</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {error && (
         <div style={{
