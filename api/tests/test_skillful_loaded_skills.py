@@ -5,7 +5,7 @@ from fastapi import status
 from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL
 
 
-def test_skillful_skills_load_persists_loaded_skills_block(test_client, auth_headers, dynamodb_table, monkeypatch):
+def test_skillful_skills_load_persists_loaded_skills_block(test_client, auth_headers, dynamodb_table, skills_s3_bucket, monkeypatch):
     """End-to-end: krishna-skillful handles skills_load and writes to core memory loaded_skills."""
 
     # 1) Create agent with krishna-skillful
@@ -31,7 +31,26 @@ def test_skillful_skills_load_persists_loaded_skills_block(test_client, auth_hea
     )
     repo.save(ps)
 
-    # 3) Create conversation
+    # 3) Create an active skill in the registry (so skills_load can resolve it)
+    manifest = {
+        "skill_id": "wordpress",
+        "name": "WordPress",
+        "version": "1.0.0",
+        "description": "WP",
+        "tools": [],
+        "allowed_hosts": ["example.com"],
+    }
+    r = test_client.post(
+        "/skills/manifest",
+        json={"manifest_json": json.dumps(manifest), "skill_md": "# wp"},
+        headers=auth_headers,
+    )
+    assert r.status_code == status.HTTP_201_CREATED
+
+    r = test_client.post("/skills/wordpress/1.0.0/activate", headers=auth_headers)
+    assert r.status_code == status.HTTP_200_OK
+
+    # 4) Create conversation
     conv_resp = test_client.post(
         "/conversations/",
         json={"title": "t", "agent_id": agent_id},

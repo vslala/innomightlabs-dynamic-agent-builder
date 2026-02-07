@@ -90,6 +90,10 @@ class Settings:
 
     # Skills (optional; required only when using skill upload/registry)
     skills_bucket_name: str = ""
+    # Skill artifact store backend: "s3" (default) or "local".
+    skills_store_backend: str = "s3"
+    # Local store root (used when skills_store_backend=local)
+    skills_local_root: str = "./.skills"
 
     # HTTP executor (optional; used by skill tool execution)
     http_executor_timeout_seconds: float = 10.0
@@ -259,6 +263,8 @@ class Settings:
             github_token=os.getenv("GITHUB_TOKEN", ""),
             # Skills
             skills_bucket_name=os.getenv("SKILLS_BUCKET_NAME", ""),
+            skills_store_backend=os.getenv("SKILLS_STORE_BACKEND", "s3"),
+            skills_local_root=os.getenv("SKILLS_LOCAL_ROOT", "./.skills"),
         )
 
 

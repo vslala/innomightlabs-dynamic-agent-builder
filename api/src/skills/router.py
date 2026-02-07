@@ -19,7 +19,7 @@ from fastapi.security import HTTPBearer
 from src import form_models
 from src.skills.models import SkillDefinition, SkillDefinitionResponse, SkillStatus
 from src.skills.repository import SkillsRepository
-from src.skills.s3_store import SkillsS3Store
+from src.skills.store import SkillsStore, get_skills_store
 
 log = logging.getLogger(__name__)
 
@@ -48,8 +48,8 @@ def get_skills_repo() -> SkillsRepository:
     return SkillsRepository()
 
 
-def get_s3_store() -> SkillsS3Store:
-    return SkillsS3Store()
+def get_store() -> SkillsStore:
+    return get_skills_store()
 
 
 @router.post("/manifest", response_model=SkillDefinitionResponse, status_code=status.HTTP_201_CREATED)
@@ -57,7 +57,7 @@ async def create_skill_from_manifest(
     request: Request,
     body: dict,
     repo: Annotated[SkillsRepository, Depends(get_skills_repo)] = None,  # type: ignore
-    store: Annotated[SkillsS3Store, Depends(get_s3_store)] = None,  # type: ignore
+    store: Annotated[SkillsStore, Depends(get_store)] = None,  # type: ignore
 ) -> SkillDefinitionResponse:
     """Create a skill from manifest JSON text (no zip upload required)."""
     owner_email: str = request.state.user_email
@@ -132,7 +132,7 @@ async def upload_skill(
     request: Request,
     file: UploadFile = File(..., description="Skill zip containing manifest.json and SKILL.md"),
     repo: Annotated[SkillsRepository, Depends(get_skills_repo)] = None,  # type: ignore
-    store: Annotated[SkillsS3Store, Depends(get_s3_store)] = None,  # type: ignore
+    store: Annotated[SkillsStore, Depends(get_store)] = None,  # type: ignore
 ) -> SkillDefinitionResponse:
     owner_email: str = request.state.user_email
 

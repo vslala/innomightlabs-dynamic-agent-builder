@@ -30,6 +30,10 @@ class SkillsS3Store:
         self.bucket = settings.skills_bucket_name
         self.s3 = boto3.client("s3", region_name=settings.aws_region)
 
+    def read_text(self, key: str) -> str:
+        obj = self.s3.get_object(Bucket=self.bucket, Key=key)
+        return obj["Body"].read().decode("utf-8")
+
     def upload_skill_manifest(self, owner_email: str, manifest: SkillManifest, skill_md: str) -> UploadedSkillArtifact:
         """Create a zip from manifest + SKILL.md and upload using the same layout as zip upload."""
         buf = io.BytesIO()

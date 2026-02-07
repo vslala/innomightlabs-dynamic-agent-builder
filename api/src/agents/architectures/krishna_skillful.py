@@ -36,6 +36,9 @@ from src.settings.repository import get_provider_settings_repository
 from src.crypto import decrypt
 from src.tools.native.definitions import NATIVE_TOOLS
 from src.tools.native.handlers import NativeToolHandler
+from src.skills.repository import SkillsRepository
+from src.skills.store import get_skills_store
+from src.skills.tool_runtime import SkillToolRuntime
 
 from src.runtime_events.models import RuntimeEvent, RuntimeEventType
 from src.runtime_events.repository import RuntimeEventRepository
@@ -77,6 +80,9 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
         self.events_repo = RuntimeEventRepository()
         self.memory_repo = MemoryRepository()
         self.memory_eviction = MemoryEvictionService()
+
+        self.skills_repo = SkillsRepository()
+        self.skills_runtime = SkillToolRuntime(repo=self.skills_repo, store=get_skills_store())
 
     @property
     def name(self) -> str:
@@ -153,7 +159,11 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
         system_prompt = self._build_system_prompt(agent=agent)
 
         # 4) Execution loop: plan -> (tool?) -> persist -> repeat
-        tools = list(NATIVE_TOOLS) + [SKILLS_LIST_TOOL, SKILLS_LOAD_TOOL]
+        # Tool catalog: native tools + skills_list/load + tools from loaded skill manifests
+        loaded_skill_records = self._get_loaded_skill_records(agent_id=agent.agent_id, actor_id=actor_id)
+        skill_tools = self._build_skill_tools(owner_email=owner_email, loaded_skill_records=loaded_skill_records)
+
+        tools = list(NATIVE_TOOLS) + [SKILLS_LIST_TOOL, SKILLS_LOAD_TOOL] + skill_tools
 
         context: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
@@ -180,6 +190,11 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
                 event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
                 content=f"Planning next step... (loop {loop_i + 1}/{self.max_loops})",
             )
+
+            # Refresh skill tools each loop in case skills_load was called
+            loaded_skill_records = self._get_loaded_skill_records(agent_id=agent.agent_id, actor_id=actor_id)
+            skill_tools = self._build_skill_tools(owner_email=owner_email, loaded_skill_records=loaded_skill_records)
+            tools = list(NATIVE_TOOLS) + [SKILLS_LIST_TOOL, SKILLS_LOAD_TOOL] + skill_tools
 
             has_tool_calls = False
 
@@ -350,19 +365,32 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
                     event_type=RuntimeEventType.SKILLS_LIST_SHOWN,
                     payload={},
                 )
-                # Phase 1: static catalog stub
-                return (
-                    "Available skills (Phase 1 stub):\n"
-                    "- native.http_get_post: Perform safe HTTP GET/POST requests (coming next phase)\n"
-                    "- native.wordpress: Search/get posts via WordPress REST API (future)\n"
-                    "Use skills_load({skill_id}) to load a skill.",
-                    True,
-                )
+
+                active = self.skills_repo.list_active(owner_email)
+                if not active:
+                    return "No active skills found. Upload a skill and activate it first.", True
+
+                lines = ["Active skills:"]
+                for s in active:
+                    lines.append(f"- {s.skill_id}@{s.version}: {s.description or s.name}")
+                lines.append("Use skills_load({skill_id}) to load a skill for tool use in this conversation.")
+                return "\n".join(lines), True
 
             if tool_name == "skills_load":
                 skill_id = str(tool_args.get("skill_id", "")).strip()
                 if not skill_id:
                     return "Error: missing skill_id", False
+
+                # Resolve an active skill version (MVP: first active match)
+                active = [s for s in self.skills_repo.list_active(owner_email) if s.skill_id == skill_id]
+                if not active:
+                    return f"Error: skill '{skill_id}' not found or not active", False
+
+                skill = active[0]
+
+                # Load manifest to extract tool names/allowed hosts
+                manifest = self.skills_runtime.load_manifest_for_skill(skill)
+                tool_names = [t.get("name") for t in (manifest.tools or []) if isinstance(t, dict) and t.get("name")]
 
                 # Persist durable event
                 self._append_event(
@@ -371,31 +399,93 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
                     actor_id=actor_id,
                     owner_email=owner_email,
                     event_type=RuntimeEventType.SKILL_LOADED,
-                    payload={"skill_id": skill_id},
+                    payload={"skill_id": skill.skill_id, "version": skill.version, "tool_count": len(tool_names)},
                 )
 
                 # Update [loaded_skills] core memory with a compact record (LRU block)
                 self._upsert_loaded_skill_record(
                     agent_id=agent_id,
                     actor_id=actor_id,
-                    skill_id=skill_id,
+                    skill_id=skill.skill_id,
+                    version=skill.version,
+                    tools=tool_names,
+                    allowed_hosts=manifest.allowed_hosts,
+                    manifest_key=skill.s3_manifest_key,
+                    skill_md_key=skill.s3_skill_md_key,
                 )
 
                 return (
-                    f"Loaded skill '{skill_id}'. Added to [loaded_skills] memory. "
-                    "You may now use the skill's tools (activation comes next phase).",
+                    f"Loaded skill '{skill.skill_id}@{skill.version}'. "
+                    f"Tools now available: {', '.join(tool_names) if tool_names else '(none)'}.",
                     True,
                 )
 
-            # Delegate native memory/KB tools
-            result = await self.tool_handler.execute(tool_name, tool_args, agent_id)
-            return result, True
+            # Delegate native tools first
+            try:
+                result = await self.tool_handler.execute(tool_name, tool_args, agent_id)
+                return result, True
+            except ValueError:
+                # Not a native tool, try skill-defined tool dispatch
+                loaded_skill_records = self._get_loaded_skill_records(agent_id=agent_id, actor_id=actor_id)
+                resolved = self.skills_runtime.resolve_loaded_tool(
+                    owner_email=owner_email,
+                    loaded_skills=loaded_skill_records,
+                    tool_name=tool_name,
+                )
+                if not resolved:
+                    raise
+
+                result = await self.skills_runtime.execute_tool(resolved, tool_args)
+                return result, True
 
         except Exception as e:
             log.error(f"Tool execution error ({tool_name}): {e}", exc_info=True)
             return f"Error: {str(e)}", False
 
-    def _upsert_loaded_skill_record(self, agent_id: str, actor_id: str, skill_id: str) -> None:
+    def _get_loaded_skill_records(self, agent_id: str, actor_id: str) -> list[dict[str, Any]]:
+        memory = self.memory_repo.get_core_memory(agent_id, actor_id, "loaded_skills")
+        if not memory or not memory.lines:
+            return []
+
+        out: list[dict[str, Any]] = []
+        for line in memory.lines:
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(obj, dict):
+                out.append(obj)
+        return out
+
+    def _build_skill_tools(self, owner_email: str, loaded_skill_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        tools: list[dict[str, Any]] = []
+        for rec in loaded_skill_records:
+            skill_id = str(rec.get("skill_id", "") or "").strip()
+            version = str(rec.get("version", "") or "").strip()
+            if not skill_id or not version:
+                continue
+            skill = self.skills_repo.get(owner_email, skill_id, version)
+            if not skill:
+                continue
+            try:
+                manifest = self.skills_runtime.load_manifest_for_skill(skill)
+            except Exception:
+                continue
+            tools.extend(self.skills_runtime.build_llm_tools_for_skill(manifest))
+        return tools
+
+    def _upsert_loaded_skill_record(
+        self,
+        agent_id: str,
+        actor_id: str,
+        skill_id: str,
+        *,
+        version: str,
+        tools: list[str],
+        allowed_hosts: list[str],
+        manifest_key: str,
+        skill_md_key: str,
+    ) -> None:
         """Upsert a compact loaded skill record into core memory block [loaded_skills].
 
         Stored as a single JSON line per skill_id for deterministic parsing.
@@ -418,11 +508,11 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
         # Parse existing lines and replace if skill_id exists
         new_line_obj = {
             "skill_id": skill_id,
-            "version": "0.0.0",
-            "tools": [],
-            "allowed_hosts": [],
-            "manifest_key": None,
-            "skill_md_key": None,
+            "version": version,
+            "tools": tools,
+            "allowed_hosts": allowed_hosts,
+            "manifest_key": manifest_key,
+            "skill_md_key": skill_md_key,
             "last_used_at": now.isoformat(),
         }
         new_line = json.dumps(new_line_obj, ensure_ascii=False)
