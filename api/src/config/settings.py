@@ -100,6 +100,8 @@ class Settings:
     http_executor_max_response_bytes: int = 200_000
     # Optional allowlist. If empty, allow any public host (private/local targets still blocked).
     http_executor_allowed_hosts: list[str] = field(default_factory=list)
+    # If true, allow localhost/private targets (ONLY recommended for local dev).
+    http_executor_allow_local: bool = False
 
     def validate_core(self) -> None:
         """
@@ -233,6 +235,10 @@ class Settings:
             http_executor_timeout_seconds=float(os.getenv("HTTP_EXECUTOR_TIMEOUT_SECONDS", "10")),
             http_executor_max_response_bytes=int(os.getenv("HTTP_EXECUTOR_MAX_RESPONSE_BYTES", "200000")),
             http_executor_allowed_hosts=http_allowed_hosts,
+            http_executor_allow_local=(
+                os.getenv("HTTP_EXECUTOR_ALLOW_LOCAL", "").lower() in {"1", "true", "yes"}
+                or environment == "dev"
+            ),
             # Pinecone - no defaults, must be explicitly configured
             pinecone_api_key=os.getenv("PINECONE_API_KEY", ""),
             pinecone_host=os.getenv("PINECONE_HOST", ""),

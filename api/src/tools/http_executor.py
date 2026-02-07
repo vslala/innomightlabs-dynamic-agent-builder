@@ -92,22 +92,26 @@ class HttpExecutor:
 
         host = parsed.hostname.strip().lower()
 
+        allow_local = bool(getattr(settings, "http_executor_allow_local", False))
+
         # Basic host checks
-        if host in {"localhost"} or host.endswith(".localhost"):
-            raise HttpExecutorError("Refusing to call localhost")
-        if host.endswith(".local") or host.endswith(".internal"):
-            raise HttpExecutorError("Refusing to call internal hostnames")
+        if not allow_local:
+            if host in {"localhost"} or host.endswith(".localhost"):
+                raise HttpExecutorError("Refusing to call localhost")
+            if host.endswith(".local") or host.endswith(".internal"):
+                raise HttpExecutorError("Refusing to call internal hostnames")
 
         # If host is an IP literal, block private/link-local/etc.
         try:
             ip = ipaddress.ip_address(host)
-            # In practice, only globally-routable IPs should be reachable.
-            # If it's not global, treat it as unsafe.
-            if not ip.is_global:
-                # Block cloud metadata IP explicitly (also not-global, but clearer message)
-                if str(ip) == "169.254.169.254":
-                    raise HttpExecutorError("Refusing to call metadata service")
-                raise HttpExecutorError("Refusing to call non-global (private/local) IPs")
+            if not allow_local:
+                # In practice, only globally-routable IPs should be reachable.
+                # If it's not global, treat it as unsafe.
+                if not ip.is_global:
+                    # Block cloud metadata IP explicitly (also not-global, but clearer message)
+                    if str(ip) == "169.254.169.254":
+                        raise HttpExecutorError("Refusing to call metadata service")
+                    raise HttpExecutorError("Refusing to call non-global (private/local) IPs")
         except ValueError:
             # Not an IP literal
             pass
