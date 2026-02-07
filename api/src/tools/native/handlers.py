@@ -4,6 +4,7 @@ Native tool handlers for the memGPT architecture.
 Handles execution of memory tools with idempotency and capacity management.
 """
 
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from src.memory import (
 from src.memory.eviction import MemoryEvictionService
 from src.messages.repository import MessageRepository
 from src.vectorstore.search import get_search_service
+from src.tools.http_executor import HttpExecutor, HttpExecutorError
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +71,7 @@ class NativeToolHandler:
         self.memory_repo = memory_repo or MemoryRepository()
         self.eviction_service = MemoryEvictionService()
         self.message_repo = MessageRepository()
+        self.http_executor = HttpExecutor()
         self._conversation_id: Optional[str] = None
         self._linked_kb_ids: list[str] = []
         self._user_id: Optional[str] = None
@@ -216,6 +219,77 @@ class NativeToolHandler:
             f'Appended to [{block_name}] at line {len(memory.lines)}: "{content}" '
             f"({memory.word_count}/{block_def.word_limit} words){eviction_note}"
         )
+
+    async def _handle_http_get(self, args: dict, agent_id: str) -> str:
+        """HTTP GET executor."""
+        try:
+            result = await self.http_executor.request(
+                "GET",
+                url=str(args.get("url", "")),
+                headers=args.get("headers"),
+                query=args.get("query"),
+            )
+            return result.to_json()
+        except HttpExecutorError as e:
+            return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
+
+    async def _handle_http_delete(self, args: dict, agent_id: str) -> str:
+        """HTTP DELETE executor."""
+        try:
+            result = await self.http_executor.request(
+                "DELETE",
+                url=str(args.get("url", "")),
+                headers=args.get("headers"),
+                query=args.get("query"),
+            )
+            return result.to_json()
+        except HttpExecutorError as e:
+            return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
+
+    async def _handle_http_post(self, args: dict, agent_id: str) -> str:
+        """HTTP POST executor."""
+        try:
+            result = await self.http_executor.request(
+                "POST",
+                url=str(args.get("url", "")),
+                headers=args.get("headers"),
+                query=args.get("query"),
+                json_body=args.get("json_body"),
+                text_body=args.get("text_body"),
+            )
+            return result.to_json()
+        except HttpExecutorError as e:
+            return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
+
+    async def _handle_http_put(self, args: dict, agent_id: str) -> str:
+        """HTTP PUT executor."""
+        try:
+            result = await self.http_executor.request(
+                "PUT",
+                url=str(args.get("url", "")),
+                headers=args.get("headers"),
+                query=args.get("query"),
+                json_body=args.get("json_body"),
+                text_body=args.get("text_body"),
+            )
+            return result.to_json()
+        except HttpExecutorError as e:
+            return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
+
+    async def _handle_http_patch(self, args: dict, agent_id: str) -> str:
+        """HTTP PATCH executor."""
+        try:
+            result = await self.http_executor.request(
+                "PATCH",
+                url=str(args.get("url", "")),
+                headers=args.get("headers"),
+                query=args.get("query"),
+                json_body=args.get("json_body"),
+                text_body=args.get("text_body"),
+            )
+            return result.to_json()
+        except HttpExecutorError as e:
+            return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
 
     async def _handle_core_memory_replace(self, args: dict, agent_id: str, user_id: str) -> str:
         """Replace a specific line in a memory block (idempotent)."""

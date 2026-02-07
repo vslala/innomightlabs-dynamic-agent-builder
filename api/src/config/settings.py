@@ -91,6 +91,12 @@ class Settings:
     # Skills (optional; required only when using skill upload/registry)
     skills_bucket_name: str = ""
 
+    # HTTP executor (optional; used by skill tool execution)
+    http_executor_timeout_seconds: float = 10.0
+    http_executor_max_response_bytes: int = 200_000
+    # Optional allowlist. If empty, allow any public host (private/local targets still blocked).
+    http_executor_allowed_hosts: list[str] = field(default_factory=list)
+
     def validate_core(self) -> None:
         """
         Validate core configuration required for the app to start.
@@ -207,6 +213,8 @@ class Settings:
         google_client_id = os.getenv("GOOGLE_CLIENT_ID", google_client_id)
         google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET", google_client_secret)
 
+        http_allowed_hosts = [h.strip() for h in os.getenv("HTTP_EXECUTOR_ALLOWED_HOSTS", "").split(",") if h.strip()]
+
         return cls(
             environment=environment,
             dynamodb_table=os.getenv("DYNAMODB_TABLE", "dynamic-agent-builder-main" if environment == "dev" else ""),
@@ -218,6 +226,9 @@ class Settings:
             google_client_id=google_client_id,
             google_client_secret=google_client_secret,
             google_redirect_uri=f"{api_base_url}/auth/callback",
+            http_executor_timeout_seconds=float(os.getenv("HTTP_EXECUTOR_TIMEOUT_SECONDS", "10")),
+            http_executor_max_response_bytes=int(os.getenv("HTTP_EXECUTOR_MAX_RESPONSE_BYTES", "200000")),
+            http_executor_allowed_hosts=http_allowed_hosts,
             # Pinecone - no defaults, must be explicitly configured
             pinecone_api_key=os.getenv("PINECONE_API_KEY", ""),
             pinecone_host=os.getenv("PINECONE_HOST", ""),
