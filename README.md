@@ -129,35 +129,93 @@ In the dashboard go to **Skills → Create Skill (Manifest JSON)**.
   - Reference them in the manifest using placeholders like `{{secret:wp_token}}`
   - Secrets are encrypted before storing in DynamoDB and are linked to the **skill_id** (version-agnostic)
 
-Example `manifest.json` (HTTP tool):
+### Manifest structure
+
+Top-level fields:
+- `skill_id` (string, required): stable identifier
+- `name` (string, required)
+- `version` (string, required): currently used for skill versioning/activation
+- `description` (string, optional)
+- `allowed_hosts` (string[], required for HTTP safety): host allowlist (e.g. `www.example.com`)
+- `tools` (array, optional): tool definitions exposed to the LLM
+
+Tool definition fields:
+- `name` (string, required): tool name the LLM will call
+- `description` (string, optional)
+- `parameters` (JSON Schema object): tool argument schema (OpenAI-style)
+- `executor` (string, required): currently only `"http"`
+- `http` (object, required when executor=`http`):
+  - `method`: `GET|POST|PUT|PATCH|DELETE`
+  - `url`: full URL
+  - `headers` (object, optional): supports templates
+  - `query` (object, optional): supports templates
+  - `json_body` (any, optional): supports templates
+  - `text_body` (string, optional): supports templates
+
+Templating:
+- `{{arg_name}}` is replaced with the tool call argument value
+- `{{secret:NAME}}` is replaced with the stored secret variable value
+
+Example `manifest.json` (WordPress search + get post):
 
 ```json
 {
   "skill_id": "wordpress",
   "name": "WordPress",
   "version": "1.0.0",
-  "description": "Search posts",
+  "description": "Search and fetch WordPress posts",
   "allowed_hosts": ["www.bemyaficionado.com"],
   "tools": [
     {
       "name": "wp_search_posts",
-      "description": "Search posts",
+      "description": "Search posts by query text",
       "parameters": {
         "type": "object",
-        "properties": { "query": { "type": "string" } },
+        "properties": {
+          "query": { "type": "string", "description": "Search text" },
+          "per_page": { "type": "integer", "description": "Max results", "default": 5 }
+        },
         "required": ["query"]
       },
       "executor": "http",
       "http": {
         "method": "GET",
         "url": "https://www.bemyaficionado.com/wp-json/wp/v2/posts",
-        "query": { "search": "{{query}}" },
-        "headers": { "Authorization": "Bearer {{secret:wp_token}}" }
+        "query": {
+          "search": "{{query}}",
+          "per_page": "{{per_page}}"
+        },
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer {{secret:wp_token}}"
+        }
+      }
+    },
+    {
+      "name": "wp_get_post",
+      "description": "Get a post by ID",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": { "type": "integer", "description": "WordPress post id" }
+        },
+        "required": ["post_id"]
+      },
+      "executor": "http",
+      "http": {
+        "method": "GET",
+        "url": "https://www.bemyaficionado.com/wp-json/wp/v2/posts/{{post_id}}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer {{secret:wp_token}}"
+        }
       }
     }
   ]
 }
 ```
+
+Note: For public WordPress endpoints you may not need auth. If so, remove the `Authorization` header and don’t set `wp_token`.
 
 ### Running skills locally (filesystem store)
 To avoid S3 in local development, you can store skill artifacts on disk:
