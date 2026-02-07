@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,14 +18,56 @@ class SkillStatus(str, Enum):
     INACTIVE = "inactive"
 
 
+class SkillToolExecutor(str, Enum):
+    HTTP = "http"
+
+
+class HttpToolSpec(BaseModel):
+    method: str = Field(..., description="HTTP method: GET/POST/PUT/PATCH/DELETE")
+    url: str = Field(..., min_length=1, description="Full http(s) URL")
+    headers: dict[str, Any] | None = None
+    query: dict[str, Any] | None = None
+    json_body: Any | None = None
+    text_body: str | None = None
+
+
+class SkillToolDefinition(BaseModel):
+    """Strict tool definition stored in a skill manifest."""
+
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str = Field(default="", max_length=2000)
+    # OpenAI/Anthropic style tool schema
+    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+
+    executor: SkillToolExecutor = Field(...)
+
+    # Executor-specific config
+    http: HttpToolSpec | None = None
+
+    def validate_executor_config(self) -> "SkillToolDefinition":
+        if self.executor == SkillToolExecutor.HTTP:
+            if self.http is None:
+                raise ValueError("executor=http requires http spec")
+            m = self.http.method.upper().strip()
+            if m not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+                raise ValueError("http.method must be one of GET/POST/PUT/PATCH/DELETE")
+            self.http.method = m
+        return self
+
+
 class SkillManifest(BaseModel):
     skill_id: str = Field(..., min_length=1, max_length=100)
     name: str = Field(..., min_length=1, max_length=200)
     version: str = Field(..., min_length=1, max_length=50)
     description: str = Field(default="", max_length=2000)
-    # Tool schemas exposed by this skill (OpenAI tool JSON schema compatible)
-    tools: list[dict] = Field(default_factory=list)
     allowed_hosts: list[str] = Field(default_factory=list)
+
+    tools: list[SkillToolDefinition] = Field(default_factory=list, description="Strict tool definitions")
+
+    def model_post_init(self, __context: Any) -> None:
+        # Ensure each tool has valid executor config
+        for t in self.tools:
+            t.validate_executor_config()
 
 
 class SkillDefinition(BaseModel):

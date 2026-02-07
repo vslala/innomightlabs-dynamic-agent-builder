@@ -20,7 +20,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from src.skills.models import SkillDefinition, SkillManifest
+from src.skills.models import SkillDefinition, SkillManifest, SkillToolDefinition
 from src.skills.repository import SkillsRepository
 from src.skills.store import SkillsStore
 from src.tools.http_executor import HttpExecutor, HttpExecutorError
@@ -30,7 +30,7 @@ from src.tools.http_executor import HttpExecutor, HttpExecutorError
 class ResolvedTool:
     skill: SkillDefinition
     manifest: SkillManifest
-    tool_def: dict[str, Any]
+    tool_def: SkillToolDefinition
 
 
 class SkillToolRuntime:
@@ -44,21 +44,17 @@ class SkillToolRuntime:
         self.store = store or __import__("src.skills.store", fromlist=["get_skills_store"]).get_skills_store()
         self.http = http_executor or HttpExecutor()
 
-    def _tool_schema_from_tool_def(self, tool_def: dict[str, Any]) -> dict[str, Any]:
+    def _tool_schema_from_tool_def(self, tool_def: SkillToolDefinition) -> dict[str, Any]:
         # Only expose OpenAI-compatible schema fields to the model.
         return {
-            "name": tool_def.get("name"),
-            "description": tool_def.get("description", ""),
-            "parameters": tool_def.get("parameters", {"type": "object", "properties": {}}),
+            "name": tool_def.name,
+            "description": tool_def.description,
+            "parameters": tool_def.parameters,
         }
 
     def build_llm_tools_for_skill(self, manifest: SkillManifest) -> list[dict[str, Any]]:
         tools: list[dict[str, Any]] = []
         for t in manifest.tools or []:
-            if not isinstance(t, dict):
-                continue
-            if not t.get("name"):
-                continue
             tools.append(self._tool_schema_from_tool_def(t))
         return tools
 
@@ -88,7 +84,7 @@ class SkillToolRuntime:
 
             manifest = self.load_manifest_for_skill(skill)
             for t in manifest.tools or []:
-                if isinstance(t, dict) and t.get("name") == tool_name:
+                if t.name == tool_name:
                     return ResolvedTool(skill=skill, manifest=manifest, tool_def=t)
 
         return None
@@ -111,24 +107,24 @@ class SkillToolRuntime:
 
     async def execute_tool(self, resolved: ResolvedTool, args: dict[str, Any]) -> str:
         tool_def = resolved.tool_def
-        executor = str(tool_def.get("executor", "") or "").lower()
+        executor = tool_def.executor.value
 
         if executor != "http":
             return json.dumps({"ok": False, "error": f"Unsupported executor '{executor}'"}, ensure_ascii=False)
 
-        http_def = tool_def.get("http") or {}
-        method = str(http_def.get("method", "GET") or "GET").upper()
-        url = self._render_template_obj(str(http_def.get("url", "") or ""), args)
-        headers = self._render_template_obj(http_def.get("headers"), args)
-        query = self._render_template_obj(http_def.get("query"), args)
+        assert tool_def.http is not None
+        method = tool_def.http.method
+        url = self._render_template_obj(tool_def.http.url, args)
+        headers = self._render_template_obj(tool_def.http.headers, args)
+        query = self._render_template_obj(tool_def.http.query, args)
 
         # Body can come from tool call args OR template; template wins if provided
-        json_body = http_def.get("json_body")
+        json_body = tool_def.http.json_body
         if json_body is None:
             json_body = args.get("json_body")
         json_body = self._render_template_obj(json_body, args)
 
-        text_body = http_def.get("text_body")
+        text_body = tool_def.http.text_body
         if text_body is None:
             text_body = args.get("text_body")
         text_body = self._render_template_obj(text_body, args)

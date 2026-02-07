@@ -36,8 +36,8 @@ async def test_skill_tool_runtime_executes_http_tool_from_manifest(tmp_path, mon
                 "http": {
                     "method": "GET",
                     "url": "https://example.com/hello",
-                    "query": {"q": "{{q}}"},
-                },
+                    "query": {"q": "{{q}}"}
+                }
             }
         ],
     )

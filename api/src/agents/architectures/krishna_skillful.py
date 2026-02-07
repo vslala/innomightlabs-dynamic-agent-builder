@@ -390,7 +390,7 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
 
                 # Load manifest to extract tool names/allowed hosts
                 manifest = self.skills_runtime.load_manifest_for_skill(skill)
-                tool_names = [t.get("name") for t in (manifest.tools or []) if isinstance(t, dict) and t.get("name")]
+                tool_names = [t.name for t in (manifest.tools or [])]
 
                 # Persist durable event
                 self._append_event(

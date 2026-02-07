@@ -16,6 +16,12 @@ def _make_skill_zip(skill_id: str = "wordpress", version: str = "1.0.0") -> byte
                 "name": "wp_search_posts",
                 "description": "Search posts",
                 "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+                "executor": "http",
+                "http": {
+                    "method": "GET",
+                    "url": "https://www.bemyaficionado.com/wp-json/wp/v2/posts",
+                    "query": {"search": "{{query}}"}
+                }
             }
         ],
         "allowed_hosts": ["www.bemyaficionado.com"],
