@@ -116,14 +116,29 @@ class SkillToolRuntime:
     def _render_template_obj(self, obj: Any, args: dict[str, Any], *, owner_email: str, skill_id: str) -> Any:
         """Render a template object replacing {{var}} and {{secret:name}} in strings.
 
-        This is intentionally minimal (no expressions).
+        Robustness rules:
+        - If a placeholder cannot be resolved (arg missing), return None.
+        - If a rendered string still contains an unresolved {{...}} token, return None.
         """
         if isinstance(obj, str):
             out = obj
             for k, v in args.items():
+                if v is None:
+                    continue
                 out = out.replace("{{" + str(k) + "}}", str(v))
+
             out = self._inject_secrets(owner_email=owner_email, skill_id=skill_id, text=out)
+
+            # If any placeholders remain, treat as missing
+            if "{{" in out and "}}" in out:
+                return None
+
+            # Treat empty strings as None for query/header pruning
+            if out.strip() == "":
+                return None
+
             return out
+
         if isinstance(obj, dict):
             return {k: self._render_template_obj(v, args, owner_email=owner_email, skill_id=skill_id) for k, v in obj.items()}
         if isinstance(obj, list):
@@ -144,6 +159,12 @@ class SkillToolRuntime:
         url = self._render_template_obj(tool_def.http.url, args, owner_email=owner_email, skill_id=skill_id)
         headers = self._render_template_obj(tool_def.http.headers, args, owner_email=owner_email, skill_id=skill_id)
         query = self._render_template_obj(tool_def.http.query, args, owner_email=owner_email, skill_id=skill_id)
+
+        # Prune Nones from headers/query so we don't send unresolved placeholders.
+        if isinstance(headers, dict):
+            headers = {k: v for k, v in headers.items() if v is not None}
+        if isinstance(query, dict):
+            query = {k: v for k, v in query.items() if v is not None}
 
         # Body can come from tool call args OR template; template wins if provided
         json_body = tool_def.http.json_body
