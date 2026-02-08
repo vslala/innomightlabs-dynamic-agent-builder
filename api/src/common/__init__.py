@@ -6,6 +6,7 @@ from .constants import (
     MAX_PAGE_SIZE,
     MAX_TOOL_ITERATIONS,
 )
+from .json_utils import dumps_safe
 
 __all__ = [
     "Paginated",
@@ -15,4 +16,5 @@ __all__ = [
     "DEFAULT_PAGE_SIZE",
     "MAX_PAGE_SIZE",
     "MAX_TOOL_ITERATIONS",
+    "dumps_safe",
 ]

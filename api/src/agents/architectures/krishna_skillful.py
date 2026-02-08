@@ -41,6 +41,7 @@ from src.skills.store import get_skills_store
 from src.skills.tool_runtime import SkillToolRuntime
 
 from src.runtime_events.models import RuntimeEvent, RuntimeEventType
+from src.common.json_utils import dumps_safe
 from src.runtime_events.repository import RuntimeEventRepository
 from src.memory.repository import MemoryRepository
 from src.memory.models import MemoryBlockDefinition, EvictionPolicy, CoreMemory
@@ -587,7 +588,7 @@ class KrishnaSkillfulArchitecture(AgentArchitecture):
         lines: list[str] = ["<runtime_events>"]
         for ev in page.items[:10]:
             if ev.event_type in {RuntimeEventType.SKILL_LOADED, RuntimeEventType.TOOL_CALL_RESULT}:
-                lines.append(f"- {ev.event_type.value}: {json.dumps(ev.payload, ensure_ascii=False)}")
+                lines.append(f"- {ev.event_type.value}: {dumps_safe(ev.payload, ensure_ascii=False)}")
         lines.append("</runtime_events>")
         return "\n".join(lines)
 
