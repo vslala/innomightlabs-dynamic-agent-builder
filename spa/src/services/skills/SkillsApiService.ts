@@ -33,6 +33,18 @@ class SkillsApiService {
     return httpClient.post<SkillDefinitionResponse>("/skills/manifest", data);
   }
 
+  async getEditForm(skill_id: string, version: string): Promise<{ form_schema: import("../../types/form").FormSchema; initial_values: any }> {
+    return httpClient.get(`/skills/${skill_id}/${version}/edit-form`);
+  }
+
+  async updateSkill(skill_id: string, version: string, data: {
+    manifest_json: string;
+    skill_md?: string;
+    secrets?: Array<{ name: string; value: string }>;
+  }): Promise<SkillDefinitionResponse> {
+    return httpClient.put<SkillDefinitionResponse>(`/skills/${skill_id}/${version}`, data);
+  }
+
   async uploadSkillZip(file: File): Promise<SkillDefinitionResponse> {
     const form = new FormData();
     form.append("file", file);

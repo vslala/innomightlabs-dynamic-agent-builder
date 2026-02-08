@@ -18,6 +18,7 @@ from fastapi.security import HTTPBearer
 
 from src import form_models
 from src.skills.models import SkillDefinition, SkillDefinitionResponse, SkillStatus
+from src.skills.edit_models import SkillEditFormResponse
 from src.skills.repository import SkillsRepository
 from src.skills.store import SkillsStore, get_skills_store
 
@@ -42,6 +43,60 @@ async def get_manifest_skill_form_schema() -> form_models.Form:
     from src.skills.schemas import get_skill_manifest_form
 
     return get_skill_manifest_form()
+
+
+@router.get("/{skill_id}/{version}/edit-form", response_model=SkillEditFormResponse)
+async def get_skill_edit_form(
+    request: Request,
+    skill_id: str,
+    version: str,
+    repo: Annotated[SkillsRepository, Depends(get_skills_repo)],
+    store: Annotated[SkillsStore, Depends(get_store)],
+) -> SkillEditFormResponse:
+    owner_email: str = request.state.user_email
+
+    skill = repo.get(owner_email, skill_id, version)
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+
+    try:
+        manifest_raw = store.read_text(skill.s3_manifest_key)
+        skill_md = store.read_text(skill.s3_skill_md_key)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to load skill artifact: {e}")
+
+    # Pretty-print JSON for editor UX
+    manifest_json = manifest_raw
+    try:
+        import json
+
+        manifest_json = json.dumps(json.loads(manifest_raw), indent=2, sort_keys=True, ensure_ascii=False)
+    except Exception:
+        # Keep raw if it isn't valid JSON for any reason
+        manifest_json = manifest_raw
+
+    # Do not return secret values; only names so user can rotate them.
+    secret_pairs: list[dict[str, str]] = []
+    try:
+        from src.skills.secrets_repository import SkillSecretsRepository
+
+        secrets_repo = SkillSecretsRepository()
+        for s in secrets_repo.list_for_skill(owner_email, skill_id):
+            secret_pairs.append({"name": s.name, "value": ""})
+    except Exception:
+        pass
+
+    from src.skills.schemas import get_skill_manifest_edit_form
+
+    schema = get_skill_manifest_edit_form(skill_id=skill_id, version=version)
+    return SkillEditFormResponse(
+        form_schema=schema,
+        initial_values={
+            "manifest_json": manifest_json,
+            "skill_md": skill_md,
+            "secrets": secret_pairs,
+        },
+    )
 
 
 def get_skills_repo() -> SkillsRepository:
@@ -195,6 +250,89 @@ async def upload_skill(
         status=skill_def.status,
         created_at=skill_def.created_at,
         updated_at=skill_def.updated_at,
+    )
+
+
+@router.put("/{skill_id}/{version}", response_model=SkillDefinitionResponse)
+async def update_skill_manifest(
+    request: Request,
+    skill_id: str,
+    version: str,
+    body: dict,
+    repo: Annotated[SkillsRepository, Depends(get_skills_repo)],
+    store: Annotated[SkillsStore, Depends(get_store)],
+) -> SkillDefinitionResponse:
+    """Update a skill's manifest.json + SKILL.md and optionally rotate secrets.
+
+    Note: secrets are linked to skill_id only (version-agnostic). When updating, any secret entries with
+    empty values are ignored (keeps existing value).
+    """
+    owner_email: str = request.state.user_email
+
+    existing = repo.get(owner_email, skill_id, version)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Skill not found")
+
+    manifest_json = str(body.get("manifest_json", "") or "").strip()
+    skill_md = str(body.get("skill_md", "") or "").strip()
+    secrets_raw = body.get("secrets") or []
+
+    if not manifest_json:
+        raise HTTPException(status_code=400, detail="manifest_json is required")
+
+    try:
+        from src.skills.models import SkillManifest
+
+        manifest = SkillManifest.model_validate_json(manifest_json)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid manifest_json: {e}")
+
+    # Prevent changing identity via edit
+    if manifest.skill_id != skill_id or manifest.version != version:
+        raise HTTPException(status_code=400, detail="skill_id/version in manifest must match the skill being edited")
+
+    # Overwrite artifact at same keys (same skill_id/version)
+    try:
+        artifact = store.upload_skill_manifest(owner_email=owner_email, manifest=manifest, skill_md=skill_md)
+    except Exception as e:
+        log.error(f"Failed to store updated skill: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
+
+    existing.name = artifact.manifest.name
+    existing.description = artifact.manifest.description
+    existing.s3_zip_key = artifact.zip_key
+    existing.s3_manifest_key = artifact.manifest_key
+    existing.s3_skill_md_key = artifact.skill_md_key
+
+    repo.upsert(existing)
+
+    # Rotate secrets if provided (only non-empty values)
+    try:
+        from src.skills.secrets_repository import SkillSecretsRepository
+
+        secrets_repo = SkillSecretsRepository()
+        if isinstance(secrets_raw, list):
+            for item in secrets_raw:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name", "") or "").strip()
+                value = str(item.get("value", "") or "")
+                if not name:
+                    continue
+                if not value:
+                    continue
+                secrets_repo.upsert_plaintext(owner_email=owner_email, skill_id=skill_id, name=name, value=value)
+    except Exception as e:
+        log.error(f"Failed to rotate secrets for skill {skill_id}: {e}", exc_info=True)
+
+    return SkillDefinitionResponse(
+        skill_id=existing.skill_id,
+        version=existing.version,
+        name=existing.name,
+        description=existing.description,
+        status=existing.status,
+        created_at=existing.created_at,
+        updated_at=existing.updated_at,
     )
 
 

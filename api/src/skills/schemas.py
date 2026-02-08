@@ -53,3 +53,11 @@ def get_skill_manifest_form() -> Form:
             ),
         ],
     )
+
+
+def get_skill_manifest_edit_form(skill_id: str, version: str) -> Form:
+    """Same as create form, but submits to update endpoint."""
+    f = get_skill_manifest_form()
+    f.form_name = f"Edit Skill (Manifest JSON) - {skill_id} v{version}"
+    f.submit_path = f"/skills/{skill_id}/{version}"
+    return f

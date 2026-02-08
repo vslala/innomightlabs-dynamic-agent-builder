@@ -3,6 +3,7 @@ import { ToggleLeft, ToggleRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { SchemaForm } from "../../components/forms";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { skillsApiService, type SkillDefinitionResponse } from "../../services/skills";
 import type { FormSchema, FormValue } from "../../types/form";
 
@@ -14,6 +15,11 @@ export function Skills() {
   const [uploadSchema, setUploadSchema] = useState<FormSchema | null>(null);
   const [manifestSchema, setManifestSchema] = useState<FormSchema | null>(null);
   const [creatingFromManifest, setCreatingFromManifest] = useState(false);
+
+  const [editing, setEditing] = useState<SkillDefinitionResponse | null>(null);
+  const [editSchema, setEditSchema] = useState<FormSchema | null>(null);
+  const [editInitialValues, setEditInitialValues] = useState<Record<string, any> | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -58,6 +64,20 @@ export function Skills() {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const openEdit = async (skill: SkillDefinitionResponse) => {
+    setEditing(skill);
+    setEditSchema(null);
+    setEditInitialValues(null);
+    setError(null);
+    try {
+      const resp = await skillsApiService.getEditForm(skill.skill_id, skill.version);
+      setEditSchema(resp.form_schema);
+      setEditInitialValues(resp.initial_values || {});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load edit form");
     }
   };
 
@@ -165,6 +185,46 @@ export function Skills() {
         </div>
       )}
 
+      <Dialog open={!!editing} onOpenChange={(open) => { if (!open) setEditing(null); }}>
+        <DialogContent style={{ maxWidth: 900 }}>
+          <DialogHeader>
+            <DialogTitle>Edit Skill</DialogTitle>
+          </DialogHeader>
+
+          {!editing ? null : !editSchema || !editInitialValues ? (
+            <p style={{ color: "var(--text-muted)" }}>Loading…</p>
+          ) : (
+            <SchemaForm
+              schema={editSchema}
+              initialValues={editInitialValues as any}
+              submitLabel={savingEdit ? "Saving..." : "Save"}
+              isLoading={savingEdit}
+              onSubmit={async (data: Record<string, FormValue>) => {
+                const manifest_json = String(data.manifest_json || "");
+                const skill_md = String(data.skill_md || "");
+                const secrets = Array.isArray(data.secrets) ? data.secrets : [];
+
+                setSavingEdit(true);
+                setError(null);
+                try {
+                  await skillsApiService.updateSkill(editing.skill_id, editing.version, {
+                    manifest_json,
+                    skill_md,
+                    secrets: secrets as any,
+                  });
+                  setEditing(null);
+                  await load();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Failed to save skill");
+                } finally {
+                  setSavingEdit(false);
+                }
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardHeader>
           <CardTitle>Uploaded Skills</CardTitle>
@@ -211,17 +271,23 @@ export function Skills() {
                     )}
                   </div>
 
-                  <Button variant="outline" onClick={() => void toggle(s)}>
-                    {s.status === "active" ? (
-                      <>
-                        <ToggleRight style={{ height: 16, width: 16, marginRight: 8 }} /> Deactivate
-                      </>
-                    ) : (
-                      <>
-                        <ToggleLeft style={{ height: 16, width: 16, marginRight: 8 }} /> Activate
-                      </>
-                    )}
-                  </Button>
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <Button variant="outline" onClick={() => void openEdit(s)}>
+                      Edit
+                    </Button>
+
+                    <Button variant="outline" onClick={() => void toggle(s)}>
+                      {s.status === "active" ? (
+                        <>
+                          <ToggleRight style={{ height: 16, width: 16, marginRight: 8 }} /> Deactivate
+                        </>
+                      ) : (
+                        <>
+                          <ToggleLeft style={{ height: 16, width: 16, marginRight: 8 }} /> Activate
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
