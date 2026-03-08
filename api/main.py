@@ -23,6 +23,7 @@ from src.runtime_events import runtime_events_router
 from src.skills import skills_router
 from src.exceptions import register_exception_handlers
 from src.logging_config import configure_cloudwatch_logging
+from src.skills import skills_router
 
 
 # Custom JSON encoder for DynamoDB Decimal types

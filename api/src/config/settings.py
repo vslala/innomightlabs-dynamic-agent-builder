@@ -88,20 +88,8 @@ class Settings:
     # GitHub (optional; for issue creation from contact form)
     github_token: str = ""
 
-    # Skills (optional; required only when using skill upload/registry)
-    skills_bucket_name: str = ""
-    # Skill artifact store backend: "s3" (default) or "local".
-    skills_store_backend: str = "s3"
-    # Local store root (used when skills_store_backend=local)
-    skills_local_root: str = "./.skills"
-
-    # HTTP executor (optional; used by skill tool execution)
-    http_executor_timeout_seconds: float = 10.0
-    http_executor_max_response_bytes: int = 200_000
-    # Optional allowlist. If empty, allow any public host (private/local targets still blocked).
-    http_executor_allowed_hosts: list[str] = field(default_factory=list)
-    # If true, allow localhost/private targets (ONLY recommended for local dev).
-    http_executor_allow_local: bool = False
+    # Skills (optional; path to skill packages directory)
+    skills_root: str = ""
 
     def validate_core(self) -> None:
         """
@@ -219,8 +207,6 @@ class Settings:
         google_client_id = os.getenv("GOOGLE_CLIENT_ID", google_client_id)
         google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET", google_client_secret)
 
-        http_allowed_hosts = [h.strip() for h in os.getenv("HTTP_EXECUTOR_ALLOWED_HOSTS", "").split(",") if h.strip()]
-
         return cls(
             environment=environment,
             dynamodb_table=os.getenv("DYNAMODB_TABLE", "dynamic-agent-builder-main" if environment == "dev" else ""),
@@ -232,13 +218,6 @@ class Settings:
             google_client_id=google_client_id,
             google_client_secret=google_client_secret,
             google_redirect_uri=f"{api_base_url}/auth/callback",
-            http_executor_timeout_seconds=float(os.getenv("HTTP_EXECUTOR_TIMEOUT_SECONDS", "10")),
-            http_executor_max_response_bytes=int(os.getenv("HTTP_EXECUTOR_MAX_RESPONSE_BYTES", "200000")),
-            http_executor_allowed_hosts=http_allowed_hosts,
-            http_executor_allow_local=(
-                os.getenv("HTTP_EXECUTOR_ALLOW_LOCAL", "").lower() in {"1", "true", "yes"}
-                or environment == "dev"
-            ),
             # Pinecone - no defaults, must be explicitly configured
             pinecone_api_key=os.getenv("PINECONE_API_KEY", ""),
             pinecone_host=os.getenv("PINECONE_HOST", ""),
@@ -267,10 +246,11 @@ class Settings:
             mailjet_secret_key=os.getenv("MAILJET_SECRET_KEY", ""),
             # GitHub
             github_token=os.getenv("GITHUB_TOKEN", ""),
-            # Skills
-            skills_bucket_name=os.getenv("SKILLS_BUCKET_NAME", ""),
-            skills_store_backend=os.getenv("SKILLS_STORE_BACKEND", "s3"),
-            skills_local_root=os.getenv("SKILLS_LOCAL_ROOT", "./.skills"),
+            # Skills: default to api/src/skill_packages (bundled with Lambda)
+            skills_root=os.getenv(
+                "SKILLS_ROOT",
+                str(Path(__file__).resolve().parent.parent / "skill_packages"),
+            ),
         )
 
 
