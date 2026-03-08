@@ -1,0 +1,22 @@
+{
+  "form_name": "WordPress Manager Configuration",
+  "submit_path": "/skills/enable",
+  "form_inputs": [
+    {
+      "input_type": "text",
+      "name": "site_url",
+      "label": "WordPress Site URL",
+      "attr": {
+        "placeholder": "https://yoursite.com"
+      }
+    },
+    {
+      "input_type": "password",
+      "name": "api_token",
+      "label": "Application Password (optional)",
+      "attr": {
+        "placeholder": "Leave empty for public sites"
+      }
+    }
+  ]
+}
