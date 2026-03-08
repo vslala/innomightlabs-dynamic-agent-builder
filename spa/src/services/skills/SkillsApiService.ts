@@ -1,62 +1,49 @@
+/**
+ * Skills API service.
+ *
+ * Handles communication with the skills registry and user configuration endpoints.
+ */
+
 import { httpClient } from "../http/client";
+import type { FormSchema } from "../../types/form";
 
-export type SkillStatus = "active" | "inactive";
-
-export interface SkillDefinitionResponse {
+export interface SkillRegistryEntry {
   skill_id: string;
-  version: string;
   name: string;
   description: string;
-  status: SkillStatus;
+  version: string;
+  has_schema: boolean;
+}
+
+export interface EnabledSkillResponse {
+  skill_id: string;
+  config_keys: string[];
   created_at: string;
-  updated_at?: string | null;
+  updated_at: string;
 }
 
 class SkillsApiService {
-  async listSkills(): Promise<SkillDefinitionResponse[]> {
-    return httpClient.get<SkillDefinitionResponse[]>("/skills");
+  async listRegistry(): Promise<SkillRegistryEntry[]> {
+    return httpClient.get<SkillRegistryEntry[]>("/skills/registry");
   }
 
-  async getUploadSchema(): Promise<import("../../types/form").FormSchema> {
-    return httpClient.get<import("../../types/form").FormSchema>("/skills/forms/upload");
+  async getSchema(skillId: string): Promise<FormSchema> {
+    return httpClient.get<FormSchema>(`/skills/${skillId}/schema`);
   }
 
-  async getManifestSchema(): Promise<import("../../types/form").FormSchema> {
-    return httpClient.get<import("../../types/form").FormSchema>("/skills/forms/manifest");
+  async enableSkill(skillId: string, configValues: Record<string, unknown>): Promise<void> {
+    await httpClient.post("/skills/enable", {
+      skill_id: skillId,
+      config_values: configValues,
+    });
   }
 
-  async createFromManifest(data: {
-    manifest_json: string;
-    skill_md?: string;
-    secrets?: Array<{ name: string; value: string }>;
-  }): Promise<SkillDefinitionResponse> {
-    return httpClient.post<SkillDefinitionResponse>("/skills/manifest", data);
+  async listEnabled(): Promise<EnabledSkillResponse[]> {
+    return httpClient.get<EnabledSkillResponse[]>("/skills/enabled");
   }
 
-  async getEditForm(skill_id: string, version: string): Promise<{ form_schema: import("../../types/form").FormSchema; initial_values: any }> {
-    return httpClient.get(`/skills/${skill_id}/${version}/edit-form`);
-  }
-
-  async updateSkill(skill_id: string, version: string, data: {
-    manifest_json: string;
-    skill_md?: string;
-    secrets?: Array<{ name: string; value: string }>;
-  }): Promise<SkillDefinitionResponse> {
-    return httpClient.put<SkillDefinitionResponse>(`/skills/${skill_id}/${version}`, data);
-  }
-
-  async uploadSkillZip(file: File): Promise<SkillDefinitionResponse> {
-    const form = new FormData();
-    form.append("file", file);
-    return httpClient.postForm<SkillDefinitionResponse>("/skills/upload", form);
-  }
-
-  async activateSkill(skillId: string, version: string): Promise<SkillDefinitionResponse> {
-    return httpClient.post<SkillDefinitionResponse>(`/skills/${skillId}/${version}/activate`, {});
-  }
-
-  async deactivateSkill(skillId: string, version: string): Promise<SkillDefinitionResponse> {
-    return httpClient.post<SkillDefinitionResponse>(`/skills/${skillId}/${version}/deactivate`, {});
+  async disableSkill(skillId: string): Promise<void> {
+    await httpClient.delete(`/skills/${skillId}`);
   }
 }
 

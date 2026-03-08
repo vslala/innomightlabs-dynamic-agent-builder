@@ -1,1 +1,1 @@
-export * from "./SkillsApiService";
+export { skillsApiService, type SkillRegistryEntry, type EnabledSkillResponse } from "./SkillsApiService";
