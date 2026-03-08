@@ -1,138 +1,97 @@
-"""Skills domain models.
+"""
+Skill package domain models.
 
-A Skill is a tenant-uploaded package (zip) stored in S3.
-We store the canonical artifact in S3 and metadata in DynamoDB.
+These models represent skill packages discovered from the registry
+and user-specific configuration stored in DynamoDB.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class SkillStatus(str, Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
+# -----------------------------------------------------------------------------
+# Registry models (from config.json)
+# -----------------------------------------------------------------------------
 
 
-class SkillToolExecutor(str, Enum):
-    HTTP = "http"
+class SkillPackageConfig(BaseModel):
+    """
+    Configuration loaded from a skill package's config.json.
 
+    Represents the static metadata of a skill as defined by the skill author.
+    """
 
-class HttpToolSpec(BaseModel):
-    method: str = Field(..., description="HTTP method: GET/POST/PUT/PATCH/DELETE")
-    url: str = Field(..., min_length=1, description="Full http(s) URL")
-    headers: dict[str, Any] | None = None
-    query: dict[str, Any] | None = None
-    json_body: Any | None = None
-    text_body: str | None = None
-
-
-class SkillToolDefinition(BaseModel):
-    """Strict tool definition stored in a skill manifest."""
-
-    name: str = Field(..., min_length=1, max_length=100)
-    description: str = Field(default="", max_length=2000)
-    # OpenAI/Anthropic style tool schema
-    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
-
-    executor: SkillToolExecutor = Field(...)
-
-    # Executor-specific config
-    http: HttpToolSpec | None = None
-
-    def validate_executor_config(self) -> "SkillToolDefinition":
-        if self.executor == SkillToolExecutor.HTTP:
-            if self.http is None:
-                raise ValueError("executor=http requires http spec")
-            m = self.http.method.upper().strip()
-            if m not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
-                raise ValueError("http.method must be one of GET/POST/PUT/PATCH/DELETE")
-            self.http.method = m
-        return self
-
-
-class SkillManifest(BaseModel):
     skill_id: str = Field(..., min_length=1, max_length=100)
     name: str = Field(..., min_length=1, max_length=200)
-    version: str = Field(..., min_length=1, max_length=50)
     description: str = Field(default="", max_length=2000)
-    allowed_hosts: list[str] = Field(default_factory=list)
-
-    tools: list[SkillToolDefinition] = Field(default_factory=list, description="Strict tool definitions")
-
-    def model_post_init(self, __context: Any) -> None:
-        # Ensure each tool has valid executor config
-        for t in self.tools:
-            t.validate_executor_config()
+    version: str = Field(..., min_length=1, max_length=50)
 
 
-class SkillDefinition(BaseModel):
-    owner_email: str
+class SkillRegistryEntry(BaseModel):
+    """
+    Entry returned by the skills registry API.
+
+    Contains information needed for the frontend to list available skills
+    and determine whether a skill requires user configuration.
+    """
+
     skill_id: str
-    version: str
     name: str
-    description: str = ""
-    status: SkillStatus = SkillStatus.INACTIVE
+    description: str
+    version: str
+    has_schema: bool
 
-    s3_zip_key: str
-    s3_manifest_key: str
-    s3_skill_md_key: str
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: Optional[datetime] = None
+# -----------------------------------------------------------------------------
+# User configuration models (DynamoDB)
+# -----------------------------------------------------------------------------
+
+
+@dataclass
+class UserSkillConfig:
+    """
+    User-specific configuration for an enabled skill.
+
+    Stores the values provided by the user when enabling a skill.
+    These values are available at tool execution time.
+    """
+
+    user_email: str
+    skill_id: str
+    config_values: dict[str, Any]
+    created_at: str
+    updated_at: str
 
     @property
     def pk(self) -> str:
-        return f"Tenant#{self.owner_email}"
+        return f"User#{self.user_email}"
 
     @property
     def sk(self) -> str:
-        return f"Skill#{self.skill_id}#{self.version}"
+        return f"SkillConfig#{self.skill_id}"
 
-    def to_dynamo_item(self) -> dict:
+    def to_dynamo_item(self) -> dict[str, Any]:
         return {
             "pk": self.pk,
             "sk": self.sk,
-            "entity_type": "SkillDefinition",
-            "owner_email": self.owner_email,
+            "user_email": self.user_email,
             "skill_id": self.skill_id,
-            "version": self.version,
-            "name": self.name,
-            "description": self.description,
-            "status": self.status.value,
-            "s3_zip_key": self.s3_zip_key,
-            "s3_manifest_key": self.s3_manifest_key,
-            "s3_skill_md_key": self.s3_skill_md_key,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "config_values": self.config_values,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "entity_type": "UserSkillConfig",
         }
 
     @classmethod
-    def from_dynamo_item(cls, item: dict) -> "SkillDefinition":
+    def from_dynamo_item(cls, item: dict[str, Any]) -> "UserSkillConfig":
         return cls(
-            owner_email=item["owner_email"],
+            user_email=item["user_email"],
             skill_id=item["skill_id"],
-            version=item["version"],
-            name=item.get("name", ""),
-            description=item.get("description", ""),
-            status=SkillStatus(item.get("status", SkillStatus.INACTIVE.value)),
-            s3_zip_key=item["s3_zip_key"],
-            s3_manifest_key=item["s3_manifest_key"],
-            s3_skill_md_key=item["s3_skill_md_key"],
-            created_at=datetime.fromisoformat(item["created_at"]),
-            updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
+            config_values=item.get("config_values", {}),
+            created_at=item["created_at"],
+            updated_at=item["updated_at"],
         )
-
-
-class SkillDefinitionResponse(BaseModel):
-    skill_id: str
-    version: str
-    name: str
-    description: str
-    status: SkillStatus
-    created_at: datetime
-    updated_at: Optional[datetime] = None
