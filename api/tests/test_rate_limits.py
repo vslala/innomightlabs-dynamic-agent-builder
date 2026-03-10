@@ -1,4 +1,5 @@
 from fastapi import status
+from fastapi import HTTPException
 
 from tests.mock_data import TEST_USER_EMAIL
 
@@ -113,3 +114,82 @@ def _agent_payload():
         "agent_model": "anthropic.claude-3-sonnet-20240229-v1:0",
         "agent_persona": "Test persona",
     }
+
+
+def test_superuser_bypasses_all_rate_limit_checks(dynamodb_table, monkeypatch):
+    from src.config import settings
+    from src.payments.pricing_config import PricingTierLimits
+    from src.rate_limits.models import UsageRecord
+    from src.rate_limits.service import RateLimitService
+
+    service = RateLimitService()
+    monkeypatch.setattr(settings, "superuser_emails", [TEST_USER_EMAIL.lower()])
+    monkeypatch.setattr(service, "get_tier_limits", lambda _tier: PricingTierLimits(
+        agents=1,
+        messages_per_month=1,
+        kb_pages=1,
+        memory_blocks=1,
+    ))
+    monkeypatch.setattr(service, "get_user_tier", lambda _email: "free")
+    monkeypatch.setattr(
+        service.usage_repo,
+        "get_usage",
+        lambda _email, period: UsageRecord(
+            user_email=TEST_USER_EMAIL,
+            period_key=period,
+            messages_used=1,
+            kb_pages_used=1,
+            agents_active=1,
+        ),
+    )
+
+    # Should not raise even though all limits are already reached.
+    service.check_agent_limit(TEST_USER_EMAIL)
+    service.check_message_limit(TEST_USER_EMAIL)
+    service.check_kb_pages_limit(TEST_USER_EMAIL, requested_pages=10)
+
+
+def test_non_superuser_still_gets_rate_limit_errors(dynamodb_table, monkeypatch):
+    from src.config import settings
+    from src.payments.pricing_config import PricingTierLimits
+    from src.rate_limits.models import UsageRecord
+    from src.rate_limits.service import RateLimitService
+
+    service = RateLimitService()
+    monkeypatch.setattr(settings, "superuser_emails", [])
+    monkeypatch.setattr(service, "get_tier_limits", lambda _tier: PricingTierLimits(
+        agents=1,
+        messages_per_month=1,
+        kb_pages=1,
+        memory_blocks=1,
+    ))
+    monkeypatch.setattr(service, "get_user_tier", lambda _email: "free")
+    monkeypatch.setattr(
+        service.usage_repo,
+        "get_usage",
+        lambda _email, period: UsageRecord(
+            user_email=TEST_USER_EMAIL,
+            period_key=period,
+            messages_used=1,
+            kb_pages_used=1,
+            agents_active=1,
+        ),
+    )
+
+    try:
+        service.check_agent_limit(TEST_USER_EMAIL)
+        assert False, "Expected check_agent_limit to raise"
+    except HTTPException as exc:
+        assert exc.status_code == 429
+
+    try:
+        service.check_message_limit(TEST_USER_EMAIL)
+        assert False, "Expected check_message_limit to raise"
+    except HTTPException as exc:
+        assert exc.status_code == 429
+
+    try:
+        service.check_kb_pages_limit(TEST_USER_EMAIL, requested_pages=10)
+        assert False, "Expected check_kb_pages_limit to raise"
+    except HTTPException as exc:
+        assert exc.status_code == 429

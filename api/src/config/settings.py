@@ -76,6 +76,7 @@ class Settings:
 
     # Feature flags
     _validated_features: set = field(default_factory=set)
+    superuser_emails: list[str] = field(default_factory=list)
 
     # Stripe (optional; only required for billing features)
     stripe_secret_key: str = ""
@@ -186,6 +187,15 @@ class Settings:
         """Check if OpenAI OAuth is configured."""
         return bool(self.openai_oauth_client_id)
 
+    def is_superuser_email(self, email: str | None) -> bool:
+        """Check if email belongs to a configured superuser."""
+        if not email:
+            return False
+        normalized = email.strip().lower()
+        if not normalized:
+            return False
+        return normalized in set(self.superuser_emails)
+
     @classmethod
     def from_env(cls) -> "Settings":
         """
@@ -246,6 +256,12 @@ class Settings:
 
             return [part.strip() for part in text.split(",") if part.strip()]
 
+        def parse_env_email_list(name: str, default: list[str]) -> list[str]:
+            values = parse_env_list(name, default)
+            normalized = [value.strip().lower() for value in values if value and value.strip()]
+            # Preserve order while removing duplicates
+            return list(dict.fromkeys(normalized))
+
         return cls(
             environment=environment,
             dynamodb_table=os.getenv("DYNAMODB_TABLE", "dynamic-agent-builder-main" if environment == "dev" else ""),
@@ -278,6 +294,7 @@ class Settings:
                 "OPENAI_OAUTH_RESPONSES_URL",
                 "https://chatgpt.com/backend-api/codex/responses",
             ),
+            superuser_emails=parse_env_email_list("SUPERUSER_EMAILS", []),
             # Pinecone - no defaults, must be explicitly configured
             pinecone_api_key=os.getenv("PINECONE_API_KEY", ""),
             pinecone_host=os.getenv("PINECONE_HOST", ""),

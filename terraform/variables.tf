@@ -83,6 +83,12 @@ variable "openai_models" {
   default     = "gpt-5.4,gpt-5.3-codex,gpt-5.2-codex,gpt-5.2,gpt-5.1-codex-max,gpt-5.1-codex-mini"
 }
 
+variable "superuser_emails" {
+  description = "Comma-separated superuser emails that bypass authenticated product rate limits"
+  type        = string
+  default     = ""
+}
+
 variable "jwt_secret" {
   description = "JWT secret for signing tokens"
   type        = string

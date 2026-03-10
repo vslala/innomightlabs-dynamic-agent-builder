@@ -58,6 +58,7 @@ resource "aws_lambda_function" "api" {
       )
       OPENAI_OAUTH_RESPONSES_URL = var.openai_oauth_responses_url
       OPENAI_MODELS = var.openai_models
+      SUPERUSER_EMAILS = var.superuser_emails
       JWT_SECRET           = var.jwt_secret
       # Cognito Hosted UI
       COGNITO_DOMAIN        = "https://${aws_cognito_user_pool_domain.hosted_ui.domain}.auth.${var.aws_region}.amazoncognito.com"

@@ -56,6 +56,13 @@ class RateLimitService:
         Raises:
             HTTPException: 429 if limit exceeded
         """
+        if settings.is_superuser_email(user_email):
+            log.info(
+                "Rate-limit bypass applied",
+                extra={"user": user_email, "limit_type": "agents"},
+            )
+            return
+
         tier = self.get_user_tier(user_email)
         limits = self.get_tier_limits(tier)
 
@@ -99,6 +106,13 @@ class RateLimitService:
         Raises:
             HTTPException: 429 if limit exceeded
         """
+        if settings.is_superuser_email(user_email):
+            log.info(
+                "Rate-limit bypass applied",
+                extra={"user": user_email, "limit_type": "messages"},
+            )
+            return
+
         tier = self.get_user_tier(user_email)
         limits = self.get_tier_limits(tier)
 
@@ -137,6 +151,13 @@ class RateLimitService:
         Raises:
             HTTPException: 429 if limit exceeded
         """
+        if settings.is_superuser_email(user_email):
+            log.info(
+                "Rate-limit bypass applied",
+                extra={"user": user_email, "limit_type": "kb_pages"},
+            )
+            return
+
         tier = self.get_user_tier(user_email)
         limits = self.get_tier_limits(tier)
 

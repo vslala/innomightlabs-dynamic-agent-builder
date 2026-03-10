@@ -167,6 +167,7 @@ write_kv "openai_oauth_originator" "$(get_var 'OPENAI_OAUTH_ORIGINATOR')"
 write_kv "openai_oauth_redirect_uri" "$(get_var 'OPENAI_OAUTH_REDIRECT_URI')"
 write_kv "openai_oauth_responses_url" "$(get_var 'OPENAI_OAUTH_RESPONSES_URL')"
 write_kv "openai_models" "$(get_var 'OPENAI_MODELS')"
+write_kv "superuser_emails" "$(get_var 'SUPERUSER_EMAILS')"
 
 # ============================================================================
 # JWT (common)
