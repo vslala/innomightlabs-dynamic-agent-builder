@@ -39,8 +39,18 @@ ANTHROPIC_PROVIDER_FORM = Form(
 
 OPENAI_PROVIDER_FORM = Form(
     form_name="OpenAI OAuth Configuration",
-    submit_path="/auth/openai/start",
-    form_inputs=[],
+    submit_path="/auth/openai/complete",
+    form_inputs=[
+        FormInput(
+            input_type=FormInputType.TEXT,
+            name="callback_url",
+            label="Paste callback URL",
+            attr={
+                "type": "url",
+                "placeholder": "http://localhost:1455/auth/callback?code=...&state=...",
+            },
+        )
+    ],
 )
 
 # Map of provider name -> form schema

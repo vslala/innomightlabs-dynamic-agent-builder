@@ -1,8 +1,10 @@
 import json
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 
+from src.config import settings
 from src.crypto import decrypt
 from src.auth.openai_oauth import encode_state_session, OpenAIOAuthState
 from src.settings.repository import ProviderSettingsRepository
@@ -15,25 +17,22 @@ class TestOpenAIOAuth:
         assert response.status_code == 401
 
     def test_openai_start_returns_authorize_url(self, test_client: TestClient, auth_headers: dict):
-        response = test_client.post(
-            "/auth/openai/start",
-            json={"return_to": "http://localhost:5173/dashboard/settings"},
-            headers=auth_headers,
-        )
+        response = test_client.post("/auth/openai/start", json={}, headers=auth_headers)
 
         assert response.status_code == 200
         payload = response.json()
         assert "authorize_url" in payload
         assert payload["authorize_url"].startswith("https://auth.openai.com/oauth/authorize?")
 
-    def test_openai_callback_success_saves_provider_settings(
+    def test_openai_complete_success_saves_provider_settings(
         self,
         test_client: TestClient,
+        auth_headers: dict,
         monkeypatch,
     ):
         async def mock_build_credentials(code: str, code_verifier: str):
             assert code == "test-code"
-            assert code_verifier == "test-verifier"
+            assert code_verifier
             from src.auth.openai_oauth import OpenAICredentials
             return OpenAICredentials(
                 access_token="header.payload.signature",
@@ -45,22 +44,22 @@ class TestOpenAIOAuth:
 
         monkeypatch.setattr("src.auth.router.build_credentials_from_auth_code", mock_build_credentials)
 
-        state_session = OpenAIOAuthState(
-            nonce="nonce-test",
-            code_verifier="test-verifier",
-            user_email=TEST_USER_EMAIL,
-            return_to="http://localhost:5173/dashboard/settings",
-            expires_at=int((datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()),
+        start_response = test_client.post("/auth/openai/start", json={}, headers=auth_headers)
+        assert start_response.status_code == 200
+        authorize_url = start_response.json()["authorize_url"]
+        state = parse_qs(urlparse(authorize_url).query)["state"][0]
+        callback_url = f"{settings.openai_oauth_redirect_uri}?code=test-code&state={state}"
+
+        response = test_client.post(
+            "/auth/openai/complete",
+            json={"callback_url": callback_url},
+            headers=auth_headers,
         )
 
-        response = test_client.get(
-            "/auth/openai",
-            params={"code": "test-code", "state": encode_state_session(state_session)},
-            follow_redirects=False,
-        )
-
-        assert response.status_code in (302, 307)
-        assert "openai_oauth=success" in response.headers["location"]
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["provider_name"] == "OpenAI"
+        assert payload["is_configured"] is True
 
         repo = ProviderSettingsRepository()
         saved = repo.find_by_provider(TEST_USER_EMAIL, "OpenAI")
@@ -72,36 +71,39 @@ class TestOpenAIOAuth:
         assert credentials["refresh_token"] == "refresh-123"
         assert "expires_at" in credentials
 
-    def test_openai_callback_invalid_state_redirects_error(
+    def test_openai_complete_rejects_invalid_callback_url(
         self,
         test_client: TestClient,
+        auth_headers: dict,
     ):
-        response = test_client.get(
-            "/auth/openai",
-            params={"code": "test-code", "state": "different-state"},
-            follow_redirects=False,
+        response = test_client.post(
+            "/auth/openai/complete",
+            json={"callback_url": "not-a-url"},
+            headers=auth_headers,
         )
 
-        assert response.status_code in (302, 307)
-        assert "openai_oauth=error" in response.headers["location"]
+        assert response.status_code == 400
+        assert "full callback URL" in response.json()["detail"]
 
-    def test_openai_callback_works_without_cookie_when_state_contains_session(
+    def test_openai_complete_invalid_state_returns_400(
         self,
         test_client: TestClient,
-        monkeypatch,
+        auth_headers: dict,
     ):
-        async def mock_build_credentials(code: str, code_verifier: str):
-            assert code == "test-code"
-            assert code_verifier == "test-verifier"
-            from src.auth.openai_oauth import OpenAICredentials
-            return OpenAICredentials(
-                access_token="header.payload.signature",
-                refresh_token="refresh-123",
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-            )
+        callback_url = f"{settings.openai_oauth_redirect_uri}?code=test-code&state=bad-state"
+        response = test_client.post(
+            "/auth/openai/complete",
+            json={"callback_url": callback_url},
+            headers=auth_headers,
+        )
 
-        monkeypatch.setattr("src.auth.router.build_credentials_from_auth_code", mock_build_credentials)
+        assert response.status_code == 400
+        assert "Invalid OpenAI OAuth state" in response.json()["detail"]
 
+    def test_callback_page_for_openai_state_returns_manual_instructions(
+        self,
+        test_client: TestClient,
+    ):
         state_session = OpenAIOAuthState(
             nonce="nonce-test",
             code_verifier="test-verifier",
@@ -111,14 +113,10 @@ class TestOpenAIOAuth:
         )
         encrypted_state = encode_state_session(state_session)
 
-        response = test_client.get(
-            "/auth/callback",
-            params={"code": "test-code", "state": encrypted_state},
-            follow_redirects=False,
-        )
+        response = test_client.get("/auth/callback", params={"state": encrypted_state})
 
-        assert response.status_code in (302, 307)
-        assert "openai_oauth=success" in response.headers["location"]
+        assert response.status_code == 200
+        assert "Copy the full URL" in response.text
 
 
 class TestOpenAISettings:

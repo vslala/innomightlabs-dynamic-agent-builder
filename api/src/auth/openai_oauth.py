@@ -5,7 +5,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -93,6 +93,49 @@ def build_authorization_url(state: str, code_challenge: str) -> str:
         params["originator"] = settings.openai_oauth_originator
 
     return f"{OPENAI_AUTHORIZE_URL}?{urlencode(params)}"
+
+
+def parse_openai_callback_url(callback_url: str) -> tuple[str, str]:
+    """
+    Validate and parse pasted OpenAI OAuth callback URL.
+
+    Returns:
+        (code, state)
+    """
+    raw = (callback_url or "").strip()
+    if not raw:
+        raise OpenAIOAuthError("Callback URL is required.")
+
+    parsed = urlparse(raw)
+    if not parsed.scheme or not parsed.netloc:
+        raise OpenAIOAuthError("Please paste the full callback URL including http:// or https://")
+
+    expected = urlparse(settings.openai_oauth_redirect_uri)
+    if (
+        parsed.scheme != expected.scheme
+        or parsed.netloc != expected.netloc
+        or parsed.path != expected.path
+    ):
+        expected_base = f"{expected.scheme}://{expected.netloc}{expected.path}"
+        raise OpenAIOAuthError(
+            f"Invalid callback URL. It must match the configured redirect URI: {expected_base}"
+        )
+
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    oauth_error = (params.get("error") or [None])[0]
+    if oauth_error:
+        error_description = (params.get("error_description") or [""])[0]
+        message = f"OpenAI OAuth error: {oauth_error}"
+        if error_description:
+            message += f" ({error_description})"
+        raise OpenAIOAuthError(message)
+
+    code = (params.get("code") or [None])[0]
+    state = (params.get("state") or [None])[0]
+    if not code or not state:
+        raise OpenAIOAuthError("Callback URL must include both 'code' and 'state' query parameters.")
+
+    return code, state
 
 
 def encode_state_session(session: OpenAIOAuthState) -> str:

@@ -35,7 +35,6 @@ PUBLIC_PATHS = {
     "/auth/cognito",
     "/auth/local/signup",
     "/auth/local/login",
-    "/auth/openai",
     "/docs",
     "/test-logging",
     "/openapi.json",

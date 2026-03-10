@@ -124,7 +124,7 @@ async def save_provider_settings(
     if provider_name == "OpenAI":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OpenAI must be configured using OAuth via /auth/openai/start",
+            detail="OpenAI must be configured using OAuth via /auth/openai/complete",
         )
 
     # Validate required fields from schema

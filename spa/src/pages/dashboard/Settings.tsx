@@ -19,6 +19,7 @@ import {
   providerSettingsService,
   type ProviderWithStatus,
 } from "../../services/settings/ProviderSettingsService";
+import "./Settings.css";
 
 type SubscriptionStatus = {
   tier: string;
@@ -50,16 +51,18 @@ export function Settings() {
   useEffect(() => {
     loadProviders();
     loadSubscription();
-    const query = new URLSearchParams(window.location.search);
-    const oauthStatus = query.get("openai_oauth");
-    if (oauthStatus === "success") {
-      setError(null);
-      window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (oauthStatus === "error") {
-      setError("OpenAI OAuth connection failed. Please try again.");
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
   }, []);
+
+  const getErrorMessage = (err: unknown, fallback: string) => {
+    if (err && typeof err === "object" && "response" in err) {
+      const response = (err as { response?: { data?: { detail?: string } } }).response;
+      const detail = response?.data?.detail;
+      if (typeof detail === "string" && detail.trim()) {
+        return detail;
+      }
+    }
+    return fallback;
+  };
 
   const loadProviders = async () => {
     try {
@@ -87,18 +90,23 @@ export function Settings() {
     setSavingProvider(true);
     setError(null);
     try {
-      const payload: Record<string, string> = {};
-      for (const [key, value] of Object.entries(data)) {
-        if (typeof value === "string") {
-          payload[key] = value;
+      if (providerName === "OpenAI") {
+        const callbackUrl = typeof data.callback_url === "string" ? data.callback_url.trim() : "";
+        await providerSettingsService.completeOpenAIConnect({ callback_url: callbackUrl });
+      } else {
+        const payload: Record<string, string> = {};
+        for (const [key, value] of Object.entries(data)) {
+          if (typeof value === "string") {
+            payload[key] = value;
+          }
         }
+        await providerSettingsService.saveProviderSettings(providerName, payload);
       }
-      await providerSettingsService.saveProviderSettings(providerName, payload);
       // Refresh providers list to update status
       await loadProviders();
       setConfiguringProvider(null);
     } catch (err) {
-      setError("Failed to save provider configuration. Please try again.");
+      setError(getErrorMessage(err, "Failed to save provider configuration. Please try again."));
       console.error("Error saving provider:", err);
     } finally {
       setSavingProvider(false);
@@ -109,12 +117,13 @@ export function Settings() {
     setOpenaiConnecting(true);
     setError(null);
     try {
-      const response = await providerSettingsService.startOpenAIConnect(
-        `${window.location.origin}/dashboard/settings`
-      );
-      window.location.href = response.authorize_url;
+      const response = await providerSettingsService.startOpenAIConnect();
+      const opened = window.open(response.authorize_url, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        setError("Popup blocked. Please allow popups and try again.");
+      }
     } catch (err) {
-      setError("Failed to start OpenAI OAuth connection. Please try again.");
+      setError(getErrorMessage(err, "Failed to start OpenAI OAuth connection. Please try again."));
       console.error("Error starting OpenAI OAuth:", err);
     } finally {
       setOpenaiConnecting(false);
@@ -127,8 +136,11 @@ export function Settings() {
     try {
       await providerSettingsService.deleteProviderSettings("OpenAI");
       await loadProviders();
+      if (configuringProvider === "OpenAI") {
+        setConfiguringProvider(null);
+      }
     } catch (err) {
-      setError("Failed to disconnect OpenAI. Please try again.");
+      setError(getErrorMessage(err, "Failed to disconnect OpenAI. Please try again."));
       console.error("Error disconnecting OpenAI:", err);
     } finally {
       setOpenaiDisconnecting(false);
@@ -373,49 +385,7 @@ export function Settings() {
                     backgroundColor: "var(--bg-secondary)",
                   }}
                 >
-                  {provider.provider_name === "OpenAI" ? (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                        {provider.is_configured ? (
-                          <CheckCircle className="h-5 w-5" style={{ color: "#4ade80" }} />
-                        ) : (
-                          <AlertCircle className="h-5 w-5" style={{ color: "var(--text-muted)" }} />
-                        )}
-                        <div>
-                          <p style={{ fontWeight: 500, color: "var(--text-primary)" }}>
-                            OpenAI (OAuth)
-                          </p>
-                          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                            {provider.is_configured ? "Connected via OAuth" : "Not connected"}
-                          </p>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: "0.5rem" }}>
-                        {provider.is_configured && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleOpenAIDisconnect}
-                            disabled={openaiDisconnecting}
-                          >
-                            {openaiDisconnecting ? "Disconnecting..." : "Disconnect"}
-                          </Button>
-                        )}
-                        <Button
-                          variant={provider.is_configured ? "outline" : "default"}
-                          size="sm"
-                          onClick={handleOpenAIConnect}
-                          disabled={openaiConnecting}
-                        >
-                          {openaiConnecting
-                            ? "Connecting..."
-                            : provider.is_configured
-                              ? "Reconnect"
-                              : "Connect"}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : configuringProvider === provider.provider_name ? (
+                  {configuringProvider === provider.provider_name ? (
                     // Show configuration form
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
@@ -424,11 +394,27 @@ export function Settings() {
                           Configure {provider.provider_name}
                         </h3>
                       </div>
+                      {provider.provider_name === "OpenAI" && (
+                        <div className="openai-oauth-guide">
+                          <p className="openai-oauth-guide-text">
+                            1. Click Open OpenAI Login. 2. Sign in and approve access. 3. Copy the full localhost callback URL from your browser (the page may fail to load). 4. Paste that URL below and submit.
+                          </p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleOpenAIConnect}
+                            disabled={openaiConnecting}
+                          >
+                            {openaiConnecting ? "Opening..." : "Open OpenAI Login"}
+                          </Button>
+                        </div>
+                      )}
                       <SchemaForm
                         schema={provider.form}
                         onSubmit={(data) => handleSaveProvider(provider.provider_name, data)}
                         onCancel={handleCancelConfigure}
-                        submitLabel="Save Configuration"
+                        submitLabel={provider.provider_name === "OpenAI" ? "Complete Connection" : "Save Configuration"}
                         isLoading={savingProvider}
                       />
                     </div>
@@ -443,20 +429,36 @@ export function Settings() {
                         )}
                         <div>
                           <p style={{ fontWeight: 500, color: "var(--text-primary)" }}>
-                            {provider.provider_name}
+                            {provider.provider_name === "OpenAI" ? "OpenAI (OAuth)" : provider.provider_name}
                           </p>
                           <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                            {provider.is_configured ? "Configured" : "Not configured"}
+                            {provider.provider_name === "OpenAI"
+                              ? (provider.is_configured ? "Connected via OAuth" : "Not connected")
+                              : (provider.is_configured ? "Configured" : "Not configured")}
                           </p>
                         </div>
                       </div>
-                      <Button
-                        variant={provider.is_configured ? "outline" : "default"}
-                        size="sm"
-                        onClick={() => handleConfigureClick(provider.provider_name)}
-                      >
-                        {provider.is_configured ? "Update" : "Configure"}
-                      </Button>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        {provider.provider_name === "OpenAI" && provider.is_configured && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleOpenAIDisconnect}
+                            disabled={openaiDisconnecting}
+                          >
+                            {openaiDisconnecting ? "Disconnecting..." : "Disconnect"}
+                          </Button>
+                        )}
+                        <Button
+                          variant={provider.is_configured ? "outline" : "default"}
+                          size="sm"
+                          onClick={() => handleConfigureClick(provider.provider_name)}
+                        >
+                          {provider.provider_name === "OpenAI"
+                            ? (provider.is_configured ? "Reconnect" : "Connect")
+                            : (provider.is_configured ? "Update" : "Configure")}
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>

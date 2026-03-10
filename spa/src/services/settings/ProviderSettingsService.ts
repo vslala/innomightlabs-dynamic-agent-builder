@@ -28,6 +28,10 @@ export interface OpenAIStartResponse {
   authorize_url: string;
 }
 
+export interface OpenAICompleteRequest {
+  callback_url: string;
+}
+
 class ProviderSettingsService {
   /**
    * List all supported providers with their configuration status.
@@ -63,11 +67,12 @@ class ProviderSettingsService {
     await httpClient.delete(`/settings/providers/${providerName}`);
   }
 
-  async startOpenAIConnect(returnTo?: string): Promise<OpenAIStartResponse> {
-    return httpClient.post<OpenAIStartResponse>(
-      "/auth/openai/start",
-      returnTo ? { return_to: returnTo } : {}
-    );
+  async startOpenAIConnect(): Promise<OpenAIStartResponse> {
+    return httpClient.post<OpenAIStartResponse>("/auth/openai/start", {});
+  }
+
+  async completeOpenAIConnect(payload: OpenAICompleteRequest): Promise<ProviderSettingsResponse> {
+    return httpClient.post<ProviderSettingsResponse>("/auth/openai/complete", payload);
   }
 }
 
