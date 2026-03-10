@@ -37,10 +37,17 @@ ANTHROPIC_PROVIDER_FORM = Form(
     ]
 )
 
+OPENAI_PROVIDER_FORM = Form(
+    form_name="OpenAI OAuth Configuration",
+    submit_path="/auth/openai/start",
+    form_inputs=[],
+)
+
 # Map of provider name -> form schema
 PROVIDER_SCHEMAS: dict[str, Form] = {
     "Bedrock": BEDROCK_PROVIDER_FORM,
-    "Anthropic": ANTHROPIC_PROVIDER_FORM
+    "Anthropic": ANTHROPIC_PROVIDER_FORM,
+    "OpenAI": OPENAI_PROVIDER_FORM,
 }
 
 # List of all supported provider names

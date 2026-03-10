@@ -16,6 +16,7 @@ class ProviderSettings(BaseModel):
     user_email: str
     provider_name: str  # "Bedrock", "OpenAI", etc.
     encrypted_credentials: str  # JSON string of encrypted credentials
+    auth_type: str = "api_key"  # "api_key" | "oauth"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
@@ -37,6 +38,7 @@ class ProviderSettings(BaseModel):
             "user_email": self.user_email,
             "provider_name": self.provider_name,
             "encrypted_credentials": self.encrypted_credentials,
+            "auth_type": self.auth_type,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "entity_type": "ProviderSettings",
@@ -49,6 +51,7 @@ class ProviderSettings(BaseModel):
             user_email=item["user_email"],
             provider_name=item["provider_name"],
             encrypted_credentials=item["encrypted_credentials"],
+            auth_type=item.get("auth_type", "api_key"),
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
         )

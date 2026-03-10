@@ -121,6 +121,12 @@ async def save_provider_settings(
             detail=f"Unknown provider: {provider_name}. Supported: {SUPPORTED_PROVIDERS}"
         )
 
+    if provider_name == "OpenAI":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OpenAI must be configured using OAuth via /auth/openai/start",
+        )
+
     # Validate required fields from schema
     required_fields = [field.name for field in schema.form_inputs]
     missing_fields = [f for f in required_fields if f not in body or not body[f]]

@@ -71,6 +71,25 @@ write_list() {
   printf '%s = %s\n' "$key" "$out" >> "$TFVARS_PATH"
 }
 
+# Helper function to write boolean values to tfvars
+write_bool() {
+  local key="$1"
+  local value="$2"
+  if [[ -z "$value" ]]; then
+    return
+  fi
+
+  local normalized
+  normalized="$(echo "$value" | tr '[:upper:]' '[:lower:]' | xargs)"
+  case "$normalized" in
+    true|1|yes|on) printf '%s = true\n' "$key" >> "$TFVARS_PATH" ;;
+    false|0|no|off) printf '%s = false\n' "$key" >> "$TFVARS_PATH" ;;
+    *)
+      echo "Warning: Invalid boolean '$value' for $key, skipping" >&2
+      ;;
+  esac
+}
+
 # Helper function to get environment-specific variable with fallback to common
 get_var() {
   local var_name="$1"
@@ -131,6 +150,23 @@ write_kv "pinecone_index" "$(get_var 'PINECONE_INDEX')"
 
 write_kv "google_client_id" "$(get_var 'GOOGLE_CLIENT_ID')"
 write_kv "google_client_secret" "$(get_var 'GOOGLE_CLIENT_SECRET')"
+
+# ============================================================================
+# OpenAI OAuth
+# ============================================================================
+{
+  echo ""
+  echo "# OpenAI OAuth"
+} >> "$TFVARS_PATH"
+
+write_kv "openai_oauth_client_id" "$(get_var 'OPENAI_OAUTH_CLIENT_ID')"
+write_kv "openai_oauth_scopes" "$(get_var 'OPENAI_OAUTH_SCOPES')"
+write_bool "openai_oauth_id_token_add_organizations" "$(get_var 'OPENAI_OAUTH_ID_TOKEN_ADD_ORGANIZATIONS')"
+write_bool "openai_oauth_codex_cli_simplified_flow" "$(get_var 'OPENAI_OAUTH_CODEX_CLI_SIMPLIFIED_FLOW')"
+write_kv "openai_oauth_originator" "$(get_var 'OPENAI_OAUTH_ORIGINATOR')"
+write_kv "openai_oauth_redirect_uri" "$(get_var 'OPENAI_OAUTH_REDIRECT_URI')"
+write_kv "openai_oauth_responses_url" "$(get_var 'OPENAI_OAUTH_RESPONSES_URL')"
+write_kv "openai_models" "$(get_var 'OPENAI_MODELS')"
 
 # ============================================================================
 # JWT (common)

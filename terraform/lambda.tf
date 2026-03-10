@@ -47,6 +47,17 @@ resource "aws_lambda_function" "api" {
       API_BASE_URL         = var.api_domain != "" ? "https://${var.api_domain}" : aws_apigatewayv2_api.api.api_endpoint
       GOOGLE_CLIENT_ID     = var.google_client_id
       GOOGLE_CLIENT_SECRET = var.google_client_secret
+      OPENAI_OAUTH_CLIENT_ID = var.openai_oauth_client_id
+      OPENAI_OAUTH_SCOPES = var.openai_oauth_scopes
+      OPENAI_OAUTH_ID_TOKEN_ADD_ORGANIZATIONS = tostring(var.openai_oauth_id_token_add_organizations)
+      OPENAI_OAUTH_CODEX_CLI_SIMPLIFIED_FLOW = tostring(var.openai_oauth_codex_cli_simplified_flow)
+      OPENAI_OAUTH_ORIGINATOR = var.openai_oauth_originator
+      OPENAI_OAUTH_REDIRECT_URI = coalesce(
+        var.openai_oauth_redirect_uri,
+        var.api_domain != "" ? "https://${var.api_domain}/auth/openai" : "${aws_apigatewayv2_api.api.api_endpoint}/auth/openai"
+      )
+      OPENAI_OAUTH_RESPONSES_URL = var.openai_oauth_responses_url
+      OPENAI_MODELS = var.openai_models
       JWT_SECRET           = var.jwt_secret
       # Cognito Hosted UI
       COGNITO_DOMAIN        = "https://${aws_cognito_user_pool_domain.hosted_ui.domain}.auth.${var.aws_region}.amazoncognito.com"

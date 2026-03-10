@@ -161,7 +161,7 @@ UPDATE_AGENT_FORM = Form(
         FormInput(
             label="Provider Name",
             name="agent_provider",
-            values=["Bedrock", "Anthropic"],
+            values=["Bedrock", "Anthropic", "OpenAI"],
             input_type=FormInputType.SELECT,
         ),
         FormInput(

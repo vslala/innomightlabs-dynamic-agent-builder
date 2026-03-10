@@ -5,12 +5,12 @@ LLM Models service - fetches available models from providers.
 import json
 import logging
 from typing import Optional
-from functools import lru_cache
 
 import boto3
 from pydantic import BaseModel
 
 from src.crypto import decrypt
+from src.config import settings
 from src.settings.models import ProviderSettings
 
 log = logging.getLogger(__name__)
@@ -207,6 +207,22 @@ class ModelsService:
             )
             for m in models
         ]
+
+    def get_openai_models(self) -> list[ModelInfo]:
+        """
+        Get OpenAI models from settings.
+        """
+        models = [m.strip() for m in settings.openai_models if m and m.strip()]
+        result = [
+            ModelInfo(
+                model_id=model,
+                model_name=model,
+                display_name=f"[OpenAI] {model}",
+                provider="openai",
+            )
+            for model in models
+        ]
+        return result
 
 # Singleton instance
 models_service = ModelsService()

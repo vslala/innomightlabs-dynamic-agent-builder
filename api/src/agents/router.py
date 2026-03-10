@@ -85,6 +85,21 @@ async def get_create_agent_schema(
             ])
         except Exception as e:
             log.warning(f"Failed to load Anthropic models for user {user_email}: {e}")
+
+    openai_settings = providers_settings_repo.find_by_provider(
+        user_email=user_email,
+        provider_name="OpenAI",
+    )
+    if openai_settings:
+        model_providers.append("OpenAI")
+        try:
+            openai_models = models_service.get_openai_models()
+            model_options.extend([
+                {"value": m.model_name, "label": m.display_name}
+                for m in openai_models
+            ])
+        except Exception as e:
+            log.warning(f"Failed to load OpenAI models for user {user_email}: {e}")
     
     return get_create_agent_form(model_providers, model_options)
 
@@ -183,6 +198,21 @@ async def get_update_agent_schema(
             {"value": m.model_name, "label": m.display_name}
             for m in anthropic_models
         ])
+
+    openai_settings = providers_settings_repo.find_by_provider(
+        user_email=user_email,
+        provider_name="OpenAI",
+    )
+    if openai_settings:
+        model_providers.append("OpenAI")
+        try:
+            openai_models = models_service.get_openai_models()
+            model_options.extend([
+                {"value": m.model_name, "label": m.display_name}
+                for m in openai_models
+            ])
+        except Exception as e:
+            log.warning(f"Failed to load OpenAI models for user {user_email}: {e}")
 
     return get_update_agent_form(agent_id, model_providers, model_options)
 

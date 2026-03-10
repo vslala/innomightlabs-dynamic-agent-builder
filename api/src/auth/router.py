@@ -1,14 +1,28 @@
-from urllib.parse import urlencode
-from fastapi import APIRouter, Depends, HTTPException, Query
+from urllib.parse import urlencode, urlparse, parse_qsl
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 import hashlib
 import secrets
 import time
+from datetime import datetime, timezone
 
 from ..config import settings
 from ..users import User, UserRepository
+from ..settings.models import ProviderSettings
+from ..settings.repository import ProviderSettingsRepository
 from .oauth_providers import CognitoOAuthProvider, GoogleOAuthProvider, OAuthProvider
+from .openai_oauth import (
+    OpenAIOAuthError,
+    build_authorization_url,
+    build_credentials_from_auth_code,
+    decode_state_session,
+    encode_state_session,
+    generate_pkce_bundle,
+    generate_code_challenge,
+    OpenAIOAuthState,
+    save_credentials,
+)
 from .jwt_utils import create_access_token, get_current_user
 from ..email import send_welcome_email_safe
 
@@ -19,6 +33,77 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 user_repository = UserRepository()
+provider_settings_repository = ProviderSettingsRepository()
+OPENAI_PKCE_TTL_SECONDS = 600
+
+
+class OpenAIStartRequest(BaseModel):
+    return_to: str | None = None
+
+
+class OpenAIStartResponse(BaseModel):
+    authorize_url: str
+
+
+def _append_query_params(url: str, params: dict[str, str]) -> str:
+    parsed = urlparse(url)
+    current_query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    current_query.update(params)
+    query = urlencode(current_query)
+    return parsed._replace(query=query).geturl()
+
+
+def _openai_settings_redirect(status_value: str, return_to: str | None = None) -> RedirectResponse:
+    target = return_to or f"{settings.frontend_url}/dashboard/settings"
+    return RedirectResponse(url=_append_query_params(target, {"openai_oauth": status_value}))
+
+
+def _extract_openai_state_session(state: str | None) -> tuple[OpenAIOAuthState | None, str]:
+    return_to = f"{settings.frontend_url}/dashboard/settings"
+    session = decode_state_session(state)
+    if not session:
+        return None, return_to
+    return_to = session.return_to or return_to
+    return session, return_to
+
+
+async def _handle_openai_oauth_callback(
+    code: str | None,
+    error: str | None,
+    state: str | None,
+) -> RedirectResponse:
+    oauth_session, return_to = _extract_openai_state_session(state)
+
+    try:
+        if error or not oauth_session:
+            return _openai_settings_redirect("error", return_to=return_to)
+
+        if oauth_session.is_expired():
+            return _openai_settings_redirect("error", return_to=return_to)
+
+        if not code:
+            return _openai_settings_redirect("error", return_to=return_to)
+
+        credentials = await build_credentials_from_auth_code(
+            code=code,
+            code_verifier=oauth_session.code_verifier,
+        )
+
+        provider_settings = ProviderSettings(
+            user_email=oauth_session.user_email,
+            provider_name="OpenAI",
+            encrypted_credentials="",
+            auth_type="oauth",
+        )
+        save_credentials(provider_settings, provider_settings_repository, credentials)
+        return _openai_settings_redirect("success", return_to=return_to)
+
+    except OpenAIOAuthError as e:
+        log.error(f"OpenAI OAuth callback error: {e}", exc_info=True)
+        return _openai_settings_redirect("error", return_to=return_to)
+    except Exception as e:
+        log.error(f"Unexpected OpenAI OAuth callback error: {e}", exc_info=True)
+        return _openai_settings_redirect("error", return_to=return_to)
 
 
 def _get_provider(provider_name: str) -> OAuthProvider:
@@ -59,6 +144,46 @@ async def login_with_cognito():
     provider = _get_provider("cognito")
     authorization_url, _state = provider.get_authorization_url()
     return RedirectResponse(url=authorization_url)
+
+
+@router.post("/openai/start", response_model=OpenAIStartResponse)
+async def start_openai_oauth(request: Request, body: OpenAIStartRequest | None = None):
+    """
+    Start backend-owned OpenAI OAuth PKCE flow.
+    """
+    if not settings.is_openai_oauth_configured():
+        raise HTTPException(status_code=500, detail="OpenAI OAuth is not configured")
+
+    user_email = getattr(request.state, "user_email", None)
+    if not user_email:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    nonce, code_verifier = generate_pkce_bundle()
+    code_challenge = generate_code_challenge(code_verifier)
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+
+    session = OpenAIOAuthState(
+        nonce=nonce,
+        code_verifier=code_verifier,
+        user_email=user_email,
+        return_to=(body.return_to if body and body.return_to else f"{settings.frontend_url}/dashboard/settings"),
+        expires_at=now_ts + OPENAI_PKCE_TTL_SECONDS,
+    )
+    state = encode_state_session(session)
+    authorize_url = build_authorization_url(state=state, code_challenge=code_challenge)
+    return OpenAIStartResponse(authorize_url=authorize_url)
+
+
+@router.get("/openai")
+async def openai_oauth_callback(
+    code: str = Query(None),
+    error: str = Query(None),
+    state: str = Query(None),
+):
+    """
+    OpenAI OAuth callback endpoint.
+    """
+    return await _handle_openai_oauth_callback(code=code, error=error, state=state)
 
 
 async def _oauth_callback(
@@ -125,11 +250,15 @@ async def _oauth_callback(
 
 @router.get("/callback")
 async def oauth_callback(
+    _request: Request,
     code: str = Query(None),
     error: str = Query(None),
     state: str = Query(None),
 ):
-    """Handle OAuth callback from Google (legacy route)."""
+    """Handle OAuth callback from Google (legacy route) or OpenAI (state payload flow)."""
+    state_session, _ = _extract_openai_state_session(state)
+    if state_session:
+        return await _handle_openai_oauth_callback(code=code, error=error, state=state)
     return await _oauth_callback("google", code=code, error=error, state=state)
 
 

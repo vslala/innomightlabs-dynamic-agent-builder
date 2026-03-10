@@ -37,6 +37,8 @@ export function Settings() {
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [openaiConnecting, setOpenaiConnecting] = useState(false);
+  const [openaiDisconnecting, setOpenaiDisconnecting] = useState(false);
 
   // Track which provider is being configured
   const [configuringProvider, setConfiguringProvider] = useState<string | null>(null);
@@ -48,6 +50,15 @@ export function Settings() {
   useEffect(() => {
     loadProviders();
     loadSubscription();
+    const query = new URLSearchParams(window.location.search);
+    const oauthStatus = query.get("openai_oauth");
+    if (oauthStatus === "success") {
+      setError(null);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (oauthStatus === "error") {
+      setError("OpenAI OAuth connection failed. Please try again.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
   }, []);
 
   const loadProviders = async () => {
@@ -91,6 +102,36 @@ export function Settings() {
       console.error("Error saving provider:", err);
     } finally {
       setSavingProvider(false);
+    }
+  };
+
+  const handleOpenAIConnect = async () => {
+    setOpenaiConnecting(true);
+    setError(null);
+    try {
+      const response = await providerSettingsService.startOpenAIConnect(
+        `${window.location.origin}/dashboard/settings`
+      );
+      window.location.href = response.authorize_url;
+    } catch (err) {
+      setError("Failed to start OpenAI OAuth connection. Please try again.");
+      console.error("Error starting OpenAI OAuth:", err);
+    } finally {
+      setOpenaiConnecting(false);
+    }
+  };
+
+  const handleOpenAIDisconnect = async () => {
+    setOpenaiDisconnecting(true);
+    setError(null);
+    try {
+      await providerSettingsService.deleteProviderSettings("OpenAI");
+      await loadProviders();
+    } catch (err) {
+      setError("Failed to disconnect OpenAI. Please try again.");
+      console.error("Error disconnecting OpenAI:", err);
+    } finally {
+      setOpenaiDisconnecting(false);
     }
   };
 
@@ -332,7 +373,49 @@ export function Settings() {
                     backgroundColor: "var(--bg-secondary)",
                   }}
                 >
-                  {configuringProvider === provider.provider_name ? (
+                  {provider.provider_name === "OpenAI" ? (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                        {provider.is_configured ? (
+                          <CheckCircle className="h-5 w-5" style={{ color: "#4ade80" }} />
+                        ) : (
+                          <AlertCircle className="h-5 w-5" style={{ color: "var(--text-muted)" }} />
+                        )}
+                        <div>
+                          <p style={{ fontWeight: 500, color: "var(--text-primary)" }}>
+                            OpenAI (OAuth)
+                          </p>
+                          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                            {provider.is_configured ? "Connected via OAuth" : "Not connected"}
+                          </p>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        {provider.is_configured && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleOpenAIDisconnect}
+                            disabled={openaiDisconnecting}
+                          >
+                            {openaiDisconnecting ? "Disconnecting..." : "Disconnect"}
+                          </Button>
+                        )}
+                        <Button
+                          variant={provider.is_configured ? "outline" : "default"}
+                          size="sm"
+                          onClick={handleOpenAIConnect}
+                          disabled={openaiConnecting}
+                        >
+                          {openaiConnecting
+                            ? "Connecting..."
+                            : provider.is_configured
+                              ? "Reconnect"
+                              : "Connect"}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : configuringProvider === provider.provider_name ? (
                     // Show configuration form
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>

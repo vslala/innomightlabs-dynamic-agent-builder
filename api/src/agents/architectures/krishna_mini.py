@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING, AsyncIterator
 
 from src.crypto import decrypt
+from src.auth.openai_oauth import ensure_valid_openai_credentials
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
 from src.llm.providers import get_llm_provider
@@ -116,7 +117,14 @@ class KrishnaMiniArchitecture(AgentArchitecture):
                 return
 
             # Decrypt and parse credentials
-            credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
+            if agent.agent_provider == "OpenAI":
+                openai_credentials = await ensure_valid_openai_credentials(
+                    provider_settings,
+                    self.provider_settings_repo,
+                )
+                credentials = openai_credentials.model_dump(mode="json")
+            else:
+                credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
 
             # 3. Build context
             yield SSEEvent(

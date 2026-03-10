@@ -49,6 +49,21 @@ class Settings:
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = ""
+    openai_oauth_client_id: str = ""
+    openai_oauth_scopes: str = "openid profile email offline_access"
+    openai_models: list[str] = field(default_factory=lambda: [
+        "gpt-5.4",
+        "gpt-5.3-codex",
+        "gpt-5.2-codex",
+        "gpt-5.2",
+        "gpt-5.1-codex-max",
+        "gpt-5.1-codex-mini",
+    ])
+    openai_oauth_id_token_add_organizations: bool = False
+    openai_oauth_codex_cli_simplified_flow: bool = False
+    openai_oauth_originator: str = ""
+    openai_oauth_redirect_uri: str = ""
+    openai_oauth_responses_url: str = "https://chatgpt.com/backend-api/codex/responses"
 
     # Pinecone Vector Store (required for knowledge base features)
     pinecone_api_key: str = ""
@@ -167,6 +182,10 @@ class Settings:
             and self.google_client_secret
         )
 
+    def is_openai_oauth_configured(self) -> bool:
+        """Check if OpenAI OAuth is configured."""
+        return bool(self.openai_oauth_client_id)
+
     @classmethod
     def from_env(cls) -> "Settings":
         """
@@ -203,6 +222,29 @@ class Settings:
         # Override with env vars if present (Lambda/production)
         google_client_id = os.getenv("GOOGLE_CLIENT_ID", google_client_id)
         google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET", google_client_secret)
+        openai_oauth_client_id = os.getenv("OPENAI_OAUTH_CLIENT_ID", "")
+
+        def env_bool(name: str, default: bool = False) -> bool:
+            value = os.getenv(name)
+            if value is None:
+                return default
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+
+        def parse_env_list(name: str, default: list[str]) -> list[str]:
+            raw = os.getenv(name, "")
+            if not raw:
+                return default
+
+            text = raw.strip()
+            if text.startswith("["):
+                try:
+                    parsed = json.loads(text)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed if str(item).strip()]
+                except Exception:
+                    pass
+
+            return [part.strip() for part in text.split(",") if part.strip()]
 
         return cls(
             environment=environment,
@@ -215,6 +257,27 @@ class Settings:
             google_client_id=google_client_id,
             google_client_secret=google_client_secret,
             google_redirect_uri=f"{api_base_url}/auth/callback",
+            openai_oauth_client_id=openai_oauth_client_id,
+            openai_oauth_scopes=os.getenv("OPENAI_OAUTH_SCOPES", "openid profile email offline_access"),
+            openai_models=parse_env_list(
+                "OPENAI_MODELS",
+                [
+                    "gpt-5.4",
+                    "gpt-5.3-codex",
+                    "gpt-5.2-codex",
+                    "gpt-5.2",
+                    "gpt-5.1-codex-max",
+                    "gpt-5.1-codex-mini",
+                ],
+            ),
+            openai_oauth_id_token_add_organizations=env_bool("OPENAI_OAUTH_ID_TOKEN_ADD_ORGANIZATIONS"),
+            openai_oauth_codex_cli_simplified_flow=env_bool("OPENAI_OAUTH_CODEX_CLI_SIMPLIFIED_FLOW"),
+            openai_oauth_originator=os.getenv("OPENAI_OAUTH_ORIGINATOR", ""),
+            openai_oauth_redirect_uri=os.getenv("OPENAI_OAUTH_REDIRECT_URI", f"{api_base_url}/auth/openai"),
+            openai_oauth_responses_url=os.getenv(
+                "OPENAI_OAUTH_RESPONSES_URL",
+                "https://chatgpt.com/backend-api/codex/responses",
+            ),
             # Pinecone - no defaults, must be explicitly configured
             pinecone_api_key=os.getenv("PINECONE_API_KEY", ""),
             pinecone_host=os.getenv("PINECONE_HOST", ""),

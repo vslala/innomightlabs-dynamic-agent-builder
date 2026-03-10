@@ -34,6 +34,55 @@ variable "google_client_secret" {
   sensitive   = true
 }
 
+variable "openai_oauth_client_id" {
+  description = "OpenAI OAuth client ID for PKCE authorization"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "openai_oauth_scopes" {
+  description = "OpenAI OAuth scopes"
+  type        = string
+  default     = "openid profile email offline_access"
+}
+
+variable "openai_oauth_id_token_add_organizations" {
+  description = "OpenAI OAuth authorize flag: id_token_add_organizations"
+  type        = bool
+  default     = false
+}
+
+variable "openai_oauth_codex_cli_simplified_flow" {
+  description = "OpenAI OAuth authorize flag: codex_cli_simplified_flow"
+  type        = bool
+  default     = false
+}
+
+variable "openai_oauth_originator" {
+  description = "OpenAI OAuth authorize optional originator value"
+  type        = string
+  default     = ""
+}
+
+variable "openai_oauth_redirect_uri" {
+  description = "Optional explicit OpenAI OAuth redirect URI override"
+  type        = string
+  default     = ""
+}
+
+variable "openai_oauth_responses_url" {
+  description = "OpenAI OAuth responses endpoint URL (Codex/ChatGPT backend)"
+  type        = string
+  default     = "https://chatgpt.com/backend-api/codex/responses"
+}
+
+variable "openai_models" {
+  description = "Comma-separated OpenAI model IDs exposed in the app"
+  type        = string
+  default     = "gpt-5.4,gpt-5.3-codex,gpt-5.2-codex,gpt-5.2,gpt-5.1-codex-max,gpt-5.1-codex-mini"
+}
+
 variable "jwt_secret" {
   description = "JWT secret for signing tokens"
   type        = string
