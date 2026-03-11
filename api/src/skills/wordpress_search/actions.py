@@ -14,12 +14,19 @@ def _normalize_site_url(raw: str) -> str:
 
 
 def _build_headers(config: dict[str, Any]) -> dict[str, str]:
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "InnomightLabs-WordPressSkill/1.0",
+    }
     username = str(config.get("username", "")).strip()
     app_password = str(config.get("app_password", "")).strip()
     if username and app_password:
         token = base64.b64encode(f"{username}:{app_password}".encode("utf-8")).decode("utf-8")
         headers["Authorization"] = f"Basic {token}"
+
+    bypass_token = str(config.get("cf_bypass_token", "")).strip()
+    if bypass_token:
+        headers["X-Innomightlabs-Skill"] = bypass_token
     return headers
 
 

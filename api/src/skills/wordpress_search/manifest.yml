@@ -65,3 +65,10 @@ form:
       placeholder: Optional, needed for private content
       optional: "true"
       secret: "true"
+  - input_type: password
+    name: cf_bypass_token
+    label: Cloudflare Bypass Token
+    attr:
+      placeholder: Optional shared secret for WAF skip rule
+      optional: "true"
+      secret: "true"

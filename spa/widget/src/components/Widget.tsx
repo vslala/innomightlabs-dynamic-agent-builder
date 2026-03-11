@@ -50,6 +50,19 @@ export function Widget({ config }: WidgetProps) {
         const widgetConfig = await fetchConfig();
         setAgentName(widgetConfig.agentName);
 
+        // If token exists but is scoped to another agent, clear stale session data.
+        const token = getVisitorToken();
+        if (token) {
+          try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            if (payload.agent_id && payload.agent_id !== widgetConfig.agentId) {
+              clearAllData();
+            }
+          } catch {
+            // Ignore parse errors; session validity check below will handle malformed tokens.
+          }
+        }
+
         // Check for existing session
         if (isSessionValid()) {
           const visitor = getVisitorInfo();
@@ -67,11 +80,31 @@ export function Widget({ config }: WidgetProps) {
           if (visitor) {
             try {
               const conversations = await listConversations();
+
+              // Validate stored conversation against server state
               let activeConversation = conversation;
+              if (activeConversation) {
+                const exists = conversations.some(
+                  (item) =>
+                    item.conversationId === activeConversation?.conversationId &&
+                    item.agentId === widgetConfig.agentId
+                );
+                if (!exists) {
+                  activeConversation = null;
+                }
+              }
+
               if (!activeConversation && conversations.length > 0) {
                 activeConversation = conversations[0];
                 setCurrentConversation(activeConversation);
               }
+
+              // Ensure authenticated sessions always have a usable conversation
+              if (!activeConversation) {
+                activeConversation = await createConversation('New Chat');
+                setCurrentConversation(activeConversation);
+              }
+
               let messages: Message[] = [];
               if (activeConversation?.conversationId) {
                 try {
