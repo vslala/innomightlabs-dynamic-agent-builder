@@ -1,0 +1,67 @@
+id: wordpress_search
+namespace: integrations.wordpress
+name: WordPress Search
+description: Search posts from a configured WordPress site.
+system_prompt: |
+  Use this skill when the user asks to find or inspect blog posts from WordPress.
+  First load the skill, then execute the search action with a focused query.
+actions:
+  - name: search
+    description: Search WordPress posts with optional author/category/time filters.
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Query text to search in WordPress posts.
+        per_page:
+          type: integer
+          description: Number of posts to return (1-20, default 5).
+        page:
+          type: integer
+          description: Page number for pagination (default 1).
+        author:
+          type: string
+          description: Author filter (ID, slug, or name).
+        category:
+          type: string
+          description: Category filter (ID, slug, name, or comma-separated values).
+        after:
+          type: string
+          description: Include posts published after this date/time (ISO 8601 or YYYY-MM-DD).
+        before:
+          type: string
+          description: Include posts published before this date/time (ISO 8601 or YYYY-MM-DD).
+        order:
+          type: string
+          enum: [asc, desc]
+          description: Sort order for results (default desc).
+        orderby:
+          type: string
+          enum: [date, relevance, title, modified]
+          description: Field to sort by (default relevance when query exists, else date).
+        status:
+          type: string
+          enum: [publish, draft, private, future, pending]
+          description: Post status filter (default publish).
+      required: [query]
+    handler: actions:search
+form:
+  - input_type: text
+    name: site_url
+    label: WordPress Site URL
+    attr:
+      placeholder: https://example.com
+  - input_type: text
+    name: username
+    label: WordPress Username
+    attr:
+      placeholder: Optional for authenticated search
+      optional: "true"
+  - input_type: password
+    name: app_password
+    label: WordPress App Password
+    attr:
+      placeholder: Optional, needed for private content
+      optional: "true"
+      secret: "true"

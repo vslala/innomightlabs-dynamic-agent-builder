@@ -22,6 +22,7 @@ from src.memory import MemoryRepository, CoreMemory
 from src.messages.models import Message, Attachment
 from src.messages.repository import MessageRepository
 from src.settings.repository import get_provider_settings_repository
+from src.skills.service import SkillRuntimeService
 from src.tools.native import NATIVE_TOOLS, KNOWLEDGE_TOOLS, NativeToolHandler
 from src.knowledge.repository import AgentKnowledgeBaseRepository
 
@@ -60,6 +61,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         self.memory_repo = MemoryRepository()
         self.provider_settings_repo = get_provider_settings_repository()
         self.agent_kb_repo = AgentKnowledgeBaseRepository()
+        self.skill_runtime = SkillRuntimeService()
         self.tool_handler = NativeToolHandler(self.memory_repo)
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
 
@@ -98,6 +100,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
             linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
             self.tool_handler.set_knowledge_base_context(linked_kb_ids)
+            enabled_skills = self.skill_runtime.list_enabled(agent.agent_id)
 
             self._ensure_memory_initialized(agent.agent_id, actor_id)
 
@@ -153,6 +156,8 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
             if linked_kb_ids:
                 system_prompt += "\n\n" + self._build_kb_instructions(len(linked_kb_ids))
+            if enabled_skills:
+                system_prompt += "\n\n" + self.skill_runtime.build_system_prompt_addendum(enabled_skills)
 
             capacity_warnings = self._check_capacity_warnings(agent.agent_id, actor_id)
             if capacity_warnings:
@@ -187,6 +192,8 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             tools = NATIVE_TOOLS.copy()
             if linked_kb_ids:
                 tools.extend(KNOWLEDGE_TOOLS)
+            if enabled_skills:
+                tools.extend(self.skill_runtime.build_skill_tools())
 
             full_response = ""
             for iteration in range(MAX_TOOL_ITERATIONS):
@@ -249,11 +256,21 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                     tool_results = []
                     for tool_event in pending_tool_calls:
                         try:
-                            result = await self.tool_handler.execute(
-                                tool_event.tool_name,
-                                tool_event.tool_input,
-                                agent.agent_id,
-                            )
+                            if tool_event.tool_name in {"load_skill", "execute_skill_action"}:
+                                result = await self.skill_runtime.handle_tool_call(
+                                    tool_name=tool_event.tool_name,
+                                    tool_input=tool_event.tool_input,
+                                    agent_id=agent.agent_id,
+                                    actor_email=actor_email,
+                                    actor_id=actor_id,
+                                    conversation_id=conversation.conversation_id,
+                                )
+                            else:
+                                result = await self.tool_handler.execute(
+                                    tool_event.tool_name,
+                                    tool_event.tool_input,
+                                    agent.agent_id,
+                                )
                             success = True
                         except Exception as e:
                             result = f"Error: {str(e)}"

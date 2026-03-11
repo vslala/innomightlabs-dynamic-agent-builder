@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Bot, ChevronLeft, Pencil, Plus, Trash2, ChevronDown, ChevronRight, Database, Lock, Key, Copy, Check, Eye, EyeOff, Globe, BookOpen, Link2, Unlink } from "lucide-react";
+import { Bot, ChevronLeft, Pencil, Plus, Trash2, ChevronDown, ChevronRight, Database, Lock, Key, Copy, Check, Eye, EyeOff, Globe, BookOpen, Link2, Unlink, Wrench, Power, PowerOff } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -34,8 +34,10 @@ import {
   type AgentResponse,
 } from "../../services/agents/AgentApiService";
 import { knowledgeApiService } from "../../services/knowledge/KnowledgeApiService";
+import { skillApiService } from "../../services/skills";
 import type { KnowledgeBase } from "../../types/knowledge";
 import type { FormSchema, FormValue } from "../../types/form";
+import type { InstalledSkill, SkillCatalogItem } from "../../types/skills";
 
 export function AgentDetail() {
   const { agentId } = useParams<{ agentId: string }>();
@@ -95,6 +97,18 @@ export function AgentDetail() {
   const [linkKBError, setLinkKBError] = useState<string | null>(null);
   const [unlinkingKB, setUnlinkingKB] = useState<KnowledgeBase | null>(null);
   const [isUnlinkingKB, setIsUnlinkingKB] = useState(false);
+
+  // Skills state
+  const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([]);
+  const [availableSkills, setAvailableSkills] = useState<SkillCatalogItem[]>([]);
+  const [loadingSkills, setLoadingSkills] = useState(false);
+  const [isSkillDialogOpen, setIsSkillDialogOpen] = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState<SkillCatalogItem | null>(null);
+  const [selectedSkillSchema, setSelectedSkillSchema] = useState<FormSchema | null>(null);
+  const [installSkillError, setInstallSkillError] = useState<string | null>(null);
+  const [installingSkill, setInstallingSkill] = useState(false);
+  const [updatingSkillId, setUpdatingSkillId] = useState<string | null>(null);
+  const [uninstallingSkillId, setUninstallingSkillId] = useState<string | null>(null);
 
   const loadAgent = async () => {
     if (!agentId) return;
@@ -371,12 +385,131 @@ export function AgentDetail() {
     }
   };
 
+  // Skills handlers
+  const loadInstalledSkills = async () => {
+    if (!agentId) return;
+    setLoadingSkills(true);
+    try {
+      const skills = await skillApiService.listInstalledSkills(agentId);
+      setInstalledSkills(skills);
+    } catch (err) {
+      console.error("Error loading installed skills:", err);
+    } finally {
+      setLoadingSkills(false);
+    }
+  };
+
+  const openSkillDialog = async () => {
+    setInstallSkillError(null);
+    setSelectedSkill(null);
+    setSelectedSkillSchema(null);
+    try {
+      const allSkills = await skillApiService.listSkills();
+      const installedIds = new Set(installedSkills.map((s) => s.skill_id));
+      setAvailableSkills(allSkills.filter((s) => !installedIds.has(s.skill_id)));
+      setIsSkillDialogOpen(true);
+    } catch (err) {
+      setInstallSkillError("Failed to load skill catalog");
+    }
+  };
+
+  const selectSkillForInstall = async (skill: SkillCatalogItem) => {
+    setInstallSkillError(null);
+    setSelectedSkill(skill);
+    try {
+      const schema = await skillApiService.getSkillInstallSchema(skill.skill_id);
+      setSelectedSkillSchema(schema);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load skill form";
+      setInstallSkillError(message);
+      setSelectedSkillSchema(null);
+    }
+  };
+
+  const handleInstallSkill = async (data: Record<string, FormValue>) => {
+    if (!agentId || !selectedSkill) return;
+    setInstallingSkill(true);
+    setInstallSkillError(null);
+    try {
+      const payload: Record<string, string> = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (typeof value === "string") {
+          payload[key] = value;
+        }
+      }
+      await skillApiService.installSkill(agentId, selectedSkill.skill_id, { config: payload });
+      setIsSkillDialogOpen(false);
+      setSelectedSkill(null);
+      setSelectedSkillSchema(null);
+      await loadInstalledSkills();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to install skill";
+      setInstallSkillError(message);
+    } finally {
+      setInstallingSkill(false);
+    }
+  };
+
+  const handleToggleSkill = async (skill: InstalledSkill) => {
+    if (!agentId) return;
+    setUpdatingSkillId(skill.skill_id);
+    try {
+      const updated = await skillApiService.updateInstalledSkill(agentId, skill.skill_id, {
+        enabled: !skill.enabled,
+      });
+      setInstalledSkills((prev) =>
+        prev.map((item) => (item.skill_id === updated.skill_id ? updated : item))
+      );
+    } catch (err) {
+      console.error("Error toggling skill:", err);
+    } finally {
+      setUpdatingSkillId(null);
+    }
+  };
+
+  const handleUpdateSkillConfig = async (skill: InstalledSkill, data: Record<string, FormValue>) => {
+    if (!agentId) return;
+    setUpdatingSkillId(skill.skill_id);
+    try {
+      const payload: Record<string, string> = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (typeof value === "string") {
+          payload[key] = value;
+        }
+      }
+      const updated = await skillApiService.updateInstalledSkill(agentId, skill.skill_id, {
+        config: payload,
+      });
+      setInstalledSkills((prev) =>
+        prev.map((item) => (item.skill_id === updated.skill_id ? updated : item))
+      );
+    } catch (err) {
+      console.error("Error updating skill config:", err);
+    } finally {
+      setUpdatingSkillId(null);
+    }
+  };
+
+  const handleUninstallSkill = async (skillId: string) => {
+    if (!agentId) return;
+    setUninstallingSkillId(skillId);
+    try {
+      await skillApiService.uninstallSkill(agentId, skillId);
+      setInstalledSkills((prev) => prev.filter((skill) => skill.skill_id !== skillId));
+    } catch (err) {
+      console.error("Error uninstalling skill:", err);
+    } finally {
+      setUninstallingSkillId(null);
+    }
+  };
+
   useEffect(() => {
     loadAgent();
     loadUpdateSchema();
     loadMemoryBlocks();
     loadApiKeys();
     loadLinkedKBs();
+    loadInstalledSkills();
   }, [agentId]);
 
   const handleStartEdit = () => {
@@ -1042,6 +1175,214 @@ export function AgentDetail() {
           )}
         </CardContent>
       </Card>
+
+      {/* Skills Section */}
+      <Card>
+        <CardHeader>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Wrench style={{ height: "1.25rem", width: "1.25rem", color: "var(--gradient-start)" }} />
+              <CardTitle className="text-lg">Skills</CardTitle>
+            </div>
+            <Button size="sm" onClick={openSkillDialog}>
+              <Plus style={{ height: "1rem", width: "1rem", marginRight: "0.375rem" }} />
+              Add Skill
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+            Install reusable skills to give this agent task-specific capabilities with secure configuration.
+          </p>
+          {loadingSkills ? (
+            <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
+              <div style={{
+                height: "2rem",
+                width: "2rem",
+                animation: "spin 1s linear infinite",
+                borderRadius: "50%",
+                border: "2px solid var(--gradient-start)",
+                borderTopColor: "transparent",
+              }} />
+            </div>
+          ) : installedSkills.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
+              <Wrench style={{ height: "3rem", width: "3rem", margin: "0 auto 1rem", opacity: 0.5 }} />
+              <p>No skills installed</p>
+              <p style={{ fontSize: "0.875rem" }}>Install a skill and configure it to enable specialized actions.</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              {installedSkills.map((skill) => (
+                <div
+                  key={skill.skill_id}
+                  style={{
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "0.5rem",
+                    padding: "1rem",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+                        <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{skill.name}</span>
+                        <span style={{
+                          fontSize: "0.75rem",
+                          color: skill.enabled ? "#10b981" : "var(--text-muted)",
+                          backgroundColor: skill.enabled ? "rgba(16, 185, 129, 0.1)" : "var(--bg-tertiary)",
+                          padding: "0.125rem 0.5rem",
+                          borderRadius: "0.25rem",
+                        }}>
+                          {skill.enabled ? "enabled" : "disabled"}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
+                        {skill.description}
+                      </p>
+                      <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
+                        Namespace: {skill.namespace} | Installed: {new Date(skill.installed_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={skill.enabled ? "Disable skill" : "Enable skill"}
+                        disabled={updatingSkillId === skill.skill_id}
+                        onClick={() => handleToggleSkill(skill)}
+                      >
+                        {skill.enabled ? (
+                          <PowerOff style={{ height: "0.875rem", width: "0.875rem" }} />
+                        ) : (
+                          <Power style={{ height: "0.875rem", width: "0.875rem" }} />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        style={{ color: "#f87171", height: "2rem", width: "2rem" }}
+                        disabled={uninstallingSkillId === skill.skill_id}
+                        onClick={() => handleUninstallSkill(skill.skill_id)}
+                        title="Uninstall skill"
+                      >
+                        <Trash2 style={{ height: "0.875rem", width: "0.875rem" }} />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Update non-secret config */}
+                  <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border-subtle)" }}>
+                    <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
+                      Update skill configuration
+                    </p>
+                    <SchemaForm
+                      schema={{
+                        form_name: `Update ${skill.name}`,
+                        submit_path: `/agents/${agentId}/skills/${skill.skill_id}`,
+                        form_inputs: Object.entries(skill.config).map(([key, value]) => ({
+                          input_type: "text",
+                          name: key,
+                          label: key,
+                          value: String(value),
+                        })),
+                      }}
+                      onSubmit={(data) => handleUpdateSkillConfig(skill, data)}
+                      submitLabel={updatingSkillId === skill.skill_id ? "Saving..." : "Save Config"}
+                      isLoading={updatingSkillId === skill.skill_id}
+                    />
+                    {skill.secret_fields.length > 0 && (
+                      <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
+                        Secret fields are protected and not shown: {skill.secret_fields.join(", ")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Install Skill Dialog */}
+      <Dialog open={isSkillDialogOpen} onOpenChange={setIsSkillDialogOpen}>
+        <DialogContent style={{ maxWidth: "44rem" }}>
+          <DialogHeader>
+            <DialogTitle>Add Skill</DialogTitle>
+            <DialogDescription>
+              Select a skill, review the setup form, and save configuration for this agent.
+            </DialogDescription>
+          </DialogHeader>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            <div style={{ border: "1px solid var(--border-subtle)", borderRadius: "0.5rem", padding: "0.75rem", maxHeight: "18rem", overflowY: "auto" }}>
+              {availableSkills.length === 0 ? (
+                <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>No additional skills available.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {availableSkills.map((skill) => (
+                    <button
+                      key={skill.skill_id}
+                      type="button"
+                      onClick={() => selectSkillForInstall(skill)}
+                      style={{
+                        border: selectedSkill?.skill_id === skill.skill_id
+                          ? "2px solid var(--gradient-start)"
+                          : "1px solid var(--border-subtle)",
+                        borderRadius: "0.5rem",
+                        background: "transparent",
+                        color: "inherit",
+                        padding: "0.75rem",
+                        textAlign: "left",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div style={{ fontWeight: 500, color: "var(--text-primary)", marginBottom: "0.25rem" }}>
+                        {skill.name}
+                      </div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                        {skill.description}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              {!selectedSkill ? (
+                <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+                  Select a skill to configure and install.
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  <div>
+                    <p style={{ fontWeight: 600, color: "var(--text-primary)" }}>{selectedSkill.name}</p>
+                    <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>{selectedSkill.description}</p>
+                  </div>
+                  {installSkillError && (
+                    <div style={{
+                      padding: "0.75rem",
+                      borderRadius: "0.5rem",
+                      backgroundColor: "rgba(239, 68, 68, 0.1)",
+                      border: "1px solid rgba(239, 68, 68, 0.2)",
+                      color: "#f87171",
+                      fontSize: "0.875rem",
+                    }}>
+                      {installSkillError}
+                    </div>
+                  )}
+                  {selectedSkillSchema && (
+                    <SchemaForm
+                      schema={selectedSkillSchema}
+                      onSubmit={handleInstallSkill}
+                      submitLabel={installingSkill ? "Installing..." : "Install Skill"}
+                      isLoading={installingSkill}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Block Dialog */}
       <Dialog open={isCreateBlockDialogOpen} onOpenChange={setIsCreateBlockDialogOpen}>

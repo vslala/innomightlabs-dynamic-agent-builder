@@ -1,0 +1,1 @@
+"""WordPress search skill package."""

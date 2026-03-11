@@ -76,6 +76,7 @@ dependencies = [
     { name = "pyjwt" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
+    { name = "pyyaml" },
     { name = "stripe" },
     { name = "uvicorn" },
 ]
@@ -119,6 +120,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "python-multipart", specifier = ">=0.0.22" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "stripe", specifier = "==14.2.0" },
     { name = "uvicorn", specifier = ">=0.40.0" },
 ]
