@@ -274,24 +274,24 @@ async def get_crawl_config_schema(kb_id: str) -> form_models.Form:
 
 
 def _invoke_crawl_async(job_id: str, kb_id: str, user_email: str):
-    """
-    Invoke the crawl job asynchronously using Lambda async invocation.
+    """Invoke the crawl job asynchronously via Lambda async invocation.
 
-    This is necessary because FastAPI BackgroundTasks don't work reliably
-    in AWS Lambda - the function can freeze after returning the response.
+    Notes:
+    - FastAPI BackgroundTasks are unreliable in Lambda (the function may freeze
+      after returning the HTTP response).
+    - When running locally, we fall back to BackgroundTasks.
     """
     import os
     import boto3
 
-    # Check if we're running in Lambda
-    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
-    if not function_name:
-        # Running locally - use synchronous execution in a thread
+    from src.runtime.env import aws_region, is_lambda
+
+    if not is_lambda():
         log.info(f"Running locally - crawl will run in background thread for job {job_id}")
         return None
 
-    # Invoke Lambda asynchronously
-    lambda_client = boto3.client("lambda", region_name=os.environ.get("AWS_REGION_NAME", "eu-west-2"))
+    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    lambda_client = boto3.client("lambda", region_name=aws_region())
 
     payload = json.dumps({
         "crawl_job": {
@@ -391,13 +391,12 @@ async def start_crawl_job(
 
     # Start crawling if auto_start is enabled
     if auto_start:
-        import os
-        if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-            # In Lambda - use async invocation
+        from src.runtime.env import is_lambda
+
+        if is_lambda():
             _invoke_crawl_async(saved_job.job_id, kb_id, user_email)
             log.info(f"Invoked async Lambda for crawl job {saved_job.job_id}")
         else:
-            # Local development - use background task
             background_tasks.add_task(
                 _run_crawl_in_background,
                 saved_job.job_id,
@@ -508,13 +507,12 @@ async def run_crawl_job(
         )
 
     # Start crawling
-    import os
-    if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-        # In Lambda - use async invocation
+    from src.runtime.env import is_lambda
+
+    if is_lambda():
         _invoke_crawl_async(job_id, kb_id, user_email)
         log.info(f"Invoked async Lambda for crawl job {job_id} (manual trigger)")
     else:
-        # Local development - use background task
         background_tasks.add_task(
             _run_crawl_in_background,
             job_id,

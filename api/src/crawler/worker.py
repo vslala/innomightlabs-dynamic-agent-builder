@@ -732,8 +732,10 @@ class CrawlerWorker:
 
     def _invoke_continuation(self, job_id: str, kb_id: str, user_email: str) -> None:
         """Invoke Lambda asynchronously to continue crawl from checkpoint."""
+        from src.runtime.env import is_lambda
+
         function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
-        if not function_name:
+        if not (is_lambda() and function_name):
             log.warning("Not running in Lambda, skipping self-invocation")
             return
 

@@ -122,6 +122,18 @@ This exports `LOCAL_*` values into the active shell session.
 - The backend expects some variables like `AWS_REGION_NAME` (see `api/src/config/settings.py`).
 - Stripe pricing IDs and other billing settings are required only if billing is enabled.
 
+## Recent Features (high level)
+- **OpenAI / Codex OAuth flow** (backend + tests) for user-friendly provider auth.
+- **Skills module** (API + SPA) for defining and activating skills/tools.
+- **Rate limits & usage accounting**, with **superuser bypass** support.
+- **Widget improvements** (custom header support + state bug fixes).
+- Timezone-aware UTC timestamps throughout the backend.
+
+## TODOs / Follow-ups
+- Clarify deployment docs for OAuth redirect URLs (Google/OpenAI) across dev/uat/prod.
+- Document skills activation/validation rules and how tool-name conflicts are handled.
+- Add a single “quickstart” command set for local dev (API + SPA + local DynamoDB).
+- Expand runbook for production observability (logs, rate-limit alerts, Stripe webhooks).
 
 ## Next Steps
 - Read `api/README.md` for backend architecture details.
