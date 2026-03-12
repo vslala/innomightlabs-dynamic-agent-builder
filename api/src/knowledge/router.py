@@ -361,13 +361,14 @@ async def start_crawl_job(
     if not kb:
         raise HTTPException(status_code=404, detail="Knowledge base not found")
 
-    # Check if Pinecone is configured (required for crawling)
+    # Pinecone is required only when we actually start a crawl.
     from src.config import settings
-    if auto_start and not settings.is_pinecone_configured():
-        raise HTTPException(
-            status_code=503,
-            detail="Vector store is not configured. Set PINECONE_API_KEY, PINECONE_HOST, and PINECONE_INDEX to enable crawling."
-        )
+    if auto_start:
+        try:
+            settings.require_pinecone()
+        except Exception as e:
+            # Map config issues to a consistent 503 for callers.
+            raise HTTPException(status_code=503, detail=str(e))
 
     # Create crawl config
     config = CrawlConfig(
@@ -498,13 +499,12 @@ async def run_crawl_job(
             detail="Crawl job was cancelled. Create a new job to re-crawl."
         )
 
-    # Check if Pinecone is configured
+    # Pinecone is required to run a crawl.
     from src.config import settings
-    if not settings.is_pinecone_configured():
-        raise HTTPException(
-            status_code=503,
-            detail="Vector store is not configured. Set PINECONE_API_KEY, PINECONE_HOST, and PINECONE_INDEX to enable crawling."
-        )
+    try:
+        settings.require_pinecone()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     # Start crawling
     from src.runtime.env import is_lambda
@@ -683,13 +683,12 @@ async def run_and_stream_crawl_job(
             detail="Crawl job has already completed. Create a new job to re-crawl."
         )
 
-    # Check if Pinecone is configured
+    # Pinecone is required to stream crawl events.
     from src.config import settings
-    if not settings.is_pinecone_configured():
-        raise HTTPException(
-            status_code=503,
-            detail="Vector store is not configured. Set PINECONE_API_KEY, PINECONE_HOST, and PINECONE_INDEX to enable crawling."
-        )
+    try:
+        settings.require_pinecone()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     async def event_stream():
         """Run crawler and stream events."""
@@ -835,12 +834,11 @@ async def search_knowledge_base(
 
     user_email: str = request.state.user_email
 
-    # Check if Pinecone is configured
-    if not settings.is_pinecone_configured():
-        raise HTTPException(
-            status_code=503,
-            detail="Vector search is not configured. Set PINECONE_API_KEY, PINECONE_HOST, and PINECONE_INDEX."
-        )
+    # Pinecone is required for vector search.
+    try:
+        settings.require_pinecone()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     # Verify KB exists and belongs to user
     kb = kb_repo.find_by_id(kb_id, user_email)
@@ -886,12 +884,11 @@ async def search_agent_knowledge_bases(
 
     user_email: str = request.state.user_email
 
-    # Check if Pinecone is configured
-    if not settings.is_pinecone_configured():
-        raise HTTPException(
-            status_code=503,
-            detail="Vector search is not configured. Set PINECONE_API_KEY, PINECONE_HOST, and PINECONE_INDEX."
-        )
+    # Pinecone is required for vector search.
+    try:
+        settings.require_pinecone()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     # Get linked KB IDs
     links = agent_kb_repo.find_kbs_for_agent(agent_id)

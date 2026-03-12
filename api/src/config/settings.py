@@ -27,6 +27,10 @@ class ConfigValidationError(Exception):
             message = f"Missing required configuration: {', '.join(missing_vars)}"
         super().__init__(message)
 
+    def to_public_message(self) -> str:
+        """Return a human-readable error message safe to show to API clients."""
+        return str(self)
+
 
 @dataclass
 class Settings:
@@ -146,12 +150,7 @@ class Settings:
         self._validated_features.add("google_oauth")
 
     def validate_pinecone(self) -> None:
-        """
-        Validate Pinecone configuration for knowledge base features.
-
-        Raises:
-            ConfigValidationError: If required config is missing
-        """
+        """Validate Pinecone configuration for knowledge base features."""
         if "pinecone" in self._validated_features:
             return
 
@@ -167,6 +166,10 @@ class Settings:
             raise ConfigValidationError(missing, "Pinecone vector store")
 
         self._validated_features.add("pinecone")
+
+    def require_pinecone(self) -> None:
+        """Fail with a single consistent exception when Pinecone isn't configured."""
+        self.validate_pinecone()
 
     def is_pinecone_configured(self) -> bool:
         """Check if Pinecone is fully configured without raising an error."""

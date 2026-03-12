@@ -1,9 +1,9 @@
 import os
 import logging
 from decimal import Decimal
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from mangum import Mangum
 
 from src.auth import auth_router, middleware
@@ -21,7 +21,11 @@ from src.widget import widget_router, WidgetAuthMiddleware
 from src.contact.router import router as contact_router
 from src.skills import skills_router
 from src.exceptions import register_exception_handlers
+from src.middleware.request_id import RequestIdMiddleware
+from src.runtime.env import is_lambda
 from src.logging_config import configure_cloudwatch_logging
+from src.logging.config import configure_logging
+from src.config import settings
 
 
 # Custom JSON encoder for DynamoDB Decimal types
@@ -33,18 +37,11 @@ def decimal_default(obj):
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
-# Use JSON logging for CloudWatch, regular logging for local development
-if os.getenv("AWS_EXECUTION_ENV"):
-    # Running in Lambda - use JSON logging for CloudWatch
+# Configure logging once at import time (Lambda cold start / local startup)
+if is_lambda():
     configure_cloudwatch_logging(LOG_LEVEL)
 else:
-    # Running locally - use human-readable logging
-    logging.basicConfig(
-        level=getattr(logging, LOG_LEVEL, logging.INFO),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        force=True,
-    )
+    configure_logging()
     logging.getLogger("botocore").setLevel(logging.WARNING)
     logging.getLogger("boto3").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -69,60 +66,80 @@ def patched_render(self, content):
 
 StarletteJSONResponse.render = patched_render
 
-# Configure FastAPI
-app = FastAPI(
-    title="Dynamic Agent Builder API",
-    description="API for building dynamic agents with long-term memory",
-    version="0.1.0",
-)
+def create_app() -> FastAPI:
+    """Create the FastAPI app.
 
-# Register global exception handlers
-register_exception_handlers(app)
+    Waterfall design goal:
+    - validate core config once
+    - configure middleware in a single block
+    - register routers
+    """
 
-# Dashboard origins (with credentials)
-dashboard_origins = [
-    "http://localhost:5173",
-    "https://vslala.github.io",
-]
+    # Fail-fast if core runtime config is missing.
+    settings.validate_core()
 
-# Middleware order matters! Last added = first to run.
-# Order of execution: CORSMiddleware -> WidgetAuthMiddleware -> AuthMiddleware -> Route
+    app = FastAPI(
+        title="Dynamic Agent Builder API",
+        description="API for building dynamic agents with long-term memory",
+        version="0.1.0",
+    )
 
-# Rate limit middleware - runs after auth (added first)
-app.add_middleware(RateLimitMiddleware)
+    register_exception_handlers(app)
 
-# Dashboard auth middleware (JWT validation) - added first, runs last
-app.add_middleware(middleware.AuthMiddleware)
+    # Middleware order matters! Last added = first to run.
+    # Order of execution: CORSMiddleware -> RequestId -> WidgetAuth -> Auth -> RateLimit -> Route
 
-# Widget auth middleware (API key validation) - runs second
-app.add_middleware(WidgetAuthMiddleware)
+    # Rate limit middleware - runs after auth (added first)
+    app.add_middleware(RateLimitMiddleware)
 
-# CORS middleware - added last, runs FIRST (must handle OPTIONS preflight before auth)
-# Note: Widget endpoints allow any origin (validated by WidgetAuthMiddleware against API key's allowed_origins)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins; widget validates via API key, dashboard via auth
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-)
+    # Dashboard auth middleware (JWT validation) - added first, runs last
+    app.add_middleware(middleware.AuthMiddleware)
 
-app.include_router(auth_router)
-app.include_router(router=agent_router)
-app.include_router(router=apikeys_router)
-app.include_router(router=conversation_router)
-app.include_router(router=settings_router)
-app.include_router(router=memory_router)
-app.include_router(router=llm_router)
-app.include_router(router=knowledge_sse_router)
-app.include_router(router=knowledge_router)
-app.include_router(router=agent_kb_router)
-app.include_router(router=widget_router)
-app.include_router(router=stripe_payments_router)
-app.include_router(router=users_router)
-app.include_router(router=contact_router)
-app.include_router(router=skills_router)
+    # Widget auth middleware (API key validation) - runs second
+    app.add_middleware(WidgetAuthMiddleware)
+
+    # Request id middleware - runs early so request_id is available in downstream logs
+    app.add_middleware(RequestIdMiddleware)
+
+    # CORS middleware - added last, runs FIRST (must handle OPTIONS preflight before auth)
+    # Note: Widget endpoints allow any origin (validated by WidgetAuthMiddleware against API key's allowed_origins)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
+
+    app.include_router(auth_router)
+    app.include_router(router=agent_router)
+    app.include_router(router=apikeys_router)
+    app.include_router(router=conversation_router)
+    app.include_router(router=settings_router)
+    app.include_router(router=memory_router)
+    app.include_router(router=llm_router)
+    app.include_router(router=knowledge_sse_router)
+    app.include_router(router=knowledge_router)
+    app.include_router(router=agent_kb_router)
+    app.include_router(router=widget_router)
+    app.include_router(router=stripe_payments_router)
+    app.include_router(router=users_router)
+    app.include_router(router=contact_router)
+    app.include_router(router=skills_router)
+
+    @app.get("/health")
+    def health_check():
+        return {"status": "healthy"}
+
+    @app.get("/")
+    def root():
+        return {"message": "Dynamic Agent Builder API"}
+
+    return app
+
+
+app = create_app()
 
 
 @app.get("/health")

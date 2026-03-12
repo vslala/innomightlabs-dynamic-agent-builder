@@ -38,7 +38,8 @@ class PricingConfig(BaseModel):
 
 
 def _config_path() -> Path:
-    return Path(__file__).with_name(f"{os.getenv("ENVIRONMENT", "dev")}_pricing_config.json")
+    env = os.getenv("ENVIRONMENT", "dev")
+    return Path(__file__).with_name(f"{env}_pricing_config.json")
 
 
 def get_pricing_config() -> PricingConfig:

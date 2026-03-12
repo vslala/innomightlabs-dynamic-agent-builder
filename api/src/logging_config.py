@@ -22,6 +22,7 @@ class CloudWatchJsonFormatter(logging.Formatter):
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
+            "request_id": getattr(record, "request_id", "-"),
         }
 
         # Add extra fields if present
@@ -52,13 +53,12 @@ class CloudWatchJsonFormatter(logging.Formatter):
 
 
 def configure_cloudwatch_logging(log_level: str = "INFO") -> None:
-    """
-    Configure logging for AWS CloudWatch with JSON formatting.
+    """Configure JSON logging for AWS CloudWatch.
 
-    Args:
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    Includes request_id when provided by RequestIdMiddleware.
     """
-    # Get root logger
+    from src.logging.request_id import RequestIdFilter
+
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
@@ -66,10 +66,13 @@ def configure_cloudwatch_logging(log_level: str = "INFO") -> None:
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
-    # Create console handler with JSON formatter
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(CloudWatchJsonFormatter())
     root_logger.addHandler(console_handler)
+
+    request_filter = RequestIdFilter()
+    for logger_name in ("", "uvicorn", "uvicorn.error", "uvicorn.access"):
+        logging.getLogger(logger_name).addFilter(request_filter)
 
     # Suppress noisy libraries
     logging.getLogger("botocore").setLevel(logging.WARNING)
