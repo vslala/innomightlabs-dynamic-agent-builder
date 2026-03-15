@@ -95,22 +95,37 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             SSEEvent objects for streaming to the client
         """
         try:
+            from src.agents.runtime_state import AgentTurnState
+
             self.tool_handler.set_conversation_context(conversation.conversation_id)
             self.tool_handler.set_user_context(actor_id)
 
-            linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
-            self.tool_handler.set_knowledge_base_context(linked_kb_ids)
-            enabled_skills = self.skill_runtime.list_enabled(agent.agent_id)
+            state = AgentTurnState(
+                owner_email=owner_email,
+                actor_email=actor_email,
+                actor_id=actor_id,
+                conversation_id=conversation.conversation_id,
+                agent_id=agent.agent_id,
+                provider_name=agent.agent_provider,
+                model_name=agent.agent_model,
+                user_message=user_message,
+                attachments=attachments or [],
+            )
+
+            state.linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
+            self.tool_handler.set_knowledge_base_context(state.linked_kb_ids)
+
+            state.enabled_skills = self.skill_runtime.list_enabled(agent.agent_id)
 
             self._ensure_memory_initialized(agent.agent_id, actor_id)
 
             # 2. Save user message (with attachments if any)
             user_msg = Message(
-                conversation_id=conversation.conversation_id,
-                created_by=actor_email,
+                conversation_id=state.conversation_id,
+                created_by=state.actor_email,
                 role="user",
-                content=user_message,
-                attachments=attachments or [],
+                content=state.user_message,
+                attachments=state.attachments,
             )
             self.message_repo.save(user_msg)
 
@@ -127,24 +142,24 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             )
 
             provider_settings = self.provider_settings_repo.find_by_provider(
-                owner_email, agent.agent_provider
+                state.owner_email, state.provider_name
             )
             if not provider_settings:
                 yield SSEEvent(
                     event_type=SSEEventType.ERROR,
-                    content=f"Provider '{agent.agent_provider}' is not configured. "
+                    content=f"Provider '{state.provider_name}' is not configured. "
                             "Please configure it in Settings > Provider Configuration.",
                 )
                 return
 
-            if agent.agent_provider == "OpenAI":
+            if state.provider_name == "OpenAI":
                 openai_credentials = await ensure_valid_openai_credentials(
                     provider_settings,
                     self.provider_settings_repo,
                 )
-                credentials = openai_credentials.model_dump(mode="json")
+                state.credentials = openai_credentials.model_dump(mode="json")
             else:
-                credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
+                state.credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
 
             # 4. Load core memory and build system prompt
             yield SSEEvent(
@@ -152,10 +167,14 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 content="Loading memory...",
             )
 
-            kb_instructions = self._build_kb_instructions(len(linked_kb_ids)) if linked_kb_ids else None
+            kb_instructions = (
+                self._build_kb_instructions(len(state.linked_kb_ids))
+                if state.linked_kb_ids
+                else None
+            )
             skills_addendum = (
-                self.skill_runtime.build_system_prompt_addendum(enabled_skills)
-                if enabled_skills
+                self.skill_runtime.build_system_prompt_addendum(state.enabled_skills)
+                if state.enabled_skills
                 else None
             )
 
@@ -189,13 +208,13 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 content="Connecting to AI model...",
             )
 
-            provider = get_llm_provider(agent.agent_provider)
+            provider = get_llm_provider(state.provider_name)
 
-            tools = NATIVE_TOOLS.copy()
-            if linked_kb_ids:
-                tools.extend(KNOWLEDGE_TOOLS)
-            if enabled_skills:
-                tools.extend(self.skill_runtime.build_skill_tools())
+            state.tools = NATIVE_TOOLS.copy()
+            if state.linked_kb_ids:
+                state.tools.extend(KNOWLEDGE_TOOLS)
+            if state.enabled_skills:
+                state.tools.extend(self.skill_runtime.build_skill_tools())
 
             full_response = ""
             for iteration in range(MAX_TOOL_ITERATIONS):
@@ -204,7 +223,10 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 iteration_text = ""
 
                 async for event in provider.stream_response(
-                    context, credentials, tools, agent.agent_model
+                    context,
+                    state.credentials or {},
+                    state.tools,
+                    state.model_name,
                 ): # pyright: ignore[reportGeneralTypeIssues]
                     if event.type == "text":
                         full_response += event.content
