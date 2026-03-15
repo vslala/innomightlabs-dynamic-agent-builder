@@ -277,42 +277,34 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                     })
 
                     # Execute tools and collect results
+                    from src.agents.tool_execution import ToolExecutionRouter
+
+                    tool_router = ToolExecutionRouter(
+                        skill_runtime=self.skill_runtime,
+                        native_tools=self.tool_handler,
+                    )
+
                     tool_results = []
                     for tool_event in pending_tool_calls:
-                        try:
-                            if tool_event.tool_name in {"load_skill", "execute_skill_action"}:
-                                result = await self.skill_runtime.handle_tool_call(
-                                    tool_name=tool_event.tool_name,
-                                    tool_input=tool_event.tool_input,
-                                    agent_id=agent.agent_id,
-                                    actor_email=actor_email,
-                                    actor_id=actor_id,
-                                    conversation_id=conversation.conversation_id,
-                                )
-                            else:
-                                result = await self.tool_handler.execute(
-                                    tool_event.tool_name,
-                                    tool_event.tool_input,
-                                    agent.agent_id,
-                                )
-                            success = True
-                        except Exception as e:
-                            result = f"Error: {str(e)}"
-                            success = False
-                            log.error(f"Tool execution error: {e}", exc_info=True)
+                        outcome = await tool_router.execute(
+                            tool_name=tool_event.tool_name,
+                            tool_input=tool_event.tool_input,
+                            tool_use_id=tool_event.tool_use_id,
+                            state=state,
+                        )
 
                         # Emit tool result event for UI timeline
                         yield SSEEvent(
                             event_type=SSEEventType.TOOL_CALL_RESULT,
-                            content=result[:200] + "..." if len(result) > 200 else result,
+                            content=outcome.result[:200] + "..." if len(outcome.result) > 200 else outcome.result,
                             tool_name=tool_event.tool_name,
-                            success=success,
+                            success=outcome.success,
                         )
 
                         tool_results.append({
                             "toolResult": {
                                 "toolUseId": tool_event.tool_use_id,
-                                "content": [{"text": result}],
+                                "content": [{"text": outcome.result}],
                             }
                         })
 
