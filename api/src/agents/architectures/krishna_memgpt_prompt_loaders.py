@@ -52,40 +52,43 @@ class PersonaLoader(PromptLoaderBase):
 
 class CoreMemoryLoader(PromptLoaderBase):
     id = "krishna_memgpt.core_memory"
-    requires = ("agent_id", "user_id")
+    requires = ("runtime.core_memory",)
 
     def __init__(self, *, memory_repo: MemoryRepository):
+        # kept for backwards-compat during migration; will be removed once all callers pass runtime.core_memory
         self._memory_repo = memory_repo
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
-        memory_content = self._build_core_memory(agent_id=inp.agent_id, user_id=inp.user_id)
+        from src.memory.snapshot import CoreMemorySnapshot
+
+        snapshot = inp.runtime.core_memory
+        assert snapshot is not None
+        if not isinstance(snapshot, CoreMemorySnapshot):
+            raise TypeError("runtime.core_memory must be CoreMemorySnapshot")
+
+        sections: list[str] = []
+        for block_def in snapshot.block_defs:
+            block = snapshot.blocks.get(block_def.block_name)
+            title = f"[{block_def.block_name.title()} - {block_def.description}]"
+
+            if block and block.lines:
+                lines_str = "\n".join(f"{i+1}: {line}" for i, line in enumerate(block.lines))
+                capacity_pct = (block.word_count / block_def.word_limit) * 100 if block_def.word_limit else 0
+                warning = " ⚠️ NEARING CAPACITY" if capacity_pct >= 80 else ""
+                sections.append(
+                    f"{title} ({block.word_count}/{block_def.word_limit} words){warning}\n{lines_str}"
+                )
+            else:
+                sections.append(f"{title}\n(empty)")
+
+        memory_content = "\n\n".join(sections)
+
         ctx.add_section(
             "core_memory",
             f"""<core_memory>
 {memory_content}
 </core_memory>""",
         )
-
-    def _build_core_memory(self, *, agent_id: str, user_id: str) -> str:
-        block_defs = self._memory_repo.get_block_definitions(agent_id, user_id)
-        memories = {m.block_name: m for m in self._memory_repo.get_all_core_memories(agent_id, user_id)}
-
-        sections: list[str] = []
-        for block_def in block_defs:
-            memory = memories.get(block_def.block_name)
-            title = f"[{block_def.block_name.title()} - {block_def.description}]"
-
-            if memory and memory.lines:
-                lines_str = "\n".join(f"{i+1}: {line}" for i, line in enumerate(memory.lines))
-                capacity_pct = memory.get_capacity_percent(block_def.word_limit)
-                warning = " ⚠️ NEARING CAPACITY" if capacity_pct >= 80 else ""
-                sections.append(
-                    f"{title} ({memory.word_count}/{block_def.word_limit} words){warning}\n{lines_str}"
-                )
-            else:
-                sections.append(f"{title}\n(empty)")
-
-        return "\n\n".join(sections)
 
 
 class MemoryToolsLoader(PromptLoaderBase):

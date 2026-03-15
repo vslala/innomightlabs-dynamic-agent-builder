@@ -28,6 +28,7 @@ def build_krishna_memgpt_system_prompt(
     user_id: str,
     kb_count: int | None = None,
     enabled_skills: list[dict] | None = None,
+    core_memory: object | None = None,
     capacity_warnings: list[dict] | None = None,
 ) -> str:
     pipeline = PromptPipeline(
@@ -54,6 +55,7 @@ def build_krishna_memgpt_system_prompt(
             runtime=PromptRuntime(
                 kb_count=kb_count,
                 enabled_skills=enabled_skills,
+                core_memory=core_memory,
                 capacity_warnings=capacity_warnings,
             ),
         )

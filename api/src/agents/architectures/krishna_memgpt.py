@@ -169,13 +169,15 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
             kb_count = len(state.linked_kb_ids) if state.linked_kb_ids else None
 
-            capacity_warnings = self._check_capacity_warnings(agent.agent_id, actor_id)
+            core_memory_snapshot = self._load_core_memory_snapshot(agent.agent_id, actor_id)
+            capacity_warnings = self._check_capacity_warnings_from_snapshot(core_memory_snapshot)
 
             system_prompt = self._build_system_prompt(
                 agent,
                 actor_id,
                 kb_count=kb_count,
                 enabled_skills=state.enabled_skills or None,
+                core_memory=core_memory_snapshot,
                 capacity_warnings=capacity_warnings or None,
             )
 
@@ -296,6 +298,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         *,
         kb_count: int | None = None,
         enabled_skills: list[dict] | None = None,
+        core_memory: object | None = None,
         capacity_warnings: list[dict] | None = None,
     ) -> str:
         """Build the system prompt.
@@ -312,54 +315,66 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             user_id=user_id,
             kb_count=kb_count,
             enabled_skills=enabled_skills,
+            core_memory=core_memory,
             capacity_warnings=capacity_warnings,
         )
 
-    def _check_capacity_warnings(self, agent_id: str, user_id: str) -> list[dict]:
-        """Check for memory blocks at or above warning threshold."""
+    def _load_core_memory_snapshot(self, agent_id: str, user_id: str):
+        """Load a consistent core-memory snapshot (single read) for this turn."""
+        from src.memory.snapshot import (
+            CoreMemoryBlockDefSnapshot,
+            CoreMemoryBlockSnapshot,
+            CoreMemorySnapshot,
+        )
+
         block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
-        memories = {
-            m.block_name: m
-            for m in self.memory_repo.get_all_core_memories(agent_id, user_id)
+        memories = self.memory_repo.get_all_core_memories(agent_id, user_id)
+
+        def_snaps = [
+            CoreMemoryBlockDefSnapshot(
+                block_name=d.block_name,
+                description=d.description,
+                word_limit=d.word_limit,
+            )
+            for d in block_defs
+        ]
+
+        block_snaps = {
+            m.block_name: CoreMemoryBlockSnapshot(
+                block_name=m.block_name,
+                lines=list(m.lines or []),
+                word_count=m.word_count,
+            )
+            for m in memories
         }
 
-        warnings = []
-        for block_def in block_defs:
-            memory = memories.get(block_def.block_name)
-            if memory:
-                percent = memory.get_capacity_percent(block_def.word_limit)
-                if percent >= CAPACITY_WARNING_THRESHOLD * 100:
-                    warnings.append({
-                        "block_name": block_def.block_name,
-                        "word_count": memory.word_count,
-                        "word_limit": block_def.word_limit,
+        return CoreMemorySnapshot(block_defs=def_snaps, blocks=block_snaps)
+
+    def _check_capacity_warnings_from_snapshot(self, snapshot) -> list[dict]:
+        """Check capacity warnings from a snapshot (no DB reads)."""
+        from src.memory.snapshot import CoreMemorySnapshot
+
+        if not isinstance(snapshot, CoreMemorySnapshot):
+            raise TypeError("snapshot must be CoreMemorySnapshot")
+
+        warnings: list[dict] = []
+        for d in snapshot.block_defs:
+            b = snapshot.blocks.get(d.block_name)
+            if not b:
+                continue
+            percent = (b.word_count / d.word_limit) * 100 if d.word_limit else 0
+            if percent >= CAPACITY_WARNING_THRESHOLD * 100:
+                warnings.append(
+                    {
+                        "block_name": d.block_name,
+                        "word_count": b.word_count,
+                        "word_limit": d.word_limit,
                         "percent": percent,
-                    })
+                    }
+                )
         return warnings
 
-    def _build_warning_message(self, warnings: list[dict]) -> str:
-        """Build system message for capacity warnings."""
-        lines = [
-            "<memory_warning>",
-            "The following memory blocks are nearing capacity:",
-        ]
-        for w in warnings:
-            lines.append(
-                f"- [{w['block_name']}]: {w['word_count']}/{w['word_limit']} words "
-                f"({w['percent']:.0f}%)"
-            )
-
-        lines.extend([
-            "",
-            "You should:",
-            "1. Review and consolidate redundant information",
-            "2. Move detailed information to archival memory",
-            "3. Delete outdated entries",
-            "",
-            "If you don't take action, the system will auto-compact these blocks.",
-            "</memory_warning>",
-        ])
-        return "\n".join(lines)
+    # Capacity warning prompt rendering lives in CapacityWarningsLoader.
 
     def _format_content_with_attachments(
         self, content: str, attachments: list[Attachment]
