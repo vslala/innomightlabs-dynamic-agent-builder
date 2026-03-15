@@ -167,38 +167,16 @@ Use the provided skill tools when needed. If a skill action fails, read the tool
 
 class CapacityWarningsLoader(PromptLoaderBase):
     id = "krishna_memgpt.warnings"
-    requires = ("agent_id", "user_id")
+    optional_requires = ("runtime.capacity_warnings",)
 
     def __init__(self, *, memory_repo: MemoryRepository):
+        # kept for backwards-compat during migration; will be removed once all callers pass warnings in runtime
         self._memory_repo = memory_repo
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
-        warning_block = self._build_capacity_warning(agent_id=inp.agent_id, user_id=inp.user_id)
-        if warning_block:
-            ctx.add_section("warnings", warning_block)
-
-    def _build_capacity_warning(self, *, agent_id: str, user_id: str) -> str | None:
-        block_defs = self._memory_repo.get_block_definitions(agent_id, user_id)
-        memories = {m.block_name: m for m in self._memory_repo.get_all_core_memories(agent_id, user_id)}
-
-        warnings: list[dict] = []
-        for block_def in block_defs:
-            memory = memories.get(block_def.block_name)
-            if not memory:
-                continue
-            percent = memory.get_capacity_percent(block_def.word_limit)
-            if percent >= CAPACITY_WARNING_THRESHOLD * 100:
-                warnings.append(
-                    {
-                        "block_name": block_def.block_name,
-                        "word_count": memory.word_count,
-                        "word_limit": block_def.word_limit,
-                        "percent": percent,
-                    }
-                )
-
+        warnings = inp.runtime.capacity_warnings or []
         if not warnings:
-            return None
+            return
 
         lines = [
             "<memory_warning>",
@@ -221,4 +199,4 @@ class CapacityWarningsLoader(PromptLoaderBase):
                 "</memory_warning>",
             ]
         )
-        return "\n".join(lines)
+        ctx.add_section("warnings", "\n".join(lines))

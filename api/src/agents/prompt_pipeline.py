@@ -30,6 +30,9 @@ class PromptRuntime:
     # Skills
     enabled_skills: list[dict] | None = None
 
+    # Memory capacity warnings
+    capacity_warnings: list[dict] | None = None
+
 
 @dataclass(frozen=True)
 class PromptBuildInput:
