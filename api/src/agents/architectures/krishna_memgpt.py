@@ -216,6 +216,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             if state.enabled_skills:
                 state.tools.extend(self.skill_runtime.build_skill_tools())
 
+            from src.agents.agentic_loop import run_agentic_tool_loop
             from src.agents.tool_execution import ToolExecutionRouter
 
             tool_router = ToolExecutionRouter(
@@ -224,98 +225,40 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             )
 
             full_response = ""
-            for iteration in range(MAX_TOOL_ITERATIONS):
-                has_tool_calls = False
-                pending_tool_calls = []
-                iteration_text = ""
+            async for loop_event in run_agentic_tool_loop(
+                provider=provider,
+                context=context,
+                credentials=state.credentials or {},
+                tools=state.tools,
+                model=state.model_name,
+                tool_router=tool_router,
+                state=state,
+            ):
+                if loop_event.kind == "text":
+                    yield SSEEvent(
+                        event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
+                        content=loop_event.payload["content"],
+                    )
 
-                async for event in provider.stream_response(
-                    context,
-                    state.credentials or {},
-                    state.tools,
-                    state.model_name,
-                ): # pyright: ignore[reportGeneralTypeIssues]
-                    if event.type == "text":
-                        full_response += event.content
-                        iteration_text += event.content
-                        yield SSEEvent(
-                            event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
-                            content=event.content,
-                        )
+                elif loop_event.kind == "tool_call_start":
+                    yield SSEEvent(
+                        event_type=SSEEventType.TOOL_CALL_START,
+                        content=f"Calling {loop_event.payload['tool_name']}...",
+                        tool_name=loop_event.payload["tool_name"],
+                        tool_args=loop_event.payload["tool_args"],
+                    )
 
-                    elif event.type == "tool_use":
-                        has_tool_calls = True
-                        pending_tool_calls.append(event)
+                elif loop_event.kind == "tool_call_result":
+                    result = loop_event.payload["result"]
+                    yield SSEEvent(
+                        event_type=SSEEventType.TOOL_CALL_RESULT,
+                        content=result[:200] + "..." if len(result) > 200 else result,
+                        tool_name=loop_event.payload["tool_name"],
+                        success=loop_event.payload["success"],
+                    )
 
-                        # Emit tool start event for UI timeline
-                        yield SSEEvent(
-                            event_type=SSEEventType.TOOL_CALL_START,
-                            content=f"Calling {event.tool_name}...",
-                            tool_name=event.tool_name,
-                            tool_args=event.tool_input,
-                        )
-
-                    elif event.type == "stop":
-                        pass
-
-                # Process all tool calls from this iteration
-                if pending_tool_calls:
-                    # Add assistant's response to context (text + tool use)
-                    # This ensures the LLM knows what it already said when continuing
-                    assistant_content = []
-
-                    # Include any text generated before tool calls
-                    if iteration_text.strip():
-                        assistant_content.append({"text": iteration_text})
-
-                    # Add tool use blocks
-                    for tool_event in pending_tool_calls:
-                        assistant_content.append({
-                            "toolUse": {
-                                "toolUseId": tool_event.tool_use_id,
-                                "name": tool_event.tool_name,
-                                "input": tool_event.tool_input,
-                            }
-                        })
-
-                    context.append({
-                        "role": "assistant",
-                        "content": assistant_content,
-                    })
-
-                    # Execute tools and collect results
-                    tool_results = []
-                    for tool_event in pending_tool_calls:
-                        outcome = await tool_router.execute(
-                            tool_name=tool_event.tool_name,
-                            tool_input=tool_event.tool_input,
-                            tool_use_id=tool_event.tool_use_id,
-                            state=state,
-                        )
-
-                        # Emit tool result event for UI timeline
-                        yield SSEEvent(
-                            event_type=SSEEventType.TOOL_CALL_RESULT,
-                            content=outcome.result[:200] + "..." if len(outcome.result) > 200 else outcome.result,
-                            tool_name=tool_event.tool_name,
-                            success=outcome.success,
-                        )
-
-                        tool_results.append({
-                            "toolResult": {
-                                "toolUseId": tool_event.tool_use_id,
-                                "content": [{"text": outcome.result}],
-                            }
-                        })
-
-                    # Add tool results to context
-                    context.append({
-                        "role": "user",
-                        "content": tool_results,
-                    })
-
-                if not has_tool_calls:
-                    break
+                elif loop_event.kind == "complete":
+                    full_response = loop_event.payload["full_text"]
 
             # 8. Save assistant message (text response only)
             if full_response.strip():
