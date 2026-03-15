@@ -152,17 +152,19 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 content="Loading memory...",
             )
 
-            system_prompt = self._build_system_prompt(agent, actor_id)
+            kb_instructions = self._build_kb_instructions(len(linked_kb_ids)) if linked_kb_ids else None
+            skills_addendum = (
+                self.skill_runtime.build_system_prompt_addendum(enabled_skills)
+                if enabled_skills
+                else None
+            )
 
-            if linked_kb_ids:
-                system_prompt += "\n\n" + self._build_kb_instructions(len(linked_kb_ids))
-            if enabled_skills:
-                system_prompt += "\n\n" + self.skill_runtime.build_system_prompt_addendum(enabled_skills)
-
-            capacity_warnings = self._check_capacity_warnings(agent.agent_id, actor_id)
-            if capacity_warnings:
-                warning_msg = self._build_warning_message(capacity_warnings)
-                system_prompt += "\n\n" + warning_msg
+            system_prompt = self._build_system_prompt(
+                agent,
+                actor_id,
+                kb_instructions=kb_instructions,
+                skills_addendum=skills_addendum,
+            )
 
             # 5. Build conversation context
             yield SSEEvent(
@@ -336,7 +338,14 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             self.memory_repo.initialize_default_blocks(agent_id, user_id)
             log.info(f"Initialized default memory blocks for agent {agent_id}")
 
-    def _build_system_prompt(self, agent: "Agent", user_id: str) -> str:
+    def _build_system_prompt(
+        self,
+        agent: "Agent",
+        user_id: str,
+        *,
+        kb_instructions: str | None = None,
+        skills_addendum: str | None = None,
+    ) -> str:
         """Build the system prompt.
 
         This wrapper keeps the architecture readable by delegating prompt
@@ -349,6 +358,8 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             memory_repo=self.memory_repo,
             agent_id=agent.agent_id,
             user_id=user_id,
+            kb_instructions=kb_instructions,
+            skills_addendum=skills_addendum,
         )
 
     def _check_capacity_warnings(self, agent_id: str, user_id: str) -> list[dict]:
