@@ -9,13 +9,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from src.agents.context import PromptContext
-from src.agents.prompt_pipeline import PromptBuildInput, PromptLoader
+from src.agents.prompt_pipeline import PromptBuildInput, PromptLoaderBase
 from src.common import CAPACITY_WARNING_THRESHOLD
 from src.memory import MemoryRepository
 
 
-class IdentityLoader:
+class IdentityLoader(PromptLoaderBase):
     id = "krishna_memgpt.identity"
+    requires = ("agent_persona", "agent_id", "user_id")
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
         timestamp_str = datetime.now(timezone.utc).strftime("%A, %B %d, %Y at %I:%M %p UTC")
@@ -36,8 +37,9 @@ CORE DIRECTIVES:
         )
 
 
-class PersonaLoader:
+class PersonaLoader(PromptLoaderBase):
     id = "krishna_memgpt.persona"
+    requires = ("agent_persona",)
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
         ctx.add_section(
@@ -48,8 +50,9 @@ class PersonaLoader:
         )
 
 
-class CoreMemoryLoader:
+class CoreMemoryLoader(PromptLoaderBase):
     id = "krishna_memgpt.core_memory"
+    requires = ("agent_id", "user_id")
 
     def __init__(self, *, memory_repo: MemoryRepository):
         self._memory_repo = memory_repo
@@ -85,7 +88,7 @@ class CoreMemoryLoader:
         return "\n\n".join(sections)
 
 
-class MemoryToolsLoader:
+class MemoryToolsLoader(PromptLoaderBase):
     id = "krishna_memgpt.memory_tools"
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
@@ -110,7 +113,7 @@ MEMORY GUIDELINES:
         )
 
 
-class KnowledgeBaseLoader:
+class KnowledgeBaseLoader(PromptLoaderBase):
     id = "krishna_memgpt.knowledge_base"
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
@@ -118,7 +121,7 @@ class KnowledgeBaseLoader:
             ctx.add_section("knowledge_base", inp.kb_instructions)
 
 
-class SkillsLoader:
+class SkillsLoader(PromptLoaderBase):
     id = "krishna_memgpt.skills"
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
@@ -126,8 +129,9 @@ class SkillsLoader:
             ctx.add_section("skills", inp.skills_addendum)
 
 
-class CapacityWarningsLoader:
+class CapacityWarningsLoader(PromptLoaderBase):
     id = "krishna_memgpt.warnings"
+    requires = ("agent_id", "user_id")
 
     def __init__(self, *, memory_repo: MemoryRepository):
         self._memory_repo = memory_repo
