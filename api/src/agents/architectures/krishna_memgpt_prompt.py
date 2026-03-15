@@ -41,12 +41,16 @@ def build_krishna_memgpt_system_prompt(
         ]
     )
 
+    from src.agents.prompt_pipeline import PromptRuntime
+
     return pipeline.build(
         PromptBuildInput(
             agent_persona=agent_persona,
             agent_id=agent_id,
             user_id=user_id,
-            kb_instructions=kb_instructions,
-            skills_addendum=skills_addendum,
+            runtime=PromptRuntime(
+                kb_instructions=kb_instructions,
+                skills_addendum=skills_addendum,
+            ),
         )
     )

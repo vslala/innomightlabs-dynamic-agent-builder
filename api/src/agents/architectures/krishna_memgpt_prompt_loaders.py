@@ -115,18 +115,19 @@ MEMORY GUIDELINES:
 
 class KnowledgeBaseLoader(PromptLoaderBase):
     id = "krishna_memgpt.knowledge_base"
+    optional_requires = ("runtime.kb_instructions",)
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
-        if inp.kb_instructions:
-            ctx.add_section("knowledge_base", inp.kb_instructions)
+        # optional loader: pipeline ensures runtime.kb_instructions is present
+        ctx.add_section("knowledge_base", inp.runtime.kb_instructions or "")
 
 
 class SkillsLoader(PromptLoaderBase):
     id = "krishna_memgpt.skills"
+    optional_requires = ("runtime.skills_addendum",)
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
-        if inp.skills_addendum:
-            ctx.add_section("skills", inp.skills_addendum)
+        ctx.add_section("skills", inp.runtime.skills_addendum or "")
 
 
 class CapacityWarningsLoader(PromptLoaderBase):

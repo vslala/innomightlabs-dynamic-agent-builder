@@ -17,6 +17,18 @@ from src.agents.context import PromptContext
 
 
 @dataclass(frozen=True)
+class PromptRuntime:
+    """Turn-specific, optional prompt inputs.
+
+    This is intentionally separate from required identity inputs so optional
+    sections can evolve without bloating the base input contract.
+    """
+
+    kb_instructions: str | None = None
+    skills_addendum: str | None = None
+
+
+@dataclass(frozen=True)
 class PromptBuildInput:
     """Inputs available to prompt loaders.
 
@@ -26,8 +38,7 @@ class PromptBuildInput:
     agent_persona: str
     agent_id: str
     user_id: str
-    kb_instructions: str | None = None
-    skills_addendum: str | None = None
+    runtime: PromptRuntime = PromptRuntime()
 
 
 class PromptBuildError(Exception):
@@ -42,26 +53,39 @@ class PromptLoaderBase:
 
     Contract:
     - id: stable identifier (used in logs/errors)
-    - requires: list of PromptBuildInput field names the loader expects to be populated
+    - requires: field paths that must be present (fatal if missing)
+    - optional_requires: field paths that, if missing, should cause the loader to be skipped
     - load(): writes blocks into PromptContext
+
+    Field paths are dotted, e.g. "agent_id" or "runtime.kb_instructions".
     """
 
     id: str = "prompt_loader"
     requires: tuple[str, ...] = ()
+    optional_requires: tuple[str, ...] = ()
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:  # pragma: no cover
         raise NotImplementedError
 
 
+def _get_field(inp: PromptBuildInput, path: str):
+    cur: object = inp
+    for part in path.split("."):
+        cur = getattr(cur, part, None)
+        if cur is None:
+            return None
+    return cur
+
+
 def _missing_required(inp: PromptBuildInput, required: Iterable[str]) -> list[str]:
     missing: list[str] = []
-    for field in required:
-        value = getattr(inp, field, None)
+    for path in required:
+        value = _get_field(inp, path)
         if value is None:
-            missing.append(field)
+            missing.append(path)
             continue
         if isinstance(value, str) and not value.strip():
-            missing.append(field)
+            missing.append(path)
     return missing
 
 
@@ -75,5 +99,11 @@ class PromptPipeline:
             missing = _missing_required(inp, loader.requires)
             if missing:
                 raise PromptBuildError(loader_id=loader.id, missing=missing)
+
+            missing_optional = _missing_required(inp, loader.optional_requires)
+            if missing_optional and loader.optional_requires:
+                # Explicitly skip loaders whose optional inputs aren't present.
+                continue
+
             loader.load(ctx=ctx, inp=inp)
         return ctx.render()
