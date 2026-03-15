@@ -14,11 +14,8 @@ from src.common import CAPACITY_WARNING_THRESHOLD
 from src.memory import MemoryRepository
 
 
-class KrishnaMemGPTPromptLoader:
-    id = "krishna_memgpt.v1"
-
-    def __init__(self, *, memory_repo: MemoryRepository):
-        self._memory_repo = memory_repo
+class IdentityLoader:
+    id = "krishna_memgpt.identity"
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
         timestamp_str = datetime.now(timezone.utc).strftime("%A, %B %d, %Y at %I:%M %p UTC")
@@ -38,6 +35,11 @@ CORE DIRECTIVES:
 </identity>""",
         )
 
+
+class PersonaLoader:
+    id = "krishna_memgpt.persona"
+
+    def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
         ctx.add_section(
             "persona",
             f"""<persona>
@@ -45,6 +47,14 @@ CORE DIRECTIVES:
 </persona>""",
         )
 
+
+class CoreMemoryLoader:
+    id = "krishna_memgpt.core_memory"
+
+    def __init__(self, *, memory_repo: MemoryRepository):
+        self._memory_repo = memory_repo
+
+    def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
         memory_content = self._build_core_memory(agent_id=inp.agent_id, user_id=inp.user_id)
         ctx.add_section(
             "core_memory",
@@ -52,36 +62,6 @@ CORE DIRECTIVES:
 {memory_content}
 </core_memory>""",
         )
-
-        ctx.add_section(
-            "memory_tools",
-            """<memory_tools>
-You have access to memory tools - use them actively:
-- core_memory_append: Remember new facts about the human (block: "human")
-- core_memory_replace: Update outdated information (needs line number)
-- core_memory_delete: Remove obsolete facts (needs line number)
-- archival_memory_insert: Store detailed information for later retrieval
-- archival_memory_search: Search your long-term memory
-- core_memory_list_blocks: See all available memory blocks
-- recall_conversation: Retrieve earlier parts of this conversation
-
-MEMORY GUIDELINES:
-- If the user references something you don't see in context ("what we discussed", "as I mentioned"), use recall_conversation
-- Block names are lowercase with underscores (e.g., "human", not "Human - Facts about the user")
-- Always use core_memory_read BEFORE modifying a block to get current line numbers
-- Core memory is for key facts; archival is for detailed information
-</memory_tools>""",
-        )
-
-        if inp.kb_instructions:
-            ctx.add_section("knowledge_base", inp.kb_instructions)
-
-        if inp.skills_addendum:
-            ctx.add_section("skills", inp.skills_addendum)
-
-        warning_block = self._build_capacity_warning(agent_id=inp.agent_id, user_id=inp.user_id)
-        if warning_block:
-            ctx.add_section("warnings", warning_block)
 
     def _build_core_memory(self, *, agent_id: str, user_id: str) -> str:
         block_defs = self._memory_repo.get_block_definitions(agent_id, user_id)
@@ -103,6 +83,59 @@ MEMORY GUIDELINES:
                 sections.append(f"{title}\n(empty)")
 
         return "\n\n".join(sections)
+
+
+class MemoryToolsLoader:
+    id = "krishna_memgpt.memory_tools"
+
+    def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
+        ctx.add_section(
+            "memory_tools",
+            """<memory_tools>
+You have access to memory tools - use them actively:
+- core_memory_append: Remember new facts about the human (block: "human")
+- core_memory_replace: Update outdated information (needs line number)
+- core_memory_delete: Remove obsolete facts (needs line number)
+- archival_memory_insert: Store detailed information for later retrieval
+- archival_memory_search: Search your long-term memory
+- core_memory_list_blocks: See all available memory blocks
+- recall_conversation: Retrieve earlier parts of this conversation
+
+MEMORY GUIDELINES:
+- If the user references something you don't see in context ("what we discussed", "as I mentioned"), use recall_conversation
+- Block names are lowercase with underscores (e.g., "human", not "Human - Facts about the user")
+- Always use core_memory_read BEFORE modifying a block to get current line numbers
+- Core memory is for key facts; archival is for detailed information
+</memory_tools>""",
+        )
+
+
+class KnowledgeBaseLoader:
+    id = "krishna_memgpt.knowledge_base"
+
+    def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
+        if inp.kb_instructions:
+            ctx.add_section("knowledge_base", inp.kb_instructions)
+
+
+class SkillsLoader:
+    id = "krishna_memgpt.skills"
+
+    def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
+        if inp.skills_addendum:
+            ctx.add_section("skills", inp.skills_addendum)
+
+
+class CapacityWarningsLoader:
+    id = "krishna_memgpt.warnings"
+
+    def __init__(self, *, memory_repo: MemoryRepository):
+        self._memory_repo = memory_repo
+
+    def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
+        warning_block = self._build_capacity_warning(agent_id=inp.agent_id, user_id=inp.user_id)
+        if warning_block:
+            ctx.add_section("warnings", warning_block)
 
     def _build_capacity_warning(self, *, agent_id: str, user_id: str) -> str | None:
         block_defs = self._memory_repo.get_block_definitions(agent_id, user_id)

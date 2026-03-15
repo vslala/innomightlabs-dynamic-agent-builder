@@ -9,7 +9,15 @@ from __future__ import annotations
 from src.agents.prompt_pipeline import PromptBuildInput, PromptPipeline
 from src.memory import MemoryRepository
 
-from .krishna_memgpt_prompt_loaders import KrishnaMemGPTPromptLoader
+from .krishna_memgpt_prompt_loaders import (
+    CapacityWarningsLoader,
+    CoreMemoryLoader,
+    IdentityLoader,
+    KnowledgeBaseLoader,
+    MemoryToolsLoader,
+    PersonaLoader,
+    SkillsLoader,
+)
 
 
 def build_krishna_memgpt_system_prompt(
@@ -23,7 +31,13 @@ def build_krishna_memgpt_system_prompt(
 ) -> str:
     pipeline = PromptPipeline(
         loaders=[
-            KrishnaMemGPTPromptLoader(memory_repo=memory_repo),
+            IdentityLoader(),
+            PersonaLoader(),
+            CoreMemoryLoader(memory_repo=memory_repo),
+            MemoryToolsLoader(),
+            KnowledgeBaseLoader(),
+            SkillsLoader(),
+            CapacityWarningsLoader(memory_repo=memory_repo),
         ]
     )
 
