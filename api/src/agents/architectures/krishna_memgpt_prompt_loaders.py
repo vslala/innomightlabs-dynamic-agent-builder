@@ -145,10 +145,21 @@ class SkillsLoader(PromptLoaderBase):
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
         skills = inp.runtime.enabled_skills or []
 
+        def _skill_id(s: object) -> str:
+            # Supports Pydantic models (e.g. AgentSkill) and dict payloads.
+            if isinstance(s, dict):
+                return str(s.get("skill_id") or s.get("id") or "").strip()
+            # Pydantic/BaseModel or dataclass-ish objects
+            for attr in ("skill_id", "id"):
+                value = getattr(s, attr, None)
+                if value:
+                    return str(value).strip()
+            return ""
+
         # Keep it compact: the runtime tool list is the source of truth.
-        names = []
+        names: list[str] = []
         for s in skills:
-            sid = (s.get("skill_id") or s.get("id") or "").strip()
+            sid = _skill_id(s)
             if sid:
                 names.append(sid)
 

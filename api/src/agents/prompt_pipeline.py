@@ -28,7 +28,7 @@ class PromptRuntime:
     kb_count: int | None = None
 
     # Skills
-    enabled_skills: list[dict] | None = None
+    enabled_skills: list[object] | None = None  # AgentSkill or dict
 
     # Memory snapshot + capacity warnings
     core_memory: object | None = None  # CoreMemorySnapshot (import avoided to keep prompt pipeline lightweight)

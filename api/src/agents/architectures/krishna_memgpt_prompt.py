@@ -27,7 +27,7 @@ def build_krishna_memgpt_system_prompt(
     agent_id: str,
     user_id: str,
     kb_count: int | None = None,
-    enabled_skills: list[dict] | None = None,
+    enabled_skills: list[object] | None = None,
     core_memory: object | None = None,
     capacity_warnings: list[dict] | None = None,
 ) -> str:
