@@ -64,6 +64,10 @@ class ToolExecutionRouter:
             else:
                 result = await self._native_tools.execute(tool_name, tool_input, state.agent_id)
 
+                # Mark prompt dirty when core memory is mutated.
+                if tool_name in {"core_memory_append", "core_memory_replace", "core_memory_delete"}:
+                    state.prompt_dirty = True
+
             return ToolExecutionOutcome(result=result, success=True)
 
         except Exception as e:

@@ -164,6 +164,12 @@ async def run_agentic_tool_loop(
 
             context.append({"role": "user", "content": tool_results})
 
+            # If tools mutated core memory, request a prompt refresh before the next iteration.
+            if getattr(state, "prompt_dirty", False):
+                yield AgenticLoopEvent(kind="prompt_refresh_needed", payload={})
+                # Clear here so we refresh at most once per tool batch.
+                state.prompt_dirty = False
+
         if not has_tool_calls:
             break
 

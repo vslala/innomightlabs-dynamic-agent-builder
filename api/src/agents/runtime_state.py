@@ -35,3 +35,7 @@ class AgentTurnState:
     # Provider runtime
     credentials: dict[str, Any] | None = None
     tools: list[dict[str, Any]] = field(default_factory=list)
+
+    # When a tool mutates core memory, we should rebuild the system prompt so the
+    # model doesn't operate on stale memory context.
+    prompt_dirty: bool = False

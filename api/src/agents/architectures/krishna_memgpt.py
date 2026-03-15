@@ -253,6 +253,25 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                         success=loop_event.payload["success"],
                     )
 
+                elif loop_event.kind == "prompt_refresh_needed":
+                    # Core memory was mutated by tools; rebuild system prompt so the model
+                    # sees the updated memory context on the next iteration.
+                    refreshed_snapshot = self._load_core_memory_snapshot(agent.agent_id, actor_id)
+                    refreshed_warnings = self._check_capacity_warnings_from_snapshot(refreshed_snapshot)
+
+                    refreshed_prompt = self._build_system_prompt(
+                        agent,
+                        actor_id,
+                        kb_count=kb_count,
+                        enabled_skills=state.enabled_skills or None,
+                        core_memory=refreshed_snapshot,
+                        capacity_warnings=refreshed_warnings or None,
+                    )
+
+                    # Replace the system prompt in-place.
+                    if context and context[0].get("role") == "system":
+                        context[0]["content"] = refreshed_prompt
+
                 elif loop_event.kind == "complete":
                     full_response = loop_event.payload["full_text"]
 
