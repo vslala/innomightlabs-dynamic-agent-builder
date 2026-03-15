@@ -216,6 +216,13 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             if state.enabled_skills:
                 state.tools.extend(self.skill_runtime.build_skill_tools())
 
+            from src.agents.tool_execution import ToolExecutionRouter
+
+            tool_router = ToolExecutionRouter(
+                skill_runtime=self.skill_runtime,
+                native_tools=self.tool_handler,
+            )
+
             full_response = ""
             for iteration in range(MAX_TOOL_ITERATIONS):
                 has_tool_calls = False
@@ -277,13 +284,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                     })
 
                     # Execute tools and collect results
-                    from src.agents.tool_execution import ToolExecutionRouter
-
-                    tool_router = ToolExecutionRouter(
-                        skill_runtime=self.skill_runtime,
-                        native_tools=self.tool_handler,
-                    )
-
                     tool_results = []
                     for tool_event in pending_tool_calls:
                         outcome = await tool_router.execute(
