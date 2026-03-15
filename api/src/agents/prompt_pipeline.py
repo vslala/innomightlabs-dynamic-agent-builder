@@ -27,8 +27,8 @@ class PromptRuntime:
     # Knowledge base
     kb_count: int | None = None
 
-    # Skills (temporary: still string-based; we'll make this structured next)
-    skills_addendum: str | None = None
+    # Skills
+    enabled_skills: list[dict] | None = None
 
 
 @dataclass(frozen=True)

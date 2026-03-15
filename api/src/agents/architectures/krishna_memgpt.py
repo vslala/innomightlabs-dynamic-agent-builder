@@ -168,17 +168,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             )
 
             kb_count = len(state.linked_kb_ids) if state.linked_kb_ids else None
-            skills_addendum = (
-                self.skill_runtime.build_system_prompt_addendum(state.enabled_skills)
-                if state.enabled_skills
-                else None
-            )
 
             system_prompt = self._build_system_prompt(
                 agent,
                 actor_id,
                 kb_count=kb_count,
-                skills_addendum=skills_addendum,
+                enabled_skills=state.enabled_skills or None,
             )
 
             # 5. Build conversation context
@@ -297,7 +292,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         user_id: str,
         *,
         kb_count: int | None = None,
-        skills_addendum: str | None = None,
+        enabled_skills: list[dict] | None = None,
     ) -> str:
         """Build the system prompt.
 
@@ -312,7 +307,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             agent_id=agent.agent_id,
             user_id=user_id,
             kb_count=kb_count,
-            skills_addendum=skills_addendum,
+            enabled_skills=enabled_skills,
         )
 
     def _check_capacity_warnings(self, agent_id: str, user_id: str) -> list[dict]:

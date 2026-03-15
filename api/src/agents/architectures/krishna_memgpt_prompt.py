@@ -27,7 +27,7 @@ def build_krishna_memgpt_system_prompt(
     agent_id: str,
     user_id: str,
     kb_count: int | None = None,
-    skills_addendum: str | None = None,
+    enabled_skills: list[dict] | None = None,
 ) -> str:
     pipeline = PromptPipeline(
         loaders=[
@@ -52,7 +52,7 @@ def build_krishna_memgpt_system_prompt(
             user_id=user_id,
             runtime=PromptRuntime(
                 kb_count=kb_count,
-                skills_addendum=skills_addendum,
+                enabled_skills=enabled_skills,
             ),
         )
     )

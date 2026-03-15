@@ -137,10 +137,32 @@ The tool will return relevant text chunks with source URLs. Use these to provide
 
 class SkillsLoader(PromptLoaderBase):
     id = "krishna_memgpt.skills"
-    optional_requires = ("runtime.skills_addendum",)
+    optional_requires = ("runtime.enabled_skills",)
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
-        ctx.add_section("skills", inp.runtime.skills_addendum or "")
+        skills = inp.runtime.enabled_skills or []
+
+        # Keep it compact: the runtime tool list is the source of truth.
+        names = []
+        for s in skills:
+            sid = (s.get("skill_id") or s.get("id") or "").strip()
+            if sid:
+                names.append(sid)
+
+        if not names:
+            return
+
+        skills_list = "\n".join(f"- {n}" for n in names)
+
+        ctx.add_section(
+            "skills",
+            f"""<skills>
+Enabled skills ({len(names)}):
+{skills_list}
+
+Use the provided skill tools when needed. If a skill action fails, read the tool error and either retry with corrected inputs or ask the user for the missing information.
+</skills>""",
+        )
 
 
 class CapacityWarningsLoader(PromptLoaderBase):
