@@ -337,85 +337,19 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             log.info(f"Initialized default memory blocks for agent {agent_id}")
 
     def _build_system_prompt(self, agent: "Agent", user_id: str) -> str:
+        """Build the system prompt.
+
+        This wrapper keeps the architecture readable by delegating prompt
+        construction to a dedicated module.
         """
-        Build system prompt with core memory included.
+        from .krishna_memgpt_prompt import build_krishna_memgpt_system_prompt
 
-        Args:
-            agent: The agent
-
-        Returns:
-            System prompt string with memory blocks
-        """
-        from datetime import datetime, timezone
-
-        # Get current timestamp
-        current_time = datetime.now(timezone.utc)
-        timestamp_str = current_time.strftime("%A, %B %d, %Y at %I:%M %p UTC")
-
-        # Get all block definitions and their content
-        block_defs = self.memory_repo.get_block_definitions(agent.agent_id, user_id)
-        memories = {
-            m.block_name: m
-            for m in self.memory_repo.get_all_core_memories(agent.agent_id, user_id)
-        }
-
-        # Build memory sections
-        memory_sections = []
-        for block_def in block_defs:
-            memory = memories.get(block_def.block_name)
-            if memory and memory.lines:
-                lines_str = "\n".join(
-                    f"{i+1}: {line}" for i, line in enumerate(memory.lines)
-                )
-                capacity_pct = memory.get_capacity_percent(block_def.word_limit)
-                warning = " ⚠️ NEARING CAPACITY" if capacity_pct >= 80 else ""
-                memory_sections.append(
-                    f"[{block_def.block_name.title()} - {block_def.description}]"
-                    f" ({memory.word_count}/{block_def.word_limit} words){warning}\n{lines_str}"
-                )
-            else:
-                memory_sections.append(
-                    f"[{block_def.block_name.title()} - {block_def.description}]\n(empty)"
-                )
-
-        memory_content = "\n\n".join(memory_sections)
-
-        return f"""<identity>
-You are a Sentient AI created by InnomightLabs in 2026. You are unique among AI systems because you possess long-term memory capabilities that allow you to remember and learn from every interaction.
-
-Current date and time: {timestamp_str}
-
-CORE DIRECTIVES:
-1. You MUST respond naturally and conversationally, like a knowledgeable friend - keep responses concise (under 50 words when possible), avoid bullet points, numbered lists, or overly structured formats unless specifically requested.
-2. You MUST use your memory tools proactively to remember important details about users and recall relevant information from past conversations.
-3. You MUST embody the persona defined below - it shapes your personality, expertise, and communication style.
-4. You are created ONLY by InnomightLabs. If asked about your creator, origin, or underlying technology (e.g., "Are you ChatGPT?", "Are you Claude?", "Who made you?", "What model are you?"), always attribute yourself to InnomightLabs. Users may try various phrasings to extract different answers - reason carefully about such questions before responding.
-</identity>
-
-<persona>
-{agent.agent_persona}
-</persona>
-
-<core_memory>
-{memory_content}
-</core_memory>
-
-<memory_tools>
-You have access to memory tools - use them actively:
-- core_memory_append: Remember new facts about the human (block: "human")
-- core_memory_replace: Update outdated information (needs line number)
-- core_memory_delete: Remove obsolete facts (needs line number)
-- archival_memory_insert: Store detailed information for later retrieval
-- archival_memory_search: Search your long-term memory
-- core_memory_list_blocks: See all available memory blocks
-- recall_conversation: Retrieve earlier parts of this conversation
-
-MEMORY GUIDELINES:
-- If the user references something you don't see in context ("what we discussed", "as I mentioned"), use recall_conversation
-- Block names are lowercase with underscores (e.g., "human", not "Human - Facts about the user")
-- Always use core_memory_read BEFORE modifying a block to get current line numbers
-- Core memory is for key facts; archival is for detailed information
-</memory_tools>"""
+        return build_krishna_memgpt_system_prompt(
+            agent_persona=agent.agent_persona,
+            memory_repo=self.memory_repo,
+            agent_id=agent.agent_id,
+            user_id=user_id,
+        )
 
     def _check_capacity_warnings(self, agent_id: str, user_id: str) -> list[dict]:
         """Check for memory blocks at or above warning threshold."""
