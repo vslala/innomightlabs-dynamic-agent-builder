@@ -115,11 +115,24 @@ MEMORY GUIDELINES:
 
 class KnowledgeBaseLoader(PromptLoaderBase):
     id = "krishna_memgpt.knowledge_base"
-    optional_requires = ("runtime.kb_instructions",)
+    optional_requires = ("runtime.kb_count",)
 
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
-        # optional loader: pipeline ensures runtime.kb_instructions is present
-        ctx.add_section("knowledge_base", inp.runtime.kb_instructions or "")
+        kb_count = inp.runtime.kb_count or 0
+        ctx.add_section(
+            "knowledge_base",
+            f"""<knowledge_base>
+You have access to {kb_count} knowledge base(s) containing documentation, FAQs, and other content.
+
+Use the knowledge_base_search tool when:
+- The user asks about products, features, or services
+- The user needs information that might be in documentation
+- The user asks "how do I..." or "what is..." questions about topics covered in the knowledge base
+- You're unsure about factual information that the knowledge base might contain
+
+The tool will return relevant text chunks with source URLs. Use these to provide accurate, sourced answers.
+</knowledge_base>""",
+        )
 
 
 class SkillsLoader(PromptLoaderBase):

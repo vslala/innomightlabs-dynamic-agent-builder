@@ -26,7 +26,7 @@ def build_krishna_memgpt_system_prompt(
     memory_repo: MemoryRepository,
     agent_id: str,
     user_id: str,
-    kb_instructions: str | None = None,
+    kb_count: int | None = None,
     skills_addendum: str | None = None,
 ) -> str:
     pipeline = PromptPipeline(
@@ -43,13 +43,15 @@ def build_krishna_memgpt_system_prompt(
 
     from src.agents.prompt_pipeline import PromptRuntime
 
+    # kb_count is now the source of truth; callers should pass the real count.
+
     return pipeline.build(
         PromptBuildInput(
             agent_persona=agent_persona,
             agent_id=agent_id,
             user_id=user_id,
             runtime=PromptRuntime(
-                kb_instructions=kb_instructions,
+                kb_count=kb_count,
                 skills_addendum=skills_addendum,
             ),
         )

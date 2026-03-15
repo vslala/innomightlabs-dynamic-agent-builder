@@ -24,7 +24,10 @@ class PromptRuntime:
     sections can evolve without bloating the base input contract.
     """
 
-    kb_instructions: str | None = None
+    # Knowledge base
+    kb_count: int | None = None
+
+    # Skills (temporary: still string-based; we'll make this structured next)
     skills_addendum: str | None = None
 
 

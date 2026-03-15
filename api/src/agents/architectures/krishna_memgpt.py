@@ -167,11 +167,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 content="Loading memory...",
             )
 
-            kb_instructions = (
-                self._build_kb_instructions(len(state.linked_kb_ids))
-                if state.linked_kb_ids
-                else None
-            )
+            kb_count = len(state.linked_kb_ids) if state.linked_kb_ids else None
             skills_addendum = (
                 self.skill_runtime.build_system_prompt_addendum(state.enabled_skills)
                 if state.enabled_skills
@@ -181,7 +177,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             system_prompt = self._build_system_prompt(
                 agent,
                 actor_id,
-                kb_instructions=kb_instructions,
+                kb_count=kb_count,
                 skills_addendum=skills_addendum,
             )
 
@@ -300,7 +296,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         agent: "Agent",
         user_id: str,
         *,
-        kb_instructions: str | None = None,
+        kb_count: int | None = None,
         skills_addendum: str | None = None,
     ) -> str:
         """Build the system prompt.
@@ -315,7 +311,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             memory_repo=self.memory_repo,
             agent_id=agent.agent_id,
             user_id=user_id,
-            kb_instructions=kb_instructions,
+            kb_count=kb_count,
             skills_addendum=skills_addendum,
         )
 
