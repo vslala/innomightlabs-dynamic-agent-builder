@@ -68,9 +68,12 @@ def configure_cloudwatch_logging(log_level: str = "INFO") -> None:
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(CloudWatchJsonFormatter())
-    root_logger.addHandler(console_handler)
 
     request_filter = RequestIdFilter()
+    console_handler.addFilter(request_filter)
+
+    root_logger.addHandler(console_handler)
+
     for logger_name in ("", "uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(logger_name).addFilter(request_filter)
 

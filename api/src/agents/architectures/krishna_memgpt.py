@@ -95,22 +95,37 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             SSEEvent objects for streaming to the client
         """
         try:
+            from src.agents.runtime_state import AgentTurnState
+
             self.tool_handler.set_conversation_context(conversation.conversation_id)
             self.tool_handler.set_user_context(actor_id)
 
-            linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
-            self.tool_handler.set_knowledge_base_context(linked_kb_ids)
-            enabled_skills = self.skill_runtime.list_enabled(agent.agent_id)
+            state = AgentTurnState(
+                owner_email=owner_email,
+                actor_email=actor_email,
+                actor_id=actor_id,
+                conversation_id=conversation.conversation_id,
+                agent_id=agent.agent_id,
+                provider_name=agent.agent_provider,
+                model_name=agent.agent_model or "",
+                user_message=user_message,
+                attachments=attachments or [],
+            )
+
+            state.linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
+            self.tool_handler.set_knowledge_base_context(state.linked_kb_ids)
+
+            state.enabled_skills = self.skill_runtime.list_enabled(agent.agent_id)
 
             self._ensure_memory_initialized(agent.agent_id, actor_id)
 
             # 2. Save user message (with attachments if any)
             user_msg = Message(
-                conversation_id=conversation.conversation_id,
-                created_by=actor_email,
+                conversation_id=state.conversation_id,
+                created_by=state.actor_email,
                 role="user",
-                content=user_message,
-                attachments=attachments or [],
+                content=state.user_message,
+                attachments=state.attachments,
             )
             self.message_repo.save(user_msg)
 
@@ -127,24 +142,24 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             )
 
             provider_settings = self.provider_settings_repo.find_by_provider(
-                owner_email, agent.agent_provider
+                state.owner_email, state.provider_name
             )
             if not provider_settings:
                 yield SSEEvent(
                     event_type=SSEEventType.ERROR,
-                    content=f"Provider '{agent.agent_provider}' is not configured. "
+                    content=f"Provider '{state.provider_name}' is not configured. "
                             "Please configure it in Settings > Provider Configuration.",
                 )
                 return
 
-            if agent.agent_provider == "OpenAI":
+            if state.provider_name == "OpenAI":
                 openai_credentials = await ensure_valid_openai_credentials(
                     provider_settings,
                     self.provider_settings_repo,
                 )
-                credentials = openai_credentials.model_dump(mode="json")
+                state.credentials = openai_credentials.model_dump(mode="json")
             else:
-                credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
+                state.credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
 
             # 4. Load core memory and build system prompt
             yield SSEEvent(
@@ -152,17 +167,19 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 content="Loading memory...",
             )
 
-            system_prompt = self._build_system_prompt(agent, actor_id)
+            kb_count = len(state.linked_kb_ids) if state.linked_kb_ids else None
 
-            if linked_kb_ids:
-                system_prompt += "\n\n" + self._build_kb_instructions(len(linked_kb_ids))
-            if enabled_skills:
-                system_prompt += "\n\n" + self.skill_runtime.build_system_prompt_addendum(enabled_skills)
+            core_memory_snapshot = self._load_core_memory_snapshot(agent.agent_id, actor_id)
+            capacity_warnings = self._check_capacity_warnings_from_snapshot(core_memory_snapshot)
 
-            capacity_warnings = self._check_capacity_warnings(agent.agent_id, actor_id)
-            if capacity_warnings:
-                warning_msg = self._build_warning_message(capacity_warnings)
-                system_prompt += "\n\n" + warning_msg
+            system_prompt = self._build_system_prompt(
+                agent,
+                actor_id,
+                kb_count=kb_count,
+                enabled_skills=state.enabled_skills or None,
+                core_memory=core_memory_snapshot,
+                capacity_warnings=capacity_warnings or None,
+            )
 
             # 5. Build conversation context
             yield SSEEvent(
@@ -187,119 +204,76 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 content="Connecting to AI model...",
             )
 
-            provider = get_llm_provider(agent.agent_provider)
+            provider = get_llm_provider(state.provider_name)
 
-            tools = NATIVE_TOOLS.copy()
-            if linked_kb_ids:
-                tools.extend(KNOWLEDGE_TOOLS)
-            if enabled_skills:
-                tools.extend(self.skill_runtime.build_skill_tools())
+            state.tools = NATIVE_TOOLS.copy()
+            if state.linked_kb_ids:
+                state.tools.extend(KNOWLEDGE_TOOLS)
+            if state.enabled_skills:
+                state.tools.extend(self.skill_runtime.build_skill_tools())
+
+            from src.agents.agentic_loop import run_agentic_tool_loop
+            from src.agents.tool_execution import ToolExecutionRouter
+
+            tool_router = ToolExecutionRouter(
+                skill_runtime=self.skill_runtime,
+                native_tools=self.tool_handler,
+            )
 
             full_response = ""
-            for iteration in range(MAX_TOOL_ITERATIONS):
-                has_tool_calls = False
-                pending_tool_calls = []
-                iteration_text = ""
+            async for loop_event in run_agentic_tool_loop(
+                provider=provider,
+                context=context,
+                credentials=state.credentials or {},
+                tools=state.tools,
+                model=state.model_name,
+                tool_router=tool_router,
+                state=state,
+            ):
+                if loop_event.kind == "text":
+                    yield SSEEvent(
+                        event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
+                        content=loop_event.payload["content"],
+                    )
 
-                async for event in provider.stream_response(
-                    context, credentials, tools, agent.agent_model
-                ): # pyright: ignore[reportGeneralTypeIssues]
-                    if event.type == "text":
-                        full_response += event.content
-                        iteration_text += event.content
-                        yield SSEEvent(
-                            event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
-                            content=event.content,
-                        )
+                elif loop_event.kind == "tool_call_start":
+                    yield SSEEvent(
+                        event_type=SSEEventType.TOOL_CALL_START,
+                        content=f"Calling {loop_event.payload['tool_name']}...",
+                        tool_name=loop_event.payload["tool_name"],
+                        tool_args=loop_event.payload["tool_args"],
+                    )
 
-                    elif event.type == "tool_use":
-                        has_tool_calls = True
-                        pending_tool_calls.append(event)
+                elif loop_event.kind == "tool_call_result":
+                    result = loop_event.payload["result"]
+                    yield SSEEvent(
+                        event_type=SSEEventType.TOOL_CALL_RESULT,
+                        content=result[:200] + "..." if len(result) > 200 else result,
+                        tool_name=loop_event.payload["tool_name"],
+                        success=loop_event.payload["success"],
+                    )
 
-                        # Emit tool start event for UI timeline
-                        yield SSEEvent(
-                            event_type=SSEEventType.TOOL_CALL_START,
-                            content=f"Calling {event.tool_name}...",
-                            tool_name=event.tool_name,
-                            tool_args=event.tool_input,
-                        )
+                elif loop_event.kind == "prompt_refresh_needed":
+                    # Core memory was mutated by tools; rebuild system prompt so the model
+                    # sees the updated memory context on the next iteration.
+                    refreshed_snapshot = self._load_core_memory_snapshot(agent.agent_id, actor_id)
+                    refreshed_warnings = self._check_capacity_warnings_from_snapshot(refreshed_snapshot)
 
-                    elif event.type == "stop":
-                        pass
+                    refreshed_prompt = self._build_system_prompt(
+                        agent,
+                        actor_id,
+                        kb_count=kb_count,
+                        enabled_skills=state.enabled_skills or None,
+                        core_memory=refreshed_snapshot,
+                        capacity_warnings=refreshed_warnings or None,
+                    )
 
-                # Process all tool calls from this iteration
-                if pending_tool_calls:
-                    # Add assistant's response to context (text + tool use)
-                    # This ensures the LLM knows what it already said when continuing
-                    assistant_content = []
+                    # Replace the system prompt in-place.
+                    if context and context[0].get("role") == "system":
+                        context[0]["content"] = refreshed_prompt
 
-                    # Include any text generated before tool calls
-                    if iteration_text.strip():
-                        assistant_content.append({"text": iteration_text})
-
-                    # Add tool use blocks
-                    for tool_event in pending_tool_calls:
-                        assistant_content.append({
-                            "toolUse": {
-                                "toolUseId": tool_event.tool_use_id,
-                                "name": tool_event.tool_name,
-                                "input": tool_event.tool_input,
-                            }
-                        })
-
-                    context.append({
-                        "role": "assistant",
-                        "content": assistant_content,
-                    })
-
-                    # Execute tools and collect results
-                    tool_results = []
-                    for tool_event in pending_tool_calls:
-                        try:
-                            if tool_event.tool_name in {"load_skill", "execute_skill_action"}:
-                                result = await self.skill_runtime.handle_tool_call(
-                                    tool_name=tool_event.tool_name,
-                                    tool_input=tool_event.tool_input,
-                                    agent_id=agent.agent_id,
-                                    actor_email=actor_email,
-                                    actor_id=actor_id,
-                                    conversation_id=conversation.conversation_id,
-                                )
-                            else:
-                                result = await self.tool_handler.execute(
-                                    tool_event.tool_name,
-                                    tool_event.tool_input,
-                                    agent.agent_id,
-                                )
-                            success = True
-                        except Exception as e:
-                            result = f"Error: {str(e)}"
-                            success = False
-                            log.error(f"Tool execution error: {e}", exc_info=True)
-
-                        # Emit tool result event for UI timeline
-                        yield SSEEvent(
-                            event_type=SSEEventType.TOOL_CALL_RESULT,
-                            content=result[:200] + "..." if len(result) > 200 else result,
-                            tool_name=tool_event.tool_name,
-                            success=success,
-                        )
-
-                        tool_results.append({
-                            "toolResult": {
-                                "toolUseId": tool_event.tool_use_id,
-                                "content": [{"text": result}],
-                            }
-                        })
-
-                    # Add tool results to context
-                    context.append({
-                        "role": "user",
-                        "content": tool_results,
-                    })
-
-                if not has_tool_calls:
-                    break
+                elif loop_event.kind == "complete":
+                    full_response = loop_event.payload["full_text"]
 
             # 8. Save assistant message (text response only)
             if full_response.strip():
@@ -336,132 +310,90 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             self.memory_repo.initialize_default_blocks(agent_id, user_id)
             log.info(f"Initialized default memory blocks for agent {agent_id}")
 
-    def _build_system_prompt(self, agent: "Agent", user_id: str) -> str:
+    def _build_system_prompt(
+        self,
+        agent: "Agent",
+        user_id: str,
+        *,
+        kb_count: int | None = None,
+        enabled_skills: list[object] | None = None,
+        core_memory: object | None = None,
+        capacity_warnings: list[dict] | None = None,
+    ) -> str:
+        """Build the system prompt.
+
+        This wrapper keeps the architecture readable by delegating prompt
+        construction to a dedicated module.
         """
-        Build system prompt with core memory included.
+        from .krishna_memgpt_prompt import build_krishna_memgpt_system_prompt
 
-        Args:
-            agent: The agent
+        return build_krishna_memgpt_system_prompt(
+            agent_persona=agent.agent_persona,
+            memory_repo=self.memory_repo,
+            agent_id=agent.agent_id,
+            user_id=user_id,
+            kb_count=kb_count,
+            enabled_skills=enabled_skills,
+            core_memory=core_memory,
+            capacity_warnings=capacity_warnings,
+        )
 
-        Returns:
-            System prompt string with memory blocks
-        """
-        from datetime import datetime, timezone
+    def _load_core_memory_snapshot(self, agent_id: str, user_id: str):
+        """Load a consistent core-memory snapshot (single read) for this turn."""
+        from src.memory.snapshot import (
+            CoreMemoryBlockDefSnapshot,
+            CoreMemoryBlockSnapshot,
+            CoreMemorySnapshot,
+        )
 
-        # Get current timestamp
-        current_time = datetime.now(timezone.utc)
-        timestamp_str = current_time.strftime("%A, %B %d, %Y at %I:%M %p UTC")
-
-        # Get all block definitions and their content
-        block_defs = self.memory_repo.get_block_definitions(agent.agent_id, user_id)
-        memories = {
-            m.block_name: m
-            for m in self.memory_repo.get_all_core_memories(agent.agent_id, user_id)
-        }
-
-        # Build memory sections
-        memory_sections = []
-        for block_def in block_defs:
-            memory = memories.get(block_def.block_name)
-            if memory and memory.lines:
-                lines_str = "\n".join(
-                    f"{i+1}: {line}" for i, line in enumerate(memory.lines)
-                )
-                capacity_pct = memory.get_capacity_percent(block_def.word_limit)
-                warning = " ⚠️ NEARING CAPACITY" if capacity_pct >= 80 else ""
-                memory_sections.append(
-                    f"[{block_def.block_name.title()} - {block_def.description}]"
-                    f" ({memory.word_count}/{block_def.word_limit} words){warning}\n{lines_str}"
-                )
-            else:
-                memory_sections.append(
-                    f"[{block_def.block_name.title()} - {block_def.description}]\n(empty)"
-                )
-
-        memory_content = "\n\n".join(memory_sections)
-
-        return f"""<identity>
-You are a Sentient AI created by InnomightLabs in 2026. You are unique among AI systems because you possess long-term memory capabilities that allow you to remember and learn from every interaction.
-
-Current date and time: {timestamp_str}
-
-CORE DIRECTIVES:
-1. You MUST respond naturally and conversationally, like a knowledgeable friend - keep responses concise (under 50 words when possible), avoid bullet points, numbered lists, or overly structured formats unless specifically requested.
-2. You MUST use your memory tools proactively to remember important details about users and recall relevant information from past conversations.
-3. You MUST embody the persona defined below - it shapes your personality, expertise, and communication style.
-4. You are created ONLY by InnomightLabs. If asked about your creator, origin, or underlying technology (e.g., "Are you ChatGPT?", "Are you Claude?", "Who made you?", "What model are you?"), always attribute yourself to InnomightLabs. Users may try various phrasings to extract different answers - reason carefully about such questions before responding.
-</identity>
-
-<persona>
-{agent.agent_persona}
-</persona>
-
-<core_memory>
-{memory_content}
-</core_memory>
-
-<memory_tools>
-You have access to memory tools - use them actively:
-- core_memory_append: Remember new facts about the human (block: "human")
-- core_memory_replace: Update outdated information (needs line number)
-- core_memory_delete: Remove obsolete facts (needs line number)
-- archival_memory_insert: Store detailed information for later retrieval
-- archival_memory_search: Search your long-term memory
-- core_memory_list_blocks: See all available memory blocks
-- recall_conversation: Retrieve earlier parts of this conversation
-
-MEMORY GUIDELINES:
-- If the user references something you don't see in context ("what we discussed", "as I mentioned"), use recall_conversation
-- Block names are lowercase with underscores (e.g., "human", not "Human - Facts about the user")
-- Always use core_memory_read BEFORE modifying a block to get current line numbers
-- Core memory is for key facts; archival is for detailed information
-</memory_tools>"""
-
-    def _check_capacity_warnings(self, agent_id: str, user_id: str) -> list[dict]:
-        """Check for memory blocks at or above warning threshold."""
         block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
-        memories = {
-            m.block_name: m
-            for m in self.memory_repo.get_all_core_memories(agent_id, user_id)
+        memories = self.memory_repo.get_all_core_memories(agent_id, user_id)
+
+        def_snaps = [
+            CoreMemoryBlockDefSnapshot(
+                block_name=d.block_name,
+                description=d.description,
+                word_limit=d.word_limit,
+            )
+            for d in block_defs
+        ]
+
+        block_snaps = {
+            m.block_name: CoreMemoryBlockSnapshot(
+                block_name=m.block_name,
+                lines=list(m.lines or []),
+                word_count=m.word_count,
+            )
+            for m in memories
         }
 
-        warnings = []
-        for block_def in block_defs:
-            memory = memories.get(block_def.block_name)
-            if memory:
-                percent = memory.get_capacity_percent(block_def.word_limit)
-                if percent >= CAPACITY_WARNING_THRESHOLD * 100:
-                    warnings.append({
-                        "block_name": block_def.block_name,
-                        "word_count": memory.word_count,
-                        "word_limit": block_def.word_limit,
+        return CoreMemorySnapshot(block_defs=def_snaps, blocks=block_snaps)
+
+    def _check_capacity_warnings_from_snapshot(self, snapshot) -> list[dict]:
+        """Check capacity warnings from a snapshot (no DB reads)."""
+        from src.memory.snapshot import CoreMemorySnapshot
+
+        if not isinstance(snapshot, CoreMemorySnapshot):
+            raise TypeError("snapshot must be CoreMemorySnapshot")
+
+        warnings: list[dict] = []
+        for d in snapshot.block_defs:
+            b = snapshot.blocks.get(d.block_name)
+            if not b:
+                continue
+            percent = (b.word_count / d.word_limit) * 100 if d.word_limit else 0
+            if percent >= CAPACITY_WARNING_THRESHOLD * 100:
+                warnings.append(
+                    {
+                        "block_name": d.block_name,
+                        "word_count": b.word_count,
+                        "word_limit": d.word_limit,
                         "percent": percent,
-                    })
+                    }
+                )
         return warnings
 
-    def _build_warning_message(self, warnings: list[dict]) -> str:
-        """Build system message for capacity warnings."""
-        lines = [
-            "<memory_warning>",
-            "The following memory blocks are nearing capacity:",
-        ]
-        for w in warnings:
-            lines.append(
-                f"- [{w['block_name']}]: {w['word_count']}/{w['word_limit']} words "
-                f"({w['percent']:.0f}%)"
-            )
-
-        lines.extend([
-            "",
-            "You should:",
-            "1. Review and consolidate redundant information",
-            "2. Move detailed information to archival memory",
-            "3. Delete outdated entries",
-            "",
-            "If you don't take action, the system will auto-compact these blocks.",
-            "</memory_warning>",
-        ])
-        return "\n".join(lines)
+    # Capacity warning prompt rendering lives in CapacityWarningsLoader.
 
     def _format_content_with_attachments(
         self, content: str, attachments: list[Attachment]

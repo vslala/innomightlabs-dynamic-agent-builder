@@ -35,5 +35,11 @@ def configure_logging() -> None:
 
     # Ensure request_id is always present on records.
     request_filter = RequestIdFilter()
+
+    # Attach to handlers (covers all loggers that propagate to root).
+    for h in root.handlers:
+        h.addFilter(request_filter)
+
+    # Also attach to common loggers for completeness.
     for logger_name in ("", "uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(logger_name).addFilter(request_filter)
