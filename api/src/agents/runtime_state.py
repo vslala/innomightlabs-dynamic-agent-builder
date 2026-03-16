@@ -30,7 +30,7 @@ class AgentTurnState:
 
     # Enrichment (populated during preflight)
     linked_kb_ids: list[str] = field(default_factory=list)
-    enabled_skills: list[dict[str, Any]] = field(default_factory=list)
+    enabled_skills: list[object] = field(default_factory=list)
 
     # Provider runtime
     credentials: dict[str, Any] | None = None

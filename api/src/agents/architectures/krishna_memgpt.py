@@ -107,7 +107,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 conversation_id=conversation.conversation_id,
                 agent_id=agent.agent_id,
                 provider_name=agent.agent_provider,
-                model_name=agent.agent_model,
+                model_name=agent.agent_model or "",
                 user_message=user_message,
                 attachments=attachments or [],
             )
