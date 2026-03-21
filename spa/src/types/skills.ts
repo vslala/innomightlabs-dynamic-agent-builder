@@ -7,6 +7,9 @@ export interface SkillCatalogItem {
   description: string;
   action_names: string[];
   has_form: boolean;
+  requires_oauth: boolean;
+  oauth_provider_name: string | null;
+  oauth_connected: boolean | null;
 }
 
 export interface InstalledSkill {
@@ -31,3 +34,13 @@ export interface SkillUpdateRequest {
 }
 
 export type SkillInstallSchema = FormSchema;
+
+export interface GoogleDriveOAuthStartRequest {
+  agent_id: string;
+  skill_id: string;
+  return_to: string;
+}
+
+export interface GoogleDriveOAuthStartResponse {
+  authorize_url: string;
+}

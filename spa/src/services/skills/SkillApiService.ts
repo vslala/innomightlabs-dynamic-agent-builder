@@ -1,6 +1,8 @@
 import { httpClient } from "../http/client";
 import type { FormSchema } from "../../types/form";
 import type {
+  GoogleDriveOAuthStartRequest,
+  GoogleDriveOAuthStartResponse,
   InstalledSkill,
   SkillCatalogItem,
   SkillInstallRequest,
@@ -30,6 +32,10 @@ class SkillApiService {
 
   async uninstallSkill(agentId: string, skillId: string): Promise<void> {
     await httpClient.delete(`/agents/${agentId}/skills/${encodeURIComponent(skillId)}`);
+  }
+
+  async startGoogleDriveOAuth(payload: GoogleDriveOAuthStartRequest): Promise<GoogleDriveOAuthStartResponse> {
+    return httpClient.post<GoogleDriveOAuthStartResponse>("/auth/google-drive/start", payload);
   }
 }
 

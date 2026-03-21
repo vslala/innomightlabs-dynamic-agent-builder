@@ -1,0 +1,106 @@
+id: google_drive
+namespace: integrations.google
+name: Google Drive
+description: Search, read, and trash files from the connected Google Drive account.
+system_prompt: |
+  Use this skill to inspect or manage files in Google Drive.
+  Always load the skill first, then call the most specific action.
+  Prefer `search` with structured filters when the user is trying to browse folders or narrow to a specific file.
+
+  Example usages:
+  - Find a likely folder named "Personal":
+    action=search
+    arguments={"mode":"search","query":"Personal","entry_type":"folders","order_by":"name"}
+  - List direct child folders inside a known folder:
+    action=search
+    arguments={"mode":"children","parent_folder_id":"<folder_id>","entry_type":"folders","order_by":"name"}
+  - List direct child files inside a known folder:
+    action=search
+    arguments={"mode":"children","parent_folder_id":"<folder_id>","entry_type":"files","order_by":"name"}
+  - Recursively walk a folder tree when files may be nested:
+    action=search
+    arguments={"mode":"children","parent_folder_id":"<folder_id>","entry_type":"files","recursive":true,"page_size":20}
+  - Diagnose why a folder appears empty:
+    action=search
+    arguments={"mode":"children","parent_folder_id":"<folder_id>","entry_type":"any","diagnostics":true}
+  - Find an exact file name:
+    action=search
+    arguments={"mode":"search","query":"budget-2025.pdf","exact_name":true,"entry_type":"files"}
+  - Read a file after locating its id:
+    action=read
+    arguments={"file_id":"<file_id>"}
+  - Move a file to trash:
+    action=delete
+    arguments={"file_id":"<file_id>"}
+
+  Notes:
+  - Use `entry_type="folders"` when the user is looking for folders only.
+  - Use `parent_folder_id` plus `mode="children"` to emulate folder listing like `ls`.
+  - Use `recursive=true` when the folder may contain nested subfolders rather than direct files.
+  - Use `diagnostics=true` when a folder should contain files but listing comes back empty; this returns parent resolution details.
+  - Use `exact_name=true` when the user gives a precise file or folder name.
+requires_oauth: true
+oauth_provider_name: GoogleDrive
+actions:
+  - name: search
+    description: Search or list Google Drive files with ls-style filters such as folders-only or children of a folder.
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Search text for matching file names or content metadata. Optional when using list mode.
+        mode:
+          type: string
+          enum: [search, list, children]
+          description: search=full-text search, list=list visible files, children=list direct children of a folder.
+        entry_type:
+          type: string
+          enum: [any, files, folders]
+          description: Restrict results to files only or folders only.
+        parent_folder_id:
+          type: string
+          description: Restrict search/list to direct children of this folder id.
+        exact_name:
+          type: boolean
+          description: Match file names exactly instead of full-text search.
+        recursive:
+          type: boolean
+          description: For mode=children, recursively traverse nested folders until enough matching results are found.
+        diagnostics:
+          type: boolean
+          description: Include parent resolution and traversal diagnostics in the response.
+        page_size:
+          type: integer
+          description: Number of results to return (1-20, default 10).
+        mime_type:
+          type: string
+          description: Optional mime type filter, for example application/pdf.
+        order_by:
+          type: string
+          enum: [modifiedTime desc, modifiedTime asc, name, name desc, createdTime desc, createdTime asc]
+          description: Result ordering. Defaults to modifiedTime desc.
+        include_trashed:
+          type: boolean
+          description: Include trashed files in results. Defaults to false.
+    handler: actions:search
+  - name: read
+    description: Read supported Google Drive files including Google Docs, text-like files, and PDFs.
+    input_schema:
+      type: object
+      properties:
+        file_id:
+          type: string
+          description: Google Drive file id to read.
+      required: [file_id]
+    handler: actions:read
+  - name: delete
+    description: Move a Google Drive file to trash.
+    input_schema:
+      type: object
+      properties:
+        file_id:
+          type: string
+          description: Google Drive file id to move to trash.
+      required: [file_id]
+    handler: actions:delete

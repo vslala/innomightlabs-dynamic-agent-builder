@@ -32,9 +32,11 @@ def get_agent_repository() -> AgentRepository:
 
 @router.get("/skills", response_model=list[SkillCatalogItemResponse])
 async def list_skills(
+    request: Request,
     service: Annotated[SkillService, Depends(get_skill_service)],
 ) -> list[SkillCatalogItemResponse]:
-    return service.list_catalog()
+    user_email: str = request.state.user_email
+    return service.list_catalog(user_email)
 
 
 @router.get("/skills/{skill_id}/install-schema", response_model=form_models.Form, response_model_exclude_none=True)

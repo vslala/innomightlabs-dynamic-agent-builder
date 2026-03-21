@@ -4,6 +4,7 @@ import json
 from typing import Any, Optional
 
 import src.form_models as form_models
+from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import AgentSkill, InstalledSkillResponse, SkillCatalogItemResponse
 from src.skills.registry import SkillRegistry, get_skill_registry
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
@@ -14,13 +15,21 @@ class SkillService:
         self,
         registry: Optional[SkillRegistry] = None,
         repository: Optional[AgentSkillRepository] = None,
+        provider_settings_repository: Optional[ProviderSettingsRepository] = None,
     ):
         self.registry = registry or get_skill_registry()
         self.repository = repository or get_agent_skill_repository()
+        self.provider_settings_repository = provider_settings_repository or get_provider_settings_repository()
 
-    def list_catalog(self) -> list[SkillCatalogItemResponse]:
+    def list_catalog(self, user_email: str | None = None) -> list[SkillCatalogItemResponse]:
         items: list[SkillCatalogItemResponse] = []
         for loaded in self.registry.list():
+            oauth_provider_name = loaded.manifest.oauth_provider_name if loaded.manifest.requires_oauth else None
+            oauth_connected: bool | None = None
+            if oauth_provider_name and user_email:
+                oauth_connected = (
+                    self.provider_settings_repository.find_by_provider(user_email, oauth_provider_name) is not None
+                )
             items.append(
                 SkillCatalogItemResponse(
                     skill_id=loaded.manifest.id,
@@ -29,6 +38,9 @@ class SkillService:
                     description=loaded.manifest.description,
                     action_names=[a.name for a in loaded.manifest.actions],
                     has_form=bool(loaded.manifest.form),
+                    requires_oauth=loaded.manifest.requires_oauth,
+                    oauth_provider_name=oauth_provider_name,
+                    oauth_connected=oauth_connected,
                 )
             )
         return items
@@ -47,6 +59,16 @@ class SkillService:
         loaded = self.registry.get(skill_id)
         if not loaded:
             raise ValueError(f"Unknown skill: {skill_id}")
+
+        if loaded.manifest.requires_oauth and loaded.manifest.oauth_provider_name:
+            provider_settings = self.provider_settings_repository.find_by_provider(
+                user_email,
+                loaded.manifest.oauth_provider_name,
+            )
+            if not provider_settings:
+                raise ValueError(
+                    f"{loaded.manifest.name} requires a connected {loaded.manifest.oauth_provider_name} account before installation"
+                )
 
         normalized = self.registry.validate_config(skill_id, raw_config)
         secret_fields = self.registry.secret_fields(skill_id)
@@ -210,6 +232,7 @@ class SkillRuntimeService:
         tool_name: str,
         tool_input: dict[str, Any],
         agent_id: str,
+        owner_email: str,
         actor_email: str,
         actor_id: str,
         conversation_id: str,
@@ -272,6 +295,7 @@ class SkillRuntimeService:
                 config=config,
                 context={
                     "agent_id": agent_id,
+                    "owner_email": owner_email,
                     "actor_email": actor_email,
                     "actor_id": actor_id,
                     "conversation_id": conversation_id,

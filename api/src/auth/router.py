@@ -2,12 +2,10 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
-import hashlib
-import secrets
-import time
 from datetime import datetime, timezone
 
 from ..config import settings
+from ..agents.repository import AgentRepository
 from ..users import User, UserRepository
 from ..settings.models import ProviderSettings, ProviderSettingsResponse
 from ..settings.repository import ProviderSettingsRepository
@@ -24,6 +22,15 @@ from .openai_oauth import (
     OpenAIOAuthState,
     save_credentials,
 )
+from .google_drive_oauth import (
+    GoogleDriveOAuthError,
+    build_authorization_url as build_google_drive_authorization_url,
+    build_credentials_from_auth_code as build_google_drive_credentials_from_auth_code,
+    create_state_session as create_google_drive_state_session,
+    decode_state_session as decode_google_drive_state_session,
+    encode_state_session as encode_google_drive_state_session,
+    save_credentials as save_google_drive_credentials,
+)
 from .jwt_utils import create_access_token, get_current_user
 from ..email import send_welcome_email_safe
 
@@ -35,7 +42,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 user_repository = UserRepository()
 provider_settings_repository = ProviderSettingsRepository()
+agent_repository = AgentRepository()
 OPENAI_PKCE_TTL_SECONDS = 600
+GOOGLE_DRIVE_OAUTH_TTL_SECONDS = 600
 
 
 class OpenAIStartResponse(BaseModel):
@@ -44,6 +53,16 @@ class OpenAIStartResponse(BaseModel):
 
 class OpenAICompleteRequest(BaseModel):
     callback_url: str
+
+
+class GoogleDriveStartRequest(BaseModel):
+    agent_id: str
+    skill_id: str
+    return_to: str
+
+
+class GoogleDriveStartResponse(BaseModel):
+    authorize_url: str
 
 
 def _extract_openai_state_session(state: str | None) -> OpenAIOAuthState | None:
@@ -189,6 +208,89 @@ async def complete_openai_oauth(
     except Exception as e:
         log.error("Unexpected OpenAI OAuth completion error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to complete OpenAI OAuth flow")
+
+
+@router.post("/google-drive/start", response_model=GoogleDriveStartResponse)
+async def start_google_drive_oauth(
+    request: Request,
+    body: GoogleDriveStartRequest,
+) -> GoogleDriveStartResponse:
+    if not settings.is_google_drive_oauth_configured():
+        raise HTTPException(status_code=500, detail="Google Drive OAuth is not configured")
+
+    user_email = getattr(request.state, "user_email", None)
+    if not user_email:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if body.skill_id != "google_drive":
+        raise HTTPException(status_code=400, detail="Unsupported skill for Google Drive OAuth")
+    agent = agent_repository.find_agent_by_id(body.agent_id, user_email)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    session = create_google_drive_state_session(
+        user_email=user_email,
+        agent_id=body.agent_id,
+        skill_id=body.skill_id,
+        return_to=body.return_to,
+        ttl_seconds=GOOGLE_DRIVE_OAUTH_TTL_SECONDS,
+    )
+    state = encode_google_drive_state_session(session)
+    authorize_url = build_google_drive_authorization_url(state=state)
+    return GoogleDriveStartResponse(authorize_url=authorize_url)
+
+
+@router.get("/google-drive/callback")
+async def google_drive_oauth_callback(
+    code: str = Query(None),
+    error: str = Query(None),
+    state: str = Query(None),
+):
+    session = decode_google_drive_state_session(state)
+    fallback_return_to = f"{settings.frontend_url}/dashboard/agents"
+
+    if not session:
+        params = urlencode({"google_drive_oauth": "error", "reason": "invalid_state"})
+        return RedirectResponse(url=f"{fallback_return_to}?{params}")
+
+    query_params = {
+        "google_drive_oauth": "error" if error else "success",
+        "agent_id": session.agent_id,
+        "skill_id": session.skill_id,
+    }
+
+    if session.is_expired():
+        query_params["google_drive_oauth"] = "error"
+        query_params["reason"] = "expired"
+        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
+
+    if error:
+        query_params["reason"] = error
+        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
+
+    if not code:
+        query_params["google_drive_oauth"] = "error"
+        query_params["reason"] = "missing_code"
+        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
+
+    try:
+        credentials = await build_google_drive_credentials_from_auth_code(code)
+        provider_settings = ProviderSettings(
+            user_email=session.user_email,
+            provider_name="GoogleDrive",
+            encrypted_credentials="",
+            auth_type="oauth",
+        )
+        save_google_drive_credentials(provider_settings, provider_settings_repository, credentials)
+        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
+    except GoogleDriveOAuthError as e:
+        query_params["google_drive_oauth"] = "error"
+        query_params["reason"] = str(e)
+        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
+    except Exception as e:
+        log.error("Unexpected Google Drive OAuth callback error: %s", e, exc_info=True)
+        query_params["google_drive_oauth"] = "error"
+        query_params["reason"] = "callback_failed"
+        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
 
 
 async def _oauth_callback(

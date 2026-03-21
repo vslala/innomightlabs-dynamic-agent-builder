@@ -74,6 +74,7 @@ dependencies = [
     { name = "mypy" },
     { name = "pinecone" },
     { name = "pyjwt" },
+    { name = "pypdf" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
     { name = "pyyaml" },
@@ -116,6 +117,7 @@ requires-dist = [
     { name = "mypy", specifier = ">=1.19.1" },
     { name = "pinecone", specifier = ">=5.0.0" },
     { name = "pyjwt", specifier = ">=2.10.1" },
+    { name = "pypdf", specifier = ">=5.4.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
@@ -1132,6 +1134,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/33/c1/1d9de9aeaa1b89b0186e5fe23294ff6517fce1bc69149185577cd31016b2/pyparsing-3.3.1.tar.gz", hash = "sha256:47fad0f17ac1e2cad3de3b458570fbc9b03560aa029ed5e16ee5554da9a2251c", size = 1550512, upload-time = "2025-12-23T03:14:04.391Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/40/2614036cdd416452f5bf98ec037f38a1afb17f327cb8e6b652d4729e0af8/pyparsing-3.3.1-py3-none-any.whl", hash = "sha256:023b5e7e5520ad96642e2c6db4cb683d3970bd640cdf7115049a6e9c3682df82", size = 121793, upload-time = "2025-12-23T03:14:02.103Z" },
+]
+
+[[package]]
+name = "pypdf"
+version = "6.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f5/c8/1f40699576c70a6c90d4bf47705a12a0bed1b02964a6bee039016279e126/pypdf-6.9.0.tar.gz", hash = "sha256:a59257869fc575ba2ccc10100a36be0a47cd1bc1fb00f2950abf1d219fa94c01", size = 5311107, upload-time = "2026-03-15T15:28:26.402Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/64/ac6159cfbeabab3cf54873bbf7314b29183c7ff547c9776596d63170d7c0/pypdf-6.9.0-py3-none-any.whl", hash = "sha256:85805ad7457ca878c4cfd1bc026c4b3dcae359b4a80f889fa7e8c5a1c1a83e51", size = 333408, upload-time = "2026-03-15T15:28:24.667Z" },
 ]
 
 [[package]]

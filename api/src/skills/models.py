@@ -22,6 +22,8 @@ class SkillManifest(BaseModel):
     name: str
     description: str
     system_prompt: str = ""
+    requires_oauth: bool = False
+    oauth_provider_name: Optional[str] = None
     actions: list[SkillActionManifest] = Field(default_factory=list)
     form: list[form_models.FormInput] = Field(default_factory=list)
 
@@ -39,6 +41,9 @@ class SkillCatalogItemResponse(BaseModel):
     description: str
     action_names: list[str]
     has_form: bool
+    requires_oauth: bool = False
+    oauth_provider_name: Optional[str] = None
+    oauth_connected: Optional[bool] = None
 
 
 class InstalledSkillResponse(BaseModel):

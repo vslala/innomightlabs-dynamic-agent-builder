@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Bot, ChevronLeft, Pencil, Plus, Trash2, ChevronDown, ChevronRight, Database, Lock, Key, Copy, Check, Eye, EyeOff, Globe, BookOpen, Link2, Unlink, Wrench, Power, PowerOff } from "lucide-react";
 import {
@@ -107,8 +107,10 @@ export function AgentDetail() {
   const [selectedSkillSchema, setSelectedSkillSchema] = useState<FormSchema | null>(null);
   const [installSkillError, setInstallSkillError] = useState<string | null>(null);
   const [installingSkill, setInstallingSkill] = useState(false);
+  const [connectingSkillId, setConnectingSkillId] = useState<string | null>(null);
   const [updatingSkillId, setUpdatingSkillId] = useState<string | null>(null);
   const [uninstallingSkillId, setUninstallingSkillId] = useState<string | null>(null);
+  const handledGoogleDriveCallbackRef = useRef(false);
 
   const loadAgent = async () => {
     if (!agentId) return;
@@ -386,14 +388,16 @@ export function AgentDetail() {
   };
 
   // Skills handlers
-  const loadInstalledSkills = async () => {
-    if (!agentId) return;
+  const loadInstalledSkills = async (): Promise<InstalledSkill[]> => {
+    if (!agentId) return [];
     setLoadingSkills(true);
     try {
       const skills = await skillApiService.listInstalledSkills(agentId);
       setInstalledSkills(skills);
+      return skills;
     } catch (err) {
       console.error("Error loading installed skills:", err);
+      return [];
     } finally {
       setLoadingSkills(false);
     }
@@ -404,19 +408,29 @@ export function AgentDetail() {
     setSelectedSkill(null);
     setSelectedSkillSchema(null);
     try {
-      const allSkills = await skillApiService.listSkills();
-      const installedIds = new Set(installedSkills.map((s) => s.skill_id));
-      setAvailableSkills(allSkills.filter((s) => !installedIds.has(s.skill_id)));
+      await refreshAvailableSkills();
       setIsSkillDialogOpen(true);
     } catch (err) {
       setInstallSkillError("Failed to load skill catalog");
     }
   };
 
+  const refreshAvailableSkills = async (installedOverride?: InstalledSkill[]): Promise<SkillCatalogItem[]> => {
+    const allSkills = await skillApiService.listSkills();
+    const installedIds = new Set((installedOverride ?? installedSkills).map((s) => s.skill_id));
+    const available = allSkills.filter((s) => !installedIds.has(s.skill_id));
+    setAvailableSkills(available);
+    return available;
+  };
+
   const selectSkillForInstall = async (skill: SkillCatalogItem) => {
     setInstallSkillError(null);
     setSelectedSkill(skill);
     try {
+      if (!skill.has_form) {
+        setSelectedSkillSchema(null);
+        return;
+      }
       const schema = await skillApiService.getSkillInstallSchema(skill.skill_id);
       setSelectedSkillSchema(schema);
     } catch (err: unknown) {
@@ -442,11 +456,87 @@ export function AgentDetail() {
       setSelectedSkill(null);
       setSelectedSkillSchema(null);
       await loadInstalledSkills();
+      await refreshAvailableSkills();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to install skill";
       setInstallSkillError(message);
     } finally {
       setInstallingSkill(false);
+    }
+  };
+
+  const handleConnectGoogleDriveSkill = async () => {
+    if (!agentId || !selectedSkill) return;
+    setConnectingSkillId(selectedSkill.skill_id);
+    setInstallSkillError(null);
+    try {
+      const returnTo = `${window.location.origin}/dashboard/agents/${agentId}`;
+      const response = await skillApiService.startGoogleDriveOAuth({
+        agent_id: agentId,
+        skill_id: selectedSkill.skill_id,
+        return_to: returnTo,
+      });
+      window.location.href = response.authorize_url;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to connect Google Drive";
+      setInstallSkillError(message);
+      setConnectingSkillId(null);
+    }
+  };
+
+  const handleGoogleDriveOAuthCallback = async () => {
+    if (!agentId || handledGoogleDriveCallbackRef.current) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("google_drive_oauth");
+    const callbackAgentId = params.get("agent_id");
+    const callbackSkillId = params.get("skill_id");
+
+    if (!status || callbackAgentId !== agentId || callbackSkillId !== "google_drive") {
+      return;
+    }
+
+    handledGoogleDriveCallbackRef.current = true;
+
+    try {
+      const currentInstalled = await loadInstalledSkills();
+      const available = await refreshAvailableSkills(currentInstalled);
+
+      if (status !== "success") {
+        setInstallSkillError("Google Drive connection failed");
+        setIsSkillDialogOpen(true);
+        const skill = available.find((item) => item.skill_id === "google_drive") || null;
+        setSelectedSkill(skill);
+        setSelectedSkillSchema(null);
+        return;
+      }
+
+      const alreadyInstalled = currentInstalled.some((skill) => skill.skill_id === "google_drive");
+      if (alreadyInstalled) {
+        return;
+      }
+
+      await skillApiService.installSkill(agentId, "google_drive", { config: {} });
+      const refreshedInstalled = await loadInstalledSkills();
+      await refreshAvailableSkills(refreshedInstalled);
+      setIsSkillDialogOpen(false);
+      setSelectedSkill(null);
+      setSelectedSkillSchema(null);
+    } catch (err: unknown) {
+      const available = await refreshAvailableSkills().catch(() => []);
+      const skill = available.find((item) => item.skill_id === "google_drive") || null;
+      setSelectedSkill(skill);
+      setSelectedSkillSchema(null);
+      setInstallSkillError(err instanceof Error ? err.message : "Failed to install Google Drive skill");
+      setIsSkillDialogOpen(true);
+    } finally {
+      params.delete("google_drive_oauth");
+      params.delete("agent_id");
+      params.delete("skill_id");
+      params.delete("reason");
+      const nextQuery = params.toString();
+      const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+      window.history.replaceState({}, "", nextUrl);
     }
   };
 
@@ -511,6 +601,10 @@ export function AgentDetail() {
     loadLinkedKBs();
     loadInstalledSkills();
   }, [agentId]);
+
+  useEffect(() => {
+    handleGoogleDriveOAuthCallback();
+  }, [agentId, installedSkills]);
 
   const handleStartEdit = () => {
     setIsEditing(true);
@@ -1271,31 +1365,35 @@ export function AgentDetail() {
                   </div>
 
                   {/* Update non-secret config */}
-                  <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border-subtle)" }}>
-                    <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
-                      Update skill configuration
-                    </p>
-                    <SchemaForm
-                      schema={{
-                        form_name: `Update ${skill.name}`,
-                        submit_path: `/agents/${agentId}/skills/${skill.skill_id}`,
-                        form_inputs: Object.entries(skill.config).map(([key, value]) => ({
-                          input_type: "text",
-                          name: key,
-                          label: key,
-                          value: String(value),
-                        })),
-                      }}
-                      onSubmit={(data) => handleUpdateSkillConfig(skill, data)}
-                      submitLabel={updatingSkillId === skill.skill_id ? "Saving..." : "Save Config"}
-                      isLoading={updatingSkillId === skill.skill_id}
-                    />
-                    {skill.secret_fields.length > 0 && (
-                      <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
-                        Secret fields are protected and not shown: {skill.secret_fields.join(", ")}
+                  {(Object.keys(skill.config).length > 0 || skill.secret_fields.length > 0) && (
+                    <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border-subtle)" }}>
+                      <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
+                        Update skill configuration
                       </p>
-                    )}
-                  </div>
+                      {Object.keys(skill.config).length > 0 && (
+                        <SchemaForm
+                          schema={{
+                            form_name: `Update ${skill.name}`,
+                            submit_path: `/agents/${agentId}/skills/${skill.skill_id}`,
+                            form_inputs: Object.entries(skill.config).map(([key, value]) => ({
+                              input_type: "text",
+                              name: key,
+                              label: key,
+                              value: String(value),
+                            })),
+                          }}
+                          onSubmit={(data) => handleUpdateSkillConfig(skill, data)}
+                          submitLabel={updatingSkillId === skill.skill_id ? "Saving..." : "Save Config"}
+                          isLoading={updatingSkillId === skill.skill_id}
+                        />
+                      )}
+                      {skill.secret_fields.length > 0 && (
+                        <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
+                          Secret fields are protected and not shown: {skill.secret_fields.join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1356,6 +1454,13 @@ export function AgentDetail() {
                   <div>
                     <p style={{ fontWeight: 600, color: "var(--text-primary)" }}>{selectedSkill.name}</p>
                     <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>{selectedSkill.description}</p>
+                    {selectedSkill.requires_oauth && (
+                      <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.375rem" }}>
+                        {selectedSkill.oauth_connected
+                          ? `Connected via ${selectedSkill.oauth_provider_name}`
+                          : `Requires ${selectedSkill.oauth_provider_name} connection before install`}
+                      </p>
+                    )}
                   </div>
                   {installSkillError && (
                     <div style={{
@@ -1369,6 +1474,14 @@ export function AgentDetail() {
                       {installSkillError}
                     </div>
                   )}
+                  {selectedSkill.requires_oauth && !selectedSkill.oauth_connected && (
+                    <Button
+                      onClick={handleConnectGoogleDriveSkill}
+                      disabled={connectingSkillId === selectedSkill.skill_id}
+                    >
+                      {connectingSkillId === selectedSkill.skill_id ? "Connecting..." : "Connect Google Drive"}
+                    </Button>
+                  )}
                   {selectedSkillSchema && (
                     <SchemaForm
                       schema={selectedSkillSchema}
@@ -1376,6 +1489,11 @@ export function AgentDetail() {
                       submitLabel={installingSkill ? "Installing..." : "Install Skill"}
                       isLoading={installingSkill}
                     />
+                  )}
+                  {!selectedSkillSchema && (!selectedSkill.requires_oauth || selectedSkill.oauth_connected) && (
+                    <Button onClick={() => handleInstallSkill({})} disabled={installingSkill}>
+                      {installingSkill ? "Installing..." : "Install Skill"}
+                    </Button>
                   )}
                 </div>
               )}

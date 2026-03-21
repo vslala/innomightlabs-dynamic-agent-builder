@@ -4,6 +4,8 @@ import asyncio
 
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
+from src.settings.models import ProviderSettings
+from src.settings.repository import ProviderSettingsRepository
 from src.skills.service import SkillRuntimeService
 
 
@@ -26,6 +28,30 @@ def test_list_skills_catalog(test_client, auth_headers):
     payload = response.json()
     assert isinstance(payload, list)
     assert any(item["skill_id"] == "wordpress_search" for item in payload)
+    google_drive = next(item for item in payload if item["skill_id"] == "google_drive")
+    assert google_drive["requires_oauth"] is True
+    assert google_drive["oauth_provider_name"] == "GoogleDrive"
+    assert google_drive["oauth_connected"] is False
+
+
+def test_list_skills_catalog_reports_google_drive_connected(test_client, auth_headers, dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    repo = ProviderSettingsRepository()
+    repo.save(
+        ProviderSettings(
+            user_email=TEST_USER_EMAIL,
+            provider_name="GoogleDrive",
+            encrypted_credentials="encrypted",
+            auth_type="oauth",
+        )
+    )
+
+    response = test_client.get("/skills", headers=auth_headers)
+    assert response.status_code == 200
+    payload = response.json()
+    google_drive = next(item for item in payload if item["skill_id"] == "google_drive")
+    assert google_drive["oauth_connected"] is True
 
 
 def test_skill_install_update_and_uninstall_flow(test_client, auth_headers, dynamodb_table):
@@ -93,6 +119,46 @@ def test_skill_install_update_and_uninstall_flow(test_client, auth_headers, dyna
     assert list_after_delete.json() == []
 
 
+def test_google_drive_install_requires_connected_provider_settings(test_client, auth_headers, dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+    install_resp = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=google_drive",
+        headers=auth_headers,
+        json={"config": {}},
+    )
+
+    assert install_resp.status_code == 400
+    assert "requires a connected GoogleDrive account" in install_resp.json()["detail"]
+
+
+def test_google_drive_install_succeeds_when_provider_connected(test_client, auth_headers, dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    repo = ProviderSettingsRepository()
+    repo.save(
+        ProviderSettings(
+            user_email=TEST_USER_EMAIL,
+            provider_name="GoogleDrive",
+            encrypted_credentials="encrypted",
+            auth_type="oauth",
+        )
+    )
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+
+    install_resp = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=google_drive",
+        headers=auth_headers,
+        json={"config": {}},
+    )
+
+    assert install_resp.status_code == 201
+    payload = install_resp.json()
+    assert payload["skill_id"] == "google_drive"
+    assert payload["config"] == {}
+
+
 def test_execute_skill_action_requires_nested_arguments(test_client, auth_headers, dynamodb_table, monkeypatch):
     from tests.mock_data import TEST_USER_EMAIL
 
@@ -115,6 +181,7 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
         assert action_name == "search"
         assert arguments.get("query") == "pricing"
         assert config.get("site_url") == "https://example.com"
+        assert context.get("owner_email") == TEST_USER_EMAIL
         return "ok"
 
     monkeypatch.setattr(runtime.skill_service.registry, "execute_action", fake_execute_action)
@@ -130,6 +197,7 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
                     "query": "pricing",
                 },
                 agent_id=agent.agent_id,
+                owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
                 conversation_id="conv-test",
@@ -149,6 +217,7 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
                 "arguments": {"query": "pricing"},
             },
             agent_id=agent.agent_id,
+            owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
             conversation_id="conv-test",

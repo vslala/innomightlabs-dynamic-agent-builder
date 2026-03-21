@@ -126,6 +126,11 @@ async def save_provider_settings(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="OpenAI must be configured using OAuth via /auth/openai/complete",
         )
+    if provider_name == "GoogleDrive":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="GoogleDrive must be configured using OAuth via /auth/google-drive/start",
+        )
 
     # Validate required fields from schema
     required_fields = [field.name for field in schema.form_inputs]

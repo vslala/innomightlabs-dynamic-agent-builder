@@ -12,6 +12,8 @@ os.environ["AWS_ACCESS_KEY_ID"] = "testing"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
 os.environ["JWT_SECRET"] = "test-secret"
 os.environ["OPENAI_OAUTH_CLIENT_ID"] = "test-openai-client-id"
+os.environ["GOOGLE_CLIENT_ID"] = "test-google-client-id"
+os.environ["GOOGLE_CLIENT_SECRET"] = "test-google-client-secret"
 os.environ.pop("DYNAMODB_ENDPOINT", None)
 
 import pytest
