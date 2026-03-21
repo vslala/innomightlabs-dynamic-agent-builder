@@ -21,8 +21,13 @@ export function Navbar() {
   return (
     <nav className={`${styles.navbar} ${scrolled || isDocsPage ? styles.scrolled : ''}`}>
       <div className={styles.container}>
-        <Link to="/" className={styles.logo}>
-          InnoMight Labs
+        <Link to="/" className={styles.logo} aria-label="InnoMight Labs home">
+          <img
+            className={styles.logoMark}
+            src={new URL('../assets/brand/innomightlabs-logo.jpg', import.meta.url).toString()}
+            alt="InnoMight Labs"
+          />
+          <span className={styles.logoText}>InnoMight Labs</span>
         </Link>
 
         <div className={styles.links}>

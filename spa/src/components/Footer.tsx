@@ -7,10 +7,15 @@ export function Footer() {
     <footer className={styles.footer}>
       <div className={styles.container}>
         <div className={styles.brand}>
-          <span className={styles.logo}>InnoMight Labs</span>
-          <p className={styles.tagline}>
-            Building the future of intelligent AI agents.
-          </p>
+          <div className={styles.brandRow}>
+            <img
+              className={styles.logoMark}
+              src={new URL('../assets/brand/innomightlabs-logo.jpg', import.meta.url).toString()}
+              alt="InnoMight Labs"
+            />
+            <span className={styles.logo}>InnoMight Labs</span>
+          </div>
+          <p className={styles.tagline}>Building the future of intelligent AI agents.</p>
         </div>
 
         <div className={styles.divider} />

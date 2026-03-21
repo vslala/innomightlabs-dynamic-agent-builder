@@ -13,6 +13,20 @@
   margin-bottom: 2rem;
 }
 
+.brandRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.logoMark {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
 .logo {
   font-size: 1.5rem;
   font-weight: 800;
