@@ -10,6 +10,7 @@ import { QuickStart } from './pages/docs/QuickStart';
 import { FAQ } from './pages/docs/FAQ';
 import { Terms } from './pages/legal/Terms';
 import { PricingPolicy } from './pages/legal/PricingPolicy';
+import { Privacy } from './pages/legal/Privacy';
 import { Contact } from './pages/Contact';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
@@ -63,6 +64,7 @@ function App() {
         <Route path="/docs/quick-start" element={<QuickStart />} />
         <Route path="/docs/faq" element={<FAQ />} />
         <Route path="/legal/terms" element={<Terms />} />
+        <Route path="/legal/privacy" element={<Privacy />} />
         <Route path="/legal/pricing" element={<PricingPolicy />} />
         <Route path="/contact" element={<Contact />} />
 
