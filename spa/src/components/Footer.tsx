@@ -20,6 +20,7 @@ export function Footer() {
             {currentYear} InnoMight Labs. All rights reserved.
           </p>
           <div className={styles.links}>
+            <a href="/legal/privacy" className={styles.link}>Privacy Policy</a>
             <a href="/legal/pricing" className={styles.link}>Pricing Policy</a>
             <a href="/legal/terms" className={styles.link}>Terms of Service</a>
           </div>
