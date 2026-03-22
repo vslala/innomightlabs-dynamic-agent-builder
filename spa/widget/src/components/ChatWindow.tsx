@@ -1,9 +1,12 @@
 /** @jsxImportSource preact */
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { Message, Conversation } from '../types';
+import { Message, Conversation, SSEEvent, Form } from '../types';
 import { sendMessage } from '../api';
 import { SendIcon } from './Icons';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { FormRenderer, FormAnswer } from './FormRenderer';
+
+const FORM_SUBMISSION_PREFIX = '__FORM_SUBMISSION__:';
 
 interface ChatWindowProps {
   conversation: Conversation;
@@ -23,6 +26,7 @@ export function ChatWindow({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  const [activeForm, setActiveForm] = useState<{ form: Form; submitLabel?: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when messages change
@@ -30,19 +34,17 @@ export function ChatWindow({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
 
-  const handleSend = async () => {
-    const content = input.trim();
-    if (!content || isLoading) return;
+  const runSendMessage = async (content: string, optimisticUserContent?: string) => {
+    if (!content.trim() || isLoading) return;
 
-    // Add user message
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content,
+      content: optimisticUserContent ?? content,
       timestamp: new Date(),
     };
     onMessagesChange([...messages, userMessage]);
-    setInput('');
+
     setIsLoading(true);
     setStreamingContent('');
 
@@ -53,12 +55,13 @@ export function ChatWindow({
         if (event.event_type === 'AGENT_RESPONSE_TO_USER') {
           assistantContent += event.content;
           setStreamingContent(assistantContent);
+        } else if (event.event_type === 'UI_FORM_RENDER' && event.form) {
+          setActiveForm({ form: event.form, submitLabel: event.submit_label });
         } else if (event.event_type === 'ERROR') {
           throw new Error(event.content);
         }
       }
 
-      // Add assistant message
       if (assistantContent) {
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
@@ -69,7 +72,6 @@ export function ChatWindow({
         onMessagesChange([...messages, userMessage, assistantMessage]);
       }
     } catch (error) {
-      // Add error message
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         role: 'assistant',
@@ -81,6 +83,33 @@ export function ChatWindow({
       setIsLoading(false);
       setStreamingContent('');
     }
+  };
+
+  const handleSend = async () => {
+    const content = input.trim();
+    if (!content || isLoading) return;
+    setInput('');
+    await runSendMessage(content);
+  };
+
+  const handleFormSubmit = async (answers: FormAnswer[]) => {
+    if (!activeForm) return;
+
+    const payload = {
+      type: 'form_submission',
+      form_label: activeForm.form.form_name,
+      submit_path: activeForm.form.submit_path,
+      answers,
+    };
+
+    // Send structured payload back through the LLM loop.
+    const content = `${FORM_SUBMISSION_PREFIX}${JSON.stringify(payload)}`;
+
+    // For chat UX, show a clean user message.
+    const optimistic = `Submitted: ${activeForm.form.form_name}`;
+
+    setActiveForm(null);
+    await runSendMessage(content, optimistic);
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -107,6 +136,19 @@ export function ChatWindow({
         {streamingContent && (
           <div className="innomight-message innomight-message-assistant">
             <MarkdownRenderer content={streamingContent} />
+          </div>
+        )}
+
+        {/* Active form */}
+        {activeForm && (
+          <div className="innomight-message innomight-message-assistant">
+            <FormRenderer
+              form={activeForm.form}
+              submitLabel={activeForm.submitLabel}
+              onSubmit={handleFormSubmit}
+              onCancel={() => setActiveForm(null)}
+              disabled={isLoading}
+            />
           </div>
         )}
 

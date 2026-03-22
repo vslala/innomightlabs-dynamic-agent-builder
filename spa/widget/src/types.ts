@@ -58,9 +58,33 @@ export interface Message {
 export type SSEEventType =
   | 'LIFECYCLE_NOTIFICATION'
   | 'AGENT_RESPONSE_TO_USER'
+  | 'UI_FORM_RENDER'
   | 'MESSAGE_SAVED'
   | 'STREAM_COMPLETE'
   | 'ERROR';
+
+export type FormInputType = 'text' | 'text_area' | 'password' | 'select' | 'choice' | 'file_upload';
+
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
+export interface FormInput {
+  input_type: FormInputType;
+  name: string;
+  label: string;
+  value?: string | null;
+  values?: string[] | null;
+  options?: SelectOption[] | null;
+  attr?: Record<string, string> | null;
+}
+
+export interface Form {
+  form_name: string;
+  submit_path: string;
+  form_inputs: FormInput[];
+}
 
 /**
  * SSE event payload
@@ -69,6 +93,10 @@ export interface SSEEvent {
   event_type: SSEEventType;
   content: string;
   metadata?: Record<string, unknown>;
+  form?: Form;
+  submit_label?: string;
+  form_id?: string;
+  form_label?: string;
 }
 
 /**

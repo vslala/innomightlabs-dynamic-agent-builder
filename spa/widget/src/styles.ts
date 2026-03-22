@@ -254,6 +254,80 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       fill: white;
     }
 
+    /* Form renderer */
+    .innomight-form {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .innomight-form-title {
+      font-weight: 700;
+      font-size: 14px;
+      color: ${colors.text};
+    }
+
+    .innomight-form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .innomight-form-label {
+      font-size: 12px;
+      color: ${colors.textSecondary};
+    }
+
+    .innomight-form-input,
+    .innomight-form-textarea,
+    .innomight-form-select {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid ${colors.border};
+      background: ${colors.surface};
+      color: ${colors.text};
+      outline: none;
+      font-size: 14px;
+    }
+
+    .innomight-form-textarea {
+      resize: vertical;
+    }
+
+    .innomight-form-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: ${colors.textSecondary};
+    }
+
+    .innomight-form-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .innomight-form-cancel {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid ${colors.border};
+      background: transparent;
+      color: ${colors.textSecondary};
+      cursor: pointer;
+    }
+
+    .innomight-form-submit {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: none;
+      background: ${colors.primary};
+      color: white;
+      cursor: pointer;
+    }
+
     /* Login screen */
     .innomight-login {
       flex: 1;
