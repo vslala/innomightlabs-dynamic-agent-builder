@@ -27,6 +27,25 @@ actions:
           description: Button label (defaults to "Submit").
       required: [form_label]
     handler: actions:render_form
+  - name: render_custom_form
+    description: Render a custom form schema (bounded) in the widget for lead capture.
+    input_schema:
+      type: object
+      properties:
+        form_label:
+          type: string
+          description: Human label for the form (e.g. "Request a demo").
+        submit_label:
+          type: string
+          description: Button label (defaults to "Submit").
+        form_inputs:
+          type: array
+          description: List of form inputs following the platform Form schema.
+          items:
+            type: object
+      required: [form_label, form_inputs]
+    handler: actions:render_custom_form
+
   - name: register_lead
     description: Store a lead submission for this agent and optionally send an acknowledgement email.
     input_schema:

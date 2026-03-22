@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +8,8 @@ import src.form_models as form_models
 from src.config import settings
 from src.db import get_dynamodb_resource
 from src.email import send_email
+
+from .forms import parse_custom_inputs
 
 
 def _iso_now() -> str:
@@ -21,15 +22,24 @@ def _require_str(value: Any, name: str) -> str:
     return value.strip()
 
 
-def render_form(*, arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    """Return a widget-renderable form schema."""
-    form_label = _require_str(arguments.get("form_label"), "form_label")
-    submit_label = str(arguments.get("submit_label") or "Submit").strip() or "Submit"
-
+def _submit_path(context: dict[str, Any]) -> str:
     agent_id = str(context.get("agent_id") or "").strip()
     conversation_id = str(context.get("conversation_id") or "").strip()
+    return f"/agents/{agent_id}/{conversation_id}/lead-capture/submit"
 
-    submit_path = f"/agents/{agent_id}/{conversation_id}/lead-capture/submit"
+
+def _ui_form_payload(form: form_models.Form, *, submit_label: str) -> dict[str, Any]:
+    return {
+        "type": "ui_form_render",
+        "form": form.model_dump(mode="json"),
+        "submit_label": submit_label,
+    }
+
+
+def render_form(*, arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """Return a widget-renderable default lead capture form."""
+    form_label = _require_str(arguments.get("form_label"), "form_label")
+    submit_label = str(arguments.get("submit_label") or "Submit").strip() or "Submit"
 
     inputs: list[form_models.FormInput] = [
         form_models.FormInput(
@@ -66,16 +76,31 @@ def render_form(*, arguments: dict[str, Any], config: dict[str, Any], context: d
 
     form = form_models.Form(
         form_name=form_label,
-        submit_path=submit_path,
+        submit_path=_submit_path(context),
         form_inputs=inputs,
     )
 
-    # Explicit UI instruction payload. The agent runtime will emit a dedicated SSE event.
-    return {
-        "type": "ui_form_render",
-        "form": form.model_dump(mode="json"),
-        "submit_label": submit_label,
-    }
+    return _ui_form_payload(form, submit_label=submit_label)
+
+
+def render_custom_form(*, arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """Render a bounded custom form schema in the widget.
+
+    The caller (LLM) provides form_inputs. We validate and normalize them so the
+    UI receives a safe, predictable schema.
+    """
+    form_label = _require_str(arguments.get("form_label"), "form_label")
+    submit_label = str(arguments.get("submit_label") or "Submit").strip() or "Submit"
+
+    inputs = parse_custom_inputs(arguments.get("form_inputs"))
+
+    form = form_models.Form(
+        form_name=form_label,
+        submit_path=_submit_path(context),
+        form_inputs=inputs,
+    )
+
+    return _ui_form_payload(form, submit_label=submit_label)
 
 
 def register_lead(*, arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
