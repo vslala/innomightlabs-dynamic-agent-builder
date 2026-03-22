@@ -18,6 +18,9 @@ class SSEEventType(str, Enum):
     AGENT_RESPONSE_TO_USER = "AGENT_RESPONSE_TO_USER"
     AGENT_THOUGHTS = "AGENT_THOUGHTS"
 
+    # UI events
+    UI_FORM_RENDER = "UI_FORM_RENDER"
+
     # Tool call events (for memGPT timeline)
     TOOL_CALL_START = "TOOL_CALL_START"
     TOOL_CALL_RESULT = "TOOL_CALL_RESULT"
@@ -31,12 +34,7 @@ class SSEEventType(str, Enum):
 
 
 class SSEEvent(BaseModel):
-    """
-    Server-Sent Event model.
-
-    This model represents a single SSE event that can be streamed to the client.
-    The event_type determines how the frontend should handle the event.
-    """
+    """Server-Sent Event model."""
 
     event_type: SSEEventType
     content: str
@@ -46,6 +44,12 @@ class SSEEvent(BaseModel):
     tool_name: Optional[str] = None
     tool_args: Optional[dict] = None
     success: Optional[bool] = None
+
+    # UI events
+    form: Optional[dict] = None
+    submit_label: Optional[str] = None
+    form_id: Optional[str] = None
+    form_label: Optional[str] = None
 
     def to_sse(self) -> str:
         """
