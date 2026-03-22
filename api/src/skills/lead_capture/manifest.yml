@@ -14,7 +14,22 @@ system_prompt: |
   Recommended flow:
   1) Call action=render_form (default) or action=render_custom_form (custom schema) to show a form.
   2) After the user submits, the conversation will contain a <form_submission> block.
-  3) If appropriate, call action=register_lead with the form label and answers to store it.
+  3) If appropriate, call action=register_lead with the same form label and answers.
+
+  When you see a <form_submission>, immediately translate it into register_lead arguments:
+  - form_label: the label attribute on the <form_submission>
+  - answers: [{field_id, label, value}] derived from the fields
+
+  Example:
+    action=register_lead
+    arguments={
+      "form_label": "Request a demo",
+      "answers": [
+        {"field_id":"name","label":"Name","value":"Jane"},
+        {"field_id":"email","label":"Work email","value":"jane@acme.com"},
+        {"field_id":"request","label":"What would you like help with?","value":"Demo for 20 seats"}
+      ]
+    }
 
   Notes:
   - Always include a clear reason why you are collecting information.

@@ -133,12 +133,23 @@ def register_lead(*, arguments: dict[str, Any], config: dict[str, Any], context:
     lead_id = uuid.uuid4().hex
     created_at = _iso_now()
 
-    # Try to extract an email for acknowledgement.
+    # Extract email + consent for acknowledgement.
     submitted_email = ""
+    consent = ""
     for a in answers:
-        if a["field_id"].lower() in {"email", "work_email"}:
+        fid = a["field_id"].lower()
+        if fid in {"email", "work_email"} and not submitted_email:
             submitted_email = a["value"]
-            break
+        if fid in {"contact_consent", "consent"} and not consent:
+            consent = a["value"].strip().lower()
+
+    if not submitted_email:
+        raise ValueError("Missing email. Ask the user for a work email before registering the lead.")
+
+    if consent not in {"yes", "true", "1", "on"}:
+        raise ValueError(
+            "Missing consent. Ask the user to confirm they agree to be contacted before registering the lead."
+        )
 
     dynamodb = get_dynamodb_resource()
     table = dynamodb.Table(settings.dynamodb_table)
