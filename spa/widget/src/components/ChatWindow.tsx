@@ -1,12 +1,10 @@
 /** @jsxImportSource preact */
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { Message, Conversation, SSEEvent, Form } from '../types';
+import { Message, Conversation, Form } from '../types';
 import { sendMessage } from '../api';
 import { SendIcon } from './Icons';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { FormRenderer, FormAnswer } from './FormRenderer';
-
-const FORM_SUBMISSION_PREFIX = '__FORM_SUBMISSION__:';
 
 interface ChatWindowProps {
   conversation: Conversation;
@@ -95,18 +93,29 @@ export function ChatWindow({
   const handleFormSubmit = async (answers: FormAnswer[]) => {
     if (!activeForm) return;
 
-    const payload = {
-      type: 'form_submission',
-      form_label: activeForm.form.form_name,
-      submit_path: activeForm.form.submit_path,
-      answers,
-    };
+    const label = activeForm.form.form_name;
 
-    // Send structured payload back through the LLM loop.
-    const content = `${FORM_SUBMISSION_PREFIX}${JSON.stringify(payload)}`;
+    const lines: string[] = [];
+    lines.push(`<form_submission label="${label}">`);
+
+    for (const a of answers) {
+      // Human readable and tool-friendly enough for the model.
+      lines.push(`- ${a.label}: ${a.value}`);
+    }
+
+    lines.push(`</form_submission>`);
+    lines.push('');
+    lines.push('Fields:');
+    for (const a of answers) {
+      // Stable field ids to make tool calls deterministic.
+      const v = a.value.replace(/\n/g, ' ');
+      lines.push(`- ${a.field_id}="${v}"`);
+    }
+
+    const content = lines.join('\n');
 
     // For chat UX, show a clean user message.
-    const optimistic = `Submitted: ${activeForm.form.form_name}`;
+    const optimistic = `Submitted: ${label}`;
 
     setActiveForm(null);
     await runSendMessage(content, optimistic);

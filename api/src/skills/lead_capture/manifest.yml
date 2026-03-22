@@ -1,13 +1,20 @@
 id: lead_capture
 namespace: growth.leads
-name: Lead Capture
-description: Render a lead capture form in the widget and register submissions for an agent.
+name: Interactive Forms
+description: Render interactive forms in the widget to collect structured inputs. Optionally register submissions as leads.
 system_prompt: |
-  Use this skill to capture user contact details and requests (e.g. demo, pricing, support).
+  Use this skill to collect structured input from the user via interactive forms.
+
+  You can use forms for:
+  - Lead capture (demo requests, contact sales)
+  - Feedback collection
+  - Asking the user to choose from multiple options
+  - Multi-step clarification to gather missing fields
 
   Recommended flow:
-  1) Call action=render_form to show a form to the user.
-  2) After the user submits, call action=register_lead with the form label and answers.
+  1) Call action=render_form (default) or action=render_custom_form (custom schema) to show a form.
+  2) After the user submits, the conversation will contain a <form_submission> block.
+  3) If appropriate, call action=register_lead with the form label and answers to store it.
 
   Notes:
   - Always include a clear reason why you are collecting information.
