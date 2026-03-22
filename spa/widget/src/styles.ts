@@ -328,6 +328,11 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       cursor: pointer;
     }
 
+    .innomight-form-status {
+      font-size: 12px;
+      color: ${colors.textSecondary};
+    }
+
     /* Login screen */
     .innomight-login {
       flex: 1;

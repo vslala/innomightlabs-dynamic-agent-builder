@@ -145,36 +145,40 @@ class SkillsLoader(PromptLoaderBase):
     def load(self, *, ctx: PromptContext, inp: PromptBuildInput) -> None:
         skills = inp.runtime.enabled_skills or []
 
-        def _skill_id(s: object) -> str:
-            # Supports Pydantic models (e.g. AgentSkill) and dict payloads.
+        def _skill_row(s: object) -> str:
+            """Render a compact, readable skill line."""
             if isinstance(s, dict):
-                return str(s.get("skill_id") or s.get("id") or "").strip()
-            # Pydantic/BaseModel or dataclass-ish objects
-            for attr in ("skill_id", "id"):
-                value = getattr(s, attr, None)
-                if value:
-                    return str(value).strip()
-            return ""
+                sid = str(s.get("skill_id") or s.get("id") or "").strip()
+                name = str(s.get("skill_name") or s.get("name") or "").strip()
+                desc = str(s.get("skill_description") or s.get("description") or "").strip()
+            else:
+                sid = str(getattr(s, "skill_id", None) or getattr(s, "id", None) or "").strip()
+                name = str(getattr(s, "skill_name", None) or getattr(s, "name", None) or "").strip()
+                desc = str(getattr(s, "skill_description", None) or getattr(s, "description", None) or "").strip()
 
-        # Keep it compact: the runtime tool list is the source of truth.
-        names: list[str] = []
-        for s in skills:
-            sid = _skill_id(s)
-            if sid:
-                names.append(sid)
+            if not sid:
+                return ""
 
-        if not names:
+            # Prefer human name when available.
+            label = name or sid
+            if desc:
+                return f"- {sid}: {label} — {desc}"
+            return f"- {sid}: {label}"
+
+        rows = [r for r in (_skill_row(s) for s in skills) if r]
+        if not rows:
             return
 
-        skills_list = "\n".join(f"- {n}" for n in names)
+        skills_list = "\n".join(rows)
 
         ctx.add_section(
             "skills",
             f"""<skills>
-Enabled skills ({len(names)}):
+Enabled skills ({len(rows)}):
 {skills_list}
 
-Use the provided skill tools when needed. If a skill action fails, read the tool error and either retry with corrected inputs or ask the user for the missing information.
+Use the provided skill tools when needed. If you need structured input from the user, prefer interactive forms (when available) instead of long back-and-forth.
+If a skill action fails, read the tool error and either retry with corrected inputs or ask the user for the missing information.
 </skills>""",
         )
 

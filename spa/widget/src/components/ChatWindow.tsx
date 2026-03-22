@@ -25,6 +25,7 @@ export function ChatWindow({
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [activeForm, setActiveForm] = useState<{ form: Form; submitLabel?: string } | null>(null);
+  const [pendingFormLabel, setPendingFormLabel] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when messages change
@@ -80,6 +81,7 @@ export function ChatWindow({
     } finally {
       setIsLoading(false);
       setStreamingContent('');
+      setPendingFormLabel(null);
     }
   };
 
@@ -94,6 +96,9 @@ export function ChatWindow({
     if (!activeForm) return;
 
     const label = activeForm.form.form_name;
+
+    // Keep the form visible (disabled) while we process the submission.
+    setPendingFormLabel(label);
 
     const lines: string[] = [];
     lines.push(`<form_submission label="${label}">`);
@@ -156,8 +161,17 @@ export function ChatWindow({
               submitLabel={activeForm.submitLabel}
               onSubmit={handleFormSubmit}
               onCancel={() => setActiveForm(null)}
-              disabled={isLoading}
+              disabled={isLoading || Boolean(pendingFormLabel)}
             />
+          </div>
+        )}
+
+        {/* Submission status */}
+        {pendingFormLabel && (
+          <div className="innomight-message innomight-message-assistant">
+            <div className="innomight-form-status">
+              Captured “{pendingFormLabel}”. Processing…
+            </div>
           </div>
         )}
 
