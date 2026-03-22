@@ -1,0 +1,49 @@
+id: lead_capture
+namespace: growth.leads
+name: Lead Capture
+description: Render a lead capture form in the widget and register submissions for an agent.
+system_prompt: |
+  Use this skill to capture user contact details and requests (e.g. demo, pricing, support).
+
+  Recommended flow:
+  1) Call action=render_form to show a form to the user.
+  2) After the user submits, call action=register_lead with the form label and answers.
+
+  Notes:
+  - Always include a clear reason why you are collecting information.
+  - Do not request sensitive data (passwords, card numbers).
+  - When a lead is registered, the system may send an acknowledgement email.
+actions:
+  - name: render_form
+    description: Return a form schema to collect lead details in the widget.
+    input_schema:
+      type: object
+      properties:
+        form_label:
+          type: string
+          description: Human label for the form (e.g. "Request a demo").
+        submit_label:
+          type: string
+          description: Button label (defaults to "Submit").
+      required: [form_label]
+    handler: actions:render_form
+  - name: register_lead
+    description: Store a lead submission for this agent and optionally send an acknowledgement email.
+    input_schema:
+      type: object
+      properties:
+        form_label:
+          type: string
+          description: Human label for the form (e.g. "Request a demo").
+        answers:
+          type: array
+          description: Field answers from the form submission.
+          items:
+            type: object
+            properties:
+              field_id: { type: string }
+              label: { type: string }
+              value: { type: string }
+            required: [field_id, label, value]
+      required: [form_label, answers]
+    handler: actions:register_lead
