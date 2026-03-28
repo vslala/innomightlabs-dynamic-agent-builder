@@ -6,6 +6,7 @@ from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
+from src.skills.lead_capture.forms import parse_custom_inputs
 from src.skills.service import SkillRuntimeService
 
 
@@ -225,3 +226,67 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
     )
 
     assert result == "ok"
+
+
+def test_lead_capture_custom_form_normalizes_common_input_type_aliases():
+    inputs = parse_custom_inputs(
+        [
+            {
+                "input_type": "email",
+                "name": "email",
+                "label": "Work email",
+                "attr": {"placeholder": "name@company.com"},
+            },
+            {
+                "input_type": "textarea",
+                "name": "requirements",
+                "label": "Requirements",
+            },
+            {
+                "input_type": "radio",
+                "name": "contact_consent",
+                "label": "Consent",
+                "values": ["yes"],
+            },
+        ]
+    )
+
+    assert inputs[0].input_type.value == "text"
+    assert inputs[0].attr == {
+        "type": "email",
+        "placeholder": "name@company.com",
+    }
+    assert inputs[1].input_type.value == "text_area"
+    assert inputs[2].input_type.value == "choice"
+    assert inputs[2].attr == {"variant": "radio"}
+
+
+def test_lead_capture_custom_form_rejects_unknown_input_types():
+    try:
+        parse_custom_inputs(
+            [
+                {
+                    "input_type": "date",
+                    "name": "start_date",
+                    "label": "Start date",
+                }
+            ]
+        )
+        assert False, "Expected ValueError for unsupported input_type"
+    except ValueError as exc:
+        assert "Invalid input_type for form_inputs[0]" in str(exc)
+        assert "Unsupported input_type 'date'" in str(exc)
+
+
+def test_lead_capture_manifest_declares_strict_custom_form_schema():
+    runtime = SkillRuntimeService()
+    loaded = runtime.skill_service.registry.get("lead_capture")
+    assert loaded is not None
+
+    action = next(a for a in loaded.manifest.actions if a.name == "render_custom_form")
+    form_inputs = action.input_schema["properties"]["form_inputs"]
+    item_props = form_inputs["items"]["properties"]
+
+    assert item_props["input_type"]["enum"] == ["text", "text_area", "select", "choice"]
+    assert "Do not use email" in item_props["input_type"]["description"]
+    assert form_inputs["items"]["additionalProperties"] is False

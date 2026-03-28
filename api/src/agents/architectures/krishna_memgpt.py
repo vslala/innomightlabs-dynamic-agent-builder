@@ -246,6 +246,35 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
                 elif loop_event.kind == "tool_call_result":
                     result = loop_event.payload["result"]
+
+                    # If a skill returns a UI payload, emit an explicit UI event.
+                    # (The widget should render forms only when it receives UI_FORM_RENDER.)
+                    try:
+                        parsed = json.loads(result) if isinstance(result, str) else None
+                    except Exception:
+                        parsed = None
+
+                    if isinstance(parsed, dict) and parsed.get("type") == "ui_form_render":
+                        form = parsed.get("form") if isinstance(parsed.get("form"), dict) else None
+                        submit_label = parsed.get("submit_label") if isinstance(parsed.get("submit_label"), str) else None
+
+                        # Attempt to extract identifiers for analytics/readability.
+                        form_label = None
+                        form_id = None
+                        if form:
+                            form_label = form.get("form_name") if isinstance(form.get("form_name"), str) else None
+                            form_id = form.get("form_id") if isinstance(form.get("form_id"), str) else None
+
+                        yield SSEEvent(
+                            event_type=SSEEventType.UI_FORM_RENDER,
+                            content=form_label or "Form",
+                            form=form,
+                            submit_label=submit_label,
+                            form_id=form_id,
+                            form_label=form_label,
+                        )
+
+                    # Always emit a tool result for the timeline.
                     yield SSEEvent(
                         event_type=SSEEventType.TOOL_CALL_RESULT,
                         content=result[:200] + "..." if len(result) > 200 else result,

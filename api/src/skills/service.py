@@ -220,6 +220,11 @@ class SkillRuntimeService:
             "<installed_skills>",
             "You can use skills to perform specialized tasks.",
             "Use load_skill(skill_id) before execute_skill_action when you need exact instructions or action schema.",
+            "When calling execute_skill_action, put every action parameter inside the nested arguments object.",
+            "If a skill exposes form fields with enums or fixed literals, use those exact values instead of HTML input types or synonyms.",
+            "Do not claim that you sent, rendered, showed, or displayed a form unless you actually call execute_skill_action for that form in the same turn.",
+            "If you want to give narrative text and then show a form, still make the tool call in that same turn. Narrative text alone does not render UI.",
+            "When a skill offers both a built-in default form and a custom-form action, use the custom-form action whenever the requested fields or choices are not exactly the built-in default form.",
         ]
         for skill in enabled_skills:
             lines.append(f"- {skill.skill_id}: {skill.skill_name} - {skill.skill_description}")
