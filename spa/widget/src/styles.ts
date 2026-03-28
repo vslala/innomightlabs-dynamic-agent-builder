@@ -304,6 +304,23 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       color: ${colors.textSecondary};
     }
 
+    .innomight-form-choice-group {
+      margin: 0;
+      padding: 0;
+      border: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .innomight-form-choice-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: ${colors.text};
+    }
+
     .innomight-form-actions {
       display: flex;
       justify-content: flex-end;

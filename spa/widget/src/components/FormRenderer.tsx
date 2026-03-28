@@ -17,6 +17,21 @@ function normalizePlaceholder(input: FormInput): string | undefined {
   return typeof placeholder === 'string' ? placeholder : undefined;
 }
 
+function getChoiceOptions(input: FormInput): Array<{ value: string; label: string }> {
+  if (input.options?.length) {
+    return input.options;
+  }
+  return (input.values || []).map((value) => ({ value, label: value }));
+}
+
+function getChoiceVariant(input: FormInput, optionCount: number): 'checkbox' | 'radio' {
+  const variant = input.attr?.variant;
+  if (variant === 'radio') return 'radio';
+  if (variant === 'checkbox') return 'checkbox';
+  if (optionCount <= 1) return 'checkbox';
+  return 'radio';
+}
+
 export function FormRenderer({ form, submitLabel = 'Submit', onSubmit, onCancel, disabled }: FormRendererProps) {
   const initial = useMemo(() => {
     const values: Record<string, string> = {};
@@ -115,19 +130,77 @@ export function FormRenderer({ form, submitLabel = 'Submit', onSubmit, onCancel,
         }
 
         if (input.input_type === 'choice') {
-          // For now, support a single yes/consent checkbox.
-          const checked = Boolean(value);
-          const yesValue = (input.values && input.values[0]) || 'yes';
+          const options = getChoiceOptions(input);
+          const variant = getChoiceVariant(input, options.length);
+
+          if (variant === 'checkbox' && options.length <= 1) {
+            const yesValue = options[0]?.value || 'yes';
+            const checked = value === yesValue;
+
+            return (
+              <label className="innomight-form-checkbox" key={input.name}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => handleChange(input.name, (e.target as HTMLInputElement).checked ? yesValue : '')}
+                  disabled={isDisabled}
+                />
+                <span>{input.label}</span>
+              </label>
+            );
+          }
+
+          if (variant === 'checkbox') {
+            const selected = new Set(
+              value
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean)
+            );
+
+            return (
+              <fieldset className="innomight-form-choice-group" key={input.name} disabled={isDisabled}>
+                <legend className="innomight-form-label">{input.label}</legend>
+                {options.map((opt) => (
+                  <label className="innomight-form-checkbox" key={opt.value}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(opt.value)}
+                      onChange={(e) => {
+                        const next = new Set(selected);
+                        if ((e.target as HTMLInputElement).checked) {
+                          next.add(opt.value);
+                        } else {
+                          next.delete(opt.value);
+                        }
+                        handleChange(input.name, Array.from(next).join(', '));
+                      }}
+                      disabled={isDisabled}
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))}
+              </fieldset>
+            );
+          }
+
           return (
-            <label className="innomight-form-checkbox" key={input.name}>
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={(e) => handleChange(input.name, (e.target as HTMLInputElement).checked ? yesValue : '')}
-                disabled={isDisabled}
-              />
-              <span>{input.label}</span>
-            </label>
+            <fieldset className="innomight-form-choice-group" key={input.name} disabled={isDisabled}>
+              <legend className="innomight-form-label">{input.label}</legend>
+              {options.map((opt) => (
+                <label className="innomight-form-choice-option" key={opt.value}>
+                  <input
+                    type="radio"
+                    name={input.name}
+                    value={opt.value}
+                    checked={value === opt.value}
+                    onChange={(e) => handleChange(input.name, (e.target as HTMLInputElement).value)}
+                    disabled={isDisabled}
+                  />
+                  <span>{opt.label}</span>
+                </label>
+              ))}
+            </fieldset>
           );
         }
 

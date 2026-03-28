@@ -12,9 +12,67 @@ system_prompt: |
   - Multi-step clarification to gather missing fields
 
   Recommended flow:
-  1) Call action=render_form (default) or action=render_custom_form (custom schema) to show a form.
+  1) Call action=render_custom_form for most cases. Use action=render_form only for the built-in contact/lead form.
   2) After the user submits, the conversation will contain a <form_submission> block.
   3) If appropriate, call action=register_lead with the same form label and answers.
+
+  Critical reliability rule:
+  - Never say that you have sent, shown, rendered, or displayed a form unless you actually call render_form or render_custom_form in that same turn.
+  - If you want to write story text first and then present choices, still make the form tool call in the same turn.
+  - Text like "I've sent the next choice form" does not render anything by itself.
+
+  For interactive stories and games:
+  - Prefer render_custom_form for branching choices.
+  - For multiple exclusive choices, use input_type="choice" with multiple values and attr.variant="radio".
+  - Include all selectable values explicitly.
+  - Do not use render_form for stories, games, adventures, quizzes, route selection, or other custom experiences.
+
+  Built-in form rule:
+  - render_form is only for the default contact-style lead form with name, work email, company, request, and contact consent.
+  - If the requested fields differ from that built-in set, use render_custom_form instead.
+
+  Valid game choice example:
+    action=render_custom_form
+    arguments={
+      "form_label": "Choose Your Route",
+      "submit_label": "Continue",
+      "form_inputs": [
+        {
+          "input_type":"choice",
+          "name":"route",
+          "label":"Choose your route",
+          "values":["bridge","engine_room","escape_pods"],
+          "attr":{"variant":"radio"}
+        }
+      ]
+    }
+
+  Tool calling rules for action=render_custom_form:
+  - Put all action fields inside arguments.
+  - form_inputs must be an array of objects with: input_type, name, label.
+  - Allowed input_type values are: text, text_area, select, choice.
+  - Do not use raw HTML-style types such as email, textarea, radio, checkbox, tel, or url as platform input_type values.
+  - If you need an email or phone field, use input_type="text" and set attr.type to "email" or "tel".
+  - Use select or choice only when you provide options or values.
+
+  Valid custom form example:
+    action=render_custom_form
+    arguments={
+      "form_label": "Request a demo",
+      "submit_label": "Request demo",
+      "form_inputs": [
+        {"input_type":"text","name":"name","label":"Name","attr":{"placeholder":"Your name"}},
+        {"input_type":"text","name":"email","label":"Work email","attr":{"type":"email","placeholder":"name@company.com"}},
+        {"input_type":"text","name":"company","label":"Company"},
+        {"input_type":"text_area","name":"requirements","label":"What do you need help with?"},
+        {"input_type":"choice","name":"contact_consent","label":"I agree to be contacted","values":["yes"]}
+      ]
+    }
+
+  Invalid custom form example:
+    {"input_type":"email","name":"email","label":"Work email"}
+  Correct version:
+    {"input_type":"text","name":"email","label":"Work email","attr":{"type":"email"}}
 
   When you see a <form_submission>, immediately translate it into register_lead arguments:
   - form_label: the label attribute on the <form_submission>
@@ -37,7 +95,7 @@ system_prompt: |
   - When a lead is registered, the system may send an acknowledgement email.
 actions:
   - name: render_form
-    description: Return a form schema to collect lead details in the widget.
+    description: Return the built-in contact/lead form only. Do not use for games, branching choices, or arbitrary custom schemas.
     input_schema:
       type: object
       properties:
@@ -50,7 +108,7 @@ actions:
       required: [form_label]
     handler: actions:render_form
   - name: render_custom_form
-    description: Render a custom form schema (bounded) in the widget for lead capture.
+    description: Render a custom form schema (bounded) in the widget. Use this for games, branching choices, and any form that is not the built-in contact form.
     input_schema:
       type: object
       properties:
@@ -62,9 +120,50 @@ actions:
           description: Button label (defaults to "Submit").
         form_inputs:
           type: array
-          description: List of form inputs following the platform Form schema.
+          description: |
+            List of form inputs following the platform Form schema.
+            Allowed input_type values: text, text_area, select, choice.
+            For email/phone/url fields, still use input_type=text and set attr.type.
           items:
             type: object
+            properties:
+              input_type:
+                type: string
+                enum: [text, text_area, select, choice]
+                description: Platform input type. Do not use email, textarea, radio, checkbox, tel, or url here.
+              name:
+                type: string
+                description: Stable field identifier.
+              label:
+                type: string
+                description: User-visible field label.
+              value:
+                type: string
+                description: Optional default value for text-like inputs.
+              values:
+                type: array
+                description: Allowed values for choice inputs.
+                items:
+                  type: string
+              options:
+                type: array
+                description: Allowed options for select inputs.
+                items:
+                  type: object
+                  properties:
+                    value: { type: string }
+                    label: { type: string }
+                  required: [value, label]
+                  additionalProperties: False
+              attr:
+                type: object
+                description: |
+                  Optional UI hints such as placeholder, rows, type, accept, or multiple.
+                  Example for email: {"type":"email","placeholder":"name@company.com"}
+                additionalProperties:
+                  type: string
+            required: [input_type, name, label]
+            additionalProperties: False
       required: [form_label, form_inputs]
     handler: actions:render_custom_form
 
