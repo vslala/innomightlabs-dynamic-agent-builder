@@ -51,10 +51,16 @@ jobs:
         with:
           node-version: '20'
           cache: 'yarn'
-          cache-dependency-path: spa/yarn.lock
+          cache-dependency-path: |
+            spa/yarn.lock
+            spa/widget/yarn.lock
 
-      - name: Install dependencies
+      - name: Install SPA dependencies
         working-directory: spa
+        run: yarn install --frozen-lockfile
+
+      - name: Install widget dependencies
+        working-directory: spa/widget
         run: yarn install --frozen-lockfile
 
       - name: Create environment file
@@ -64,13 +70,26 @@ jobs:
           echo "VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}" > .env.production
           echo "Environment file created with VITE_API_BASE_URL set"
 
-      - name: Build
+      - name: Build shared chat stream package
+        working-directory: spa
+        run: ./node_modules/.bin/tsc -p packages/chat-stream-renderer/tsconfig.json
+
+      - name: Build SPA
         working-directory: spa
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: |
           echo "Building with VITE_API_BASE_URL configured..."
           yarn build
+
+      - name: Build widget
+        working-directory: spa/widget
+        run: yarn build
+
+      - name: Stage widget for Pages artifact
+        run: |
+          mkdir -p spa/dist/widget
+          cp -R spa/widget/dist/. spa/dist/widget/
 
       - name: Verify build output
         working-directory: spa
