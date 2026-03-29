@@ -1,92 +1,69 @@
-import type { ReactNode } from 'react';
+export type ChatStreamRenderItem<TMessage> =
+  | {
+      kind: 'message';
+      key: string;
+      message: TMessage;
+      index: number;
+    }
+  | {
+      kind: 'streaming';
+      key: 'streaming';
+      content: string;
+    }
+  | {
+      kind: 'extra';
+      key: 'extra';
+    }
+  | {
+      kind: 'typing';
+      key: 'typing';
+    };
 
-export type ChatRole = 'user' | 'assistant';
-
-export type RenderMessage = {
-  id: string;
-  role: ChatRole;
-  content: string;
-};
-
-export type RenderToolActivity = {
-  id: string;
-  toolName: string;
-  status: 'running' | 'success' | 'error';
-  output?: string;
-};
-
-export type ChatRendererFlags = {
-  renderDynamicForm?: boolean;
-  showToolExecution?: boolean;
+export type BuildChatStreamRenderPlanProps<TMessage> = {
+  messages: TMessage[];
+  getMessageKey: (message: TMessage, index: number) => string;
+  streamingContent?: string;
+  hasExtraNode?: boolean;
+  isLoading?: boolean;
   showTypingIndicator?: boolean;
 };
 
-export type ChatStreamRendererProps = {
-  messages: RenderMessage[];
-  streamingContent?: string;
-  isLoading?: boolean;
-  toolActivities?: RenderToolActivity[];
-  flags?: ChatRendererFlags;
-
-  /** Render message content (e.g. markdown). */
-  renderContent: (content: string) => ReactNode;
-
-  /** Optional nodes injected inline (forms, status, etc.) */
-  formNode?: ReactNode;
-  statusNode?: ReactNode;
-};
-
-export function ChatStreamRenderer({
+export function buildChatStreamRenderPlan<TMessage>({
   messages,
+  getMessageKey,
   streamingContent,
+  hasExtraNode,
   isLoading,
-  toolActivities = [],
-  flags = {},
-  renderContent,
-  formNode,
-  statusNode,
-}: ChatStreamRendererProps) {
-  const showTyping = flags.showTypingIndicator !== false;
+  showTypingIndicator = true,
+}: BuildChatStreamRenderPlanProps<TMessage>): ChatStreamRenderItem<TMessage>[] {
+  const items: ChatStreamRenderItem<TMessage>[] = messages.map((message, index) => ({
+    kind: 'message',
+    key: getMessageKey(message, index),
+    message,
+    index,
+  }));
 
-  return (
-    <>
-      {messages.map((msg) => (
-        <div key={msg.id} className={`innomight-message innomight-message-${msg.role}`}>
-          {renderContent(msg.content)}
-        </div>
-      ))}
+  if (streamingContent) {
+    items.push({
+      kind: 'streaming',
+      key: 'streaming',
+      content: streamingContent,
+    });
+  }
 
-      {flags.showToolExecution && toolActivities.length > 0 && (
-        <div className="innomight-message innomight-message-assistant">
-          <div className="innomight-tools">
-            {toolActivities.map((t) => (
-              <div key={t.id} className={`innomight-tool innomight-tool-${t.status}`}>
-                <div className="innomight-tool-title">
-                  {t.toolName} — {t.status}
-                </div>
-                {t.output && <div className="innomight-tool-output">{t.output}</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+  if (hasExtraNode) {
+    items.push({
+      kind: 'extra',
+      key: 'extra',
+    });
+  }
 
-      {streamingContent && (
-        <div className="innomight-message innomight-message-assistant">
-          {renderContent(streamingContent)}
-        </div>
-      )}
+  if (isLoading && !streamingContent && showTypingIndicator) {
+    items.push({
+      kind: 'typing',
+      key: 'typing',
+    });
+  }
 
-      {flags.renderDynamicForm && formNode}
-      {statusNode}
-
-      {showTyping && isLoading && !streamingContent && (
-        <div className="innomight-typing">
-          <div className="innomight-typing-dot" />
-          <div className="innomight-typing-dot" />
-          <div className="innomight-typing-dot" />
-        </div>
-      )}
-    </>
-  );
+  return items;
 }

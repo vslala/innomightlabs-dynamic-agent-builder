@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'preact/hooks';
 import { Message, Conversation, Form } from '../types';
 import { sendMessage } from '../api';
 import { SendIcon } from './Icons';
-import { MarkdownRenderer } from './MarkdownRenderer';
+import { ChatStreamRenderer } from './ChatStreamRenderer';
 import { FormRenderer, FormAnswer } from './FormRenderer';
 
 interface ChatWindowProps {
@@ -137,52 +137,34 @@ export function ChatWindow({
     <>
       {/* Messages */}
       <div className="innomight-messages">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`innomight-message innomight-message-${msg.role}`}
-          >
-            <MarkdownRenderer content={msg.content} />
-          </div>
-        ))}
+        <ChatStreamRenderer
+          messages={messages}
+          streamingContent={streamingContent}
+          isLoading={isLoading}
+          extraNode={
+            <>
+              {activeForm && (
+                <div className="innomight-message innomight-message-assistant">
+                  <FormRenderer
+                    form={activeForm.form}
+                    submitLabel={activeForm.submitLabel}
+                    onSubmit={handleFormSubmit}
+                    onCancel={() => setActiveForm(null)}
+                    disabled={isLoading || Boolean(pendingFormLabel)}
+                  />
+                </div>
+              )}
 
-        {/* Streaming response */}
-        {streamingContent && (
-          <div className="innomight-message innomight-message-assistant">
-            <MarkdownRenderer content={streamingContent} />
-          </div>
-        )}
-
-        {/* Active form */}
-        {activeForm && (
-          <div className="innomight-message innomight-message-assistant">
-            <FormRenderer
-              form={activeForm.form}
-              submitLabel={activeForm.submitLabel}
-              onSubmit={handleFormSubmit}
-              onCancel={() => setActiveForm(null)}
-              disabled={isLoading || Boolean(pendingFormLabel)}
-            />
-          </div>
-        )}
-
-        {/* Submission status */}
-        {pendingFormLabel && (
-          <div className="innomight-message innomight-message-assistant">
-            <div className="innomight-form-status">
-              Captured “{pendingFormLabel}”. Processing…
-            </div>
-          </div>
-        )}
-
-        {/* Typing indicator */}
-        {isLoading && !streamingContent && (
-          <div className="innomight-typing">
-            <div className="innomight-typing-dot" />
-            <div className="innomight-typing-dot" />
-            <div className="innomight-typing-dot" />
-          </div>
-        )}
+              {pendingFormLabel && (
+                <div className="innomight-message innomight-message-assistant">
+                  <div className="innomight-form-status">
+                    Captured “{pendingFormLabel}”. Processing…
+                  </div>
+                </div>
+              )}
+            </>
+          }
+        />
 
         <div ref={messagesEndRef} />
       </div>

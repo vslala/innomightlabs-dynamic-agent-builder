@@ -2,6 +2,8 @@
  * Message types matching backend API.
  */
 
+import type { FormSchema } from "./form";
+
 export type MessageRole = "user" | "assistant" | "system";
 
 /**
@@ -79,6 +81,7 @@ export const SSEEventType = {
   LIFECYCLE_NOTIFICATION: "LIFECYCLE_NOTIFICATION",
   AGENT_RESPONSE_TO_USER: "AGENT_RESPONSE_TO_USER",
   AGENT_THOUGHTS: "AGENT_THOUGHTS",
+  UI_FORM_RENDER: "UI_FORM_RENDER",
   MESSAGE_SAVED: "MESSAGE_SAVED",
   STREAM_COMPLETE: "STREAM_COMPLETE",
   ERROR: "ERROR",
@@ -96,6 +99,10 @@ export interface SSEEvent {
   event_type: SSEEventType;
   content: string;
   message_id?: string;
+  form?: FormSchema;
+  submit_label?: string;
+  form_id?: string;
+  form_label?: string;
   // Tool call event fields
   tool_name?: string;
   tool_args?: Record<string, unknown>;
