@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Send, User, Loader2, Wrench, CheckCircle2, XCircle, Maximize2, Minimize2, Paperclip } from "lucide-react";
+import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Send, Loader2, Maximize2, Minimize2, Paperclip } from "lucide-react";
+import { ChatFormRenderer, type FormAnswer } from "../../components/chat/ChatFormRenderer";
 import { AttachmentChip } from "../../components/chat/AttachmentChip";
+import { ChatStreamRenderer } from "../../components/chat/ChatStreamRenderer";
 import { useFileAttachments } from "../../hooks/useFileAttachments";
 import { ALLOWED_EXTENSIONS } from "../../types/message";
 import {
@@ -33,8 +35,8 @@ import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
 import { chatService } from "../../services/chat";
 import { authService } from "../../services/auth";
-import { MarkdownRenderer } from "../../components/ui/markdown-renderer";
 import type { ConversationResponse } from "../../types/conversation";
+import type { FormSchema } from "../../types/form";
 import { SSEEventType, type Message, type SSEEvent, type ToolActivity } from "../../types/message";
 
 export function ConversationDetail() {
@@ -65,6 +67,8 @@ export function ConversationDetail() {
   const [isSending, setIsSending] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [activeForm, setActiveForm] = useState<{ form: FormSchema; submitLabel?: string } | null>(null);
+  const [pendingFormLabel, setPendingFormLabel] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
   const [incompleteResponse, setIncompleteResponse] = useState(false);
@@ -73,6 +77,7 @@ export function ConversationDetail() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const streamingContentRef = useRef("");
   const hadToolCallsRef = useRef(false);
+  const renderedFormRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
     attachments,
@@ -256,7 +261,7 @@ export function ConversationDetail() {
   }, [isExpanded]);
 
   // Handle sending a message
-  const handleSendMessage = async (messageOverride?: string) => {
+  const handleSendMessage = async (messageOverride?: string, optimisticUserContent?: string) => {
     const messageToSend = messageOverride || inputValue.trim();
     // Allow sending if there's a message OR attachments
     if ((!messageToSend && attachments.length === 0) || !conversation || isSending) return;
@@ -273,9 +278,11 @@ export function ConversationDetail() {
     setStatusMessage(null);
     setStreamingContent("");
     setToolActivities([]);
+    setActiveForm(null);
     setIncompleteResponse(false);
     streamingContentRef.current = "";
     hadToolCallsRef.current = false;
+    renderedFormRef.current = false;
 
     // Add user message to the list immediately (unless it's a retry/continue message)
     const isRetryMessage = messageOverride?.startsWith("Please continue");
@@ -283,7 +290,7 @@ export function ConversationDetail() {
       message_id: `temp-${Date.now()}`,
       conversation_id: conversation.conversation_id,
       role: "user",
-      content: messageToSend || "(attachments only)",
+      content: optimisticUserContent ?? (messageToSend || "(attachments only)"),
       attachments: attachmentsToSend?.map((a) => ({ filename: a.filename, size: a.size })),
       created_at: new Date().toISOString(),
     };
@@ -301,6 +308,17 @@ export function ConversationDetail() {
           setStatusMessage(null);
           streamingContentRef.current += event.content;
           setStreamingContent(streamingContentRef.current);
+          break;
+
+        case SSEEventType.UI_FORM_RENDER:
+          if (event.form) {
+            renderedFormRef.current = true;
+            setPendingFormLabel(null);
+            setActiveForm({
+              form: event.form,
+              submitLabel: event.submit_label || undefined,
+            });
+          }
           break;
 
         case SSEEventType.MESSAGE_SAVED:
@@ -327,7 +345,7 @@ export function ConversationDetail() {
               created_at: new Date().toISOString(),
             };
             setMessages((msgs) => [...msgs, assistantMsg]);
-          } else if (hadToolCallsRef.current) {
+          } else if (hadToolCallsRef.current && !renderedFormRef.current) {
             // Had tool calls but no final response - incomplete
             setIncompleteResponse(true);
           }
@@ -403,6 +421,31 @@ export function ConversationDetail() {
   const handleRetry = () => {
     setIncompleteResponse(false);
     handleSendMessage("Please continue your response from where you left off.");
+  };
+
+  const handleFormSubmit = async (answers: FormAnswer[]) => {
+    if (!activeForm) return;
+
+    const label = activeForm.form.form_name;
+    setPendingFormLabel(label);
+
+    const lines: string[] = [];
+    lines.push(`<form_submission label="${label}">`);
+
+    for (const answer of answers) {
+      lines.push(`- ${answer.label}: ${answer.value}`);
+    }
+
+    lines.push(`</form_submission>`);
+    lines.push("");
+    lines.push("Fields:");
+
+    for (const answer of answers) {
+      const value = answer.value.replace(/\n/g, " ");
+      lines.push(`- ${answer.field_id}="${value}"`);
+    }
+
+    await handleSendMessage(lines.join("\n"), `Submitted: ${label}`);
   };
 
   // Handle Enter key press
@@ -762,231 +805,89 @@ export function ConversationDetail() {
               </div>
             ) : (
               <>
-                {messages.map((msg) => (
-                  <div
-                    key={msg.message_id}
-                    style={{
-                      display: "flex",
-                      gap: "0.75rem",
-                      alignItems: "flex-start",
-                      flexDirection: msg.role === "user" ? "row-reverse" : "row",
-                    }}
-                  >
-                    {msg.role === "user" && userInfo?.picture ? (
-                      <img
-                        src={userInfo.picture}
-                        alt={userInfo.name || "User"}
-                        style={{
-                          width: "2rem",
-                          height: "2rem",
-                          borderRadius: "50%",
-                          flexShrink: 0,
-                          objectFit: "cover",
-                        }}
-                      />
-                    ) : (
-                      <div style={{
-                        width: "2rem",
-                        height: "2rem",
-                        borderRadius: "50%",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                        backgroundColor: msg.role === "user"
-                          ? "var(--gradient-start)"
-                          : "rgba(102, 126, 234, 0.1)",
-                      }}>
-                        {msg.role === "user" ? (
-                          <User style={{ height: "1rem", width: "1rem", color: "white" }} />
-                        ) : (
-                          <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
-                        )}
-                      </div>
-                    )}
-                    <div style={{
-                      maxWidth: "70%",
-                      padding: "0.75rem 1rem",
-                      borderRadius: "1rem",
-                      backgroundColor: msg.role === "user"
-                        ? "var(--gradient-start)"
-                        : "var(--bg-secondary)",
-                      color: msg.role === "user" ? "white" : "var(--text-primary)",
-                      wordBreak: "break-word",
-                      lineHeight: "1.5",
-                      ...(msg.role === "user" ? { whiteSpace: "pre-wrap" } : {}),
-                    }}>
-                      {msg.role === "assistant" ? (
-                        <MarkdownRenderer content={msg.content} />
-                      ) : (
-                        msg.content
-                      )}
-                      {/* Attachment indicators */}
-                      {msg.attachments && msg.attachments.length > 0 && (
-                        <div style={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: "0.25rem",
-                          marginTop: "0.5rem",
-                          paddingTop: "0.5rem",
-                          borderTop: msg.role === "user"
-                            ? "1px solid rgba(255,255,255,0.2)"
-                            : "1px solid var(--border-subtle)",
-                        }}>
-                          {msg.attachments.map((att, idx) => (
-                            <AttachmentChip
-                              key={idx}
-                              filename={att.filename}
-                              size={att.size}
-                              readonly
+                <ChatStreamRenderer
+                  messages={messages}
+                  streamingContent={streamingContent}
+                  toolActivities={toolActivities}
+                  statusMessage={statusMessage}
+                  userPicture={userInfo?.picture}
+                  userName={userInfo?.name}
+                  extraNode={
+                    <>
+                      {activeForm && (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "0.75rem",
+                            alignItems: "flex-start",
+                          }}
+                        >
+                          <div style={{
+                            width: "2rem",
+                            height: "2rem",
+                            borderRadius: "50%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                            backgroundColor: "rgba(102, 126, 234, 0.1)",
+                          }}>
+                            <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
+                          </div>
+                          <div style={{
+                            maxWidth: "70%",
+                            width: "100%",
+                            padding: "0.75rem 1rem",
+                            borderRadius: "1rem",
+                            backgroundColor: "var(--bg-secondary)",
+                            color: "var(--text-primary)",
+                          }}>
+                            <ChatFormRenderer
+                              form={activeForm.form}
+                              submitLabel={activeForm.submitLabel}
+                              onSubmit={handleFormSubmit}
+                              onCancel={() => setActiveForm(null)}
+                              disabled={isSending || Boolean(pendingFormLabel)}
                             />
-                          ))}
+                          </div>
                         </div>
                       )}
-                    </div>
-                  </div>
-                ))}
 
-                {/* Streaming response */}
-                {streamingContent && (
-                  <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
-                    <div style={{
-                      width: "2rem",
-                      height: "2rem",
-                      borderRadius: "50%",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                      backgroundColor: "rgba(102, 126, 234, 0.1)",
-                    }}>
-                      <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
-                    </div>
-                    <div style={{
-                      maxWidth: "70%",
-                      padding: "0.75rem 1rem",
-                      borderRadius: "1rem",
-                      backgroundColor: "var(--bg-secondary)",
-                      color: "var(--text-primary)",
-                      wordBreak: "break-word",
-                      lineHeight: "1.5",
-                    }}>
-                      <MarkdownRenderer content={streamingContent} />
-                      <span style={{
-                        display: "inline-block",
-                        width: "0.5rem",
-                        height: "1rem",
-                        marginLeft: "0.125rem",
-                        backgroundColor: "var(--gradient-start)",
-                        animation: "blink 1s infinite",
-                      }} />
-                    </div>
-                  </div>
-                )}
-
-                {/* Tool Activities Timeline */}
-                {toolActivities.length > 0 && (
-                  <div style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.5rem",
-                    padding: "0.75rem",
-                    margin: "0.5rem 0",
-                    borderRadius: "0.5rem",
-                    backgroundColor: "var(--bg-tertiary)",
-                    border: "1px solid var(--border-subtle)",
-                  }}>
-                    <div style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
-                      paddingBottom: "0.5rem",
-                      borderBottom: "1px solid var(--border-subtle)",
-                      fontSize: "0.75rem",
-                      fontWeight: 600,
-                      color: "var(--text-muted)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}>
-                      <Wrench style={{ height: "0.875rem", width: "0.875rem" }} />
-                      Agent Activity
-                    </div>
-                    {toolActivities.map((activity) => (
-                      <div
-                        key={activity.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "0.5rem",
-                          fontSize: "0.875rem",
-                          color: "var(--text-secondary)",
-                        }}
-                      >
-                        {activity.status === "running" ? (
-                          <Loader2 style={{
-                            height: "0.875rem",
-                            width: "0.875rem",
-                            color: "var(--gradient-start)",
-                            animation: "spin 1s linear infinite",
+                      {pendingFormLabel && (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "0.75rem",
+                            alignItems: "flex-start",
+                          }}
+                        >
+                          <div style={{
+                            width: "2rem",
+                            height: "2rem",
+                            borderRadius: "50%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
                             flexShrink: 0,
-                          }} />
-                        ) : activity.status === "success" ? (
-                          <CheckCircle2 style={{
-                            height: "0.875rem",
-                            width: "0.875rem",
-                            color: "#22c55e",
-                            flexShrink: 0,
-                          }} />
-                        ) : (
-                          <XCircle style={{
-                            height: "0.875rem",
-                            width: "0.875rem",
-                            color: "#ef4444",
-                            flexShrink: 0,
-                          }} />
-                        )}
-                        <span style={{
-                          fontFamily: "monospace",
-                          fontSize: "0.75rem",
-                          color: "var(--text-muted)",
-                          flexShrink: 0,
-                        }}>
-                          {activity.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                        </span>
-                        <span style={{
-                          fontWeight: 500,
-                          color: activity.status === "running" ? "var(--gradient-start)" : "var(--text-primary)",
-                        }}>
-                          {activity.tool_name.replace(/_/g, " ")}
-                        </span>
-                        <span style={{
-                          color: "var(--text-muted)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}>
-                          {activity.content}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Status message */}
-                {statusMessage && (
-                  <div style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "0.5rem",
-                    padding: "0.5rem",
-                    color: "var(--text-muted)",
-                    fontSize: "0.875rem",
-                  }}>
-                    <Loader2 style={{ height: "1rem", width: "1rem", animation: "spin 1s linear infinite" }} />
-                    {statusMessage}
-                  </div>
-                )}
+                            backgroundColor: "rgba(102, 126, 234, 0.1)",
+                          }}>
+                            <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
+                          </div>
+                          <div style={{
+                            maxWidth: "70%",
+                            padding: "0.75rem 1rem",
+                            borderRadius: "1rem",
+                            backgroundColor: "var(--bg-secondary)",
+                            color: "var(--text-secondary)",
+                            fontSize: "0.875rem",
+                          }}>
+                            Captured "{pendingFormLabel}". Processing...
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  }
+                />
               </>
             )}
             <div ref={messagesEndRef} />

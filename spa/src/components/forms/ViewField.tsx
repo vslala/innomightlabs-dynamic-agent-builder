@@ -3,6 +3,7 @@
  */
 
 import { Label } from "../ui/label";
+import { MarkdownRenderer } from "../ui/markdown-renderer";
 import type { FormInput } from "../../types/form";
 
 interface ViewFieldProps {
@@ -40,15 +41,17 @@ export function ViewField({ field, value }: ViewFieldProps) {
     // Text area fields render with pre-wrap
     if (field.input_type === "text_area") {
       return (
-        <p
+        <div
           style={{
             color: "var(--text-secondary)",
-            whiteSpace: "pre-wrap",
-            lineHeight: "1.6",
+            padding: "0.875rem 1rem",
+            borderRadius: "0.75rem",
+            border: "1px solid var(--border-subtle)",
+            background: "linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)",
           }}
         >
-          {value || "Not set"}
-        </p>
+          {value ? <MarkdownRenderer content={value} /> : "Not set"}
+        </div>
       );
     }
 

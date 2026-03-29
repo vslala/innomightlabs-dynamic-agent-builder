@@ -5,6 +5,7 @@
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
+import { MarkdownRenderer } from "../ui/markdown-renderer";
 import {
   Select,
   SelectContent,
@@ -65,15 +66,65 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
         );
 
       case "text_area":
+        const textAreaValue = typeof value === "string" ? value : "";
+
         return (
-          <Textarea
-            id={field.name}
-            name={field.name}
-            value={typeof value === "string" ? value : ""}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholderText}
-            rows={fieldAttributes.rows ? parseInt(fieldAttributes.rows, 10) : 4}
-          />
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <Textarea
+              id={field.name}
+              name={field.name}
+              value={textAreaValue}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder={placeholderText}
+              rows={fieldAttributes.rows ? parseInt(fieldAttributes.rows, 10) : 4}
+              className="min-h-[140px] bg-white/6 text-base leading-7"
+            />
+
+            <div
+              style={{
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "0.75rem",
+                background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "0.625rem 0.875rem",
+                  borderBottom: "1px solid var(--border-subtle)",
+                  backgroundColor: "rgba(255,255,255,0.03)",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  Preview
+                </span>
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                  Markdown rendered live
+                </span>
+              </div>
+
+              <div style={{ padding: "0.875rem 1rem", color: "var(--text-secondary)" }}>
+                {textAreaValue.trim() ? (
+                  <MarkdownRenderer content={textAreaValue} />
+                ) : (
+                  <p style={{ margin: 0, color: "var(--text-muted)", lineHeight: "1.6" }}>
+                    Start typing to preview formatted markdown.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         );
 
       case "password":
