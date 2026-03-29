@@ -19,12 +19,18 @@ import BetaBanner from './components/BetaBanner';
 import { Overview } from './pages/dashboard/Overview';
 import { AgentsList } from './pages/dashboard/AgentsList';
 import { AgentCreate } from './pages/dashboard/AgentCreate';
-import { AgentDetail } from './pages/dashboard/AgentDetail';
 import { Conversations } from './pages/dashboard/Conversations';
 import { ConversationDetail } from './pages/dashboard/ConversationDetail';
 import { KnowledgeBases } from './pages/dashboard/KnowledgeBases';
 import { KnowledgeBaseDetail } from './pages/dashboard/KnowledgeBaseDetail';
 import { Settings } from './pages/dashboard/Settings';
+import { AgentDetailLayout } from './pages/dashboard/agent-detail/AgentDetailLayout';
+import { AgentOverviewPage } from './pages/dashboard/agent-detail/AgentOverviewPage';
+import { AgentMemoryPage } from './pages/dashboard/agent-detail/AgentMemoryPage';
+import { AgentApiKeysPage } from './pages/dashboard/agent-detail/AgentApiKeysPage';
+import { AgentKnowledgeBasesPage } from './pages/dashboard/agent-detail/AgentKnowledgeBasesPage';
+import { AgentSkillsPage } from './pages/dashboard/agent-detail/AgentSkillsPage';
+import { AgentAnalyticsPage } from './pages/dashboard/agent-detail/AgentAnalyticsPage';
 
 const basename = import.meta.env.BASE_URL;
 
@@ -80,7 +86,14 @@ function App() {
           <Route index element={<Overview />} />
           <Route path="agents" element={<AgentsList />} />
           <Route path="agents/new" element={<AgentCreate />} />
-          <Route path="agents/:agentId" element={<AgentDetail />} />
+          <Route path="agents/:agentId" element={<AgentDetailLayout />}>
+            <Route index element={<AgentOverviewPage />} />
+            <Route path="memory" element={<AgentMemoryPage />} />
+            <Route path="api-keys" element={<AgentApiKeysPage />} />
+            <Route path="knowledge-bases" element={<AgentKnowledgeBasesPage />} />
+            <Route path="skills" element={<AgentSkillsPage />} />
+            <Route path="analytics" element={<AgentAnalyticsPage />} />
+          </Route>
           <Route path="conversations" element={<Conversations />} />
           <Route path="conversations/:conversationId" element={<ConversationDetail />} />
           <Route path="knowledge-bases" element={<KnowledgeBases />} />
