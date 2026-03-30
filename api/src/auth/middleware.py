@@ -18,6 +18,7 @@ from starlette.responses import Response
 from ..config import settings
 from ..users import User, UserRepository
 from ..users.models import UserStatus
+from ..agents.repository import AgentRepository
 from .google_oauth import GoogleOAuth
 
 
@@ -47,6 +48,7 @@ PUBLIC_PATHS = {
 
 # Path prefixes that use different authentication (not JWT)
 WIDGET_PATH_PREFIX = "/widget"
+ANALYTICS_AGENT_PATH_PREFIX = "/analytics/agents/"
 
 
 def decode_token_without_verification(token: str) -> Optional[dict[str, Any]]:
@@ -105,6 +107,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
         self.user_repository = UserRepository()
+        self.agent_repository = AgentRepository()
         self.google_oauth = GoogleOAuth()
 
     async def dispatch(
@@ -172,6 +175,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
         else:
             request.state.auth_token = token
             request.state.user_email = email
+            analytics_agent_id = self._get_analytics_agent_id(request.url.path)
+            if analytics_agent_id:
+                agent = self.agent_repository.find_agent_by_id(analytics_agent_id, email)
+                if not agent:
+                    return JSONResponse(
+                        status_code=404,
+                        content={"detail": "Agent not found"},
+                    )
+                request.state.analytics_agent = agent
 
         response = await call_next(request)
 
@@ -209,3 +221,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Log the error in production
             print(f"Token refresh failed for {email}: {e}")
             return None
+
+    def _get_analytics_agent_id(self, path: str) -> Optional[str]:
+        """Extract analytics agent ID for analytics routes only."""
+        if not path.startswith(ANALYTICS_AGENT_PATH_PREFIX):
+            return None
+
+        remainder = path.removeprefix(ANALYTICS_AGENT_PATH_PREFIX)
+        if not remainder:
+            return None
+
+        agent_id = remainder.split("/", 1)[0].strip()
+        return agent_id or None

@@ -25,7 +25,22 @@ export function DashboardLayout() {
     }
     // Check for agent detail page
     if (location.pathname.startsWith("/dashboard/agents/")) {
-      return "Agent Details";
+      if (location.pathname.endsWith("/memory")) {
+        return "Agent Memory";
+      }
+      if (location.pathname.endsWith("/api-keys")) {
+        return "Agent API Keys";
+      }
+      if (location.pathname.endsWith("/knowledge-bases")) {
+        return "Agent Knowledge Bases";
+      }
+      if (location.pathname.endsWith("/skills")) {
+        return "Agent Skills";
+      }
+      if (location.pathname.endsWith("/analytics")) {
+        return "Agent Analytics";
+      }
+      return "Agent Overview";
     }
     // Check for knowledge base detail page
     if (location.pathname.startsWith("/dashboard/knowledge-bases/")) {

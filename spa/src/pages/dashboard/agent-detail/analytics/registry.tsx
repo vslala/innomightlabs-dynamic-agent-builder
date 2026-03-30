@@ -1,0 +1,62 @@
+import type { WidgetDefinition, WidgetType } from "./types";
+
+export const analyticsWidgetRegistry: Record<WidgetType, WidgetDefinition> = {
+  filters: {
+    widgetType: "filters",
+    displayName: "Dashboard Filters",
+    description: "Broadcasts date range and source filter changes to all mounted widgets.",
+    defaultSize: { w: 12, h: 4, minH: 4, minW: 6 },
+    defaultConfig: { preset: "30d", sourceFilter: "all" },
+    supportsConfig: false,
+    singleton: true,
+    removable: false,
+  },
+  "overview-stats": {
+    widgetType: "overview-stats",
+    displayName: "Overview Stats",
+    description: "High-level KPI cards for conversations, messages, users, and active days.",
+    defaultSize: { w: 4, h: 6, minH: 5, minW: 3 },
+    defaultConfig: { title: "" },
+    supportsConfig: true,
+  },
+  "message-mix": {
+    widgetType: "message-mix",
+    displayName: "Message Mix",
+    description: "Role mix and engagement ratios from the overview endpoint.",
+    defaultSize: { w: 4, h: 8, minH: 6, minW: 3 },
+    defaultConfig: { title: "" },
+    supportsConfig: true,
+  },
+  "messages-over-time": {
+    widgetType: "messages-over-time",
+    displayName: "Messages Over Time",
+    description: "Timeseries chart for total messages in the selected period.",
+    defaultSize: { w: 6, h: 8, minH: 7, minW: 4 },
+    defaultConfig: { title: "", bucket: "day", chartVariant: "line", showSourceSplit: true },
+    supportsConfig: true,
+  },
+  "conversations-over-time": {
+    widgetType: "conversations-over-time",
+    displayName: "Conversations Over Time",
+    description: "Timeseries chart for conversation creation over time.",
+    defaultSize: { w: 6, h: 8, minH: 7, minW: 4 },
+    defaultConfig: { title: "", bucket: "day", chartVariant: "bar", showSourceSplit: true },
+    supportsConfig: true,
+  },
+  "unique-users-over-time": {
+    widgetType: "unique-users-over-time",
+    displayName: "Unique Users Over Time",
+    description: "Timeseries chart for unique active users over time.",
+    defaultSize: { w: 6, h: 8, minH: 7, minW: 4 },
+    defaultConfig: { title: "", bucket: "day", chartVariant: "line", showSourceSplit: true },
+    supportsConfig: true,
+  },
+  "top-activity": {
+    widgetType: "top-activity",
+    displayName: "Top Activity",
+    description: "Top users and conversations in the current date range.",
+    defaultSize: { w: 6, h: 8, minH: 6, minW: 4 },
+    defaultConfig: { title: "", limit: 5, mode: "both" },
+    supportsConfig: true,
+  },
+};

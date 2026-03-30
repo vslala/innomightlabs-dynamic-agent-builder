@@ -20,6 +20,7 @@ from src.users import users_router
 from src.widget import widget_router, WidgetAuthMiddleware
 from src.contact.router import router as contact_router
 from src.skills import skills_router
+from src.analytics import analytics_router
 from src.exceptions import register_exception_handlers
 from src.middleware.request_id import RequestIdMiddleware
 from src.runtime.env import is_lambda
@@ -127,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(router=users_router)
     app.include_router(router=contact_router)
     app.include_router(router=skills_router)
+    app.include_router(router=analytics_router)
 
     @app.get("/health")
     def health_check():
