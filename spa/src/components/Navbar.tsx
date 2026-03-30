@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { authService } from '../services/auth';
+import logo from '../assets/brand/innomightlabs-logo.png';
 import styles from './Navbar.module.css';
 
 export function Navbar() {
@@ -24,8 +25,8 @@ export function Navbar() {
         <Link to="/" className={styles.logo} aria-label="InnoMight Labs home">
           <img
             className={styles.logoMark}
-            src={new URL('../assets/brand/innomightlabs-logo.jpg', import.meta.url).toString()}
-            alt="InnoMight Labs"
+            src={logo}
+            alt="InnoMight Labs logo"
           />
           <span className={styles.logoText}>InnoMight Labs</span>
         </Link>

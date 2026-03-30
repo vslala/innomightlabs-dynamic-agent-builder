@@ -3,6 +3,7 @@ import { Bot, MessageSquare, Settings, LogOut, Home, Database } from "lucide-rea
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { authService } from "../../services/auth";
+import logo from "../../assets/brand/innomightlabs-logo.png";
 
 const navItems = [
   { to: "/dashboard", icon: Home, label: "Overview" },
@@ -47,6 +48,16 @@ export function Sidebar() {
             borderBottom: "1px solid var(--border-subtle)",
           }}
         >
+          <img
+            src={logo}
+            alt="InnoMight Labs logo"
+            style={{
+              width: "2rem",
+              height: "2rem",
+              objectFit: "contain",
+              filter: "drop-shadow(0 10px 20px rgba(24, 24, 40, 0.45))",
+            }}
+          />
           <span className="gradient-text" style={{ fontSize: "1rem", fontWeight: 700 }}>InnoMight Labs</span>
         </div>
 

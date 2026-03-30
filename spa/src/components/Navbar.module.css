@@ -32,9 +32,8 @@
 .logoMark {
   width: 34px;
   height: 34px;
-  border-radius: 10px;
-  object-fit: cover;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  object-fit: contain;
+  filter: drop-shadow(0 10px 28px rgba(0, 0, 0, 0.35));
 }
 
 .logoText {

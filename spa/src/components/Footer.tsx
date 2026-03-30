@@ -1,3 +1,4 @@
+import logo from '../assets/brand/innomightlabs-logo.png';
 import styles from './Footer.module.css';
 
 export function Footer() {
@@ -10,8 +11,8 @@ export function Footer() {
           <div className={styles.brandRow}>
             <img
               className={styles.logoMark}
-              src={new URL('../assets/brand/innomightlabs-logo.jpg', import.meta.url).toString()}
-              alt="InnoMight Labs"
+              src={logo}
+              alt="InnoMight Labs logo"
             />
             <span className={styles.logo}>InnoMight Labs</span>
           </div>
