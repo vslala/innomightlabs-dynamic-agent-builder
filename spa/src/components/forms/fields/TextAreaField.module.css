@@ -1,0 +1,45 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.previewCard {
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%);
+  overflow: hidden;
+}
+
+.previewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background-color: rgba(255,255,255,0.03);
+}
+
+.previewTitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.previewSubtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.previewBody {
+  padding: 0.875rem 1rem;
+  color: var(--text-secondary);
+}
+
+.previewPlaceholder {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
