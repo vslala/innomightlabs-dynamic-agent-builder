@@ -172,6 +172,105 @@ async def list_agents(
     return [agent.to_response() for agent in agents]
 
 
+from src.common.pagination import Paginated
+
+
+class AgentSearchResult(BaseModel):
+    """Lightweight agent result used for search endpoints.
+
+    Intentionally excludes `agent_persona` to keep payloads small.
+    """
+
+    agent_id: str
+    agent_name: str
+    agent_description: str | None = None
+    agent_architecture: str
+    agent_provider: str
+    agent_model: str | None = None
+    session_timeout_minutes: int
+    created_at: str
+    updated_at: str | None = None
+
+
+@router.get("/search", response_model=Paginated[AgentSearchResult])
+async def search_agents(
+    request: Request,
+    repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    q: str | None = None,
+    limit: int = 20,
+    cursor: str | None = None,
+):
+    """Search agents owned by the authenticated user.
+
+    Returns lightweight agent objects suitable for powering UI search/autocomplete.
+
+    Query params:
+    - q: optional substring match against agent_name (and agent_description if present)
+    - limit: max items (1..100)
+    - cursor: base64 encoded offset cursor
+    """
+
+    import base64
+    import json
+
+    from fastapi import HTTPException
+
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 100")
+
+    user_email: str = request.state.user_email
+    agents = repo.find_all_by_created_by(user_email)
+
+    query = (q or "").strip().lower()
+    if query:
+        def matches(agent: Agent) -> bool:
+            name = (agent.agent_name or "").lower()
+            desc = (getattr(agent, "agent_description", None) or "").lower()
+            return query in name or query in desc
+
+        agents = [a for a in agents if matches(a)]
+
+    # Deterministic ordering
+    agents.sort(key=lambda a: (a.agent_name or "").lower())
+
+    offset = 0
+    if cursor:
+        try:
+            cursor_data = json.loads(base64.b64decode(cursor).decode("utf-8"))
+            offset = int(cursor_data.get("offset", 0))
+        except Exception:
+            offset = 0
+
+    page = agents[offset: offset + limit]
+    has_more = len(agents) > offset + limit
+
+    next_cursor = None
+    if has_more:
+        next_cursor = base64.b64encode(json.dumps({"offset": offset + limit}).encode("utf-8")).decode("utf-8")
+
+    items = [
+        AgentSearchResult(
+            agent_id=a.agent_id,
+            agent_name=a.agent_name,
+            agent_description=getattr(a, "agent_description", None),
+            agent_architecture=a.agent_architecture,
+            agent_provider=a.agent_provider,
+            agent_model=a.agent_model,
+            session_timeout_minutes=a.session_timeout_minutes,
+            created_at=a.created_at.isoformat(),
+            updated_at=a.updated_at.isoformat() if a.updated_at else None,
+        )
+        for a in page
+    ]
+
+    return Paginated[AgentSearchResult](
+        items=items,
+        next_cursor=next_cursor,
+        has_more=has_more,
+        total_count=len(agents),
+    )
+
+
 @router.get("/update-schema/{agent_id}", response_model=form_models.Form, response_model_exclude_none=True)
 async def get_update_agent_schema(
     request: Request,
