@@ -60,6 +60,12 @@ def get_create_agent_form(model_providers: list[str], model_options: list[dict] 
                 input_type=FormInputType.TEXT_AREA,
             ),
             FormInput(
+                label="Description (optional)",
+                name="agent_description",
+                input_type=FormInputType.TEXT_AREA,
+                attr={"optional": "true"},
+            ),
+            FormInput(
                 label="Provider Name",
                 name="agent_provider",
                 values=model_providers,
@@ -121,6 +127,12 @@ def get_update_agent_form(
                 input_type=FormInputType.TEXT_AREA,
             ),
             FormInput(
+                label="Description (optional)",
+                name="agent_description",
+                input_type=FormInputType.TEXT_AREA,
+                attr={"optional": "true"},
+            ),
+            FormInput(
                 label="Provider Name",
                 name="agent_provider",
                 values=providers,
@@ -157,6 +169,12 @@ UPDATE_AGENT_FORM = Form(
             label="Persona",
             name="agent_persona",
             input_type=FormInputType.TEXT_AREA,
+        ),
+        FormInput(
+            label="Description (optional)",
+            name="agent_description",
+            input_type=FormInputType.TEXT_AREA,
+            attr={"optional": "true"},
         ),
         FormInput(
             label="Provider Name",
