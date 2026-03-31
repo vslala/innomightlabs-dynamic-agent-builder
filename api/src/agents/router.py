@@ -171,18 +171,27 @@ async def list_agents(
     return [agent.to_response() for agent in agents]
 
 
-class AgentSearchOption(BaseModel):
-    """Option item for search_select style inputs."""
-
-    value: str
-    label: str
-    description: str | None = None
-
-
 from src.common.pagination import Paginated
 
 
-@router.get("/search", response_model=Paginated[AgentSearchOption])
+class AgentSearchResult(BaseModel):
+    """Lightweight agent result used for search endpoints.
+
+    Intentionally excludes `agent_persona` to keep payloads small.
+    """
+
+    agent_id: str
+    agent_name: str
+    agent_description: str | None = None
+    agent_architecture: str
+    agent_provider: str
+    agent_model: str | None = None
+    session_timeout_minutes: int
+    created_at: str
+    updated_at: str | None = None
+
+
+@router.get("/search", response_model=Paginated[AgentSearchResult])
 async def search_agents(
     request: Request,
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
@@ -192,7 +201,7 @@ async def search_agents(
 ):
     """Search agents owned by the authenticated user.
 
-    Returns results as option objects suitable for a search-select form input.
+    Returns lightweight agent objects suitable for powering UI search/autocomplete.
 
     Query params:
     - q: optional substring match against agent_name (and agent_description if present)
@@ -239,15 +248,21 @@ async def search_agents(
         next_cursor = base64.b64encode(json.dumps({"offset": offset + limit}).encode("utf-8")).decode("utf-8")
 
     items = [
-        AgentSearchOption(
-            value=a.agent_id,
-            label=a.agent_name,
-            description=getattr(a, "agent_description", None),
+        AgentSearchResult(
+            agent_id=a.agent_id,
+            agent_name=a.agent_name,
+            agent_description=getattr(a, "agent_description", None),
+            agent_architecture=a.agent_architecture,
+            agent_provider=a.agent_provider,
+            agent_model=a.agent_model,
+            session_timeout_minutes=a.session_timeout_minutes,
+            created_at=a.created_at.isoformat(),
+            updated_at=a.updated_at.isoformat() if a.updated_at else None,
         )
         for a in page
     ]
 
-    return Paginated[AgentSearchOption](
+    return Paginated[AgentSearchResult](
         items=items,
         next_cursor=next_cursor,
         has_more=has_more,

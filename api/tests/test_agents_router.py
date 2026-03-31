@@ -122,8 +122,9 @@ class TestAgentsRouter:
         assert "items" in data
         assert isinstance(data["items"], list)
         assert len(data["items"]) == 1
-        assert data["items"][0]["label"] == "Beta"
-        assert "value" in data["items"][0]
+        assert data["items"][0]["agent_name"] == "Beta"
+        assert "agent_id" in data["items"][0]
+        assert "agent_persona" not in data["items"][0]
 
     def test_search_agents_pagination(self, test_client: TestClient, auth_headers: dict):
         """Test search pagination via offset cursor."""
@@ -146,6 +147,7 @@ class TestAgentsRouter:
         assert len(d1["items"]) == 2
         assert d1["has_more"] is True
         assert d1["next_cursor"]
+        assert "agent_persona" not in d1["items"][0]
 
         r2 = test_client.get(f"/agents/search?limit=2&cursor={d1['next_cursor']}", headers=auth_headers)
         assert r2.status_code == 200

@@ -6,6 +6,7 @@ from typing import Annotated
 import src.form_models as form_models
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPBearer
+from pydantic import BaseModel
 
 from src.agents.repository import AgentRepository
 from src.skills.models import (
@@ -15,6 +16,15 @@ from src.skills.models import (
     UpdateInstalledSkillRequest,
 )
 from src.skills.service import SkillService, get_skill_service
+from src.common.pagination import Paginated
+
+
+class SearchSelectOption(BaseModel):
+    """Option item for search_select style inputs."""
+
+    value: str
+    label: str
+    description: str | None = None
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +61,73 @@ async def get_skill_install_schema(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/skills/search-options/agents", response_model=Paginated[SearchSelectOption])
+async def search_agent_options(
+    request: Request,
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    q: str | None = None,
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = None,
+) -> Paginated[SearchSelectOption]:
+    """Search agents and return results as search-select options.
+
+    This is a *skills/forms* convenience endpoint. It delegates to the same underlying
+    repository search logic used by `/agents/search` but returns the option shape:
+    - value = agent_id
+    - label = agent_name
+    - description = agent_description (if available)
+    """
+
+    # Reuse /agents/search logic by calling repository directly (same filtering/sorting/cursor pattern)
+    import base64
+    import json
+
+    user_email: str = request.state.user_email
+    agents = agent_repo.find_all_by_created_by(user_email)
+
+    query = (q or "").strip().lower()
+    if query:
+        def matches(agent) -> bool:
+            name = (getattr(agent, "agent_name", "") or "").lower()
+            desc = (getattr(agent, "agent_description", None) or "").lower()
+            return query in name or query in desc
+
+        agents = [a for a in agents if matches(a)]
+
+    agents.sort(key=lambda a: (getattr(a, "agent_name", "") or "").lower())
+
+    offset = 0
+    if cursor:
+        try:
+            cursor_data = json.loads(base64.b64decode(cursor).decode("utf-8"))
+            offset = int(cursor_data.get("offset", 0))
+        except Exception:
+            offset = 0
+
+    page = agents[offset: offset + limit]
+    has_more = len(agents) > offset + limit
+
+    next_cursor = None
+    if has_more:
+        next_cursor = base64.b64encode(json.dumps({"offset": offset + limit}).encode("utf-8")).decode("utf-8")
+
+    items = [
+        SearchSelectOption(
+            value=a.agent_id,
+            label=a.agent_name,
+            description=getattr(a, "agent_description", None),
+        )
+        for a in page
+    ]
+
+    return Paginated[SearchSelectOption](
+        items=items,
+        next_cursor=next_cursor,
+        has_more=has_more,
+        total_count=len(agents),
+    )
 
 
 @router.get("/agents/{agent_id}/skills", response_model=list[InstalledSkillResponse])
