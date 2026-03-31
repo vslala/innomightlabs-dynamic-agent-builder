@@ -1,0 +1,21 @@
+.container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.choiceButton {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-subtle);
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.choiceButtonActive {
+  border: 1px solid var(--gradient-start);
+  background-color: rgba(102, 126, 234, 0.2);
+  color: var(--text-primary);
+}
