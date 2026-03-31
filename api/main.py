@@ -20,6 +20,8 @@ from src.users import users_router
 from src.widget import widget_router, WidgetAuthMiddleware
 from src.contact.router import router as contact_router
 from src.skills import skills_router
+from src.skills.api_registry import build_skill_api_routers
+from src.skills.registry import get_skill_registry
 from src.analytics import analytics_router
 from src.exceptions import register_exception_handlers
 from src.middleware.request_id import RequestIdMiddleware
@@ -128,6 +130,15 @@ def create_app() -> FastAPI:
     app.include_router(router=users_router)
     app.include_router(router=contact_router)
     app.include_router(router=skills_router)
+
+    # Skill-owned API routers (optional, mounted under /skills/{skill_id}/...)
+    # If a skill folder (and its manifest) is removed, it simply won't be loaded.
+    try:
+        loaded_skills = get_skill_registry().list()
+        for prefix, router in build_skill_api_routers(loaded_skills):
+            app.include_router(router, prefix=prefix, tags=["skills"])
+    except Exception as e:
+        log.warning("Failed to mount skill API routers: %s", e)
     app.include_router(router=analytics_router)
 
     @app.get("/health")
