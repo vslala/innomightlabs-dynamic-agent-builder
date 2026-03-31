@@ -149,6 +149,7 @@ async def create_agent(
         agent_provider=create_request.agent_provider,
         agent_model=create_request.agent_model,
         agent_persona=create_request.agent_persona,
+        agent_description=create_request.agent_description,
         created_by=user_email,
     )
 

@@ -13,6 +13,7 @@ export interface AgentResponse {
   agent_provider: string;
   agent_model: string | null;
   agent_persona: string;
+  agent_description?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string | null;
