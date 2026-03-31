@@ -22,6 +22,12 @@ class SkillManifest(BaseModel):
     name: str
     description: str
     system_prompt: str = ""
+
+    # Optional skill-owned API router (mounted under /skills/{skill_id}/...)
+    # Format: "module_path:attribute" or "module_path.attribute".
+    # Example: "router:router" (resolves to src.skills.<skill_folder>.router.router)
+    api_router: Optional[str] = None
+
     requires_oauth: bool = False
     oauth_provider_name: Optional[str] = None
     actions: list[SkillActionManifest] = Field(default_factory=list)
