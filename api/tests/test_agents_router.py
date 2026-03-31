@@ -5,6 +5,9 @@ Tests for agents router endpoints.
 import pytest
 from fastapi.testclient import TestClient
 
+from src.agents.models import Agent
+from src.agents.repository import AgentRepository
+
 from tests.mock_data import (
     TEST_USER_EMAIL,
     AGENT_CREATE_REQUEST,
@@ -96,6 +99,58 @@ class TestAgentsRouter:
         response = test_client.get("/agents/non-existent-id", headers=auth_headers)
 
         assert response.status_code == 404
+
+    def test_search_agents(self, test_client: TestClient, auth_headers: dict):
+        """Test searching agents returns option-like objects."""
+        # Create a few agents directly (bypass rate limits enforced on HTTP endpoints)
+        repo = AgentRepository()
+        for name in ["Alpha", "Beta", "Gamma"]:
+            agent = Agent(
+                agent_name=name,
+                agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
+                agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
+                agent_model=AGENT_CREATE_REQUEST.get("agent_model"),
+                agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
+                created_by=TEST_USER_EMAIL,
+            )
+            repo.save(agent)
+
+        response = test_client.get("/agents/search?q=be", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+
+        assert "items" in data
+        assert isinstance(data["items"], list)
+        assert len(data["items"]) == 1
+        assert data["items"][0]["label"] == "Beta"
+        assert "value" in data["items"][0]
+
+    def test_search_agents_pagination(self, test_client: TestClient, auth_headers: dict):
+        """Test search pagination via offset cursor."""
+        # Create a few agents directly (bypass rate limits enforced on HTTP endpoints)
+        repo = AgentRepository()
+        for name in ["Alpha", "Beta", "Gamma"]:
+            agent = Agent(
+                agent_name=name,
+                agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
+                agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
+                agent_model=AGENT_CREATE_REQUEST.get("agent_model"),
+                agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
+                created_by=TEST_USER_EMAIL,
+            )
+            repo.save(agent)
+
+        r1 = test_client.get("/agents/search?limit=2", headers=auth_headers)
+        assert r1.status_code == 200
+        d1 = r1.json()
+        assert len(d1["items"]) == 2
+        assert d1["has_more"] is True
+        assert d1["next_cursor"]
+
+        r2 = test_client.get(f"/agents/search?limit=2&cursor={d1['next_cursor']}", headers=auth_headers)
+        assert r2.status_code == 200
+        d2 = r2.json()
+        assert len(d2["items"]) >= 1
 
     def test_get_update_schema(self, test_client: TestClient, auth_headers: dict):
         """Test getting the update form schema."""
