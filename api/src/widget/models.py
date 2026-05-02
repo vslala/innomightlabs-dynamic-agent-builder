@@ -145,4 +145,4 @@ class WidgetConfigResponse(BaseModel):
 
 class WidgetMessageRequest(BaseModel):
     """Request model for sending a message via widget."""
-    content: str = Field(..., min_length=1, max_length=10000)
+    content: str = Field(..., min_length=1)
