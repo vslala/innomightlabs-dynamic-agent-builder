@@ -67,7 +67,7 @@ export type ConversationMessage = {
 };
 
 export class InnomightlabsClient {
-	private readonly configService = new ExtensionConfigService();
+	private readonly configService: ExtensionConfigService;
 	private readonly widgetApiClient: WidgetApiClient;
 	private readonly widgetAgentRuntime: WidgetAgentRuntime;
 	private readonly runtimeTools: ToolDefinition[];
@@ -85,7 +85,11 @@ export class InnomightlabsClient {
 	 * - coordinate widget API calls
 	 * - return UI-friendly results
 	 */
-	public constructor(private readonly authService: AuthService) {
+	public constructor(
+		private readonly authService: AuthService,
+		configService: ExtensionConfigService,
+	) {
+		this.configService = configService;
 		this.widgetApiClient = new WidgetApiClient(this.configService, authService);
 		this.runtimeTools = createDefaultRuntimeTools();
 		this.widgetAgentRuntime = new WidgetAgentRuntime(
@@ -98,7 +102,7 @@ export class InnomightlabsClient {
 		request: ExplainCodeRequest,
 		options: ExplainCodeOptions = {},
 	): Promise<ExplainCodeResult> {
-		const config = this.configService.getConfig();
+		const config = await this.configService.getConfig();
 		const session = await this.authService.getValidSession();
 		console.log('[innomightlabs-code-assist] config loaded', {
 			baseUrl: config.baseUrl,
@@ -149,7 +153,7 @@ export class InnomightlabsClient {
 	}
 
 	public async listAvailableConversations(): Promise<ConversationSummary[]> {
-		if (!this.configService.isConfigured()) {
+		if (!(await this.configService.isConfigured())) {
 			return [];
 		}
 
@@ -170,7 +174,7 @@ export class InnomightlabsClient {
 			return [];
 		}
 
-		if (!this.configService.isConfigured()) {
+		if (!(await this.configService.isConfigured())) {
 			return [];
 		}
 
@@ -187,7 +191,7 @@ export class InnomightlabsClient {
 		request: SlashCommandRequest,
 		options: ExplainCodeOptions = {},
 	): Promise<SlashCommandResult> {
-		this.assertConfiguredBackend('Configure the backend base URL and API key before using slash commands.');
+		await this.assertConfiguredBackend('Configure the backend base URL and API key before using slash commands.');
 		await this.requireSession('No active visitor session found. Sign in with Google before using slash commands.');
 
 		options.onProgress?.('Fetching agent configuration');
@@ -224,7 +228,7 @@ export class InnomightlabsClient {
 		request: RewriteSelectionRequest,
 		options: ExplainCodeOptions = {},
 	): Promise<RewriteSelectionResult> {
-		this.assertConfiguredBackend('Configure the backend base URL and API key before rewriting code.');
+		await this.assertConfiguredBackend('Configure the backend base URL and API key before rewriting code.');
 		await this.requireSession('No active visitor session found. Sign in with Google before rewriting code.');
 
 		options.onProgress?.('Fetching agent configuration');
@@ -262,8 +266,8 @@ export class InnomightlabsClient {
 			.map((conversation) => this.toConversationSummary(conversation));
 	}
 
-	private assertConfiguredBackend(message: string): void {
-		if (!this.configService.isConfigured()) {
+	private async assertConfiguredBackend(message: string): Promise<void> {
+		if (!(await this.configService.isConfigured())) {
 			throw new Error(message);
 		}
 	}

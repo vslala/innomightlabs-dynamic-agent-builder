@@ -48,12 +48,12 @@ export class WidgetApiClient {
 		private readonly authService: AuthService,
 	) {}
 
-	public getConfig(): ExtensionConfig {
+	public async getConfig(): Promise<ExtensionConfig> {
 		return this.configService.getConfig();
 	}
 
 	public async fetchWidgetConfig(): Promise<WidgetConfig> {
-		const config = this.requireConfiguredBackend();
+		const config = await this.requireConfiguredBackend();
 		const response = await fetch(`${config.baseUrl}/widget/config`, {
 			method: 'GET',
 			headers: {
@@ -79,7 +79,7 @@ export class WidgetApiClient {
 	}
 
 	public async listConversations(): Promise<WidgetConversation[]> {
-		const config = this.requireConfiguredBackend();
+		const config = await this.requireConfiguredBackend();
 		const response = await fetch(`${config.baseUrl}/widget/conversations`, {
 			method: 'GET',
 			headers: await this.buildWidgetHeaders(config),
@@ -94,7 +94,7 @@ export class WidgetApiClient {
 	}
 
 	public async createConversation(title: string): Promise<WidgetConversation> {
-		const config = this.requireConfiguredBackend();
+		const config = await this.requireConfiguredBackend();
 		const response = await fetch(`${config.baseUrl}/widget/conversations`, {
 			method: 'POST',
 			headers: await this.buildWidgetHeaders(config),
@@ -114,7 +114,7 @@ export class WidgetApiClient {
 	}
 
 	public async sendMessage(conversationId: string, content: string): Promise<string> {
-		const config = this.requireConfiguredBackend();
+		const config = await this.requireConfiguredBackend();
 		const response = await fetch(
 			`${config.baseUrl}/widget/conversations/${conversationId}/messages`,
 			{
@@ -136,7 +136,7 @@ export class WidgetApiClient {
 	}
 
 	public async getConversationMessages(conversationId: string): Promise<WidgetMessage[]> {
-		const config = this.requireConfiguredBackend();
+		const config = await this.requireConfiguredBackend();
 		const response = await fetch(
 			`${config.baseUrl}/widget/conversations/${conversationId}/messages`,
 			{
@@ -157,8 +157,8 @@ export class WidgetApiClient {
 		}));
 	}
 
-	private requireConfiguredBackend(): ExtensionConfig {
-		const config = this.configService.getConfig();
+	private async requireConfiguredBackend(): Promise<ExtensionConfig> {
+		const config = await this.configService.getConfig();
 		if (!config.baseUrl || !config.apiKey) {
 			throw new Error('Configure the backend base URL and API key before calling the widget API.');
 		}

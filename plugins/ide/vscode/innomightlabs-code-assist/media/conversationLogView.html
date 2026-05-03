@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<link rel="stylesheet" href="{{CSS_URI}}" />
+</head>
+<body>
+	<div class="panel">
+		<section class="card">
+			<div class="header-row">
+				<div>
+					<h3>Conversation Log</h3>
+					<p class="muted">{{TITLE}}</p>
+				</div>
+				<button class="action-btn" data-action="refreshConversationLog" {{REFRESH_DISABLED}}>Refresh</button>
+			</div>
+		</section>
+		{{BODY}}
+	</div>
+	<script nonce="{{NONCE}}">
+		const vscode = acquireVsCodeApi();
+		document.querySelector('[data-action="refreshConversationLog"]')?.addEventListener('click', () => {
+			vscode.postMessage({ type: 'refreshConversationLog' });
+		});
+	</script>
+</body>
+</html>

@@ -28,6 +28,7 @@ type ExplainCodeViewState = {
 type ExplainCodeViewActions = {
 	onSignIn: () => Promise<void>;
 	onSignOut: () => Promise<void>;
+	onConfigureBackend: () => Promise<void>;
 	onConversationSelected: (conversationId: string) => Promise<void>;
 	onNewConversation: () => Promise<void>;
 };
@@ -76,6 +77,9 @@ export class ExplainCodeViewProvider implements vscode.WebviewViewProvider {
 			}
 			if (message.type === 'signOut') {
 				await this.actions.onSignOut();
+			}
+			if (message.type === 'configureBackend') {
+				await this.actions.onConfigureBackend();
 			}
 			if (message.type === 'selectConversation' && message.conversationId) {
 				await this.actions.onConversationSelected(message.conversationId);
@@ -451,6 +455,9 @@ export class ExplainCodeViewProvider implements vscode.WebviewViewProvider {
 		document.querySelector('[data-action="signOut"]')?.addEventListener('click', () => {
 			vscode.postMessage({ type: 'signOut' });
 		});
+		document.querySelector('[data-action="configureBackend"]')?.addEventListener('click', () => {
+			vscode.postMessage({ type: 'configureBackend' });
+		});
 		document.querySelector('[data-action="newConversation"]')?.addEventListener('click', () => {
 			vscode.postMessage({ type: 'newConversation' });
 		});
@@ -473,7 +480,10 @@ export class ExplainCodeViewProvider implements vscode.WebviewViewProvider {
 			return `<section class="card">
 				<h3>Google Sign-In</h3>
 				<p class="muted">Authenticate with the same widget flow used by the frontend before sending code to the backend.</p>
-				<button class="action-btn" data-action="signIn" ${auth.isAuthenticating ? 'disabled' : ''}>${this.escapeHtml(label)}</button>
+				<div class="toolbar-row">
+					<button class="action-btn" data-action="signIn" ${auth.isAuthenticating ? 'disabled' : ''}>${this.escapeHtml(label)}</button>
+					<button class="action-btn secondary" data-action="configureBackend">Configure</button>
+				</div>
 			</section>`;
 		}
 
@@ -482,7 +492,10 @@ export class ExplainCodeViewProvider implements vscode.WebviewViewProvider {
 		return `<section class="card">
 			<div class="header-row">
 				<h3>Signed In</h3>
-				<button class="action-btn secondary" data-action="signOut">Sign Out</button>
+				<div class="toolbar-row">
+					<button class="action-btn secondary" data-action="configureBackend">Configure</button>
+					<button class="action-btn secondary" data-action="signOut">Sign Out</button>
+				</div>
 			</div>
 			<p><strong>${this.escapeHtml(visitorName)}</strong></p>
 			${visitorEmail}

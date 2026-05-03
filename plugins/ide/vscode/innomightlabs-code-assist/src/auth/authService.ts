@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 
+import type { ExtensionConfigService } from '../config/extensionConfigService';
+
 const VISITOR_TOKEN_SECRET_KEY = 'innomightlabs.visitorToken';
 const VISITOR_INFO_STORAGE_KEY = 'innomightlabs.visitorInfo';
 
@@ -27,7 +29,10 @@ export class AuthService implements vscode.UriHandler {
 
 	public readonly onDidChangeAuthState = this.didChangeAuthStateEmitter.event;
 
-	public constructor(private readonly context: vscode.ExtensionContext) {}
+	public constructor(
+		private readonly context: vscode.ExtensionContext,
+		private readonly configService: ExtensionConfigService,
+	) {}
 
 	public async getAuthState(): Promise<AuthState> {
 		const session = await this.getValidSession();
@@ -55,12 +60,10 @@ export class AuthService implements vscode.UriHandler {
 	}
 
 	public async startGoogleLogin(): Promise<void> {
-		const config = vscode.workspace.getConfiguration('innomightlabsCodeAssist');
-		const baseUrl = config.get<string>('apiBaseUrl', '').trim();
-		const apiKey = config.get<string>('apiKey', '').trim();
+		const { baseUrl, apiKey } = await this.configService.getConfig();
 
 		if (!baseUrl || !apiKey) {
-			throw new Error('Configure `innomightlabsCodeAssist.apiBaseUrl` and `innomightlabsCodeAssist.apiKey` before signing in.');
+			throw new Error('Configure the Innomightlabs backend before signing in.');
 		}
 
 		this.isAuthenticating = true;

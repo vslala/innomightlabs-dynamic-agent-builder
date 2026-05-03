@@ -4,6 +4,7 @@ import { CompleteSlashCommandUseCase } from './application/useCases/completeSlas
 import { ExplainCodeUseCase } from './application/useCases/explainCodeUseCase';
 import { RewriteSelectionUseCase } from './application/useCases/rewriteSelectionUseCase';
 import { AuthService, type AuthState } from './auth/authService';
+import { ExtensionConfigService } from './config/extensionConfigService';
 import { type ConversationSummary, InnomightlabsClient } from './innomightlabsClient';
 import { ConversationLogViewProvider } from './sidebar/conversationLogViewProvider';
 import { ExplainCodeViewProvider } from './sidebar/explainCodeViewProvider';
@@ -13,12 +14,14 @@ const EXPLAIN_CODE_COMMAND = 'innomightlabs-code-assist.explainCode';
 const REWRITE_SELECTION_COMMAND = 'innomightlabs-code-assist.rewriteSelection';
 const SIGN_IN_COMMAND = 'innomightlabs-code-assist.signIn';
 const SIGN_OUT_COMMAND = 'innomightlabs-code-assist.signOut';
+const CONFIGURE_BACKEND_COMMAND = 'innomightlabs-code-assist.configureBackend';
 const EXPLAIN_CODE_VIEW_ID = 'innomightlabs-code-assist.explainCodeView';
 const CONVERSATION_LOG_VIEW_ID = 'innomightlabs-code-assist.conversationLogView';
 
 export function activate(context: vscode.ExtensionContext): void {
-	const authService = new AuthService(context);
-	const client = new InnomightlabsClient(authService);
+	const configService = new ExtensionConfigService(context);
+	const authService = new AuthService(context, configService);
+	const client = new InnomightlabsClient(authService, configService);
 	const store = new AppStore();
 	let selectedConversationId: string | null = null;
 	let latestConversations: ConversationSummary[] = [];
@@ -32,6 +35,9 @@ export function activate(context: vscode.ExtensionContext): void {
 	const explainCodeViewProvider = new ExplainCodeViewProvider(context.extensionUri, {
 		onSignIn: async () => {
 			await runSignIn(authService, explainCodeViewProvider);
+		},
+		onConfigureBackend: async () => {
+			await runConfigureBackend(configService);
 		},
 		onSignOut: async () => {
 			selectedConversationId = null;
@@ -234,6 +240,9 @@ export function activate(context: vscode.ExtensionContext): void {
 			}));
 			await authService.signOut();
 		}),
+		vscode.commands.registerCommand(CONFIGURE_BACKEND_COMMAND, async () => {
+			await runConfigureBackend(configService);
+		}),
 		authService.onDidChangeAuthState(async (state: AuthState) => {
 			store.update((current) => ({
 				...current,
@@ -282,8 +291,23 @@ async function runSignIn(
 		await authService.startGoogleLogin();
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Unknown error';
-		vscode.window.showErrorMessage(`Failed to start Google sign-in: ${message}`);
+		const configure = 'Configure Backend';
+		const selected = await vscode.window.showErrorMessage(
+			`Failed to start Google sign-in: ${message}`,
+			configure,
+		);
+		if (selected === configure) {
+			await vscode.commands.executeCommand(CONFIGURE_BACKEND_COMMAND);
+		}
 	}
+}
+
+async function runConfigureBackend(configService: ExtensionConfigService): Promise<void> {
+	const config = await configService.configure();
+	if (!config) {
+		return;
+	}
+	void vscode.window.showInformationMessage('Innomightlabs backend configuration saved for this VS Code install.');
 }
 
 export function deactivate(): void {}

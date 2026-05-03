@@ -14,6 +14,7 @@
     "onCommand:innomightlabs-code-assist.rewriteSelection",
     "onCommand:innomightlabs-code-assist.signIn",
     "onCommand:innomightlabs-code-assist.signOut",
+    "onCommand:innomightlabs-code-assist.configureBackend",
     "onView:innomightlabs-code-assist.explainCodeView",
     "onView:innomightlabs-code-assist.conversationLogView"
   ],
@@ -38,6 +39,11 @@
       {
         "command": "innomightlabs-code-assist.signOut",
         "title": "Sign Out",
+        "category": "Innomightlabs"
+      },
+      {
+        "command": "innomightlabs-code-assist.configureBackend",
+        "title": "Configure Backend",
         "category": "Innomightlabs"
       }
     ],

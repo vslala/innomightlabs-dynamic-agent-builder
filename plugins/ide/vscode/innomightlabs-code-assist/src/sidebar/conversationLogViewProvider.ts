@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 
 import type { VisitorInfo } from '../auth/authService';
@@ -24,6 +26,7 @@ type ConversationLogViewActions = {
 
 export class ConversationLogViewProvider implements vscode.WebviewViewProvider {
 	private view?: vscode.WebviewView;
+	private readonly templateHtml: string;
 	private state: ConversationLogViewState = {
 		auth: {
 			isAuthenticated: false,
@@ -41,7 +44,12 @@ export class ConversationLogViewProvider implements vscode.WebviewViewProvider {
 		private readonly extensionUri: vscode.Uri,
 		private readonly actions: ConversationLogViewActions,
 		private readonly store: AppStore,
-	) {}
+	) {
+		this.templateHtml = fs.readFileSync(
+			path.join(this.extensionUri.fsPath, 'media', 'conversationLogView.html'),
+			'utf8',
+		);
+	}
 
 	public resolveWebviewView(
 		webviewView: vscode.WebviewView,
@@ -150,145 +158,16 @@ export class ConversationLogViewProvider implements vscode.WebviewViewProvider {
 		const nonce = this.createNonce();
 		const title = this.getConversationTitle(state);
 		const body = this.renderBody(state);
+		const cssUri = this.view?.webview.asWebviewUri(
+			vscode.Uri.joinPath(this.extensionUri, 'media', 'conversationLogView.css'),
+		).toString() ?? '';
 
-		return `<!DOCTYPE html>
-<html lang="en">
-<head>
-	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<style>
-		:root {
-			color-scheme: light dark;
-		}
-
-		body {
-			font-family: var(--vscode-font-family);
-			padding: 12px;
-			margin: 0;
-			color: var(--vscode-foreground);
-			background: var(--vscode-sideBar-background);
-		}
-
-		.panel {
-			display: grid;
-			gap: 12px;
-		}
-
-		.card {
-			padding: 12px;
-			border-radius: 12px;
-			background: color-mix(in srgb, var(--vscode-editor-background) 94%, transparent);
-			border: 1px solid var(--vscode-panel-border);
-		}
-
-		.header-row {
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-			gap: 8px;
-		}
-
-		h2, h3, p {
-			margin: 0;
-		}
-
-		.muted {
-			color: var(--vscode-descriptionForeground);
-		}
-
-		.action-btn {
-			border: 0;
-			border-radius: 999px;
-			padding: 8px 12px;
-			font: inherit;
-			background: var(--vscode-button-background);
-			color: var(--vscode-button-foreground);
-			cursor: pointer;
-		}
-
-		.action-btn:hover {
-			background: var(--vscode-button-hoverBackground);
-		}
-
-		.action-btn:disabled {
-			opacity: 0.6;
-			cursor: default;
-		}
-
-		.log-list {
-			display: grid;
-			gap: 10px;
-			max-height: calc(100vh - 150px);
-			overflow-y: auto;
-			padding-right: 4px;
-		}
-
-		.message {
-			padding: 12px;
-			border-radius: 12px;
-			border: 1px solid var(--vscode-panel-border);
-			background: color-mix(in srgb, var(--vscode-input-background) 74%, transparent);
-		}
-
-		.message.user {
-			background: color-mix(in srgb, var(--vscode-button-background) 14%, var(--vscode-input-background));
-		}
-
-		.message.assistant {
-			background: color-mix(in srgb, var(--vscode-textCodeBlock-background) 64%, transparent);
-		}
-
-		.message-header {
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-			gap: 8px;
-			margin-bottom: 8px;
-		}
-
-		.role {
-			font-size: 12px;
-			font-weight: 700;
-			letter-spacing: 0.04em;
-			text-transform: uppercase;
-			color: var(--vscode-descriptionForeground);
-		}
-
-		.timestamp {
-			font-size: 11px;
-			color: var(--vscode-descriptionForeground);
-		}
-
-		pre {
-			margin: 0;
-			white-space: pre-wrap;
-			word-break: break-word;
-			font-family: var(--vscode-editor-font-family);
-			font-size: var(--vscode-editor-font-size);
-		}
-	</style>
-</head>
-<body>
-	<div class="panel">
-		<section class="card">
-			<div class="header-row">
-				<div>
-					<h3>Conversation Log</h3>
-					<p class="muted">${this.escapeHtml(title)}</p>
-				</div>
-				<button class="action-btn" data-action="refreshConversationLog" ${state.isLoading ? 'disabled' : ''}>Refresh</button>
-			</div>
-		</section>
-		${body}
-	</div>
-	<script nonce="${nonce}">
-		const vscode = acquireVsCodeApi();
-		document.querySelector('[data-action="refreshConversationLog"]')?.addEventListener('click', () => {
-			vscode.postMessage({ type: 'refreshConversationLog' });
-		});
-	</script>
-</body>
-</html>`;
+		return this.templateHtml
+			.replace('{{CSS_URI}}', cssUri)
+			.replace('{{TITLE}}', this.escapeHtml(title))
+			.replace('{{REFRESH_DISABLED}}', state.isLoading ? 'disabled' : '')
+			.replace('{{BODY}}', body)
+			.replace('{{NONCE}}', nonce);
 	}
 
 	private renderBody(state: ConversationLogViewState): string {
