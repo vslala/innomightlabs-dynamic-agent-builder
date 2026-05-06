@@ -3,6 +3,7 @@
   "displayName": "innomightlabs-code-assist",
   "description": "An extension that helps you write code side-by-side like a pair programmer",
   "version": "0.0.1",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.113.0"
   },
