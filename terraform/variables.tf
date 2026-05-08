@@ -80,7 +80,7 @@ variable "openai_oauth_responses_url" {
 variable "openai_models" {
   description = "Comma-separated OpenAI model IDs exposed in the app"
   type        = string
-  default     = "gpt-5.4,gpt-5.3-codex,gpt-5.2-codex,gpt-5.2,gpt-5.1-codex-max,gpt-5.1-codex-mini"
+  default     = "gpt-5.5,gpt-5.4,gpt-5.4-mini,gpt-5.4-nano,gpt-5.3-codex,gpt-5.2-codex,gpt-5.2,gpt-5.1-codex-max,gpt-5.1-codex-mini"
 }
 
 variable "superuser_emails" {

@@ -16,7 +16,7 @@ from .base import LLMEvent, LLMProvider
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL_NAME = "gpt-5.4"
+DEFAULT_MODEL_NAME = "gpt-5.5"
 
 
 class OpenAIProvider(LLMProvider):

@@ -5,6 +5,9 @@ Tests for agents router endpoints.
 import pytest
 from fastapi.testclient import TestClient
 
+from src.settings.models import ProviderSettings
+from src.settings.repository import ProviderSettingsRepository
+from src.config.settings import DEFAULT_OPENAI_MODELS
 from tests.mock_data import (
     TEST_USER_EMAIL,
     AGENT_CREATE_REQUEST,
@@ -109,6 +112,45 @@ class TestAgentsRouter:
         field_names = [f["name"] for f in data["form_inputs"]]
         assert "agent_name" not in field_names
         assert "agent_persona" in field_names
+
+    def test_update_schema_includes_openai_models_when_connected(
+        self,
+        test_client: TestClient,
+        auth_headers: dict,
+        dynamodb_table,
+        monkeypatch,
+    ):
+        """Test OpenAI model options are loaded from shared settings for edit forms."""
+        del dynamodb_table
+        from src.llm import models as llm_models
+
+        monkeypatch.setattr(llm_models.settings, "openai_models", DEFAULT_OPENAI_MODELS.copy())
+        repo = ProviderSettingsRepository()
+        repo.save(
+            ProviderSettings(
+                user_email=TEST_USER_EMAIL,
+                provider_name="OpenAI",
+                encrypted_credentials="encrypted",
+                auth_type="oauth",
+            )
+        )
+
+        response = test_client.get("/agents/update-schema/test-id", headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        provider_field = next(field for field in data["form_inputs"] if field["name"] == "agent_provider")
+        model_field = next(field for field in data["form_inputs"] if field["name"] == "agent_model")
+        model_values = [option["value"] for option in model_field["options"]]
+        openai_start = model_values.index("gpt-5.5")
+
+        assert "OpenAI" in provider_field["values"]
+        assert model_values[openai_start:openai_start + 4] == [
+            "gpt-5.5",
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "gpt-5.4-nano",
+        ]
 
     def test_update_agent(self, test_client: TestClient, auth_headers: dict):
         """Test updating an agent."""

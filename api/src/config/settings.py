@@ -14,6 +14,18 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+DEFAULT_OPENAI_MODELS = [
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "gpt-5.3-codex",
+    "gpt-5.2-codex",
+    "gpt-5.2",
+    "gpt-5.1-codex-max",
+    "gpt-5.1-codex-mini",
+]
+
 
 class ConfigValidationError(Exception):
     """Raised when required configuration is missing or invalid."""
@@ -59,14 +71,7 @@ class Settings:
     google_mail_oauth_scopes: str = "https://www.googleapis.com/auth/gmail.modify"
     openai_oauth_client_id: str = ""
     openai_oauth_scopes: str = "openid profile email offline_access"
-    openai_models: list[str] = field(default_factory=lambda: [
-        "gpt-5.4",
-        "gpt-5.3-codex",
-        "gpt-5.2-codex",
-        "gpt-5.2",
-        "gpt-5.1-codex-max",
-        "gpt-5.1-codex-mini",
-    ])
+    openai_models: list[str] = field(default_factory=lambda: DEFAULT_OPENAI_MODELS.copy())
     openai_oauth_id_token_add_organizations: bool = False
     openai_oauth_codex_cli_simplified_flow: bool = False
     openai_oauth_originator: str = ""
@@ -312,14 +317,7 @@ class Settings:
             openai_oauth_scopes=os.getenv("OPENAI_OAUTH_SCOPES", "openid profile email offline_access"),
             openai_models=parse_env_list(
                 "OPENAI_MODELS",
-                [
-                    "gpt-5.4",
-                    "gpt-5.3-codex",
-                    "gpt-5.2-codex",
-                    "gpt-5.2",
-                    "gpt-5.1-codex-max",
-                    "gpt-5.1-codex-mini",
-                ],
+                DEFAULT_OPENAI_MODELS,
             ),
             openai_oauth_id_token_add_organizations=env_bool("OPENAI_OAUTH_ID_TOKEN_ADD_ORGANIZATIONS"),
             openai_oauth_codex_cli_simplified_flow=env_bool("OPENAI_OAUTH_CODEX_CLI_SIMPLIFIED_FLOW"),
