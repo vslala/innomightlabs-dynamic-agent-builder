@@ -91,17 +91,7 @@ async def install_skill_for_agent(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return InstalledSkillResponse(
-        skill_id=installed.skill_id,
-        namespace=installed.namespace,
-        name=installed.skill_name,
-        description=installed.skill_description,
-        enabled=installed.enabled,
-        installed_at=installed.installed_at,
-        updated_at=installed.updated_at,
-        config=installed.config,
-        secret_fields=installed.secret_fields,
-    )
+    return service.to_installed_response(installed)
 
 
 @router.patch("/agents/{agent_id}/skills/{skill_id}", response_model=InstalledSkillResponse)
@@ -128,17 +118,7 @@ async def update_installed_skill(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return InstalledSkillResponse(
-        skill_id=installed.skill_id,
-        namespace=installed.namespace,
-        name=installed.skill_name,
-        description=installed.skill_description,
-        enabled=installed.enabled,
-        installed_at=installed.installed_at,
-        updated_at=installed.updated_at,
-        config=installed.config,
-        secret_fields=installed.secret_fields,
-    )
+    return service.to_installed_response(installed)
 
 
 @router.delete("/agents/{agent_id}/skills/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -148,10 +128,16 @@ async def uninstall_skill(
     skill_id: str,
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
     service: Annotated[SkillService, Depends(get_skill_service)],
+    disconnect_oauth: bool = Query(False, description="Also delete the user-level OAuth credentials for this skill's provider"),
 ) -> None:
     user_email: str = request.state.user_email
     agent = agent_repo.find_agent_by_id(agent_id, user_email)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    service.uninstall(agent_id, skill_id)
+    service.uninstall(
+        agent_id=agent_id,
+        skill_id=skill_id,
+        user_email=user_email,
+        disconnect_oauth=disconnect_oauth,
+    )

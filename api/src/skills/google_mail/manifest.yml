@@ -1,0 +1,165 @@
+id: google_mail
+namespace: integrations.google
+name: Gmail
+description: Read and manage messages from the connected Gmail account.
+system_prompt: |
+  Use this skill to inspect or manage email in Gmail.
+  Always load the skill first if it is not in your immediate context, then call the most specific action.
+
+  Example usages:
+  - Search recent mail:
+    action=search
+    arguments={"recent_20":true}
+  - Search mail in a time range:
+    action=search
+    arguments={"query":"invoice","start_date":"2026-05-01","end_date":"2026-05-07","page_size":10}
+  - Read a message after locating its id:
+    action=read
+    arguments={"message_id":"<message_id>"}
+  - Move a message to trash:
+    action=delete
+    arguments={"message_id":"<message_id>"}
+  - Move multiple messages to trash:
+    action=batch_delete
+    arguments={"message_ids":["<message_id_1>","<message_id_2>"]}
+  - Archive a message:
+    action=archive
+    arguments={"message_id":"<message_id>"}
+  - Mark a message as read:
+    action=mark_read
+    arguments={"message_id":"<message_id>"}
+  - Mark a message as unread:
+    action=mark_unread
+    arguments={"message_id":"<message_id>"}
+
+  Notes:
+  - Use `search` first when the user has not provided a message id.
+  - Use `read` when the user wants the full content of a specific email.
+  - Use `delete` when the user explicitly wants to trash an email.
+  - Use `batch_delete` after search when the user explicitly wants to trash multiple emails.
+  - Use `archive` when the user wants to remove an email from inbox without deleting it.
+  - Use `mark_read` or `mark_unread` to update message state.
+requires_oauth: true
+oauth_provider_name: GoogleMail
+actions:
+  - name: search
+    description: Search Gmail messages using text, time range, sender/recipient, labels, unread status, attachment filters, and pagination.
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Raw Gmail search terms, such as invoice, "project alpha", from:someone@example.com, or has:attachment.
+        page_size:
+          type: integer
+          description: Number of messages to return, clamped from 1 to 50. Defaults to 10.
+        recent_20:
+          type: boolean
+          description: Shortcut for the 20 most recent messages matching the other filters.
+        page_token:
+          type: string
+          description: Gmail nextPageToken from a previous search response.
+        start_date:
+          type: string
+          description: Inclusive lower date bound in YYYY-MM-DD or YYYY/MM/DD. Translates to Gmail after:.
+        end_date:
+          type: string
+          description: Upper date bound in YYYY-MM-DD or YYYY/MM/DD. Translates to Gmail before:.
+        newer_than:
+          type: string
+          description: Relative Gmail time filter such as 7d, 2m, or 1y.
+        older_than:
+          type: string
+          description: Relative Gmail time filter such as 7d, 2m, or 1y.
+        from_email:
+          type: string
+          description: Sender email or sender search term.
+        to_email:
+          type: string
+          description: Recipient email or recipient search term.
+        subject:
+          type: string
+          description: Subject search term.
+        label_ids:
+          type: array
+          items:
+            type: string
+          description: Gmail label ids to restrict results, such as INBOX, SENT, UNREAD, or custom label ids.
+        category:
+          type: string
+          description: Gmail category such as primary, social, promotions, updates, or forums.
+        has_attachment:
+          type: boolean
+          description: Only return messages with attachments.
+        is_unread:
+          type: boolean
+          description: Only return unread messages.
+        include_spam_trash:
+          type: boolean
+          description: Include spam and trash in search results.
+    handler: actions:search
+  - name: read
+    description: Read a Gmail message including headers, body, and metadata.
+    input_schema:
+      type: object
+      properties:
+        message_id:
+          type: string
+          description: Gmail message id to read.
+      required: [message_id]
+    handler: actions:read
+  - name: delete
+    description: Move a Gmail message to trash.
+    input_schema:
+      type: object
+      properties:
+        message_id:
+          type: string
+          description: Gmail message id to move to trash.
+      required: [message_id]
+    handler: actions:delete
+  - name: batch_delete
+    description: Move multiple Gmail messages to trash in batches. This is not permanent deletion.
+    input_schema:
+      type: object
+      properties:
+        message_ids:
+          type: array
+          items:
+            type: string
+          description: Gmail message ids to move to trash. Duplicate ids are ignored.
+        chunk_size:
+          type: integer
+          description: Number of ids per Gmail batchModify request. Clamped from 1 to 1000. Defaults to 1000.
+      required: [message_ids]
+    handler: actions:batch_delete
+  - name: archive
+    description: Archive a Gmail message by removing it from inbox.
+    input_schema:
+      type: object
+      properties:
+        message_id:
+          type: string
+          description: Gmail message id to archive.
+      required: [message_id]
+    handler: actions:archive
+  - name: mark_read
+    description: Mark a Gmail message as read.
+    input_schema:
+      type: object
+      properties:
+        message_id:
+          type: string
+          description: Gmail message id to mark as read.
+      required: [message_id]
+    handler: actions:mark_read
+  - name: mark_unread
+    description: Mark a Gmail message as unread.
+    input_schema:
+      type: object
+      properties:
+        message_id:
+          type: string
+          description: Gmail message id to mark as unread.
+      required: [message_id]
+    handler: actions:mark_unread

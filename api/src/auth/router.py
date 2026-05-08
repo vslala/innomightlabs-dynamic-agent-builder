@@ -2,7 +2,9 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 from ..config import settings
 from ..agents.repository import AgentRepository
@@ -31,6 +33,15 @@ from .google_drive_oauth import (
     encode_state_session as encode_google_drive_state_session,
     save_credentials as save_google_drive_credentials,
 )
+from src.skills.google_mail.oauth import (
+    GoogleMailOAuthError,
+    build_authorization_url as build_google_mail_authorization_url,
+    build_credentials_from_auth_code as build_google_mail_credentials_from_auth_code,
+    create_state_session as create_google_mail_state_session,
+    decode_state_session as decode_google_mail_state_session,
+    encode_state_session as encode_google_mail_state_session,
+    save_credentials as save_google_mail_credentials,
+)
 from .jwt_utils import create_access_token, get_current_user
 from ..email import send_welcome_email_safe
 
@@ -45,6 +56,7 @@ provider_settings_repository = ProviderSettingsRepository()
 agent_repository = AgentRepository()
 OPENAI_PKCE_TTL_SECONDS = 600
 GOOGLE_DRIVE_OAUTH_TTL_SECONDS = 600
+GOOGLE_MAIL_OAUTH_TTL_SECONDS = 600
 
 
 class OpenAIStartResponse(BaseModel):
@@ -55,14 +67,66 @@ class OpenAICompleteRequest(BaseModel):
     callback_url: str
 
 
-class GoogleDriveStartRequest(BaseModel):
+class SkillOAuthStartRequest(BaseModel):
     agent_id: str
     skill_id: str
     return_to: str
 
 
-class GoogleDriveStartResponse(BaseModel):
+class SkillOAuthStartResponse(BaseModel):
     authorize_url: str
+
+
+@dataclass(frozen=True)
+class GoogleSkillOAuthFlow:
+    skill_id: str
+    provider_name: str
+    display_name: str
+    callback_status_param: str
+    ttl_seconds: int
+    is_configured: Any
+    create_state_session: Any
+    encode_state_session: Any
+    decode_state_session: Any
+    build_authorization_url: Any
+    build_credentials_from_auth_code: Any
+    save_credentials: Any
+    error_type: type[Exception]
+
+
+def _google_skill_oauth_flows() -> dict[str, GoogleSkillOAuthFlow]:
+    return {
+        "google_drive": GoogleSkillOAuthFlow(
+            skill_id="google_drive",
+            provider_name="GoogleDrive",
+            display_name="Google Drive",
+            callback_status_param="google_drive_oauth",
+            ttl_seconds=GOOGLE_DRIVE_OAUTH_TTL_SECONDS,
+            is_configured=settings.is_google_drive_oauth_configured,
+            create_state_session=create_google_drive_state_session,
+            encode_state_session=encode_google_drive_state_session,
+            decode_state_session=decode_google_drive_state_session,
+            build_authorization_url=build_google_drive_authorization_url,
+            build_credentials_from_auth_code=build_google_drive_credentials_from_auth_code,
+            save_credentials=save_google_drive_credentials,
+            error_type=GoogleDriveOAuthError,
+        ),
+        "google_mail": GoogleSkillOAuthFlow(
+            skill_id="google_mail",
+            provider_name="GoogleMail",
+            display_name="Google Mail",
+            callback_status_param="google_mail_oauth",
+            ttl_seconds=GOOGLE_MAIL_OAUTH_TTL_SECONDS,
+            is_configured=settings.is_google_mail_oauth_configured,
+            create_state_session=create_google_mail_state_session,
+            encode_state_session=encode_google_mail_state_session,
+            decode_state_session=decode_google_mail_state_session,
+            build_authorization_url=build_google_mail_authorization_url,
+            build_credentials_from_auth_code=build_google_mail_credentials_from_auth_code,
+            save_credentials=save_google_mail_credentials,
+            error_type=GoogleMailOAuthError,
+        ),
+    }
 
 
 def _extract_openai_state_session(state: str | None) -> OpenAIOAuthState | None:
@@ -210,56 +274,61 @@ async def complete_openai_oauth(
         raise HTTPException(status_code=500, detail="Failed to complete OpenAI OAuth flow")
 
 
-@router.post("/google-drive/start", response_model=GoogleDriveStartResponse)
-async def start_google_drive_oauth(
+async def _start_google_skill_oauth(
+    *,
     request: Request,
-    body: GoogleDriveStartRequest,
-) -> GoogleDriveStartResponse:
-    if not settings.is_google_drive_oauth_configured():
-        raise HTTPException(status_code=500, detail="Google Drive OAuth is not configured")
+    body: SkillOAuthStartRequest,
+    flow: GoogleSkillOAuthFlow,
+) -> SkillOAuthStartResponse:
+    if not flow.is_configured():
+        raise HTTPException(status_code=500, detail=f"{flow.display_name} OAuth is not configured")
 
     user_email = getattr(request.state, "user_email", None)
     if not user_email:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    if body.skill_id != "google_drive":
-        raise HTTPException(status_code=400, detail="Unsupported skill for Google Drive OAuth")
+    if body.skill_id != flow.skill_id:
+        raise HTTPException(status_code=400, detail=f"Unsupported skill for {flow.display_name} OAuth")
     agent = agent_repository.find_agent_by_id(body.agent_id, user_email)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    session = create_google_drive_state_session(
+    session = flow.create_state_session(
         user_email=user_email,
         agent_id=body.agent_id,
         skill_id=body.skill_id,
         return_to=body.return_to,
-        ttl_seconds=GOOGLE_DRIVE_OAUTH_TTL_SECONDS,
+        ttl_seconds=flow.ttl_seconds,
     )
-    state = encode_google_drive_state_session(session)
-    authorize_url = build_google_drive_authorization_url(state=state)
-    return GoogleDriveStartResponse(authorize_url=authorize_url)
+    state = flow.encode_state_session(session)
+    authorize_url = flow.build_authorization_url(state=state)
+    return SkillOAuthStartResponse(authorize_url=authorize_url)
 
 
-@router.get("/google-drive/callback")
-async def google_drive_oauth_callback(
+async def _google_skill_oauth_callback(
+    *,
+    flow: GoogleSkillOAuthFlow,
     code: str = Query(None),
     error: str = Query(None),
     state: str = Query(None),
-):
-    session = decode_google_drive_state_session(state)
+) -> RedirectResponse:
+    session = flow.decode_state_session(state)
     fallback_return_to = f"{settings.frontend_url}/dashboard/agents"
+    status_param = flow.callback_status_param
 
     if not session:
-        params = urlencode({"google_drive_oauth": "error", "reason": "invalid_state"})
+        params = urlencode({"skill_oauth": "error", status_param: "error", "reason": "invalid_state"})
         return RedirectResponse(url=f"{fallback_return_to}?{params}")
 
     query_params = {
-        "google_drive_oauth": "error" if error else "success",
+        "skill_oauth": "error" if error else "success",
+        status_param: "error" if error else "success",
         "agent_id": session.agent_id,
         "skill_id": session.skill_id,
     }
 
     if session.is_expired():
-        query_params["google_drive_oauth"] = "error"
+        query_params["skill_oauth"] = "error"
+        query_params[status_param] = "error"
         query_params["reason"] = "expired"
         return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
 
@@ -268,29 +337,84 @@ async def google_drive_oauth_callback(
         return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
 
     if not code:
-        query_params["google_drive_oauth"] = "error"
+        query_params["skill_oauth"] = "error"
+        query_params[status_param] = "error"
         query_params["reason"] = "missing_code"
         return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
 
     try:
-        credentials = await build_google_drive_credentials_from_auth_code(code)
+        credentials = await flow.build_credentials_from_auth_code(code)
         provider_settings = ProviderSettings(
             user_email=session.user_email,
-            provider_name="GoogleDrive",
+            provider_name=flow.provider_name,
             encrypted_credentials="",
             auth_type="oauth",
         )
-        save_google_drive_credentials(provider_settings, provider_settings_repository, credentials)
+        flow.save_credentials(provider_settings, provider_settings_repository, credentials)
         return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
-    except GoogleDriveOAuthError as e:
-        query_params["google_drive_oauth"] = "error"
+    except flow.error_type as e:
+        query_params["skill_oauth"] = "error"
+        query_params[status_param] = "error"
         query_params["reason"] = str(e)
         return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
     except Exception as e:
-        log.error("Unexpected Google Drive OAuth callback error: %s", e, exc_info=True)
-        query_params["google_drive_oauth"] = "error"
+        log.error("Unexpected %s OAuth callback error: %s", flow.display_name, e, exc_info=True)
+        query_params["skill_oauth"] = "error"
+        query_params[status_param] = "error"
         query_params["reason"] = "callback_failed"
         return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
+
+
+@router.post("/google-drive/start", response_model=SkillOAuthStartResponse)
+async def start_google_drive_oauth(
+    request: Request,
+    body: SkillOAuthStartRequest,
+) -> SkillOAuthStartResponse:
+    return await _start_google_skill_oauth(
+        request=request,
+        body=body,
+        flow=_google_skill_oauth_flows()["google_drive"],
+    )
+
+
+@router.get("/google-drive/callback")
+async def google_drive_oauth_callback(
+    code: str = Query(None),
+    error: str = Query(None),
+    state: str = Query(None),
+):
+    return await _google_skill_oauth_callback(
+        flow=_google_skill_oauth_flows()["google_drive"],
+        code=code,
+        error=error,
+        state=state,
+    )
+
+
+@router.post("/google-mail/start", response_model=SkillOAuthStartResponse)
+async def start_google_mail_oauth(
+    request: Request,
+    body: SkillOAuthStartRequest,
+) -> SkillOAuthStartResponse:
+    return await _start_google_skill_oauth(
+        request=request,
+        body=body,
+        flow=_google_skill_oauth_flows()["google_mail"],
+    )
+
+
+@router.get("/google-mail/callback")
+async def google_mail_oauth_callback(
+    code: str = Query(None),
+    error: str = Query(None),
+    state: str = Query(None),
+):
+    return await _google_skill_oauth_callback(
+        flow=_google_skill_oauth_flows()["google_mail"],
+        code=code,
+        error=error,
+        state=state,
+    )
 
 
 async def _oauth_callback(

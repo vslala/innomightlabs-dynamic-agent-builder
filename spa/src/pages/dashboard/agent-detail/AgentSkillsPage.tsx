@@ -23,7 +23,7 @@ export function AgentSkillsPage() {
   const [connectingSkillId, setConnectingSkillId] = useState<string | null>(null);
   const [updatingSkillId, setUpdatingSkillId] = useState<string | null>(null);
   const [uninstallingSkillId, setUninstallingSkillId] = useState<string | null>(null);
-  const handledGoogleDriveCallbackRef = useRef(false);
+  const handledSkillOAuthCallbackRef = useRef(false);
 
   const loadInstalledSkills = async (): Promise<InstalledSkill[]> => {
     setLoadingSkills(true);
@@ -54,35 +54,36 @@ export function AgentSkillsPage() {
   }, [agent.agent_id]);
 
   useEffect(() => {
-    async function handleGoogleDriveOAuthCallback() {
-      if (handledGoogleDriveCallbackRef.current) return;
+    async function handleSkillOAuthCallback() {
+      if (handledSkillOAuthCallbackRef.current) return;
 
       const params = new URLSearchParams(window.location.search);
-      const status = params.get("google_drive_oauth");
+      const status = params.get("skill_oauth");
       const callbackAgentId = params.get("agent_id");
       const callbackSkillId = params.get("skill_id");
 
-      if (!status || callbackAgentId !== agent.agent_id || callbackSkillId !== "google_drive") {
+      if (!status || callbackAgentId !== agent.agent_id || !callbackSkillId) {
         return;
       }
 
-      handledGoogleDriveCallbackRef.current = true;
+      handledSkillOAuthCallbackRef.current = true;
 
       try {
         const currentInstalled = await loadInstalledSkills();
         const available = await refreshAvailableSkills(currentInstalled);
+        const callbackSkill = available.find((item) => item.skill_id === callbackSkillId) ?? null;
 
         if (status !== "success") {
-          setInstallSkillError("Google Drive connection failed");
+          setInstallSkillError("Skill connection failed");
           setIsSkillDialogOpen(true);
-          setSelectedSkill(available.find((item) => item.skill_id === "google_drive") ?? null);
+          setSelectedSkill(callbackSkill);
           setSelectedSkillSchema(null);
           return;
         }
 
-        const alreadyInstalled = currentInstalled.some((skill) => skill.skill_id === "google_drive");
+        const alreadyInstalled = currentInstalled.some((skill) => skill.skill_id === callbackSkillId);
         if (!alreadyInstalled) {
-          await skillApiService.installSkill(agent.agent_id, "google_drive", { config: {} });
+          await skillApiService.installSkill(agent.agent_id, callbackSkillId, { config: {} });
           const refreshedInstalled = await loadInstalledSkills();
           await refreshAvailableSkills(refreshedInstalled);
         }
@@ -92,12 +93,14 @@ export function AgentSkillsPage() {
         setSelectedSkillSchema(null);
       } catch (err: unknown) {
         const available = await refreshAvailableSkills().catch(() => []);
-        setSelectedSkill(available.find((item) => item.skill_id === "google_drive") ?? null);
+        setSelectedSkill(available.find((item) => item.skill_id === callbackSkillId) ?? null);
         setSelectedSkillSchema(null);
-        setInstallSkillError(err instanceof Error ? err.message : "Failed to install Google Drive skill");
+        setInstallSkillError(err instanceof Error ? err.message : "Failed to install connected skill");
         setIsSkillDialogOpen(true);
       } finally {
+        params.delete("skill_oauth");
         params.delete("google_drive_oauth");
+        params.delete("google_mail_oauth");
         params.delete("agent_id");
         params.delete("skill_id");
         params.delete("reason");
@@ -107,7 +110,7 @@ export function AgentSkillsPage() {
       }
     }
 
-    void handleGoogleDriveOAuthCallback();
+    void handleSkillOAuthCallback();
   }, [agent.agent_id]);
 
   const openSkillDialog = async () => {
@@ -126,8 +129,9 @@ export function AgentSkillsPage() {
   const selectSkillForInstall = async (skill: SkillCatalogItem) => {
     setInstallSkillError(null);
     setSelectedSkill(skill);
+    setSelectedSkillSchema(null);
     try {
-      if (!skill.has_form) {
+      if ((skill.requires_oauth && !skill.oauth_connected) || !skill.has_form) {
         setSelectedSkillSchema(null);
         return;
       }
@@ -161,20 +165,24 @@ export function AgentSkillsPage() {
     }
   };
 
-  const handleConnectGoogleDriveSkill = async () => {
+  const handleConnectSkillOAuth = async () => {
     if (!selectedSkill) return;
+    if (!selectedSkill.oauth_start_path) {
+      setInstallSkillError(`No OAuth start path is available for ${selectedSkill.oauth_provider_name ?? selectedSkill.name}`);
+      return;
+    }
     setConnectingSkillId(selectedSkill.skill_id);
     setInstallSkillError(null);
     try {
       const returnTo = `${window.location.origin}/dashboard/agents/${agent.agent_id}/skills`;
-      const response = await skillApiService.startGoogleDriveOAuth({
+      const response = await skillApiService.startSkillOAuth(selectedSkill.oauth_start_path, {
         agent_id: agent.agent_id,
         skill_id: selectedSkill.skill_id,
         return_to: returnTo,
       });
       window.location.href = response.authorize_url;
     } catch (err: unknown) {
-      setInstallSkillError(err instanceof Error ? err.message : "Failed to connect Google Drive");
+      setInstallSkillError(err instanceof Error ? err.message : `Failed to connect ${selectedSkill.oauth_provider_name ?? selectedSkill.name}`);
       setConnectingSkillId(null);
     }
   };
@@ -215,11 +223,15 @@ export function AgentSkillsPage() {
     }
   };
 
-  const handleUninstallSkill = async (skillId: string) => {
-    setUninstallingSkillId(skillId);
+  const handleUninstallSkill = async (skill: InstalledSkill) => {
+    const disconnectOAuth = skill.requires_oauth && skill.oauth_provider_name
+      ? window.confirm(`Uninstall ${skill.name}. Press OK to also disconnect ${skill.oauth_provider_name} for your account, or Cancel to uninstall only and keep the OAuth connection.`)
+      : false;
+
+    setUninstallingSkillId(skill.skill_id);
     try {
-      await skillApiService.uninstallSkill(agent.agent_id, skillId);
-      setInstalledSkills((prev) => prev.filter((skill) => skill.skill_id !== skillId));
+      await skillApiService.uninstallSkill(agent.agent_id, skill.skill_id, { disconnectOAuth });
+      setInstalledSkills((prev) => prev.filter((item) => item.skill_id !== skill.skill_id));
       await refreshAvailableSkills();
     } catch (err) {
       console.error("Error uninstalling skill:", err);
@@ -294,7 +306,7 @@ export function AgentSkillsPage() {
                           </>
                         )}
                       </Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleUninstallSkill(skill.skill_id)} disabled={uninstallingSkillId === skill.skill_id}>
+                      <Button variant="destructive" size="sm" onClick={() => handleUninstallSkill(skill)} disabled={uninstallingSkillId === skill.skill_id}>
                         {uninstallingSkillId === skill.skill_id ? "Removing..." : "Uninstall"}
                       </Button>
                       {Object.keys(skill.config).length > 0 && (
@@ -374,8 +386,8 @@ export function AgentSkillsPage() {
                     </div>
                   )}
                   {selectedSkill.requires_oauth && !selectedSkill.oauth_connected && (
-                    <Button onClick={handleConnectGoogleDriveSkill} disabled={connectingSkillId === selectedSkill.skill_id}>
-                      {connectingSkillId === selectedSkill.skill_id ? "Connecting..." : "Connect Google Drive"}
+                    <Button onClick={handleConnectSkillOAuth} disabled={connectingSkillId === selectedSkill.skill_id}>
+                      {connectingSkillId === selectedSkill.skill_id ? "Connecting..." : `Connect ${selectedSkill.oauth_provider_name}`}
                     </Button>
                   )}
                   {selectedSkillSchema && (

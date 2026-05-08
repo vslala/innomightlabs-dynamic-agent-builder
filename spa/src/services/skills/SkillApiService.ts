@@ -1,11 +1,11 @@
 import { httpClient } from "../http/client";
 import type { FormSchema } from "../../types/form";
 import type {
-  GoogleDriveOAuthStartRequest,
-  GoogleDriveOAuthStartResponse,
   InstalledSkill,
   SkillCatalogItem,
   SkillInstallRequest,
+  SkillOAuthStartRequest,
+  SkillOAuthStartResponse,
   SkillUpdateRequest,
 } from "../../types/skills";
 
@@ -30,12 +30,13 @@ class SkillApiService {
     return httpClient.patch<InstalledSkill>(`/agents/${agentId}/skills/${encodeURIComponent(skillId)}`, payload);
   }
 
-  async uninstallSkill(agentId: string, skillId: string): Promise<void> {
-    await httpClient.delete(`/agents/${agentId}/skills/${encodeURIComponent(skillId)}`);
+  async uninstallSkill(agentId: string, skillId: string, options?: { disconnectOAuth?: boolean }): Promise<void> {
+    const params = options?.disconnectOAuth ? "?disconnect_oauth=true" : "";
+    await httpClient.delete(`/agents/${agentId}/skills/${encodeURIComponent(skillId)}${params}`);
   }
 
-  async startGoogleDriveOAuth(payload: GoogleDriveOAuthStartRequest): Promise<GoogleDriveOAuthStartResponse> {
-    return httpClient.post<GoogleDriveOAuthStartResponse>("/auth/google-drive/start", payload);
+  async startSkillOAuth(path: string, payload: SkillOAuthStartRequest): Promise<SkillOAuthStartResponse> {
+    return httpClient.post<SkillOAuthStartResponse>(path, payload);
   }
 }
 

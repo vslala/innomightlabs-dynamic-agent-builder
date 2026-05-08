@@ -55,6 +55,8 @@ class Settings:
     google_redirect_uri: str = ""
     google_drive_redirect_uri: str = ""
     google_drive_oauth_scopes: str = "https://www.googleapis.com/auth/drive"
+    google_mail_redirect_uri: str = ""
+    google_mail_oauth_scopes: str = "https://www.googleapis.com/auth/gmail.modify"
     openai_oauth_client_id: str = ""
     openai_oauth_scopes: str = "openid profile email offline_access"
     openai_models: list[str] = field(default_factory=lambda: [
@@ -197,6 +199,15 @@ class Settings:
             and self.google_drive_oauth_scopes
         )
 
+    def is_google_mail_oauth_configured(self) -> bool:
+        """Check if Google Mail OAuth is fully configured without raising an error."""
+        return bool(
+            self.google_client_id
+            and self.google_client_secret
+            and self.google_mail_redirect_uri
+            and self.google_mail_oauth_scopes
+        )
+
     def is_openai_oauth_configured(self) -> bool:
         """Check if OpenAI OAuth is configured."""
         return bool(self.openai_oauth_client_id)
@@ -291,6 +302,11 @@ class Settings:
             google_drive_oauth_scopes=os.getenv(
                 "GOOGLE_DRIVE_OAUTH_SCOPES",
                 "https://www.googleapis.com/auth/drive",
+            ),
+            google_mail_redirect_uri=os.getenv("GOOGLE_MAIL_REDIRECT_URI", f"{api_base_url}/auth/google-mail/callback"),
+            google_mail_oauth_scopes=os.getenv(
+                "GOOGLE_MAIL_OAUTH_SCOPES",
+                "https://www.googleapis.com/auth/gmail.modify",
             ),
             openai_oauth_client_id=openai_oauth_client_id,
             openai_oauth_scopes=os.getenv("OPENAI_OAUTH_SCOPES", "openid profile email offline_access"),

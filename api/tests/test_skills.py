@@ -33,6 +33,12 @@ def test_list_skills_catalog(test_client, auth_headers):
     assert google_drive["requires_oauth"] is True
     assert google_drive["oauth_provider_name"] == "GoogleDrive"
     assert google_drive["oauth_connected"] is False
+    assert google_drive["oauth_start_path"] == "/auth/google-drive/start"
+    google_mail = next(item for item in payload if item["skill_id"] == "google_mail")
+    assert google_mail["requires_oauth"] is True
+    assert google_mail["oauth_provider_name"] == "GoogleMail"
+    assert google_mail["oauth_connected"] is False
+    assert google_mail["oauth_start_path"] == "/auth/google-mail/start"
 
 
 def test_list_skills_catalog_reports_google_drive_connected(test_client, auth_headers, dynamodb_table):
@@ -158,6 +164,66 @@ def test_google_drive_install_succeeds_when_provider_connected(test_client, auth
     payload = install_resp.json()
     assert payload["skill_id"] == "google_drive"
     assert payload["config"] == {}
+    assert payload["requires_oauth"] is True
+    assert payload["oauth_provider_name"] == "GoogleDrive"
+
+
+def test_oauth_skill_uninstall_keeps_provider_settings_by_default(test_client, auth_headers, dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    repo = ProviderSettingsRepository()
+    repo.save(
+        ProviderSettings(
+            user_email=TEST_USER_EMAIL,
+            provider_name="GoogleMail",
+            encrypted_credentials="encrypted",
+            auth_type="oauth",
+        )
+    )
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+
+    install_resp = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=google_mail",
+        headers=auth_headers,
+        json={"config": {}},
+    )
+    assert install_resp.status_code == 201
+
+    delete_resp = test_client.delete(
+        f"/agents/{agent.agent_id}/skills/google_mail",
+        headers=auth_headers,
+    )
+    assert delete_resp.status_code == 204
+    assert repo.find_by_provider(TEST_USER_EMAIL, "GoogleMail") is not None
+
+
+def test_oauth_skill_uninstall_can_disconnect_provider_settings(test_client, auth_headers, dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    repo = ProviderSettingsRepository()
+    repo.save(
+        ProviderSettings(
+            user_email=TEST_USER_EMAIL,
+            provider_name="GoogleMail",
+            encrypted_credentials="encrypted",
+            auth_type="oauth",
+        )
+    )
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+
+    install_resp = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=google_mail",
+        headers=auth_headers,
+        json={"config": {}},
+    )
+    assert install_resp.status_code == 201
+
+    delete_resp = test_client.delete(
+        f"/agents/{agent.agent_id}/skills/google_mail?disconnect_oauth=true",
+        headers=auth_headers,
+    )
+    assert delete_resp.status_code == 204
+    assert repo.find_by_provider(TEST_USER_EMAIL, "GoogleMail") is None
 
 
 def test_execute_skill_action_requires_nested_arguments(test_client, auth_headers, dynamodb_table, monkeypatch):

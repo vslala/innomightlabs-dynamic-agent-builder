@@ -6,6 +6,7 @@ from typing import Any, Optional
 import src.form_models as form_models
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import AgentSkill, InstalledSkillResponse, SkillCatalogItemResponse
+from src.skills.oauth_providers import get_skill_oauth_provider
 from src.skills.registry import SkillRegistry, get_skill_registry
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
 
@@ -26,6 +27,7 @@ class SkillService:
         for loaded in self.registry.list():
             oauth_provider_name = loaded.manifest.oauth_provider_name if loaded.manifest.requires_oauth else None
             oauth_connected: bool | None = None
+            oauth_provider = get_skill_oauth_provider(oauth_provider_name)
             if oauth_provider_name and user_email:
                 oauth_connected = (
                     self.provider_settings_repository.find_by_provider(user_email, oauth_provider_name) is not None
@@ -41,6 +43,7 @@ class SkillService:
                     requires_oauth=loaded.manifest.requires_oauth,
                     oauth_provider_name=oauth_provider_name,
                     oauth_connected=oauth_connected,
+                    oauth_start_path=oauth_provider.start_path if oauth_provider else None,
                 )
             )
         return items
@@ -90,23 +93,41 @@ class SkillService:
 
     def list_installed(self, agent_id: str) -> list[InstalledSkillResponse]:
         installed = self.repository.list_by_agent(agent_id)
-        return [
-            InstalledSkillResponse(
-                skill_id=item.skill_id,
-                namespace=item.namespace,
-                name=item.skill_name,
-                description=item.skill_description,
-                enabled=item.enabled,
-                installed_at=item.installed_at,
-                updated_at=item.updated_at,
-                config=item.config,
-                secret_fields=item.secret_fields,
-            )
-            for item in installed
-        ]
+        return [self.to_installed_response(item) for item in installed]
 
-    def uninstall(self, agent_id: str, skill_id: str) -> bool:
-        return self.repository.delete(agent_id, skill_id)
+    def to_installed_response(self, item: AgentSkill) -> InstalledSkillResponse:
+        loaded = self.registry.get(item.skill_id)
+        requires_oauth = loaded.manifest.requires_oauth if loaded else False
+        oauth_provider_name = loaded.manifest.oauth_provider_name if loaded and loaded.manifest.requires_oauth else None
+        return InstalledSkillResponse(
+            skill_id=item.skill_id,
+            namespace=item.namespace,
+            name=item.skill_name,
+            description=item.skill_description,
+            enabled=item.enabled,
+            installed_at=item.installed_at,
+            updated_at=item.updated_at,
+            config=item.config,
+            secret_fields=item.secret_fields,
+            requires_oauth=requires_oauth,
+            oauth_provider_name=oauth_provider_name,
+        )
+
+    def uninstall(
+        self,
+        *,
+        agent_id: str,
+        skill_id: str,
+        user_email: str,
+        disconnect_oauth: bool = False,
+    ) -> bool:
+        deleted = self.repository.delete(agent_id, skill_id)
+        if disconnect_oauth:
+            loaded = self.registry.get(skill_id)
+            oauth_provider_name = loaded.manifest.oauth_provider_name if loaded and loaded.manifest.requires_oauth else None
+            if oauth_provider_name:
+                self.provider_settings_repository.delete(user_email, oauth_provider_name)
+        return deleted
 
     def update_installed(
         self,

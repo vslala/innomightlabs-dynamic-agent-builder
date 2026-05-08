@@ -467,18 +467,22 @@ export function AgentDetail() {
 
   const handleConnectGoogleDriveSkill = async () => {
     if (!agentId || !selectedSkill) return;
+    if (!selectedSkill.oauth_start_path) {
+      setInstallSkillError(`No OAuth start path is available for ${selectedSkill.oauth_provider_name ?? selectedSkill.name}`);
+      return;
+    }
     setConnectingSkillId(selectedSkill.skill_id);
     setInstallSkillError(null);
     try {
       const returnTo = `${window.location.origin}/dashboard/agents/${agentId}`;
-      const response = await skillApiService.startGoogleDriveOAuth({
+      const response = await skillApiService.startSkillOAuth(selectedSkill.oauth_start_path, {
         agent_id: agentId,
         skill_id: selectedSkill.skill_id,
         return_to: returnTo,
       });
       window.location.href = response.authorize_url;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to connect Google Drive";
+      const message = err instanceof Error ? err.message : `Failed to connect ${selectedSkill.oauth_provider_name ?? selectedSkill.name}`;
       setInstallSkillError(message);
       setConnectingSkillId(null);
     }
@@ -580,12 +584,16 @@ export function AgentDetail() {
     }
   };
 
-  const handleUninstallSkill = async (skillId: string) => {
+  const handleUninstallSkill = async (skill: InstalledSkill) => {
     if (!agentId) return;
-    setUninstallingSkillId(skillId);
+    const disconnectOAuth = skill.requires_oauth && skill.oauth_provider_name
+      ? window.confirm(`Uninstall ${skill.name}. Press OK to also disconnect ${skill.oauth_provider_name} for your account, or Cancel to uninstall only and keep the OAuth connection.`)
+      : false;
+
+    setUninstallingSkillId(skill.skill_id);
     try {
-      await skillApiService.uninstallSkill(agentId, skillId);
-      setInstalledSkills((prev) => prev.filter((skill) => skill.skill_id !== skillId));
+      await skillApiService.uninstallSkill(agentId, skill.skill_id, { disconnectOAuth });
+      setInstalledSkills((prev) => prev.filter((item) => item.skill_id !== skill.skill_id));
     } catch (err) {
       console.error("Error uninstalling skill:", err);
     } finally {
@@ -1356,7 +1364,7 @@ export function AgentDetail() {
                         size="icon"
                         style={{ color: "#f87171", height: "2rem", width: "2rem" }}
                         disabled={uninstallingSkillId === skill.skill_id}
-                        onClick={() => handleUninstallSkill(skill.skill_id)}
+                        onClick={() => handleUninstallSkill(skill)}
                         title="Uninstall skill"
                       >
                         <Trash2 style={{ height: "0.875rem", width: "0.875rem" }} />

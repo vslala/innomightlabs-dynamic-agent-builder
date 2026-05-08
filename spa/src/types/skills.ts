@@ -10,6 +10,7 @@ export interface SkillCatalogItem {
   requires_oauth: boolean;
   oauth_provider_name: string | null;
   oauth_connected: boolean | null;
+  oauth_start_path: string | null;
 }
 
 export interface InstalledSkill {
@@ -22,6 +23,8 @@ export interface InstalledSkill {
   updated_at: string | null;
   config: Record<string, string>;
   secret_fields: string[];
+  requires_oauth: boolean;
+  oauth_provider_name: string | null;
 }
 
 export interface SkillInstallRequest {
@@ -35,12 +38,15 @@ export interface SkillUpdateRequest {
 
 export type SkillInstallSchema = FormSchema;
 
-export interface GoogleDriveOAuthStartRequest {
+export interface SkillOAuthStartRequest {
   agent_id: string;
   skill_id: string;
   return_to: string;
 }
 
-export interface GoogleDriveOAuthStartResponse {
+export interface SkillOAuthStartResponse {
   authorize_url: string;
 }
+
+export type GoogleDriveOAuthStartRequest = SkillOAuthStartRequest;
+export type GoogleDriveOAuthStartResponse = SkillOAuthStartResponse;

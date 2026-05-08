@@ -50,6 +50,7 @@ class SkillCatalogItemResponse(BaseModel):
     requires_oauth: bool = False
     oauth_provider_name: Optional[str] = None
     oauth_connected: Optional[bool] = None
+    oauth_start_path: Optional[str] = None
 
 
 class InstalledSkillResponse(BaseModel):
@@ -62,6 +63,8 @@ class InstalledSkillResponse(BaseModel):
     updated_at: Optional[datetime] = None
     config: dict[str, Any] = Field(default_factory=dict)
     secret_fields: list[str] = Field(default_factory=list)
+    requires_oauth: bool = False
+    oauth_provider_name: Optional[str] = None
 
 
 class AgentSkill(BaseModel):
