@@ -48,9 +48,14 @@ google_oauth = GoogleOAuth()
 class WidgetTokenResponse(BaseModel):
     """Response containing visitor JWT token."""
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
     expires_in: int  # seconds
     visitor: WidgetVisitor
+
+
+class WidgetRefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 
 class WidgetMessageResponse(BaseModel):
@@ -236,6 +241,7 @@ async def widget_oauth_callback(
         # Exchange code for tokens
         tokens = await google_oauth.exchange_code_for_tokens(code, redirect_uri=widget_callback_url)
         access_token = tokens.get("access_token")
+        refresh_token = tokens.get("refresh_token")
 
         if not access_token:
             raise HTTPException(status_code=400, detail="Failed to get access token")
@@ -266,6 +272,7 @@ async def widget_oauth_callback(
         if redirect_uri:
             params = urlencode({
                 "token": visitor_token,
+                "refresh_token": refresh_token or "",
                 "visitor_id": visitor.visitor_id,
                 "email": visitor.email,
                 "name": visitor.name or "",
@@ -276,6 +283,7 @@ async def widget_oauth_callback(
         # Otherwise return token in response
         return WidgetTokenResponse(
             access_token=visitor_token,
+            refresh_token=refresh_token,
             expires_in=WIDGET_JWT_EXPIRATION_HOURS * 3600,
             visitor=visitor,
         )
@@ -285,6 +293,57 @@ async def widget_oauth_callback(
     except Exception as e:
         log.error(f"Widget OAuth error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Authentication failed")
+
+
+@router.post("/auth/refresh", response_model=WidgetTokenResponse)
+async def refresh_widget_token(
+    body: WidgetRefreshTokenRequest,
+    api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
+) -> WidgetTokenResponse:
+    """
+    Refresh a widget visitor JWT using the visitor's Google refresh token.
+
+    Requires X-API-Key header. The new widget JWT is scoped to the API key's agent.
+    """
+    refresh_token = body.refresh_token.strip()
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="Missing refresh token")
+
+    try:
+        tokens = await google_oauth.refresh_access_token(refresh_token)
+        google_access_token = tokens.get("access_token")
+        if not google_access_token:
+            raise HTTPException(status_code=400, detail="Failed to refresh access token")
+
+        user_info = await google_oauth.get_user_info(google_access_token)
+        email = user_info.get("email")
+        google_id = user_info.get("id") or user_info.get("sub")
+        name = user_info.get("name")
+        picture = user_info.get("picture")
+
+        if not email:
+            raise HTTPException(status_code=400, detail="Failed to get user email")
+
+        visitor = WidgetVisitor(
+            visitor_id=google_id or email,
+            email=email,
+            name=name,
+            picture=picture,
+        )
+        visitor_token = create_visitor_token(visitor, api_key.agent_id)
+
+        return WidgetTokenResponse(
+            access_token=visitor_token,
+            refresh_token=tokens.get("refresh_token") or refresh_token,
+            expires_in=WIDGET_JWT_EXPIRATION_HOURS * 3600,
+            visitor=visitor,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning(f"Widget token refresh failed: {e}", exc_info=True)
+        raise HTTPException(status_code=401, detail="Token refresh failed")
 
 
 # OAuth callback page HTML served by the backend
@@ -325,6 +384,7 @@ OAUTH_CALLBACK_HTML = """<!DOCTYPE html>
     (function() {
       var params = new URLSearchParams(window.location.search);
       var token = params.get('token');
+      var refreshToken = params.get('refresh_token');
       var visitorId = params.get('visitor_id');
       var email = params.get('email');
       var name = params.get('name');
@@ -341,6 +401,7 @@ OAUTH_CALLBACK_HTML = """<!DOCTYPE html>
           window.opener.postMessage({
             type: 'innomight-oauth-callback',
             token: token,
+            refreshToken: refreshToken,
             visitor: {
               visitorId: visitorId,
               email: email,

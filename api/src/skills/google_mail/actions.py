@@ -368,6 +368,24 @@ async def search(arguments: dict[str, Any], config: dict[str, Any], context: dic
 
 
 async def read(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> str:
+    """Read a Gmail message and return a formatted plain-text representation.
+    
+        Validates the incoming message request, resolves an OAuth access token for
+        the agent owner, and fetches the target Gmail message in `full` format from
+        the Gmail messages API. The response payload is inspected for structured
+        headers and message body content.
+    
+        The method extracts common headers such as subject, sender, recipients, cc,
+        and date. It attempts to read the message body as plain text first, falls
+        back to HTML converted into text, and finally falls back to the Gmail
+        snippet if no body content is available. The extracted body is truncated to
+        `MAX_READ_CHARACTERS`, and the returned output includes a truncation notice
+        when applicable.
+    
+        Returns a human-readable multiline string containing message metadata and
+        body content wrapped in `<body>` tags. If the Gmail API returns a non-dict
+        payload, the method returns a simple error string instead.
+        """    
     del config
     request = _validate_message_request(arguments)
     access_token = await _get_access_token(context)
@@ -501,6 +519,12 @@ async def _modify_message_labels(
 
 
 async def delete(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> str:
+    """Move a single Gmail message to trash.
+    
+        Validates the message request, resolves an access token from the runtime
+        context, sends the Gmail trash action for the target message, and returns a
+        confirmation string containing the message ID.
+        """    
     del config
     request = _validate_message_request(arguments)
     access_token = await _get_access_token(context)
@@ -514,6 +538,14 @@ async def delete(arguments: dict[str, Any], config: dict[str, Any], context: dic
 
 
 async def batch_delete(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> str:
+    """Move multiple Gmail messages to trash in chunked batch requests.
+
+    Validates the batch request, removes duplicate message IDs while preserving
+    order, resolves an access token from the runtime context, and sends one or
+    more Gmail batchModify requests that add the TRASH label and remove INBOX.
+    Returns a summary including processed message count, batch count, and the
+    number of duplicate IDs ignored.
+    """    
     del config
     request = _validate_batch_message_request(arguments)
     message_ids, duplicate_count = _dedupe_preserving_order(request.message_ids)
