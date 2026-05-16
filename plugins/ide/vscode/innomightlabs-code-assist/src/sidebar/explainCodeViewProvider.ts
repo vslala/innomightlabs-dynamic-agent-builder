@@ -5,6 +5,9 @@ import type { ConversationSummary } from '../innomightlabsClient';
 import type { AppState } from '../state/appState';
 import { AppStore } from '../state/appStore';
 
+const PENDING_AUTHENTICATION_MESSAGE = 'Waiting for Google sign-in to complete in your browser...';
+const AUTHENTICATION_CANCELLED_MESSAGE = 'Google sign-in did not complete. You can try signing in again.';
+
 type ExplainCodeViewState = {
 	code: string;
 	language: string;
@@ -161,10 +164,27 @@ export class ExplainCodeViewProvider implements vscode.WebviewViewProvider {
 			...state,
 			explainPanel: {
 				...state.explainPanel,
-				explanation: 'Waiting for Google sign-in to complete in your browser...',
+				explanation: PENDING_AUTHENTICATION_MESSAGE,
 				status: 'idle',
 			},
 		}));
+	}
+
+	public clearPendingAuthentication(): void {
+		this.store.update((state) => {
+			if (state.explainPanel.explanation !== PENDING_AUTHENTICATION_MESSAGE) {
+				return state;
+			}
+
+			return {
+				...state,
+				explainPanel: {
+					...state.explainPanel,
+					explanation: AUTHENTICATION_CANCELLED_MESSAGE,
+					status: 'idle',
+				},
+			};
+		});
 	}
 
 	public showWorkflowOverlay(title: string, steps: string[]): void {

@@ -251,6 +251,9 @@ export function activate(context: vscode.ExtensionContext): void {
 			if (state.isAuthenticated) {
 				await refreshConversations();
 			} else {
+				if (!state.isAuthenticating) {
+					explainCodeViewProvider.clearPendingAuthentication();
+				}
 				selectedConversationId = null;
 				latestConversations = [];
 				store.update((current) => ({
@@ -290,6 +293,7 @@ async function runSignIn(
 		viewProvider.showPendingAuthentication();
 		await authService.startGoogleLogin();
 	} catch (error) {
+		viewProvider.clearPendingAuthentication();
 		const message = error instanceof Error ? error.message : 'Unknown error';
 		const configure = 'Configure Backend';
 		const selected = await vscode.window.showErrorMessage(
