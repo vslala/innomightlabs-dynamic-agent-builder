@@ -123,6 +123,21 @@ async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
     ]
 
     assert not [event for event in events if event.event_type == SSEEventType.ERROR]
+    assert [event.event_type for event in events] == [
+        SSEEventType.USER_MESSAGE_SAVED,
+        SSEEventType.LIFECYCLE_NOTIFICATION,
+        SSEEventType.LIFECYCLE_NOTIFICATION,
+        SSEEventType.LIFECYCLE_NOTIFICATION,
+        SSEEventType.LIFECYCLE_NOTIFICATION,
+        SSEEventType.TOOL_CALL_START,
+        SSEEventType.TOOL_CALL_RESULT,
+        SSEEventType.AGENT_RESPONSE_TO_USER,
+        SSEEventType.ASSISTANT_MESSAGE_SAVED,
+        SSEEventType.STREAM_COMPLETE,
+    ]
+    assert events[0].message_id == message_repo.messages[0].message_id
+    assert events[-2].message_id == message_repo.messages[-1].message_id
+    assert events[-1].message_id is None
     assert [message.role for message in message_repo.messages] == [
         "user",
         "system",

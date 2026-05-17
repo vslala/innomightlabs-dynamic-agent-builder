@@ -286,8 +286,9 @@ async def send_message(
     Events:
     - LIFECYCLE_NOTIFICATION: Status updates during processing
     - AGENT_RESPONSE_TO_USER: Streaming response chunks from the LLM
-    - MESSAGE_SAVED: Confirmation that user/assistant message was saved
-    - STREAM_COMPLETE: Stream has finished
+    - USER_MESSAGE_SAVED: Confirmation that the user message was saved
+    - ASSISTANT_MESSAGE_SAVED: Confirmation that the assistant message was saved
+    - STREAM_COMPLETE: Stream has finished successfully
     - ERROR: An error occurred
     """
     user_email: str = request.state.user_email

@@ -25,8 +25,11 @@ class SSEEventType(str, Enum):
     TOOL_CALL_START = "TOOL_CALL_START"
     TOOL_CALL_RESULT = "TOOL_CALL_RESULT"
 
+    # Message persistence events
+    USER_MESSAGE_SAVED = "USER_MESSAGE_SAVED"
+    ASSISTANT_MESSAGE_SAVED = "ASSISTANT_MESSAGE_SAVED"
+
     # Status events
-    MESSAGE_SAVED = "MESSAGE_SAVED"
     STREAM_COMPLETE = "STREAM_COMPLETE"
 
     # Error event

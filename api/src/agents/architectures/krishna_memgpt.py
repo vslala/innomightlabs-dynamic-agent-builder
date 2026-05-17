@@ -135,7 +135,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             self.message_repo.save(user_msg)
 
             yield SSEEvent(
-                event_type=SSEEventType.MESSAGE_SAVED,
+                event_type=SSEEventType.USER_MESSAGE_SAVED,
                 content="User message saved",
                 message_id=user_msg.message_id,
             )
@@ -353,15 +353,15 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 self.message_repo.save(assistant_msg)
 
                 yield SSEEvent(
-                    event_type=SSEEventType.STREAM_COMPLETE,
-                    content="Response complete",
+                    event_type=SSEEventType.ASSISTANT_MESSAGE_SAVED,
+                    content="Assistant message saved",
                     message_id=assistant_msg.message_id,
                 )
-            else:
-                yield SSEEvent(
-                    event_type=SSEEventType.STREAM_COMPLETE,
-                    content="Response complete (tools only)",
-                )
+
+            yield SSEEvent(
+                event_type=SSEEventType.STREAM_COMPLETE,
+                content="Response complete",
+            )
 
         except Exception as e:
             log.error(f"Error in KrishnaMemGPT handle_message: {e}", exc_info=True)
@@ -493,4 +493,3 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         except Exception as e:
             log.warning(f"Failed to load linked KBs for agent {agent_id}: {e}")
             return []
-

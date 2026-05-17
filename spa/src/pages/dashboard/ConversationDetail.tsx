@@ -78,6 +78,7 @@ export function ConversationDetail() {
   const streamingContentRef = useRef("");
   const hadToolCallsRef = useRef(false);
   const renderedFormRef = useRef(false);
+  const assistantMessageSavedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
     attachments,
@@ -283,6 +284,7 @@ export function ConversationDetail() {
     streamingContentRef.current = "";
     hadToolCallsRef.current = false;
     renderedFormRef.current = false;
+    assistantMessageSavedRef.current = false;
 
     // Add user message to the list immediately (unless it's a retry/continue message)
     const isRetryMessage = messageOverride?.startsWith("Please continue");
@@ -321,7 +323,7 @@ export function ConversationDetail() {
           }
           break;
 
-        case SSEEventType.MESSAGE_SAVED:
+        case SSEEventType.USER_MESSAGE_SAVED:
           // Update user message ID if provided
           if (event.message_id) {
             setMessages((prev) =>
@@ -334,9 +336,10 @@ export function ConversationDetail() {
           }
           break;
 
-        case SSEEventType.STREAM_COMPLETE:
+        case SSEEventType.ASSISTANT_MESSAGE_SAVED:
           // Add assistant message to list using ref value
           if (streamingContentRef.current) {
+            assistantMessageSavedRef.current = true;
             const assistantMsg: Message = {
               message_id: event.message_id || `assistant-${Date.now()}`,
               conversation_id: conversation.conversation_id,
@@ -345,7 +348,15 @@ export function ConversationDetail() {
               created_at: new Date().toISOString(),
             };
             setMessages((msgs) => [...msgs, assistantMsg]);
-          } else if (hadToolCallsRef.current && !renderedFormRef.current) {
+          }
+          break;
+
+        case SSEEventType.STREAM_COMPLETE:
+          if (
+            !assistantMessageSavedRef.current &&
+            hadToolCallsRef.current &&
+            !renderedFormRef.current
+          ) {
             // Had tool calls but no final response - incomplete
             setIncompleteResponse(true);
           }
