@@ -12,7 +12,7 @@ from ..db import get_dynamodb_resource
 from boto3.dynamodb.conditions import Key
 
 from src.config import settings
-from src.conversations.models import Conversation
+from src.conversations.models import AutomationConversation, Conversation
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +36,16 @@ class ConversationRepository:
     def __init__(self):
         self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
+
+    def _from_dynamo_item(self, item: dict) -> Conversation:
+        """Hydrate the concrete conversation type represented by a DynamoDB item."""
+        if (
+            item.get("conversation_type") == "automation"
+            or item.get("entity_type") == "AutomationConversation"
+        ):
+            return AutomationConversation.from_dynamo_item(item)
+
+        return Conversation.from_dynamo_item(item)
 
     def save(self, conversation: Conversation) -> Conversation:
         """
@@ -74,7 +84,7 @@ class ConversationRepository:
         )
         item = response.get("Item")
         if item:
-            return Conversation.from_dynamo_item(item)
+            return self._from_dynamo_item(item)
         return None
 
     def find_all_by_user(self, created_by: str) -> list[Conversation]:
@@ -94,7 +104,7 @@ class ConversationRepository:
         )
 
         items = response.get("Items", [])
-        conversations = [Conversation.from_dynamo_item(item) for item in items]
+        conversations = [self._from_dynamo_item(item) for item in items]
 
         # Sort by created_at descending (most recent first)
         conversations.sort(key=lambda c: c.created_at, reverse=True)
@@ -126,7 +136,7 @@ class ConversationRepository:
         )
 
         items = response.get("Items", [])
-        conversations = [Conversation.from_dynamo_item(item) for item in items]
+        conversations = [self._from_dynamo_item(item) for item in items]
 
         # Sort by created_at descending (most recent first)
         conversations.sort(key=lambda c: c.created_at, reverse=True)

@@ -4,7 +4,7 @@ Tests for ConversationRepository.
 
 import pytest
 
-from src.conversations.models import Conversation
+from src.conversations.models import AutomationConversation, Conversation
 from tests.mock_data import (
     TEST_USER_EMAIL,
     TEST_USER_EMAIL_2,
@@ -32,6 +32,32 @@ class TestConversationRepository:
         assert saved.description == CONVERSATION_CREATE_REQUEST["description"]
         assert saved.agent_id == CONVERSATION_CREATE_REQUEST["agent_id"]
         assert saved.created_by == TEST_USER_EMAIL
+        assert saved.to_dynamo_item()["conversation_type"] == "chat"
+
+    def test_save_and_find_automation_conversation(self, conversation_repository):
+        """Test that automation conversations persist and hydrate as the concrete subtype."""
+        conversation = AutomationConversation(
+            title="Automation Run",
+            description="Workflow execution",
+            agent_id="root-agent-id",
+            created_by=TEST_USER_EMAIL,
+            automation_id="automation-123",
+            automation_run_id="run-456",
+        )
+
+        saved = conversation_repository.save(conversation)
+        found = conversation_repository.find_by_id(
+            saved.conversation_id,
+            TEST_USER_EMAIL,
+        )
+
+        assert isinstance(saved, AutomationConversation)
+        assert isinstance(found, AutomationConversation)
+        assert found is not None
+        assert found.conversation_type == "automation"
+        assert found.automation_id == "automation-123"
+        assert found.automation_run_id == "run-456"
+        assert found.to_dynamo_item()["entity_type"] == "AutomationConversation"
 
     def test_find_by_id(self, conversation_repository):
         """Test that find_by_id() retrieves the correct conversation."""

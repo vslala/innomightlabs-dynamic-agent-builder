@@ -3,7 +3,7 @@ Conversation models for the conversations module.
 """
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -75,6 +75,7 @@ class Conversation(BaseModel):
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "entity_type": "Conversation",
+            "conversation_type": "chat",
             # GSI for sorting by created_at (reverse chronological)
             "gsi1_pk": self.pk,
             "gsi1_sk": f"CONVERSATION#{self.created_at.isoformat()}#{self.conversation_id}",
@@ -90,7 +91,9 @@ class Conversation(BaseModel):
             agent_id=item["agent_id"],
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),
-            updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
+            updated_at=(
+                datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None
+            ),
         )
 
     def to_response(self) -> ConversationResponse:
@@ -103,4 +106,42 @@ class Conversation(BaseModel):
             created_by=self.created_by,
             created_at=self.created_at,
             updated_at=self.updated_at,
+        )
+
+
+class AutomationConversation(Conversation):
+    """Conversation subtype for automation runs spanning one or more agents."""
+
+    conversation_type: Literal["automation"] = "automation"
+    automation_id: str
+    automation_run_id: str
+
+    def to_dynamo_item(self) -> dict[str, Any]:
+        """Convert to DynamoDB item format."""
+        item = super().to_dynamo_item()
+        item.update(
+            {
+                "entity_type": "AutomationConversation",
+                "conversation_type": self.conversation_type,
+                "automation_id": self.automation_id,
+                "automation_run_id": self.automation_run_id,
+            }
+        )
+        return item
+
+    @classmethod
+    def from_dynamo_item(cls, item: dict[str, Any]) -> "AutomationConversation":
+        """Create AutomationConversation from DynamoDB item."""
+        return cls(
+            conversation_id=item["conversation_id"],
+            title=item["title"],
+            description=item.get("description"),
+            agent_id=item["agent_id"],
+            created_by=item["created_by"],
+            created_at=datetime.fromisoformat(item["created_at"]),
+            updated_at=(
+                datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None
+            ),
+            automation_id=item["automation_id"],
+            automation_run_id=item["automation_run_id"],
         )

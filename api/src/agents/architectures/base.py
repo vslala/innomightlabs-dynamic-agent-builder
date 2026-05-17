@@ -12,11 +12,25 @@ a user message, including:
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, AsyncIterator
 
+from pydantic import BaseModel, Field
+
+from src.llm.events import SSEEvent, SSEEventType
+
 if TYPE_CHECKING:
     from src.agents.models import Agent
     from src.conversations.models import Conversation
-    from src.llm.events import SSEEvent
     from src.messages.models import Attachment
+
+
+class AgentInvocationResult(BaseModel):
+    """Buffered result for non-streaming agent invocation."""
+
+    events: list[SSEEvent] = Field(default_factory=list)
+    response_text: str = ""
+    user_message_id: str | None = None
+    assistant_message_id: str | None = None
+    success: bool = True
+    error: str | None = None
 
 
 class AgentArchitecture(ABC):
@@ -29,7 +43,7 @@ class AgentArchitecture(ABC):
     """
 
     @abstractmethod
-    async def handle_message(
+    def handle_message(
         self,
         agent: "Agent",
         conversation: "Conversation",
@@ -63,6 +77,48 @@ class AgentArchitecture(ABC):
             SSEEvent objects for streaming to the client
         """
         pass
+
+    async def handle_message_buffered(
+        self,
+        agent: "Agent",
+        conversation: "Conversation",
+        user_message: str,
+        owner_email: str,
+        actor_email: str,
+        actor_id: str,
+        attachments: list["Attachment"] | None = None,
+    ) -> AgentInvocationResult:
+        """
+        Handle a user message and return a buffered invocation result.
+
+        This is intended for non-streaming callers such as automations. The default
+        implementation consumes the streaming contract and preserves the full event
+        timeline while extracting commonly needed message IDs and response text.
+        """
+        result = AgentInvocationResult()
+
+        async for event in self.handle_message(
+            agent=agent,
+            conversation=conversation,
+            user_message=user_message,
+            owner_email=owner_email,
+            actor_email=actor_email,
+            actor_id=actor_id,
+            attachments=attachments,
+        ):
+            result.events.append(event)
+
+            if event.event_type == SSEEventType.AGENT_RESPONSE_TO_USER:
+                result.response_text += event.content
+            elif event.event_type == SSEEventType.USER_MESSAGE_SAVED:
+                result.user_message_id = event.message_id
+            elif event.event_type == SSEEventType.ASSISTANT_MESSAGE_SAVED:
+                result.assistant_message_id = event.message_id
+            elif event.event_type == SSEEventType.ERROR:
+                result.success = False
+                result.error = event.content
+
+        return result
 
     @property
     @abstractmethod
