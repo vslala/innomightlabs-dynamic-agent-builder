@@ -1,0 +1,13 @@
+<memory_warning>
+The following memory blocks are nearing capacity:
+{% for warning in capacity_warnings %}
+- [{{ warning.block_name }}]: {{ warning.word_count }}/{{ warning.word_limit }} words ({{ "%.0f"|format(warning.percent) }}%)
+{% endfor %}
+
+You should:
+1. Review and consolidate redundant information
+2. Move detailed information to archival memory
+3. Delete outdated entries
+
+If you don't take action, the system will auto-compact these blocks.
+</memory_warning>

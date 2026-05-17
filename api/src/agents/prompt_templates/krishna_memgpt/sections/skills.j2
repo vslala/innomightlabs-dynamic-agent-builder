@@ -1,0 +1,9 @@
+<skills>
+Enabled skills ({{ enabled_skills|length }}):
+{% for skill in enabled_skills %}
+- {{ skill.skill_id }}: {{ skill.skill_name or skill.skill_id }}{% if skill.skill_description %} - {{ skill.skill_description }}{% endif %}
+{% endfor %}
+
+Use the provided skill tools when needed. If you need structured input from the user, prefer interactive forms (when available) instead of long back-and-forth.
+If a skill action fails, read the tool error and either retry with corrected inputs or ask the user for the missing information.
+</skills>

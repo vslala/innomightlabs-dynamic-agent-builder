@@ -30,8 +30,8 @@ Changes should be made at the appropriate seam. This reduces merge conflicts and
 ### A) Prompt & context building (preferred for most changes)
 **Files:**
 - `krishna_memgpt_prompt.py`
-- `krishna_memgpt_prompt_loaders.py`
-- `../../agents/prompt_pipeline.py`
+- `../../agents/prompt_templates/krishna_memgpt_system_prompt.j2`
+- `../../agents/prompt_templates/krishna_memgpt/sections/*.j2`
 
 **Use this seam when:**
 - You want to add/remove/reorder system-prompt sections
@@ -39,13 +39,11 @@ Changes should be made at the appropriate seam. This reduces merge conflicts and
 - You want to add new context blocks (skills index, KB instructions, policy, diagnostics)
 
 **How:**
-1. Create or update a loader in `krishna_memgpt_prompt_loaders.py`.
-2. Declare its contract explicitly:
-   - `requires = (...)` for *fatal* inputs
-   - `optional_requires = (...)` for optional sections
-3. If the loader needs new inputs, add them to `PromptRuntime` and populate them in the orchestrator.
+1. Add or update a Jinja section template under `prompt_templates/krishna_memgpt/sections/`.
+2. Include it from `krishna_memgpt_system_prompt.j2`, guarded by `{% if ... %}` when the section is optional.
+3. If the section needs new typed data, populate it once in the orchestrator and pass it through `build_krishna_memgpt_system_prompt`.
 
-**Rule:** loaders should be renderers. Avoid network calls and DB reads inside loaders.
+**Rule:** templates render already-loaded typed data. Avoid network calls, DB reads, and Python-side formatting helpers for prompt layout.
 
 ### B) Turn orchestration (keep it thin)
 **File:** `krishna_memgpt.py`
@@ -120,9 +118,9 @@ If a tool mutates core memory, the model must not operate on stale memory.
 ## Common examples
 
 ### Example: add a new prompt section
-1. Add `MySectionLoader(PromptLoaderBase)`
-2. Add it to the pipeline list in `krishna_memgpt_prompt.py`
-3. If it needs data, add it to `PromptRuntime` and populate it once in `krishna_memgpt.py`
+1. Add `prompt_templates/krishna_memgpt/sections/my_section.j2`
+2. Include it from `prompt_templates/krishna_memgpt_system_prompt.j2`
+3. If it needs data, add a typed argument to `build_krishna_memgpt_system_prompt` and populate it once in `krishna_memgpt.py`
 
 ### Example: add a new tool that updates memory
 1. Implement tool logic (native tool handler)

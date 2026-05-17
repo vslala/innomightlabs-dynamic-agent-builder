@@ -1,0 +1,21 @@
+{% include "krishna_memgpt/sections/identity.j2" %}
+
+{% include "krishna_memgpt/sections/persona.j2" %}
+
+{% if core_memory %}
+{% include "krishna_memgpt/sections/core_memory.j2" %}
+{% endif %}
+
+{% include "krishna_memgpt/sections/memory_tools.j2" %}
+
+{% if kb_count > 0 %}
+{% include "krishna_memgpt/sections/knowledge_base.j2" %}
+{% endif %}
+
+{% if enabled_skills %}
+{% include "krishna_memgpt/sections/skills.j2" %}
+{% endif %}
+
+{% if capacity_warnings %}
+{% include "krishna_memgpt/sections/memory_warning.j2" %}
+{% endif %}

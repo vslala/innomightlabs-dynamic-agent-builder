@@ -22,6 +22,13 @@ class ToolCallAuditMessage(BaseModel):
     result_size_chars: int = 0
 
 
+class ToolCallStart(BaseModel):
+    sequence: int
+    tool_name: str
+    tool_args: dict[str, Any] = Field(default_factory=dict)
+    started_at: datetime
+
+
 def build_tool_call_audit_message(
     *,
     tool_call_id: str,

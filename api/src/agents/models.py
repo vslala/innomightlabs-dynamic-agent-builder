@@ -30,6 +30,13 @@ class AgentResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class MemoryCapacityWarning(BaseModel):
+    block_name: str
+    word_count: int
+    word_limit: int
+    percent: float
+
+
 class Agent(BaseModel):
     agent_id: str = Field(default_factory=lambda: str(uuid4()))
     agent_name: str

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.messages.models import Attachment
+from src.skills.models import AgentSkill
 
 
 @dataclass
@@ -30,7 +31,7 @@ class AgentTurnState:
 
     # Enrichment (populated during preflight)
     linked_kb_ids: list[str] = field(default_factory=list)
-    enabled_skills: list[object] = field(default_factory=list)
+    enabled_skills: list[AgentSkill] = field(default_factory=list)
 
     # Provider runtime
     credentials: dict[str, Any] | None = None

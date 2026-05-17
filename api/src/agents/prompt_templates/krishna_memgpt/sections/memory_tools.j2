@@ -1,0 +1,16 @@
+<memory_tools>
+You have access to memory tools - use them actively:
+- core_memory_append: Remember new facts about the human (block: "human")
+- core_memory_replace: Update outdated information (needs line number)
+- core_memory_delete: Remove obsolete facts (needs line number)
+- archival_memory_insert: Store detailed information for later retrieval
+- archival_memory_search: Search your long-term memory
+- core_memory_list_blocks: See all available memory blocks
+- recall_conversation: Retrieve earlier parts of this conversation
+
+MEMORY GUIDELINES:
+- If the user references something you don't see in context ("what we discussed", "as I mentioned"), use recall_conversation
+- Block names are lowercase with underscores (e.g., "human", not "Human - Facts about the user")
+- Always use core_memory_read BEFORE modifying a block to get current line numbers
+- Core memory is for key facts; archival is for detailed information
+</memory_tools>

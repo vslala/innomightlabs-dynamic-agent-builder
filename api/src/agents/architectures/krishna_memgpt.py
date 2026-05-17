@@ -13,17 +13,20 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
-from src.common import CAPACITY_WARNING_THRESHOLD, MAX_TOOL_ITERATIONS
-from src.agents.tool_audit import build_tool_call_audit_message
+from src.common import CAPACITY_WARNING_THRESHOLD
+from src.agents.models import MemoryCapacityWarning
+from src.agents.tool_audit import ToolCallStart, build_tool_call_audit_message
 from src.crypto import decrypt
 from src.auth.openai_oauth import ensure_valid_openai_credentials
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
 from src.llm.providers import get_llm_provider
-from src.memory import MemoryRepository, CoreMemory
+from src.memory import MemoryRepository
 from src.messages.models import Message, Attachment
 from src.messages.repository import MessageRepository
+from src.memory.snapshot import CoreMemorySnapshot
 from src.settings.repository import get_provider_settings_repository
+from src.skills.models import AgentSkill
 from src.skills.service import SkillRuntimeService
 from src.tools.native import NATIVE_TOOLS, KNOWLEDGE_TOOLS, NativeToolHandler
 from src.knowledge.repository import AgentKnowledgeBaseRepository
@@ -224,7 +227,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
             full_response = ""
             tool_call_sequence = 0
-            tool_call_starts: dict[str, dict[str, Any]] = {}
+            tool_call_starts: dict[str, ToolCallStart] = {}
             async for loop_event in run_agentic_tool_loop(
                 provider=provider,
                 context=context,
@@ -243,12 +246,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 elif loop_event.kind == "tool_call_start":
                     tool_call_sequence += 1
                     tool_call_id = loop_event.payload["tool_call_id"]
-                    tool_call_starts[tool_call_id] = {
-                        "sequence": tool_call_sequence,
-                        "tool_name": loop_event.payload["tool_name"],
-                        "tool_args": loop_event.payload["tool_args"],
-                        "started_at": datetime.now(timezone.utc),
-                    }
+                    tool_call_starts[tool_call_id] = ToolCallStart(
+                        sequence=tool_call_sequence,
+                        tool_name=loop_event.payload["tool_name"],
+                        tool_args=loop_event.payload["tool_args"],
+                        started_at=datetime.now(timezone.utc),
+                    )
 
                     yield SSEEvent(
                         event_type=SSEEventType.TOOL_CALL_START,
@@ -265,12 +268,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                     if start:
                         audit = build_tool_call_audit_message(
                             tool_call_id=tool_call_id,
-                            sequence=start["sequence"],
-                            tool_name=start["tool_name"],
-                            tool_args=start["tool_args"],
+                            sequence=start.sequence,
+                            tool_name=start.tool_name,
+                            tool_args=start.tool_args,
                             result=result,
                             success=loop_event.payload["success"],
-                            started_at=start["started_at"],
+                            started_at=start.started_at,
                         )
 
                         self.message_repo.save(
@@ -380,9 +383,9 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         user_id: str,
         *,
         kb_count: int | None = None,
-        enabled_skills: list[object] | None = None,
-        core_memory: object | None = None,
-        capacity_warnings: list[dict] | None = None,
+        enabled_skills: list[AgentSkill] | None = None,
+        core_memory: CoreMemorySnapshot | None = None,
+        capacity_warnings: list[MemoryCapacityWarning] | None = None,
     ) -> str:
         """Build the system prompt.
 
@@ -402,7 +405,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             capacity_warnings=capacity_warnings,
         )
 
-    def _load_core_memory_snapshot(self, agent_id: str, user_id: str):
+    def _load_core_memory_snapshot(self, agent_id: str, user_id: str) -> CoreMemorySnapshot:
         """Load a consistent core-memory snapshot (single read) for this turn."""
         from src.memory.snapshot import (
             CoreMemoryBlockDefSnapshot,
@@ -433,14 +436,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
         return CoreMemorySnapshot(block_defs=def_snaps, blocks=block_snaps)
 
-    def _check_capacity_warnings_from_snapshot(self, snapshot) -> list[dict]:
+    def _check_capacity_warnings_from_snapshot(
+        self,
+        snapshot: CoreMemorySnapshot,
+    ) -> list[MemoryCapacityWarning]:
         """Check capacity warnings from a snapshot (no DB reads)."""
-        from src.memory.snapshot import CoreMemorySnapshot
-
-        if not isinstance(snapshot, CoreMemorySnapshot):
-            raise TypeError("snapshot must be CoreMemorySnapshot")
-
-        warnings: list[dict] = []
+        warnings: list[MemoryCapacityWarning] = []
         for d in snapshot.block_defs:
             b = snapshot.blocks.get(d.block_name)
             if not b:
@@ -448,12 +449,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             percent = (b.word_count / d.word_limit) * 100 if d.word_limit else 0
             if percent >= CAPACITY_WARNING_THRESHOLD * 100:
                 warnings.append(
-                    {
-                        "block_name": d.block_name,
-                        "word_count": b.word_count,
-                        "word_limit": d.word_limit,
-                        "percent": percent,
-                    }
+                    MemoryCapacityWarning(
+                        block_name=d.block_name,
+                        word_count=b.word_count,
+                        word_limit=d.word_limit,
+                        percent=percent,
+                    )
                 )
         return warnings
 
@@ -493,16 +494,3 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             log.warning(f"Failed to load linked KBs for agent {agent_id}: {e}")
             return []
 
-    def _build_kb_instructions(self, kb_count: int) -> str:
-        """Build instructions for knowledge base search tool."""
-        return f"""<knowledge_base>
-You have access to {kb_count} knowledge base(s) containing documentation, FAQs, and other content.
-
-Use the knowledge_base_search tool when:
-- The user asks about products, features, or services
-- The user needs information that might be in documentation
-- The user asks "how do I..." or "what is..." questions about topics covered in the knowledge base
-- You're unsure about factual information that the knowledge base might contain
-
-The tool will return relevant text chunks with source URLs. Use these to provide accurate, sourced answers.
-</knowledge_base>"""
