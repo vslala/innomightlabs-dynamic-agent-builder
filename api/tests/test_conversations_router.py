@@ -4,6 +4,7 @@ Tests for conversations router endpoints.
 
 import pytest
 from fastapi.testclient import TestClient
+from datetime import datetime, timedelta, timezone
 
 from tests.mock_data import (
     TEST_USER_EMAIL,
@@ -146,6 +147,95 @@ class TestConversationsRouter:
         )
 
         assert response.status_code == 404
+
+    def test_get_messages_hides_system_messages_by_default(
+        self, test_client: TestClient, auth_headers: dict
+    ):
+        from src.messages.models import Message
+        from src.messages.repository import MessageRepository
+
+        request_data = {**CONVERSATION_CREATE_REQUEST, "agent_id": self.agent_id}
+        create_response = test_client.post(
+            "/conversations/", json=request_data, headers=auth_headers
+        )
+        conversation_id = create_response.json()["conversation_id"]
+
+        repo = MessageRepository()
+        now = datetime.now(timezone.utc)
+        repo.save(
+            Message(
+                conversation_id=conversation_id,
+                role="user",
+                content="Hello",
+                created_at=now,
+            )
+        )
+        repo.save(
+            Message(
+                conversation_id=conversation_id,
+                role="system",
+                content='{"type":"tool_call_audit"}',
+                created_at=now + timedelta(seconds=1),
+            )
+        )
+        repo.save(
+            Message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content="Hi",
+                created_at=now + timedelta(seconds=2),
+            )
+        )
+
+        response = test_client.get(
+            f"/conversations/{conversation_id}/messages?limit=10",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        roles = [item["role"] for item in response.json()["items"]]
+        assert roles == ["assistant", "user"]
+
+    def test_get_messages_can_include_system_messages(
+        self, test_client: TestClient, auth_headers: dict
+    ):
+        from src.messages.models import Message
+        from src.messages.repository import MessageRepository
+
+        request_data = {**CONVERSATION_CREATE_REQUEST, "agent_id": self.agent_id}
+        create_response = test_client.post(
+            "/conversations/", json=request_data, headers=auth_headers
+        )
+        conversation_id = create_response.json()["conversation_id"]
+
+        repo = MessageRepository()
+        now = datetime.now(timezone.utc)
+        repo.save(
+            Message(
+                conversation_id=conversation_id,
+                role="user",
+                content="Hello",
+                created_at=now,
+            )
+        )
+        repo.save(
+            Message(
+                conversation_id=conversation_id,
+                role="system",
+                content='{"type":"tool_call_audit"}',
+                created_at=now + timedelta(seconds=1),
+            )
+        )
+
+        response = test_client.get(
+            f"/conversations/{conversation_id}/messages?limit=10&include_system=true",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        roles = [item["role"] for item in response.json()["items"]]
+        assert roles == ["system", "user"]
+        assert response.json()["items"][0]["content"] == '{"type":"tool_call_audit"}'
 
     def test_update_conversation(self, test_client: TestClient, auth_headers: dict):
         """Test updating a conversation."""

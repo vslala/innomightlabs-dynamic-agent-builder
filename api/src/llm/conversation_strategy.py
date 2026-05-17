@@ -88,12 +88,16 @@ class FixedWindowStrategy(ConversationStrategy):
         Returns:
             List of message dicts (user/assistant only, no system prompt)
         """
-        if not messages:
+        conversation_messages = [
+            msg for msg in messages if msg.role in {"user", "assistant"}
+        ]
+
+        if not conversation_messages:
             return []
 
         # Check if session has expired (gap between now and last message)
         if session_timeout_minutes > 0:
-            last_message = messages[-1]
+            last_message = conversation_messages[-1]
             now = datetime.now(timezone.utc)
             gap_seconds = (now - last_message.created_at).total_seconds()
             gap_minutes = gap_seconds / 60
@@ -107,7 +111,7 @@ class FixedWindowStrategy(ConversationStrategy):
         word_count = 0
         selected_messages: list["Message"] = []
 
-        for msg in reversed(messages):
+        for msg in reversed(conversation_messages):
             msg_words = len(msg.content.split())
 
             # Check if adding this message would exceed the limit

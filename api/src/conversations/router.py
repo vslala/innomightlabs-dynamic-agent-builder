@@ -115,6 +115,7 @@ async def get_messages(
     conversation_id: str,
     limit: int = Query(default=20, ge=1, le=100, description="Number of messages per page"),
     cursor: Optional[str] = Query(default=None, description="Pagination cursor for older messages"),
+    include_system: bool = Query(default=False, description="Include system audit messages"),
 ):
     """
     Get messages for a conversation.
@@ -136,9 +137,14 @@ async def get_messages(
     messages, next_cursor, has_more = message_repository.find_by_conversation_newest_first(
         conversation_id=conversation_id, limit=limit, cursor=cursor
     )
+    visible_messages = [
+        message
+        for message in messages
+        if include_system or message.role != "system"
+    ]
 
     return Paginated[MessageResponse](
-        items=[m.to_response() for m in messages],
+        items=[m.to_response() for m in visible_messages],
         next_cursor=next_cursor,
         has_more=has_more,
     )

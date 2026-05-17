@@ -10,9 +10,11 @@ An architecture with memory capabilities:
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from src.common import CAPACITY_WARNING_THRESHOLD, MAX_TOOL_ITERATIONS
+from src.agents.tool_audit import build_tool_call_audit_message
 from src.crypto import decrypt
 from src.auth.openai_oauth import ensure_valid_openai_credentials
 from src.llm.conversation_strategy import FixedWindowStrategy
@@ -221,6 +223,8 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             )
 
             full_response = ""
+            tool_call_sequence = 0
+            tool_call_starts: dict[str, dict[str, Any]] = {}
             async for loop_event in run_agentic_tool_loop(
                 provider=provider,
                 context=context,
@@ -237,6 +241,15 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                     )
 
                 elif loop_event.kind == "tool_call_start":
+                    tool_call_sequence += 1
+                    tool_call_id = loop_event.payload["tool_call_id"]
+                    tool_call_starts[tool_call_id] = {
+                        "sequence": tool_call_sequence,
+                        "tool_name": loop_event.payload["tool_name"],
+                        "tool_args": loop_event.payload["tool_args"],
+                        "started_at": datetime.now(timezone.utc),
+                    }
+
                     yield SSEEvent(
                         event_type=SSEEventType.TOOL_CALL_START,
                         content=f"Calling {loop_event.payload['tool_name']}...",
@@ -245,7 +258,29 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                     )
 
                 elif loop_event.kind == "tool_call_result":
+                    tool_call_id = loop_event.payload["tool_call_id"]
                     result = loop_event.payload["result"]
+                    start = tool_call_starts.get(tool_call_id)
+
+                    if start:
+                        audit = build_tool_call_audit_message(
+                            tool_call_id=tool_call_id,
+                            sequence=start["sequence"],
+                            tool_name=start["tool_name"],
+                            tool_args=start["tool_args"],
+                            result=result,
+                            success=loop_event.payload["success"],
+                            started_at=start["started_at"],
+                        )
+
+                        self.message_repo.save(
+                            Message(
+                                conversation_id=conversation.conversation_id,
+                                created_by=actor_email,
+                                role="system",
+                                content=audit.model_dump_json(),
+                            )
+                        )
 
                     # If a skill returns a UI payload, emit an explicit UI event.
                     # (The widget should render forms only when it receives UI_FORM_RENDER.)

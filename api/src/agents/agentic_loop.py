@@ -105,6 +105,7 @@ async def run_agentic_tool_loop(
                 yield AgenticLoopEvent(
                     kind="tool_call_start",
                     payload={
+                        "tool_call_id": event.tool_use_id,
                         "tool_name": event.tool_name,
                         "tool_args": event.tool_input,
                     },
@@ -147,6 +148,7 @@ async def run_agentic_tool_loop(
                 yield AgenticLoopEvent(
                     kind="tool_call_result",
                     payload={
+                        "tool_call_id": tool_event.tool_use_id,
                         "tool_name": tool_event.tool_name,
                         "result": outcome.result,
                         "success": outcome.success,
