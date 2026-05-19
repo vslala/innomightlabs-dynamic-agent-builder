@@ -63,6 +63,13 @@ def conversation_repository(dynamodb_table):
 
 
 @pytest.fixture
+def automation_repository(dynamodb_table):
+    """Create AutomationRepository with mocked DynamoDB."""
+    from src.automations.repository import AutomationRepository
+    return AutomationRepository()
+
+
+@pytest.fixture
 def test_client(dynamodb_table):
     """Create FastAPI test client with mocked DynamoDB."""
     from main import app

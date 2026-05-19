@@ -6,6 +6,7 @@ import { authService, type UserInfo } from "../../services/auth";
 const pageTitles: Record<string, string> = {
   "/dashboard": "Overview",
   "/dashboard/agents": "Agents",
+  "/dashboard/automations": "Automations",
   "/dashboard/conversations": "Conversations",
   "/dashboard/knowledge-bases": "Knowledge Bases",
   "/dashboard/settings": "Settings",
@@ -41,6 +42,15 @@ export function DashboardLayout() {
         return "Agent Analytics";
       }
       return "Agent Overview";
+    }
+    if (location.pathname.startsWith("/dashboard/automations/")) {
+      if (location.pathname.endsWith("/runs")) {
+        return "Automation Runs";
+      }
+      if (location.pathname.endsWith("/analytics")) {
+        return "Automation Analytics";
+      }
+      return "Automation Builder";
     }
     // Check for knowledge base detail page
     if (location.pathname.startsWith("/dashboard/knowledge-bases/")) {

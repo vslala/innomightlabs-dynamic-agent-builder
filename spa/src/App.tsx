@@ -31,6 +31,11 @@ import { AgentApiKeysPage } from './pages/dashboard/agent-detail/AgentApiKeysPag
 import { AgentKnowledgeBasesPage } from './pages/dashboard/agent-detail/AgentKnowledgeBasesPage';
 import { AgentSkillsPage } from './pages/dashboard/agent-detail/AgentSkillsPage';
 import { AgentAnalyticsPage } from './pages/dashboard/agent-detail/AgentAnalyticsPage';
+import { AutomationsListPage } from './pages/dashboard/automations/AutomationsListPage';
+import { AutomationDetailLayout } from './pages/dashboard/automations/AutomationDetailLayout';
+import { AutomationBuilderPage } from './pages/dashboard/automations/AutomationBuilderPage';
+import { AutomationRunsPage } from './pages/dashboard/automations/AutomationRunsPage';
+import { AutomationAnalyticsPage } from './pages/dashboard/automations/AutomationAnalyticsPage';
 
 const basename = import.meta.env.BASE_URL;
 
@@ -93,6 +98,12 @@ function App() {
             <Route path="knowledge-bases" element={<AgentKnowledgeBasesPage />} />
             <Route path="skills" element={<AgentSkillsPage />} />
             <Route path="analytics" element={<AgentAnalyticsPage />} />
+          </Route>
+          <Route path="automations" element={<AutomationsListPage />} />
+          <Route path="automations/:automationId" element={<AutomationDetailLayout />}>
+            <Route index element={<AutomationBuilderPage />} />
+            <Route path="runs" element={<AutomationRunsPage />} />
+            <Route path="analytics" element={<AutomationAnalyticsPage />} />
           </Route>
           <Route path="conversations" element={<Conversations />} />
           <Route path="conversations/:conversationId" element={<ConversationDetail />} />

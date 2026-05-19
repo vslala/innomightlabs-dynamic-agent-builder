@@ -47,6 +47,12 @@ API_KEY_CREATE_REQUEST_2 = {
     "allowed_origins": [],
 }
 
+# Automation creation request data
+AUTOMATION_CREATE_REQUEST = {
+    "title": "Customer Follow-up",
+    "description": "Draft a customer follow-up reply",
+}
+
 # DynamoDB table schema
 DYNAMODB_TABLE_NAME = "test-table"
 
