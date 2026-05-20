@@ -315,7 +315,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                     # Always emit a tool result for the timeline.
                     yield SSEEvent(
                         event_type=SSEEventType.TOOL_CALL_RESULT,
-                        content=result[:200] + "..." if len(result) > 200 else result,
+                        content=result,
                         tool_name=loop_event.payload["tool_name"],
                         success=loop_event.payload["success"],
                     )

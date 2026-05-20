@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import "./styles.css";
 
-import { Button, Card, CardContent, ErrorState, LoadingState, StatusBadge } from "../../../components/ui";
+import {
+  Button,
+  Card,
+  CardContent,
+  ErrorState,
+  LoadingState,
+  StatusBadge,
+  type StatusBadgeProps,
+} from "../../../components/ui";
 import { automationApiService } from "../../../services/automations";
 import type {
   AutomationNodeRunStatus,
@@ -10,9 +20,12 @@ import type {
   PaginatedResponse,
 } from "../../../types/automation";
 import { AutomationJsonTreeViewer } from "./components/AutomationJsonEditor";
+import { filterRuntimeLogContext, getRuntimeLogSteps, type RuntimeLogStep } from "./runDisplay";
 import { useAutomationDetailContext } from "./types";
 
-function runBadgeStatus(status: AutomationRunStatus | AutomationNodeRunStatus) {
+type RunBadgeStatus = StatusBadgeProps["status"];
+
+function runBadgeStatus(status: AutomationRunStatus | AutomationNodeRunStatus): RunBadgeStatus {
   if (status === "succeeded") return "success";
   if (status === "running") return "in_progress";
   if (status === "skipped") return "inactive";
@@ -37,6 +50,7 @@ export function AutomationRunsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedRuntimeSteps, setExpandedRuntimeSteps] = useState<Set<string>>(new Set());
 
   const loadRuns = useCallback(async (cursor?: string | null) => {
     const isLoadMore = Boolean(cursor);
@@ -72,9 +86,25 @@ export function AutomationRunsPage() {
     try {
       const detail = await automationApiService.getRun(automation.automation_id, runId);
       setSelectedRun(detail);
+      const firstStepWithEvents = getRuntimeLogSteps(detail.node_results).find(
+        (step) => step.events.length > 0
+      );
+      setExpandedRuntimeSteps(new Set(firstStepWithEvents ? [firstStepWithEvents.result_id] : []));
     } catch (err) {
       console.error("Error loading run detail:", err);
     }
+  };
+
+  const toggleRuntimeStep = (resultId: string) => {
+    setExpandedRuntimeSteps((current) => {
+      const next = new Set(current);
+      if (next.has(resultId)) {
+        next.delete(resultId);
+      } else {
+        next.add(resultId);
+      }
+      return next;
+    });
   };
 
   if (loading) return <LoadingState />;
@@ -149,7 +179,13 @@ export function AutomationRunsPage() {
                   ))}
                 </div>
               </div>
-              <AutomationJsonTreeViewer label="Context" value={selectedRun.context} />
+              <RuntimeEventTimeline
+                steps={getRuntimeLogSteps(selectedRun.node_results)}
+                expandedSteps={expandedRuntimeSteps}
+                onToggle={toggleRuntimeStep}
+                runBadgeStatus={runBadgeStatus}
+              />
+              <AutomationJsonTreeViewer label="Context" value={filterRuntimeLogContext(selectedRun.context)} />
             </div>
           ) : (
             <div className="text-sm text-[var(--text-muted)]">Select a run to inspect its context.</div>
@@ -157,5 +193,84 @@ export function AutomationRunsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function RuntimeEventTimeline({
+  steps,
+  expandedSteps,
+  onToggle,
+  runBadgeStatus,
+}: {
+  steps: RuntimeLogStep[];
+  expandedSteps: Set<string>;
+  onToggle: (resultId: string) => void;
+  runBadgeStatus: (status: AutomationRunStatus | AutomationNodeRunStatus) => RunBadgeStatus;
+}) {
+  const visibleSteps = steps.filter((step) => step.events.length > 0 || step.error);
+
+  return (
+    <section className="automation-runtime-events">
+      <div className="automation-runtime-events__header">
+        <div>
+          <h3>Runtime events</h3>
+          <p>Tool calls and lifecycle activity captured during this run.</p>
+        </div>
+      </div>
+
+      {visibleSteps.length === 0 ? (
+        <div className="automation-runtime-events__empty">No visible runtime events for this run.</div>
+      ) : (
+        <div className="automation-runtime-events__steps">
+          {visibleSteps.map((step) => {
+            const isExpanded = expandedSteps.has(step.result_id);
+            return (
+              <article key={step.result_id} className="automation-runtime-events__step">
+                <button
+                  type="button"
+                  className="automation-runtime-events__step-trigger"
+                  onClick={() => onToggle(step.result_id)}
+                  aria-expanded={isExpanded}
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                  <div>
+                    <strong>{step.node_id}</strong>
+                    <span>{step.events.length} runtime events</span>
+                  </div>
+                  <StatusBadge status={runBadgeStatus(step.status)} label={step.status} />
+                </button>
+
+                {isExpanded && (
+                  <div className="automation-runtime-events__body">
+                    {step.error && (
+                      <div className="automation-runtime-events__error">{step.error}</div>
+                    )}
+                    {step.events.map((event, index) => (
+                      <div
+                        key={`${step.result_id}-${event.event_type}-${index}`}
+                        className="automation-runtime-events__event"
+                      >
+                        <div className="automation-runtime-events__event-meta">
+                          <span className="automation-runtime-events__event-type">{event.event_type}</span>
+                          {event.tool_name && <span>{event.tool_name}</span>}
+                          {typeof event.success === "boolean" && (
+                            <span>{event.success ? "success" : "failed"}</span>
+                          )}
+                        </div>
+                        <pre>{event.content || "(empty event)"}</pre>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }

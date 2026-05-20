@@ -342,6 +342,147 @@
   margin-top: 0.15rem;
 }
 
+.automation-runtime-events {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.automation-runtime-events__header {
+  align-items: flex-end;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.automation-runtime-events__header h3 {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.automation-runtime-events__header p {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin: 0.2rem 0 0;
+}
+
+.automation-runtime-events__empty {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  padding: 0.85rem;
+}
+
+.automation-runtime-events__steps {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.automation-runtime-events__step {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+
+.automation-runtime-events__step-trigger {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 0.8rem;
+  text-align: left;
+  width: 100%;
+}
+
+.automation-runtime-events__step-trigger:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.automation-runtime-events__step-trigger svg {
+  color: var(--gradient-start);
+}
+
+.automation-runtime-events__step-trigger strong,
+.automation-runtime-events__step-trigger span {
+  display: block;
+}
+
+.automation-runtime-events__step-trigger strong {
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-runtime-events__step-trigger span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  margin-top: 0.1rem;
+}
+
+.automation-runtime-events__body {
+  border-top: 1px solid var(--border-subtle);
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem;
+}
+
+.automation-runtime-events__error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 0.45rem;
+  color: #fca5a5;
+  font-size: 0.78rem;
+  padding: 0.65rem;
+}
+
+.automation-runtime-events__event {
+  background: rgba(18, 18, 38, 0.78);
+  border: 1px solid rgba(102, 126, 234, 0.22);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.65rem;
+}
+
+.automation-runtime-events__event-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.automation-runtime-events__event-meta span {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.automation-runtime-events__event-type {
+  color: #93c5fd;
+}
+
+.automation-runtime-events__event pre {
+  color: #e5e7eb;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  margin: 0;
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre;
+  word-break: normal;
+}
+
 @keyframes automation-spin {
   to {
     transform: rotate(360deg);

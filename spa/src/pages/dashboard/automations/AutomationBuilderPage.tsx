@@ -52,6 +52,7 @@ import type {
   InvokeAgentActionConfig,
 } from "../../../types/automation";
 import { AutomationJsonEditor, AutomationJsonTreeViewer } from "./components/AutomationJsonEditor";
+import { filterRuntimeLogContext } from "./runDisplay";
 import { useAutomationDetailContext } from "./types";
 
 type AutomationFlowNode = Node<{
@@ -1157,7 +1158,7 @@ function AutomationRunPanel({
       {latestRun && (
         <AutomationJsonTreeViewer
           label="Run context"
-          value={latestRun.context}
+          value={filterRuntimeLogContext(latestRun.context)}
         />
       )}
     </div>

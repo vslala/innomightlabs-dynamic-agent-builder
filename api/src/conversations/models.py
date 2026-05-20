@@ -39,6 +39,9 @@ class ConversationResponse(BaseModel):
     created_by: str
     created_at: datetime
     updated_at: Optional[datetime] = None
+    conversation_type: Literal["chat", "automation"] = "chat"
+    automation_id: Optional[str] = None
+    automation_run_id: Optional[str] = None
 
 
 class Conversation(BaseModel):
@@ -106,6 +109,7 @@ class Conversation(BaseModel):
             created_by=self.created_by,
             created_at=self.created_at,
             updated_at=self.updated_at,
+            conversation_type="chat",
         )
 
 
@@ -128,6 +132,21 @@ class AutomationConversation(Conversation):
             }
         )
         return item
+
+    def to_response(self) -> ConversationResponse:
+        """Convert to response model."""
+        return ConversationResponse(
+            conversation_id=self.conversation_id,
+            title=self.title,
+            description=self.description,
+            agent_id=self.agent_id,
+            created_by=self.created_by,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+            conversation_type=self.conversation_type,
+            automation_id=self.automation_id,
+            automation_run_id=self.automation_run_id,
+        )
 
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "AutomationConversation":

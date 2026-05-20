@@ -7,6 +7,7 @@ import { Grid, Stack, Center } from "../../components/ui/grid";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
 import { conversationApiService } from "../../services/conversations";
 import type { ConversationResponse } from "../../types/conversation";
+import { userVisibleConversations } from "../../utils/conversations";
 
 export function Overview() {
   const [agents, setAgents] = useState<AgentResponse[]>([]);
@@ -21,7 +22,7 @@ export function Overview() {
           conversationApiService.listConversations(),
         ]);
         setAgents(agentsData);
-        setConversations(conversationsData.items);
+        setConversations(userVisibleConversations(conversationsData.items));
       } catch (err) {
         console.error("Error loading data:", err);
       } finally {

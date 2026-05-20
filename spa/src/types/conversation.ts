@@ -10,6 +10,9 @@ export interface ConversationResponse {
   created_by: string;
   created_at: string;
   updated_at: string | null;
+  conversation_type?: "chat" | "automation";
+  automation_id?: string | null;
+  automation_run_id?: string | null;
 }
 
 export interface CreateConversationRequest {

@@ -221,11 +221,7 @@ class AutomationRunner:
             output={
                 "response_text": invocation.response_text,
                 "events": [
-                    {
-                        "event_type": event.event_type.value,
-                        "content": event.content,
-                        "message_id": event.message_id,
-                    }
+                    event.model_dump(mode="json", exclude_none=True)
                     for event in invocation.events
                 ],
             },

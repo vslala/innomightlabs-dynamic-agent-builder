@@ -75,6 +75,10 @@ async def list_conversations(
     request: Request,
     limit: int = Query(default=10, ge=1, le=100, description="Number of items per page"),
     cursor: Optional[str] = Query(default=None, description="Pagination cursor"),
+    include_automation: bool = Query(
+        default=False,
+        description="Include automation-run conversations in the response",
+    ),
 ):
     """
     List all conversations for the current user.
@@ -87,6 +91,12 @@ async def list_conversations(
     conversations, next_cursor, has_more = conversation_repository.find_all_by_user_paginated(
         created_by=user_email, limit=limit, cursor=cursor
     )
+    if not include_automation:
+        conversations = [
+            conversation
+            for conversation in conversations
+            if getattr(conversation, "conversation_type", "chat") != "automation"
+        ]
 
     return Paginated[ConversationResponse](
         items=[c.to_response() for c in conversations],

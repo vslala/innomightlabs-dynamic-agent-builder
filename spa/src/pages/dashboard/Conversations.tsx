@@ -24,6 +24,7 @@ import {
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
 import type { ConversationResponse } from "../../types/conversation";
+import { userVisibleConversations } from "../../utils/conversations";
 
 export function Conversations() {
   const navigate = useNavigate();
@@ -52,7 +53,7 @@ export function Conversations() {
         conversationApiService.listConversations(),
         agentApiService.listAgents(),
       ]);
-      setConversations(conversationsData.items);
+      setConversations(userVisibleConversations(conversationsData.items));
       setAgents(agentsData);
     } catch (err) {
       setError("Failed to load data. Please try again.");
