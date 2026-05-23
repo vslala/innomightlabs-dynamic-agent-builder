@@ -146,3 +146,18 @@ class WidgetConfigResponse(BaseModel):
 class WidgetMessageRequest(BaseModel):
     """Request model for sending a message via widget."""
     content: str = Field(..., min_length=1)
+
+
+class WidgetGenerateTextRequest(BaseModel):
+    """Request model for provider-style text generation."""
+    message: str = Field(..., min_length=1, max_length=20000)
+    context: dict[str, Any] = Field(default_factory=dict)
+    model: Optional[str] = None
+
+
+class WidgetGenerateTextResponse(BaseModel):
+    """Response model for provider-style text generation."""
+    text: str
+    agent_id: str
+    conversation_id: str
+    message_ids: dict[str, str] = Field(default_factory=dict)

@@ -27,6 +27,8 @@ from src.messages.repository import MessageRepository
 from src.widget.middleware import get_api_key_from_request
 from src.widget.models import (
     CreateWidgetConversationRequest,
+    WidgetGenerateTextRequest,
+    WidgetGenerateTextResponse,
     WidgetConfigResponse,
     WidgetConversation,
     WidgetConversationResponse,
@@ -429,6 +431,82 @@ async def oauth_callback_page():
     and posts it back to the parent window via postMessage.
     """
     return HTMLResponse(content=OAUTH_CALLBACK_HTML)
+
+
+@router.post("/generate-text", response_model=WidgetGenerateTextResponse)
+async def generate_text(
+    request: Request,
+    body: WidgetGenerateTextRequest,
+    api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+) -> WidgetGenerateTextResponse:
+    """
+    Generate text for provider-style integrations using only the widget API key.
+
+    The API key scopes the request to the owning agent. The invocation is treated
+    as if the agent owner made the request.
+    """
+    agent = agent_repo.find_agent_by_id(api_key.agent_id, api_key.created_by)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    from src.conversations.models import Conversation
+    from src.conversations.repository import ConversationRepository
+
+    import hashlib
+
+    site_identity = str(
+        body.context.get("site_url")
+        or body.context.get("home_url")
+        or request.headers.get("Origin")
+        or "wordpress"
+    ).strip().lower().rstrip("/")
+    site_hash = hashlib.sha256(site_identity.encode("utf-8")).hexdigest()[:16]
+    conversation_id = f"wordpress-ai-client-{api_key.agent_id}-{site_hash}"
+    conversation_repo = ConversationRepository()
+    conversation = conversation_repo.find_by_id(conversation_id, api_key.created_by)
+    if not conversation:
+        conversation = conversation_repo.save(
+            Conversation(
+                conversation_id=conversation_id,
+                title="WordPress AI Client",
+                agent_id=agent.agent_id,
+                created_by=api_key.created_by,
+            )
+        )
+
+    architecture = get_agent_architecture(agent.agent_architecture)
+    invocation = await architecture.handle_message_buffered(
+        agent=agent,
+        conversation=conversation,
+        user_message=body.message,
+        owner_email=api_key.created_by,
+        actor_email=api_key.created_by,
+        actor_id=api_key.created_by,
+        attachments=[],
+    )
+
+    conversation_repo.save(conversation)
+
+    if not invocation.success:
+        raise HTTPException(
+            status_code=500,
+            detail=invocation.error or "Agent invocation failed",
+        )
+
+    return WidgetGenerateTextResponse(
+        text=invocation.response_text,
+        agent_id=agent.agent_id,
+        conversation_id=conversation.conversation_id,
+        message_ids={
+            key: value
+            for key, value in {
+                "user_message_id": invocation.user_message_id,
+                "assistant_message_id": invocation.assistant_message_id,
+            }.items()
+            if value
+        },
+    )
 
 
 @router.post("/conversations", response_model=WidgetConversationResponse, status_code=201)
