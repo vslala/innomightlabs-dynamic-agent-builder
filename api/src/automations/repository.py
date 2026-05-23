@@ -14,10 +14,12 @@ from src.automations.models import (
     AutomationNode,
     AutomationRun,
     AutomationRunNodeResult,
+    AutomationSkill,
     AutomationStatus,
     AutomationTrigger,
 )
 from src.config import settings
+from src.crypto import decrypt
 from src.db import get_dynamodb_resource
 
 log = logging.getLogger(__name__)
@@ -250,3 +252,50 @@ class AutomationRepository:
         ]
         results.sort(key=lambda result: result.started_at)
         return results
+
+    def save_skill(self, skill: AutomationSkill) -> AutomationSkill:
+        existing = self.find_skill(skill.automation_id, skill.skill_id)
+        if existing:
+            skill.enabled_at = existing.enabled_at
+            skill.updated_at = datetime.now(timezone.utc)
+        self.table.put_item(Item=skill.to_dynamo_item())
+        return skill
+
+    def find_skill(self, automation_id: str, skill_id: str) -> Optional[AutomationSkill]:
+        response = self.table.get_item(
+            Key={"pk": f"Automation#{automation_id}", "sk": f"Skill#{skill_id}"}
+        )
+        item = response.get("Item")
+        return AutomationSkill.from_dynamo_item(item) if item else None
+
+    def list_skills(self, automation_id: str) -> list[AutomationSkill]:
+        response = self.table.query(
+            KeyConditionExpression=Key("pk").eq(f"Automation#{automation_id}")
+            & Key("sk").begins_with("Skill#")
+        )
+        skills = [
+            AutomationSkill.from_dynamo_item(item)
+            for item in response.get("Items", [])
+            if item.get("entity_type") == "AutomationSkill"
+        ]
+        skills.sort(key=lambda item: item.enabled_at)
+        return skills
+
+    def delete_skill(self, automation_id: str, skill_id: str) -> bool:
+        try:
+            self.table.delete_item(
+                Key={"pk": f"Automation#{automation_id}", "sk": f"Skill#{skill_id}"}
+            )
+            return True
+        except Exception:
+            log.exception("Failed deleting automation skill %s/%s", automation_id, skill_id)
+            return False
+
+    def get_skill_runtime_config(self, skill: AutomationSkill) -> dict:
+        config = dict(skill.config)
+        if not skill.encrypted_secrets:
+            return config
+        secrets = json.loads(decrypt(skill.encrypted_secrets))
+        if isinstance(secrets, dict):
+            config.update(secrets)
+        return config

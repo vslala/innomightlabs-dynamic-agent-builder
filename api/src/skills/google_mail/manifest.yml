@@ -41,6 +41,9 @@ system_prompt: |
   - Use `mark_read` or `mark_unread` to update message state.
 requires_oauth: true
 oauth_provider_name: GoogleMail
+connectors:
+  - connector_id: google_mail
+    required: true
 actions:
   - name: search
     description: Search Gmail messages using text, time range, sender/recipient, labels, unread status, attachment filters, and pagination.
@@ -97,6 +100,29 @@ actions:
         include_spam_trash:
           type: boolean
           description: Include spam and trash in search results.
+    action_form:
+      form_name: Gmail Search
+      submit_path: ""
+      form_inputs:
+        - input_type: text_area
+          name: query
+          label: Query
+          attr:
+            rows: "3"
+            smart_values: "true"
+            placeholder: "from:billing@example.com newer_than:7d"
+            optional: "true"
+        - input_type: choice
+          name: recent_20
+          label: Recent 20
+          value: "false"
+          values: ["true", "false"]
+        - input_type: text
+          name: page_size
+          label: Page size
+          attr:
+            placeholder: "10"
+            optional: "true"
     handler: actions:search
   - name: read
     description: Read a Gmail message including headers, body, and metadata.

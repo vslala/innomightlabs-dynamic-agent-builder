@@ -5,10 +5,26 @@ import { SchemaForm } from "../../../components/forms";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
+import { connectorApiService } from "../../../services/connectors";
 import { skillApiService } from "../../../services/skills";
 import type { FormValue, FormSchema } from "../../../types/form";
-import type { InstalledSkill, SkillCatalogItem } from "../../../types/skills";
+import type { InstalledSkill, SkillCatalogItem, SkillConnectorStatus } from "../../../types/skills";
 import { useAgentDetailContext } from "./types";
+
+function getMissingRequiredConnectors(skill: SkillCatalogItem): SkillConnectorStatus[] {
+  return (skill.connectors ?? []).filter((connector) => connector.required && !connector.connected);
+}
+
+function hasConnectorMetadata(skill: SkillCatalogItem): boolean {
+  return (skill.connectors ?? []).length > 0;
+}
+
+function canInstallSkill(skill: SkillCatalogItem): boolean {
+  if (hasConnectorMetadata(skill)) {
+    return getMissingRequiredConnectors(skill).length === 0;
+  }
+  return !skill.requires_oauth || skill.oauth_connected === true;
+}
 
 export function AgentSkillsPage() {
   const { agent } = useAgentDetailContext();
@@ -62,7 +78,10 @@ export function AgentSkillsPage() {
       const callbackAgentId = params.get("agent_id");
       const callbackSkillId = params.get("skill_id");
 
-      if (!status || callbackAgentId !== agent.agent_id || !callbackSkillId) {
+      if (!status || !callbackSkillId) {
+        return;
+      }
+      if (callbackAgentId && callbackAgentId !== agent.agent_id) {
         return;
       }
 
@@ -131,7 +150,7 @@ export function AgentSkillsPage() {
     setSelectedSkill(skill);
     setSelectedSkillSchema(null);
     try {
-      if ((skill.requires_oauth && !skill.oauth_connected) || !skill.has_form) {
+      if (!canInstallSkill(skill) || !skill.has_form) {
         setSelectedSkillSchema(null);
         return;
       }
@@ -167,6 +186,27 @@ export function AgentSkillsPage() {
 
   const handleConnectSkillOAuth = async () => {
     if (!selectedSkill) return;
+    const missingConnector = getMissingRequiredConnectors(selectedSkill)[0];
+    if (missingConnector) {
+      if (!missingConnector.connect_path) {
+        setInstallSkillError(`No connection path is available for ${missingConnector.provider_name}`);
+        return;
+      }
+      setConnectingSkillId(selectedSkill.skill_id);
+      setInstallSkillError(null);
+      try {
+        const returnTo = `${window.location.origin}/dashboard/agents/${agent.agent_id}/skills`;
+        const response = await connectorApiService.startConnector(missingConnector.connect_path, {
+          return_to: returnTo,
+        });
+        window.location.href = response.authorize_url;
+      } catch (err: unknown) {
+        setInstallSkillError(err instanceof Error ? err.message : `Failed to connect ${missingConnector.provider_name}`);
+        setConnectingSkillId(null);
+      }
+      return;
+    }
+
     if (!selectedSkill.oauth_start_path) {
       setInstallSkillError(`No OAuth start path is available for ${selectedSkill.oauth_provider_name ?? selectedSkill.name}`);
       return;
@@ -372,7 +412,17 @@ export function AgentSkillsPage() {
                   <div>
                     <p style={{ fontWeight: 600, color: "var(--text-primary)" }}>{selectedSkill.name}</p>
                     <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>{selectedSkill.description}</p>
-                    {selectedSkill.requires_oauth && (
+                    {hasConnectorMetadata(selectedSkill) ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginTop: "0.375rem" }}>
+                        {selectedSkill.connectors.map((connector) => (
+                          <p key={connector.connector_id} style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                            {connector.connected
+                              ? `Connected via ${connector.provider_name}`
+                              : `Requires ${connector.provider_name} connector before install`}
+                          </p>
+                        ))}
+                      </div>
+                    ) : selectedSkill.requires_oauth && (
                       <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.375rem" }}>
                         {selectedSkill.oauth_connected
                           ? `Connected via ${selectedSkill.oauth_provider_name}`
@@ -385,9 +435,11 @@ export function AgentSkillsPage() {
                       {installSkillError}
                     </div>
                   )}
-                  {selectedSkill.requires_oauth && !selectedSkill.oauth_connected && (
+                  {!canInstallSkill(selectedSkill) && (
                     <Button onClick={handleConnectSkillOAuth} disabled={connectingSkillId === selectedSkill.skill_id}>
-                      {connectingSkillId === selectedSkill.skill_id ? "Connecting..." : `Connect ${selectedSkill.oauth_provider_name}`}
+                      {connectingSkillId === selectedSkill.skill_id
+                        ? "Connecting..."
+                        : `Connect ${getMissingRequiredConnectors(selectedSkill)[0]?.provider_name ?? selectedSkill.oauth_provider_name ?? selectedSkill.name}`}
                     </Button>
                   )}
                   {selectedSkillSchema && (
@@ -398,7 +450,7 @@ export function AgentSkillsPage() {
                       isLoading={installingSkill}
                     />
                   )}
-                  {!selectedSkillSchema && (!selectedSkill.requires_oauth || selectedSkill.oauth_connected) && (
+                  {!selectedSkillSchema && canInstallSkill(selectedSkill) && (
                     <Button onClick={() => void handleInstallSkill({})} disabled={installingSkill}>
                       {installingSkill ? "Installing..." : "Install Skill"}
                     </Button>

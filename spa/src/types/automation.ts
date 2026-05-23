@@ -1,6 +1,6 @@
 export type AutomationStatus = "draft" | "active" | "disabled" | "deleted";
 export type AutomationNodeType = "start" | "action" | "condition" | "final";
-export type AutomationActionType = "invoke_agent" | "send_email" | "webhook_call";
+export type AutomationActionType = "skill_action" | "invoke_agent" | "send_email" | "webhook_call";
 export type AutomationTriggerType = "manual" | "webhook" | "schedule";
 export type AutomationRunStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 export type AutomationNodeRunStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
@@ -72,6 +72,48 @@ export interface InvokeAgentActionConfig {
   input: Record<string, unknown>;
 }
 
+export interface SkillActionConfig {
+  action_type: "skill_action";
+  skill_id: string;
+  action: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface AutomationSkillConnector {
+  connector_id: string;
+  provider_name: string;
+  required: boolean;
+  connected: boolean;
+  connect_path?: string | null;
+}
+
+export interface AutomationSkillResponse {
+  skill_id: string;
+  namespace: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  enabled_at: string;
+  updated_at?: string | null;
+  config: Record<string, unknown>;
+  connectors: AutomationSkillConnector[];
+}
+
+export interface AutomationActionCatalogItem {
+  action_type: "skill_action";
+  skill_id: string;
+  skill_name: string;
+  action: string;
+  label: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  action_form?: import("./form").FormSchema | null;
+}
+
+export interface AutomationActionCatalogResponse {
+  actions: AutomationActionCatalogItem[];
+}
+
 export interface ConditionNodeConfig {
   expression: string;
   true_label: "true";
@@ -125,6 +167,10 @@ export interface SaveAutomationGraphRequest {
 export interface StartAutomationRunRequest {
   trigger_id?: string | null;
   input: Record<string, unknown>;
+}
+
+export interface EnableAutomationSkillRequest {
+  config: Record<string, unknown>;
 }
 
 export interface AutomationRunResponse {

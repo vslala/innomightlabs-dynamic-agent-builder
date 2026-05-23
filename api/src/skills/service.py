@@ -4,8 +4,14 @@ import json
 from typing import Any, Optional
 
 import src.form_models as form_models
+from src.connectors.service import ConnectorService, connector_id_for_provider, get_connector_service
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
-from src.skills.models import AgentSkill, InstalledSkillResponse, SkillCatalogItemResponse
+from src.skills.models import (
+    AgentSkill,
+    InstalledSkillResponse,
+    SkillCatalogItemResponse,
+    SkillConnectorDependency,
+)
 from src.skills.oauth_providers import get_skill_oauth_provider
 from src.skills.registry import SkillRegistry, get_skill_registry
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
@@ -17,15 +23,24 @@ class SkillService:
         registry: Optional[SkillRegistry] = None,
         repository: Optional[AgentSkillRepository] = None,
         provider_settings_repository: Optional[ProviderSettingsRepository] = None,
+        connector_service: Optional[ConnectorService] = None,
     ):
         self.registry = registry or get_skill_registry()
         self.repository = repository or get_agent_skill_repository()
         self.provider_settings_repository = provider_settings_repository or get_provider_settings_repository()
+        self.connector_service = connector_service or get_connector_service()
 
     def list_catalog(self, user_email: str | None = None) -> list[SkillCatalogItemResponse]:
         items: list[SkillCatalogItemResponse] = []
         for loaded in self.registry.list():
             oauth_provider_name = loaded.manifest.oauth_provider_name if loaded.manifest.requires_oauth else None
+            connector_dependencies = list(loaded.manifest.connectors)
+            connector_id = connector_id_for_provider(oauth_provider_name)
+            if connector_id and not any(item.connector_id == connector_id for item in connector_dependencies):
+                connector_dependencies.append(SkillConnectorDependency(connector_id=connector_id))
+            manifest_for_status = loaded.manifest.model_copy(
+                update={"connectors": connector_dependencies}
+            )
             oauth_connected: bool | None = None
             oauth_provider = get_skill_oauth_provider(oauth_provider_name)
             if oauth_provider_name and user_email:
@@ -44,6 +59,16 @@ class SkillService:
                     oauth_provider_name=oauth_provider_name,
                     oauth_connected=oauth_connected,
                     oauth_start_path=oauth_provider.start_path if oauth_provider else None,
+                    connectors=self.connector_service.statuses_for_manifest(
+                        manifest_for_status,
+                        user_email,
+                    ),
+                    available=not self.connector_service.missing_required_connectors(
+                        manifest_for_status,
+                        user_email,
+                    )
+                    if user_email
+                    else not manifest_for_status.connectors,
                 )
             )
         return items
@@ -72,6 +97,11 @@ class SkillService:
                 raise ValueError(
                     f"{loaded.manifest.name} requires a connected {loaded.manifest.oauth_provider_name} account before installation"
                 )
+        missing_connectors = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
+        if missing_connectors:
+            raise ValueError(
+                f"{loaded.manifest.name} requires connected connector(s): {', '.join(missing_connectors)}"
+            )
 
         normalized = self.registry.validate_config(skill_id, raw_config)
         secret_fields = self.registry.secret_fields(skill_id)
@@ -294,6 +324,11 @@ class SkillRuntimeService:
                         "name": action.name,
                         "description": action.description,
                         "input_schema": action.input_schema,
+                        "action_form": (
+                            action.action_form.model_dump(mode="json", exclude_none=True)
+                            if action.action_form
+                            else None
+                        ),
                     }
                     for action in loaded.manifest.actions
                 ],

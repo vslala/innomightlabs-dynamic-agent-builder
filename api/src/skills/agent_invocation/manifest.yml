@@ -1,0 +1,35 @@
+id: agent_invocation
+namespace: core.automation
+name: Invoke Agent
+description: Send a smart-value prompt to one of your agents.
+system_prompt: |
+  Use this skill to invoke an agent with a prompt.
+actions:
+  - name: invoke
+    description: Invoke an agent and return response text, runtime events, and saved message ids.
+    input_schema:
+      type: object
+      required: [agent_id, prompt_template]
+      properties:
+        agent_id:
+          type: string
+          description: Agent id to invoke.
+        prompt_template:
+          type: string
+          description: Prompt text after automation smart values have been rendered.
+    action_form:
+      form_name: Invoke Agent
+      submit_path: ""
+      form_inputs:
+        - input_type: select
+          name: agent_id
+          label: Agent
+          attr:
+            source: agents
+        - input_type: text_area
+          name: prompt_template
+          label: Prompt template
+          attr:
+            rows: "10"
+            smart_values: "true"
+    handler: actions:invoke

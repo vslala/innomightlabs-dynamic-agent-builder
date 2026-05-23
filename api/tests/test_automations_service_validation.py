@@ -2,9 +2,17 @@ import pytest
 
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
-from src.automations.models import AutomationEdge, AutomationNode, AutomationTrigger
+from src.automations.models import (
+    AutomationEdge,
+    AutomationNode,
+    AutomationTrigger,
+    CreateAutomationRequest,
+    EnableAutomationSkillRequest,
+)
 from src.automations.repository import AutomationRepository
 from src.automations.service import AutomationService, AutomationValidationError
+from src.settings.models import ProviderSettings
+from src.settings.repository import ProviderSettingsRepository
 from tests.mock_data import TEST_USER_EMAIL
 
 
@@ -141,6 +149,80 @@ def test_validate_invoke_agent_requires_owned_agent(dynamodb_table):
     ]
     trigger = AutomationTrigger(
         automation_id="auto-1",
+        type="manual",
+        name="Manual",
+        entry_node_id="start",
+    )
+
+    make_service().validate_graph([start, action, final], edges, [trigger], TEST_USER_EMAIL)
+
+
+def test_validate_skill_action_requires_enabled_automation_skill(dynamodb_table):
+    start = AutomationNode(automation_id="auto-1", node_id="start", type="start", name="Start")
+    action = AutomationNode(
+        automation_id="auto-1",
+        node_id="action",
+        type="action",
+        name="Search Mail",
+        config={
+            "action_type": "skill_action",
+            "skill_id": "google_mail",
+            "action": "search",
+            "arguments": {"recent_20": True},
+        },
+    )
+    final = AutomationNode(automation_id="auto-1", node_id="final", type="final", name="Done")
+    edges = [
+        AutomationEdge(automation_id="auto-1", source_node_id="start", target_node_id="action"),
+        AutomationEdge(automation_id="auto-1", source_node_id="action", target_node_id="final"),
+    ]
+    trigger = AutomationTrigger(
+        automation_id="auto-1",
+        type="manual",
+        name="Manual",
+        entry_node_id="start",
+    )
+
+    with pytest.raises(AutomationValidationError, match="not enabled"):
+        make_service().validate_graph([start, action, final], edges, [trigger], TEST_USER_EMAIL)
+
+
+def test_validate_skill_action_accepts_enabled_skill_with_connector(dynamodb_table):
+    automation = make_service().create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    ProviderSettingsRepository().save(
+        ProviderSettings(
+            user_email=TEST_USER_EMAIL,
+            provider_name="GoogleMail",
+            encrypted_credentials="encrypted",
+            auth_type="oauth",
+        )
+    )
+    make_service().enable_skill(
+        automation.automation_id,
+        "google_mail",
+        EnableAutomationSkillRequest(config={}),
+        TEST_USER_EMAIL,
+    )
+    start = AutomationNode(automation_id=automation.automation_id, node_id="start", type="start", name="Start")
+    action = AutomationNode(
+        automation_id=automation.automation_id,
+        node_id="action",
+        type="action",
+        name="Search Mail",
+        config={
+            "action_type": "skill_action",
+            "skill_id": "google_mail",
+            "action": "search",
+            "arguments": {"recent_20": True},
+        },
+    )
+    final = AutomationNode(automation_id=automation.automation_id, node_id="final", type="final", name="Done")
+    edges = [
+        AutomationEdge(automation_id=automation.automation_id, source_node_id="start", target_node_id="action"),
+        AutomationEdge(automation_id=automation.automation_id, source_node_id="action", target_node_id="final"),
+    ]
+    trigger = AutomationTrigger(
+        automation_id=automation.automation_id,
         type="manual",
         name="Manual",
         entry_node_id="start",

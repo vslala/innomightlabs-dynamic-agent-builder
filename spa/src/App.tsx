@@ -24,6 +24,7 @@ import { ConversationDetail } from './pages/dashboard/ConversationDetail';
 import { KnowledgeBases } from './pages/dashboard/KnowledgeBases';
 import { KnowledgeBaseDetail } from './pages/dashboard/KnowledgeBaseDetail';
 import { Settings } from './pages/dashboard/Settings';
+import { ConnectorsPage } from './pages/dashboard/ConnectorsPage';
 import { AgentDetailLayout } from './pages/dashboard/agent-detail/AgentDetailLayout';
 import { AgentOverviewPage } from './pages/dashboard/agent-detail/AgentOverviewPage';
 import { AgentMemoryPage } from './pages/dashboard/agent-detail/AgentMemoryPage';
@@ -109,6 +110,7 @@ function App() {
           <Route path="conversations/:conversationId" element={<ConversationDetail />} />
           <Route path="knowledge-bases" element={<KnowledgeBases />} />
           <Route path="knowledge-bases/:kbId" element={<KnowledgeBaseDetail />} />
+          <Route path="connectors" element={<ConnectorsPage />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

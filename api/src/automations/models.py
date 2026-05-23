@@ -26,6 +26,7 @@ class AutomationNodeType(str, Enum):
 
 
 class AutomationActionType(str, Enum):
+    SKILL_ACTION = "skill_action"
     INVOKE_AGENT = "invoke_agent"
     SEND_EMAIL = "send_email"
     WEBHOOK_CALL = "webhook_call"
@@ -77,6 +78,20 @@ class InvokeAgentActionConfig(BaseModel):
     def validate_action_type(cls, value: AutomationActionType) -> AutomationActionType:
         if value != AutomationActionType.INVOKE_AGENT:
             raise ValueError("InvokeAgentActionConfig requires action_type='invoke_agent'")
+        return value
+
+
+class SkillActionConfig(BaseModel):
+    action_type: AutomationActionType = AutomationActionType.SKILL_ACTION
+    skill_id: str
+    action: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("action_type")
+    @classmethod
+    def validate_action_type(cls, value: AutomationActionType) -> AutomationActionType:
+        if value != AutomationActionType.SKILL_ACTION:
+            raise ValueError("SkillActionConfig requires action_type='skill_action'")
         return value
 
 
@@ -172,6 +187,41 @@ class AutomationRunDetailResponse(BaseModel):
     node_results: list[AutomationRunNodeResultResponse] = Field(default_factory=list)
 
 
+class AutomationSkillConnectorResponse(BaseModel):
+    connector_id: str
+    provider_name: str
+    required: bool = True
+    connected: bool = False
+    connect_path: Optional[str] = None
+
+
+class AutomationSkillResponse(BaseModel):
+    skill_id: str
+    namespace: str
+    name: str
+    description: str
+    enabled: bool
+    enabled_at: datetime
+    updated_at: Optional[datetime] = None
+    config: dict[str, Any] = Field(default_factory=dict)
+    connectors: list[AutomationSkillConnectorResponse] = Field(default_factory=list)
+
+
+class AutomationActionCatalogItemResponse(BaseModel):
+    action_type: AutomationActionType = AutomationActionType.SKILL_ACTION
+    skill_id: str
+    skill_name: str
+    action: str
+    label: str
+    description: str
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+    action_form: Optional[dict[str, Any]] = None
+
+
+class AutomationActionCatalogResponse(BaseModel):
+    actions: list[AutomationActionCatalogItemResponse] = Field(default_factory=list)
+
+
 class CreateAutomationRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: Optional[str] = Field(default=None, max_length=1000)
@@ -242,6 +292,15 @@ class SaveAutomationGraphRequest(BaseModel):
 class StartAutomationRunRequest(BaseModel):
     trigger_id: Optional[str] = None
     input: dict[str, Any] = Field(default_factory=dict)
+
+
+class EnableAutomationSkillRequest(BaseModel):
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class UpdateAutomationSkillRequest(BaseModel):
+    enabled: Optional[bool] = None
+    config: Optional[dict[str, Any]] = None
 
 
 class Automation(BaseModel):
@@ -457,6 +516,66 @@ class AutomationTrigger(BaseModel):
 
     def to_response(self) -> AutomationTriggerResponse:
         return AutomationTriggerResponse(**self.model_dump())
+
+
+class AutomationSkill(BaseModel):
+    automation_id: str
+    skill_id: str
+    namespace: str
+    skill_name: str
+    skill_description: str
+    enabled: bool = True
+    config: dict[str, Any] = Field(default_factory=dict)
+    encrypted_secrets: str = ""
+    secret_fields: list[str] = Field(default_factory=list)
+    enabled_by: str
+    enabled_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+
+    @property
+    def pk(self) -> str:
+        return f"Automation#{self.automation_id}"
+
+    @property
+    def sk(self) -> str:
+        return f"Skill#{self.skill_id}"
+
+    def to_dynamo_item(self) -> dict[str, Any]:
+        return convert_floats_to_decimals({
+            "pk": self.pk,
+            "sk": self.sk,
+            "entity_type": "AutomationSkill",
+            "automation_id": self.automation_id,
+            "skill_id": self.skill_id,
+            "namespace": self.namespace,
+            "skill_name": self.skill_name,
+            "skill_description": self.skill_description,
+            "enabled": self.enabled,
+            "config": self.config,
+            "encrypted_secrets": self.encrypted_secrets,
+            "secret_fields": self.secret_fields,
+            "enabled_by": self.enabled_by,
+            "enabled_at": self.enabled_at.isoformat(),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        })
+
+    @classmethod
+    def from_dynamo_item(cls, item: dict[str, Any]) -> "AutomationSkill":
+        item = convert_decimals(item)
+        return cls(
+            automation_id=item["automation_id"],
+            skill_id=item["skill_id"],
+            namespace=item.get("namespace", ""),
+            skill_name=item.get("skill_name", item["skill_id"]),
+            skill_description=item.get("skill_description", ""),
+            enabled=bool(item.get("enabled", True)),
+            config=item.get("config") or {},
+            encrypted_secrets=item.get("encrypted_secrets", ""),
+            secret_fields=item.get("secret_fields") or [],
+            enabled_by=item.get("enabled_by", ""),
+            enabled_at=datetime.fromisoformat(item["enabled_at"]),
+            updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
+        )
 
 
 class AutomationRun(BaseModel):

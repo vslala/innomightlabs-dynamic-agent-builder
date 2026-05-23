@@ -25,6 +25,9 @@ from src.automations.repository import AutomationRepository
 from src.automations.service import AutomationGraph, AutomationValidationError
 from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
+from src.connectors.service import ConnectorService, get_connector_service
+from src.skills.service import SkillService
+from src.skills.service import get_skill_service
 
 
 class AutomationRunner:
@@ -35,10 +38,14 @@ class AutomationRunner:
         automation_repo: AutomationRepository | None = None,
         agent_repo: AgentRepository | None = None,
         conversation_repo: ConversationRepository | None = None,
+        skill_service: SkillService | None = None,
+        connector_service: ConnectorService | None = None,
     ):
         self.automation_repo = automation_repo or AutomationRepository()
         self.agent_repo = agent_repo or AgentRepository()
         self.conversation_repo = conversation_repo or ConversationRepository()
+        self.skill_service = skill_service or get_skill_service()
+        self.connector_service = connector_service or get_connector_service()
 
     async def run_test(
         self,
@@ -173,6 +180,15 @@ class AutomationRunner:
 
         action_type = node.config.get("action_type")
         if action_type != AutomationActionType.INVOKE_AGENT.value:
+            if action_type == AutomationActionType.SKILL_ACTION.value:
+                return await self._execute_skill_action(
+                    automation=automation,
+                    node=node,
+                    run=run,
+                    conversation=conversation,
+                    user_email=user_email,
+                    started_at=started_at,
+                )
             return AutomationRunNodeResult(
                 run_id=run.run_id,
                 automation_id=automation.automation_id,
@@ -238,6 +254,126 @@ class AutomationRunner:
             completed_at=datetime.now(timezone.utc),
         )
 
+    async def _execute_skill_action(
+        self,
+        automation: Automation,
+        node: AutomationNode,
+        run: AutomationRun,
+        conversation: AutomationConversation,
+        user_email: str,
+        started_at: datetime,
+    ) -> AutomationRunNodeResult:
+        skill_id = str(node.config.get("skill_id", "")).strip()
+        action_name = str(node.config.get("action", "")).strip()
+        raw_arguments = node.config.get("arguments", {})
+        if not isinstance(raw_arguments, dict):
+            return AutomationRunNodeResult(
+                run_id=run.run_id,
+                automation_id=automation.automation_id,
+                node_id=node.node_id,
+                status=AutomationNodeRunStatus.FAILED,
+                input=node.config,
+                error="skill_action arguments must be an object",
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+            )
+        if not skill_id or not action_name:
+            return AutomationRunNodeResult(
+                run_id=run.run_id,
+                automation_id=automation.automation_id,
+                node_id=node.node_id,
+                status=AutomationNodeRunStatus.FAILED,
+                input=node.config,
+                error="skill_action requires skill_id and action",
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+            )
+
+        enabled = self.automation_repo.find_skill(automation.automation_id, skill_id)
+        if not enabled or not enabled.enabled:
+            return AutomationRunNodeResult(
+                run_id=run.run_id,
+                automation_id=automation.automation_id,
+                node_id=node.node_id,
+                status=AutomationNodeRunStatus.FAILED,
+                input={"skill_id": skill_id, "action": action_name},
+                error="Skill is not enabled for this automation",
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+            )
+
+        loaded = self.skill_service.registry.get(skill_id)
+        if not loaded:
+            return AutomationRunNodeResult(
+                run_id=run.run_id,
+                automation_id=automation.automation_id,
+                node_id=node.node_id,
+                status=AutomationNodeRunStatus.FAILED,
+                input={"skill_id": skill_id, "action": action_name},
+                error="Skill is not available",
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+            )
+        missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
+        if missing:
+            return AutomationRunNodeResult(
+                run_id=run.run_id,
+                automation_id=automation.automation_id,
+                node_id=node.node_id,
+                status=AutomationNodeRunStatus.FAILED,
+                input={"skill_id": skill_id, "action": action_name},
+                error="Missing connected connectors: " + ", ".join(missing),
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+            )
+
+        arguments = self._render_smart_values(deepcopy(raw_arguments), run.context)
+        try:
+            result = await self.skill_service.registry.execute_action(
+                skill_id=skill_id,
+                action_name=action_name,
+                arguments=arguments,
+                config=self.automation_repo.get_skill_runtime_config(enabled),
+                context={
+                    "owner_email": user_email,
+                    "actor_email": user_email,
+                    "actor_id": user_email,
+                    "conversation_id": conversation.conversation_id,
+                    "automation_id": automation.automation_id,
+                    "automation_run_id": run.run_id,
+                    "automation_node_id": node.node_id,
+                    "orchestrator_type": "automation",
+                    "orchestrator_id": automation.automation_id,
+                },
+            )
+        except Exception as exc:
+            return AutomationRunNodeResult(
+                run_id=run.run_id,
+                automation_id=automation.automation_id,
+                node_id=node.node_id,
+                status=AutomationNodeRunStatus.FAILED,
+                input={"skill_id": skill_id, "action": action_name, "arguments": arguments},
+                error=str(exc),
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+            )
+
+        return AutomationRunNodeResult(
+            run_id=run.run_id,
+            automation_id=automation.automation_id,
+            node_id=node.node_id,
+            status=AutomationNodeRunStatus.SUCCEEDED,
+            input={"skill_id": skill_id, "action": action_name, "arguments": arguments},
+            output={
+                "skill_id": skill_id,
+                "action": action_name,
+                "arguments": arguments,
+                "result": result,
+            },
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+        )
+
     def _select_trigger(
         self, triggers: list[AutomationTrigger], trigger_id: str | None
     ) -> AutomationTrigger | None:
@@ -268,6 +404,14 @@ class AutomationRunner:
                 and node.config.get("action_type") == AutomationActionType.INVOKE_AGENT.value
             ):
                 return str(node.config.get("agent_id", ""))
+            if (
+                node.type == AutomationNodeType.ACTION
+                and node.config.get("action_type") == AutomationActionType.SKILL_ACTION.value
+                and node.config.get("skill_id") == "agent_invocation"
+            ):
+                arguments = node.config.get("arguments")
+                if isinstance(arguments, dict):
+                    return str(arguments.get("agent_id", ""))
         return ""
 
     def _outgoing_edges(self, edges: list[AutomationEdge]) -> dict[str, list[AutomationEdge]]:
@@ -314,6 +458,28 @@ class AutomationRunner:
             return "" if value is None else str(value)
 
         return re.sub(r"\{\{\s*(\$\.[^}]+)\s*\}\}", replace, template)
+
+    def _render_smart_values(self, value: Any, context: dict[str, Any]) -> Any:
+        if isinstance(value, dict):
+            return {key: self._render_smart_values(item, context) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._render_smart_values(item, context) for item in value]
+        if isinstance(value, str):
+            return self._render_smart_string(value, context)
+        return value
+
+    def _render_smart_string(self, value: str, context: dict[str, Any]) -> Any:
+        whole_match = re.fullmatch(r"\s*\{\{\s*(\$\.[^}]+|\$)\s*\}\}\s*", value)
+        if whole_match:
+            return self._resolve_json_path(whole_match.group(1).strip(), context)
+
+        def replace(match: re.Match[str]) -> str:
+            resolved = self._resolve_json_path(match.group(1).strip(), context)
+            if isinstance(resolved, (dict, list)):
+                return json.dumps(resolved)
+            return "" if resolved is None else str(resolved)
+
+        return re.sub(r"\{\{\s*(\$\.[^}]+|\$)\s*\}\}", replace, value)
 
     def _resolve_json_path(self, path: str, context: dict[str, Any]) -> Any:
         if path == "$":

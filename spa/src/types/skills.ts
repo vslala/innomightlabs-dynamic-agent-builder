@@ -1,5 +1,13 @@
 import type { FormSchema } from "./form";
 
+export interface SkillConnectorStatus {
+  connector_id: string;
+  provider_name: string;
+  required: boolean;
+  connected: boolean;
+  connect_path: string | null;
+}
+
 export interface SkillCatalogItem {
   skill_id: string;
   namespace: string;
@@ -11,6 +19,8 @@ export interface SkillCatalogItem {
   oauth_provider_name: string | null;
   oauth_connected: boolean | null;
   oauth_start_path: string | null;
+  connectors: SkillConnectorStatus[];
+  available: boolean;
 }
 
 export interface InstalledSkill {

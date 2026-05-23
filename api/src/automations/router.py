@@ -7,7 +7,9 @@ from fastapi.security import HTTPBearer
 
 from src.automations.models import (
     AutomationGraphResponse,
+    AutomationActionCatalogResponse,
     AutomationResponse,
+    AutomationSkillResponse,
     AutomationRunDetailResponse,
     AutomationRunResponse,
     AutomationNodeResponse,
@@ -17,9 +19,11 @@ from src.automations.models import (
     CreateAutomationNodeRequest,
     CreateAutomationRequest,
     CreateAutomationTriggerRequest,
+    EnableAutomationSkillRequest,
     SaveAutomationGraphRequest,
     StartAutomationRunRequest,
     UpdateAutomationEdgeRequest,
+    UpdateAutomationSkillRequest,
     UpdateAutomationNodeRequest,
     UpdateAutomationRequest,
     UpdateAutomationTriggerRequest,
@@ -138,6 +142,71 @@ async def get_graph(
 ) -> AutomationGraphResponse:
     try:
         return service.get_graph(automation_id, get_user_email(request)).to_response()
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get("/{automation_id}/action-catalog", response_model=AutomationActionCatalogResponse)
+async def get_action_catalog(
+    request: Request,
+    automation_id: str,
+    service: Annotated[AutomationService, Depends(get_automation_service)],
+) -> AutomationActionCatalogResponse:
+    try:
+        return service.list_action_catalog(automation_id, get_user_email(request))
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get("/{automation_id}/skills", response_model=list[AutomationSkillResponse])
+async def list_automation_skills(
+    request: Request,
+    automation_id: str,
+    service: Annotated[AutomationService, Depends(get_automation_service)],
+) -> list[AutomationSkillResponse]:
+    try:
+        return service.list_skills(automation_id, get_user_email(request))
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post("/{automation_id}/skills", response_model=AutomationSkillResponse, status_code=201)
+async def enable_automation_skill(
+    request: Request,
+    automation_id: str,
+    body: EnableAutomationSkillRequest,
+    service: Annotated[AutomationService, Depends(get_automation_service)],
+    skill_id: str = Query(..., description="Skill id to enable"),
+) -> AutomationSkillResponse:
+    try:
+        return service.enable_skill(automation_id, skill_id, body, get_user_email(request))
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.patch("/{automation_id}/skills/{skill_id}", response_model=AutomationSkillResponse)
+async def update_automation_skill(
+    request: Request,
+    automation_id: str,
+    skill_id: str,
+    body: UpdateAutomationSkillRequest,
+    service: Annotated[AutomationService, Depends(get_automation_service)],
+) -> AutomationSkillResponse:
+    try:
+        return service.update_skill(automation_id, skill_id, body, get_user_email(request))
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.delete("/{automation_id}/skills/{skill_id}", status_code=204)
+async def delete_automation_skill(
+    request: Request,
+    automation_id: str,
+    skill_id: str,
+    service: Annotated[AutomationService, Depends(get_automation_service)],
+) -> None:
+    try:
+        service.delete_skill(automation_id, skill_id, get_user_email(request))
     except Exception as exc:
         raise translate_error(exc) from exc
 

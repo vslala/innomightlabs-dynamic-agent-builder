@@ -41,6 +41,9 @@ system_prompt: |
   - Use `exact_name=true` when the user gives a precise file or folder name.
 requires_oauth: true
 oauth_provider_name: GoogleDrive
+connectors:
+  - connector_id: google_drive
+    required: true
 actions:
   - name: search
     description: Search or list Google Drive files with ls-style filters such as folders-only or children of a folder.

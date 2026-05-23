@@ -1,10 +1,13 @@
 import { httpClient } from "../http/client";
 import type {
   AutomationGraphResponse,
+  AutomationActionCatalogResponse,
   AutomationResponse,
+  AutomationSkillResponse,
   AutomationRunDetailResponse,
   AutomationRunResponse,
   CreateAutomationRequest,
+  EnableAutomationSkillRequest,
   PaginatedResponse,
   SaveAutomationGraphRequest,
   StartAutomationRunRequest,
@@ -37,6 +40,25 @@ class AutomationApiService {
 
   async getGraph(automationId: string): Promise<AutomationGraphResponse> {
     return httpClient.get<AutomationGraphResponse>(`/automations/${automationId}/graph`);
+  }
+
+  async getActionCatalog(automationId: string): Promise<AutomationActionCatalogResponse> {
+    return httpClient.get<AutomationActionCatalogResponse>(`/automations/${automationId}/action-catalog`);
+  }
+
+  async listSkills(automationId: string): Promise<AutomationSkillResponse[]> {
+    return httpClient.get<AutomationSkillResponse[]>(`/automations/${automationId}/skills`);
+  }
+
+  async enableSkill(
+    automationId: string,
+    skillId: string,
+    data: EnableAutomationSkillRequest
+  ): Promise<AutomationSkillResponse> {
+    return httpClient.post<AutomationSkillResponse>(
+      `/automations/${automationId}/skills?skill_id=${encodeURIComponent(skillId)}`,
+      data
+    );
   }
 
   async saveGraph(

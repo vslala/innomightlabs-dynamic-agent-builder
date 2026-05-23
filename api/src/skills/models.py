@@ -13,7 +13,21 @@ class SkillActionManifest(BaseModel):
     name: str
     description: str
     input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    action_form: Optional[form_models.Form] = None
     handler: str
+
+
+class SkillConnectorDependency(BaseModel):
+    connector_id: str
+    required: bool = True
+
+
+class SkillConnectorStatus(BaseModel):
+    connector_id: str
+    provider_name: str
+    required: bool = True
+    connected: bool = False
+    connect_path: Optional[str] = None
 
 
 class SkillManifest(BaseModel):
@@ -30,6 +44,7 @@ class SkillManifest(BaseModel):
 
     requires_oauth: bool = False
     oauth_provider_name: Optional[str] = None
+    connectors: list[SkillConnectorDependency] = Field(default_factory=list)
     actions: list[SkillActionManifest] = Field(default_factory=list)
     form: list[form_models.FormInput] = Field(default_factory=list)
 
@@ -51,6 +66,8 @@ class SkillCatalogItemResponse(BaseModel):
     oauth_provider_name: Optional[str] = None
     oauth_connected: Optional[bool] = None
     oauth_start_path: Optional[str] = None
+    connectors: list[SkillConnectorStatus] = Field(default_factory=list)
+    available: bool = True
 
 
 class InstalledSkillResponse(BaseModel):

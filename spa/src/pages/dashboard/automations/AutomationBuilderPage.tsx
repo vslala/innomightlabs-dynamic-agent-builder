@@ -37,9 +37,11 @@ import {
   StatusBadge,
   Textarea,
 } from "../../../components/ui";
+import { SchemaForm } from "../../../components/forms";
 import { agentApiService, type AgentResponse } from "../../../services/agents/AgentApiService";
 import { automationApiService } from "../../../services/automations";
 import type {
+  AutomationActionCatalogItem,
   AutomationEdge,
   AutomationGraphResponse,
   AutomationNode,
@@ -50,7 +52,9 @@ import type {
   CreateAutomationNodeRequest,
   CreateAutomationTriggerRequest,
   InvokeAgentActionConfig,
+  SkillActionConfig,
 } from "../../../types/automation";
+import type { FormSchema, FormValue, SelectOption } from "../../../types/form";
 import { AutomationJsonEditor, AutomationJsonTreeViewer } from "./components/AutomationJsonEditor";
 import { filterRuntimeLogContext } from "./runDisplay";
 import { useAutomationDetailContext } from "./types";
@@ -63,6 +67,7 @@ type AutomationFlowNode = Node<{
 type AutomationFlowEdge = Edge<{ automationEdge?: AutomationEdge }>;
 
 const DEFAULT_PROMPT = "Use the workflow context to complete this step.\n\nInput: {{ $.input }}";
+const DEFAULT_SKILL_ACTION = "agent_invocation:invoke";
 
 function createNodeId(type: AutomationNodeType): string {
   return `${type}-${crypto.randomUUID()}`;
@@ -98,6 +103,93 @@ function getInvokeAgentConfig(config: Record<string, unknown>): InvokeAgentActio
     };
   }
   return { action_type: "invoke_agent", agent_id: "", prompt_template: "", input: {} };
+}
+
+function isSkillActionConfig(config: Record<string, unknown>): boolean {
+  return config.action_type === "skill_action";
+}
+
+function getSkillActionConfig(config: Record<string, unknown>): SkillActionConfig {
+  if (isSkillActionConfig(config)) {
+    return {
+      action_type: "skill_action",
+      skill_id: typeof config.skill_id === "string" ? config.skill_id : "",
+      action: typeof config.action === "string" ? config.action : "",
+      arguments:
+        typeof config.arguments === "object" && config.arguments !== null
+          ? (config.arguments as Record<string, unknown>)
+          : {},
+    };
+  }
+  if (isInvokeAgentConfig(config)) {
+    const invokeConfig = getInvokeAgentConfig(config);
+    return {
+      action_type: "skill_action",
+      skill_id: "agent_invocation",
+      action: "invoke",
+      arguments: {
+        agent_id: invokeConfig.agent_id,
+        prompt_template: invokeConfig.prompt_template,
+      },
+    };
+  }
+  return {
+    action_type: "skill_action",
+    skill_id: "agent_invocation",
+    action: "invoke",
+    arguments: { agent_id: "", prompt_template: DEFAULT_PROMPT },
+  };
+}
+
+function skillActionKey(config: SkillActionConfig): string {
+  return `${config.skill_id}:${config.action}`;
+}
+
+function hydrateActionForm(schema: FormSchema, agents: AgentResponse[]): FormSchema {
+  return {
+    ...schema,
+    form_inputs: schema.form_inputs.map((field) => {
+      if (field.attr?.source !== "agents") return field;
+      const options: SelectOption[] = agents.map((agent) => ({
+        value: agent.agent_id,
+        label: agent.agent_name,
+      }));
+      return { ...field, options };
+    }),
+  };
+}
+
+function formValuesToArguments(
+  values: Record<string, FormValue>,
+  inputSchema: Record<string, unknown>
+): Record<string, unknown> {
+  const properties =
+    typeof inputSchema.properties === "object" && inputSchema.properties !== null
+      ? inputSchema.properties as Record<string, { type?: string }>
+      : {};
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (value === null || value instanceof FileList || Array.isArray(value)) continue;
+    const type = properties[key]?.type;
+    if (type === "boolean") {
+      result[key] = value === "true";
+    } else if (type === "integer") {
+      const parsed = Number.parseInt(String(value), 10);
+      if (Number.isFinite(parsed)) result[key] = parsed;
+    } else if (type === "number") {
+      const parsed = Number.parseFloat(String(value));
+      if (Number.isFinite(parsed)) result[key] = parsed;
+    } else if (value !== "") {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+function argumentsToFormValues(argumentsValue: Record<string, unknown>): Record<string, FormValue> {
+  return Object.fromEntries(
+    Object.entries(argumentsValue).map(([key, value]) => [key, value == null ? "" : String(value)])
+  );
 }
 
 function toFlowNodes(
@@ -333,16 +425,19 @@ function graphToSaveRequest(graph: AutomationGraphResponse) {
   return { nodes, edges, triggers };
 }
 
-function actionConfig(): InvokeAgentActionConfig {
+function actionConfig(): SkillActionConfig {
   return {
-    action_type: "invoke_agent",
-    agent_id: "",
-    prompt_template: DEFAULT_PROMPT,
-    input: {},
+    action_type: "skill_action",
+    skill_id: "agent_invocation",
+    action: "invoke",
+    arguments: {
+      agent_id: "",
+      prompt_template: DEFAULT_PROMPT,
+    },
   };
 }
 
-function toConfigRecord(config: InvokeAgentActionConfig | ReturnType<typeof conditionConfig>): Record<string, unknown> {
+function toConfigRecord(config: SkillActionConfig | InvokeAgentActionConfig | ReturnType<typeof conditionConfig>): Record<string, unknown> {
   return { ...config };
 }
 
@@ -631,6 +726,7 @@ function AutomationBuilderContent() {
   const [flowEdges, setFlowEdges] = useState<AutomationFlowEdge[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [smartValuesOpen, setSmartValuesOpen] = useState(false);
+  const [actionCatalog, setActionCatalog] = useState<AutomationActionCatalogItem[]>([]);
 
   const loadGraph = useCallback(async () => {
     if (!automationId) return;
@@ -641,9 +737,11 @@ function AutomationBuilderContent() {
         automationApiService.getGraph(automationId),
         agentApiService.listAgents(),
       ]);
+      const catalogData = await automationApiService.getActionCatalog(automationId);
       const normalized = normalizeGraph(graphData);
       setGraph(normalized.graph);
       setAgents(agentsData);
+      setActionCatalog(catalogData.actions);
       setSelectedNodeId(normalized.graph.nodes.find((node) => node.type === "start")?.node_id ?? null);
       setDirty(normalized.changed);
     } catch (err) {
@@ -821,12 +919,13 @@ function AutomationBuilderContent() {
     }, 0);
   };
 
-  const saveGraph = async (): Promise<AutomationGraphResponse | null> => {
-    if (!automationId || !graph) return null;
+  const saveGraph = async (graphOverride?: AutomationGraphResponse): Promise<AutomationGraphResponse | null> => {
+    const graphToSave = graphOverride ?? graph;
+    if (!automationId || !graphToSave) return null;
     setSaving(true);
     setMutationError(null);
     try {
-      const saved = await automationApiService.saveGraph(automationId, graphToSaveRequest(graph));
+      const saved = await automationApiService.saveGraph(automationId, graphToSaveRequest(graphToSave));
       setGraph(saved);
       setDirty(false);
       return saved;
@@ -837,6 +936,17 @@ function AutomationBuilderContent() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const saveNodePatch = async (
+    nodeId: string,
+    patch: Partial<Pick<AutomationNode, "name" | "description" | "config">>
+  ): Promise<void> => {
+    if (!graph) return;
+    const nextGraph = patchNode(graph, nodeId, patch);
+    setGraph(nextGraph);
+    setDirty(true);
+    await saveGraph(nextGraph);
   };
 
   const updateAutomationStatus = async () => {
@@ -1030,6 +1140,7 @@ function AutomationBuilderContent() {
                 node={selectedNode}
                 steps={editableSteps}
                 agents={agents}
+                actionCatalog={actionCatalog}
                 onAddStep={addStep}
                 onSelectNode={setSelectedNodeId}
                 onPlaceNode={placeNodeOnCanvas}
@@ -1040,6 +1151,7 @@ function AutomationBuilderContent() {
                 smartValuesOpen={smartValuesOpen}
                 onSmartValuesOpenChange={setSmartValuesOpen}
                 onChange={(nodeId, patch) => updateGraph((current) => patchNode(current, nodeId, patch))}
+                onSaveChange={saveNodePatch}
                 onTypeChange={(nodeId, type) => updateGraph((current) => updateStepType(current, nodeId, type))}
                 onDelete={(nodeId) => {
                   setSelectedNodeId(null);
@@ -1059,6 +1171,7 @@ interface AutomationInspectorProps {
   node: AutomationNode | null;
   steps: AutomationNode[];
   agents: AgentResponse[];
+  actionCatalog: AutomationActionCatalogItem[];
   onAddStep: () => void;
   onSelectNode: (nodeId: string) => void;
   onPlaceNode: (nodeId: string) => void;
@@ -1069,6 +1182,10 @@ interface AutomationInspectorProps {
     nodeId: string,
     patch: Partial<Pick<AutomationNode, "name" | "description" | "config">>
   ) => void;
+  onSaveChange: (
+    nodeId: string,
+    patch: Partial<Pick<AutomationNode, "name" | "description" | "config">>
+  ) => Promise<void>;
   onTypeChange: (nodeId: string, type: "action" | "condition") => void;
   onDelete: (nodeId: string) => void;
 }
@@ -1209,6 +1326,7 @@ function AutomationInspector({
   node,
   steps,
   agents,
+  actionCatalog,
   onAddStep,
   onSelectNode,
   onPlaceNode,
@@ -1216,6 +1334,7 @@ function AutomationInspector({
   smartValuesOpen,
   onSmartValuesOpenChange,
   onChange,
+  onSaveChange,
   onTypeChange,
   onDelete,
 }: AutomationInspectorProps) {
@@ -1313,7 +1432,15 @@ function AutomationInspector({
     );
   }
 
-  const invokeConfig = node.type === "action" ? getInvokeAgentConfig(node.config) : null;
+  const skillConfig = node.type === "action" ? getSkillActionConfig(node.config) : null;
+  const selectedAction = skillConfig
+    ? actionCatalog.find((item) => `${item.skill_id}:${item.action}` === skillActionKey(skillConfig)) ??
+      actionCatalog.find((item) => `${item.skill_id}:${item.action}` === DEFAULT_SKILL_ACTION) ??
+      null
+    : null;
+  const actionForm = selectedAction?.action_form
+    ? hydrateActionForm(selectedAction.action_form, agents)
+    : null;
   const expression = typeof node.config.expression === "string" ? node.config.expression : "";
   const isSystemNode = node.type === "start" || node.type === "final";
 
@@ -1378,12 +1505,32 @@ function AutomationInspector({
         {node.type === "action" && (
           <div className="space-y-2">
             <Label>Action</Label>
-            <Select value="invoke_agent" disabled>
+            <Select
+              value={skillConfig ? skillActionKey(skillConfig) : DEFAULT_SKILL_ACTION}
+              onValueChange={(value) => {
+                const [skillId, action] = value.split(":");
+                const catalogItem = actionCatalog.find((item) => item.skill_id === skillId && item.action === action);
+                onChange(node.node_id, {
+                  config: {
+                    action_type: "skill_action",
+                    skill_id: skillId,
+                    action,
+                    arguments: {},
+                  },
+                  name: catalogItem?.label ?? node.name,
+                });
+              }}
+              disabled={isSystemNode || actionCatalog.length === 0}
+            >
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Select action" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="invoke_agent">Invoke Agent</SelectItem>
+                {actionCatalog.map((item) => (
+                  <SelectItem key={`${item.skill_id}:${item.action}`} value={`${item.skill_id}:${item.action}`}>
+                    {item.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -1408,44 +1555,39 @@ function AutomationInspector({
           />
         </div>
 
-        {invokeConfig && (
+        {skillConfig && selectedAction && (
           <>
-            <div className="space-y-2">
-              <Label>Agent</Label>
-              <Select
-                value={invokeConfig.agent_id}
-                onValueChange={(agentId) =>
-                  onChange(node.node_id, { config: { ...invokeConfig, agent_id: agentId } })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select agent" />
-                </SelectTrigger>
-                <SelectContent>
-                  {agents.map((agent) => (
-                    <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                      {agent.agent_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="prompt-template">Prompt template</Label>
-              <Textarea
-                id="prompt-template"
-                value={invokeConfig.prompt_template}
-                onChange={(event) =>
-                  onChange(node.node_id, {
-                    config: { ...invokeConfig, prompt_template: event.target.value },
+            {actionForm ? (
+              <SchemaForm
+                key={`${node.node_id}:${skillActionKey(skillConfig)}`}
+                schema={actionForm}
+                initialValues={argumentsToFormValues(skillConfig.arguments)}
+                submitLabel="Apply Arguments"
+                onSubmit={(values) =>
+                  onSaveChange(node.node_id, {
+                    config: {
+                      ...skillConfig,
+                      arguments: formValuesToArguments(values, selectedAction.input_schema),
+                    },
                   })
                 }
-                style={{ minHeight: "10rem", fontFamily: "monospace" }}
               />
-              <p className="text-xs text-[var(--text-muted)]">
-                Use the bulb for copyable smart values like {"{{ $.input.input }}"} or previous step output.
-              </p>
-            </div>
+            ) : (
+              <AutomationJsonEditor
+                label="Arguments"
+                value={JSON.stringify(skillConfig.arguments, null, 2)}
+                onChange={(argumentsValue) => {
+                  try {
+                    const parsed = JSON.parse(argumentsValue) as Record<string, unknown>;
+                    onChange(node.node_id, {
+                      config: { ...skillConfig, arguments: parsed },
+                    });
+                  } catch {
+                    // Keep invalid draft text local to the textarea until it parses.
+                  }
+                }}
+              />
+            )}
           </>
         )}
 

@@ -3,7 +3,7 @@ from typing import AsyncIterator
 from src.agents.architectures.base import AgentArchitecture
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
-from src.automations.models import Automation, AutomationEdge, AutomationNode, AutomationTrigger
+from src.automations.models import Automation, AutomationEdge, AutomationNode, AutomationSkill, AutomationTrigger
 from src.automations.repository import AutomationRepository
 from src.automations.runner import AutomationRunner
 from src.automations.service import AutomationGraph
@@ -167,3 +167,76 @@ async def test_runner_follows_error_edge_for_failed_agent(dynamodb_table, monkey
     assert run.status == "succeeded"
     assert run.context["nodes"]["draft"]["status"] == "failed"
     assert run.context["nodes"]["draft"]["error"] == "provider failed"
+
+
+async def test_runner_executes_skill_action_and_renders_arguments(dynamodb_table, monkeypatch):
+    automation = Automation(
+        automation_id="auto-skill",
+        title="Workflow",
+        created_by=TEST_USER_EMAIL,
+    )
+    start = AutomationNode(automation_id="auto-skill", node_id="start", type="start", name="Start")
+    action = AutomationNode(
+        automation_id="auto-skill",
+        node_id="search",
+        type="action",
+        name="Search",
+        config={
+            "action_type": "skill_action",
+            "skill_id": "wordpress_search",
+            "action": "search",
+            "arguments": {"query": "{{ $.input.query }}", "per_page": "{{ $.input.limit }}"},
+        },
+    )
+    final = AutomationNode(automation_id="auto-skill", node_id="final", type="final", name="Done")
+    graph = AutomationGraph(
+        automation,
+        [start, action, final],
+        [
+            AutomationEdge(automation_id="auto-skill", source_node_id="start", target_node_id="search"),
+            AutomationEdge(automation_id="auto-skill", source_node_id="search", target_node_id="final"),
+        ],
+        [
+            AutomationTrigger(
+                automation_id="auto-skill",
+                trigger_id="trigger-1",
+                type="manual",
+                name="Manual",
+                enabled=True,
+                entry_node_id="start",
+            )
+        ],
+    )
+    repo = AutomationRepository()
+    repo.save_skill(
+        AutomationSkill(
+            automation_id="auto-skill",
+            skill_id="wordpress_search",
+            namespace="integrations.wordpress",
+            skill_name="WordPress Search",
+            skill_description="Search posts",
+            enabled_by=TEST_USER_EMAIL,
+            config={"site_url": "https://example.com"},
+        )
+    )
+
+    runner = AutomationRunner(
+        automation_repo=repo,
+        agent_repo=AgentRepository(),
+        conversation_repo=ConversationRepository(),
+    )
+
+    async def fake_execute_action(skill_id, action_name, arguments, config, context):
+        assert skill_id == "wordpress_search"
+        assert action_name == "search"
+        assert arguments == {"query": "pricing", "per_page": 3}
+        assert config == {"site_url": "https://example.com"}
+        assert context["automation_id"] == "auto-skill"
+        return {"ok": True}
+
+    monkeypatch.setattr(runner.skill_service.registry, "execute_action", fake_execute_action)
+
+    run = await runner.run_test(graph, None, {"query": "pricing", "limit": 3}, TEST_USER_EMAIL)
+
+    assert run.status == "succeeded"
+    assert run.context["nodes"]["search"]["output"]["result"] == {"ok": True}
