@@ -34,3 +34,6 @@ dynamodb-data/
 
 # Local planning scratchpad (do not commit)
 tmp/
+
+# Artifacts
+*.zip
