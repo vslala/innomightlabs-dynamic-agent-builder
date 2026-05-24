@@ -114,12 +114,76 @@ jobs:
         with:
           path: spa/dist
 
+  package_plugins:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [vscode, wordpress]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: matrix.plugin == 'vscode'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: plugins/ide/vscode/innomightlabs-code-assist/yarn.lock
+
+      - name: Package VS Code plugin
+        if: matrix.plugin == 'vscode'
+        run: scripts/downloads/package_vscode_plugin.sh
+
+      - name: Package WordPress plugin
+        if: matrix.plugin == 'wordpress'
+        run: scripts/downloads/package_wordpress_plugin.sh
+
+      - name: Stage plugin artifact
+        run: |
+          mkdir -p artifact-root/${{ matrix.plugin }}
+          cp -R dist/downloads/${{ matrix.plugin }}/. artifact-root/${{ matrix.plugin }}/
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-${{ matrix.plugin }}
+          path: artifact-root
+          if-no-files-found: error
+
+  publish_plugins:
+    runs-on: ubuntu-latest
+    needs: package_plugins
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download plugin artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: plugin-*
+          path: dist/downloads
+          merge-multiple: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: us-east-1
+
+      - name: Publish plugin downloads
+        env:
+          ARTIFACTS_BUCKET: innomightlabs-artifacts
+          PLUGINS_PREFIX: artifacts/plugins
+        run: scripts/downloads/publish_plugins.sh
+
   deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, publish_plugins]
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

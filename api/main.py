@@ -25,6 +25,7 @@ from src.skills.api_registry import build_skill_api_routers
 from src.skills.registry import get_skill_registry
 from src.analytics import analytics_router
 from src.automations import automations_router
+from src.downloads import router as downloads_router
 from src.exceptions import register_exception_handlers
 from src.middleware.request_id import RequestIdMiddleware
 from src.runtime.env import is_lambda
@@ -134,6 +135,7 @@ def create_app() -> FastAPI:
     app.include_router(router=connectors_router)
     app.include_router(router=skills_router)
     app.include_router(router=automations_router)
+    app.include_router(router=downloads_router)
 
     # Skill-owned API routers (optional, mounted under /skills/{skill_id}/...)
     # If a skill folder (and its manifest) is removed, it simply won't be loaded.

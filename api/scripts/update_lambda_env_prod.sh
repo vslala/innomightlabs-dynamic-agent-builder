@@ -46,6 +46,10 @@ ENVIRONMENT=$(extract_tfvar "environment")
 STRIPE_SECRET_KEY=$(extract_tfvar "stripe_secret_key")
 STRIPE_PUBLISHABLE_KEY=$(extract_tfvar "stripe_publishable_key")
 STRIPE_WEBHOOK_SECRET=$(extract_tfvar "stripe_webhook_secret")
+DOWNLOADS_ARTIFACTS_BUCKET=$(extract_tfvar "downloads_artifacts_bucket")
+DOWNLOADS_ARTIFACTS_REGION=$(extract_tfvar "downloads_artifacts_region")
+DOWNLOADS_MANIFEST_KEY=$(extract_tfvar "downloads_manifest_key")
+DOWNLOADS_PRESIGN_TTL_SECONDS=$(extract_tfvar "downloads_presign_ttl_seconds")
 
 # Validate required variables
 if [ -z "$ENVIRONMENT" ]; then
@@ -123,6 +127,22 @@ fi
 
 if [ -n "$STRIPE_WEBHOOK_SECRET" ]; then
     API_ENV_UPDATES=$(echo "$API_ENV_UPDATES" | jq ". + {\"STRIPE_WEBHOOK_SECRET\": \"$STRIPE_WEBHOOK_SECRET\"}")
+fi
+
+if [ -n "$DOWNLOADS_ARTIFACTS_BUCKET" ]; then
+    API_ENV_UPDATES=$(echo "$API_ENV_UPDATES" | jq ". + {\"DOWNLOADS_ARTIFACTS_BUCKET\": \"$DOWNLOADS_ARTIFACTS_BUCKET\"}")
+fi
+
+if [ -n "$DOWNLOADS_ARTIFACTS_REGION" ]; then
+    API_ENV_UPDATES=$(echo "$API_ENV_UPDATES" | jq ". + {\"DOWNLOADS_ARTIFACTS_REGION\": \"$DOWNLOADS_ARTIFACTS_REGION\"}")
+fi
+
+if [ -n "$DOWNLOADS_MANIFEST_KEY" ]; then
+    API_ENV_UPDATES=$(echo "$API_ENV_UPDATES" | jq ". + {\"DOWNLOADS_MANIFEST_KEY\": \"$DOWNLOADS_MANIFEST_KEY\"}")
+fi
+
+if [ -n "$DOWNLOADS_PRESIGN_TTL_SECONDS" ]; then
+    API_ENV_UPDATES=$(echo "$API_ENV_UPDATES" | jq ". + {\"DOWNLOADS_PRESIGN_TTL_SECONDS\": \"$DOWNLOADS_PRESIGN_TTL_SECONDS\"}")
 fi
 
 update_lambda_env "$API_LAMBDA_NAME" "$API_ENV_UPDATES"

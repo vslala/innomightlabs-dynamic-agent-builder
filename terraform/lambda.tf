@@ -79,6 +79,11 @@ resource "aws_lambda_function" "api" {
       # Mailjet
       MAILJET_API_KEY    = var.mailjet_api_key
       MAILJET_SECRET_KEY = var.mailjet_secret_key
+      # Downloads
+      DOWNLOADS_ARTIFACTS_BUCKET    = var.downloads_artifacts_bucket
+      DOWNLOADS_ARTIFACTS_REGION    = var.downloads_artifacts_region
+      DOWNLOADS_MANIFEST_KEY        = var.downloads_manifest_key
+      DOWNLOADS_PRESIGN_TTL_SECONDS = tostring(var.downloads_presign_ttl_seconds)
     }
   }
 

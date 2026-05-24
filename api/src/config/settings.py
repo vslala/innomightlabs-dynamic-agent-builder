@@ -117,6 +117,12 @@ class Settings:
     # GitHub (optional; for issue creation from contact form)
     github_token: str = ""
 
+    # Downloads artifacts (optional; required for downloads API)
+    downloads_artifacts_bucket: str = "innomightlabs-artifacts"
+    downloads_artifacts_region: str = "us-east-1"
+    downloads_manifest_key: str = "artifacts/plugins/manifest.json"
+    downloads_presign_ttl_seconds: int = 900
+
     def validate_core(self) -> None:
         """
         Validate core configuration required for the app to start.
@@ -356,6 +362,11 @@ class Settings:
             mailjet_secret_key=os.getenv("MAILJET_SECRET_KEY", ""),
             # GitHub
             github_token=os.getenv("GITHUB_TOKEN", ""),
+            # Downloads artifacts
+            downloads_artifacts_bucket=os.getenv("DOWNLOADS_ARTIFACTS_BUCKET", "innomightlabs-artifacts"),
+            downloads_artifacts_region=os.getenv("DOWNLOADS_ARTIFACTS_REGION", "us-east-1"),
+            downloads_manifest_key=os.getenv("DOWNLOADS_MANIFEST_KEY", "artifacts/plugins/manifest.json"),
+            downloads_presign_ttl_seconds=int(os.getenv("DOWNLOADS_PRESIGN_TTL_SECONDS", "900")),
         )
 
 

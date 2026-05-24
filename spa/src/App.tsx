@@ -12,6 +12,8 @@ import { Terms } from './pages/legal/Terms';
 import { PricingPolicy } from './pages/legal/PricingPolicy';
 import { Privacy } from './pages/legal/Privacy';
 import { Contact } from './pages/Contact';
+import { DownloadsPage } from './pages/DownloadsPage';
+import { PluginDetailsPage } from './pages/PluginDetailsPage';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 import { RateLimitBanner } from './components/RateLimitBanner';
@@ -79,6 +81,8 @@ function App() {
         <Route path="/legal/privacy" element={<Privacy />} />
         <Route path="/legal/pricing" element={<PricingPolicy />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/downloads" element={<DownloadsPage />} />
+        <Route path="/downloads/plugins/:pluginId" element={<PluginDetailsPage />} />
 
         {/* Protected dashboard routes */}
         <Route

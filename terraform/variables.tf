@@ -101,6 +101,30 @@ variable "widget_cdn_domain" {
   default     = ""
 }
 
+variable "downloads_artifacts_bucket" {
+  description = "S3 bucket for downloadable plugin artifacts"
+  type        = string
+  default     = "innomightlabs-artifacts"
+}
+
+variable "downloads_artifacts_region" {
+  description = "AWS region for the downloadable plugin artifacts bucket"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "downloads_manifest_key" {
+  description = "S3 object key for the plugin downloads manifest"
+  type        = string
+  default     = "artifacts/plugins/manifest.json"
+}
+
+variable "downloads_presign_ttl_seconds" {
+  description = "TTL in seconds for generated plugin download presigned URLs"
+  type        = number
+  default     = 900
+}
+
 variable "api_domain" {
   description = "Custom domain for API (e.g., api.innomightlabs.com)"
   type        = string

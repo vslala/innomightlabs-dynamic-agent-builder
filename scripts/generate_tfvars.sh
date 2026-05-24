@@ -106,6 +106,17 @@ get_var() {
   echo "$value"
 }
 
+get_var_default() {
+  local var_name="$1"
+  local default_value="$2"
+  local value
+  value="$(get_var "$var_name")"
+  if [[ -z "$value" ]]; then
+    value="$default_value"
+  fi
+  echo "$value"
+}
+
 # Generate terraform.tfvars
 rm -f "$TFVARS_PATH"
 {
@@ -127,6 +138,10 @@ write_kv "project_name" "$(get_var 'PROJECT_NAME')"
 write_kv "frontend_url" "$(get_var 'FRONTEND_URL')"
 write_kv "api_domain" "$(get_var 'API_DOMAIN')"
 write_kv "widget_cdn_domain" "$(get_var 'WIDGET_CDN_DOMAIN')"
+write_kv "downloads_artifacts_bucket" "$(get_var_default 'DOWNLOADS_ARTIFACTS_BUCKET' 'innomightlabs-artifacts')"
+write_kv "downloads_artifacts_region" "$(get_var_default 'DOWNLOADS_ARTIFACTS_REGION' 'us-east-1')"
+write_kv "downloads_manifest_key" "$(get_var_default 'DOWNLOADS_MANIFEST_KEY' 'artifacts/plugins/manifest.json')"
+write_kv "downloads_presign_ttl_seconds" "$(get_var_default 'DOWNLOADS_PRESIGN_TTL_SECONDS' '900')"
 
 # ============================================================================
 # Pinecone Vector Store (common)
