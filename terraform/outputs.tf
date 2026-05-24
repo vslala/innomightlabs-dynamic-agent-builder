@@ -44,6 +44,11 @@ output "artifacts_s3_bucket" {
   value       = aws_s3_bucket.artifacts.id
 }
 
+output "github_actions_artifact_publisher_role_arn" {
+  description = "IAM role ARN for GitHub Actions plugin artifact publishing"
+  value       = aws_iam_role.github_actions_artifact_publisher.arn
+}
+
 output "widget_embed_url" {
   description = "URL to embed the widget script"
   value       = var.widget_cdn_domain != "" ? "https://${var.widget_cdn_domain}/widget.js" : "https://${aws_cloudfront_distribution.widget.domain_name}/widget.js"

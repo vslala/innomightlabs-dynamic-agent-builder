@@ -125,6 +125,12 @@ variable "downloads_presign_ttl_seconds" {
   default     = 900
 }
 
+variable "github_actions_repository" {
+  description = "GitHub repository allowed to assume the artifact publisher role"
+  type        = string
+  default     = "vslala/innomightlabs-dynamic-agent-builder"
+}
+
 variable "api_domain" {
   description = "Custom domain for API (e.g., api.innomightlabs.com)"
   type        = string
