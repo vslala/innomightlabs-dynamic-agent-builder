@@ -173,6 +173,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: us-east-1
+          retry-max-attempts: 3
 
       - name: Publish plugin downloads
         env:

@@ -27,7 +27,10 @@ resource "aws_iam_role" "github_actions_artifact_publisher" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_actions_repository}:ref:refs/heads/prod"
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:${var.github_actions_repository}:ref:refs/heads/prod",
+              "repo:${var.github_actions_repository}:environment:github-pages"
+            ]
           }
         }
       }
