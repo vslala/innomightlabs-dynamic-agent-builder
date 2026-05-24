@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Bot, CheckCircle2, ExternalLink, Image as ImageIcon, Loader2, User, Wrench, XCircle } from "lucide-react";
+import { CheckCircle2, ExternalLink, Image as ImageIcon, Loader2, User, Wrench, XCircle } from "lucide-react";
 import { buildChatStreamRenderPlan } from '../../../packages/chat-stream-renderer/src';
 import { AttachmentChip } from "./AttachmentChip";
 import { MarkdownRenderer } from '../ui/markdown-renderer';
+import { SubmittedFormMessage } from "./SubmittedFormMessage";
+import { isSubmittedFormMessage } from "./submittedFormParser";
 import type { AttachmentInfo, Message, MessageImage, ToolActivity } from "../../types/message";
 
 interface ChatStreamRendererProps {
@@ -223,6 +225,10 @@ export function ChatStreamRenderer({
   extraNode: customExtraNode,
 }: ChatStreamRendererProps) {
   const renderAvatar = (role: Message["role"]) => {
+    if (role === "assistant") {
+      return null;
+    }
+
     if (role === "user" && userPicture) {
       return (
         <img
@@ -234,6 +240,7 @@ export function ChatStreamRenderer({
             borderRadius: "50%",
             flexShrink: 0,
             objectFit: "cover",
+            opacity: 0.9,
           }}
         />
       );
@@ -249,16 +256,10 @@ export function ChatStreamRenderer({
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
-          backgroundColor: role === "user"
-            ? "var(--gradient-start)"
-            : "rgba(102, 126, 234, 0.1)",
+          backgroundColor: "rgba(255, 255, 255, 0.12)",
         }}
       >
-        {role === "user" ? (
-          <User style={{ height: "1rem", width: "1rem", color: "white" }} />
-        ) : (
-          <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
-        )}
+        <User style={{ height: "1rem", width: "1rem", color: "rgba(255, 255, 255, 0.86)" }} />
       </div>
     );
   };
@@ -273,9 +274,8 @@ export function ChatStreamRenderer({
             gap: "0.5rem",
             padding: "0.75rem",
             margin: "0.5rem 0",
-            borderRadius: "0.5rem",
-            backgroundColor: "var(--bg-tertiary)",
-            border: "1px solid var(--border-subtle)",
+            borderRadius: "0.75rem",
+            backgroundColor: "rgba(255, 255, 255, 0.045)",
           }}
         >
           <div
@@ -284,7 +284,6 @@ export function ChatStreamRenderer({
               alignItems: "center",
               gap: "0.5rem",
               paddingBottom: "0.5rem",
-              borderBottom: "1px solid var(--border-subtle)",
               fontSize: "0.75rem",
               fontWeight: 600,
               color: "var(--text-muted)",
@@ -387,33 +386,44 @@ export function ChatStreamRenderer({
       {plan.map((item) => {
         if (item.kind === "message") {
           const msg = item.message;
+          const isFormSubmission = msg.role === "user" && isSubmittedFormMessage(msg);
           return (
             <div
               key={item.key}
               style={{
                 display: "flex",
-                gap: "0.75rem",
+                gap: msg.role === "user" ? "0.75rem" : 0,
                 alignItems: "flex-start",
                 flexDirection: msg.role === "user" ? "row-reverse" : "row",
+                width: "100%",
               }}
             >
               {renderAvatar(msg.role)}
               <div
                 style={{
-                  width: msg.images?.length ? "min(100%, 52rem)" : "fit-content",
-                  maxWidth: msg.images?.length ? "min(100%, 52rem)" : "min(78%, 46rem)",
-                  padding: msg.images?.length ? "0.875rem" : "0.75rem 1rem",
-                  borderRadius: msg.images?.length ? "0.875rem" : "1rem",
-                  backgroundColor: msg.role === "user" ? "var(--gradient-start)" : "var(--bg-secondary)",
+                  width: msg.role === "assistant" || msg.images?.length ? "100%" : "fit-content",
+                  maxWidth: msg.role === "assistant" || msg.images?.length ? "100%" : "min(72%, 42rem)",
+                  padding: msg.role === "assistant"
+                    ? msg.images?.length ? "0.5rem 0" : 0
+                    : "0.8rem 1rem",
+                  borderRadius: msg.images?.length ? "0.875rem" : "1.25rem",
+                  backgroundColor: msg.role === "user" ? "#2a2a2d" : "transparent",
                   color: msg.role === "user" ? "white" : "var(--text-primary)",
                   wordBreak: "break-word",
-                  lineHeight: "1.5",
+                  lineHeight: msg.role === "assistant" ? "1.68" : "1.5",
+                  fontSize: msg.role === "assistant" ? "1rem" : "0.975rem",
                   ...(msg.role === "user" ? { whiteSpace: "pre-wrap" as const } : {}),
                 }}
               >
                 {msg.content && (
                   <div style={msg.images?.length ? { marginBottom: "0.25rem" } : undefined}>
-                    {msg.role === "assistant" ? <MarkdownRenderer content={msg.content} /> : msg.content}
+                    {isFormSubmission ? (
+                      <SubmittedFormMessage message={msg} />
+                    ) : msg.role === "assistant" ? (
+                      <MarkdownRenderer content={msg.content} />
+                    ) : (
+                      msg.content
+                    )}
                   </div>
                 )}
                 {renderImages(msg.images)}
@@ -425,17 +435,17 @@ export function ChatStreamRenderer({
 
         if (item.kind === "streaming") {
           return (
-            <div key={item.key} style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
-              {renderAvatar("assistant")}
+            <div key={item.key} style={{ display: "flex", alignItems: "flex-start", width: "100%" }}>
               <div
                 style={{
-                  maxWidth: "70%",
-                  padding: "0.75rem 1rem",
-                  borderRadius: "1rem",
-                  backgroundColor: "var(--bg-secondary)",
+                  width: "100%",
+                  padding: 0,
+                  borderRadius: 0,
+                  backgroundColor: "transparent",
                   color: "var(--text-primary)",
                   wordBreak: "break-word",
-                  lineHeight: "1.5",
+                  lineHeight: "1.68",
+                  fontSize: "1rem",
                 }}
               >
                 <MarkdownRenderer content={item.content} />

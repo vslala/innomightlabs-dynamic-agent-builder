@@ -36,6 +36,7 @@ import { authService } from "../../services/auth";
 import type { ConversationResponse } from "../../types/conversation";
 import type { FormSchema } from "../../types/form";
 import { SSEEventType, type Message, type SSEEvent, type ToolActivity } from "../../types/message";
+import styles from "./Conversation.module.css";
 
 export function ConversationDetail() {
   const { conversationId } = useParams<{ conversationId: string }>();
@@ -457,7 +458,8 @@ export function ConversationDetail() {
     lines.push(`<form_submission label="${label}">`);
 
     for (const answer of answers) {
-      lines.push(`- ${answer.label}: ${answer.value}`);
+      const displayValue = answer.value.replace(/\n/g, "\\n");
+      lines.push(`- ${answer.label}: ${displayValue}`);
     }
 
     lines.push(`</form_submission>`);
@@ -619,23 +621,16 @@ export function ConversationDetail() {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "16rem" }}>
-        <div style={{
-          height: "2rem",
-          width: "2rem",
-          animation: "spin 1s linear infinite",
-          borderRadius: "50%",
-          border: "2px solid var(--gradient-start)",
-          borderTopColor: "transparent",
-        }} />
+      <div className={styles.loadingPanel}>
+        <div className={styles.loadingSpinner} />
       </div>
     );
   }
 
   if (error && !conversation) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+      <div className={styles.notFoundShell}>
+        <div className={styles.notFoundHeader}>
           <Button
             variant="ghost"
             size="icon"
@@ -643,15 +638,15 @@ export function ConversationDetail() {
           >
             <ChevronLeft style={{ height: "1.25rem", width: "1.25rem" }} />
           </Button>
-          <h1 style={{ fontSize: "1.25rem", fontWeight: 600, color: "var(--text-primary)" }}>
+          <h1 className={styles.notFoundTitle}>
             Conversation Not Found
           </h1>
         </div>
         <Card>
-          <CardContent style={{ padding: "3rem" }}>
-            <div style={{ textAlign: "center" }}>
-              <MessageSquare style={{ height: "4rem", width: "4rem", margin: "0 auto", color: "var(--text-muted)", marginBottom: "1rem" }} />
-              <p style={{ color: "var(--text-muted)", marginBottom: "1.5rem" }}>{error}</p>
+          <CardContent className={styles.notFoundCardContent}>
+            <div className={styles.notFoundBody}>
+              <MessageSquare className={styles.notFoundIcon} />
+              <p className={styles.notFoundMessage}>{error}</p>
               <Button onClick={() => navigate("/dashboard/conversations")}>
                 Back to Conversations
               </Button>
@@ -665,91 +660,35 @@ export function ConversationDetail() {
   if (!conversation) return null;
 
   return (
-    <div style={{
-      width: "100%",
-      display: "flex",
-      flexDirection: "column",
-      gap: "1rem",
-    }}>
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "1rem",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.875rem", minWidth: 0 }}>
+    <div className={styles.shell}>
+      <div className={styles.header}>
+        <div className={styles.headerMain}>
           <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard/conversations")}>
             <ChevronLeft style={{ height: "1.25rem", width: "1.25rem" }} />
           </Button>
-          <div style={{
-            width: "2.75rem",
-            height: "2.75rem",
-            borderRadius: "0.75rem",
-            backgroundColor: "rgba(102, 126, 234, 0.14)",
-            border: "1px solid rgba(102, 126, 234, 0.24)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}>
-            <MessageSquare style={{ height: "1.25rem", width: "1.25rem", color: "var(--gradient-start)" }} />
+          <div className={styles.conversationIcon}>
+            <MessageSquare className={styles.conversationIconSvg} />
           </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.625rem",
-              flexWrap: "wrap",
-            }}>
-              <h1 style={{
-                fontSize: "1.375rem",
-                fontWeight: 650,
-                color: "var(--text-primary)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                margin: 0,
-              }}>
+          <div className={styles.headerText}>
+            <div className={styles.titleRow}>
+              <h1 className={styles.title}>
                 {conversation.title}
               </h1>
               {supportsImageGeneration && (
-                <span style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "0.375rem",
-                  padding: "0.25rem 0.5rem",
-                  borderRadius: "999px",
-                  backgroundColor: "rgba(34, 197, 94, 0.12)",
-                  color: "#86efac",
-                  fontSize: "0.75rem",
-                  fontWeight: 600,
-                }}>
-                  <ImageIcon style={{ height: "0.875rem", width: "0.875rem" }} />
+                <span className={styles.imageBadge}>
+                  <ImageIcon className={styles.badgeIcon} />
                   Images
                 </span>
               )}
             </div>
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.75rem",
-              flexWrap: "wrap",
-              color: "var(--text-muted)",
-              fontSize: "0.875rem",
-              marginTop: "0.25rem",
-            }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
-                <Bot style={{ height: "0.875rem", width: "0.875rem" }} />
+            <div className={styles.metaRow}>
+              <span className={styles.metaItem}>
+                <Bot className={styles.metaIcon} />
                 {getAgentName(conversation.agent_id)}
               </span>
               <span>Created {formatDate(conversation.created_at)}</span>
               {conversation.description && (
-                <span style={{
-                  maxWidth: "42rem",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}>
+                <span className={styles.description}>
                   {conversation.description}
                 </span>
               )}
@@ -757,14 +696,14 @@ export function ConversationDetail() {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
+        <div className={styles.actions}>
           <Button variant="ghost" size="icon" onClick={handleStartEdit} title="Edit conversation">
             <Pencil style={{ height: "1rem", width: "1rem" }} />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            style={{ color: "#f87171" }}
+            className={styles.dangerButton}
             onClick={() => setIsDeleteDialogOpen(true)}
             title="Delete conversation"
           >
@@ -804,9 +743,12 @@ export function ConversationDetail() {
       <Card style={{
         display: "flex",
         flexDirection: "column",
-        height: isExpanded ? "100vh" : "calc(100vh - 10rem)",
+        height: isExpanded ? "100vh" : "calc(100vh - 9rem)",
         minHeight: isExpanded ? undefined : "42rem",
         overflow: "hidden",
+        border: "none",
+        boxShadow: "none",
+        background: "transparent",
         ...(isExpanded ? {
           position: "fixed",
           top: 0,
@@ -817,20 +759,20 @@ export function ConversationDetail() {
           maxWidth: "100%",
           borderRadius: 0,
           margin: 0,
-          background: "#0d0d12",
+          background: "#050506",
         } : {}),
       }}>
         <div style={{
-          borderBottom: "1px solid var(--border-subtle)",
           flexShrink: 0,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "0.75rem 1rem",
-          backgroundColor: "rgba(255, 255, 255, 0.015)",
+          width: "min(100%, 56rem)",
+          margin: "0 auto",
+          padding: "0.25rem 0 0.5rem",
+          backgroundColor: "transparent",
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-            <MessageSquare style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
             <span>{messages.length} messages</span>
           </div>
           <Button
@@ -851,13 +793,16 @@ export function ConversationDetail() {
           <div
             ref={messagesContainerRef}
             onScroll={handleScroll}
+            className={styles.messagesPane}
             style={{
               flex: 1,
               overflowY: "auto",
-              padding: "1.5rem",
+              padding: "2rem 1rem 1.5rem",
               display: "flex",
               flexDirection: "column",
-              gap: "1.25rem",
+              gap: "1.55rem",
+              width: "min(100%, 56rem)",
+              margin: "0 auto",
             }}
           >
             {/* Loading indicator for older messages */}
@@ -922,23 +867,13 @@ export function ConversationDetail() {
                           }}
                         >
                           <div style={{
-                            width: "2rem",
-                            height: "2rem",
-                            borderRadius: "50%",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                            backgroundColor: "rgba(102, 126, 234, 0.1)",
-                          }}>
-                            <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
-                          </div>
+                            display: "none",
+                          }} />
                           <div style={{
-                            maxWidth: "min(100%, 48rem)",
                             width: "100%",
                             padding: "0.75rem 1rem",
-                            borderRadius: "1rem",
-                            backgroundColor: "var(--bg-secondary)",
+                            borderRadius: "0.875rem",
+                            backgroundColor: "rgba(255, 255, 255, 0.055)",
                             color: "var(--text-primary)",
                           }}>
                             <ChatFormRenderer
@@ -961,22 +896,12 @@ export function ConversationDetail() {
                           }}
                         >
                           <div style={{
-                            width: "2rem",
-                            height: "2rem",
-                            borderRadius: "50%",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                            backgroundColor: "rgba(102, 126, 234, 0.1)",
-                          }}>
-                            <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
-                          </div>
+                            display: "none",
+                          }} />
                           <div style={{
-                            maxWidth: "min(100%, 48rem)",
                             padding: "0.75rem 1rem",
-                            borderRadius: "1rem",
-                            backgroundColor: "var(--bg-secondary)",
+                            borderRadius: "0.875rem",
+                            backgroundColor: "rgba(255, 255, 255, 0.055)",
                             color: "var(--text-secondary)",
                             fontSize: "0.875rem",
                           }}>
@@ -994,22 +919,13 @@ export function ConversationDetail() {
                           }}
                         >
                           <div style={{
-                            width: "2rem",
-                            height: "2rem",
-                            borderRadius: "50%",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                            backgroundColor: "rgba(102, 126, 234, 0.1)",
-                          }}>
-                            <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
-                          </div>
+                            display: "none",
+                          }} />
                           <div style={{
-                            width: "min(100%, 52rem)",
+                            width: "100%",
                             padding: "0.875rem",
                             borderRadius: "0.875rem",
-                            backgroundColor: "var(--bg-secondary)",
+                            backgroundColor: "rgba(255, 255, 255, 0.055)",
                             color: "var(--text-primary)",
                           }}>
                             <div style={{ fontWeight: 650, marginBottom: "0.75rem" }}>
@@ -1153,10 +1069,11 @@ export function ConversationDetail() {
           <div style={{
             display: "flex",
             gap: "0.75rem",
-            padding: "1rem 1.25rem",
-            borderTop: "1px solid var(--border-subtle)",
+            width: "min(100%, 56rem)",
+            margin: "0 auto",
+            padding: "0.75rem 1rem 1rem",
             alignItems: "flex-end",
-            backgroundColor: "rgba(255, 255, 255, 0.015)",
+            backgroundColor: "transparent",
           }}>
             {/* Hidden file input */}
             <input
@@ -1175,7 +1092,7 @@ export function ConversationDetail() {
               onClick={() => fileInputRef.current?.click()}
               disabled={isSending}
               title="Attach files"
-              style={{ flexShrink: 0, height: "2.5rem", width: "2.5rem" }}
+              style={{ flexShrink: 0, height: "2.75rem", width: "2.75rem", borderRadius: "999px" }}
             >
               <Paperclip style={{ height: "1rem", width: "1rem" }} />
             </Button>
@@ -1187,7 +1104,7 @@ export function ConversationDetail() {
                 onClick={() => setIsImageDialogOpen(true)}
                 disabled={isSending || isGeneratingImage}
                 title="Generate image"
-                style={{ flexShrink: 0, height: "2.5rem", width: "2.5rem" }}
+                style={{ flexShrink: 0, height: "2.75rem", width: "2.75rem", borderRadius: "999px" }}
               >
                 <ImageIcon style={{ height: "1rem", width: "1rem" }} />
               </Button>
@@ -1203,10 +1120,16 @@ export function ConversationDetail() {
               rows={1}
               style={{
                 flex: 1,
-                minHeight: "2.5rem",
+                minHeight: "2.75rem",
                 maxHeight: "10rem",
                 resize: "none",
                 overflow: "auto",
+                border: "none",
+                borderRadius: "1.375rem",
+                backgroundColor: "#242427",
+                color: "var(--text-primary)",
+                padding: "0.75rem 1rem",
+                boxShadow: "none",
               }}
               onInput={(e) => {
                 const target = e.target as HTMLTextAreaElement;
@@ -1217,7 +1140,7 @@ export function ConversationDetail() {
             <Button
               onClick={() => handleSendMessage()}
               disabled={(!inputValue.trim() && attachments.length === 0) || isSending}
-              style={{ flexShrink: 0, height: "2.5rem" }}
+              style={{ flexShrink: 0, height: "2.75rem", width: "2.75rem", borderRadius: "999px", padding: 0 }}
             >
               {isSending ? (
                 <Loader2 style={{ height: "1rem", width: "1rem", animation: "spin 1s linear infinite" }} />
