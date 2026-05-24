@@ -14,14 +14,14 @@ PLUGIN_METADATA = {
     "vscode": {
         "kind": "Editor plugin",
         "platform": "VS Code",
-        "tagline": "Build and test Innomight agents without leaving your editor.",
-        "description": "Open agent workflows, run quick checks, and move from code to automation with a VS Code extension built for day-to-day development.",
+        "tagline": "Bring your Innomight coding assistant into VS Code.",
+        "description": "Ask better questions about selected code, rewrite tricky sections in place, generate snippets from slash prompts, and keep your Innomight agent conversation beside the editor while you build.",
     },
     "wordpress": {
         "kind": "Website plugin",
         "platform": "WordPress",
-        "tagline": "Connect your WordPress site to Innomight agents and automations.",
-        "description": "Add Innomight-powered chat and workflow hooks to WordPress so site visitors can interact with your agents from the pages they already use.",
+        "tagline": "Use Innomight Labs with the latest WordPress 7.0 AI Connector experience.",
+        "description": "Register Innomight as a native WordPress AI Connector, configure your key once, and unlock Innomight-backed AI features wherever WordPress 7.0 connectors and AI tools are available.",
     },
 }
 
