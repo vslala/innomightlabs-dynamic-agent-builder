@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
+from src.agents.image_generation.capabilities import image_capability_registry
+
 
 class CreateAgentRequest(BaseModel):
     """Request model for creating an agent"""
@@ -24,6 +26,7 @@ class AgentResponse(BaseModel):
     agent_model: Optional[str] = None
     agent_persona: str
     agent_description: Optional[str] = None
+    capabilities: list[str] = Field(default_factory=list)
     session_timeout_minutes: int = 60  # Default 60 minutes
     created_by: str
     created_at: datetime
@@ -117,6 +120,10 @@ class Agent(BaseModel):
             agent_model=self.agent_model,
             agent_persona=self.agent_persona,
             agent_description=self.agent_description,
+            capabilities=image_capability_registry.capabilities_for(
+                self.agent_provider,
+                self.agent_model,
+            ),
             session_timeout_minutes=self.session_timeout_minutes,
             created_by=self.created_by,
             created_at=self.created_at,

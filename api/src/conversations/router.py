@@ -5,7 +5,9 @@ Conversations API router.
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import Response
 
+from src.agents.image_generation.storage import ConversationMediaStorage
 from src.agents.repository import AgentRepository
 from src.common.pagination import Paginated
 from src.conversations.models import (
@@ -17,6 +19,7 @@ from src.conversations.models import (
 from src.conversations.repository import ConversationRepository
 from src.messages.models import MessageResponse
 from src.messages.repository import MessageRepository
+from src.messages.responses import MessageResponseFactory
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -24,6 +27,7 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 conversation_repository = ConversationRepository()
 agent_repository = AgentRepository()
 message_repository = MessageRepository()
+message_response_factory = MessageResponseFactory()
 
 
 def get_user_email(request: Request) -> str:
@@ -154,9 +158,47 @@ async def get_messages(
     ]
 
     return Paginated[MessageResponse](
-        items=[m.to_response() for m in visible_messages],
+        items=[message_response_factory.to_response(m) for m in visible_messages],
         next_cursor=next_cursor,
         has_more=has_more,
+    )
+
+
+@router.get("/{conversation_id}/messages/{message_id}/images/{image_id}")
+async def get_message_image(
+    request: Request,
+    conversation_id: str,
+    message_id: str,
+    image_id: str,
+):
+    """Return generated image bytes for an authenticated conversation owner."""
+    user_email = get_user_email(request)
+
+    conversation = conversation_repository.find_by_id(conversation_id, user_email)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    messages = message_repository.find_by_conversation(conversation_id)
+    message = next((m for m in messages if m.message_id == message_id), None)
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    image = next((img for img in message.images if img.image_id == image_id), None)
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    try:
+        body, content_type = ConversationMediaStorage().get_image(image.s3_key)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="Image object not found") from e
+
+    return Response(
+        content=body,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "Content-Disposition": f'inline; filename="{image.filename}"',
+        },
     )
 
 
@@ -210,6 +252,20 @@ async def delete_conversation(request: Request, conversation_id: str):
 
     # Delete all messages in this conversation first
     deleted_messages = message_repository.delete_by_conversation(conversation_id)
+
+    try:
+        ConversationMediaStorage().delete_conversation_prefix(
+            conversation.agent_id,
+            conversation_id,
+        )
+    except Exception:
+        # Do not leave a user-visible deletion failure after DynamoDB cleanup
+        # succeeded. S3 cleanup can be retried operationally by prefix.
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Failed to delete media for conversation %s", conversation_id, exc_info=True
+        )
 
     # Delete conversation
     deleted = conversation_repository.delete_by_id(conversation_id, user_email)

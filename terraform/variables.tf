@@ -125,6 +125,30 @@ variable "downloads_presign_ttl_seconds" {
   default     = 900
 }
 
+variable "conversation_media_bucket" {
+  description = "Private S3 bucket for generated conversation media"
+  type        = string
+  default     = "innomightlabs-conversations-meta"
+}
+
+variable "conversation_media_presign_ttl_seconds" {
+  description = "TTL in seconds for generated conversation media presigned URLs"
+  type        = number
+  default     = 900
+}
+
+variable "openai_image_generation_backend" {
+  description = "OpenAI image generation backend used by the API"
+  type        = string
+  default     = "codex_oauth"
+}
+
+variable "openai_image_generation_models" {
+  description = "Comma-separated OpenAI model IDs that enable agent image generation"
+  type        = string
+  default     = "gpt-5.5,gpt-5.4"
+}
+
 variable "github_actions_repository" {
   description = "GitHub repository allowed to assume the artifact publisher role"
   type        = string

@@ -77,6 +77,8 @@ class Settings:
     openai_oauth_originator: str = ""
     openai_oauth_redirect_uri: str = ""
     openai_oauth_responses_url: str = "https://chatgpt.com/backend-api/codex/responses"
+    openai_image_generation_backend: str = "codex_oauth"
+    openai_image_generation_models: list[str] = field(default_factory=lambda: ["gpt-5.4", "gpt-5.5"])
 
     # Pinecone Vector Store (required for knowledge base features)
     pinecone_api_key: str = ""
@@ -122,6 +124,8 @@ class Settings:
     downloads_artifacts_region: str = "us-east-1"
     downloads_manifest_key: str = "artifacts/plugins/manifest.json"
     downloads_presign_ttl_seconds: int = 900
+    conversation_media_bucket: str = "innomightlabs-conversations-meta"
+    conversation_media_presign_ttl_seconds: int = 900
 
     def validate_core(self) -> None:
         """
@@ -333,6 +337,11 @@ class Settings:
                 "OPENAI_OAUTH_RESPONSES_URL",
                 "https://chatgpt.com/backend-api/codex/responses",
             ),
+            openai_image_generation_backend=os.getenv("OPENAI_IMAGE_GENERATION_BACKEND", "codex_oauth"),
+            openai_image_generation_models=parse_env_list(
+                "OPENAI_IMAGE_GENERATION_MODELS",
+                ["gpt-5.4", "gpt-5.5"],
+            ),
             superuser_emails=parse_env_email_list("SUPERUSER_EMAILS", []),
             # Pinecone - no defaults, must be explicitly configured
             pinecone_api_key=os.getenv("PINECONE_API_KEY", ""),
@@ -367,6 +376,8 @@ class Settings:
             downloads_artifacts_region=os.getenv("DOWNLOADS_ARTIFACTS_REGION", "us-east-1"),
             downloads_manifest_key=os.getenv("DOWNLOADS_MANIFEST_KEY", "artifacts/plugins/manifest.json"),
             downloads_presign_ttl_seconds=int(os.getenv("DOWNLOADS_PRESIGN_TTL_SECONDS", "900")),
+            conversation_media_bucket=os.getenv("CONVERSATION_MEDIA_BUCKET", "innomightlabs-conversations-meta"),
+            conversation_media_presign_ttl_seconds=int(os.getenv("CONVERSATION_MEDIA_PRESIGN_TTL_SECONDS", "900")),
         )
 
 

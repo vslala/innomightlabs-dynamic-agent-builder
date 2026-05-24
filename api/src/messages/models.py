@@ -53,6 +53,37 @@ class AttachmentResponse(BaseModel):
     size: int
 
 
+class MessageImage(BaseModel):
+    """Generated image metadata stored with a message."""
+
+    image_id: str = Field(default_factory=lambda: str(uuid4()))
+    s3_key: str
+    filename: str
+    mime_type: str
+    size_bytes: int
+    width: int | None = None
+    height: int | None = None
+    prompt: str | None = None
+    revised_prompt: str | None = None
+    quality: str | None = None
+    background: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class MessageImageResponse(BaseModel):
+    """Generated image info returned to frontend."""
+
+    image_id: str
+    url: str | None = None
+    filename: str
+    mime_type: str
+    size_bytes: int
+    width: int | None = None
+    height: int | None = None
+    prompt: str | None = None
+    revised_prompt: str | None = None
+
+
 class MessageResponse(BaseModel):
     """Response model for message."""
 
@@ -61,6 +92,7 @@ class MessageResponse(BaseModel):
     role: Literal["user", "assistant", "system"]
     content: str
     attachments: list[AttachmentResponse] = Field(default_factory=list)
+    images: list[MessageImageResponse] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -73,6 +105,7 @@ class Message(BaseModel):
     role: Literal["user", "assistant", "system"]
     content: str
     attachments: list[Attachment] = Field(default_factory=list)
+    images: list[MessageImage] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -100,6 +133,11 @@ class Message(BaseModel):
         }
         if self.attachments:
             item["attachments"] = [att.model_dump() for att in self.attachments]
+        if self.images:
+            item["images"] = [
+                img.model_dump(mode="json")
+                for img in self.images
+            ]
         return item
 
     @classmethod
@@ -108,6 +146,9 @@ class Message(BaseModel):
         attachments = [
             Attachment(**att) for att in item.get("attachments", [])
         ]
+        images = [
+            MessageImage(**img) for img in item.get("images", [])
+        ]
         return cls(
             message_id=item["message_id"],
             conversation_id=item["conversation_id"],
@@ -115,6 +156,7 @@ class Message(BaseModel):
             role=item["role"],
             content=item["content"],
             attachments=attachments,
+            images=images,
             created_at=datetime.fromisoformat(item["created_at"]),
         )
 
@@ -128,6 +170,19 @@ class Message(BaseModel):
             attachments=[
                 AttachmentResponse(filename=att.filename, size=att.size)
                 for att in self.attachments
+            ],
+            images=[
+                MessageImageResponse(
+                    image_id=img.image_id,
+                    filename=img.filename,
+                    mime_type=img.mime_type,
+                    size_bytes=img.size_bytes,
+                    width=img.width,
+                    height=img.height,
+                    prompt=img.prompt,
+                    revised_prompt=img.revised_prompt,
+                )
+                for img in self.images
             ],
             created_at=self.created_at,
         )

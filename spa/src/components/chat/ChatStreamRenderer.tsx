@@ -1,8 +1,9 @@
-import { Bot, CheckCircle2, Loader2, User, Wrench, XCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bot, CheckCircle2, ExternalLink, Image as ImageIcon, Loader2, User, Wrench, XCircle } from "lucide-react";
 import { buildChatStreamRenderPlan } from '../../../packages/chat-stream-renderer/src';
 import { AttachmentChip } from "./AttachmentChip";
 import { MarkdownRenderer } from '../ui/markdown-renderer';
-import type { AttachmentInfo, Message, ToolActivity } from "../../types/message";
+import type { AttachmentInfo, Message, MessageImage, ToolActivity } from "../../types/message";
 
 interface ChatStreamRendererProps {
   messages: Message[];
@@ -40,6 +41,174 @@ function renderAttachments(role: Message["role"], attachments?: AttachmentInfo[]
           readonly
         />
       ))}
+    </div>
+  );
+}
+
+function ImagePreview({ image }: { image: MessageImage }) {
+  const [failed, setFailed] = useState(false);
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const label = image.revised_prompt || image.prompt || image.filename;
+
+  useEffect(() => {
+    let active = true;
+    let nextObjectUrl: string | null = null;
+
+    async function loadImage() {
+      if (!image.url) {
+        setFailed(true);
+        return;
+      }
+
+      setFailed(false);
+      setObjectUrl(null);
+
+      try {
+        const token = localStorage.getItem("auth_token");
+        const response = await fetch(image.url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Image request failed with ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        nextObjectUrl = URL.createObjectURL(blob);
+        if (active) {
+          setObjectUrl(nextObjectUrl);
+        } else {
+          URL.revokeObjectURL(nextObjectUrl);
+        }
+      } catch {
+        if (active) {
+          setFailed(true);
+        }
+      }
+    }
+
+    loadImage();
+
+    return () => {
+      active = false;
+      if (nextObjectUrl) {
+        URL.revokeObjectURL(nextObjectUrl);
+      }
+    };
+  }, [image.url]);
+
+  if (!image.url || failed) {
+    return (
+      <div
+        style={{
+          minHeight: "16rem",
+          borderRadius: "0.75rem",
+          border: "1px solid var(--border-subtle)",
+          backgroundColor: "var(--bg-tertiary)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "0.75rem",
+          padding: "1.5rem",
+          color: "var(--text-muted)",
+          textAlign: "center",
+        }}
+      >
+        <ImageIcon style={{ height: "2rem", width: "2rem", color: "var(--text-muted)" }} />
+        <div style={{ maxWidth: "28rem" }}>
+          <div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: "0.25rem" }}>
+            Image preview unavailable
+          </div>
+          <div style={{ fontSize: "0.875rem", lineHeight: 1.5 }}>
+            The image file could not be loaded. It may still be processing or unavailable in storage.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!objectUrl) {
+    return (
+      <div
+        style={{
+          minHeight: "16rem",
+          borderRadius: "0.75rem",
+          border: "1px solid var(--border-subtle)",
+          backgroundColor: "var(--bg-tertiary)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--text-muted)",
+        }}
+      >
+        <Loader2 style={{ height: "1.5rem", width: "1.5rem", animation: "spin 1s linear infinite" }} />
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={objectUrl}
+      target="_blank"
+      rel="noreferrer"
+      title={label}
+      style={{
+        display: "block",
+        borderRadius: "0.75rem",
+        overflow: "hidden",
+        border: "1px solid var(--border-subtle)",
+        backgroundColor: "var(--bg-tertiary)",
+        position: "relative",
+      }}
+    >
+      <img
+        src={objectUrl}
+        alt={label}
+        onError={() => setFailed(true)}
+        style={{
+          display: "block",
+          width: "100%",
+          maxHeight: "34rem",
+          objectFit: "contain",
+          backgroundColor: "#101018",
+        }}
+      />
+      <span
+        style={{
+          position: "absolute",
+          right: "0.75rem",
+          top: "0.75rem",
+          width: "2rem",
+          height: "2rem",
+          borderRadius: "999px",
+          backgroundColor: "rgba(0, 0, 0, 0.55)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <ExternalLink style={{ height: "1rem", width: "1rem", color: "white" }} />
+      </span>
+    </a>
+  );
+}
+
+function renderImages(images?: MessageImage[]) {
+  if (!images?.length) {
+    return null;
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
+        gap: "0.75rem",
+        marginTop: "0.875rem",
+      }}
+    >
+      {images.map((image) => <ImagePreview key={image.image_id} image={image} />)}
     </div>
   );
 }
@@ -231,19 +400,23 @@ export function ChatStreamRenderer({
               {renderAvatar(msg.role)}
               <div
                 style={{
-                  maxWidth: "70%",
-                  padding: "0.75rem 1rem",
-                  borderRadius: "1rem",
-                  backgroundColor: msg.role === "user"
-                    ? "var(--gradient-start)"
-                    : "var(--bg-secondary)",
+                  width: msg.images?.length ? "min(100%, 52rem)" : "fit-content",
+                  maxWidth: msg.images?.length ? "min(100%, 52rem)" : "min(78%, 46rem)",
+                  padding: msg.images?.length ? "0.875rem" : "0.75rem 1rem",
+                  borderRadius: msg.images?.length ? "0.875rem" : "1rem",
+                  backgroundColor: msg.role === "user" ? "var(--gradient-start)" : "var(--bg-secondary)",
                   color: msg.role === "user" ? "white" : "var(--text-primary)",
                   wordBreak: "break-word",
                   lineHeight: "1.5",
                   ...(msg.role === "user" ? { whiteSpace: "pre-wrap" as const } : {}),
                 }}
               >
-                {msg.role === "assistant" ? <MarkdownRenderer content={msg.content} /> : msg.content}
+                {msg.content && (
+                  <div style={msg.images?.length ? { marginBottom: "0.25rem" } : undefined}>
+                    {msg.role === "assistant" ? <MarkdownRenderer content={msg.content} /> : msg.content}
+                  </div>
+                )}
+                {renderImages(msg.images)}
                 {renderAttachments(msg.role, msg.attachments)}
               </div>
             </div>

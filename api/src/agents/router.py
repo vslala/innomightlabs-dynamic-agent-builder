@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field, field_validator
@@ -7,6 +7,15 @@ import logging
 
 import src.form_models as form_models
 from src.agents.architectures import get_agent_architecture
+from src.agents.image_generation.storage import ConversationMediaStorage
+from src.agents.image_generation.models import GenerateImageRequest, GenerateImageResponse
+from src.agents.image_generation.service import (
+    AgentImageGenerationError,
+    AgentImageGenerationService,
+    ImageGenerationConflictError,
+    ImageGenerationNotFoundError,
+    ImageGenerationNotSupportedError,
+)
 from src.agents.models import Agent, CreateAgentRequest, AgentResponse
 from src.agents.repository import AgentRepository
 from src.agents.schemas import get_create_agent_form, get_update_agent_form, UPDATE_AGENT_FORM
@@ -55,6 +64,11 @@ class SendMessageRequest(BaseModel):
 def get_agent_repository() -> AgentRepository:
     """Dependency for AgentRepository"""
     return AgentRepository()
+
+
+def get_agent_image_generation_service() -> AgentImageGenerationService:
+    """Dependency for AgentImageGenerationService."""
+    return AgentImageGenerationService()
 
 
 def _load_agent_model_choices(
@@ -267,6 +281,10 @@ async def delete_agent(
     """
     user_email: str = request.state.user_email
     repo.delete_by_id(agent_id, user_email)
+    try:
+        ConversationMediaStorage().delete_agent_prefix(agent_id)
+    except Exception:
+        log.warning("Failed to delete media for agent %s", agent_id, exc_info=True)
     log.info(f"Deleted agent {agent_id} for user {user_email}")
 
 
@@ -363,4 +381,71 @@ async def send_message(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
         }
+    )
+
+
+@router.post("/{agent_id}/{conversation_id}/generate-image", response_model=GenerateImageResponse)
+async def generate_image(
+    request: Request,
+    agent_id: str,
+    conversation_id: str,
+    body: GenerateImageRequest,
+    service: Annotated[AgentImageGenerationService, Depends(get_agent_image_generation_service)],
+) -> GenerateImageResponse:
+    """Explicitly generate an image with an agent and save it to chat history."""
+    user_email: str = request.state.user_email
+    try:
+        return await service.generate_for_dashboard(
+            agent_id=agent_id,
+            conversation_id=conversation_id,
+            user_email=user_email,
+            request=body,
+        )
+    except ImageGenerationNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ImageGenerationConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except ImageGenerationNotSupportedError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except AgentImageGenerationError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/{agent_id}/{conversation_id}/generate-image-stream")
+async def generate_image_stream(
+    request: Request,
+    agent_id: str,
+    conversation_id: str,
+    body: GenerateImageRequest,
+    service: Annotated[AgentImageGenerationService, Depends(get_agent_image_generation_service)],
+):
+    """Explicitly generate an image with an agent and stream preview/final events."""
+    user_email: str = request.state.user_email
+
+    async def event_stream():
+        try:
+            async for event in service.stream_for_dashboard(
+                agent_id=agent_id,
+                conversation_id=conversation_id,
+                user_email=user_email,
+                request=body,
+            ):
+                yield event.to_sse()
+        except ImageGenerationNotFoundError as e:
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=str(e)).to_sse()
+        except ImageGenerationConflictError as e:
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=str(e)).to_sse()
+        except ImageGenerationNotSupportedError as e:
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=str(e)).to_sse()
+        except Exception as e:
+            log.error("Error in generate_image_stream: %s", e, exc_info=True)
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=str(e)).to_sse()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
     )

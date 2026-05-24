@@ -161,3 +161,32 @@ class WidgetGenerateTextResponse(BaseModel):
     agent_id: str
     conversation_id: str
     message_ids: dict[str, str] = Field(default_factory=dict)
+
+
+class WidgetGenerateImageRequest(BaseModel):
+    """Request model for provider-style image generation."""
+
+    prompt: str = Field(..., min_length=1, max_length=4000)
+    context: dict[str, Any] = Field(default_factory=dict)
+    model: Optional[str] = None
+    size: Optional[str] = None
+    quality: Optional[str] = None
+    output_format: str = "png"
+
+
+class WidgetGeneratedImage(BaseModel):
+    """Generated image response item for provider-style integrations."""
+
+    url: Optional[str] = None
+    mime_type: str
+    width: Optional[int] = None
+    height: Optional[int] = None
+
+
+class WidgetGenerateImageResponse(BaseModel):
+    """Response model for provider-style image generation."""
+
+    images: list[WidgetGeneratedImage]
+    agent_id: str
+    conversation_id: str
+    message_ids: dict[str, str] = Field(default_factory=dict)

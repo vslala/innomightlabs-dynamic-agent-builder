@@ -7,8 +7,9 @@ import logging
 from typing import Optional
 
 import boto3
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from src.agents.image_generation.capabilities import image_capability_registry
 from src.crypto import decrypt
 from src.config import settings
 from src.settings.models import ProviderSettings
@@ -22,6 +23,7 @@ class ModelInfo(BaseModel):
     model_name: str         # Short name for selection (e.g., "claude-sonnet-4")
     display_name: str       # Human-readable name (e.g., "Claude Sonnet 4")
     provider: str           # Provider name (e.g., "bedrock")
+    capabilities: list[str] = Field(default_factory=list)
 
 
 class ModelsService:
@@ -219,6 +221,7 @@ class ModelsService:
                 model_name=model,
                 display_name=f"[OpenAI] {model}",
                 provider="openai",
+                capabilities=image_capability_registry.capabilities_for("OpenAI", model),
             )
             for model in models
         ]

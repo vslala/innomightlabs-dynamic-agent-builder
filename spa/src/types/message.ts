@@ -65,12 +65,25 @@ export interface AttachmentInfo {
   size: number;
 }
 
+export interface MessageImage {
+  image_id: string;
+  url?: string | null;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  width?: number | null;
+  height?: number | null;
+  prompt?: string | null;
+  revised_prompt?: string | null;
+}
+
 export interface Message {
   message_id: string;
   conversation_id: string;
   role: MessageRole;
   content: string;
   attachments?: AttachmentInfo[];
+  images?: MessageImage[];
   created_at: string;
 }
 
@@ -81,6 +94,9 @@ export const SSEEventType = {
   LIFECYCLE_NOTIFICATION: "LIFECYCLE_NOTIFICATION",
   AGENT_RESPONSE_TO_USER: "AGENT_RESPONSE_TO_USER",
   AGENT_THOUGHTS: "AGENT_THOUGHTS",
+  IMAGE_GENERATION_STARTED: "IMAGE_GENERATION_STARTED",
+  IMAGE_GENERATION_PARTIAL: "IMAGE_GENERATION_PARTIAL",
+  IMAGE_GENERATION_COMPLETE: "IMAGE_GENERATION_COMPLETE",
   UI_FORM_RENDER: "UI_FORM_RENDER",
   USER_MESSAGE_SAVED: "USER_MESSAGE_SAVED",
   ASSISTANT_MESSAGE_SAVED: "ASSISTANT_MESSAGE_SAVED",
@@ -108,6 +124,14 @@ export interface SSEEvent {
   tool_name?: string;
   tool_args?: Record<string, unknown>;
   success?: boolean;
+  image_b64?: string;
+  image_mime_type?: string;
+  image_url?: string;
+  image_id?: string;
+  image_filename?: string;
+  image_width?: number;
+  image_height?: number;
+  images?: GeneratedImageResponse[];
 }
 
 /**
@@ -128,4 +152,32 @@ export interface ToolActivity {
 export interface SendMessageRequest {
   content: string;
   attachments?: Attachment[];
+}
+
+export interface GenerateImageRequest {
+  prompt: string;
+  size?: string;
+  quality?: string;
+  output_format?: "png" | "jpeg" | "webp";
+}
+
+export interface GeneratedImageResponse {
+  image_id: string;
+  url?: string | null;
+  s3_key: string;
+  filename: string;
+  mime_type: string;
+  width?: number | null;
+  height?: number | null;
+  size_bytes: number;
+  prompt: string;
+  revised_prompt?: string | null;
+}
+
+export interface GenerateImageResponse {
+  agent_id: string;
+  conversation_id: string;
+  user_message_id: string;
+  assistant_message_id: string;
+  images: GeneratedImageResponse[];
 }

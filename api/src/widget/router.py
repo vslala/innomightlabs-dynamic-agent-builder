@@ -18,6 +18,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from src.agents.architectures import get_agent_architecture
+from src.agents.image_generation.models import GenerateImageRequest
+from src.agents.image_generation.service import (
+    AgentImageGenerationError,
+    AgentImageGenerationService,
+    ImageGenerationNotSupportedError,
+)
 from src.agents.repository import AgentRepository
 from src.apikeys.models import AgentApiKey
 from src.auth.google_oauth import GoogleOAuth
@@ -27,6 +33,9 @@ from src.messages.repository import MessageRepository
 from src.widget.middleware import get_api_key_from_request
 from src.widget.models import (
     CreateWidgetConversationRequest,
+    WidgetGeneratedImage,
+    WidgetGenerateImageRequest,
+    WidgetGenerateImageResponse,
     WidgetGenerateTextRequest,
     WidgetGenerateTextResponse,
     WidgetConfigResponse,
@@ -505,6 +514,82 @@ async def generate_text(
                 "assistant_message_id": invocation.assistant_message_id,
             }.items()
             if value
+        },
+    )
+
+
+@router.post("/generate-image", response_model=WidgetGenerateImageResponse)
+async def generate_image(
+    request: Request,
+    body: WidgetGenerateImageRequest,
+    api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+) -> WidgetGenerateImageResponse:
+    """Generate an image for provider-style integrations using only the widget API key."""
+    agent = agent_repo.find_agent_by_id(api_key.agent_id, api_key.created_by)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    from src.conversations.models import Conversation
+    from src.conversations.repository import ConversationRepository
+
+    import hashlib
+
+    site_identity = str(
+        body.context.get("site_url")
+        or body.context.get("home_url")
+        or request.headers.get("Origin")
+        or "wordpress"
+    ).strip().lower().rstrip("/")
+    site_hash = hashlib.sha256(site_identity.encode("utf-8")).hexdigest()[:16]
+    conversation_id = f"wordpress-ai-client-{api_key.agent_id}-{site_hash}"
+    conversation_repo = ConversationRepository()
+    conversation = conversation_repo.find_by_id(conversation_id, api_key.created_by)
+    if not conversation:
+        conversation = conversation_repo.save(
+            Conversation(
+                conversation_id=conversation_id,
+                title="WordPress AI Client",
+                agent_id=agent.agent_id,
+                created_by=api_key.created_by,
+            )
+        )
+
+    try:
+        result = await AgentImageGenerationService().generate_for_widget(
+            agent=agent,
+            conversation=conversation,
+            owner_email=api_key.created_by,
+            actor_email=api_key.created_by,
+            request=GenerateImageRequest(
+                prompt=body.prompt,
+                size=body.size,
+                quality=body.quality,
+                output_format=body.output_format,  # type: ignore[arg-type]
+            ),
+        )
+    except ImageGenerationNotSupportedError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except AgentImageGenerationError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+    conversation_repo.save(conversation)
+
+    return WidgetGenerateImageResponse(
+        images=[
+            WidgetGeneratedImage(
+                url=image.url,
+                mime_type=image.mime_type,
+                width=image.width,
+                height=image.height,
+            )
+            for image in result.images
+        ],
+        agent_id=result.agent_id,
+        conversation_id=result.conversation_id,
+        message_ids={
+            "user_message_id": result.user_message_id,
+            "assistant_message_id": result.assistant_message_id,
         },
     )
 

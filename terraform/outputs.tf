@@ -44,6 +44,11 @@ output "artifacts_s3_bucket" {
   value       = aws_s3_bucket.artifacts.id
 }
 
+output "conversation_media_s3_bucket" {
+  description = "S3 bucket name for private generated conversation media"
+  value       = aws_s3_bucket.conversation_media.id
+}
+
 output "github_actions_artifact_publisher_role_arn" {
   description = "IAM role ARN for GitHub Actions plugin artifact publishing"
   value       = aws_iam_role.github_actions_artifact_publisher.arn

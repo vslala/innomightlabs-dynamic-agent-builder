@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Send, Loader2, Maximize2, Minimize2, Paperclip } from "lucide-react";
+import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Send, Loader2, Maximize2, Minimize2, Paperclip, Image as ImageIcon } from "lucide-react";
 import { ChatFormRenderer, type FormAnswer } from "../../components/chat/ChatFormRenderer";
 import { AttachmentChip } from "../../components/chat/AttachmentChip";
 import { ChatStreamRenderer } from "../../components/chat/ChatStreamRenderer";
@@ -9,8 +9,6 @@ import { ALLOWED_EXTENSIONS } from "../../types/message";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -73,6 +71,15 @@ export function ConversationDetail() {
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
   const [incompleteResponse, setIncompleteResponse] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [streamingImagePreview, setStreamingImagePreview] = useState<{
+    prompt: string;
+    dataUrl: string | null;
+    status: string;
+  } | null>(null);
+  const [imagePasteWarningOpen, setImagePasteWarningOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const streamingContentRef = useRef("");
@@ -172,6 +179,12 @@ export function ConversationDetail() {
     const agent = agents.find((a) => a.agent_id === agentId);
     return agent?.agent_name || "Unknown Agent";
   };
+
+  const currentAgent = conversation
+    ? agents.find((agent) => agent.agent_id === conversation.agent_id)
+    : null;
+  const supportsImageGeneration = currentAgent?.capabilities?.includes("image_generation") ?? false;
+  const supportsImageUnderstanding = currentAgent?.capabilities?.includes("image_understanding") ?? false;
 
   const formatDate = (dateString: string): string => {
     return new Date(dateString).toLocaleDateString(undefined, {
@@ -459,6 +472,143 @@ export function ConversationDetail() {
     await handleSendMessage(lines.join("\n"), `Submitted: ${label}`);
   };
 
+  const handleGenerateImage = async () => {
+    if (!conversation || !imagePrompt.trim() || isGeneratingImage) return;
+
+    const prompt = imagePrompt.trim();
+    setIsGeneratingImage(true);
+    setChatError(null);
+    setStatusMessage(null);
+    setStreamingImagePreview({
+      prompt,
+      dataUrl: null,
+      status: "Starting image generation...",
+    });
+    setImagePrompt("");
+    setIsImageDialogOpen(false);
+
+    let userMessageId: string | null = null;
+    let assistantMessageId: string | null = null;
+
+    try {
+      await chatService.generateImageStream(
+        conversation.agent_id,
+        conversation.conversation_id,
+        {
+          prompt,
+          output_format: "png",
+        },
+        {
+          onEvent: (event) => {
+            switch (event.event_type) {
+              case SSEEventType.USER_MESSAGE_SAVED:
+                userMessageId = event.message_id || null;
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    message_id: userMessageId || `image-user-${Date.now()}`,
+                    conversation_id: conversation.conversation_id,
+                    role: "user",
+                    content: prompt,
+                    created_at: new Date().toISOString(),
+                  },
+                ]);
+                break;
+
+              case SSEEventType.IMAGE_GENERATION_STARTED:
+              case SSEEventType.LIFECYCLE_NOTIFICATION:
+                setStreamingImagePreview((prev) =>
+                  prev ? { ...prev, status: event.content } : prev
+                );
+                break;
+
+              case SSEEventType.IMAGE_GENERATION_PARTIAL:
+                if (event.image_b64) {
+                  setStreamingImagePreview({
+                    prompt,
+                    dataUrl: `data:${event.image_mime_type || "image/png"};base64,${event.image_b64}`,
+                    status: "Painting preview...",
+                  });
+                }
+                break;
+
+              case SSEEventType.ASSISTANT_MESSAGE_SAVED:
+                assistantMessageId = event.message_id || null;
+                break;
+
+              case SSEEventType.IMAGE_GENERATION_COMPLETE:
+                if (event.images && event.images.length > 0) {
+                  const completedImages = event.images;
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      message_id: assistantMessageId || event.message_id || `assistant-image-${Date.now()}`,
+                      conversation_id: conversation.conversation_id,
+                      role: "assistant",
+                      content: `Generated image: ${prompt}`,
+                      images: completedImages.map((image) => ({
+                        image_id: image.image_id,
+                        url: image.url,
+                        filename: image.filename,
+                        mime_type: image.mime_type,
+                        size_bytes: image.size_bytes,
+                        width: image.width,
+                        height: image.height,
+                        prompt: image.prompt,
+                        revised_prompt: image.revised_prompt,
+                      })),
+                      created_at: new Date().toISOString(),
+                    },
+                  ]);
+                }
+                setStreamingImagePreview(null);
+                break;
+
+              case SSEEventType.ERROR:
+                setChatError(event.content);
+                setStreamingImagePreview(null);
+                setIsGeneratingImage(false);
+                break;
+
+              case SSEEventType.STREAM_COMPLETE:
+                setStreamingImagePreview(null);
+                setIsGeneratingImage(false);
+                requestAnimationFrame(() => scrollToBottom());
+                break;
+
+              default:
+                break;
+            }
+          },
+          onError: (err) => {
+            setChatError(err.message);
+            setStreamingImagePreview(null);
+            setIsGeneratingImage(false);
+          },
+          onComplete: () => {
+            setIsGeneratingImage(false);
+          },
+        }
+      );
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : String(err));
+      setStreamingImagePreview(null);
+      setIsGeneratingImage(false);
+    } finally {
+      setStatusMessage(null);
+    }
+  };
+
+  const handleChatPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const hasImage = Array.from(e.clipboardData.items).some((item) =>
+      item.type.startsWith("image/")
+    );
+    if (hasImage && !supportsImageUnderstanding) {
+      e.preventDefault();
+      setImagePasteWarningOpen(true);
+    }
+  };
+
   // Handle Enter key press
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -515,195 +665,126 @@ export function ConversationDetail() {
   if (!conversation) return null;
 
   return (
-    <div style={{ maxWidth: "42rem", display: "flex", flexDirection: "column", gap: "2rem" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/dashboard/conversations")}
-          >
+    <div style={{
+      width: "100%",
+      display: "flex",
+      flexDirection: "column",
+      gap: "1rem",
+    }}>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "1rem",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.875rem", minWidth: 0 }}>
+          <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard/conversations")}>
             <ChevronLeft style={{ height: "1.25rem", width: "1.25rem" }} />
           </Button>
           <div style={{
-            height: "3rem",
-            width: "3rem",
+            width: "2.75rem",
+            height: "2.75rem",
             borderRadius: "0.75rem",
-            background: "linear-gradient(to bottom right, var(--gradient-start), var(--gradient-mid))",
+            backgroundColor: "rgba(102, 126, 234, 0.14)",
+            border: "1px solid rgba(102, 126, 234, 0.24)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            flexShrink: 0,
           }}>
-            <MessageSquare style={{ height: "1.5rem", width: "1.5rem", color: "white" }} />
+            <MessageSquare style={{ height: "1.25rem", width: "1.25rem", color: "var(--gradient-start)" }} />
           </div>
-          <div>
-            <h1 style={{ fontSize: "1.25rem", fontWeight: 600, color: "var(--text-primary)" }}>
-              {conversation.title}
-            </h1>
-            <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
-              {getAgentName(conversation.agent_id)}
-            </p>
-          </div>
-        </div>
-        {!isEditing && (
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <Button variant="outline" onClick={handleStartEdit}>
-              <Pencil style={{ height: "1rem", width: "1rem", marginRight: "0.5rem" }} />
-              Edit
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              style={{ color: "#f87171" }}
-              onClick={() => setIsDeleteDialogOpen(true)}
-            >
-              <Trash2 style={{ height: "1rem", width: "1rem" }} />
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* Conversation Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle style={{ fontSize: "1.125rem" }}>
-            {isEditing ? "Edit Conversation" : "Conversation Details"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {error && (
+          <div style={{ minWidth: 0 }}>
             <div style={{
-              marginBottom: "1rem",
-              padding: "0.75rem",
-              borderRadius: "0.5rem",
-              backgroundColor: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid rgba(239, 68, 68, 0.2)",
-              color: "#f87171",
-              fontSize: "0.875rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.625rem",
+              flexWrap: "wrap",
             }}>
-              {error}
-            </div>
-          )}
-
-          {isEditing ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                <Label htmlFor="title">Title *</Label>
-                <Input
-                  id="title"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                />
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  rows={4}
-                />
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                <Label htmlFor="agent">Agent *</Label>
-                <Select value={editAgentId} onValueChange={setEditAgentId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select an agent" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {agents.map((agent) => (
-                      <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                        {agent.agent_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", paddingTop: "0.5rem" }}>
-                <Button variant="outline" onClick={handleCancelEdit} disabled={isSubmitting}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleUpdate}
-                  disabled={!editTitle.trim() || !editAgentId || isSubmitting}
-                >
-                  {isSubmitting ? "Saving..." : "Save Changes"}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-              <div>
-                <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
-                  Title
-                </Label>
-                <p style={{ color: "var(--text-primary)", fontSize: "1rem" }}>
-                  {conversation.title}
-                </p>
-              </div>
-
-              <div>
-                <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
-                  Description
-                </Label>
-                <p style={{ color: "var(--text-secondary)", whiteSpace: "pre-wrap", lineHeight: "1.6" }}>
-                  {conversation.description || "No description provided"}
-                </p>
-              </div>
-
-              <div>
-                <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
-                  Agent
-                </Label>
+              <h1 style={{
+                fontSize: "1.375rem",
+                fontWeight: 650,
+                color: "var(--text-primary)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                margin: 0,
+              }}>
+                {conversation.title}
+              </h1>
+              {supportsImageGeneration && (
                 <span style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  padding: "0.375rem 0.75rem",
-                  borderRadius: "0.375rem",
-                  fontSize: "0.875rem",
-                  fontWeight: 500,
-                  backgroundColor: "rgba(102, 126, 234, 0.1)",
-                  color: "var(--gradient-start)",
+                  gap: "0.375rem",
+                  padding: "0.25rem 0.5rem",
+                  borderRadius: "999px",
+                  backgroundColor: "rgba(34, 197, 94, 0.12)",
+                  color: "#86efac",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
                 }}>
-                  <Bot style={{ height: "0.875rem", width: "0.875rem", marginRight: "0.375rem" }} />
-                  {getAgentName(conversation.agent_id)}
+                  <ImageIcon style={{ height: "0.875rem", width: "0.875rem" }} />
+                  Images
                 </span>
-              </div>
-
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "1rem",
-                paddingTop: "1.5rem",
-                borderTop: "1px solid var(--border-subtle)",
-              }}>
-                <div>
-                  <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
-                    Created
-                  </Label>
-                  <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-                    {formatDate(conversation.created_at)}
-                  </p>
-                </div>
-                {conversation.updated_at && (
-                  <div>
-                    <Label style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block" }}>
-                      Last Updated
-                    </Label>
-                    <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-                      {formatDate(conversation.updated_at)}
-                    </p>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.75rem",
+              flexWrap: "wrap",
+              color: "var(--text-muted)",
+              fontSize: "0.875rem",
+              marginTop: "0.25rem",
+            }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
+                <Bot style={{ height: "0.875rem", width: "0.875rem" }} />
+                {getAgentName(conversation.agent_id)}
+              </span>
+              <span>Created {formatDate(conversation.created_at)}</span>
+              {conversation.description && (
+                <span style={{
+                  maxWidth: "42rem",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}>
+                  {conversation.description}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
+          <Button variant="ghost" size="icon" onClick={handleStartEdit} title="Edit conversation">
+            <Pencil style={{ height: "1rem", width: "1rem" }} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            style={{ color: "#f87171" }}
+            onClick={() => setIsDeleteDialogOpen(true)}
+            title="Delete conversation"
+          >
+            <Trash2 style={{ height: "1rem", width: "1rem" }} />
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{
+          padding: "0.75rem 1rem",
+          borderRadius: "0.5rem",
+          backgroundColor: "rgba(239, 68, 68, 0.1)",
+          border: "1px solid rgba(239, 68, 68, 0.2)",
+          color: "#f87171",
+          fontSize: "0.875rem",
+        }}>
+          {error}
+        </div>
+      )}
 
       {/* Fullscreen backdrop overlay */}
       {isExpanded && (
@@ -720,11 +801,12 @@ export function ConversationDetail() {
         />
       )}
 
-      {/* Chat Section */}
       <Card style={{
         display: "flex",
         flexDirection: "column",
-        height: isExpanded ? "100vh" : "32rem",
+        height: isExpanded ? "100vh" : "calc(100vh - 10rem)",
+        minHeight: isExpanded ? undefined : "42rem",
+        overflow: "hidden",
         ...(isExpanded ? {
           position: "fixed",
           top: 0,
@@ -738,15 +820,19 @@ export function ConversationDetail() {
           background: "#0d0d12",
         } : {}),
       }}>
-        <CardHeader style={{
+        <div style={{
           borderBottom: "1px solid var(--border-subtle)",
           flexShrink: 0,
           display: "flex",
-          flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
+          padding: "0.75rem 1rem",
+          backgroundColor: "rgba(255, 255, 255, 0.015)",
         }}>
-          <CardTitle style={{ fontSize: "1.125rem" }}>Messages</CardTitle>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", color: "var(--text-secondary)", fontSize: "0.875rem" }}>
+            <MessageSquare style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
+            <span>{messages.length} messages</span>
+          </div>
           <Button
             variant="ghost"
             size="icon"
@@ -759,7 +845,7 @@ export function ConversationDetail() {
               <Maximize2 style={{ height: "1.125rem", width: "1.125rem" }} />
             )}
           </Button>
-        </CardHeader>
+        </div>
         <CardContent style={{ flex: 1, display: "flex", flexDirection: "column", padding: 0, overflow: "hidden" }}>
           {/* Messages Area */}
           <div
@@ -768,10 +854,10 @@ export function ConversationDetail() {
             style={{
               flex: 1,
               overflowY: "auto",
-              padding: "1rem",
+              padding: "1.5rem",
               display: "flex",
               flexDirection: "column",
-              gap: "1rem",
+              gap: "1.25rem",
             }}
           >
             {/* Loading indicator for older messages */}
@@ -812,7 +898,9 @@ export function ConversationDetail() {
               }}>
                 <MessageSquare style={{ height: "3rem", width: "3rem", marginBottom: "1rem", opacity: 0.5 }} />
                 <p style={{ marginBottom: "0.5rem" }}>No messages yet</p>
-                <p style={{ fontSize: "0.875rem" }}>Send a message to start the conversation</p>
+                <p style={{ fontSize: "0.875rem" }}>
+                  Send a message{supportsImageGeneration ? " or generate an image" : ""} to start the conversation
+                </p>
               </div>
             ) : (
               <>
@@ -846,7 +934,7 @@ export function ConversationDetail() {
                             <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
                           </div>
                           <div style={{
-                            maxWidth: "70%",
+                            maxWidth: "min(100%, 48rem)",
                             width: "100%",
                             padding: "0.75rem 1rem",
                             borderRadius: "1rem",
@@ -885,7 +973,7 @@ export function ConversationDetail() {
                             <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
                           </div>
                           <div style={{
-                            maxWidth: "70%",
+                            maxWidth: "min(100%, 48rem)",
                             padding: "0.75rem 1rem",
                             borderRadius: "1rem",
                             backgroundColor: "var(--bg-secondary)",
@@ -893,6 +981,89 @@ export function ConversationDetail() {
                             fontSize: "0.875rem",
                           }}>
                             Captured "{pendingFormLabel}". Processing...
+                          </div>
+                        </div>
+                      )}
+
+                      {streamingImagePreview && (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "0.75rem",
+                            alignItems: "flex-start",
+                          }}
+                        >
+                          <div style={{
+                            width: "2rem",
+                            height: "2rem",
+                            borderRadius: "50%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                            backgroundColor: "rgba(102, 126, 234, 0.1)",
+                          }}>
+                            <Bot style={{ height: "1rem", width: "1rem", color: "var(--gradient-start)" }} />
+                          </div>
+                          <div style={{
+                            width: "min(100%, 52rem)",
+                            padding: "0.875rem",
+                            borderRadius: "0.875rem",
+                            backgroundColor: "var(--bg-secondary)",
+                            color: "var(--text-primary)",
+                          }}>
+                            <div style={{ fontWeight: 650, marginBottom: "0.75rem" }}>
+                              Generating image: {streamingImagePreview.prompt}
+                            </div>
+                            <div style={{
+                              minHeight: "18rem",
+                              borderRadius: "0.75rem",
+                              border: "1px solid var(--border-subtle)",
+                              backgroundColor: "var(--bg-tertiary)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              overflow: "hidden",
+                              position: "relative",
+                            }}>
+                              {streamingImagePreview.dataUrl ? (
+                                <img
+                                  src={streamingImagePreview.dataUrl}
+                                  alt={streamingImagePreview.prompt}
+                                  style={{
+                                    width: "100%",
+                                    maxHeight: "34rem",
+                                    objectFit: "contain",
+                                    animation: "fade-in 250ms ease-out",
+                                  }}
+                                />
+                              ) : (
+                                <div style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  alignItems: "center",
+                                  gap: "0.75rem",
+                                  color: "var(--text-muted)",
+                                }}>
+                                  <Loader2 style={{ height: "1.5rem", width: "1.5rem", animation: "spin 1s linear infinite" }} />
+                                  <span>{streamingImagePreview.status}</span>
+                                </div>
+                              )}
+                              {streamingImagePreview.dataUrl && (
+                                <div style={{
+                                  position: "absolute",
+                                  left: 0,
+                                  right: 0,
+                                  bottom: 0,
+                                  padding: "0.75rem 1rem",
+                                  background: "linear-gradient(to top, rgba(0,0,0,0.62), rgba(0,0,0,0))",
+                                  color: "white",
+                                  fontSize: "0.875rem",
+                                }}>
+                                  {streamingImagePreview.status}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       )}
@@ -982,9 +1153,10 @@ export function ConversationDetail() {
           <div style={{
             display: "flex",
             gap: "0.75rem",
-            padding: "1rem",
+            padding: "1rem 1.25rem",
             borderTop: "1px solid var(--border-subtle)",
             alignItems: "flex-end",
+            backgroundColor: "rgba(255, 255, 255, 0.015)",
           }}>
             {/* Hidden file input */}
             <input
@@ -1008,11 +1180,25 @@ export function ConversationDetail() {
               <Paperclip style={{ height: "1rem", width: "1rem" }} />
             </Button>
 
+            {supportsImageGeneration && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsImageDialogOpen(true)}
+                disabled={isSending || isGeneratingImage}
+                title="Generate image"
+                style={{ flexShrink: 0, height: "2.5rem", width: "2.5rem" }}
+              >
+                <ImageIcon style={{ height: "1rem", width: "1rem" }} />
+              </Button>
+            )}
+
             <Textarea
               placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyPress}
+              onPaste={handleChatPaste}
               disabled={isSending}
               rows={1}
               style={{
@@ -1043,6 +1229,64 @@ export function ConversationDetail() {
         </CardContent>
       </Card>
 
+      <Dialog open={isEditing} onOpenChange={(open) => open ? handleStartEdit() : handleCancelEdit()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Conversation</DialogTitle>
+            <DialogDescription>
+              Update the conversation title, description, or assigned agent.
+            </DialogDescription>
+          </DialogHeader>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <Label htmlFor="title">Title *</Label>
+              <Input
+                id="title"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                rows={4}
+              />
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <Label htmlFor="agent">Agent *</Label>
+              <Select value={editAgentId} onValueChange={setEditAgentId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an agent" />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                      {agent.agent_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCancelEdit} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdate}
+              disabled={!editTitle.trim() || !editAgentId || isSubmitting}
+            >
+              {isSubmitting ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent>
@@ -1068,6 +1312,53 @@ export function ConversationDetail() {
             >
               {isDeleting ? "Deleting..." : "Delete Conversation"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isImageDialogOpen} onOpenChange={setIsImageDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Generate Image</DialogTitle>
+            <DialogDescription>
+              Describe the image this agent should create.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={imagePrompt}
+            onChange={(e) => setImagePrompt(e.target.value)}
+            placeholder="A clean product hero image for..."
+            rows={5}
+            disabled={isGeneratingImage}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsImageDialogOpen(false)}
+              disabled={isGeneratingImage}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleGenerateImage}
+              disabled={!imagePrompt.trim() || isGeneratingImage}
+            >
+              {isGeneratingImage ? "Generating..." : "Generate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={imagePasteWarningOpen} onOpenChange={setImagePasteWarningOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Image Attachments Unavailable</DialogTitle>
+            <DialogDescription>
+              This agent's selected model does not support image attachments. Choose a multimodal model to attach images.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setImagePasteWarningOpen(false)}>OK</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

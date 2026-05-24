@@ -58,6 +58,8 @@ resource "aws_lambda_function" "api" {
       )
       OPENAI_OAUTH_RESPONSES_URL = var.openai_oauth_responses_url
       OPENAI_MODELS = var.openai_models
+      OPENAI_IMAGE_GENERATION_BACKEND = var.openai_image_generation_backend
+      OPENAI_IMAGE_GENERATION_MODELS  = var.openai_image_generation_models
       SUPERUSER_EMAILS = var.superuser_emails
       JWT_SECRET           = var.jwt_secret
       # Cognito Hosted UI
@@ -84,6 +86,8 @@ resource "aws_lambda_function" "api" {
       DOWNLOADS_ARTIFACTS_REGION    = var.downloads_artifacts_region
       DOWNLOADS_MANIFEST_KEY        = var.downloads_manifest_key
       DOWNLOADS_PRESIGN_TTL_SECONDS = tostring(var.downloads_presign_ttl_seconds)
+      CONVERSATION_MEDIA_BUCKET              = aws_s3_bucket.conversation_media.id
+      CONVERSATION_MEDIA_PRESIGN_TTL_SECONDS = tostring(var.conversation_media_presign_ttl_seconds)
     }
   }
 
