@@ -177,7 +177,7 @@ log = logging.getLogger(__name__)
 
 def handler(event, context):
     """
-    Lambda handler that routes between HTTP requests and async crawl jobs.
+    Lambda handler that routes between HTTP requests and async jobs.
 
     For async crawl job invocations, the event looks like:
     {
@@ -188,13 +188,22 @@ def handler(event, context):
         }
     }
 
+    For async automation run invocations, the event looks like:
+    {
+        "automation_run": {
+            "run_id": "...",
+            "automation_id": "...",
+            "user_email": "..."
+        }
+    }
+
     For HTTP requests (via API Gateway), the event is passed to Mangum.
     """
-    # Check if this is an async crawl job invocation
     if "crawl_job" in event:
         return _handle_crawl_job(event["crawl_job"], context)
+    if "automation_run" in event:
+        return _handle_automation_run(event["automation_run"], context)
 
-    # Otherwise, handle as HTTP request
     return _http_handler(event, context)
 
 
@@ -240,6 +249,34 @@ def _handle_crawl_job(crawl_job: dict, context):
     except Exception as e:
         log.error(f"Crawl job {job_id} failed: {e}")
         return {"statusCode": 500, "body": f"Crawl job {job_id} failed: {str(e)}"}
+
+
+def _handle_automation_run(automation_run: dict, context):  # noqa: ARG001
+    """Handle async automation run invocation."""
+    import asyncio
+
+    run_id = automation_run.get("run_id")
+    user_email = automation_run.get("user_email")
+
+    if not all([run_id, user_email]):
+        log.error("Invalid automation_run payload: %s", automation_run)
+        return {"statusCode": 400, "body": "Invalid automation_run payload"}
+
+    log.info("Processing async automation run %s", run_id)
+
+    try:
+        from src.automations.runner import AutomationRunner
+
+        run = asyncio.run(AutomationRunner().execute_run(run_id, user_email))
+
+        log.info("Completed automation run %s with status %s", run_id, run.status.value)
+        return {
+            "statusCode": 200,
+            "body": f"Automation run {run_id} completed with status {run.status.value}",
+        }
+    except Exception as e:
+        log.error("Automation run %s failed: %s", run_id, e)
+        return {"statusCode": 500, "body": f"Automation run {run_id} failed: {str(e)}"}
 
 
 if __name__ == "__main__":

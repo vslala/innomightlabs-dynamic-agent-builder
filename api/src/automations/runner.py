@@ -1,4 +1,4 @@
-"""Synchronous automation runner for manual/test execution."""
+"""Automation runner for manual/test execution."""
 
 import json
 import re
@@ -22,7 +22,7 @@ from src.automations.models import (
     AutomationTriggerType,
 )
 from src.automations.repository import AutomationRepository
-from src.automations.service import AutomationGraph, AutomationValidationError
+from src.automations.service import AutomationGraph, AutomationService, AutomationValidationError
 from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
 from src.connectors.service import ConnectorService, get_connector_service
@@ -54,12 +54,22 @@ class AutomationRunner:
         input_data: dict[str, Any],
         user_email: str,
     ) -> AutomationRun:
+        run = self.create_test_run(graph, trigger_id, input_data, user_email)
+        return await self.execute_run_graph(graph, run, user_email)
+
+    def create_test_run(
+        self,
+        graph: AutomationGraph,
+        trigger_id: str | None,
+        input_data: dict[str, Any],
+        user_email: str,
+    ) -> AutomationRun:
         trigger = self._select_trigger(graph.triggers, trigger_id)
         first_agent_id = self._first_agent_id(graph.nodes)
         run = AutomationRun(
             automation_id=graph.automation.automation_id,
             trigger_id=trigger.trigger_id if trigger else None,
-            status=AutomationRunStatus.RUNNING,
+            status=AutomationRunStatus.PENDING,
             context={
                 "input": input_data,
                 "trigger": {
@@ -69,7 +79,6 @@ class AutomationRunner:
                 "nodes": {},
             },
             created_by=user_email,
-            started_at=datetime.now(timezone.utc),
         )
         conversation = AutomationConversation(
             title=f"Automation Run: {graph.automation.title}",
@@ -81,7 +90,42 @@ class AutomationRunner:
         )
         saved_conversation = self.conversation_repo.save(conversation)
         run.conversation_id = saved_conversation.conversation_id
-        self.automation_repo.save_run(run)
+        return self.automation_repo.save_run(run)
+
+    async def execute_run(self, run_id: str, user_email: str) -> AutomationRun:
+        run = self.automation_repo.find_run_by_id(run_id, user_email)
+        if not run:
+            raise AutomationValidationError("Run not found")
+        if run.status in {
+            AutomationRunStatus.SUCCEEDED,
+            AutomationRunStatus.FAILED,
+            AutomationRunStatus.CANCELLED,
+        }:
+            return run
+
+        service = AutomationService(repo=self.automation_repo)
+        graph = service.get_graph(run.automation_id, user_email)
+        service.validate_graph(graph.nodes, graph.edges, graph.triggers, user_email)
+        return await self.execute_run_graph(graph, run, user_email)
+
+    async def execute_run_graph(
+        self,
+        graph: AutomationGraph,
+        run: AutomationRun,
+        user_email: str,
+    ) -> AutomationRun:
+        trigger = self._select_trigger(graph.triggers, run.trigger_id)
+        if not run.conversation_id:
+            raise AutomationValidationError("Run is missing conversation")
+
+        conversation = self.conversation_repo.find_by_id(run.conversation_id, user_email)
+        if not isinstance(conversation, AutomationConversation):
+            raise AutomationValidationError("Run conversation not found")
+
+        if run.status == AutomationRunStatus.PENDING:
+            run.status = AutomationRunStatus.RUNNING
+            run.started_at = datetime.now(timezone.utc)
+            self.automation_repo.save_run(run)
 
         try:
             current_node_id = trigger.entry_node_id if trigger else self._default_start_node(graph.nodes).node_id
@@ -101,7 +145,7 @@ class AutomationRunner:
                     automation=graph.automation,
                     node=node,
                     run=run,
-                    conversation=saved_conversation,
+                    conversation=conversation,
                     user_email=user_email,
                 )
                 self.automation_repo.save_node_result(result)

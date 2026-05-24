@@ -1,7 +1,12 @@
 """Automations API router."""
 
+import asyncio
+import json
+import logging
+import os
 from typing import Annotated, Optional
 
+import boto3
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPBearer
 
@@ -36,6 +41,9 @@ from src.automations.service import (
     AutomationValidationError,
 )
 from src.common.pagination import Paginated
+from src.runtime.env import aws_region, is_lambda
+
+log = logging.getLogger(__name__)
 
 security = HTTPBearer()
 
@@ -67,6 +75,33 @@ def get_user_email(request: Request) -> str:
     if not user_email:
         raise HTTPException(status_code=401, detail="User not authenticated")
     return str(user_email)
+
+
+def invoke_automation_run_async(run_id: str, automation_id: str, user_email: str) -> None:
+    if not is_lambda():
+        log.info("Running locally - automation run will execute in background task: %s", run_id)
+        asyncio.create_task(AutomationRunner().execute_run(run_id, user_email))
+        return
+
+    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    if not function_name:
+        raise AutomationValidationError("Lambda function name is not available")
+
+    client = boto3.client("lambda", region_name=aws_region())
+    response = client.invoke(
+        FunctionName=function_name,
+        InvocationType="Event",
+        Payload=json.dumps(
+            {
+                "automation_run": {
+                    "run_id": run_id,
+                    "automation_id": automation_id,
+                    "user_email": user_email,
+                }
+            }
+        ).encode("utf-8"),
+    )
+    log.info("Invoked Lambda async for automation run %s, status: %s", run_id, response["StatusCode"])
 
 
 def translate_error(exc: Exception) -> HTTPException:
@@ -346,7 +381,11 @@ async def delete_trigger(
         raise translate_error(exc) from exc
 
 
-@router.post("/{automation_id}/test-run", response_model=AutomationRunResponse)
+@router.post(
+    "/{automation_id}/test-run",
+    response_model=AutomationRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def test_run(
     request: Request,
     automation_id: str,
@@ -358,7 +397,8 @@ async def test_run(
     try:
         graph = service.get_graph(automation_id, user_email)
         service.validate_graph(graph.nodes, graph.edges, graph.triggers, user_email)
-        run = await runner.run_test(graph, body.trigger_id, body.input, user_email)
+        run = runner.create_test_run(graph, body.trigger_id, body.input, user_email)
+        invoke_automation_run_async(run.run_id, automation_id, user_email)
         return run.to_response()
     except Exception as exc:
         raise translate_error(exc) from exc

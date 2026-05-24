@@ -6,6 +6,7 @@ import base64
 import pytest
 
 from src.skills.google_mail.actions import archive, batch_delete, delete, mark_read, mark_unread, read, search
+from src.skills.registry import SkillRegistry
 
 
 class FakeResponse:
@@ -175,6 +176,49 @@ def test_google_mail_search_recent_20_fetches_metadata(monkeypatch):
     assert "q" not in fake_client.get_calls[0]["params"]
     assert fake_client.get_calls[1]["url"].endswith("/messages/msg-1")
     assert fake_client.get_calls[1]["params"]["format"] == "metadata"
+
+
+def test_google_mail_search_messages_alias_uses_search_handler(monkeypatch):
+    async def fake_access_token(context):
+        assert context["owner_email"] == "owner@example.com"
+        return "token"
+
+    fake_client = FakeAsyncClient(
+        [
+            FakeResponse(json_data={"messages": [{"id": "msg-1", "threadId": "thread-1"}]}),
+            FakeResponse(
+                json_data={
+                    "id": "msg-1",
+                    "threadId": "thread-1",
+                    "labelIds": ["INBOX"],
+                    "snippet": "Alias result snippet",
+                    "payload": {
+                        "headers": [
+                            {"name": "Subject", "value": "Alias Result"},
+                            {"name": "From", "value": "sender@example.com"},
+                        ]
+                    },
+                }
+            ),
+        ]
+    )
+
+    monkeypatch.setattr("src.skills.google_mail.actions._get_access_token", fake_access_token)
+    monkeypatch.setattr("src.skills.google_mail.actions.httpx.AsyncClient", lambda timeout=20.0: fake_client)
+
+    registry = SkillRegistry()
+    result = asyncio.run(
+        registry.execute_action(
+            skill_id="google_mail",
+            action_name="search_messages",
+            arguments={"query": "marketing", "page_size": 1},
+            config={},
+            context={"owner_email": "owner@example.com"},
+        )
+    )
+
+    assert "subject=Alias Result" in result
+    assert fake_client.get_calls[0]["params"]["q"] == "marketing"
 
 
 def test_google_mail_search_builds_rich_query_and_filters(monkeypatch):

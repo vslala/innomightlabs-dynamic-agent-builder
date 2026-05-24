@@ -61,6 +61,50 @@ def test_list_runs_requires_owner_scoped_automation(test_client, auth_headers):
     assert response.status_code == 404
 
 
+def test_test_run_returns_accepted_run_id(test_client, auth_headers, monkeypatch):
+    dispatched = {}
+
+    def fake_invoke(run_id: str, automation_id: str, user_email: str) -> None:
+        dispatched["run_id"] = run_id
+        dispatched["automation_id"] = automation_id
+        dispatched["user_email"] = user_email
+
+    monkeypatch.setattr("src.automations.router.invoke_automation_run_async", fake_invoke)
+
+    create_response = test_client.post(
+        "/automations",
+        json=AUTOMATION_CREATE_REQUEST,
+        headers=auth_headers,
+    )
+    automation_id = create_response.json()["automation"]["automation_id"]
+
+    response = test_client.post(
+        f"/automations/{automation_id}/test-run",
+        json={"input": {"input": "hello"}},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["run_id"]
+    assert payload["automation_id"] == automation_id
+    assert payload["status"] == "pending"
+    assert dispatched == {
+        "run_id": payload["run_id"],
+        "automation_id": automation_id,
+        "user_email": TEST_USER_EMAIL,
+    }
+
+    detail_response = test_client.get(
+        f"/automations/{automation_id}/runs/{payload['run_id']}",
+        headers=auth_headers,
+    )
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert detail["run"]["run_id"] == payload["run_id"]
+    assert detail["context"]["input"] == {"input": "hello"}
+
+
 def test_automation_skills_and_action_catalog(test_client, auth_headers, dynamodb_table):
     create_response = test_client.post(
         "/automations",

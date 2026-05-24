@@ -1,7 +1,7 @@
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Controls,
@@ -68,6 +68,12 @@ type AutomationFlowEdge = Edge<{ automationEdge?: AutomationEdge }>;
 
 const DEFAULT_PROMPT = "Use the workflow context to complete this step.\n\nInput: {{ $.input }}";
 const DEFAULT_SKILL_ACTION = "agent_invocation:invoke";
+const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
+const RUN_POLL_INTERVAL_MS = 1500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function createNodeId(type: AutomationNodeType): string {
   return `${type}-${crypto.randomUUID()}`;
@@ -727,6 +733,7 @@ function AutomationBuilderContent() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [smartValuesOpen, setSmartValuesOpen] = useState(false);
   const [actionCatalog, setActionCatalog] = useState<AutomationActionCatalogItem[]>([]);
+  const activeRunPollId = useRef(0);
 
   const loadGraph = useCallback(async () => {
     if (!automationId) return;
@@ -755,6 +762,10 @@ function AutomationBuilderContent() {
   useEffect(() => {
     void loadGraph();
   }, [loadGraph]);
+
+  useEffect(() => () => {
+    activeRunPollId.current += 1;
+  }, []);
 
   const handleCopyNodeId = useCallback(async (nodeId: string) => {
     try {
@@ -985,6 +996,8 @@ function AutomationBuilderContent() {
 
   const runTest = async () => {
     if (!automationId) return;
+    const pollId = activeRunPollId.current + 1;
+    activeRunPollId.current = pollId;
     setRunning(true);
     setMutationError(null);
     setRunInputError(null);
@@ -996,8 +1009,15 @@ function AutomationBuilderContent() {
         if (!saved) return;
       }
       const run = await automationApiService.testRun(automationId, { input: parsed });
-      const detail = await automationApiService.getRun(automationId, run.run_id);
-      setLatestRun(detail);
+      let detail = await automationApiService.getRun(automationId, run.run_id);
+      while (activeRunPollId.current === pollId) {
+        setLatestRun(detail);
+        if (TERMINAL_RUN_STATUSES.has(detail.run.status)) {
+          break;
+        }
+        await sleep(RUN_POLL_INTERVAL_MS);
+        detail = await automationApiService.getRun(automationId, run.run_id);
+      }
     } catch (err) {
       console.error("Error running automation:", err);
       if (err instanceof SyntaxError) {
@@ -1006,7 +1026,9 @@ function AutomationBuilderContent() {
         setMutationError(err instanceof Error ? err.message : "Failed to run automation.");
       }
     } finally {
-      setRunning(false);
+      if (activeRunPollId.current === pollId) {
+        setRunning(false);
+      }
     }
   };
 
@@ -1247,12 +1269,13 @@ function AutomationRunPanel({
             />
           )}
         </div>
-        {running ? (
+        {running && (
           <div className="automation-run-log__loading">
             <div className="automation-run-log__spinner" />
-            <span>Running automation and waiting for step results...</span>
+            <span>Running automation...</span>
           </div>
-        ) : latestRun ? (
+        )}
+        {latestRun ? (
           <div className="automation-run-log__steps">
             {latestRun.node_results.map((result) => (
               <div className="automation-run-log__step" key={result.result_id}>
@@ -1267,8 +1290,10 @@ function AutomationRunPanel({
               </div>
             ))}
           </div>
-        ) : (
+        ) : !running ? (
           <div className="automation-run-log__empty">Run the automation to see step results here.</div>
+        ) : (
+          <div className="automation-run-log__empty">Waiting for the first step result.</div>
         )}
       </div>
 

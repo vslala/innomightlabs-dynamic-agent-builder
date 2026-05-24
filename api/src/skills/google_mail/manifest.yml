@@ -46,6 +46,7 @@ connectors:
     required: true
 actions:
   - name: search
+    aliases: [search_messages, search_email, search_emails]
     description: Search Gmail messages using text, time range, sender/recipient, labels, unread status, attachment filters, and pagination.
     input_schema:
       type: object
@@ -125,6 +126,7 @@ actions:
             optional: "true"
     handler: actions:search
   - name: read
+    aliases: [read_message, read_email]
     description: Read a Gmail message including headers, body, and metadata.
     input_schema:
       type: object
@@ -135,6 +137,7 @@ actions:
       required: [message_id]
     handler: actions:read
   - name: delete
+    aliases: [delete_message, delete_email]
     description: Move a Gmail message to trash.
     input_schema:
       type: object
@@ -145,6 +148,7 @@ actions:
       required: [message_id]
     handler: actions:delete
   - name: batch_delete
+    aliases: [batch_delete_messages, delete_messages, delete_emails]
     description: Move multiple Gmail messages to trash in batches. This is not permanent deletion.
     input_schema:
       type: object
@@ -160,6 +164,7 @@ actions:
       required: [message_ids]
     handler: actions:batch_delete
   - name: archive
+    aliases: [archive_message, archive_email]
     description: Archive a Gmail message by removing it from inbox.
     input_schema:
       type: object
@@ -170,6 +175,7 @@ actions:
       required: [message_id]
     handler: actions:archive
   - name: mark_read
+    aliases: [mark_message_read, mark_email_read]
     description: Mark a Gmail message as read.
     input_schema:
       type: object
@@ -180,6 +186,7 @@ actions:
       required: [message_id]
     handler: actions:mark_read
   - name: mark_unread
+    aliases: [mark_message_unread, mark_email_unread]
     description: Mark a Gmail message as unread.
     input_schema:
       type: object

@@ -11,6 +11,7 @@ import src.form_models as form_models
 
 class SkillActionManifest(BaseModel):
     name: str
+    aliases: list[str] = Field(default_factory=list)
     description: str
     input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
     action_form: Optional[form_models.Form] = None

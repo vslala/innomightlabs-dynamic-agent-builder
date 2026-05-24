@@ -126,7 +126,14 @@ class SkillRegistry:
         if not loaded:
             raise ValueError(f"Unknown skill: {skill_id}")
 
-        action = next((a for a in loaded.manifest.actions if a.name == action_name), None)
+        action = next(
+            (
+                a
+                for a in loaded.manifest.actions
+                if a.name == action_name or action_name in a.aliases
+            ),
+            None,
+        )
         if not action:
             raise ValueError(f"Skill '{skill_id}' has no action '{action_name}'")
 

@@ -322,6 +322,7 @@ class SkillRuntimeService:
                 "actions": [
                     {
                         "name": action.name,
+                        "aliases": action.aliases,
                         "description": action.description,
                         "input_schema": action.input_schema,
                         "action_form": (

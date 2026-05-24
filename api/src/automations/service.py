@@ -494,7 +494,11 @@ class AutomationService:
                     "skill_action requires connected connectors: " + ", ".join(missing)
                 )
             action = next(
-                (item for item in loaded.manifest.actions if item.name == skill_config.action),
+                (
+                    item
+                    for item in loaded.manifest.actions
+                    if item.name == skill_config.action or skill_config.action in item.aliases
+                ),
                 None,
             )
             if not action:

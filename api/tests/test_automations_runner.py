@@ -137,6 +137,44 @@ async def test_runner_invokes_agent_and_stores_run_context(dynamodb_table, monke
     assert conversation.automation_run_id == run.run_id
 
 
+async def test_runner_creates_pending_run_then_executes_by_id(dynamodb_table, monkeypatch):
+    agent = Agent(
+        agent_id="agent-1",
+        agent_name="Helper",
+        agent_architecture="successful",
+        agent_provider="Bedrock",
+        agent_persona="Helpful",
+        created_by=TEST_USER_EMAIL,
+    )
+    AgentRepository().save(agent)
+    graph = build_graph(agent.agent_id)
+    repo = AutomationRepository()
+    repo.save_automation(graph.automation)
+    repo.save_graph(graph.automation.automation_id, graph.nodes, graph.edges, graph.triggers)
+    monkeypatch.setattr(
+        "src.automations.runner.get_agent_architecture",
+        lambda _: SuccessfulArchitecture(),
+    )
+
+    runner = AutomationRunner(
+        automation_repo=repo,
+        agent_repo=AgentRepository(),
+        conversation_repo=ConversationRepository(),
+    )
+    pending = runner.create_test_run(graph, None, {"name": "Ada"}, TEST_USER_EMAIL)
+
+    assert pending.status == "pending"
+    assert pending.started_at is None
+    assert pending.conversation_id is not None
+
+    completed = await runner.execute_run(pending.run_id, TEST_USER_EMAIL)
+
+    assert completed.status == "succeeded"
+    assert completed.started_at is not None
+    assert completed.completed_at is not None
+    assert completed.context["nodes"]["draft"]["output"]["response_text"] == "Echo: Hello Ada"
+
+
 async def test_runner_follows_error_edge_for_failed_agent(dynamodb_table, monkeypatch):
     agent = Agent(
         agent_id="agent-1",
