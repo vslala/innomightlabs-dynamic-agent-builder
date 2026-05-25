@@ -272,10 +272,11 @@ class TestWidgetRouter:
     ):
         """OAuth callback redirects with widget JWT and Google refresh token."""
         _, public_key = self._create_agent_and_api_key(test_client, auth_headers)
+        monkeypatch.setattr("src.config.settings.api_base_url", "https://api.example.com")
 
         async def fake_exchange_code_for_tokens(code: str, redirect_uri: str | None = None):
             assert code == "code-123"
-            assert redirect_uri == "http://testserver/widget/auth/callback"
+            assert redirect_uri == "https://api.example.com/widget/auth/callback"
             return {
                 "access_token": "google-access-token",
                 "refresh_token": "google-refresh-token",

@@ -8,6 +8,7 @@ Provides endpoints for:
 """
 
 import logging
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Optional, cast
 from urllib.parse import urlencode
@@ -91,6 +92,54 @@ def get_message_repository() -> MessageRepository:
     return MessageRepository()
 
 
+def get_wordpress_ai_conversation(
+    *,
+    request: Request,
+    context: dict[str, Any],
+    api_key: AgentApiKey,
+    agent_id: str,
+):
+    """Load or create the owner conversation for a WordPress AI Client request."""
+    from src.conversations.models import Conversation
+    from src.conversations.repository import ConversationRepository
+
+    site_identity = str(
+        context.get("site_url")
+        or context.get("home_url")
+        or request.headers.get("Origin")
+        or "wordpress"
+    ).strip().lower().rstrip("/")
+
+    post_id = str(
+        context.get("post_id")
+        or context.get("postId")
+        or context.get("wordpress_post_id")
+        or ""
+    ).strip()
+
+    conversation_identity = site_identity
+    title = "WordPress AI Client"
+    if post_id:
+        conversation_identity = f"{site_identity}#post:{post_id}"
+        title = f"WordPress Post {post_id}"
+
+    identity_hash = hashlib.sha256(conversation_identity.encode("utf-8")).hexdigest()[:16]
+    conversation_id = f"wordpress-ai-client-{api_key.agent_id}-{identity_hash}"
+    conversation_repo = ConversationRepository()
+    conversation = conversation_repo.find_by_id(conversation_id, api_key.created_by)
+    if not conversation:
+        conversation = conversation_repo.save(
+            Conversation(
+                conversation_id=conversation_id,
+                title=title,
+                agent_id=agent_id,
+                created_by=api_key.created_by,
+            )
+        )
+
+    return conversation, conversation_repo
+
+
 def create_visitor_token(visitor: WidgetVisitor, agent_id: str) -> str:
     """Create a JWT token for a widget visitor."""
     payload = {
@@ -140,6 +189,11 @@ def get_visitor_from_request(request: Request) -> WidgetVisitor:
         name=payload.get("name"),
         picture=payload.get("picture"),
     )
+
+
+def get_widget_oauth_callback_url() -> str:
+    """Return the externally registered Google OAuth callback URL for widgets."""
+    return f"{settings.api_base_url.rstrip('/')}/widget/auth/callback"
 
 
 @router.get("/config", response_model=WidgetConfigResponse)
@@ -197,10 +251,8 @@ async def widget_oauth_start(
     # redirect_uri here is the final destination after OAuth (callback-page)
     state = f"{api_key_obj.public_key}|{redirect_uri or ''}"
 
-    # Build the widget's OAuth callback URL (where Google redirects to)
-    # This must be registered in Google OAuth console
-    base_url = str(request.base_url).rstrip("/")
-    widget_callback_url = f"{base_url}/widget/auth/callback"
+    # This must match the URI registered in Google OAuth console.
+    widget_callback_url = get_widget_oauth_callback_url()
 
     authorization_url, _ = google_oauth.get_authorization_url(
         state=state,
@@ -244,10 +296,8 @@ async def widget_oauth_callback(
         raise HTTPException(status_code=401, detail="Invalid or inactive API key")
 
     try:
-        # Build the same callback URL used during authorization
-        # Google requires redirect_uri to match exactly
-        base_url = str(request.base_url).rstrip("/")
-        widget_callback_url = f"{base_url}/widget/auth/callback"
+        # Google requires redirect_uri to match the authorization request exactly.
+        widget_callback_url = get_widget_oauth_callback_url()
 
         # Exchange code for tokens
         tokens = await google_oauth.exchange_code_for_tokens(code, redirect_uri=widget_callback_url)
@@ -459,30 +509,12 @@ async def generate_text(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    from src.conversations.models import Conversation
-    from src.conversations.repository import ConversationRepository
-
-    import hashlib
-
-    site_identity = str(
-        body.context.get("site_url")
-        or body.context.get("home_url")
-        or request.headers.get("Origin")
-        or "wordpress"
-    ).strip().lower().rstrip("/")
-    site_hash = hashlib.sha256(site_identity.encode("utf-8")).hexdigest()[:16]
-    conversation_id = f"wordpress-ai-client-{api_key.agent_id}-{site_hash}"
-    conversation_repo = ConversationRepository()
-    conversation = conversation_repo.find_by_id(conversation_id, api_key.created_by)
-    if not conversation:
-        conversation = conversation_repo.save(
-            Conversation(
-                conversation_id=conversation_id,
-                title="WordPress AI Client",
-                agent_id=agent.agent_id,
-                created_by=api_key.created_by,
-            )
-        )
+    conversation, conversation_repo = get_wordpress_ai_conversation(
+        request=request,
+        context=body.context,
+        api_key=api_key,
+        agent_id=agent.agent_id,
+    )
 
     architecture = get_agent_architecture(agent.agent_architecture)
     invocation = await architecture.handle_message_buffered(
@@ -530,30 +562,12 @@ async def generate_image(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    from src.conversations.models import Conversation
-    from src.conversations.repository import ConversationRepository
-
-    import hashlib
-
-    site_identity = str(
-        body.context.get("site_url")
-        or body.context.get("home_url")
-        or request.headers.get("Origin")
-        or "wordpress"
-    ).strip().lower().rstrip("/")
-    site_hash = hashlib.sha256(site_identity.encode("utf-8")).hexdigest()[:16]
-    conversation_id = f"wordpress-ai-client-{api_key.agent_id}-{site_hash}"
-    conversation_repo = ConversationRepository()
-    conversation = conversation_repo.find_by_id(conversation_id, api_key.created_by)
-    if not conversation:
-        conversation = conversation_repo.save(
-            Conversation(
-                conversation_id=conversation_id,
-                title="WordPress AI Client",
-                agent_id=agent.agent_id,
-                created_by=api_key.created_by,
-            )
-        )
+    conversation, conversation_repo = get_wordpress_ai_conversation(
+        request=request,
+        context=body.context,
+        api_key=api_key,
+        agent_id=agent.agent_id,
+    )
 
     try:
         result = await AgentImageGenerationService().generate_for_widget(
@@ -590,6 +604,59 @@ async def generate_image(
         message_ids={
             "user_message_id": result.user_message_id,
             "assistant_message_id": result.assistant_message_id,
+        },
+    )
+
+
+@router.post("/generate-image-stream")
+async def generate_image_stream(
+    request: Request,
+    body: WidgetGenerateImageRequest,
+    api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+):
+    """Generate an image for provider-style integrations using widget API key SSE."""
+    agent = agent_repo.find_agent_by_id(api_key.agent_id, api_key.created_by)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    conversation, conversation_repo = get_wordpress_ai_conversation(
+        request=request,
+        context=body.context,
+        api_key=api_key,
+        agent_id=agent.agent_id,
+    )
+
+    async def event_stream():
+        try:
+            async for event in AgentImageGenerationService().stream_for_widget(
+                agent=agent,
+                conversation=conversation,
+                owner_email=api_key.created_by,
+                actor_email=api_key.created_by,
+                request=GenerateImageRequest(
+                    prompt=body.prompt,
+                    size=body.size,
+                    quality=body.quality,
+                    output_format=body.output_format,  # type: ignore[arg-type]
+                ),
+            ):
+                yield event.to_sse()
+            conversation_repo.save(conversation)
+        except ImageGenerationNotSupportedError as e:
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=str(e)).to_sse()
+        except AgentImageGenerationError as e:
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=str(e)).to_sse()
+        except Exception as e:
+            log.error("Error in widget generate_image_stream: %s", e, exc_info=True)
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=str(e)).to_sse()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
         },
     )
 

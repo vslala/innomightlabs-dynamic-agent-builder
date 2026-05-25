@@ -25,6 +25,16 @@ export function SendIcon() {
   );
 }
 
+export function SparkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2l1.72 5.16L19 9l-5.28 1.84L12 16l-1.72-5.16L5 9l5.28-1.84L12 2z" />
+      <path d="M19 14l.9 2.7L23 18l-3.1 1.3L19 22l-.9-2.7L15 18l3.1-1.3L19 14z" />
+      <path d="M5 13l.7 2.1L8 16l-2.3.9L5 19l-.7-2.1L2 16l2.3-.9L5 13z" />
+    </svg>
+  );
+}
+
 export function GoogleIcon() {
   return (
     <svg viewBox="0 0 24 24">

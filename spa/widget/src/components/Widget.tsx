@@ -15,7 +15,7 @@ import {
 import { lightTheme, darkTheme, injectStyles } from '../styles';
 import { ChatWindow } from './ChatWindow';
 import { LoginScreen } from './LoginScreen';
-import { ChatIcon, CloseIcon } from './Icons';
+import { ChatIcon, CloseIcon, SparkIcon } from './Icons';
 
 interface WidgetProps {
   config: WidgetConfig;
@@ -253,7 +253,18 @@ export function Widget({ config }: WidgetProps) {
         <div className="innomight-window">
           {/* Header */}
           <div className="innomight-header">
-            <span className="innomight-header-title">{agentName}</span>
+            <div className="innomight-header-agent">
+              <span className="innomight-header-icon" aria-hidden="true">
+                <SparkIcon />
+              </span>
+              <div className="innomight-header-copy">
+                <span className="innomight-header-title">{agentName}</span>
+                <span className="innomight-header-status">
+                  <span className="innomight-status-dot" aria-hidden="true" />
+                  Online
+                </span>
+              </div>
+            </div>
             <button className="innomight-header-close" onClick={closeChat} aria-label="Close">
               <CloseIcon />
             </button>

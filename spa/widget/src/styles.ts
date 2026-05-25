@@ -16,27 +16,27 @@ export interface ThemeColors {
 }
 
 export const lightTheme: ThemeColors = {
-  primary: '#6366f1',
-  primaryHover: '#4f46e5',
+  primary: '#111827',
+  primaryHover: '#27272a',
   background: '#ffffff',
-  surface: '#f9fafb',
+  surface: '#f7f7f8',
   text: '#111827',
   textSecondary: '#6b7280',
   border: '#e5e7eb',
-  userBubble: '#6366f1',
-  assistantBubble: '#f3f4f6',
+  userBubble: '#111827',
+  assistantBubble: '#ffffff',
 };
 
 export const darkTheme: ThemeColors = {
-  primary: '#818cf8',
-  primaryHover: '#6366f1',
-  background: '#1f2937',
-  surface: '#374151',
+  primary: '#374151',
+  primaryHover: '#4b5563',
+  background: '#111827',
+  surface: '#1f2937',
   text: '#f9fafb',
   textSecondary: '#9ca3af',
-  border: '#4b5563',
-  userBubble: '#6366f1',
-  assistantBubble: '#374151',
+  border: '#374151',
+  userBubble: '#374151',
+  assistantBubble: '#1f2937',
 };
 
 export function getStyles(theme: ThemeColors, primaryColor?: string): string {
@@ -52,6 +52,11 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       color: ${colors.text};
       position: fixed;
       z-index: 999999;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      --innomight-focus: rgba(17, 24, 39, 0.12);
+      --innomight-muted-bg: #f7f7f8;
+      --innomight-soft-border: #e5e7eb;
     }
 
     .innomight-widget-container * {
@@ -60,8 +65,8 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
 
     /* Chat bubble button */
     .innomight-bubble {
-      width: 60px;
-      height: 60px;
+      width: 64px;
+      height: 64px;
       border-radius: 50%;
       background: ${colors.primary};
       border: none;
@@ -69,65 +74,129 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      transition: transform 0.2s, background 0.2s;
+      box-shadow: 0 18px 42px rgba(17, 24, 39, 0.22), 0 6px 16px rgba(17, 24, 39, 0.14);
+      transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
     }
 
     .innomight-bubble:hover {
-      transform: scale(1.05);
+      transform: translateY(-2px) scale(1.03);
       background: ${colors.primaryHover};
+      box-shadow: 0 22px 54px rgba(17, 24, 39, 0.28), 0 8px 20px rgba(17, 24, 39, 0.16);
     }
 
     .innomight-bubble svg {
-      width: 28px;
-      height: 28px;
+      width: 26px;
+      height: 26px;
       fill: white;
     }
 
     /* Chat window */
     .innomight-window {
-      width: 380px;
-      height: 600px;
-      max-height: calc(100vh - 100px);
+      width: min(760px, calc(100vw - 44px));
+      height: min(840px, calc(100vh - 104px));
       background: ${colors.background};
       border-radius: 16px;
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+      box-shadow: 0 32px 100px rgba(15, 23, 42, 0.20), 0 10px 30px rgba(15, 23, 42, 0.12);
       display: flex;
       flex-direction: column;
       overflow: hidden;
       border: 1px solid ${colors.border};
+      backdrop-filter: blur(18px);
     }
 
     /* Header */
     .innomight-header {
-      padding: 16px;
-      background: ${colors.primary};
-      color: white;
+      min-height: 78px;
+      padding: 15px 20px;
+      background: ${colors.background};
+      color: ${colors.text};
       display: flex;
       align-items: center;
       justify-content: space-between;
+      border-bottom: 1px solid ${colors.border};
+      box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+    }
+
+    .innomight-header-agent {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .innomight-header-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #111827;
+      color: #ffffff;
+      flex: 0 0 auto;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.10);
+    }
+
+    .innomight-header-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .innomight-header-copy {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
 
     .innomight-header-title {
-      font-weight: 600;
+      font-weight: 700;
       font-size: 16px;
+      line-height: 1.25;
+      color: ${colors.text};
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      letter-spacing: 0;
+    }
+
+    .innomight-header-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: ${colors.textSecondary};
+      line-height: 1.2;
+    }
+
+    .innomight-status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #16a34a;
+      box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
     }
 
     .innomight-header-close {
-      background: none;
-      border: none;
-      color: white;
+      width: 36px;
+      height: 36px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: ${colors.textSecondary};
       cursor: pointer;
-      padding: 4px;
+      padding: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 4px;
-      transition: background 0.2s;
+      border-radius: 10px;
+      transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
     }
 
     .innomight-header-close:hover {
-      background: rgba(255, 255, 255, 0.2);
+      background: ${colors.surface};
+      border-color: ${colors.border};
+      color: ${colors.text};
+      transform: translateY(-1px);
     }
 
     .innomight-header-close svg {
@@ -139,19 +208,60 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
     .innomight-messages {
       flex: 1;
       overflow-y: auto;
-      padding: 16px;
+      padding: 28px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, #fafafa 100%);
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 transparent;
+    }
+
+    .innomight-messages::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .innomight-messages::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .innomight-messages::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 999px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+    }
+
+    .innomight-empty-state {
+      margin: auto;
+      max-width: 390px;
+      text-align: center;
+      color: ${colors.textSecondary};
+      padding: 28px 20px;
+    }
+
+    .innomight-empty-title {
+      color: ${colors.text};
+      font-size: 20px;
+      line-height: 1.3;
+      font-weight: 700;
+      margin-bottom: 6px;
+      letter-spacing: 0;
+    }
+
+    .innomight-empty-subtitle {
+      font-size: 14px;
+      line-height: 1.55;
     }
 
     /* Message bubble */
     .innomight-message {
-      max-width: 85%;
-      padding: 12px 16px;
-      border-radius: 18px;
+      max-width: min(78%, 560px);
+      padding: 13px 16px;
+      border-radius: 14px;
       word-wrap: break-word;
       animation: innomight-message-in 0.2s ease-out;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
 
     @keyframes innomight-message-in {
@@ -169,7 +279,7 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       align-self: flex-end;
       background: ${colors.userBubble};
       color: white;
-      border-bottom-right-radius: 4px;
+      border-bottom-right-radius: 5px;
     }
 
     .innomight-message-user .innomight-inline-code {
@@ -182,7 +292,14 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       align-self: flex-start;
       background: ${colors.assistantBubble};
       color: ${colors.text};
-      border-bottom-left-radius: 4px;
+      border: 1px solid ${colors.border};
+      border-bottom-left-radius: 5px;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+    }
+
+    .innomight-message-assistant:has(.innomight-form) {
+      max-width: min(92%, 620px);
+      padding: 18px;
     }
 
     .innomight-message-assistant .innomight-markdown a {
@@ -200,26 +317,35 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
 
     /* Input area */
     .innomight-input-area {
-      padding: 16px;
+      padding: 16px 20px 20px;
       border-top: 1px solid ${colors.border};
       display: flex;
-      gap: 8px;
+      gap: 10px;
+      align-items: center;
+      background: ${colors.background};
     }
 
     .innomight-input {
       flex: 1;
-      padding: 10px 14px;
+      min-width: 0;
+      min-height: 48px;
+      max-height: 132px;
+      padding: 13px 16px;
       border: 1px solid ${colors.border};
-      border-radius: 24px;
+      border-radius: 14px;
       outline: none;
       font-size: 14px;
-      background: ${colors.surface};
+      line-height: 1.5;
+      background: #ffffff;
       color: ${colors.text};
-      transition: border-color 0.2s;
+      resize: none;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
 
     .innomight-input:focus {
-      border-color: ${colors.primary};
+      border-color: #9ca3af;
+      box-shadow: 0 0 0 4px var(--innomight-focus);
     }
 
     .innomight-input::placeholder {
@@ -227,20 +353,23 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
     }
 
     .innomight-send-btn {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
       background: ${colors.primary};
       border: none;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.2s;
+      transition: background 0.18s ease, transform 0.18s ease, opacity 0.18s ease;
+      box-shadow: 0 10px 22px rgba(17, 24, 39, 0.16);
+      flex: 0 0 auto;
     }
 
     .innomight-send-btn:hover:not(:disabled) {
       background: ${colors.primaryHover};
+      transform: translateY(-1px);
     }
 
     .innomight-send-btn:disabled {
@@ -259,12 +388,13 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       width: 100%;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
+      min-width: min(460px, 100%);
     }
 
     .innomight-form-title {
       font-weight: 700;
-      font-size: 14px;
+      font-size: 16px;
       color: ${colors.text};
     }
 
@@ -277,19 +407,28 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
     .innomight-form-label {
       font-size: 12px;
       color: ${colors.textSecondary};
+      font-weight: 600;
     }
 
     .innomight-form-input,
     .innomight-form-textarea,
     .innomight-form-select {
       width: 100%;
-      padding: 10px 12px;
-      border-radius: 12px;
+      padding: 12px 13px;
+      border-radius: 10px;
       border: 1px solid ${colors.border};
-      background: ${colors.surface};
+      background: #ffffff;
       color: ${colors.text};
       outline: none;
       font-size: 14px;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .innomight-form-input:focus,
+    .innomight-form-textarea:focus,
+    .innomight-form-select:focus {
+      border-color: #94a3b8;
+      box-shadow: 0 0 0 4px var(--innomight-focus);
     }
 
     .innomight-form-textarea {
@@ -300,7 +439,7 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       display: flex;
       align-items: center;
       gap: 10px;
-      font-size: 12px;
+      font-size: 13px;
       color: ${colors.textSecondary};
     }
 
@@ -328,21 +467,22 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
     }
 
     .innomight-form-cancel {
-      padding: 10px 12px;
-      border-radius: 12px;
+      padding: 10px 14px;
+      border-radius: 10px;
       border: 1px solid ${colors.border};
-      background: transparent;
+      background: #ffffff;
       color: ${colors.textSecondary};
       cursor: pointer;
     }
 
     .innomight-form-submit {
-      padding: 10px 12px;
-      border-radius: 12px;
+      padding: 10px 14px;
+      border-radius: 10px;
       border: none;
       background: ${colors.primary};
       color: white;
       cursor: pointer;
+      box-shadow: 0 8px 18px rgba(17, 24, 39, 0.14);
     }
 
     .innomight-form-status {
@@ -357,39 +497,40 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 24px;
+      padding: 40px 28px;
       text-align: center;
     }
 
     .innomight-login-title {
-      font-size: 18px;
-      font-weight: 600;
+      font-size: 22px;
+      font-weight: 700;
       margin-bottom: 8px;
     }
 
     .innomight-login-subtitle {
       color: ${colors.textSecondary};
-      margin-bottom: 24px;
+      margin-bottom: 26px;
     }
 
     .innomight-google-btn {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 12px 24px;
+      padding: 12px 18px;
       background: white;
       border: 1px solid ${colors.border};
-      border-radius: 8px;
+      border-radius: 10px;
       cursor: pointer;
       font-size: 14px;
       font-weight: 500;
       color: #333;
-      transition: background 0.2s, box-shadow 0.2s;
+      transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
     }
 
     .innomight-google-btn:hover {
       background: #f9fafb;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+      transform: translateY(-1px);
     }
 
     .innomight-google-btn svg {
@@ -424,8 +565,9 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
       gap: 4px;
       padding: 12px 16px;
       background: ${colors.assistantBubble};
-      border-radius: 16px;
+      border-radius: 14px;
       align-self: flex-start;
+      border: 1px solid ${colors.border};
     }
 
     .innomight-typing-dot {
@@ -539,6 +681,37 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
 
     .innomight-markdown tr:nth-child(even) {
       background: ${colors.surface};
+    }
+
+    @media (max-width: 640px) {
+      .innomight-window {
+        width: calc(100vw - 24px);
+        height: calc(100vh - 88px);
+        border-radius: 14px;
+      }
+
+      .innomight-header {
+        min-height: 68px;
+        padding: 12px 14px;
+      }
+
+      .innomight-messages {
+        padding: 18px 14px;
+      }
+
+      .innomight-message {
+        max-width: 92%;
+      }
+
+      .innomight-input-area {
+        padding: 12px 14px 14px;
+      }
+
+      .innomight-header-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+      }
     }
 
     .innomight-markdown hr {

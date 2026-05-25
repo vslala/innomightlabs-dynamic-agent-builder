@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 API_DIR="$PROJECT_ROOT/api"
 
-RAILWAY_SERVICE="${RAILWAY_SERVICE:-api}"
+RAILWAY_SERVICE="${RAILWAY_SERVICE:-InnomightLabs API}"
 RAILWAY_ENVIRONMENT="${RAILWAY_ENVIRONMENT:-production}"
 
 echo "=========================================="
@@ -100,6 +100,7 @@ echo "Syncing Railway variables for service '$RAILWAY_SERVICE' in environment '$
 RAILWAY_VAR_ARGS=()
 
 set_railway_var "RAILWAY_DOCKERFILE_PATH" "Dockerfile.railway"
+set_railway_var "RAILWAY_HEALTHCHECK_TIMEOUT_SEC" "999"
 set_railway_var "ENVIRONMENT" "$environment_name"
 set_railway_var "DYNAMODB_TABLE" "$(get_var_default 'DYNAMODB_TABLE' "${project_name}-main")"
 set_railway_var "AWS_REGION_NAME" "$aws_region"

@@ -137,6 +137,15 @@ export function ChatWindow({
     <>
       {/* Messages */}
       <div className="innomight-messages">
+        {messages.length === 0 && !streamingContent && !activeForm && !pendingFormLabel && (
+          <div className="innomight-empty-state">
+            <div className="innomight-empty-title">Start the conversation</div>
+            <div className="innomight-empty-subtitle">
+              Ask a question, share context, or request a task.
+            </div>
+          </div>
+        )}
+
         <ChatStreamRenderer
           messages={messages}
           streamingContent={streamingContent}
@@ -171,14 +180,14 @@ export function ChatWindow({
 
       {/* Input area */}
       <div className="innomight-input-area">
-        <input
-          type="text"
+        <textarea
           className="innomight-input"
           value={input}
-          onInput={(e) => setInput((e.target as HTMLInputElement).value)}
+          onInput={(e) => setInput((e.target as HTMLTextAreaElement).value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={isLoading}
+          rows={1}
         />
         <button
           className="innomight-send-btn"
