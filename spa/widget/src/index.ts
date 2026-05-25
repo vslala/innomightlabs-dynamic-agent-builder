@@ -3,13 +3,21 @@
  * InnomightLabs Chat Widget
  *
  * Usage:
- * <script src="https://cdn.innomightlabs.com/widget.js"></script>
  * <script>
- *   InnomightChat.init({
- *     apiKey: 'pk_live_xxx',
- *     position: 'bottom-right',
- *     theme: 'light'
- *   });
+ *   (function () {
+ *     var script = document.createElement('script');
+ *     var widgetVersion = Math.floor(Date.now() / 300000);
+ *     script.src = 'https://cdn.innomightlabs.com/widget.js?v=' + widgetVersion;
+ *     script.async = true;
+ *     script.onload = function () {
+ *       InnomightChat.init({
+ *         apiKey: 'pk_live_xxx',
+ *         position: 'bottom-right',
+ *         theme: 'light'
+ *       });
+ *     };
+ *     document.head.appendChild(script);
+ *   })();
  * </script>
  */
 

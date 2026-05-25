@@ -223,13 +223,21 @@ const faqSections: FAQSection[] = [
               Add this code to your website, just before the closing <code>&lt;/body&gt;</code> tag:
             </p>
             <pre>
-{`<script src="https://cdn.innomightlabs.com/widget.js"></script>
-<script>
-  InnomightChat.init({
-    apiKey: 'your-api-key',
-    position: 'bottom-right',
-    theme: 'light'
-  });
+{`<script>
+  (function () {
+    var script = document.createElement('script');
+    var widgetVersion = Math.floor(Date.now() / 300000);
+    script.src = 'https://cdn.innomightlabs.com/widget.js?v=' + widgetVersion;
+    script.async = true;
+    script.onload = function () {
+      InnomightChat.init({
+        apiKey: 'your-api-key',
+        position: 'bottom-right',
+        theme: 'light'
+      });
+    };
+    document.head.appendChild(script);
+  })();
 </script>`}
             </pre>
             <p>

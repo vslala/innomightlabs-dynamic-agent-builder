@@ -40,9 +40,8 @@ export const darkTheme: ThemeColors = {
 };
 
 export function getStyles(theme: ThemeColors, primaryColor?: string): string {
-  const colors = primaryColor
-    ? { ...theme, primary: primaryColor, primaryHover: primaryColor, userBubble: primaryColor }
-    : theme;
+  const accentColor = primaryColor || theme.primary;
+  const colors = theme;
 
   return `
     .innomight-widget-container {
@@ -303,7 +302,7 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
     }
 
     .innomight-message-assistant .innomight-markdown a {
-      color: ${colors.primary};
+      color: ${accentColor};
     }
 
     .innomight-message-user .innomight-markdown a {
@@ -378,9 +377,11 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
     }
 
     .innomight-send-btn svg {
-      width: 18px;
-      height: 18px;
-      fill: white;
+      width: 20px;
+      height: 20px;
+      color: white;
+      fill: none;
+      stroke: currentColor;
     }
 
     /* Form renderer */
@@ -620,14 +621,14 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
     .innomight-markdown h6 { font-size: 13px; }
 
     .innomight-markdown a {
-      color: ${colors.primary};
+      color: ${accentColor};
       text-decoration: none;
       border-bottom: 1px solid transparent;
       transition: border-color 0.2s;
     }
 
     .innomight-markdown a:hover {
-      border-bottom-color: ${colors.primary};
+      border-bottom-color: ${accentColor};
     }
 
     .innomight-markdown strong {
@@ -651,7 +652,7 @@ export function getStyles(theme: ThemeColors, primaryColor?: string): string {
     .innomight-markdown blockquote {
       margin: 12px 0;
       padding: 8px 16px;
-      border-left: 3px solid ${colors.primary};
+      border-left: 3px solid ${accentColor};
       background: ${colors.surface};
       border-radius: 4px;
     }

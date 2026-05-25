@@ -405,14 +405,22 @@ preferences, communication style, and frequently asked topics.)`}
               <div className={styles.codeExample}>
                 <div className={styles.codeHeader}>Widget Embed Code</div>
                 <pre>
-{`<script src="https://cdn.innomightlabs.com/widget.js"></script>
-<script>
-  InnomightChat.init({
-    apiKey: 'your-api-key-here',
-    position: 'bottom-right',
-    theme: 'light',
-    greeting: 'Hi! How can I help you today?'
-  });
+{`<script>
+  (function () {
+    var script = document.createElement('script');
+    var widgetVersion = Math.floor(Date.now() / 300000);
+    script.src = 'https://cdn.innomightlabs.com/widget.js?v=' + widgetVersion;
+    script.async = true;
+    script.onload = function () {
+      InnomightChat.init({
+        apiKey: 'your-api-key-here',
+        position: 'bottom-right',
+        theme: 'light',
+        greeting: 'Hi! How can I help you today?'
+      });
+    };
+    document.head.appendChild(script);
+  })();
 </script>`}
                 </pre>
               </div>

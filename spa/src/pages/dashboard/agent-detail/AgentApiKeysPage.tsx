@@ -198,12 +198,20 @@ export function AgentApiKeysPage() {
               </p>
               <div style={{ fontFamily: "monospace", fontSize: "0.75rem", backgroundColor: "var(--bg-tertiary)", padding: "0.75rem", borderRadius: "0.375rem", overflowX: "auto" }}>
                 <pre style={{ margin: 0, color: "var(--text-secondary)" }}>
-{`<script src="https://cdn.innomightlabs.com/widget.js"></script>
-<script>
-  InnomightChat.init({
-    apiKey: '${apiKeys[0]?.public_key || "YOUR_API_KEY"}',
-    position: 'bottom-right'
-  });
+{`<script>
+  (function () {
+    var script = document.createElement('script');
+    var widgetVersion = Math.floor(Date.now() / 300000);
+    script.src = 'https://cdn.innomightlabs.com/widget.js?v=' + widgetVersion;
+    script.async = true;
+    script.onload = function () {
+      InnomightChat.init({
+        apiKey: '${apiKeys[0]?.public_key || "YOUR_API_KEY"}',
+        position: 'bottom-right'
+      });
+    };
+    document.head.appendChild(script);
+  })();
 </script>`}
                 </pre>
               </div>

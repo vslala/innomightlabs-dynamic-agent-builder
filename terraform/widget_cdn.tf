@@ -183,10 +183,17 @@ resource "aws_s3_bucket_policy" "widget" {
 resource "null_resource" "widget_build_upload" {
   # Rebuild when widget source changes
   triggers = {
-    # Hash of key widget source files to detect changes
+    # Hash every widget source/public file. The CDN serves one bundled file, so
+    # component and style edits must also trigger rebuild and upload.
     widget_src_hash = sha256(join("", [
-      filesha256("${path.module}/../spa/widget/src/index.ts"),
+      for file in concat(
+        [for file in fileset("${path.module}/../spa/widget/src", "**/*") : "src/${file}"],
+        [for file in fileset("${path.module}/../spa/widget/public", "**/*") : "public/${file}"]
+      ) : filesha256("${path.module}/../spa/widget/${file}")
+    ]))
+    widget_build_hash = sha256(join("", [
       filesha256("${path.module}/../spa/widget/package.json"),
+      filesha256("${path.module}/../spa/widget/yarn.lock"),
       filesha256("${path.module}/../spa/widget/rollup.config.js"),
     ]))
     # Also rebuild if bucket changes
@@ -205,8 +212,14 @@ resource "null_resource" "widget_build_upload" {
       echo "Uploading widget to S3..."
       aws s3 sync dist/ s3://${aws_s3_bucket.widget.id}/ \
         --delete \
-        --cache-control "public, max-age=31536000" \
-        --exclude "*.html"
+        --cache-control "public, max-age=31536000, immutable" \
+        --exclude "*.html" \
+        --exclude "widget.js"
+
+      # widget.js is an unversioned public URL, so keep browser cache short.
+      aws s3 cp dist/widget.js s3://${aws_s3_bucket.widget.id}/widget.js \
+        --cache-control "public, max-age=300, must-revalidate" \
+        --content-type "application/javascript"
 
       # HTML files with shorter cache
       aws s3 sync dist/ s3://${aws_s3_bucket.widget.id}/ \
