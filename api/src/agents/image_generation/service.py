@@ -127,6 +127,25 @@ class AgentImageGenerationService:
             request=request,
         )
 
+    async def stream_for_widget(
+        self,
+        *,
+        agent: Agent,
+        conversation: Conversation,
+        owner_email: str,
+        actor_email: str,
+        request: GenerateImageRequest,
+    ) -> AsyncIterator[SSEEvent]:
+        async for event in self._stream_generate(
+            agent=agent,
+            conversation=conversation,
+            owner_email=owner_email,
+            actor_email=actor_email,
+            request=request,
+            dashboard_urls=False,
+        ):
+            yield event
+
     async def _generate(
         self,
         *,

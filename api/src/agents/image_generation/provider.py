@@ -117,6 +117,8 @@ class CodexOpenAIImageGenerationProvider:
                     error_text = (await response.aread()).decode("utf-8", errors="ignore")
                     raise RuntimeError(f"OpenAI Codex image generation error: {error_text}")
 
+                latest_partial: GeneratedImageBytes | None = None
+
                 async for raw_line in response.aiter_lines():
                     line = raw_line.strip()
                     if not line.startswith("data:"):
@@ -145,11 +147,29 @@ class CodexOpenAIImageGenerationProvider:
                         image_b64 = event.get("partial_image_b64")
                         output_format = str(event.get("output_format") or options.output_format or "png")
                         if image_b64:
+                            partial_bytes = base64.b64decode(image_b64)
+                            width, height = _dimensions_for_image(partial_bytes, output_format)
+                            latest_partial = GeneratedImageBytes(
+                                data=partial_bytes,
+                                output_format=output_format,
+                                mime_type=_mime_type_for_format(output_format),
+                                prompt=prompt,
+                                width=width,
+                                height=height,
+                                quality=event.get("quality"),
+                                provider_metadata={
+                                    "provider": "openai_codex",
+                                    "source_event_type": event_type,
+                                    "partial": True,
+                                },
+                            )
                             yield ImageGenerationStreamEvent(
                                 kind="partial",
                                 image_b64=image_b64,
                                 output_format=output_format,
                                 mime_type=_mime_type_for_format(output_format),
+                                width=width,
+                                height=height,
                                 quality=event.get("quality"),
                             )
 
@@ -192,6 +212,29 @@ class CodexOpenAIImageGenerationProvider:
                         )
 
                     elif event_type == "response.completed":
+                        completed_image = _extract_completed_response_image(
+                            event,
+                            prompt=prompt,
+                            default_output_format=options.output_format,
+                        )
+                        if completed_image:
+                            yield ImageGenerationStreamEvent(
+                                kind="image",
+                                image=completed_image,
+                                output_format=completed_image.output_format,
+                                mime_type=completed_image.mime_type,
+                                width=completed_image.width,
+                                height=completed_image.height,
+                            )
+                        elif latest_partial:
+                            yield ImageGenerationStreamEvent(
+                                kind="image",
+                                image=latest_partial,
+                                output_format=latest_partial.output_format,
+                                mime_type=latest_partial.mime_type,
+                                width=latest_partial.width,
+                                height=latest_partial.height,
+                            )
                         yield ImageGenerationStreamEvent(kind="completed", message="Image generation complete")
                         break
 
@@ -226,3 +269,50 @@ def _dimensions_for_image(data: bytes, output_format: str) -> tuple[int | None, 
         width, height = struct.unpack(">II", data[16:24])
         return int(width), int(height)
     return None, None
+
+
+def _extract_completed_response_image(
+    event: dict[str, Any],
+    *,
+    prompt: str,
+    default_output_format: str,
+) -> GeneratedImageBytes | None:
+    response = event.get("response") or {}
+    output = response.get("output") or event.get("output") or []
+    if not isinstance(output, list):
+        return None
+
+    for item in output:
+        if not isinstance(item, dict) or item.get("type") != "image_generation_call":
+            continue
+
+        image_b64 = (
+            item.get("result")
+            or item.get("image_b64")
+            or item.get("b64_json")
+            or item.get("partial_image_b64")
+        )
+        if not isinstance(image_b64, str) or not image_b64:
+            continue
+
+        output_format = str(item.get("output_format") or default_output_format or "png")
+        image_bytes = base64.b64decode(image_b64)
+        width, height = _dimensions_for_image(image_bytes, output_format)
+        return GeneratedImageBytes(
+            data=image_bytes,
+            output_format=output_format,
+            mime_type=_mime_type_for_format(output_format),
+            prompt=prompt,
+            revised_prompt=item.get("revised_prompt"),
+            width=width,
+            height=height,
+            quality=item.get("quality"),
+            background=item.get("background"),
+            provider_metadata={
+                "provider": "openai_codex",
+                "item_id": item.get("id"),
+                "source_event_type": event.get("type"),
+            },
+        )
+
+    return None
