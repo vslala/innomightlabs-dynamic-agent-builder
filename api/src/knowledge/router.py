@@ -274,24 +274,18 @@ async def get_crawl_config_schema(kb_id: str) -> form_models.Form:
 
 
 def _invoke_crawl_async(job_id: str, kb_id: str, user_email: str):
-    """Invoke the crawl job asynchronously via Lambda async invocation.
-
-    Notes:
-    - FastAPI BackgroundTasks are unreliable in Lambda (the function may freeze
-      after returning the HTTP response).
-    - When running locally, we fall back to BackgroundTasks.
-    """
-    import os
+    """Invoke the crawl job asynchronously via the configured Lambda worker."""
     import boto3
 
-    from src.runtime.env import aws_region, is_lambda
+    from src.config import settings
 
-    if not is_lambda():
-        log.info(f"Running locally - crawl will run in background thread for job {job_id}")
-        return None
-
-    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
-    lambda_client = boto3.client("lambda", region_name=aws_region())
+    function_name = settings.async_job_lambda_name
+    if not function_name:
+        raise HTTPException(
+            status_code=503,
+            detail="ASYNC_JOB_LAMBDA_NAME is required when ASYNC_JOB_BACKEND=lambda",
+        )
+    lambda_client = boto3.client("lambda", region_name=settings.aws_region)
 
     payload = json.dumps({
         "crawl_job": {
@@ -392,9 +386,9 @@ async def start_crawl_job(
 
     # Start crawling if auto_start is enabled
     if auto_start:
-        from src.runtime.env import is_lambda
+        from src.config import settings
 
-        if is_lambda():
+        if settings.async_job_backend == "lambda":
             _invoke_crawl_async(saved_job.job_id, kb_id, user_email)
             log.info(f"Invoked async Lambda for crawl job {saved_job.job_id}")
         else:
@@ -507,9 +501,9 @@ async def run_crawl_job(
         raise HTTPException(status_code=503, detail=str(e))
 
     # Start crawling
-    from src.runtime.env import is_lambda
+    from src.config import settings
 
-    if is_lambda():
+    if settings.async_job_backend == "lambda":
         _invoke_crawl_async(job_id, kb_id, user_email)
         log.info(f"Invoked async Lambda for crawl job {job_id} (manual trigger)")
     else:

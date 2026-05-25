@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import os
 from typing import Annotated, Optional
 
 import boto3
@@ -41,7 +40,7 @@ from src.automations.service import (
     AutomationValidationError,
 )
 from src.common.pagination import Paginated
-from src.runtime.env import aws_region, is_lambda
+from src.config import settings
 
 log = logging.getLogger(__name__)
 
@@ -78,16 +77,16 @@ def get_user_email(request: Request) -> str:
 
 
 def invoke_automation_run_async(run_id: str, automation_id: str, user_email: str) -> None:
-    if not is_lambda():
-        log.info("Running locally - automation run will execute in background task: %s", run_id)
+    if settings.async_job_backend != "lambda":
+        log.info("Automation run will execute in local background task: %s", run_id)
         asyncio.create_task(AutomationRunner().execute_run(run_id, user_email))
         return
 
-    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    function_name = settings.async_job_lambda_name
     if not function_name:
-        raise AutomationValidationError("Lambda function name is not available")
+        raise AutomationValidationError("ASYNC_JOB_LAMBDA_NAME is required when ASYNC_JOB_BACKEND=lambda")
 
-    client = boto3.client("lambda", region_name=aws_region())
+    client = boto3.client("lambda", region_name=settings.aws_region)
     response = client.invoke(
         FunctionName=function_name,
         InvocationType="Event",

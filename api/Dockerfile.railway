@@ -1,0 +1,18 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY main.py ./
+COPY src ./src
+COPY lambdas ./lambdas
+COPY assets ./assets
+
+ENV PYTHONPATH="/app/.venv/lib/python3.13/site-packages:/app"
+ENV PYTHONUNBUFFERED=1
+
+CMD ["sh", "-c", "uv run uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]

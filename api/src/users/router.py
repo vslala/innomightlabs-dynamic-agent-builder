@@ -67,7 +67,7 @@ async def delete_account(request: Request):
     # Trigger async Lambda for cascade deletion
     try:
         lambda_client = boto3.client("lambda", region_name=settings.aws_region)
-        function_name = f"{settings.environment}-account-deletion-handler"
+        function_name = settings.account_deletion_lambda_name or f"{settings.environment}-account-deletion-handler"
 
         lambda_client.invoke(
             FunctionName=function_name,

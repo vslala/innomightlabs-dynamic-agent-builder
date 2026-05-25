@@ -19,6 +19,11 @@ DEFAULT_OPENAI_MODELS = [
     "gpt-5.4",
     "gpt-5.4-mini",
     "gpt-5.4-nano",
+    "gpt-5.3-codex",
+    "gpt-5.2-codex",
+    "gpt-5.2",
+    "gpt-5.1-codex-max",
+    "gpt-5.1-codex-mini",
 ]
 
 
@@ -52,6 +57,11 @@ class Settings:
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     jwt_expiration_hours: int = 24 * 7
+
+    # Background job dispatch
+    async_job_backend: str = "local"
+    async_job_lambda_name: str = ""
+    account_deletion_lambda_name: str = ""
 
     # DynamoDB endpoint (optional, for local development)
     dynamodb_endpoint: Optional[str] = None
@@ -305,6 +315,15 @@ class Settings:
             frontend_url=os.getenv("FRONTEND_URL", "http://localhost:5173" if environment == "dev" else ""),
             api_base_url=api_base_url,
             jwt_secret=os.getenv("JWT_SECRET", "dev-secret-change-in-production" if environment == "dev" else ""),
+            async_job_backend=os.getenv(
+                "ASYNC_JOB_BACKEND",
+                "lambda" if os.getenv("AWS_LAMBDA_FUNCTION_NAME") else "local",
+            ).strip().lower(),
+            async_job_lambda_name=os.getenv(
+                "ASYNC_JOB_LAMBDA_NAME",
+                os.getenv("AWS_LAMBDA_FUNCTION_NAME", ""),
+            ),
+            account_deletion_lambda_name=os.getenv("ACCOUNT_DELETION_LAMBDA_NAME", ""),
             google_client_id=google_client_id,
             google_client_secret=google_client_secret,
             google_redirect_uri=f"{api_base_url}/auth/callback",
