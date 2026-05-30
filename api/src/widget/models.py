@@ -150,7 +150,7 @@ class WidgetMessageRequest(BaseModel):
 
 class WidgetGenerateTextRequest(BaseModel):
     """Request model for provider-style text generation."""
-    message: str = Field(..., min_length=1, max_length=20000)
+    message: str = Field(..., min_length=1)
     context: dict[str, Any] = Field(default_factory=dict)
     model: Optional[str] = None
 

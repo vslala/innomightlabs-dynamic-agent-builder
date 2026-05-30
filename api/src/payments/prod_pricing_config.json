@@ -37,12 +37,12 @@
       "key": "starter",
       "name": "Starter",
       "prices": {
-        "monthly": "$29",
-        "annual": "$290"
+        "monthly": "$5",
+        "annual": "$50"
       },
       "stripe_price_ids": {
-        "monthly": "price_1SsQp494EtooRMivaJtqPUM0",
-        "annual": "price_1SsQp594EtooRMivDqgGsh1l"
+        "monthly": "price_1TcCrO94EtooRMivXLm59ljh",
+        "annual": "price_1TcCrP94EtooRMivEMTuqG0n"
       },
       "stripe_product_id": "prod_Tq73AZs1qHJ7Kp",
       "badge": "For growing teams",
@@ -70,12 +70,12 @@
       "key": "pro",
       "name": "Pro",
       "prices": {
-        "monthly": "$99",
-        "annual": "$990"
+        "monthly": "$20",
+        "annual": "$200"
       },
       "stripe_price_ids": {
-        "monthly": "price_1SsQp694EtooRMiv7csmGkuB",
-        "annual": "price_1SsQp694EtooRMivS8wR9cMO"
+        "monthly": "price_1TcCrQ94EtooRMiv0vcdDpSQ",
+        "annual": "price_1TcCrQ94EtooRMivIajQtUrL"
       },
       "stripe_product_id": "prod_Tq73M8h2pzSKoq",
       "badge": "Most popular",
