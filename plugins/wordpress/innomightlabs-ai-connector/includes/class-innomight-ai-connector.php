@@ -24,6 +24,10 @@ final class Innomight_AI_Connector {
 		add_action( 'rest_api_init', array( 'Innomight_AI_REST_Controller', 'register_routes' ) );
 		add_action( 'admin_menu', array( 'Innomight_AI_Admin', 'register_menu' ) );
 		add_action( 'admin_init', array( 'Innomight_AI_Admin', 'register_settings' ) );
+		add_filter( 'wpai_preferred_text_models', array( self::class, 'prepend_wpai_preferred_model' ) );
+		add_filter( 'wpai_preferred_image_models', array( self::class, 'prepend_wpai_preferred_model' ) );
+		add_filter( 'ai_experiments_preferred_models_for_text_generation', array( self::class, 'prepend_wpai_preferred_model' ) );
+		add_filter( 'ai_experiments_preferred_image_models', array( self::class, 'prepend_wpai_preferred_model' ) );
 	}
 
 	/**
@@ -69,7 +73,7 @@ final class Innomight_AI_Connector {
 				'name'           => __( 'Innomight Labs', 'innomightlabs-ai-connector' ),
 				'description'    => __( 'Connect WordPress to your Innomight Labs AI agent backend.', 'innomightlabs-ai-connector' ),
 				'logo_url'       => INNOMIGHT_AI_CONNECTOR_URL . 'assets/logo.svg',
-				'type'           => 'ai_service',
+				'type'           => 'ai_provider',
 				'authentication' => array(
 					'method'          => 'api_key',
 					'credentials_url' => 'https://innomightlabs.com/dashboard/api-keys',
@@ -82,5 +86,30 @@ final class Innomight_AI_Connector {
 				),
 			)
 		);
+	}
+
+	/**
+	 * Add Innomight Labs to the WordPress AI plugin's preferred model list.
+	 *
+	 * @param array<int, array{string, string}> $models Preferred provider/model pairs.
+	 * @return array<int, array{string, string}> Updated preferred provider/model pairs.
+	 */
+	public static function prepend_wpai_preferred_model( array $models ): array {
+		$innomight_model = array(
+			INNOMIGHT_AI_CONNECTOR_ID,
+			\InnomightLabs\AiConnector\Metadata\InnomightModelMetadataDirectory::MODEL_ID,
+		);
+
+		$models = array_values(
+			array_filter(
+				$models,
+				static function ( $model ) use ( $innomight_model ): bool {
+					return ! is_array( $model ) || $model !== $innomight_model;
+				}
+			)
+		);
+
+		array_unshift( $models, $innomight_model );
+		return $models;
 	}
 }

@@ -56,6 +56,54 @@ final class Innomight_AI_Client {
 	}
 
 	/**
+	 * Generate an image through the configured Innomight Labs agent.
+	 *
+	 * @param string $prompt Image prompt.
+	 * @param array  $context Optional request context.
+	 * @param array  $options Optional image options.
+	 * @return array|WP_Error Backend response.
+	 */
+	public function generate_image( string $prompt, array $context = array(), array $options = array() ) {
+		return $this->generate_image_stream( $prompt, $context, $options );
+	}
+
+	/**
+	 * Generate an image through the backend SSE endpoint and buffer the final image event.
+	 *
+	 * @param string $prompt Image prompt.
+	 * @param array  $context Optional request context.
+	 * @param array  $options Optional image options.
+	 * @return array|WP_Error Backend-style image response.
+	 */
+	public function generate_image_stream( string $prompt, array $context = array(), array $options = array() ) {
+		$body = array_merge(
+			array(
+				'prompt'  => $prompt,
+				'context' => array_merge(
+					innomight_ai_get_wordpress_context(),
+					$context
+				),
+			),
+			$options
+		);
+
+		$response = $this->request(
+			'POST',
+			'/widget/generate-image-stream',
+			$body,
+			array(
+				'timeout' => 120,
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		return $this->parse_image_stream_response( $response );
+	}
+
+	/**
 	 * Send a request to the Innomight Labs backend.
 	 *
 	 * @param string $method HTTP method.
@@ -173,6 +221,13 @@ final class Innomight_AI_Client {
 				return sanitize_text_field( $data['detail'] );
 			}
 
+			if ( isset( $data['detail'] ) && is_array( $data['detail'] ) ) {
+				$detail = wp_json_encode( $data['detail'] );
+				if ( is_string( $detail ) && '' !== $detail ) {
+					return sanitize_text_field( $detail );
+				}
+			}
+
 			if ( isset( $data['error']['message'] ) && is_string( $data['error']['message'] ) ) {
 				return sanitize_text_field( $data['error']['message'] );
 			}
@@ -182,6 +237,110 @@ final class Innomight_AI_Client {
 			/* translators: %d: HTTP status code. */
 			__( 'Innomight Labs API request failed with HTTP status %d.', 'innomightlabs-ai-connector' ),
 			$status
+		);
+	}
+
+	/**
+	 * Parse buffered SSE image events into the normal image response shape.
+	 *
+	 * @param array<string, mixed> $response Parsed response wrapper.
+	 * @return array|WP_Error Image response.
+	 */
+	private function parse_image_stream_response( array $response ) {
+		$raw_body = isset( $response['body'] ) && is_string( $response['body'] ) ? $response['body'] : '';
+		if ( '' === trim( $raw_body ) ) {
+			return new WP_Error(
+				'innomight_empty_image_stream',
+				__( 'Innomight Labs image stream did not return any events.', 'innomightlabs-ai-connector' )
+			);
+		}
+
+		$complete_event = null;
+		$partial_image  = null;
+		foreach ( preg_split( "/\r?\n\r?\n/", trim( $raw_body ) ) as $event_block ) {
+			foreach ( preg_split( "/\r?\n/", trim( $event_block ) ) as $line ) {
+				if ( 0 !== strpos( $line, 'data:' ) ) {
+					continue;
+				}
+
+				$data = json_decode( trim( substr( $line, 5 ) ), true );
+				if ( ! is_array( $data ) ) {
+					continue;
+				}
+
+				if ( isset( $data['event_type'] ) && 'ERROR' === $data['event_type'] ) {
+					return new WP_Error(
+						'innomight_image_stream_error',
+						isset( $data['content'] ) && is_string( $data['content'] ) ? sanitize_text_field( $data['content'] ) : __( 'Innomight Labs image stream failed.', 'innomightlabs-ai-connector' )
+					);
+				}
+
+				if ( isset( $data['event_type'] ) && 'IMAGE_GENERATION_COMPLETE' === $data['event_type'] ) {
+					$complete_event = $data;
+				}
+
+				if ( isset( $data['event_type'] ) && 'IMAGE_GENERATION_PARTIAL' === $data['event_type'] && ! empty( $data['image_b64'] ) && is_string( $data['image_b64'] ) ) {
+					$partial_image = $data;
+				}
+			}
+		}
+
+		if ( ! is_array( $complete_event ) ) {
+			return new WP_Error(
+				'innomight_missing_image_complete_event',
+				__( 'Innomight Labs image stream did not include a completion event.', 'innomightlabs-ai-connector' )
+			);
+		}
+
+		$images = array();
+		if ( isset( $complete_event['images'] ) && is_array( $complete_event['images'] ) ) {
+			foreach ( $complete_event['images'] as $image ) {
+				if ( is_array( $image ) ) {
+					$images[] = $this->normalize_stream_image( $image );
+				}
+			}
+		} elseif ( ! empty( $complete_event['image_url'] ) && is_string( $complete_event['image_url'] ) ) {
+			$images[] = $this->normalize_stream_image( $complete_event );
+		}
+
+		if ( null !== $partial_image && isset( $images[0] ) && empty( $images[0]['base64'] ) ) {
+			$images[0]['base64']    = $partial_image['image_b64'];
+			$images[0]['mime_type'] = isset( $partial_image['image_mime_type'] ) && is_string( $partial_image['image_mime_type'] ) ? $partial_image['image_mime_type'] : $images[0]['mime_type'];
+			$images[0]['width']     = isset( $partial_image['image_width'] ) && null !== $partial_image['image_width'] ? absint( $partial_image['image_width'] ) : $images[0]['width'];
+			$images[0]['height']    = isset( $partial_image['image_height'] ) && null !== $partial_image['image_height'] ? absint( $partial_image['image_height'] ) : $images[0]['height'];
+		}
+
+		if ( array() === $images ) {
+			return new WP_Error(
+				'innomight_missing_image_output',
+				__( 'Innomight Labs image stream did not include image output.', 'innomightlabs-ai-connector' )
+			);
+		}
+
+		return array(
+			'images'           => $images,
+			'conversation_id'  => isset( $complete_event['conversation_id'] ) && is_string( $complete_event['conversation_id'] ) ? $complete_event['conversation_id'] : '',
+			'message_ids'      => array(
+				'assistant_message_id' => isset( $complete_event['message_id'] ) && is_string( $complete_event['message_id'] ) ? $complete_event['message_id'] : '',
+			),
+			'stream_complete'  => true,
+			'stream_raw_event' => $complete_event,
+		);
+	}
+
+	/**
+	 * Normalize one stream image item.
+	 *
+	 * @param array<string, mixed> $image Stream image event or image item.
+	 * @return array<string, mixed> Normalized image.
+	 */
+	private function normalize_stream_image( array $image ): array {
+		return array(
+			'url'       => isset( $image['url'] ) && is_string( $image['url'] ) ? $image['url'] : ( isset( $image['image_url'] ) && is_string( $image['image_url'] ) ? $image['image_url'] : null ),
+			'base64'    => isset( $image['base64'] ) && is_string( $image['base64'] ) ? $image['base64'] : ( isset( $image['image_b64'] ) && is_string( $image['image_b64'] ) ? $image['image_b64'] : null ),
+			'mime_type' => isset( $image['mime_type'] ) && is_string( $image['mime_type'] ) ? $image['mime_type'] : ( isset( $image['image_mime_type'] ) && is_string( $image['image_mime_type'] ) ? $image['image_mime_type'] : 'image/png' ),
+			'width'     => isset( $image['width'] ) ? absint( $image['width'] ) : ( isset( $image['image_width'] ) ? absint( $image['image_width'] ) : null ),
+			'height'    => isset( $image['height'] ) ? absint( $image['height'] ) : ( isset( $image['image_height'] ) ? absint( $image['image_height'] ) : null ),
 		);
 	}
 

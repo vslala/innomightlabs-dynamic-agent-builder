@@ -16,7 +16,7 @@ use WordPress\AiClient\Providers\Http\DTO\ApiKeyRequestAuthentication;
 use WordPress\AiClient\Providers\Http\Traits\WithRequestAuthenticationTrait;
 
 /**
- * Checks whether the Innomight Labs widget API key is valid.
+ * Checks whether the Innomight Labs widget API key is configured.
  */
 final class InnomightProviderAvailability implements ProviderAvailabilityInterface, WithRequestAuthenticationInterface {
 	use WithRequestAuthenticationTrait;
@@ -24,7 +24,11 @@ final class InnomightProviderAvailability implements ProviderAvailabilityInterfa
 	/**
 	 * Check if provider is configured.
 	 *
-	 * @return bool True when the key can access the backend.
+	 * The WordPress AI plugin calls this during feature support checks before it
+	 * invokes the model. Keep it local and deterministic; the admin connection
+	 * test and generation requests still validate the key against the backend.
+	 *
+	 * @return bool True when a widget API key is available.
 	 */
 	public function isConfigured(): bool {
 		try {
@@ -33,29 +37,7 @@ final class InnomightProviderAvailability implements ProviderAvailabilityInterfa
 			$api_key = \innomight_ai_get_api_key();
 		}
 
-		if ( ! is_string( $api_key ) || '' === trim( $api_key ) ) {
-			return false;
-		}
-
-		$response = wp_remote_get(
-			\innomight_ai_get_api_base_url() . '/widget/config',
-			array(
-				'timeout' => 10,
-				'headers' => array(
-					'Accept'     => 'application/json',
-					'Origin'     => home_url(),
-					'User-Agent' => 'InnomightAIConnector/' . INNOMIGHT_AI_CONNECTOR_VERSION,
-					'X-API-Key'  => trim( $api_key ),
-				),
-			)
-		);
-
-		if ( is_wp_error( $response ) ) {
-			return false;
-		}
-
-		$status = wp_remote_retrieve_response_code( $response );
-		return $status >= 200 && $status < 300;
+		return is_string( $api_key ) && '' !== trim( $api_key );
 	}
 
 	/**

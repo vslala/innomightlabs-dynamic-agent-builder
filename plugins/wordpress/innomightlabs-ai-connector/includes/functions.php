@@ -105,6 +105,79 @@ function innomight_ai_get_api_base_url_source(): string {
 }
 
 /**
+ * Resolve the current WordPress post ID for AI Client requests.
+ *
+ * The WordPress AI plugin invokes abilities through REST requests, where the
+ * edited post is commonly only visible in the admin referer.
+ *
+ * @return int Post ID, or 0 when unavailable.
+ */
+function innomight_ai_get_current_post_id(): int {
+	foreach ( array( 'post_id', 'post_ID', 'post', 'id' ) as $key ) {
+		if ( isset( $_REQUEST[ $key ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$post_id = absint( wp_unslash( $_REQUEST[ $key ] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			if ( $post_id > 0 ) {
+				return $post_id;
+			}
+		}
+	}
+
+	$referers = array();
+	if ( isset( $_SERVER['HTTP_REFERER'] ) && is_string( $_SERVER['HTTP_REFERER'] ) ) {
+		$referers[] = wp_unslash( $_SERVER['HTTP_REFERER'] );
+	}
+	if ( isset( $_REQUEST['_wp_http_referer'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$referers[] = wp_unslash( $_REQUEST['_wp_http_referer'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+	}
+
+	foreach ( $referers as $referer ) {
+		$query = wp_parse_url( esc_url_raw( $referer ), PHP_URL_QUERY );
+		if ( ! is_string( $query ) || '' === $query ) {
+			continue;
+		}
+
+		$params = array();
+		wp_parse_str( $query, $params );
+		if ( isset( $params['post'] ) ) {
+			$post_id = absint( $params['post'] );
+			if ( $post_id > 0 ) {
+				return $post_id;
+			}
+		}
+	}
+
+	$post_id = get_the_ID();
+	return $post_id ? absint( $post_id ) : 0;
+}
+
+/**
+ * Build context sent to the Innomight Labs backend for WordPress AI requests.
+ *
+ * @return array<string, mixed> Request context.
+ */
+function innomight_ai_get_wordpress_context(): array {
+	$context = array(
+		'source'    => 'wordpress_ai_client',
+		'site_url'  => home_url(),
+		'site_name' => get_bloginfo( 'name' ),
+	);
+
+	$post_id = innomight_ai_get_current_post_id();
+	if ( $post_id > 0 ) {
+		$context['post_id'] = (string) $post_id;
+
+		$post = get_post( $post_id );
+		if ( $post instanceof WP_Post ) {
+			$context['post_type']  = $post->post_type;
+			$context['post_title'] = get_the_title( $post );
+			$context['post_url']   = get_permalink( $post );
+		}
+	}
+
+	return $context;
+}
+
+/**
  * Invoke the Innomight Labs backend with the configured widget API key.
  *
  * Other plugins can use this as the minimal integration surface.
@@ -128,4 +201,30 @@ function innomight_ai_request( string $method, string $path, array $body = array
 function innomight_ai_get_widget_config() {
 	$client = new Innomight_AI_Client();
 	return $client->get_widget_config();
+}
+
+/**
+ * Generate an image through the configured Innomight Labs agent.
+ *
+ * @param string $prompt Image prompt.
+ * @param array  $context Optional request context.
+ * @param array  $options Optional image options.
+ * @return array|WP_Error Backend response.
+ */
+function innomight_ai_generate_image( string $prompt, array $context = array(), array $options = array() ) {
+	$client = new Innomight_AI_Client();
+	return $client->generate_image( $prompt, $context, $options );
+}
+
+/**
+ * Generate an image through the configured Innomight Labs agent using SSE.
+ *
+ * @param string $prompt Image prompt.
+ * @param array  $context Optional request context.
+ * @param array  $options Optional image options.
+ * @return array|WP_Error Backend response.
+ */
+function innomight_ai_generate_image_stream( string $prompt, array $context = array(), array $options = array() ) {
+	$client = new Innomight_AI_Client();
+	return $client->generate_image_stream( $prompt, $context, $options );
 }
