@@ -21,9 +21,11 @@ export interface SkillCatalogItem {
   oauth_start_path: string | null;
   connectors: SkillConnectorStatus[];
   available: boolean;
+  repeatable: boolean;
 }
 
 export interface InstalledSkill {
+  installed_skill_id: string;
   skill_id: string;
   namespace: string;
   name: string;

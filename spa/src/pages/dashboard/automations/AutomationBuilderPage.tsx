@@ -155,7 +155,7 @@ function hydrateActionForm(schema: FormSchema, agents: AgentResponse[]): FormSch
   return {
     ...schema,
     form_inputs: schema.form_inputs.map((field) => {
-      if (field.attr?.source !== "agents") return field;
+      if (field.options_source?.type !== "agents" && field.attr?.source !== "agents") return field;
       const options: SelectOption[] = agents.map((agent) => ({
         value: agent.agent_id,
         label: agent.agent_name,

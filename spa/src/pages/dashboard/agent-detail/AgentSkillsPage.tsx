@@ -58,7 +58,7 @@ export function AgentSkillsPage() {
   const refreshAvailableSkills = async (installedOverride?: InstalledSkill[]): Promise<SkillCatalogItem[]> => {
     const allSkills = await skillApiService.listSkills();
     const installedIds = new Set((installedOverride ?? installedSkills).map((skill) => skill.skill_id));
-    const available = allSkills.filter((skill) => !installedIds.has(skill.skill_id));
+    const available = allSkills.filter((skill) => skill.repeatable || !installedIds.has(skill.skill_id));
     setAvailableSkills(available);
     return available;
   };
@@ -228,13 +228,14 @@ export function AgentSkillsPage() {
   };
 
   const handleToggleSkill = async (skill: InstalledSkill) => {
-    setUpdatingSkillId(skill.skill_id);
+    const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+    setUpdatingSkillId(installedSkillId);
     try {
-      const updated = await skillApiService.updateInstalledSkill(agent.agent_id, skill.skill_id, {
+      const updated = await skillApiService.updateInstalledSkill(agent.agent_id, installedSkillId, {
         enabled: !skill.enabled,
       });
       setInstalledSkills((prev) =>
-        prev.map((item) => (item.skill_id === updated.skill_id ? updated : item))
+        prev.map((item) => ((item.installed_skill_id ?? item.skill_id) === updated.installed_skill_id ? updated : item))
       );
     } catch (err) {
       console.error("Error toggling skill:", err);
@@ -244,17 +245,18 @@ export function AgentSkillsPage() {
   };
 
   const handleUpdateSkillConfig = async (skill: InstalledSkill, data: Record<string, FormValue>) => {
-    setUpdatingSkillId(skill.skill_id);
+    const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+    setUpdatingSkillId(installedSkillId);
     try {
       const payload: Record<string, string> = {};
       for (const [key, value] of Object.entries(data)) {
         if (typeof value === "string") payload[key] = value;
       }
-      const updated = await skillApiService.updateInstalledSkill(agent.agent_id, skill.skill_id, {
+      const updated = await skillApiService.updateInstalledSkill(agent.agent_id, installedSkillId, {
         config: payload,
       });
       setInstalledSkills((prev) =>
-        prev.map((item) => (item.skill_id === updated.skill_id ? updated : item))
+        prev.map((item) => ((item.installed_skill_id ?? item.skill_id) === updated.installed_skill_id ? updated : item))
       );
     } catch (err) {
       console.error("Error updating skill config:", err);
@@ -268,10 +270,11 @@ export function AgentSkillsPage() {
       ? window.confirm(`Uninstall ${skill.name}. Press OK to also disconnect ${skill.oauth_provider_name} for your account, or Cancel to uninstall only and keep the OAuth connection.`)
       : false;
 
-    setUninstallingSkillId(skill.skill_id);
+    const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+    setUninstallingSkillId(installedSkillId);
     try {
-      await skillApiService.uninstallSkill(agent.agent_id, skill.skill_id, { disconnectOAuth });
-      setInstalledSkills((prev) => prev.filter((item) => item.skill_id !== skill.skill_id));
+      await skillApiService.uninstallSkill(agent.agent_id, installedSkillId, { disconnectOAuth });
+      setInstalledSkills((prev) => prev.filter((item) => (item.installed_skill_id ?? item.skill_id) !== installedSkillId));
       await refreshAvailableSkills();
     } catch (err) {
       console.error("Error uninstalling skill:", err);
@@ -311,8 +314,10 @@ export function AgentSkillsPage() {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {installedSkills.map((skill) => (
-                <div key={skill.skill_id} style={{ border: "1px solid var(--border-subtle)", borderRadius: "0.75rem", padding: "1rem" }}>
+              {installedSkills.map((skill) => {
+                const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+                return (
+                <div key={installedSkillId} style={{ border: "1px solid var(--border-subtle)", borderRadius: "0.75rem", padding: "1rem" }}>
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
@@ -333,7 +338,7 @@ export function AgentSkillsPage() {
                       )}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                      <Button variant="outline" size="sm" onClick={() => handleToggleSkill(skill)} disabled={updatingSkillId === skill.skill_id}>
+                      <Button variant="outline" size="sm" onClick={() => handleToggleSkill(skill)} disabled={updatingSkillId === installedSkillId}>
                         {skill.enabled ? (
                           <>
                             <PowerOff className="h-4 w-4 mr-2" />
@@ -346,23 +351,24 @@ export function AgentSkillsPage() {
                           </>
                         )}
                       </Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleUninstallSkill(skill)} disabled={uninstallingSkillId === skill.skill_id}>
-                        {uninstallingSkillId === skill.skill_id ? "Removing..." : "Uninstall"}
+                      <Button variant="destructive" size="sm" onClick={() => handleUninstallSkill(skill)} disabled={uninstallingSkillId === installedSkillId}>
+                        {uninstallingSkillId === installedSkillId ? "Removing..." : "Uninstall"}
                       </Button>
                       {Object.keys(skill.config).length > 0 && (
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleUpdateSkillConfig(skill, skill.config)}
-                          disabled={updatingSkillId === skill.skill_id}
+                          disabled={updatingSkillId === installedSkillId}
                         >
-                          {updatingSkillId === skill.skill_id ? "Saving..." : "Refresh Config"}
+                          {updatingSkillId === installedSkillId ? "Saving..." : "Refresh Config"}
                         </Button>
                       )}
                     </div>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </CardContent>

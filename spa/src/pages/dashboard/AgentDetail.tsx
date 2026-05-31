@@ -418,7 +418,7 @@ export function AgentDetail() {
   const refreshAvailableSkills = async (installedOverride?: InstalledSkill[]): Promise<SkillCatalogItem[]> => {
     const allSkills = await skillApiService.listSkills();
     const installedIds = new Set((installedOverride ?? installedSkills).map((s) => s.skill_id));
-    const available = allSkills.filter((s) => !installedIds.has(s.skill_id));
+    const available = allSkills.filter((s) => s.repeatable || !installedIds.has(s.skill_id));
     setAvailableSkills(available);
     return available;
   };
@@ -546,13 +546,14 @@ export function AgentDetail() {
 
   const handleToggleSkill = async (skill: InstalledSkill) => {
     if (!agentId) return;
-    setUpdatingSkillId(skill.skill_id);
+    const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+    setUpdatingSkillId(installedSkillId);
     try {
-      const updated = await skillApiService.updateInstalledSkill(agentId, skill.skill_id, {
+      const updated = await skillApiService.updateInstalledSkill(agentId, installedSkillId, {
         enabled: !skill.enabled,
       });
       setInstalledSkills((prev) =>
-        prev.map((item) => (item.skill_id === updated.skill_id ? updated : item))
+        prev.map((item) => ((item.installed_skill_id ?? item.skill_id) === updated.installed_skill_id ? updated : item))
       );
     } catch (err) {
       console.error("Error toggling skill:", err);
@@ -563,7 +564,8 @@ export function AgentDetail() {
 
   const handleUpdateSkillConfig = async (skill: InstalledSkill, data: Record<string, FormValue>) => {
     if (!agentId) return;
-    setUpdatingSkillId(skill.skill_id);
+    const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+    setUpdatingSkillId(installedSkillId);
     try {
       const payload: Record<string, string> = {};
       for (const [key, value] of Object.entries(data)) {
@@ -571,11 +573,11 @@ export function AgentDetail() {
           payload[key] = value;
         }
       }
-      const updated = await skillApiService.updateInstalledSkill(agentId, skill.skill_id, {
+      const updated = await skillApiService.updateInstalledSkill(agentId, installedSkillId, {
         config: payload,
       });
       setInstalledSkills((prev) =>
-        prev.map((item) => (item.skill_id === updated.skill_id ? updated : item))
+        prev.map((item) => ((item.installed_skill_id ?? item.skill_id) === updated.installed_skill_id ? updated : item))
       );
     } catch (err) {
       console.error("Error updating skill config:", err);
@@ -590,10 +592,11 @@ export function AgentDetail() {
       ? window.confirm(`Uninstall ${skill.name}. Press OK to also disconnect ${skill.oauth_provider_name} for your account, or Cancel to uninstall only and keep the OAuth connection.`)
       : false;
 
-    setUninstallingSkillId(skill.skill_id);
+    const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+    setUninstallingSkillId(installedSkillId);
     try {
-      await skillApiService.uninstallSkill(agentId, skill.skill_id, { disconnectOAuth });
-      setInstalledSkills((prev) => prev.filter((item) => item.skill_id !== skill.skill_id));
+      await skillApiService.uninstallSkill(agentId, installedSkillId, { disconnectOAuth });
+      setInstalledSkills((prev) => prev.filter((item) => (item.installed_skill_id ?? item.skill_id) !== installedSkillId));
     } catch (err) {
       console.error("Error uninstalling skill:", err);
     } finally {
@@ -1323,9 +1326,11 @@ export function AgentDetail() {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {installedSkills.map((skill) => (
+              {installedSkills.map((skill) => {
+                const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+                return (
                 <div
-                  key={skill.skill_id}
+                  key={installedSkillId}
                   style={{
                     border: "1px solid var(--border-subtle)",
                     borderRadius: "0.5rem",
@@ -1358,7 +1363,7 @@ export function AgentDetail() {
                         variant="ghost"
                         size="icon"
                         title={skill.enabled ? "Disable skill" : "Enable skill"}
-                        disabled={updatingSkillId === skill.skill_id}
+                        disabled={updatingSkillId === installedSkillId}
                         onClick={() => handleToggleSkill(skill)}
                       >
                         {skill.enabled ? (
@@ -1371,7 +1376,7 @@ export function AgentDetail() {
                         variant="ghost"
                         size="icon"
                         style={{ color: "#f87171", height: "2rem", width: "2rem" }}
-                        disabled={uninstallingSkillId === skill.skill_id}
+                        disabled={uninstallingSkillId === installedSkillId}
                         onClick={() => handleUninstallSkill(skill)}
                         title="Uninstall skill"
                       >
@@ -1390,7 +1395,7 @@ export function AgentDetail() {
                         <SchemaForm
                           schema={{
                             form_name: `Update ${skill.name}`,
-                            submit_path: `/agents/${agentId}/skills/${skill.skill_id}`,
+                            submit_path: `/agents/${agentId}/skills/${installedSkillId}`,
                             form_inputs: Object.entries(skill.config).map(([key, value]) => ({
                               input_type: "text",
                               name: key,
@@ -1399,8 +1404,8 @@ export function AgentDetail() {
                             })),
                           }}
                           onSubmit={(data) => handleUpdateSkillConfig(skill, data)}
-                          submitLabel={updatingSkillId === skill.skill_id ? "Saving..." : "Save Config"}
-                          isLoading={updatingSkillId === skill.skill_id}
+                          submitLabel={updatingSkillId === installedSkillId ? "Saving..." : "Save Config"}
+                          isLoading={updatingSkillId === installedSkillId}
                         />
                       )}
                       {skill.secret_fields.length > 0 && (
@@ -1411,7 +1416,8 @@ export function AgentDetail() {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>

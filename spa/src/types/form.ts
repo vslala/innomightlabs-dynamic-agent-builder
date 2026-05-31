@@ -11,6 +11,12 @@ export interface SelectOption {
   label: string;
 }
 
+export interface FormOptionsSource {
+  type: string;
+  mode?: "hydrate" | "lazy";
+  endpoint?: string | null;
+}
+
 export interface FormInput {
   input_type: FormInputType;
   name: string;
@@ -18,6 +24,7 @@ export interface FormInput {
   value?: string | null;
   values?: string[] | null;
   options?: SelectOption[] | null;  // For value/label pairs
+  options_source?: FormOptionsSource | null;
   attr?: Record<string, string> | null;
 }
 
