@@ -25,11 +25,6 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
   ErrorState,
   Input,
   Label,
@@ -71,6 +66,7 @@ type AutomationFlowNode = Node<{
   onCopyNodeId?: (nodeId: string) => void;
 }>;
 type AutomationFlowEdge = Edge<{ automationEdge?: AutomationEdge }>;
+type BuilderPanelMode = "step" | "smart" | "test" | "configure";
 
 const DEFAULT_PROMPT = "Use the workflow context to complete this step.\n\nInput: {{ $.input }}";
 const DEFAULT_SKILL_ACTION = "agent_invocation::invoke";
@@ -182,6 +178,38 @@ function findCatalogActionForInstalledSkill(
       item.skill_id === installed.skill_id &&
       item.action === actionName
   ) ?? null;
+}
+
+function buildWorkflowSmartValueExamples(
+  steps: AutomationNode[],
+  actionCatalog: AutomationActionCatalogItem[],
+  currentNodeId: string,
+): SmartValueExample[] {
+  const examples: SmartValueExample[] = [
+    {
+      label: "Manual input",
+      value: "{{ $.input.input }}",
+      description: "The text supplied when the automation is tested or manually run.",
+    },
+    {
+      label: "Manual input object",
+      value: "{{ $.input }}",
+      description: "Complete input object supplied when the automation starts.",
+    },
+    {
+      label: "Trigger type",
+      value: "{{ $.trigger.type }}",
+      description: "The trigger source, such as manual.",
+    },
+  ];
+
+  steps
+    .filter((step) => step.node_id !== currentNodeId)
+    .forEach((step) => {
+      examples.push(...buildStepSmartValueExamples(step, actionCatalog));
+    });
+
+  return examples;
 }
 
 function buildStepSmartValueExamples(
@@ -856,7 +884,7 @@ function AutomationBuilderContent() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [runPanelOpen, setRunPanelOpen] = useState(false);
+  const [panelMode, setPanelMode] = useState<BuilderPanelMode>("step");
   const [runInput, setRunInput] = useState("{\n  \"input\": \"\"\n}");
   const [runInputError, setRunInputError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -866,12 +894,12 @@ function AutomationBuilderContent() {
   const [flowNodes, setFlowNodes] = useState<AutomationFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<AutomationFlowEdge[]>([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
-  const [smartValuesOpen, setSmartValuesOpen] = useState(false);
   const [actionCatalog, setActionCatalog] = useState<AutomationActionCatalogItem[]>([]);
   const [configuringAction, setConfiguringAction] = useState<AutomationActionCatalogItem | null>(null);
   const [configuringActionNodeId, setConfiguringActionNodeId] = useState<string | null>(null);
   const [configuringActionError, setConfiguringActionError] = useState<string | null>(null);
   const [configuringActionSubmitting, setConfiguringActionSubmitting] = useState(false);
+  const [copiedSmartValue, setCopiedSmartValue] = useState<string | null>(null);
   const activeRunPollId = useRef(0);
 
   const loadGraph = useCallback(async () => {
@@ -930,6 +958,10 @@ function AutomationBuilderContent() {
   const editableSteps = useMemo(
     () => graph?.nodes.filter((node) => node.type !== "start" && node.type !== "final") ?? [],
     [graph]
+  );
+  const smartValueExamples = useMemo(
+    () => buildWorkflowSmartValueExamples(editableSteps, actionCatalog, selectedNodeId ?? ""),
+    [actionCatalog, editableSteps, selectedNodeId]
   );
 
   useEffect(() => {
@@ -1107,6 +1139,7 @@ function AutomationBuilderContent() {
     setConfiguringAction(action);
     setConfiguringActionNodeId(nodeId);
     setConfiguringActionError(null);
+    setPanelMode("configure");
   }, []);
 
   const closeActionConfiguration = useCallback(() => {
@@ -1114,6 +1147,7 @@ function AutomationBuilderContent() {
     setConfiguringAction(null);
     setConfiguringActionNodeId(null);
     setConfiguringActionError(null);
+    setPanelMode("step");
   }, [configuringActionSubmitting]);
 
   const handleActionConfigurationSubmit = useCallback(async (data: Record<string, FormValue>) => {
@@ -1152,6 +1186,7 @@ function AutomationBuilderContent() {
       setConfiguringAction(null);
       setConfiguringActionNodeId(null);
       setConfiguringActionError(null);
+      setPanelMode("step");
     } catch (err) {
       console.error("Error configuring automation action:", err);
       setConfiguringActionError(err instanceof Error ? err.message : "Failed to configure action.");
@@ -1164,6 +1199,16 @@ function AutomationBuilderContent() {
     configuringActionNodeId,
     updateGraph,
   ]);
+
+  const copySmartValue = useCallback(async (value: string) => {
+    try {
+      await copyToClipboard(value);
+      setCopiedSmartValue(value);
+      window.setTimeout(() => setCopiedSmartValue((current) => (current === value ? null : current)), 1400);
+    } catch (err) {
+      console.error("Error copying smart value:", err);
+    }
+  }, []);
 
   const updateAutomationStatus = async () => {
     if (!automationId) return;
@@ -1247,9 +1292,9 @@ function AutomationBuilderContent() {
           <p className="automation-builder__eyebrow">Builder</p>
           <h1>{automation.title}</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="automation-builder__toolbar-actions">
           <StatusBadge status={automation.status === "active" ? "active" : "inactive"} label={automation.status} />
-          <Button variant="outline" size="sm" onClick={() => setRunPanelOpen((current) => !current)}>
+          <Button variant={panelMode === "test" ? "default" : "outline"} size="sm" onClick={() => setPanelMode("test")}>
             <Play className="h-4 w-4" />
             Test Run
           </Button>
@@ -1271,98 +1316,72 @@ function AutomationBuilderContent() {
       )}
 
       <div className="automation-builder__body">
-        <div className={`automation-builder__canvas ${selectedNode ? "automation-builder__canvas--drawer-open" : ""}`}>
-          <div className="automation-builder__canvas-rail">
-            <Button size="sm" onClick={addStep} title="Add step">
-              <Plus className="h-4 w-4" />
-              Add Step
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const firstEditable = editableSteps[0];
-                setSelectedNodeId(firstEditable?.node_id ?? graph.nodes.find((node) => node.type === "start")?.node_id ?? null);
-                setSmartValuesOpen(true);
-              }}
-              title="Open smart values"
-            >
-              <Lightbulb className="h-4 w-4" />
-              Smart Values
-            </Button>
-          </div>
-          {selectedEdge && (
-            <div className="automation-builder__edge-actions">
-              <div>
-                <span>Selected edge</span>
-                <strong>{selectedEdge.label}</strong>
-              </div>
-              <Button variant="destructive" size="sm" onClick={removeSelectedEdge}>
-                <Trash2 className="h-4 w-4" />
-                Delete
+        <div className="automation-builder__workspace">
+          <aside className={`automation-builder__side-panel automation-builder__side-panel--${panelMode}`}>
+            <div className="automation-builder__panel-tabs">
+              <Button size="sm" variant={panelMode === "step" ? "default" : "ghost"} onClick={() => setPanelMode("step")}>
+                Step
+              </Button>
+              <Button size="sm" variant={panelMode === "smart" ? "default" : "ghost"} onClick={() => setPanelMode("smart")}>
+                <Lightbulb className="h-4 w-4" />
+                Smart
+              </Button>
+              <Button size="sm" variant={panelMode === "test" ? "default" : "ghost"} onClick={() => setPanelMode("test")}>
+                <Play className="h-4 w-4" />
+                Test
               </Button>
             </div>
-          )}
-          {runPanelOpen && (
-            <AutomationRunPanel
-              input={runInput}
-              inputError={runInputError}
-              running={running}
-              latestRun={latestRun}
-              onInputChange={(value) => {
-                setRunInput(value);
-                setRunInputError(null);
-              }}
-              onFormatInput={() => {
-                const formatted = formatJsonText(runInput);
-                setRunInput(formatted.value);
-                setRunInputError(formatted.error);
-              }}
-              onRun={() => void runTest()}
-              onClose={() => setRunPanelOpen(false)}
-            />
-          )}
-          {editableSteps.length === 0 && (
-            <div className="automation-builder__empty-canvas">
-              <Workflow className="h-10 w-10" />
-              <div>
-                <p>No steps yet</p>
-                <span>Add the first editable workflow step. Start and Done are managed automatically.</span>
+            {panelMode === "test" ? (
+              <div className="automation-builder__panel-content">
+                <AutomationRunPanel
+                  input={runInput}
+                  inputError={runInputError}
+                  running={running}
+                  latestRun={latestRun}
+                  onInputChange={(value) => {
+                    setRunInput(value);
+                    setRunInputError(null);
+                  }}
+                  onFormatInput={() => {
+                    const formatted = formatJsonText(runInput);
+                    setRunInput(formatted.value);
+                    setRunInputError(formatted.error);
+                  }}
+                  onRun={() => void runTest()}
+                  onClose={() => setPanelMode("step")}
+                />
               </div>
-              <Button onClick={addStep}>
-                <Plus className="h-4 w-4" />
-                Add First Step
-              </Button>
-            </div>
-          )}
-          <ReactFlow
-            nodes={flowNodes}
-            edges={flowEdges}
-            nodeTypes={nodeTypes}
-            onNodesChange={handleNodesChange}
-            onEdgesChange={handleEdgesChange}
-            onConnect={handleConnect}
-            nodesDraggable
-            onNodeDragStop={(_, node) => commitNodePosition(node.id, node.position)}
-            onNodeClick={(_, node) => {
-              setSelectedEdgeId(null);
-              setSelectedNodeId(node.id);
-            }}
-            onEdgeClick={(_, edge) => {
-              setSelectedNodeId(null);
-              setSelectedEdgeId(edge.id);
-            }}
-            onPaneClick={() => {
-              setSelectedNodeId(null);
-              setSelectedEdgeId(null);
-            }}
-            fitView
-          >
-            <Background />
-            <Controls />
-          </ReactFlow>
-          {selectedNode && (
-            <div className="automation-builder__drawer">
+            ) : panelMode === "smart" ? (
+              <div className="automation-builder__panel-content">
+                <SmartValueHelper
+                  examples={smartValueExamples}
+                  copiedValue={copiedSmartValue}
+                  onCopy={(value) => void copySmartValue(value)}
+                />
+              </div>
+            ) : panelMode === "configure" && configuringAction?.install_schema ? (
+              <div className="automation-builder__panel-content">
+                <div className="automation-builder__panel-header">
+                  <div>
+                    <h2>Configure Action</h2>
+                    <p>{configuringAction.label}</p>
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={closeActionConfiguration} disabled={configuringActionSubmitting}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                {configuringActionError && (
+                  <div className="automation-builder__error">{configuringActionError}</div>
+                )}
+                <SchemaForm
+                  schema={configuringAction.install_schema}
+                  onSubmit={handleActionConfigurationSubmit}
+                  onCancel={closeActionConfiguration}
+                  submitLabel="Configure"
+                  isLoading={configuringActionSubmitting}
+                />
+              </div>
+            ) : (
               <AutomationInspector
                 node={selectedNode}
                 steps={editableSteps}
@@ -1373,10 +1392,9 @@ function AutomationBuilderContent() {
                 onPlaceNode={placeNodeOnCanvas}
                 onClose={() => {
                   setSelectedNodeId(null);
-                  setSmartValuesOpen(false);
+                  setPanelMode("step");
                 }}
-                smartValuesOpen={smartValuesOpen}
-                onSmartValuesOpenChange={setSmartValuesOpen}
+                onOpenSmartValues={() => setPanelMode("smart")}
                 onChange={(nodeId, patch) => updateGraph((current) => patchNode(current, nodeId, patch))}
                 onSaveChange={saveNodePatch}
                 onTypeChange={(nodeId, type) => updateGraph((current) => updateStepType(current, nodeId, type))}
@@ -1386,35 +1404,86 @@ function AutomationBuilderContent() {
                 }}
                 onConfigureAction={openActionConfiguration}
               />
+            )}
+          </aside>
+
+          <div className="automation-builder__canvas">
+            <div className="automation-builder__canvas-rail">
+              <Button size="sm" onClick={addStep} title="Add step">
+                <Plus className="h-4 w-4" />
+                Add Step
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const firstEditable = editableSteps[0];
+                  setSelectedNodeId(firstEditable?.node_id ?? graph.nodes.find((node) => node.type === "start")?.node_id ?? null);
+                  setPanelMode("smart");
+                }}
+                title="Open smart values"
+              >
+                <Lightbulb className="h-4 w-4" />
+                Smart Values
+              </Button>
             </div>
-          )}
+            {selectedEdge && (
+              <div className="automation-builder__edge-actions">
+                <div>
+                  <span>Selected edge</span>
+                  <strong>{selectedEdge.label}</strong>
+                </div>
+                <Button variant="destructive" size="sm" onClick={removeSelectedEdge}>
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </Button>
+              </div>
+            )}
+            {editableSteps.length === 0 && (
+              <div className="automation-builder__empty-canvas">
+                <Workflow className="h-10 w-10" />
+                <div>
+                  <p>No steps yet</p>
+                  <span>Add the first editable workflow step. Start and Done are managed automatically.</span>
+                </div>
+                <Button onClick={addStep}>
+                  <Plus className="h-4 w-4" />
+                  Add First Step
+                </Button>
+              </div>
+            )}
+            <ReactFlow
+              nodes={flowNodes}
+              edges={flowEdges}
+              nodeTypes={nodeTypes}
+              onNodesChange={handleNodesChange}
+              onEdgesChange={handleEdgesChange}
+              onConnect={handleConnect}
+              nodesDraggable
+              onNodeDragStop={(_, node) => commitNodePosition(node.id, node.position)}
+              onNodeClick={(_, node) => {
+                setSelectedEdgeId(null);
+                setSelectedNodeId(node.id);
+                setPanelMode("step");
+              }}
+              onEdgeClick={(_, edge) => {
+                setSelectedNodeId(null);
+                setSelectedEdgeId(edge.id);
+              }}
+              onPaneClick={() => {
+                setSelectedNodeId(null);
+                setSelectedEdgeId(null);
+                if (panelMode === "configure") return;
+                setPanelMode("step");
+              }}
+              fitView
+            >
+              <Background />
+              <Controls />
+            </ReactFlow>
+          </div>
         </div>
       </div>
-
-      <Dialog open={!!configuringAction} onOpenChange={(open) => {
-        if (!open) closeActionConfiguration();
-      }}>
-        <DialogContent style={{ maxWidth: "40rem" }}>
-          <DialogHeader>
-            <DialogTitle>Configure Action</DialogTitle>
-            <DialogDescription>
-              Set the configuration required before this action can be used in the workflow.
-            </DialogDescription>
-          </DialogHeader>
-          {configuringActionError && (
-            <div className="automation-builder__error">{configuringActionError}</div>
-          )}
-          {configuringAction?.install_schema && (
-            <SchemaForm
-              schema={configuringAction.install_schema}
-              onSubmit={handleActionConfigurationSubmit}
-              onCancel={closeActionConfiguration}
-              submitLabel="Configure"
-              isLoading={configuringActionSubmitting}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
 
     </div>
   );
@@ -1429,8 +1498,7 @@ interface AutomationInspectorProps {
   onSelectNode: (nodeId: string) => void;
   onPlaceNode: (nodeId: string) => void;
   onClose: () => void;
-  smartValuesOpen: boolean;
-  onSmartValuesOpenChange: (open: boolean) => void;
+  onOpenSmartValues: () => void;
   onChange: (
     nodeId: string,
     patch: Partial<Pick<AutomationNode, "name" | "description" | "config">>
@@ -1588,54 +1656,13 @@ function AutomationInspector({
   onSelectNode,
   onPlaceNode,
   onClose,
-  smartValuesOpen,
-  onSmartValuesOpenChange,
+  onOpenSmartValues,
   onChange,
   onSaveChange,
   onTypeChange,
   onDelete,
   onConfigureAction,
 }: AutomationInspectorProps) {
-  const [copiedSmartValue, setCopiedSmartValue] = useState<string | null>(null);
-  const currentNodeId = node?.node_id ?? "";
-  const smartValueExamples = useMemo(() => {
-    const examples: SmartValueExample[] = [
-      {
-        label: "Manual input",
-        value: "{{ $.input.input }}",
-        description: "The text supplied when the automation is tested or manually run.",
-      },
-      {
-        label: "Manual input object",
-        value: "{{ $.input }}",
-        description: "Complete input object supplied when the automation starts.",
-      },
-      {
-        label: "Trigger type",
-        value: "{{ $.trigger.type }}",
-        description: "The trigger source, such as manual.",
-      },
-    ];
-
-    steps
-      .filter((step) => step.node_id !== currentNodeId)
-      .forEach((step) => {
-        examples.push(...buildStepSmartValueExamples(step, actionCatalog));
-      });
-
-    return examples;
-  }, [actionCatalog, currentNodeId, steps]);
-
-  const copySmartValue = async (value: string) => {
-    try {
-      await copyToClipboard(value);
-      setCopiedSmartValue(value);
-      window.setTimeout(() => setCopiedSmartValue((current) => (current === value ? null : current)), 1400);
-    } catch (err) {
-      console.error("Error copying smart value:", err);
-    }
-  };
-
   if (!node) {
     return (
       <aside className="automation-inspector">
@@ -1647,19 +1674,12 @@ function AutomationInspector({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => onSmartValuesOpenChange(!smartValuesOpen)}
+            onClick={onOpenSmartValues}
             title="Smart value examples"
           >
             <Lightbulb className="h-4 w-4" />
           </Button>
         </div>
-        {smartValuesOpen && (
-          <SmartValueHelper
-            examples={smartValueExamples}
-            copiedValue={copiedSmartValue}
-            onCopy={(value) => void copySmartValue(value)}
-          />
-        )}
         {steps.length === 0 ? (
           <>
             <p>Add the first step to place an editable node on the canvas.</p>
@@ -1709,7 +1729,7 @@ function AutomationInspector({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => onSmartValuesOpenChange(!smartValuesOpen)}
+            onClick={onOpenSmartValues}
             title="Smart value examples"
           >
             <Lightbulb className="h-4 w-4" />
@@ -1724,13 +1744,6 @@ function AutomationInspector({
           </Button>
         </div>
       </div>
-      {smartValuesOpen && (
-        <SmartValueHelper
-          examples={smartValueExamples}
-          copiedValue={copiedSmartValue}
-          onCopy={(value) => void copySmartValue(value)}
-        />
-      )}
       {!isSystemNode && (
         <Button className="automation-inspector__place-button" onClick={() => onPlaceNode(node.node_id)}>
           Place on canvas

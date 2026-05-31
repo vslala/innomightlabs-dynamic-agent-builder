@@ -23,6 +23,14 @@
   margin: 0;
 }
 
+.automation-builder__toolbar-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .automation-builder__eyebrow {
   color: var(--text-muted);
   font-size: 0.72rem;
@@ -39,8 +47,12 @@
   padding: 0.75rem 1rem;
 }
 
-.automation-builder__body {
-  min-height: calc(100vh - 13rem);
+.automation-builder__workspace {
+  align-items: stretch;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(42rem, calc(100vh - 13rem));
 }
 
 .automation-builder__canvas {
@@ -73,15 +85,6 @@
   position: absolute;
   top: 1rem;
   z-index: 35;
-}
-
-.automation-builder__drawer {
-  bottom: 1rem;
-  position: absolute;
-  right: 1rem;
-  top: 1rem;
-  width: min(24rem, calc(100% - 2rem));
-  z-index: 34;
 }
 
 .automation-builder__edge-actions {
@@ -120,22 +123,10 @@
 }
 
 .automation-run-panel {
-  background: rgba(22, 22, 47, 0.96);
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.75rem;
-  bottom: 1rem;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
   color: var(--text-secondary);
   display: grid;
   gap: 1rem;
-  left: 1rem;
-  max-width: min(42rem, calc(100% - 2rem));
-  overflow: auto;
-  padding: 1rem;
-  position: absolute;
-  top: 4.75rem;
-  width: 42rem;
-  z-index: 37;
+  min-height: 0;
 }
 
 .automation-run-panel__header,
@@ -525,6 +516,60 @@
   margin-top: 0.2rem;
 }
 
+.automation-builder__side-panel {
+  background: rgba(22, 22, 47, 0.94);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  min-height: 16rem;
+  overflow: hidden;
+}
+
+.automation-builder__panel-tabs {
+  align-content: start;
+  background: rgba(255, 255, 255, 0.035);
+  border-right: 1px solid var(--border-subtle);
+  display: grid;
+  gap: 0.35rem;
+  grid-auto-rows: min-content;
+  padding: 0.5rem;
+}
+
+.automation-builder__panel-tabs button {
+  justify-content: flex-start;
+}
+
+.automation-builder__panel-content {
+  color: var(--text-secondary);
+  max-height: min(30rem, 46vh);
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.automation-builder__panel-header {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.automation-builder__panel-header h2 {
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 650;
+  margin: 0;
+}
+
+.automation-builder__panel-header p {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin: 0.25rem 0 0;
+}
+
 .automation-inspector__step-list {
   display: flex;
   flex-direction: column;
@@ -637,12 +682,9 @@
 }
 
 .automation-inspector {
-  background: rgba(22, 22, 47, 0.94);
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.75rem;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
   color: var(--text-secondary);
   height: 100%;
+  max-height: min(30rem, 46vh);
   min-height: 0;
   overflow: auto;
   padding: 1rem;
@@ -789,4 +831,76 @@
 
 .react-flow__edge-text {
   fill: var(--text-secondary);
+}
+
+@media (max-width: 1100px) {
+  .automation-builder__workspace {
+    grid-template-rows: auto minmax(34rem, 58vh);
+  }
+
+  .automation-builder__canvas,
+  .automation-builder__canvas .react-flow {
+    height: 58vh;
+    min-height: 34rem;
+  }
+
+  .automation-builder__side-panel {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .automation-builder__panel-tabs {
+    align-items: center;
+    border-bottom: 1px solid var(--border-subtle);
+    border-right: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .automation-builder__panel-tabs button {
+    justify-content: center;
+  }
+
+  .automation-builder__panel-content {
+    max-height: 24rem;
+  }
+
+  .automation-inspector {
+    max-height: 24rem;
+  }
+}
+
+@media (max-width: 760px) {
+  .automation-builder__toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .automation-builder__toolbar-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .automation-builder__workspace {
+    grid-template-rows: auto minmax(28rem, 56vh);
+  }
+
+  .automation-builder__canvas,
+  .automation-builder__canvas .react-flow {
+    height: 56vh;
+    min-height: 28rem;
+  }
+
+  .automation-builder__panel-content {
+    max-height: 22rem;
+  }
+
+  .automation-inspector {
+    max-height: 22rem;
+  }
+
+  .automation-builder__canvas-rail {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
