@@ -31,6 +31,10 @@ class SkillConnectorStatus(BaseModel):
     connect_path: Optional[str] = None
 
 
+class SkillAutomationConfig(BaseModel):
+    enabled: bool = True
+
+
 class SkillManifest(BaseModel):
     id: str
     namespace: str
@@ -48,6 +52,7 @@ class SkillManifest(BaseModel):
     requires_oauth: bool = False
     oauth_provider_name: Optional[str] = None
     connectors: list[SkillConnectorDependency] = Field(default_factory=list)
+    automation: SkillAutomationConfig = Field(default_factory=SkillAutomationConfig)
     actions: list[SkillActionManifest] = Field(default_factory=list)
     form: list[form_models.FormInput] = Field(default_factory=list)
 

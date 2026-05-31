@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from typing import Any, Optional
 
 import src.form_models as form_models
 from src.connectors.service import ConnectorService, connector_id_for_provider, get_connector_service
 from src.form_options import FormOptionsContext, hydrate_form_options, validate_form_options
+from src.skills.identity import installed_skill_id_for
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import (
     AgentSkill,
     InstalledSkillResponse,
     SkillCatalogItemResponse,
     SkillConnectorDependency,
-    SkillManifest,
 )
 from src.skills.oauth_providers import get_skill_oauth_provider
 from src.skills.registry import SkillRegistry, get_skill_registry
@@ -122,7 +121,7 @@ class SkillService:
         secret_fields = self.registry.secret_fields(skill_id)
         plain_config = {k: v for k, v in normalized.items() if k not in secret_fields}
         secret_config = {k: v for k, v in normalized.items() if k in secret_fields}
-        installed_skill_id = self._installed_skill_id(loaded.manifest, normalized)
+        installed_skill_id = installed_skill_id_for(loaded.manifest, normalized)
 
         return self.repository.upsert_with_config(
             agent_id=agent_id,
@@ -214,7 +213,7 @@ class SkillService:
                 normalized,
                 FormOptionsContext(user_email=existing.installed_by),
             )
-            next_installed_skill_id = self._installed_skill_id(loaded.manifest, normalized)
+            next_installed_skill_id = installed_skill_id_for(loaded.manifest, normalized)
             if next_installed_skill_id != existing.installed_skill_id:
                 raise ValueError("Repeatable skill identity fields cannot be changed")
             secret_fields = self.registry.secret_fields(existing.skill_id)
@@ -237,24 +236,6 @@ class SkillService:
             secret_config=secret_config,
             secret_fields=secret_field_list,
         )
-
-    def _installed_skill_id(
-        self,
-        manifest: SkillManifest,
-        normalized_config: dict[str, Any],
-    ) -> str:
-        if not manifest.repeatable:
-            return manifest.id
-
-        identity_fields = manifest.repeatable_identity_fields or sorted(normalized_config.keys())
-        identity_values = {
-            field_name: normalized_config.get(field_name)
-            for field_name in identity_fields
-        }
-        identity_json = json.dumps(identity_values, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-        digest = hashlib.sha256(identity_json.encode("utf-8")).hexdigest()[:16]
-        return f"{manifest.id}:{digest}"
-
 
 class SkillRuntimeService:
     """Runtime behavior for MemGPT tool-based skill loading/execution."""

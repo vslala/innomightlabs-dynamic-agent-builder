@@ -74,7 +74,8 @@ export interface InvokeAgentActionConfig {
 
 export interface SkillActionConfig {
   action_type: "skill_action";
-  skill_id: string;
+  installed_skill_id?: string | null;
+  skill_id?: string | null;
   action: string;
   arguments: Record<string, unknown>;
 }
@@ -88,6 +89,7 @@ export interface AutomationSkillConnector {
 }
 
 export interface AutomationSkillResponse {
+  installed_skill_id: string;
   skill_id: string;
   namespace: string;
   name: string;
@@ -102,12 +104,19 @@ export interface AutomationSkillResponse {
 export interface AutomationActionCatalogItem {
   action_type: "skill_action";
   skill_id: string;
+  installed_skill_id?: string | null;
   skill_name: string;
   action: string;
   label: string;
   description: string;
   input_schema: Record<string, unknown>;
   action_form?: import("./form").FormSchema | null;
+  available: boolean;
+  configured: boolean;
+  enabled: boolean;
+  disabled_reason?: string | null;
+  install_schema?: import("./form").FormSchema | null;
+  connectors: AutomationSkillConnector[];
 }
 
 export interface AutomationActionCatalogResponse {

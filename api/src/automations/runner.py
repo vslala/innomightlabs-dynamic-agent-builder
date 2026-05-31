@@ -18,6 +18,7 @@ from src.automations.models import (
     AutomationRun,
     AutomationRunStatus,
     AutomationRunNodeResult,
+    AutomationSkill,
     AutomationTrigger,
     AutomationTriggerType,
 )
@@ -307,6 +308,7 @@ class AutomationRunner:
         user_email: str,
         started_at: datetime,
     ) -> AutomationRunNodeResult:
+        installed_skill_id = str(node.config.get("installed_skill_id", "")).strip()
         skill_id = str(node.config.get("skill_id", "")).strip()
         action_name = str(node.config.get("action", "")).strip()
         raw_arguments = node.config.get("arguments", {})
@@ -321,39 +323,55 @@ class AutomationRunner:
                 started_at=started_at,
                 completed_at=datetime.now(timezone.utc),
             )
-        if not skill_id or not action_name:
+        if not (installed_skill_id or skill_id) or not action_name:
             return AutomationRunNodeResult(
                 run_id=run.run_id,
                 automation_id=automation.automation_id,
                 node_id=node.node_id,
                 status=AutomationNodeRunStatus.FAILED,
                 input=node.config,
-                error="skill_action requires skill_id and action",
+                error="skill_action requires installed_skill_id or skill_id and action",
                 started_at=started_at,
                 completed_at=datetime.now(timezone.utc),
             )
 
-        enabled = self.automation_repo.find_skill(automation.automation_id, skill_id)
+        try:
+            enabled = self._resolve_automation_skill(
+                automation.automation_id,
+                installed_skill_id=installed_skill_id,
+                skill_id=skill_id,
+            )
+        except ValueError as exc:
+            return AutomationRunNodeResult(
+                run_id=run.run_id,
+                automation_id=automation.automation_id,
+                node_id=node.node_id,
+                status=AutomationNodeRunStatus.FAILED,
+                input={"installed_skill_id": installed_skill_id, "skill_id": skill_id, "action": action_name},
+                error=str(exc),
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+            )
         if not enabled or not enabled.enabled:
             return AutomationRunNodeResult(
                 run_id=run.run_id,
                 automation_id=automation.automation_id,
                 node_id=node.node_id,
                 status=AutomationNodeRunStatus.FAILED,
-                input={"skill_id": skill_id, "action": action_name},
+                input={"installed_skill_id": installed_skill_id, "skill_id": skill_id, "action": action_name},
                 error="Skill is not enabled for this automation",
                 started_at=started_at,
                 completed_at=datetime.now(timezone.utc),
             )
 
-        loaded = self.skill_service.registry.get(skill_id)
+        loaded = self.skill_service.registry.get(enabled.skill_id)
         if not loaded:
             return AutomationRunNodeResult(
                 run_id=run.run_id,
                 automation_id=automation.automation_id,
                 node_id=node.node_id,
                 status=AutomationNodeRunStatus.FAILED,
-                input={"skill_id": skill_id, "action": action_name},
+                input={"installed_skill_id": installed_skill_id, "skill_id": skill_id, "action": action_name},
                 error="Skill is not available",
                 started_at=started_at,
                 completed_at=datetime.now(timezone.utc),
@@ -365,7 +383,7 @@ class AutomationRunner:
                 automation_id=automation.automation_id,
                 node_id=node.node_id,
                 status=AutomationNodeRunStatus.FAILED,
-                input={"skill_id": skill_id, "action": action_name},
+                input={"installed_skill_id": installed_skill_id, "skill_id": skill_id, "action": action_name},
                 error="Missing connected connectors: " + ", ".join(missing),
                 started_at=started_at,
                 completed_at=datetime.now(timezone.utc),
@@ -374,7 +392,7 @@ class AutomationRunner:
         arguments = self._render_smart_values(deepcopy(raw_arguments), run.context)
         try:
             result = await self.skill_service.registry.execute_action(
-                skill_id=skill_id,
+                skill_id=enabled.skill_id,
                 action_name=action_name,
                 arguments=arguments,
                 config=self.automation_repo.get_skill_runtime_config(enabled),
@@ -396,7 +414,12 @@ class AutomationRunner:
                 automation_id=automation.automation_id,
                 node_id=node.node_id,
                 status=AutomationNodeRunStatus.FAILED,
-                input={"skill_id": skill_id, "action": action_name, "arguments": arguments},
+                input={
+                    "installed_skill_id": enabled.installed_skill_id or enabled.skill_id,
+                    "skill_id": enabled.skill_id,
+                    "action": action_name,
+                    "arguments": arguments,
+                },
                 error=str(exc),
                 started_at=started_at,
                 completed_at=datetime.now(timezone.utc),
@@ -407,9 +430,15 @@ class AutomationRunner:
             automation_id=automation.automation_id,
             node_id=node.node_id,
             status=AutomationNodeRunStatus.SUCCEEDED,
-            input={"skill_id": skill_id, "action": action_name, "arguments": arguments},
+            input={
+                "installed_skill_id": enabled.installed_skill_id or enabled.skill_id,
+                "skill_id": enabled.skill_id,
+                "action": action_name,
+                "arguments": arguments,
+            },
             output={
-                "skill_id": skill_id,
+                "installed_skill_id": enabled.installed_skill_id or enabled.skill_id,
+                "skill_id": enabled.skill_id,
                 "action": action_name,
                 "arguments": arguments,
                 "result": result,
@@ -417,6 +446,38 @@ class AutomationRunner:
             started_at=started_at,
             completed_at=datetime.now(timezone.utc),
         )
+
+    def _resolve_automation_skill(
+        self,
+        automation_id: str,
+        *,
+        installed_skill_id: str,
+        skill_id: str,
+    ) -> AutomationSkill | None:
+        if installed_skill_id:
+            installed = self.automation_repo.find_skill(automation_id, installed_skill_id)
+            if installed:
+                return installed
+
+        if not skill_id:
+            return None
+
+        installed = self.automation_repo.find_skill(automation_id, skill_id)
+        if installed:
+            return installed
+
+        matches = [
+            item
+            for item in self.automation_repo.list_skills(automation_id)
+            if item.skill_id == skill_id
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ValueError(
+                f"Skill '{skill_id}' has multiple installed instances. Use installed_skill_id."
+            )
+        return None
 
     def _select_trigger(
         self, triggers: list[AutomationTrigger], trigger_id: str | None

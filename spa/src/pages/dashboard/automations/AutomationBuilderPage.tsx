@@ -25,6 +25,11 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import {
   Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
   ErrorState,
   Input,
   Label,
@@ -48,6 +53,7 @@ import type {
   AutomationNodePosition,
   AutomationNodeType,
   AutomationRunDetailResponse,
+  AutomationSkillResponse,
   CreateAutomationEdgeRequest,
   CreateAutomationNodeRequest,
   CreateAutomationTriggerRequest,
@@ -67,7 +73,7 @@ type AutomationFlowNode = Node<{
 type AutomationFlowEdge = Edge<{ automationEdge?: AutomationEdge }>;
 
 const DEFAULT_PROMPT = "Use the workflow context to complete this step.\n\nInput: {{ $.input }}";
-const DEFAULT_SKILL_ACTION = "agent_invocation:invoke";
+const DEFAULT_SKILL_ACTION = "agent_invocation::invoke";
 const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
 const RUN_POLL_INTERVAL_MS = 1500;
 
@@ -119,6 +125,7 @@ function getSkillActionConfig(config: Record<string, unknown>): SkillActionConfi
   if (isSkillActionConfig(config)) {
     return {
       action_type: "skill_action",
+      installed_skill_id: typeof config.installed_skill_id === "string" ? config.installed_skill_id : null,
       skill_id: typeof config.skill_id === "string" ? config.skill_id : "",
       action: typeof config.action === "string" ? config.action : "",
       arguments:
@@ -148,7 +155,135 @@ function getSkillActionConfig(config: Record<string, unknown>): SkillActionConfi
 }
 
 function skillActionKey(config: SkillActionConfig): string {
-  return `${config.skill_id}:${config.action}`;
+  return `${config.installed_skill_id || config.skill_id || ""}::${config.action}`;
+}
+
+function catalogActionKey(item: AutomationActionCatalogItem): string {
+  return `${item.installed_skill_id || item.skill_id}::${item.action}`;
+}
+
+function formValuesToConfig(values: Record<string, FormValue>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => {
+      if (typeof value === "string") return [key, value];
+      return [key, value ?? ""];
+    })
+  );
+}
+
+function findCatalogActionForInstalledSkill(
+  catalog: AutomationActionCatalogItem[],
+  installed: AutomationSkillResponse,
+  actionName: string,
+): AutomationActionCatalogItem | null {
+  return catalog.find(
+    (item) =>
+      item.installed_skill_id === installed.installed_skill_id &&
+      item.skill_id === installed.skill_id &&
+      item.action === actionName
+  ) ?? null;
+}
+
+function buildStepSmartValueExamples(
+  step: AutomationNode,
+  actionCatalog: AutomationActionCatalogItem[],
+): SmartValueExample[] {
+  const basePath = `$.nodes.${step.node_id}`;
+  const examples: SmartValueExample[] = [
+    {
+      label: `${step.name} status`,
+      value: `{{ ${basePath}.status }}`,
+      description: "Execution status for this step.",
+    },
+    {
+      label: `${step.name} output`,
+      value: `{{ ${basePath}.output }}`,
+      description: "Complete output object from this step.",
+    },
+  ];
+
+  if (step.type === "condition") {
+    examples.push({
+      label: `${step.name} result`,
+      value: `{{ ${basePath}.output.result }}`,
+      description: "Boolean result from this condition step.",
+    });
+    return examples;
+  }
+
+  if (step.type !== "action") {
+    return examples;
+  }
+
+  if (isInvokeAgentConfig(step.config)) {
+    examples.push({
+      label: `${step.name} response`,
+      value: `{{ ${basePath}.output.response_text }}`,
+      description: "Agent response text from this invoke-agent step.",
+    });
+    return examples;
+  }
+
+  const skillConfig = getSkillActionConfig(step.config);
+  const catalogItem = actionCatalog.find(
+    (item) => catalogActionKey(item) === skillActionKey(skillConfig)
+  );
+  const actionLabel = catalogItem?.label ?? `${skillConfig.skill_id || "Skill"}: ${skillConfig.action}`;
+
+  examples.push(
+    {
+      label: `${step.name} result`,
+      value: `{{ ${basePath}.output.result }}`,
+      description: `Complete result returned by ${actionLabel}.`,
+    },
+    {
+      label: `${step.name} action arguments`,
+      value: `{{ ${basePath}.output.arguments }}`,
+      description: "Rendered arguments used by this skill action.",
+    },
+  );
+
+  const knownResultFields = smartValueResultFieldsForSkillAction(skillConfig, catalogItem);
+  knownResultFields.forEach((field) => {
+    examples.push({
+      label: `${step.name} ${field.label}`,
+      value: `{{ ${basePath}.output.result.${field.path} }}`,
+      description: field.description,
+    });
+  });
+
+  return examples;
+}
+
+function smartValueResultFieldsForSkillAction(
+  config: SkillActionConfig,
+  catalogItem?: AutomationActionCatalogItem | null,
+): Array<{ label: string; path: string; description: string }> {
+  const skillId = catalogItem?.skill_id ?? config.skill_id;
+  if (skillId === "agent_invocation" && config.action === "invoke") {
+    return [
+      {
+        label: "response",
+        path: "response_text",
+        description: "Response text returned by the invoked agent.",
+      },
+    ];
+  }
+  if (skillId === "send_email" && config.action === "send") {
+    return [
+      {
+        label: "sent",
+        path: "sent",
+        description: "Whether at least one configured recipient was sent successfully.",
+      },
+      {
+        label: "recipients",
+        path: "recipients",
+        description: "Per-recipient delivery status for the email.",
+      },
+    ];
+  }
+  return [];
 }
 
 function hydrateActionForm(schema: FormSchema, agents: AgentResponse[]): FormSchema {
@@ -733,6 +868,10 @@ function AutomationBuilderContent() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [smartValuesOpen, setSmartValuesOpen] = useState(false);
   const [actionCatalog, setActionCatalog] = useState<AutomationActionCatalogItem[]>([]);
+  const [configuringAction, setConfiguringAction] = useState<AutomationActionCatalogItem | null>(null);
+  const [configuringActionNodeId, setConfiguringActionNodeId] = useState<string | null>(null);
+  const [configuringActionError, setConfiguringActionError] = useState<string | null>(null);
+  const [configuringActionSubmitting, setConfiguringActionSubmitting] = useState(false);
   const activeRunPollId = useRef(0);
 
   const loadGraph = useCallback(async () => {
@@ -960,6 +1099,72 @@ function AutomationBuilderContent() {
     await saveGraph(nextGraph);
   };
 
+  const openActionConfiguration = useCallback((nodeId: string, action: AutomationActionCatalogItem) => {
+    if (!action.install_schema) {
+      setMutationError(action.disabled_reason ?? "This action is not available.");
+      return;
+    }
+    setConfiguringAction(action);
+    setConfiguringActionNodeId(nodeId);
+    setConfiguringActionError(null);
+  }, []);
+
+  const closeActionConfiguration = useCallback(() => {
+    if (configuringActionSubmitting) return;
+    setConfiguringAction(null);
+    setConfiguringActionNodeId(null);
+    setConfiguringActionError(null);
+  }, [configuringActionSubmitting]);
+
+  const handleActionConfigurationSubmit = useCallback(async (data: Record<string, FormValue>) => {
+    if (!automationId || !configuringAction || !configuringActionNodeId) return;
+    setConfiguringActionSubmitting(true);
+    setConfiguringActionError(null);
+    try {
+      const config = formValuesToConfig(data);
+      const installed = await automationApiService.enableSkill(
+        automationId,
+        configuringAction.skill_id,
+        { config },
+      );
+      const catalogData = await automationApiService.getActionCatalog(automationId);
+      setActionCatalog(catalogData.actions);
+      const nextAction =
+        findCatalogActionForInstalledSkill(catalogData.actions, installed, configuringAction.action) ??
+        {
+          ...configuringAction,
+          installed_skill_id: installed.installed_skill_id,
+          available: true,
+          configured: true,
+          enabled: installed.enabled,
+          disabled_reason: null,
+        };
+      updateGraph((current) => patchNode(current, configuringActionNodeId, {
+        name: nextAction.label,
+        config: {
+          action_type: "skill_action",
+          installed_skill_id: installed.installed_skill_id,
+          skill_id: installed.skill_id,
+          action: configuringAction.action,
+          arguments: {},
+        },
+      }));
+      setConfiguringAction(null);
+      setConfiguringActionNodeId(null);
+      setConfiguringActionError(null);
+    } catch (err) {
+      console.error("Error configuring automation action:", err);
+      setConfiguringActionError(err instanceof Error ? err.message : "Failed to configure action.");
+    } finally {
+      setConfiguringActionSubmitting(false);
+    }
+  }, [
+    automationId,
+    configuringAction,
+    configuringActionNodeId,
+    updateGraph,
+  ]);
+
   const updateAutomationStatus = async () => {
     if (!automationId) return;
     const nextStatus = automation.status === "active" ? "disabled" : "active";
@@ -1179,11 +1384,37 @@ function AutomationBuilderContent() {
                   setSelectedNodeId(null);
                   updateGraph((current) => deleteNode(current, nodeId));
                 }}
+                onConfigureAction={openActionConfiguration}
               />
             </div>
           )}
         </div>
       </div>
+
+      <Dialog open={!!configuringAction} onOpenChange={(open) => {
+        if (!open) closeActionConfiguration();
+      }}>
+        <DialogContent style={{ maxWidth: "40rem" }}>
+          <DialogHeader>
+            <DialogTitle>Configure Action</DialogTitle>
+            <DialogDescription>
+              Set the configuration required before this action can be used in the workflow.
+            </DialogDescription>
+          </DialogHeader>
+          {configuringActionError && (
+            <div className="automation-builder__error">{configuringActionError}</div>
+          )}
+          {configuringAction?.install_schema && (
+            <SchemaForm
+              schema={configuringAction.install_schema}
+              onSubmit={handleActionConfigurationSubmit}
+              onCancel={closeActionConfiguration}
+              submitLabel="Configure"
+              isLoading={configuringActionSubmitting}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
@@ -1210,6 +1441,7 @@ interface AutomationInspectorProps {
   ) => Promise<void>;
   onTypeChange: (nodeId: string, type: "action" | "condition") => void;
   onDelete: (nodeId: string) => void;
+  onConfigureAction: (nodeId: string, action: AutomationActionCatalogItem) => void;
 }
 
 function AutomationRunPanel({
@@ -1362,14 +1594,21 @@ function AutomationInspector({
   onSaveChange,
   onTypeChange,
   onDelete,
+  onConfigureAction,
 }: AutomationInspectorProps) {
   const [copiedSmartValue, setCopiedSmartValue] = useState<string | null>(null);
+  const currentNodeId = node?.node_id ?? "";
   const smartValueExamples = useMemo(() => {
-    const examples = [
+    const examples: SmartValueExample[] = [
       {
         label: "Manual input",
         value: "{{ $.input.input }}",
         description: "The text supplied when the automation is tested or manually run.",
+      },
+      {
+        label: "Manual input object",
+        value: "{{ $.input }}",
+        description: "Complete input object supplied when the automation starts.",
       },
       {
         label: "Trigger type",
@@ -1378,21 +1617,14 @@ function AutomationInspector({
       },
     ];
 
-    steps.forEach((step) => {
-      examples.push({
-        label: `${step.name} response`,
-        value: `{{ $.nodes.${step.node_id}.output.response_text }}`,
-        description: "Use the agent response text from this step.",
+    steps
+      .filter((step) => step.node_id !== currentNodeId)
+      .forEach((step) => {
+        examples.push(...buildStepSmartValueExamples(step, actionCatalog));
       });
-      examples.push({
-        label: `${step.name} status`,
-        value: `{{ $.nodes.${step.node_id}.status }}`,
-        description: "Use the execution status from this step.",
-      });
-    });
 
     return examples;
-  }, [steps]);
+  }, [actionCatalog, currentNodeId, steps]);
 
   const copySmartValue = async (value: string) => {
     try {
@@ -1459,8 +1691,8 @@ function AutomationInspector({
 
   const skillConfig = node.type === "action" ? getSkillActionConfig(node.config) : null;
   const selectedAction = skillConfig
-    ? actionCatalog.find((item) => `${item.skill_id}:${item.action}` === skillActionKey(skillConfig)) ??
-      actionCatalog.find((item) => `${item.skill_id}:${item.action}` === DEFAULT_SKILL_ACTION) ??
+    ? actionCatalog.find((item) => catalogActionKey(item) === skillActionKey(skillConfig)) ??
+      actionCatalog.find((item) => catalogActionKey(item) === DEFAULT_SKILL_ACTION) ??
       null
     : null;
   const actionForm = selectedAction?.action_form
@@ -1533,13 +1765,18 @@ function AutomationInspector({
             <Select
               value={skillConfig ? skillActionKey(skillConfig) : DEFAULT_SKILL_ACTION}
               onValueChange={(value) => {
-                const [skillId, action] = value.split(":");
-                const catalogItem = actionCatalog.find((item) => item.skill_id === skillId && item.action === action);
+                const catalogItem = actionCatalog.find((item) => catalogActionKey(item) === value);
+                if (!catalogItem) return;
+                if (!catalogItem.available) {
+                  onConfigureAction(node.node_id, catalogItem);
+                  return;
+                }
                 onChange(node.node_id, {
                   config: {
                     action_type: "skill_action",
-                    skill_id: skillId,
-                    action,
+                    installed_skill_id: catalogItem.installed_skill_id,
+                    skill_id: catalogItem.skill_id,
+                    action: catalogItem.action,
                     arguments: {},
                   },
                   name: catalogItem?.label ?? node.name,
@@ -1552,8 +1789,12 @@ function AutomationInspector({
               </SelectTrigger>
               <SelectContent>
                 {actionCatalog.map((item) => (
-                  <SelectItem key={`${item.skill_id}:${item.action}`} value={`${item.skill_id}:${item.action}`}>
-                    {item.label}
+                  <SelectItem
+                    key={catalogActionKey(item)}
+                    value={catalogActionKey(item)}
+                    disabled={!item.available && !item.install_schema}
+                  >
+                    {item.disabled_reason ? `${item.label} (${item.disabled_reason})` : item.label}
                   </SelectItem>
                 ))}
               </SelectContent>

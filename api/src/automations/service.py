@@ -37,6 +37,8 @@ from src.automations.models import (
 from src.automations.repository import AutomationRepository
 from src.connectors.service import ConnectorService, get_connector_service
 from src.crypto import encrypt
+from src.form_options import FormOptionsContext, hydrate_form_options
+from src.skills.identity import installed_skill_id_for
 from src.skills.registry import SkillRegistry, get_skill_registry
 
 
@@ -479,15 +481,25 @@ class AutomationService:
             try:
                 skill_config = SkillActionConfig(**config)
             except Exception as exc:
-                raise AutomationValidationError("skill_action requires skill_id, action, and arguments") from exc
-            enabled = self._find_or_enable_default_skill(automation_id, skill_config.skill_id, user_email)
+                raise AutomationValidationError(
+                    "skill_action requires installed_skill_id or skill_id, action, and arguments"
+                ) from exc
+            enabled = self._resolve_automation_skill(
+                automation_id,
+                installed_skill_id=skill_config.installed_skill_id,
+                skill_id=skill_config.skill_id,
+                user_email=user_email,
+                allow_auto_enable=True,
+            )
             if not enabled or not enabled.enabled:
                 raise AutomationValidationError(
                     "skill_action references a skill that is not enabled for this automation"
                 )
-            loaded = self.skill_registry.get(skill_config.skill_id)
+            loaded = self.skill_registry.get(enabled.skill_id)
             if not loaded:
                 raise AutomationValidationError("skill_action references an unavailable skill")
+            if not loaded.manifest.automation.enabled:
+                raise AutomationValidationError("skill_action references a skill that is not available for automations")
             missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
             if missing:
                 raise AutomationValidationError(
@@ -533,17 +545,19 @@ class AutomationService:
         loaded = self.skill_registry.get(skill_id)
         if not loaded:
             raise AutomationValidationError(f"Unknown skill: {skill_id}")
+        if not loaded.manifest.automation.enabled:
+            raise AutomationValidationError(f"{loaded.manifest.name} is not available for automations")
         missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
         if missing:
             raise AutomationValidationError(
                 f"{loaded.manifest.name} requires connected connectors: {', '.join(missing)}"
             )
-        plain_config, encrypted_secrets, secret_fields = self._split_skill_config(
-            skill_id,
-            self.skill_registry.validate_config(skill_id, body.config),
-        )
+        normalized_config = self.skill_registry.validate_config(skill_id, body.config)
+        installed_skill_id = installed_skill_id_for(loaded.manifest, normalized_config)
+        plain_config, encrypted_secrets, secret_fields = self._split_skill_config(skill_id, normalized_config)
         skill = AutomationSkill(
             automation_id=automation_id,
+            installed_skill_id=installed_skill_id,
             skill_id=skill_id,
             namespace=loaded.manifest.namespace,
             skill_name=loaded.manifest.name,
@@ -575,10 +589,11 @@ class AutomationService:
         if body.config is not None:
             merged = self.repo.get_skill_runtime_config(existing)
             merged.update(body.config)
-            plain_config, encrypted_secrets, secret_fields = self._split_skill_config(
-                skill_id,
-                self.skill_registry.validate_config(skill_id, merged),
-            )
+            normalized = self.skill_registry.validate_config(existing.skill_id, merged)
+            next_installed_skill_id = installed_skill_id_for(loaded.manifest, normalized)
+            if next_installed_skill_id != (existing.installed_skill_id or existing.skill_id):
+                raise AutomationValidationError("Repeatable skill identity fields cannot be changed")
+            plain_config, encrypted_secrets, secret_fields = self._split_skill_config(existing.skill_id, normalized)
             existing.config = plain_config
             existing.encrypted_secrets = encrypted_secrets
             existing.secret_fields = secret_fields
@@ -597,18 +612,30 @@ class AutomationService:
         self.get_automation(automation_id, user_email)
         self._enable_default_available_skills(automation_id, user_email)
         actions: list[AutomationActionCatalogItemResponse] = []
+        installed_by_base_id: dict[str, list[AutomationSkill]] = defaultdict(list)
         for enabled in self.repo.list_skills(automation_id):
-            if not enabled.enabled:
-                continue
+            installed_by_base_id[enabled.skill_id].append(enabled)
             loaded = self.skill_registry.get(enabled.skill_id)
             if not loaded:
                 continue
-            if self.connector_service.missing_required_connectors(loaded.manifest, user_email):
-                continue
+            connector_statuses = [
+                AutomationSkillConnectorResponse(**status.model_dump())
+                for status in self.connector_service.statuses_for_manifest(loaded.manifest, user_email)
+            ]
+            missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
+            disabled_reason = None
+            available = enabled.enabled and not missing and loaded.manifest.automation.enabled
+            if not loaded.manifest.automation.enabled:
+                disabled_reason = "Skill is not available for automations"
+            elif not enabled.enabled:
+                disabled_reason = "Skill is disabled for this automation"
+            elif missing:
+                disabled_reason = "Missing connected connectors: " + ", ".join(missing)
             for action in loaded.manifest.actions:
                 actions.append(
                     AutomationActionCatalogItemResponse(
                         skill_id=enabled.skill_id,
+                        installed_skill_id=enabled.installed_skill_id or enabled.skill_id,
                         skill_name=enabled.skill_name,
                         action=action.name,
                         label=f"{enabled.skill_name}: {action.name}",
@@ -619,6 +646,59 @@ class AutomationService:
                             if action.action_form
                             else None
                         ),
+                        available=available,
+                        configured=True,
+                        enabled=enabled.enabled,
+                        disabled_reason=disabled_reason,
+                        connectors=connector_statuses,
+                    )
+                )
+        for loaded in self.skill_registry.list():
+            if loaded.manifest.id in installed_by_base_id:
+                continue
+            if not loaded.manifest.automation.enabled:
+                continue
+            connector_statuses = [
+                AutomationSkillConnectorResponse(**status.model_dump())
+                for status in self.connector_service.statuses_for_manifest(loaded.manifest, user_email)
+            ]
+            missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
+            if missing:
+                disabled_reason = "Missing connected connectors: " + ", ".join(missing)
+            elif loaded.manifest.form:
+                disabled_reason = "Skill requires configuration before use"
+            else:
+                continue
+            install_form = None
+            if loaded.manifest.form:
+                form = hydrate_form_options(
+                    self.skill_registry.install_form(
+                        loaded.manifest.id,
+                        f"/automations/{automation_id}/skills?skill_id={loaded.manifest.id}",
+                    ),
+                    FormOptionsContext(user_email=user_email),
+                )
+                install_form = form.model_dump(mode="json", exclude_none=True)
+            for action in loaded.manifest.actions:
+                actions.append(
+                    AutomationActionCatalogItemResponse(
+                        skill_id=loaded.manifest.id,
+                        skill_name=loaded.manifest.name,
+                        action=action.name,
+                        label=f"{loaded.manifest.name}: {action.name}",
+                        description=action.description,
+                        input_schema=action.input_schema,
+                        action_form=(
+                            action.action_form.model_dump(mode="json", exclude_none=True)
+                            if action.action_form
+                            else None
+                        ),
+                        available=False,
+                        configured=False,
+                        enabled=False,
+                        disabled_reason=disabled_reason,
+                        install_schema=install_form,
+                        connectors=connector_statuses,
                     )
                 )
         return AutomationActionCatalogResponse(actions=actions)
@@ -632,6 +712,7 @@ class AutomationService:
                 for status in self.connector_service.statuses_for_manifest(loaded.manifest, user_email)
             ]
         return AutomationSkillResponse(
+            installed_skill_id=item.installed_skill_id or item.skill_id,
             skill_id=item.skill_id,
             namespace=item.namespace,
             name=item.skill_name,
@@ -659,6 +740,7 @@ class AutomationService:
         self.repo.save_skill(
             AutomationSkill(
                 automation_id=automation_id,
+                installed_skill_id=skill_id,
                 skill_id=skill_id,
                 namespace=loaded.manifest.namespace,
                 skill_name=loaded.manifest.name,
@@ -686,6 +768,8 @@ class AutomationService:
         loaded = self.skill_registry.get(skill_id)
         if not loaded:
             return None
+        if not loaded.manifest.automation.enabled:
+            return None
         if loaded.manifest.form:
             return None
         if self.connector_service.missing_required_connectors(loaded.manifest, user_email):
@@ -694,6 +778,7 @@ class AutomationService:
         return self.repo.save_skill(
             AutomationSkill(
                 automation_id=automation_id,
+                installed_skill_id=skill_id,
                 skill_id=skill_id,
                 namespace=loaded.manifest.namespace,
                 skill_name=loaded.manifest.name,
@@ -705,6 +790,47 @@ class AutomationService:
                 enabled_by=user_email,
             )
         )
+
+    def _resolve_automation_skill(
+        self,
+        automation_id: str,
+        *,
+        installed_skill_id: str | None,
+        skill_id: str | None,
+        user_email: str,
+        allow_auto_enable: bool,
+    ) -> AutomationSkill | None:
+        requested_installed_id = str(installed_skill_id or "").strip()
+        requested_skill_id = str(skill_id or "").strip()
+        if requested_installed_id:
+            installed = self.repo.find_skill(automation_id, requested_installed_id)
+            if installed:
+                return installed
+
+        if not requested_skill_id:
+            return None
+
+        if allow_auto_enable:
+            auto_enabled = self._find_or_enable_default_skill(
+                automation_id,
+                requested_skill_id,
+                user_email,
+            )
+            if auto_enabled:
+                return auto_enabled
+
+        matches = [
+            item
+            for item in self.repo.list_skills(automation_id)
+            if item.skill_id == requested_skill_id
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise AutomationValidationError(
+                f"Skill '{requested_skill_id}' has multiple installed instances. Use installed_skill_id."
+            )
+        return None
 
     def _reachable_nodes(
         self, entry_node_ids: set[str], outgoing: dict[str, list[AutomationEdge]]

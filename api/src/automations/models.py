@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Any, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.utils.dynamodb import convert_decimals
 
@@ -83,7 +83,8 @@ class InvokeAgentActionConfig(BaseModel):
 
 class SkillActionConfig(BaseModel):
     action_type: AutomationActionType = AutomationActionType.SKILL_ACTION
-    skill_id: str
+    skill_id: Optional[str] = None
+    installed_skill_id: Optional[str] = None
     action: str
     arguments: dict[str, Any] = Field(default_factory=dict)
 
@@ -93,6 +94,12 @@ class SkillActionConfig(BaseModel):
         if value != AutomationActionType.SKILL_ACTION:
             raise ValueError("SkillActionConfig requires action_type='skill_action'")
         return value
+
+    @model_validator(mode="after")
+    def validate_skill_reference(self) -> "SkillActionConfig":
+        if not self.installed_skill_id and not self.skill_id:
+            raise ValueError("SkillActionConfig requires installed_skill_id or skill_id")
+        return self
 
 
 class ConditionNodeConfig(BaseModel):
@@ -196,6 +203,7 @@ class AutomationSkillConnectorResponse(BaseModel):
 
 
 class AutomationSkillResponse(BaseModel):
+    installed_skill_id: str
     skill_id: str
     namespace: str
     name: str
@@ -210,12 +218,19 @@ class AutomationSkillResponse(BaseModel):
 class AutomationActionCatalogItemResponse(BaseModel):
     action_type: AutomationActionType = AutomationActionType.SKILL_ACTION
     skill_id: str
+    installed_skill_id: Optional[str] = None
     skill_name: str
     action: str
     label: str
     description: str
     input_schema: dict[str, Any] = Field(default_factory=dict)
     action_form: Optional[dict[str, Any]] = None
+    available: bool = True
+    configured: bool = True
+    enabled: bool = True
+    disabled_reason: Optional[str] = None
+    install_schema: Optional[dict[str, Any]] = None
+    connectors: list[AutomationSkillConnectorResponse] = Field(default_factory=list)
 
 
 class AutomationActionCatalogResponse(BaseModel):
@@ -520,6 +535,7 @@ class AutomationTrigger(BaseModel):
 
 class AutomationSkill(BaseModel):
     automation_id: str
+    installed_skill_id: str = ""
     skill_id: str
     namespace: str
     skill_name: str
@@ -538,7 +554,7 @@ class AutomationSkill(BaseModel):
 
     @property
     def sk(self) -> str:
-        return f"Skill#{self.skill_id}"
+        return f"Skill#{self.installed_skill_id or self.skill_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
         return convert_floats_to_decimals({
@@ -546,6 +562,7 @@ class AutomationSkill(BaseModel):
             "sk": self.sk,
             "entity_type": "AutomationSkill",
             "automation_id": self.automation_id,
+            "installed_skill_id": self.installed_skill_id or self.skill_id,
             "skill_id": self.skill_id,
             "namespace": self.namespace,
             "skill_name": self.skill_name,
@@ -564,6 +581,7 @@ class AutomationSkill(BaseModel):
         item = convert_decimals(item)
         return cls(
             automation_id=item["automation_id"],
+            installed_skill_id=item.get("installed_skill_id", item["skill_id"]),
             skill_id=item["skill_id"],
             namespace=item.get("namespace", ""),
             skill_name=item.get("skill_name", item["skill_id"]),

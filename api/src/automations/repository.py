@@ -254,16 +254,16 @@ class AutomationRepository:
         return results
 
     def save_skill(self, skill: AutomationSkill) -> AutomationSkill:
-        existing = self.find_skill(skill.automation_id, skill.skill_id)
+        existing = self.find_skill(skill.automation_id, skill.installed_skill_id or skill.skill_id)
         if existing:
             skill.enabled_at = existing.enabled_at
             skill.updated_at = datetime.now(timezone.utc)
         self.table.put_item(Item=skill.to_dynamo_item())
         return skill
 
-    def find_skill(self, automation_id: str, skill_id: str) -> Optional[AutomationSkill]:
+    def find_skill(self, automation_id: str, installed_skill_id: str) -> Optional[AutomationSkill]:
         response = self.table.get_item(
-            Key={"pk": f"Automation#{automation_id}", "sk": f"Skill#{skill_id}"}
+            Key={"pk": f"Automation#{automation_id}", "sk": f"Skill#{installed_skill_id}"}
         )
         item = response.get("Item")
         return AutomationSkill.from_dynamo_item(item) if item else None
@@ -281,14 +281,14 @@ class AutomationRepository:
         skills.sort(key=lambda item: item.enabled_at)
         return skills
 
-    def delete_skill(self, automation_id: str, skill_id: str) -> bool:
+    def delete_skill(self, automation_id: str, installed_skill_id: str) -> bool:
         try:
             self.table.delete_item(
-                Key={"pk": f"Automation#{automation_id}", "sk": f"Skill#{skill_id}"}
+                Key={"pk": f"Automation#{automation_id}", "sk": f"Skill#{installed_skill_id}"}
             )
             return True
         except Exception:
-            log.exception("Failed deleting automation skill %s/%s", automation_id, skill_id)
+            log.exception("Failed deleting automation skill %s/%s", automation_id, installed_skill_id)
             return False
 
     def get_skill_runtime_config(self, skill: AutomationSkill) -> dict:

@@ -229,3 +229,47 @@ def test_validate_skill_action_accepts_enabled_skill_with_connector(dynamodb_tab
     )
 
     make_service().validate_graph([start, action, final], edges, [trigger], TEST_USER_EMAIL)
+
+
+def test_validate_skill_action_requires_installed_id_when_repeatable_is_ambiguous(dynamodb_table):
+    service = make_service()
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    service.enable_skill(
+        automation.automation_id,
+        "send_email",
+        EnableAutomationSkillRequest(config={"to": "first@example.com"}),
+        TEST_USER_EMAIL,
+    )
+    service.enable_skill(
+        automation.automation_id,
+        "send_email",
+        EnableAutomationSkillRequest(config={"to": "second@example.com"}),
+        TEST_USER_EMAIL,
+    )
+    start = AutomationNode(automation_id=automation.automation_id, node_id="start", type="start", name="Start")
+    action = AutomationNode(
+        automation_id=automation.automation_id,
+        node_id="action",
+        type="action",
+        name="Send Email",
+        config={
+            "action_type": "skill_action",
+            "skill_id": "send_email",
+            "action": "send",
+            "arguments": {"subject": "Hello", "body": "<p>Hello</p>"},
+        },
+    )
+    final = AutomationNode(automation_id=automation.automation_id, node_id="final", type="final", name="Done")
+    edges = [
+        AutomationEdge(automation_id=automation.automation_id, source_node_id="start", target_node_id="action"),
+        AutomationEdge(automation_id=automation.automation_id, source_node_id="action", target_node_id="final"),
+    ]
+    trigger = AutomationTrigger(
+        automation_id=automation.automation_id,
+        type="manual",
+        name="Manual",
+        entry_node_id="start",
+    )
+
+    with pytest.raises(AutomationValidationError, match="multiple installed instances"):
+        service.validate_graph([start, action, final], edges, [trigger], TEST_USER_EMAIL)

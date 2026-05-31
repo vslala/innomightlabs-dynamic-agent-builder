@@ -221,6 +221,7 @@ async def test_runner_executes_skill_action_and_renders_arguments(dynamodb_table
         name="Search",
         config={
             "action_type": "skill_action",
+            "installed_skill_id": "wordpress_search:configured",
             "skill_id": "wordpress_search",
             "action": "search",
             "arguments": {"query": "{{ $.input.query }}", "per_page": "{{ $.input.limit }}"},
@@ -249,6 +250,7 @@ async def test_runner_executes_skill_action_and_renders_arguments(dynamodb_table
     repo.save_skill(
         AutomationSkill(
             automation_id="auto-skill",
+            installed_skill_id="wordpress_search:configured",
             skill_id="wordpress_search",
             namespace="integrations.wordpress",
             skill_name="WordPress Search",
@@ -278,3 +280,4 @@ async def test_runner_executes_skill_action_and_renders_arguments(dynamodb_table
 
     assert run.status == "succeeded"
     assert run.context["nodes"]["search"]["output"]["result"] == {"ok": True}
+    assert run.context["nodes"]["search"]["output"]["installed_skill_id"] == "wordpress_search:configured"

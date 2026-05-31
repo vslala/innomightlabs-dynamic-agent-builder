@@ -170,3 +170,95 @@ def test_automation_skills_and_action_catalog(test_client, auth_headers, dynamod
     catalog = catalog_response.json()
     gmail_search = next(item for item in catalog["actions"] if item["skill_id"] == "google_mail" and item["action"] == "search")
     assert gmail_search["action_form"]["form_name"] == "Gmail Search"
+
+
+def test_action_catalog_shows_config_required_skills_disabled(test_client, auth_headers, dynamodb_table):
+    create_response = test_client.post(
+        "/automations",
+        json=AUTOMATION_CREATE_REQUEST,
+        headers=auth_headers,
+    )
+    automation_id = create_response.json()["automation"]["automation_id"]
+
+    catalog_response = test_client.get(
+        f"/automations/{automation_id}/action-catalog",
+        headers=auth_headers,
+    )
+
+    assert catalog_response.status_code == 200
+    catalog = catalog_response.json()
+    send_email = next(
+        item
+        for item in catalog["actions"]
+        if item["skill_id"] == "send_email" and item["action"] == "send"
+    )
+    assert send_email["available"] is False
+    assert send_email["configured"] is False
+    assert send_email["enabled"] is False
+    assert send_email["disabled_reason"] == "Skill requires configuration before use"
+    assert send_email["install_schema"]["form_inputs"][0]["name"] == "to"
+
+
+def test_repeatable_automation_skill_instances_appear_as_actions(
+    test_client,
+    auth_headers,
+    dynamodb_table,
+):
+    create_response = test_client.post(
+        "/automations",
+        json=AUTOMATION_CREATE_REQUEST,
+        headers=auth_headers,
+    )
+    automation_id = create_response.json()["automation"]["automation_id"]
+
+    first = test_client.post(
+        f"/automations/{automation_id}/skills?skill_id=send_email",
+        json={"config": {"to": "first@example.com"}},
+        headers=auth_headers,
+    )
+    second = test_client.post(
+        f"/automations/{automation_id}/skills?skill_id=send_email",
+        json={"config": {"to": "second@example.com"}},
+        headers=auth_headers,
+    )
+    duplicate = test_client.post(
+        f"/automations/{automation_id}/skills?skill_id=send_email",
+        json={"config": {"to": "first@example.com"}},
+        headers=auth_headers,
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert duplicate.status_code == 201
+    first_id = first.json()["installed_skill_id"]
+    second_id = second.json()["installed_skill_id"]
+    assert first_id.startswith("send_email:")
+    assert second_id.startswith("send_email:")
+    assert first_id != second_id
+    assert duplicate.json()["installed_skill_id"] == first_id
+
+    skills_response = test_client.get(
+        f"/automations/{automation_id}/skills",
+        headers=auth_headers,
+    )
+    installed_send_email = [
+        item for item in skills_response.json() if item["skill_id"] == "send_email"
+    ]
+    assert [item["installed_skill_id"] for item in installed_send_email] == [
+        first_id,
+        second_id,
+    ]
+
+    catalog_response = test_client.get(
+        f"/automations/{automation_id}/action-catalog",
+        headers=auth_headers,
+    )
+    catalog = catalog_response.json()
+    send_actions = [
+        item
+        for item in catalog["actions"]
+        if item["skill_id"] == "send_email" and item["action"] == "send"
+    ]
+    assert [item["installed_skill_id"] for item in send_actions] == [first_id, second_id]
+    assert all(item["available"] is True for item in send_actions)
+    assert all(item["configured"] is True for item in send_actions)
