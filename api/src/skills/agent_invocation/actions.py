@@ -6,6 +6,7 @@ from src.agents.architectures import get_agent_architecture
 from src.agents.repository import AgentRepository
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
+from src.messages.repositories import get_message_repository
 from src.skills.agent_invocation.models import InvokeAgentRequest
 
 
@@ -35,7 +36,10 @@ async def invoke(
     if not isinstance(conversation, Conversation):
         raise ValueError("Conversation not found")
 
-    architecture = get_agent_architecture(agent.agent_architecture)
+    architecture = get_agent_architecture(
+        agent.agent_architecture,
+        message_repository=get_message_repository("in_memory"),
+    )
     invocation = await architecture.handle_message_buffered(
         agent=agent,
         conversation=conversation,

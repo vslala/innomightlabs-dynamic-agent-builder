@@ -23,7 +23,7 @@ from src.llm.events import SSEEvent, SSEEventType
 from src.llm.providers import get_llm_provider
 from src.memory import MemoryRepository
 from src.messages.models import Message, Attachment
-from src.messages.repositories import get_message_repository
+from src.messages.repositories import MessageRepository, get_message_repository
 from src.memory.snapshot import CoreMemorySnapshot
 from src.settings.repository import get_provider_settings_repository
 from src.skills.models import AgentSkill
@@ -54,7 +54,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
     Memory blocks are persisted in DynamoDB and survive across conversations.
     """
 
-    def __init__(self, max_context_words: int = 8000):
+    def __init__(
+        self,
+        max_context_words: int = 8000,
+        *,
+        message_repository: MessageRepository | None = None,
+    ):
         """
         Initialize Krishna MemGPT architecture.
 
@@ -62,12 +67,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             max_context_words: Maximum words to include in conversation context
         """
         self.max_context_words = max_context_words
-        self.message_repo = get_message_repository("dynamodb")
+        self.message_repo = message_repository or get_message_repository("dynamodb")
         self.memory_repo = MemoryRepository()
         self.provider_settings_repo = get_provider_settings_repository()
         self.agent_kb_repo = AgentKnowledgeBaseRepository()
         self.skill_runtime = SkillRuntimeService()
-        self.tool_handler = NativeToolHandler(self.memory_repo)
+        self.tool_handler = NativeToolHandler(self.memory_repo, message_repo=self.message_repo)
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
 
     @property

@@ -321,6 +321,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
     assert installed_skill_id.startswith("agent_invocation:")
 
     captured = {}
+    captured_repositories = []
 
     class FakeArchitecture:
         async def handle_message_buffered(
@@ -356,7 +357,9 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
 
     monkeypatch.setattr(
         "src.skills.agent_invocation.actions.get_agent_architecture",
-        lambda architecture_name: FakeArchitecture(),
+        lambda architecture_name, *, message_repository=None: (
+            captured_repositories.append(message_repository) or FakeArchitecture()
+        ),
     )
 
     result = asyncio.run(
@@ -392,6 +395,8 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
         "actor_id": TEST_USER_EMAIL,
         "attachments": None,
     }
+    assert len(captured_repositories) == 1
+    assert captured_repositories[0].__class__.__name__ == "InMemoryMessageRepository"
 
     loaded_payload = json.loads(
         asyncio.run(
