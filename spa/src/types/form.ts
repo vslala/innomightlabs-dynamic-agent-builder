@@ -17,6 +17,16 @@ export interface FormOptionsSource {
   endpoint?: string | null;
 }
 
+export type FormInputValidationFormat = "email";
+
+export interface FormInputValidation {
+  format?: FormInputValidationFormat | null;
+  multiple?: boolean;
+  separator?: string;
+  min_items?: number | null;
+  max_items?: number | null;
+}
+
 export interface FormInput {
   input_type: FormInputType;
   name: string;
@@ -25,6 +35,7 @@ export interface FormInput {
   values?: string[] | null;
   options?: SelectOption[] | null;  // For value/label pairs
   options_source?: FormOptionsSource | null;
+  validation?: FormInputValidation | null;
   attr?: Record<string, string> | null;
 }
 

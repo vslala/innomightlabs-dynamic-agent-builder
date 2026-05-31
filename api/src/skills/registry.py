@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 import yaml
 
 import src.form_models as form_models
+from src.form_validation import validate_form_value
 from src.skills.models import LoadedSkill, SkillManifest
 
 log = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ class SkillRegistry:
                 form_models.FormInputType.SELECT,
                 form_models.FormInputType.CHOICE,
             }:
-                normalized[input_def.name] = str(value)
+                normalized[input_def.name] = validate_form_value(input_def, value)
             else:
                 raise ValueError(f"Unsupported form input type for skill config: {input_def.input_type}")
 

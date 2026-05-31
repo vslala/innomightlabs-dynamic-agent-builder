@@ -1,0 +1,50 @@
+id: send_email
+namespace: core.communication
+name: Send Email
+description: Send a templated email to configured recipients.
+repeatable: true
+repeatable_identity_fields: [to]
+system_prompt: |
+  Use this skill to send an email to the recipients configured by the user.
+  The recipients are fixed during skill activation. Provide only the subject and
+  HTML body when calling this skill.
+form:
+  - input_type: text
+    name: to
+    label: Recipient emails
+    attr:
+      placeholder: "name@example.com, team@example.com"
+    validation:
+      format: email
+      multiple: true
+      separator: ","
+      min_items: 1
+actions:
+  - name: send
+    description: Send an email to the configured recipients and return delivery status.
+    input_schema:
+      type: object
+      required: [subject, body]
+      properties:
+        subject:
+          type: string
+          description: Email subject.
+        body:
+          type: string
+          description: Trusted HTML body to render inside the default email template.
+    action_form:
+      form_name: Send Email
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: subject
+          label: Subject
+          attr:
+            smart_values: "true"
+        - input_type: text_area
+          name: body
+          label: Body
+          attr:
+            rows: "10"
+            smart_values: "true"
+    handler: actions:send

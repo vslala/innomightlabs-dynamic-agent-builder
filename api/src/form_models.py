@@ -26,6 +26,20 @@ class FormOptionsSource(BaseModel):
     endpoint: str | None = None
 
 
+class FormInputValidationFormat(str, Enum):
+    EMAIL = "email"
+
+
+class FormInputValidation(BaseModel):
+    """Declarative validation metadata for schema-driven form inputs."""
+
+    format: FormInputValidationFormat | None = None
+    multiple: bool = False
+    separator: str = ","
+    min_items: int | None = None
+    max_items: int | None = None
+
+
 class FormInput(BaseModel):
     input_type: FormInputType
     name: str
@@ -35,6 +49,7 @@ class FormInput(BaseModel):
     values: None | list[str] = None
     options: None | list[SelectOption] = None  # New: for value/label pairs
     options_source: None | FormOptionsSource = None
+    validation: None | FormInputValidation = None
     attr: None | dict[str, str] = None
 
 

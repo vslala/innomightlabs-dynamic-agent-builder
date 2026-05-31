@@ -10,6 +10,7 @@ interface Props {
 export function TextField({ field, value, onChange }: Props) {
   const fieldAttributes = field.attr || {};
   const placeholderText = fieldAttributes.placeholder || `Enter ${field.label.toLowerCase()}`;
+  const inputType = fieldAttributes.type || (field.validation?.format === "email" ? "email" : "text");
 
   return (
     <Input
@@ -18,9 +19,10 @@ export function TextField({ field, value, onChange }: Props) {
       value={typeof value === "string" ? value : ""}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholderText}
-      type={fieldAttributes.type || "text"}
+      type={inputType}
       min={fieldAttributes.min}
       max={fieldAttributes.max}
+      multiple={field.validation?.multiple || undefined}
     />
   );
 }

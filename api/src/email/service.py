@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 class EmailTemplate(Enum):
     """Email template identifiers."""
 
+    AGENT_RESPONSE = "agent_response"
     WELCOME = "welcome"
     SUBSCRIPTION_CONFIRMED = "subscription_confirmed"
     SUBSCRIPTION_CANCELLED = "subscription_cancelled"
@@ -115,6 +116,21 @@ class EmailService:
             subject="Welcome to InnomightLabs! 🎉",
             template=EmailTemplate.WELCOME,
             variables=variables,
+        )
+
+    async def send_agent_response_email(
+        self,
+        *,
+        to_email: str,
+        subject: str,
+        body_html: str,
+    ) -> bool:
+        """Send a templated agent-authored email."""
+        return await self.send_email(
+            to_email=to_email,
+            subject=subject,
+            template=EmailTemplate.AGENT_RESPONSE,
+            variables={"body": body_html},
         )
 
     async def send_subscription_confirmed_email(

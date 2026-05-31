@@ -498,6 +498,135 @@ def test_repeatable_skill_base_id_requires_unambiguous_instance(test_client, aut
         assert second.json()["installed_skill_id"] in message
 
 
+def test_send_email_install_schema_declares_configured_recipients(test_client, auth_headers):
+    response = test_client.get("/skills/send_email/install-schema", headers=auth_headers)
+
+    assert response.status_code == 200
+    schema = response.json()
+    assert [field["name"] for field in schema["form_inputs"]] == ["to"]
+    to_field = schema["form_inputs"][0]
+    assert to_field["validation"] == {
+        "format": "email",
+        "multiple": True,
+        "separator": ",",
+        "min_items": 1,
+    }
+
+
+def test_send_email_installs_with_normalized_recipient_list(
+    test_client,
+    auth_headers,
+    dynamodb_table,
+):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+
+    response = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=send_email",
+        headers=auth_headers,
+        json={"config": {"to": " FIRST@example.com, second@example.com, first@example.com "}},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["config"]["to"] == "first@example.com, second@example.com"
+
+
+def test_send_email_rejects_invalid_configured_recipient(
+    test_client,
+    auth_headers,
+    dynamodb_table,
+):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+
+    response = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=send_email",
+        headers=auth_headers,
+        json={"config": {"to": "not-an-email"}},
+    )
+
+    assert response.status_code == 400
+    assert "Invalid email address" in response.json()["detail"]
+
+
+def test_send_email_uses_configured_recipients_only(
+    test_client,
+    auth_headers,
+    dynamodb_table,
+    monkeypatch,
+):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+    install_resp = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=send_email",
+        headers=auth_headers,
+        json={"config": {"to": "owner@example.com, team@example.com"}},
+    )
+    assert install_resp.status_code == 201
+
+    sent_messages = []
+
+    async def fake_send_agent_response_email(self, *, to_email, subject, body_html):
+        del self
+        sent_messages.append(
+            {"to_email": to_email, "subject": subject, "body_html": body_html}
+        )
+        return to_email == "owner@example.com"
+
+    monkeypatch.setattr(
+        "src.email.EmailService.send_agent_response_email",
+        fake_send_agent_response_email,
+    )
+
+    result = asyncio.run(
+        SkillRuntimeService().handle_tool_call(
+            tool_name="execute_skill_action",
+            tool_input={
+                "skill_id": "send_email",
+                "action": "send",
+                "arguments": {
+                    "to": "attacker@example.com",
+                    "subject": "Agent update",
+                    "body": "<p>Hello</p>",
+                },
+            },
+            agent_id=agent.agent_id,
+            owner_email=TEST_USER_EMAIL,
+            actor_email=TEST_USER_EMAIL,
+            actor_id=TEST_USER_EMAIL,
+            conversation_id="conversation-1",
+        )
+    )
+
+    payload = json.loads(result)
+    assert payload == {
+        "sent": True,
+        "total": 2,
+        "succeeded": 1,
+        "failed": 1,
+        "recipients": [
+            {"email": "owner@example.com", "sent": True},
+            {"email": "team@example.com", "sent": False},
+        ],
+    }
+    assert sent_messages == [
+        {
+            "to_email": "owner@example.com",
+            "subject": "Agent update",
+            "body_html": "<p>Hello</p>",
+        },
+        {
+            "to_email": "team@example.com",
+            "subject": "Agent update",
+            "body_html": "<p>Hello</p>",
+        },
+    ]
+
+
 def test_lead_capture_custom_form_normalizes_common_input_type_aliases():
     inputs = parse_custom_inputs(
         [
