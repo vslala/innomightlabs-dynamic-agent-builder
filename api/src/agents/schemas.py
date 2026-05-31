@@ -2,7 +2,8 @@
 Agent form schemas - single source of truth for agent-related forms.
 """
 
-from src.form_models import Form, FormInput, FormInputType, SelectOption
+from src.form_models import Form, FormInput, FormInputType, FormOptionsSource, SelectOption
+from src.form_options import FormOptionSourceType
 
 
 # Fallback model options if dynamic fetch fails
@@ -23,22 +24,13 @@ SESSION_TIMEOUT_OPTIONS = [
 ]
 
 
-def get_create_agent_form(model_providers: list[str], model_options: list[dict] | None = None) -> Form:
+def get_create_agent_form() -> Form:
     """
     Get the form schema for creating an agent.
 
-    Args:
-        model_options: List of model options with value/label pairs
-
     Returns:
-        Form schema with dynamic model options
+        Form schema with dynamic model option sources
     """
-    options = (
-        [SelectOption(**opt) for opt in model_options]
-        if model_options
-        else DEFAULT_MODEL_OPTIONS
-    )
-
     return Form(
         form_name="Create Agent Form",
         submit_path="/agents",
@@ -68,14 +60,15 @@ def get_create_agent_form(model_providers: list[str], model_options: list[dict] 
             FormInput(
                 label="Provider Name",
                 name="agent_provider",
-                values=model_providers,
                 input_type=FormInputType.SELECT,
+                options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODEL_PROVIDERS),
             ),
             FormInput(
                 label="Model",
                 name="agent_model",
-                options=options,
+                options=DEFAULT_MODEL_OPTIONS,
                 input_type=FormInputType.SELECT,
+                options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODELS),
             ),
             FormInput(
                 label="Session Timeout",
@@ -90,27 +83,13 @@ def get_create_agent_form(model_providers: list[str], model_options: list[dict] 
 
 def get_update_agent_form(
     agent_id: str,
-    model_providers: list[str] | None = None,
-    model_options: list[dict] | None = None,
 ) -> Form:
     """
     Get the update form schema for a specific agent.
 
-    Args:
-        agent_id: The agent ID for the submit path
-        model_options: List of model options with value/label pairs
-
     Returns:
-        Form schema with dynamic model options
+        Form schema with dynamic model option sources
     """
-    options = (
-        [SelectOption(**opt) for opt in model_options]
-        if model_options
-        else DEFAULT_MODEL_OPTIONS
-    )
-
-    providers = model_providers or ["Bedrock"]
-
     return Form(
         form_name="Update Agent Form",
         submit_path=f"/agents/{agent_id}",
@@ -135,14 +114,15 @@ def get_update_agent_form(
             FormInput(
                 label="Provider Name",
                 name="agent_provider",
-                values=providers,
                 input_type=FormInputType.SELECT,
+                options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODEL_PROVIDERS),
             ),
             FormInput(
                 label="Model",
                 name="agent_model",
-                options=options,
+                options=DEFAULT_MODEL_OPTIONS,
                 input_type=FormInputType.SELECT,
+                options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODELS),
             ),
             FormInput(
                 label="Session Timeout",

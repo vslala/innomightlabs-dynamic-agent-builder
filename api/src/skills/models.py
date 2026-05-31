@@ -37,6 +37,8 @@ class SkillManifest(BaseModel):
     name: str
     description: str
     system_prompt: str = ""
+    repeatable: bool = False
+    repeatable_identity_fields: list[str] = Field(default_factory=list)
 
     # Optional skill-owned API router (mounted under /skills/{skill_id}/...)
     # Format: "module_path:attribute" or "module_path.attribute".
@@ -69,9 +71,11 @@ class SkillCatalogItemResponse(BaseModel):
     oauth_start_path: Optional[str] = None
     connectors: list[SkillConnectorStatus] = Field(default_factory=list)
     available: bool = True
+    repeatable: bool = False
 
 
 class InstalledSkillResponse(BaseModel):
+    installed_skill_id: str
     skill_id: str
     namespace: str
     name: str
@@ -87,6 +91,7 @@ class InstalledSkillResponse(BaseModel):
 
 class AgentSkill(BaseModel):
     agent_id: str
+    installed_skill_id: str = ""
     skill_id: str
     namespace: str
     skill_name: str
@@ -105,7 +110,7 @@ class AgentSkill(BaseModel):
 
     @property
     def sk(self) -> str:
-        return f"Skill#{self.skill_id}"
+        return f"Skill#{self.installed_skill_id or self.skill_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
         return {
@@ -113,6 +118,7 @@ class AgentSkill(BaseModel):
             "sk": self.sk,
             "entity_type": "AgentSkill",
             "agent_id": self.agent_id,
+            "installed_skill_id": self.installed_skill_id or self.skill_id,
             "skill_id": self.skill_id,
             "namespace": self.namespace,
             "skill_name": self.skill_name,
@@ -128,9 +134,11 @@ class AgentSkill(BaseModel):
 
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "AgentSkill":
+        skill_id = item["skill_id"]
         return cls(
             agent_id=item["agent_id"],
-            skill_id=item["skill_id"],
+            installed_skill_id=item.get("installed_skill_id", skill_id),
+            skill_id=skill_id,
             namespace=item.get("namespace", ""),
             skill_name=item.get("skill_name", item["skill_id"]),
             skill_description=item.get("skill_description", ""),

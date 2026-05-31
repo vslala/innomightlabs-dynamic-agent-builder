@@ -23,7 +23,7 @@ from src.llm.events import SSEEvent, SSEEventType
 from src.llm.providers import get_llm_provider
 from src.memory import MemoryRepository
 from src.messages.models import Message, Attachment
-from src.messages.repository import MessageRepository
+from src.messages.repositories import get_message_repository
 from src.memory.snapshot import CoreMemorySnapshot
 from src.settings.repository import get_provider_settings_repository
 from src.skills.models import AgentSkill
@@ -62,7 +62,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             max_context_words: Maximum words to include in conversation context
         """
         self.max_context_words = max_context_words
-        self.message_repo = MessageRepository()
+        self.message_repo = get_message_repository("dynamodb")
         self.memory_repo = MemoryRepository()
         self.provider_settings_repo = get_provider_settings_repository()
         self.agent_kb_repo = AgentKnowledgeBaseRepository()

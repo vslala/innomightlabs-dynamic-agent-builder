@@ -18,7 +18,7 @@ from src.conversations.models import (
 )
 from src.conversations.repository import ConversationRepository
 from src.messages.models import MessageResponse
-from src.messages.repository import MessageRepository
+from src.messages.repositories import get_message_repository
 from src.messages.responses import MessageResponseFactory
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 # Initialize repositories
 conversation_repository = ConversationRepository()
 agent_repository = AgentRepository()
-message_repository = MessageRepository()
+message_repository = get_message_repository("dynamodb")
 message_response_factory = MessageResponseFactory()
 
 

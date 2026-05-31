@@ -31,7 +31,7 @@ from src.analytics.models import (
 )
 from src.conversations.repository import ConversationRepository
 from src.messages.models import Message
-from src.messages.repository import MessageRepository
+from src.messages.repositories import MessageRepository, get_message_repository
 from src.widget.repository import WidgetConversationRepository
 
 DEFAULT_WINDOW_DAYS = 30
@@ -78,7 +78,7 @@ class AnalyticsService:
         self.widget_conversation_repository = (
             widget_conversation_repository or WidgetConversationRepository()
         )
-        self.message_repository = message_repository or MessageRepository()
+        self.message_repository = message_repository or get_message_repository("dynamodb")
 
     def get_overview(
         self,

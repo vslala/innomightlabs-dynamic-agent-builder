@@ -41,13 +41,16 @@ async def list_skills(
 
 @router.get("/skills/{skill_id}/install-schema", response_model=form_models.Form, response_model_exclude_none=True)
 async def get_skill_install_schema(
+    request: Request,
     skill_id: str,
     service: Annotated[SkillService, Depends(get_skill_service)],
 ) -> form_models.Form:
+    user_email: str = request.state.user_email
     try:
         return service.get_install_schema(
             skill_id=skill_id,
             submit_path=f"/agents/{{agent_id}}/skills?skill_id={skill_id}",
+            user_email=user_email,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -111,7 +114,7 @@ async def update_installed_skill(
     try:
         installed = service.update_installed(
             agent_id=agent_id,
-            skill_id=skill_id,
+            installed_skill_id=skill_id,
             enabled=body.enabled,
             raw_config=body.config,
         )
@@ -137,7 +140,7 @@ async def uninstall_skill(
 
     service.uninstall(
         agent_id=agent_id,
-        skill_id=skill_id,
+        installed_skill_id=skill_id,
         user_email=user_email,
         disconnect_oauth=disconnect_oauth,
     )

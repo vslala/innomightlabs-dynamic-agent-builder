@@ -21,7 +21,7 @@ class AgentSkillRepository:
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, skill: AgentSkill) -> AgentSkill:
-        existing = self.find_by_id(skill.agent_id, skill.skill_id)
+        existing = self.find_by_id(skill.agent_id, skill.installed_skill_id or skill.skill_id)
         if existing:
             skill.installed_at = existing.installed_at
             skill.updated_at = datetime.now(timezone.utc)
@@ -29,11 +29,11 @@ class AgentSkillRepository:
         self.table.put_item(Item=skill.to_dynamo_item())
         return skill
 
-    def find_by_id(self, agent_id: str, skill_id: str) -> Optional[AgentSkill]:
+    def find_by_id(self, agent_id: str, installed_skill_id: str) -> Optional[AgentSkill]:
         response = self.table.get_item(
             Key={
                 "pk": f"Agent#{agent_id}",
-                "sk": f"Skill#{skill_id}",
+                "sk": f"Skill#{installed_skill_id}",
             }
         )
         item = response.get("Item")
@@ -48,23 +48,24 @@ class AgentSkillRepository:
         items = response.get("Items", [])
         return [AgentSkill.from_dynamo_item(item) for item in items]
 
-    def delete(self, agent_id: str, skill_id: str) -> bool:
+    def delete(self, agent_id: str, installed_skill_id: str) -> bool:
         try:
             self.table.delete_item(
                 Key={
                     "pk": f"Agent#{agent_id}",
-                    "sk": f"Skill#{skill_id}",
+                    "sk": f"Skill#{installed_skill_id}",
                 }
             )
             return True
         except Exception as e:
-            log.error("Failed deleting AgentSkill %s/%s: %s", agent_id, skill_id, e, exc_info=True)
+            log.error("Failed deleting AgentSkill %s/%s: %s", agent_id, installed_skill_id, e, exc_info=True)
             return False
 
     def upsert_with_config(
         self,
         *,
         agent_id: str,
+        installed_skill_id: str,
         skill_id: str,
         namespace: str,
         skill_name: str,
@@ -78,6 +79,7 @@ class AgentSkillRepository:
         encrypted_secrets = encrypt(json.dumps(secret_config, ensure_ascii=True)) if secret_config else ""
         item = AgentSkill(
             agent_id=agent_id,
+            installed_skill_id=installed_skill_id,
             skill_id=skill_id,
             namespace=namespace,
             skill_name=skill_name,

@@ -2,18 +2,26 @@ id: agent_invocation
 namespace: core.automation
 name: Invoke Agent
 description: Send a smart-value prompt to one of your agents.
+repeatable: true
+repeatable_identity_fields: [target_agent_id]
 system_prompt: |
-  Use this skill to invoke an agent with a prompt.
+  Use this skill to invoke the configured agent with a prompt.
+form:
+  - input_type: select
+    name: target_agent_id
+    label: Agent
+    options_source:
+      type: agents
 actions:
   - name: invoke
     description: Invoke an agent and return response text, runtime events, and saved message ids.
     input_schema:
       type: object
-      required: [agent_id, prompt_template]
+      required: [prompt_template]
       properties:
         agent_id:
           type: string
-          description: Agent id to invoke.
+          description: Optional agent id override. Installed agent skills use the configured target agent by default.
         prompt_template:
           type: string
           description: Prompt text after automation smart values have been rendered.
@@ -24,6 +32,8 @@ actions:
         - input_type: select
           name: agent_id
           label: Agent
+          options_source:
+            type: agents
           attr:
             source: agents
         - input_type: text_area

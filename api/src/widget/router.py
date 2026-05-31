@@ -30,7 +30,7 @@ from src.apikeys.models import AgentApiKey
 from src.auth.google_oauth import GoogleOAuth
 from src.config import settings
 from src.llm.events import SSEEvent, SSEEventType
-from src.messages.repository import MessageRepository
+from src.messages.repositories import MessageRepository, get_message_repository
 from src.widget.middleware import get_api_key_from_request
 from src.widget.models import (
     CreateWidgetConversationRequest,
@@ -87,9 +87,9 @@ def get_agent_repository() -> AgentRepository:
     return AgentRepository()
 
 
-def get_message_repository() -> MessageRepository:
+def get_widget_message_repository() -> MessageRepository:
     """Dependency for MessageRepository."""
-    return MessageRepository()
+    return get_message_repository("dynamodb")
 
 
 def get_wordpress_ai_conversation(
@@ -829,7 +829,7 @@ async def list_messages(
     api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
     visitor: Annotated[WidgetVisitor, Depends(get_visitor_from_request)],
     conv_repo: Annotated[WidgetConversationRepository, Depends(get_widget_conversation_repository)],
-    message_repo: Annotated[MessageRepository, Depends(get_message_repository)],
+    message_repo: Annotated[MessageRepository, Depends(get_widget_message_repository)],
 ):
     """
     List messages for a widget conversation.

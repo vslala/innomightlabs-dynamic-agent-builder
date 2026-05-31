@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from types import SimpleNamespace
 
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
+from src.conversations.models import Conversation
+from src.conversations.repository import ConversationRepository
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.lead_capture.forms import parse_custom_inputs
@@ -292,6 +296,201 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
     )
 
     assert result == "ok"
+
+
+def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamodb_table, monkeypatch):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    source_agent = _create_agent_for_user(TEST_USER_EMAIL)
+    target_agent = _create_agent_for_user(TEST_USER_EMAIL)
+    conversation = ConversationRepository().save(
+        Conversation(
+            title="Agent skill invocation",
+            agent_id=source_agent.agent_id,
+            created_by=TEST_USER_EMAIL,
+        )
+    )
+
+    install_resp = test_client.post(
+        f"/agents/{source_agent.agent_id}/skills?skill_id=agent_invocation",
+        headers=auth_headers,
+        json={"config": {"target_agent_id": target_agent.agent_id}},
+    )
+    assert install_resp.status_code == 201
+    installed_skill_id = install_resp.json()["installed_skill_id"]
+    assert installed_skill_id.startswith("agent_invocation:")
+
+    captured = {}
+
+    class FakeArchitecture:
+        async def handle_message_buffered(
+            self,
+            *,
+            agent,
+            conversation,
+            user_message,
+            owner_email,
+            actor_email,
+            actor_id,
+            attachments=None,
+        ):
+            captured.update(
+                {
+                    "agent_id": agent.agent_id,
+                    "conversation_id": conversation.conversation_id,
+                    "user_message": user_message,
+                    "owner_email": owner_email,
+                    "actor_email": actor_email,
+                    "actor_id": actor_id,
+                    "attachments": attachments,
+                }
+            )
+            return SimpleNamespace(
+                success=True,
+                error=None,
+                response_text="delegated response",
+                events=[],
+                user_message_id="user-message-1",
+                assistant_message_id="assistant-message-1",
+            )
+
+    monkeypatch.setattr(
+        "src.skills.agent_invocation.actions.get_agent_architecture",
+        lambda architecture_name: FakeArchitecture(),
+    )
+
+    result = asyncio.run(
+        SkillRuntimeService().handle_tool_call(
+            tool_name="execute_skill_action",
+            tool_input={
+                "skill_id": "agent_invocation",
+                "action": "invoke",
+                "arguments": {
+                    "prompt_template": "Summarize the lead",
+                },
+            },
+            agent_id=source_agent.agent_id,
+            owner_email=TEST_USER_EMAIL,
+            actor_email=TEST_USER_EMAIL,
+            actor_id=TEST_USER_EMAIL,
+            conversation_id=conversation.conversation_id,
+        )
+    )
+
+    payload = json.loads(result)
+    assert payload["response_text"] == "delegated response"
+    assert payload["message_ids"] == {
+        "user_message_id": "user-message-1",
+        "assistant_message_id": "assistant-message-1",
+    }
+    assert captured == {
+        "agent_id": target_agent.agent_id,
+        "conversation_id": conversation.conversation_id,
+        "user_message": "Summarize the lead",
+        "owner_email": TEST_USER_EMAIL,
+        "actor_email": TEST_USER_EMAIL,
+        "actor_id": TEST_USER_EMAIL,
+        "attachments": None,
+    }
+
+    loaded_payload = json.loads(
+        asyncio.run(
+            SkillRuntimeService().handle_tool_call(
+                tool_name="load_skill",
+                tool_input={"skill_id": "agent_invocation"},
+                agent_id=source_agent.agent_id,
+                owner_email=TEST_USER_EMAIL,
+                actor_email=TEST_USER_EMAIL,
+                actor_id=TEST_USER_EMAIL,
+                conversation_id=conversation.conversation_id,
+            )
+        )
+    )
+    assert loaded_payload["installed_skill_id"] == installed_skill_id
+    assert loaded_payload["execute_contract"]["required_shape"]["skill_id"] == installed_skill_id
+
+
+def test_agent_invocation_install_schema_hydrates_agent_options(test_client, auth_headers, dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+
+    response = test_client.get("/skills/agent_invocation/install-schema", headers=auth_headers)
+
+    assert response.status_code == 200
+    schema = response.json()
+    target_field = next(field for field in schema["form_inputs"] if field["name"] == "target_agent_id")
+    assert target_field["options_source"] == {
+        "type": "agents",
+        "mode": "hydrate",
+    }
+    assert {"value": agent.agent_id, "label": agent.agent_name} in target_field["options"]
+
+
+def test_repeatable_skill_install_is_deterministic_by_identity_fields(test_client, auth_headers, dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    source_agent = _create_agent_for_user(TEST_USER_EMAIL)
+    target_agent = _create_agent_for_user(TEST_USER_EMAIL)
+    payload = {"config": {"target_agent_id": target_agent.agent_id}}
+
+    first = test_client.post(
+        f"/agents/{source_agent.agent_id}/skills?skill_id=agent_invocation",
+        headers=auth_headers,
+        json=payload,
+    )
+    second = test_client.post(
+        f"/agents/{source_agent.agent_id}/skills?skill_id=agent_invocation",
+        headers=auth_headers,
+        json=payload,
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["installed_skill_id"] == second.json()["installed_skill_id"]
+    list_resp = test_client.get(f"/agents/{source_agent.agent_id}/skills", headers=auth_headers)
+    listed = [item for item in list_resp.json() if item["skill_id"] == "agent_invocation"]
+    assert len(listed) == 1
+
+
+def test_repeatable_skill_base_id_requires_unambiguous_instance(test_client, auth_headers, dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    source_agent = _create_agent_for_user(TEST_USER_EMAIL)
+    first_target = _create_agent_for_user(TEST_USER_EMAIL)
+    second_target = _create_agent_for_user(TEST_USER_EMAIL)
+
+    first = test_client.post(
+        f"/agents/{source_agent.agent_id}/skills?skill_id=agent_invocation",
+        headers=auth_headers,
+        json={"config": {"target_agent_id": first_target.agent_id}},
+    )
+    second = test_client.post(
+        f"/agents/{source_agent.agent_id}/skills?skill_id=agent_invocation",
+        headers=auth_headers,
+        json={"config": {"target_agent_id": second_target.agent_id}},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    try:
+        asyncio.run(
+            SkillRuntimeService().handle_tool_call(
+                tool_name="load_skill",
+                tool_input={"skill_id": "agent_invocation"},
+                agent_id=source_agent.agent_id,
+                owner_email=TEST_USER_EMAIL,
+                actor_email=TEST_USER_EMAIL,
+                actor_id=TEST_USER_EMAIL,
+                conversation_id="conv-test",
+            )
+        )
+        assert False, "Expected ambiguous repeatable skill lookup to fail"
+    except ValueError as exc:
+        message = str(exc)
+        assert "multiple installed instances" in message
+        assert first.json()["installed_skill_id"] in message
+        assert second.json()["installed_skill_id"] in message
 
 
 def test_lead_capture_custom_form_normalizes_common_input_type_aliases():

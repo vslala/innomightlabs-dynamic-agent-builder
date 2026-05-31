@@ -152,7 +152,7 @@ class TestConversationsRouter:
         self, test_client: TestClient, auth_headers: dict
     ):
         from src.messages.models import Message
-        from src.messages.repository import MessageRepository
+        from src.messages.repositories import get_message_repository
 
         request_data = {**CONVERSATION_CREATE_REQUEST, "agent_id": self.agent_id}
         create_response = test_client.post(
@@ -160,7 +160,7 @@ class TestConversationsRouter:
         )
         conversation_id = create_response.json()["conversation_id"]
 
-        repo = MessageRepository()
+        repo = get_message_repository("dynamodb")
         now = datetime.now(timezone.utc)
         repo.save(
             Message(
@@ -200,7 +200,7 @@ class TestConversationsRouter:
         self, test_client: TestClient, auth_headers: dict
     ):
         from src.messages.models import Message
-        from src.messages.repository import MessageRepository
+        from src.messages.repositories import get_message_repository
 
         request_data = {**CONVERSATION_CREATE_REQUEST, "agent_id": self.agent_id}
         create_response = test_client.post(
@@ -208,7 +208,7 @@ class TestConversationsRouter:
         )
         conversation_id = create_response.json()["conversation_id"]
 
-        repo = MessageRepository()
+        repo = get_message_repository("dynamodb")
         now = datetime.now(timezone.utc)
         repo.save(
             Message(

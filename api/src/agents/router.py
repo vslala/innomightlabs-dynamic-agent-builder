@@ -21,10 +21,9 @@ from src.agents.repository import AgentRepository
 from src.agents.schemas import get_create_agent_form, get_update_agent_form, UPDATE_AGENT_FORM
 from src.conversations.repository import ConversationRepository
 from src.crypto import encrypt_secret_fields
+from src.form_options import FormOptionsContext, hydrate_form_options
 from src.llm.events import SSEEvent, SSEEventType
-from src.llm.models import models_service
 from src.messages.models import Attachment, MAX_FILES, MAX_TOTAL_SIZE
-from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 
 log = logging.getLogger(__name__)
@@ -71,58 +70,19 @@ def get_agent_image_generation_service() -> AgentImageGenerationService:
     return AgentImageGenerationService()
 
 
-def _load_agent_model_choices(
-    user_email: str,
-    providers_settings_repo: ProviderSettingsRepository,
-) -> tuple[list[str], list[dict[str, str]]]:
-    bedrock_models = models_service.get_bedrock_models()
-    model_providers = ["Bedrock"]
-    model_options = [
-        {"value": m.model_name, "label": m.display_name}
-        for m in bedrock_models
-    ]
-
-    provider_settings = providers_settings_repo.find_by_provider(
-        user_email=user_email,
-        provider_name="Anthropic",
-    )
-    if provider_settings:
-        try:
-            anthropic_models = models_service.get_anthropic_models(provider_settings=provider_settings)
-            model_providers.append("Anthropic")
-            model_options.extend([
-                {"value": m.model_name, "label": m.display_name}
-                for m in anthropic_models
-            ])
-        except Exception as e:
-            log.warning(f"Failed to load Anthropic models for user {user_email}: {e}")
-
-    openai_settings = providers_settings_repo.find_by_provider(
-        user_email=user_email,
-        provider_name="OpenAI",
-    )
-    if openai_settings:
-        model_providers.append("OpenAI")
-        try:
-            openai_models = models_service.get_openai_models()
-            model_options.extend([
-                {"value": m.model_name, "label": m.display_name}
-                for m in openai_models
-            ])
-        except Exception as e:
-            log.warning(f"Failed to load OpenAI models for user {user_email}: {e}")
-
-    return model_providers, model_options
-
-
 @router.get("/supported-models", response_model=form_models.Form, response_model_exclude_none=True)
 async def get_create_agent_schema(
     request: Request,
     providers_settings_repo: Annotated[ProviderSettingsRepository, Depends(get_provider_settings_repository)]) -> form_models.Form:
     """Get the form schema for creating an agent with dynamically fetched models."""
     user_email = request.state.user_email
-    model_providers, model_options = _load_agent_model_choices(user_email, providers_settings_repo)
-    return get_create_agent_form(model_providers, model_options)
+    return hydrate_form_options(
+        get_create_agent_form(),
+        FormOptionsContext(
+            user_email=user_email,
+            provider_settings_repository=providers_settings_repo,
+        ),
+    )
 
 
 @router.post(
@@ -201,8 +161,13 @@ async def get_update_agent_schema(
 ) -> form_models.Form:
     """Get the form schema for updating an agent with dynamically fetched models."""
     user_email = request.state.user_email
-    model_providers, model_options = _load_agent_model_choices(user_email, providers_settings_repo)
-    return get_update_agent_form(agent_id, model_providers, model_options)
+    return hydrate_form_options(
+        get_update_agent_form(agent_id),
+        FormOptionsContext(
+            user_email=user_email,
+            provider_settings_repository=providers_settings_repo,
+        ),
+    )
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)

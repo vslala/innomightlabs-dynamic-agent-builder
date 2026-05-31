@@ -6,14 +6,14 @@ import pytest
 from datetime import datetime, timezone
 
 from src.messages.models import Message, MessageResponse
-from src.messages.repository import MessageRepository
+from src.messages.repositories import get_message_repository
 from tests.mock_data import TEST_USER_EMAIL
 
 
 @pytest.fixture
 def message_repository(dynamodb_table):
     """Create MessageRepository with mocked DynamoDB."""
-    return MessageRepository()
+    return get_message_repository("dynamodb")
 
 
 class TestMessageModel:

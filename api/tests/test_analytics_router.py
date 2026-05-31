@@ -7,7 +7,7 @@ from src.agents.repository import AgentRepository
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.messages.models import Message
-from src.messages.repository import MessageRepository
+from src.messages.repositories import get_message_repository
 from src.widget.models import WidgetConversation
 from src.widget.repository import WidgetConversationRepository
 from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2
@@ -78,7 +78,7 @@ def save_message(
         content=content,
         created_at=created_at,
     )
-    return MessageRepository().save(message)
+    return get_message_repository("dynamodb").save(message)
 
 
 def test_overview_supports_dashboard_and_widget_sources(

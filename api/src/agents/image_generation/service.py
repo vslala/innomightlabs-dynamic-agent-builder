@@ -25,7 +25,7 @@ from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.crypto import decrypt
 from src.messages.models import Message, MessageImage
-from src.messages.repository import MessageRepository
+from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.llm.events import SSEEvent, SSEEventType
 
@@ -63,7 +63,7 @@ class AgentImageGenerationService:
     ):
         self.agent_repo = agent_repo or AgentRepository()
         self.conversation_repo = conversation_repo or ConversationRepository()
-        self.message_repo = message_repo or MessageRepository()
+        self.message_repo = message_repo or get_message_repository("dynamodb")
         self.provider_settings_repo = provider_settings_repo or get_provider_settings_repository()
         self.storage = storage or ConversationMediaStorage()
         self.provider_factory = provider_factory or ImageProviderFactory()

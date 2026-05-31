@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any, Optional
 
 import src.form_models as form_models
 from src.connectors.service import ConnectorService, connector_id_for_provider, get_connector_service
+from src.form_options import FormOptionsContext, hydrate_form_options, validate_form_options
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import (
     AgentSkill,
     InstalledSkillResponse,
     SkillCatalogItemResponse,
     SkillConnectorDependency,
+    SkillManifest,
 )
 from src.skills.oauth_providers import get_skill_oauth_provider
 from src.skills.registry import SkillRegistry, get_skill_registry
@@ -69,12 +72,19 @@ class SkillService:
                     )
                     if user_email
                     else not manifest_for_status.connectors,
+                    repeatable=loaded.manifest.repeatable,
                 )
             )
         return items
 
-    def get_install_schema(self, skill_id: str, submit_path: str) -> form_models.Form:
-        return self.registry.install_form(skill_id, submit_path)
+    def get_install_schema(self, skill_id: str, submit_path: str, user_email: str | None = None) -> form_models.Form:
+        form = self.registry.install_form(skill_id, submit_path)
+        if not user_email:
+            return form
+        return hydrate_form_options(
+            form,
+            FormOptionsContext(user_email=user_email),
+        )
 
     def install_skill(
         self,
@@ -104,12 +114,19 @@ class SkillService:
             )
 
         normalized = self.registry.validate_config(skill_id, raw_config)
+        validate_form_options(
+            loaded.manifest.form,
+            normalized,
+            FormOptionsContext(user_email=user_email),
+        )
         secret_fields = self.registry.secret_fields(skill_id)
         plain_config = {k: v for k, v in normalized.items() if k not in secret_fields}
         secret_config = {k: v for k, v in normalized.items() if k in secret_fields}
+        installed_skill_id = self._installed_skill_id(loaded.manifest, normalized)
 
         return self.repository.upsert_with_config(
             agent_id=agent_id,
+            installed_skill_id=installed_skill_id,
             skill_id=skill_id,
             namespace=loaded.manifest.namespace,
             skill_name=loaded.manifest.name,
@@ -130,6 +147,7 @@ class SkillService:
         requires_oauth = loaded.manifest.requires_oauth if loaded else False
         oauth_provider_name = loaded.manifest.oauth_provider_name if loaded and loaded.manifest.requires_oauth else None
         return InstalledSkillResponse(
+            installed_skill_id=item.installed_skill_id or item.skill_id,
             skill_id=item.skill_id,
             namespace=item.namespace,
             name=item.skill_name,
@@ -147,13 +165,14 @@ class SkillService:
         self,
         *,
         agent_id: str,
-        skill_id: str,
+        installed_skill_id: str,
         user_email: str,
         disconnect_oauth: bool = False,
     ) -> bool:
-        deleted = self.repository.delete(agent_id, skill_id)
+        existing = self.repository.find_by_id(agent_id, installed_skill_id)
+        deleted = self.repository.delete(agent_id, installed_skill_id)
         if disconnect_oauth:
-            loaded = self.registry.get(skill_id)
+            loaded = self.registry.get(existing.skill_id) if existing else self.registry.get(installed_skill_id)
             oauth_provider_name = loaded.manifest.oauth_provider_name if loaded and loaded.manifest.requires_oauth else None
             if oauth_provider_name:
                 self.provider_settings_repository.delete(user_email, oauth_provider_name)
@@ -163,15 +182,15 @@ class SkillService:
         self,
         *,
         agent_id: str,
-        skill_id: str,
+        installed_skill_id: str,
         enabled: bool | None,
         raw_config: dict[str, Any] | None,
     ) -> AgentSkill:
-        existing = self.repository.find_by_id(agent_id, skill_id)
+        existing = self.repository.find_by_id(agent_id, installed_skill_id)
         if not existing:
             raise ValueError("Skill not installed for this agent")
 
-        loaded = self.registry.get(skill_id)
+        loaded = self.registry.get(existing.skill_id)
         if not loaded:
             raise ValueError("Skill not available")
 
@@ -189,8 +208,16 @@ class SkillService:
             # Merge update payload with existing runtime config, validate complete shape, then split
             merged = self.repository.get_runtime_config(existing)
             merged.update(raw_config)
-            normalized = self.registry.validate_config(skill_id, merged)
-            secret_fields = self.registry.secret_fields(skill_id)
+            normalized = self.registry.validate_config(existing.skill_id, merged)
+            validate_form_options(
+                loaded.manifest.form,
+                normalized,
+                FormOptionsContext(user_email=existing.installed_by),
+            )
+            next_installed_skill_id = self._installed_skill_id(loaded.manifest, normalized)
+            if next_installed_skill_id != existing.installed_skill_id:
+                raise ValueError("Repeatable skill identity fields cannot be changed")
+            secret_fields = self.registry.secret_fields(existing.skill_id)
             plain_config = {k: v for k, v in normalized.items() if k not in secret_fields}
             secret_config = {k: v for k, v in normalized.items() if k in secret_fields}
             secret_field_list = sorted(secret_fields)
@@ -199,7 +226,8 @@ class SkillService:
 
         return self.repository.upsert_with_config(
             agent_id=agent_id,
-            skill_id=skill_id,
+            installed_skill_id=existing.installed_skill_id or existing.skill_id,
+            skill_id=existing.skill_id,
             namespace=loaded.manifest.namespace,
             skill_name=loaded.manifest.name,
             skill_description=loaded.manifest.description,
@@ -209,6 +237,23 @@ class SkillService:
             secret_config=secret_config,
             secret_fields=secret_field_list,
         )
+
+    def _installed_skill_id(
+        self,
+        manifest: SkillManifest,
+        normalized_config: dict[str, Any],
+    ) -> str:
+        if not manifest.repeatable:
+            return manifest.id
+
+        identity_fields = manifest.repeatable_identity_fields or sorted(normalized_config.keys())
+        identity_values = {
+            field_name: normalized_config.get(field_name)
+            for field_name in identity_fields
+        }
+        identity_json = json.dumps(identity_values, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        digest = hashlib.sha256(identity_json.encode("utf-8")).hexdigest()[:16]
+        return f"{manifest.id}:{digest}"
 
 
 class SkillRuntimeService:
@@ -278,7 +323,11 @@ class SkillRuntimeService:
             "When a skill offers both a built-in default form and a custom-form action, use the custom-form action whenever the requested fields or choices are not exactly the built-in default form.",
         ]
         for skill in enabled_skills:
-            lines.append(f"- {skill.skill_id}: {skill.skill_name} - {skill.skill_description}")
+            lines.append(
+                f"- {skill.installed_skill_id or skill.skill_id}: "
+                f"{skill.skill_name} - {skill.skill_description} "
+                f"(skill_id: {skill.skill_id})"
+            )
         lines.append("</installed_skills>")
         return "\n".join(lines)
 
@@ -294,26 +343,27 @@ class SkillRuntimeService:
         conversation_id: str,
     ) -> str:
         if tool_name == "load_skill":
-            skill_id = str(tool_input.get("skill_id", "")).strip()
-            if not skill_id:
+            installed_skill_id = str(tool_input.get("skill_id", "")).strip()
+            if not installed_skill_id:
                 raise ValueError("Missing required argument: skill_id")
 
-            installed = self.repository.find_by_id(agent_id, skill_id)
+            installed = self._resolve_installed_skill(agent_id, installed_skill_id)
             if not installed or not installed.enabled:
-                raise ValueError(f"Skill '{skill_id}' is not installed/enabled for this agent")
+                raise ValueError(f"Skill '{installed_skill_id}' is not installed/enabled for this agent")
 
-            loaded = self.skill_service.registry.get(skill_id)
+            loaded = self.skill_service.registry.get(installed.skill_id)
             if not loaded:
-                raise ValueError(f"Skill '{skill_id}' is not available")
+                raise ValueError(f"Skill '{installed.skill_id}' is not available")
 
             payload = {
+                "installed_skill_id": installed.installed_skill_id or installed.skill_id,
                 "skill_id": loaded.manifest.id,
                 "name": loaded.manifest.name,
                 "description": loaded.manifest.description,
                 "system_prompt": loaded.manifest.system_prompt,
                 "execute_contract": {
                     "required_shape": {
-                        "skill_id": loaded.manifest.id,
+                        "skill_id": installed.installed_skill_id or installed.skill_id,
                         "action": "<action_name>",
                         "arguments": "<object_matching_action_input_schema>",
                     },
@@ -337,21 +387,21 @@ class SkillRuntimeService:
             return json.dumps(payload, ensure_ascii=True)
 
         if tool_name == "execute_skill_action":
-            skill_id = str(tool_input.get("skill_id", "")).strip()
+            installed_skill_id = str(tool_input.get("skill_id", "")).strip()
             action_name = str(tool_input.get("action", "")).strip()
             arguments = tool_input.get("arguments")
             if not isinstance(arguments, dict):
                 raise ValueError("'arguments' must be an object")
-            if not skill_id or not action_name:
+            if not installed_skill_id or not action_name:
                 raise ValueError("Missing required arguments: skill_id and action")
 
-            installed = self.repository.find_by_id(agent_id, skill_id)
+            installed = self._resolve_installed_skill(agent_id, installed_skill_id)
             if not installed or not installed.enabled:
-                raise ValueError(f"Skill '{skill_id}' is not installed/enabled for this agent")
+                raise ValueError(f"Skill '{installed_skill_id}' is not installed/enabled for this agent")
 
             config = self.repository.get_runtime_config(installed)
             result = await self.skill_service.registry.execute_action(
-                skill_id=skill_id,
+                skill_id=installed.skill_id,
                 action_name=action_name,
                 arguments=arguments,
                 config=config,
@@ -368,6 +418,25 @@ class SkillRuntimeService:
             return json.dumps(result, ensure_ascii=True)
 
         raise ValueError(f"Unknown skill runtime tool: {tool_name}")
+
+    def _resolve_installed_skill(self, agent_id: str, requested_id: str) -> AgentSkill | None:
+        installed = self.repository.find_by_id(agent_id, requested_id)
+        if installed:
+            return installed
+
+        matches = [
+            item
+            for item in self.repository.list_by_agent(agent_id)
+            if item.skill_id == requested_id and item.enabled
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            ids = ", ".join(sorted(item.installed_skill_id or item.skill_id for item in matches))
+            raise ValueError(
+                f"Skill '{requested_id}' has multiple installed instances. Use one of: {ids}"
+            )
+        return None
 
 
 def get_skill_service() -> SkillService:

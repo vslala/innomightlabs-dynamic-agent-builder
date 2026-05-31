@@ -68,6 +68,31 @@ class TestAgentsRouter:
 
         assert response.status_code == 401
 
+    def test_get_create_schema_hydrates_common_option_sources(
+        self,
+        test_client: TestClient,
+        auth_headers: dict,
+    ):
+        """Test create form uses the common hydrated option-source contract."""
+        response = test_client.get("/agents/supported-models", headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["form_name"] == "Create Agent Form"
+        provider_field = next(field for field in data["form_inputs"] if field["name"] == "agent_provider")
+        model_field = next(field for field in data["form_inputs"] if field["name"] == "agent_model")
+
+        assert provider_field["options_source"] == {
+            "type": "agent_model_providers",
+            "mode": "hydrate",
+        }
+        assert model_field["options_source"] == {
+            "type": "agent_models",
+            "mode": "hydrate",
+        }
+        assert provider_field["options"] == [{"value": "Bedrock", "label": "Bedrock"}]
+        assert model_field["options"]
+
     def test_list_agents(self, test_client: TestClient, auth_headers: dict):
         """Test listing all agents for a user."""
         # Create an agent first
@@ -112,6 +137,18 @@ class TestAgentsRouter:
         field_names = [f["name"] for f in data["form_inputs"]]
         assert "agent_name" not in field_names
         assert "agent_persona" in field_names
+        provider_field = next(field for field in data["form_inputs"] if field["name"] == "agent_provider")
+        model_field = next(field for field in data["form_inputs"] if field["name"] == "agent_model")
+        assert provider_field["options_source"] == {
+            "type": "agent_model_providers",
+            "mode": "hydrate",
+        }
+        assert model_field["options_source"] == {
+            "type": "agent_models",
+            "mode": "hydrate",
+        }
+        assert provider_field["options"] == [{"value": "Bedrock", "label": "Bedrock"}]
+        assert model_field["options"]
 
     def test_update_schema_includes_openai_models_when_connected(
         self,
@@ -144,7 +181,7 @@ class TestAgentsRouter:
         model_values = [option["value"] for option in model_field["options"]]
         openai_start = model_values.index("gpt-5.5")
 
-        assert "OpenAI" in provider_field["values"]
+        assert "OpenAI" in [option["value"] for option in provider_field["options"]]
         assert model_values[openai_start:openai_start + 4] == [
             "gpt-5.5",
             "gpt-5.4",

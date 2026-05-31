@@ -15,7 +15,7 @@ from src.memory import (
     CoreMemory,
     MemoryBlockDefinition,
 )
-from src.messages.repository import MessageRepository
+from src.messages.repositories import get_message_repository
 from src.vectorstore.search import get_search_service
 
 log = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ class NativeToolHandler:
 
     def __init__(self, memory_repo: Optional[MemoryRepository] = None):
         self.memory_repo = memory_repo or MemoryRepository()
-        self.message_repo = MessageRepository()
+        self.message_repo = get_message_repository("dynamodb")
         self._conversation_id: Optional[str] = None
         self._linked_kb_ids: list[str] = []
         self._user_id: Optional[str] = None

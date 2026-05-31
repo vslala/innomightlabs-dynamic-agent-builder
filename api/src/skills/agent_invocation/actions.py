@@ -4,7 +4,7 @@ from typing import Any
 
 from src.agents.architectures import get_agent_architecture
 from src.agents.repository import AgentRepository
-from src.conversations.models import AutomationConversation
+from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.skills.agent_invocation.models import InvokeAgentRequest
 
@@ -14,8 +14,10 @@ async def invoke(
     config: dict[str, Any],
     context: dict[str, Any],
 ) -> dict[str, Any]:
-    del config
     request = InvokeAgentRequest.model_validate(arguments)
+    target_agent_id = request.agent_id or str(config.get("target_agent_id") or "").strip()
+    if not target_agent_id:
+        raise ValueError("Missing target agent configuration")
     owner_email = str(context.get("owner_email") or "").strip()
     actor_email = str(context.get("actor_email") or owner_email).strip()
     actor_id = str(context.get("actor_id") or actor_email).strip()
@@ -25,13 +27,13 @@ async def invoke(
     if not conversation_id:
         raise ValueError("Missing automation conversation context")
 
-    agent = AgentRepository().find_agent_by_id(request.agent_id, owner_email)
+    agent = AgentRepository().find_agent_by_id(target_agent_id, owner_email)
     if not agent:
         raise ValueError("Agent not found")
 
     conversation = ConversationRepository().find_by_id(conversation_id, owner_email)
-    if not isinstance(conversation, AutomationConversation):
-        raise ValueError("Automation conversation not found")
+    if not isinstance(conversation, Conversation):
+        raise ValueError("Conversation not found")
 
     architecture = get_agent_architecture(agent.agent_architecture)
     invocation = await architecture.handle_message_buffered(
