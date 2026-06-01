@@ -9,15 +9,6 @@ from pydantic import BaseModel, Field, model_validator
 import src.form_models as form_models
 
 
-class SkillActionManifest(BaseModel):
-    name: str
-    aliases: list[str] = Field(default_factory=list)
-    description: str
-    input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
-    action_form: Optional[form_models.Form] = None
-    handler: str
-
-
 class SkillConnectorDependency(BaseModel):
     connector_id: str
     required: bool = True
@@ -33,6 +24,20 @@ class SkillConnectorStatus(BaseModel):
 
 class SkillAutomationConfig(BaseModel):
     enabled: bool = True
+
+
+class SkillActionAutomationConfig(BaseModel):
+    enabled: bool = True
+
+
+class SkillActionManifest(BaseModel):
+    name: str
+    aliases: list[str] = Field(default_factory=list)
+    description: str
+    input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    action_form: Optional[form_models.Form] = None
+    automation: SkillActionAutomationConfig = Field(default_factory=SkillActionAutomationConfig)
+    handler: str
 
 
 class SkillManifest(BaseModel):

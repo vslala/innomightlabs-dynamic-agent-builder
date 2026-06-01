@@ -1,5 +1,6 @@
 import os
 import logging
+from contextlib import asynccontextmanager
 from decimal import Decimal
 
 from fastapi import FastAPI
@@ -26,6 +27,8 @@ from src.skills.registry import get_skill_registry
 from src.analytics import analytics_router
 from src.automations import automations_router
 from src.downloads import router as downloads_router
+from src.scheduler import scheduler_router
+from src.scheduler.runtime import get_scheduler_runtime
 from src.exceptions import register_exception_handlers
 from src.middleware.request_id import RequestIdMiddleware
 from src.runtime.env import is_lambda
@@ -72,6 +75,16 @@ def patched_render(self, content):
 
 StarletteJSONResponse.render = patched_render
 
+
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    await get_scheduler_runtime().start()
+    try:
+        yield
+    finally:
+        await get_scheduler_runtime().stop()
+
+
 def create_app() -> FastAPI:
     """Create the FastAPI app.
 
@@ -88,6 +101,7 @@ def create_app() -> FastAPI:
         title="Dynamic Agent Builder API",
         description="API for building dynamic agents with long-term memory",
         version="0.1.0",
+        lifespan=app_lifespan,
     )
 
     register_exception_handlers(app)
@@ -136,6 +150,7 @@ def create_app() -> FastAPI:
     app.include_router(router=skills_router)
     app.include_router(router=automations_router)
     app.include_router(router=downloads_router)
+    app.include_router(router=scheduler_router)
 
     # Skill-owned API routers (optional, mounted under /skills/{skill_id}/...)
     # If a skill folder (and its manifest) is removed, it simply won't be loaded.

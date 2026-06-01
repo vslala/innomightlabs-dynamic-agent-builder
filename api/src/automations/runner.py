@@ -93,6 +93,40 @@ class AutomationRunner:
         run.conversation_id = saved_conversation.conversation_id
         return self.automation_repo.save_run(run)
 
+    def create_scheduled_run(
+        self,
+        graph: AutomationGraph,
+        input_data: dict[str, Any],
+        user_email: str,
+        schedule_id: str,
+    ) -> AutomationRun:
+        first_agent_id = self._first_agent_id(graph.nodes)
+        run = AutomationRun(
+            automation_id=graph.automation.automation_id,
+            status=AutomationRunStatus.PENDING,
+            context={
+                "input": input_data,
+                "trigger": {
+                    "type": AutomationTriggerType.SCHEDULE.value,
+                    "trigger_id": None,
+                    "schedule_id": schedule_id,
+                },
+                "nodes": {},
+            },
+            created_by=user_email,
+        )
+        conversation = AutomationConversation(
+            title=f"Scheduled Automation Run: {graph.automation.title}",
+            description="Scheduled workflow execution",
+            agent_id=first_agent_id,
+            created_by=user_email,
+            automation_id=graph.automation.automation_id,
+            automation_run_id=run.run_id,
+        )
+        saved_conversation = self.conversation_repo.save(conversation)
+        run.conversation_id = saved_conversation.conversation_id
+        return self.automation_repo.save_run(run)
+
     async def execute_run(self, run_id: str, user_email: str) -> AutomationRun:
         run = self.automation_repo.find_run_by_id(run_id, user_email)
         if not run:

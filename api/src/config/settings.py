@@ -63,6 +63,10 @@ class Settings:
     async_job_lambda_name: str = ""
     account_deletion_lambda_name: str = ""
 
+    # Scheduler
+    scheduler_backend: str = "in_app"
+    scheduler_runtime_enabled: bool = True
+
     # DynamoDB endpoint (optional, for local development)
     dynamodb_endpoint: Optional[str] = None
 
@@ -324,6 +328,9 @@ class Settings:
                 os.getenv("AWS_LAMBDA_FUNCTION_NAME", ""),
             ),
             account_deletion_lambda_name=os.getenv("ACCOUNT_DELETION_LAMBDA_NAME", ""),
+            scheduler_backend=os.getenv("SCHEDULER_BACKEND", "in_app").strip().lower(),
+            scheduler_runtime_enabled=os.getenv("SCHEDULER_RUNTIME_ENABLED", "true").strip().lower()
+            not in {"0", "false", "no"},
             google_client_id=google_client_id,
             google_client_secret=google_client_secret,
             google_redirect_uri=f"{api_base_url}/auth/callback",

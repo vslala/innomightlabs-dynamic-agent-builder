@@ -515,6 +515,8 @@ class AutomationService:
             )
             if not action:
                 raise AutomationValidationError("skill_action references an unknown skill action")
+            if not action.automation.enabled:
+                raise AutomationValidationError("skill_action references a skill action that is not available for automations")
             if not isinstance(skill_config.arguments, dict):
                 raise AutomationValidationError("skill_action arguments must be an object")
             for field_name in action.input_schema.get("required", []):
@@ -632,6 +634,8 @@ class AutomationService:
             elif missing:
                 disabled_reason = "Missing connected connectors: " + ", ".join(missing)
             for action in loaded.manifest.actions:
+                if not action.automation.enabled:
+                    continue
                 actions.append(
                     AutomationActionCatalogItemResponse(
                         skill_id=enabled.skill_id,
@@ -680,6 +684,8 @@ class AutomationService:
                 )
                 install_form = form.model_dump(mode="json", exclude_none=True)
             for action in loaded.manifest.actions:
+                if not action.automation.enabled:
+                    continue
                 actions.append(
                     AutomationActionCatalogItemResponse(
                         skill_id=loaded.manifest.id,

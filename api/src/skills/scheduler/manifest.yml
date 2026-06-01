@@ -1,0 +1,191 @@
+id: scheduler
+namespace: core.productivity
+name: Scheduler
+description: Schedule this agent to wake up later in the current conversation.
+system_prompt: |
+  Use this skill when the user asks you to remind them, follow up later, run a recurring check,
+  or otherwise wake yourself on a cron schedule. Schedules are bound to the current agent and
+  current conversation.
+actions:
+  - name: create_or_update
+    aliases: [schedule, create_schedule, update_schedule]
+    description: Create a new schedule for this agent and conversation, or update an existing schedule by schedule_id.
+    automation:
+      enabled: false
+    input_schema:
+      type: object
+      required: [name, cron_expression, message]
+      properties:
+        schedule_id:
+          type: string
+          description: Optional existing schedule id to update.
+        name:
+          type: string
+          description: Human-readable schedule name.
+        cron_expression:
+          type: string
+          description: "Standard 5-field cron expression: minute hour day month weekday."
+        timezone:
+          type: string
+          description: IANA timezone name. Defaults to UTC.
+        message:
+          type: string
+          description: Message to send to this agent when the schedule fires.
+    action_form:
+      form_name: Create Schedule
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: schedule_id
+          label: Schedule ID
+          attr:
+            placeholder: "Leave empty to create a new schedule"
+            smart_values: "true"
+        - input_type: text
+          name: name
+          label: Name
+          attr:
+            placeholder: "Daily follow-up"
+            smart_values: "true"
+        - input_type: text
+          name: cron_expression
+          label: Cron expression
+          attr:
+            placeholder: "0 9 * * 1-5"
+            smart_values: "true"
+        - input_type: text
+          name: timezone
+          label: Timezone
+          value: UTC
+          attr:
+            placeholder: "UTC"
+            smart_values: "true"
+        - input_type: text_area
+          name: message
+          label: Message
+          attr:
+            rows: "8"
+            placeholder: "Message to send when the schedule fires"
+            smart_values: "true"
+    handler: actions:create_or_update
+  - name: schedule_automation
+    aliases: [create_automation_schedule, update_automation_schedule]
+    description: Create or update a cron schedule that runs the current automation with configured input.
+    input_schema:
+      type: object
+      required: [name, cron_expression]
+      properties:
+        schedule_id:
+          type: string
+          description: Optional existing schedule id to update.
+        name:
+          type: string
+          description: Human-readable schedule name.
+        cron_expression:
+          type: string
+          description: "Standard 5-field cron expression: minute hour day month weekday."
+        timezone:
+          type: string
+          description: IANA timezone name. Defaults to UTC.
+        input_json:
+          type: string
+          description: Optional JSON object passed as automation input when the schedule fires.
+    action_form:
+      form_name: Schedule Automation
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: schedule_id
+          label: Schedule ID
+          attr:
+            placeholder: "Leave empty to create a new schedule"
+            smart_values: "true"
+        - input_type: text
+          name: name
+          label: Name
+          attr:
+            placeholder: "Daily workflow"
+            smart_values: "true"
+        - input_type: text
+          name: cron_expression
+          label: Cron expression
+          attr:
+            placeholder: "0 9 * * 1-5"
+            smart_values: "true"
+        - input_type: text
+          name: timezone
+          label: Timezone
+          value: UTC
+          attr:
+            placeholder: "UTC"
+            smart_values: "true"
+        - input_type: text_area
+          name: input_json
+          label: Input JSON
+          attr:
+            rows: "8"
+            placeholder: "{\"source\":\"scheduler\"}"
+            smart_values: "true"
+    handler: actions:schedule_automation
+  - name: pause
+    description: Pause an existing schedule.
+    input_schema:
+      type: object
+      required: [schedule_id]
+      properties:
+        schedule_id:
+          type: string
+    action_form:
+      form_name: Pause Schedule
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: schedule_id
+          label: Schedule ID
+          attr:
+            smart_values: "true"
+    handler: actions:pause
+  - name: resume
+    description: Resume an existing schedule.
+    input_schema:
+      type: object
+      required: [schedule_id]
+      properties:
+        schedule_id:
+          type: string
+    action_form:
+      form_name: Resume Schedule
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: schedule_id
+          label: Schedule ID
+          attr:
+            smart_values: "true"
+    handler: actions:resume
+  - name: delete
+    description: Delete an existing schedule.
+    input_schema:
+      type: object
+      required: [schedule_id]
+      properties:
+        schedule_id:
+          type: string
+    action_form:
+      form_name: Delete Schedule
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: schedule_id
+          label: Schedule ID
+          attr:
+            smart_values: "true"
+    handler: actions:delete
+  - name: list
+    description: List schedules for this agent in the current conversation.
+    automation:
+      enabled: false
+    input_schema:
+      type: object
+      properties: {}
+    handler: actions:list_schedules

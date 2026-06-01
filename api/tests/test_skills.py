@@ -8,6 +8,7 @@ from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
+from src.scheduler.repository import SchedulerRepository
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.lead_capture.forms import parse_custom_inputs
@@ -43,6 +44,16 @@ def test_list_skills_catalog(test_client, auth_headers):
     assert google_mail["oauth_provider_name"] == "GoogleMail"
     assert google_mail["oauth_connected"] is False
     assert google_mail["oauth_start_path"] == "/auth/google-mail/start"
+    scheduler = next(item for item in payload if item["skill_id"] == "scheduler")
+    assert scheduler["name"] == "Scheduler"
+    assert scheduler["action_names"] == [
+        "create_or_update",
+        "schedule_automation",
+        "pause",
+        "resume",
+        "delete",
+        "list",
+    ]
 
 
 def test_list_skills_catalog_reports_google_drive_connected(test_client, auth_headers, dynamodb_table):
@@ -430,6 +441,136 @@ def test_agent_invocation_install_schema_hydrates_agent_options(test_client, aut
         "mode": "hydrate",
     }
     assert {"value": agent.agent_id, "label": agent.agent_name} in target_field["options"]
+
+
+def test_scheduler_skill_creates_conversation_bound_schedule(test_client, auth_headers, dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+    conversation = ConversationRepository().save(
+        Conversation(
+            title="Scheduler skill",
+            agent_id=agent.agent_id,
+            created_by=TEST_USER_EMAIL,
+        )
+    )
+
+    install_resp = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=scheduler",
+        headers=auth_headers,
+        json={"config": {}},
+    )
+    assert install_resp.status_code == 201
+    assert install_resp.json()["installed_skill_id"] == "scheduler"
+
+    result = asyncio.run(
+        SkillRuntimeService().handle_tool_call(
+            tool_name="execute_skill_action",
+            tool_input={
+                "skill_id": "scheduler",
+                "action": "create_or_update",
+                "arguments": {
+                    "name": "Lead follow-up",
+                    "cron_expression": "*/5 * * * *",
+                    "timezone": "UTC",
+                    "message": "Check new leads and summarize any follow-up needed.",
+                },
+            },
+            agent_id=agent.agent_id,
+            owner_email=TEST_USER_EMAIL,
+            actor_email=TEST_USER_EMAIL,
+            actor_id=TEST_USER_EMAIL,
+            conversation_id=conversation.conversation_id,
+        )
+    )
+
+    payload = json.loads(result)
+    schedule = payload["schedule"]
+    assert schedule["source_type"] == "agent_skill"
+    assert schedule["target_type"] == "agent_message"
+    assert schedule["target"]["agent_id"] == agent.agent_id
+    assert schedule["target"]["conversation_id"] == conversation.conversation_id
+    assert schedule["target"]["conversation_policy"] == "existing"
+    assert schedule["target"]["message"] == "Check new leads and summarize any follow-up needed."
+    assert schedule["next_run_at"]
+
+    saved = SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule["schedule_id"])
+    assert saved is not None
+    assert saved.target["conversation_id"] == conversation.conversation_id
+
+
+def test_scheduler_skill_accepts_agent_id_argument_for_automation_context(dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+    from src.skills.scheduler.actions import create_or_update
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+    conversation = ConversationRepository().save(
+        Conversation(
+            title="Automation scheduler",
+            agent_id=agent.agent_id,
+            created_by=TEST_USER_EMAIL,
+        )
+    )
+
+    payload = asyncio.run(
+        create_or_update(
+            arguments={
+                "agent_id": agent.agent_id,
+                "name": "Automation-created schedule",
+                "cron_expression": "*/5 * * * *",
+                "timezone": "UTC",
+                "message": "Run the scheduled automation follow-up.",
+            },
+            config={},
+            context={
+                "owner_email": TEST_USER_EMAIL,
+                "actor_email": TEST_USER_EMAIL,
+                "actor_id": TEST_USER_EMAIL,
+                "conversation_id": conversation.conversation_id,
+                "automation_id": "automation-1",
+                "orchestrator_type": "automation",
+            },
+        )
+    )
+
+    schedule = payload["schedule"]
+    assert schedule["target"]["agent_id"] == agent.agent_id
+    assert schedule["target"]["conversation_id"] == conversation.conversation_id
+    assert schedule["target"]["message"] == "Run the scheduled automation follow-up."
+
+
+def test_scheduler_skill_creates_automation_run_schedule(dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+    from src.skills.scheduler.actions import schedule_automation
+
+    payload = asyncio.run(
+        schedule_automation(
+            arguments={
+                "name": "Scheduled workflow",
+                "cron_expression": "*/5 * * * *",
+                "timezone": "UTC",
+                "input_json": '{"source":"scheduler"}',
+            },
+            config={},
+            context={
+                "owner_email": TEST_USER_EMAIL,
+                "actor_email": TEST_USER_EMAIL,
+                "actor_id": TEST_USER_EMAIL,
+                "automation_id": "automation-1",
+                "automation_node_id": "node-1",
+                "orchestrator_type": "automation",
+            },
+        )
+    )
+
+    schedule = payload["schedule"]
+    assert schedule["source_type"] == "automation_skill"
+    assert schedule["target_type"] == "automation_run"
+    assert schedule["target"] == {
+        "automation_id": "automation-1",
+        "input": {"source": "scheduler"},
+        "trigger_id": "node-1",
+    }
 
 
 def test_repeatable_skill_install_is_deterministic_by_identity_fields(test_client, auth_headers, dynamodb_table):
