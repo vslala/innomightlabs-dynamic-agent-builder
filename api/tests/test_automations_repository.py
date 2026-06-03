@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from src.automations.models import (
     Automation,
     AutomationEdge,
@@ -6,6 +8,7 @@ from src.automations.models import (
     AutomationRunNodeResult,
     AutomationTrigger,
 )
+from src.automations.repository import AutomationRepository
 from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2
 
 
@@ -55,6 +58,92 @@ def test_save_and_replace_graph(automation_repository):
     _, edges, _ = automation_repository.get_graph(automation.automation_id)
 
     assert edges == []
+
+
+def test_get_graph_reads_all_query_pages():
+    start = AutomationNode(automation_id="auto-1", node_id="start", type="start", name="Start")
+    trigger = AutomationTrigger(
+        automation_id="auto-1",
+        trigger_id="manual",
+        type="manual",
+        name="Manual",
+        enabled=True,
+        entry_node_id="start",
+    )
+
+    class PaginatedTable:
+        def __init__(self):
+            self.calls = 0
+
+        def query(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                assert "ExclusiveStartKey" not in kwargs
+                return {
+                    "Items": [start.to_dynamo_item()],
+                    "LastEvaluatedKey": {"pk": "Automation#auto-1", "sk": "Node#start"},
+                }
+            assert kwargs["ExclusiveStartKey"] == {
+                "pk": "Automation#auto-1",
+                "sk": "Node#start",
+            }
+            return {"Items": [trigger.to_dynamo_item()]}
+
+    repo = AutomationRepository.__new__(AutomationRepository)
+    repo.table = PaginatedTable()
+
+    nodes, edges, triggers = repo.get_graph("auto-1")
+
+    assert [node.node_id for node in nodes] == ["start"]
+    assert edges == []
+    assert [item.trigger_id for item in triggers] == ["manual"]
+    assert repo.table.calls == 2
+
+
+def test_list_triggers_reads_all_query_pages():
+    older = AutomationTrigger(
+        automation_id="auto-1",
+        trigger_id="older",
+        type="manual",
+        name="Older",
+        enabled=True,
+        entry_node_id="start",
+    )
+    newer = AutomationTrigger(
+        automation_id="auto-1",
+        trigger_id="newer",
+        type="manual",
+        name="Newer",
+        enabled=True,
+        entry_node_id="start",
+    )
+    newer.created_at = older.created_at + timedelta(microseconds=1)
+
+    class PaginatedTriggerTable:
+        def __init__(self):
+            self.calls = 0
+
+        def query(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                assert "ExclusiveStartKey" not in kwargs
+                return {
+                    "Items": [newer.to_dynamo_item()],
+                    "LastEvaluatedKey": {"pk": "Automation#auto-1", "sk": "Trigger#newer"},
+                }
+            assert kwargs["ExclusiveStartKey"] == {
+                "pk": "Automation#auto-1",
+                "sk": "Trigger#newer",
+            }
+            return {"Items": [older.to_dynamo_item()]}
+
+    repo = AutomationRepository.__new__(AutomationRepository)
+    repo.table = PaginatedTriggerTable()
+
+    triggers = repo.list_triggers("auto-1")
+
+    assert [item.trigger_id for item in triggers] == ["older", "newer"]
+    assert repo.table.calls == 2
 
 
 def test_save_and_find_run_details(automation_repository):

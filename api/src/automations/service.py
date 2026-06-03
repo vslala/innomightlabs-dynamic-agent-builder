@@ -180,6 +180,10 @@ class AutomationService:
         nodes, edges, triggers = self.repo.get_graph(automation_id)
         return AutomationGraph(automation, nodes, edges, triggers)
 
+    def list_triggers(self, automation_id: str, user_email: str) -> list[AutomationTrigger]:
+        self.get_automation(automation_id, user_email)
+        return self.repo.list_triggers(automation_id)
+
     def save_graph(
         self, automation_id: str, body: SaveAutomationGraphRequest, user_email: str
     ) -> AutomationGraph:
@@ -217,36 +221,8 @@ class AutomationService:
                     source_node_id=edge.source_node_id,
                     target_node_id=edge.target_node_id,
                 ).edge_id
-        triggers = [
-            AutomationTrigger(
-                trigger_id=item.trigger_id or "",
-                automation_id=automation_id,
-                type=item.type,
-                name=item.name,
-                enabled=item.enabled,
-                entry_node_id=item.entry_node_id,
-                config=item.config,
-            )
-            for item in body.triggers
-        ]
-        for trigger in triggers:
-            if not trigger.trigger_id:
-                trigger.trigger_id = AutomationTrigger(
-                    automation_id=automation_id,
-                    type=trigger.type,
-                    name=trigger.name,
-                    entry_node_id=trigger.entry_node_id,
-                ).trigger_id
         existing_nodes, _, existing_triggers = self.repo.get_graph(automation_id)
-        self.validate_graph(nodes, edges, triggers, user_email, automation_id)
-        next_trigger_ids = {trigger.trigger_id for trigger in triggers}
-        for removed_trigger in existing_triggers:
-            if removed_trigger.trigger_id not in next_trigger_ids:
-                self.trigger_lifecycle.delete_trigger(
-                    automation_id,
-                    removed_trigger.trigger_id,
-                    user_email,
-                )
+        self.validate_graph(nodes, edges, existing_triggers, user_email, automation_id)
         next_node_ids = {node.node_id for node in nodes}
         for removed_node in existing_nodes:
             if removed_node.node_id not in next_node_ids:
@@ -256,10 +232,8 @@ class AutomationService:
                     user_email,
                     metadata={"automation_deleted": False, "graph_replaced": True},
                 )
-        self.repo.save_graph(automation_id, nodes, edges, triggers)
-        for trigger in triggers:
-            self.trigger_lifecycle.sync_trigger(automation, trigger, user_email)
-        return AutomationGraph(automation, nodes, edges, triggers)
+        self.repo.save_graph(automation_id, nodes, edges, existing_triggers)
+        return AutomationGraph(automation, nodes, edges, existing_triggers)
 
     def add_node(
         self, automation_id: str, body: CreateAutomationNodeRequest, user_email: str

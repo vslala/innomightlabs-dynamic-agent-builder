@@ -178,7 +178,7 @@ export interface UpdateAutomationTriggerRequest {
 export interface SaveAutomationGraphRequest {
   nodes: CreateAutomationNodeRequest[];
   edges: CreateAutomationEdgeRequest[];
-  triggers: CreateAutomationTriggerRequest[];
+  triggers?: CreateAutomationTriggerRequest[];
 }
 
 export interface StartAutomationRunRequest {

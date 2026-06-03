@@ -51,7 +51,6 @@ import type {
   AutomationSkillResponse,
   CreateAutomationEdgeRequest,
   CreateAutomationNodeRequest,
-  CreateAutomationTriggerRequest,
   InvokeAgentActionConfig,
   SkillActionConfig,
 } from "../../../types/automation";
@@ -592,15 +591,7 @@ function graphToSaveRequest(graph: AutomationGraphResponse) {
     label: edge.label,
     condition: edge.condition,
   }));
-  const triggers: CreateAutomationTriggerRequest[] = graph.triggers.map((trigger) => ({
-    trigger_id: trigger.trigger_id,
-    type: trigger.type,
-    name: trigger.name,
-    enabled: trigger.enabled,
-    entry_node_id: trigger.entry_node_id,
-    config: trigger.config,
-  }));
-  return { nodes, edges, triggers };
+  return { nodes, edges };
 }
 
 function actionConfig(): SkillActionConfig {

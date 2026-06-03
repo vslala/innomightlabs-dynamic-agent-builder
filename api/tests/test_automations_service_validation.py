@@ -488,6 +488,56 @@ def test_schedule_trigger_lifecycle_creates_updates_pauses_and_deletes_schedule(
     assert SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule_id) is None
 
 
+def test_save_graph_preserves_existing_triggers_and_schedules(dynamodb_table):
+    service = make_service()
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    graph = service.get_graph(automation.automation_id, TEST_USER_EMAIL)
+    start = next(node for node in graph.nodes if node.type == "start")
+    final = next(node for node in graph.nodes if node.type == "final")
+
+    trigger = service.add_trigger(
+        automation.automation_id,
+        CreateAutomationTriggerRequest(
+            trigger_id="five-minute-cleanup",
+            type=AutomationTriggerType.SCHEDULE,
+            name="Five minute cleanup",
+            enabled=True,
+            entry_node_id=start.node_id,
+            config={
+                "cron_expression": "*/5 * * * *",
+                "timezone": "UTC",
+                "input": {},
+            },
+        ),
+        TEST_USER_EMAIL,
+    )
+    schedule_id = f"automation:{automation.automation_id}:trigger:{trigger.trigger_id}"
+
+    saved = service.save_graph(
+        automation.automation_id,
+        SaveAutomationGraphRequest(
+            nodes=[
+                {"node_id": start.node_id, "type": "start", "name": "Start"},
+                {"node_id": final.node_id, "type": "final", "name": "Done"},
+            ],
+            edges=[
+                {
+                    "edge_id": "start-final",
+                    "source_node_id": start.node_id,
+                    "target_node_id": final.node_id,
+                }
+            ],
+        ),
+        TEST_USER_EMAIL,
+    )
+
+    assert {item.trigger_id for item in saved.triggers} == {
+        "five-minute-cleanup",
+        *{item.trigger_id for item in graph.triggers},
+    }
+    assert SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule_id) is not None
+
+
 def test_delete_scheduler_automation_step_deletes_matching_schedule(dynamodb_table):
     service = make_service()
     automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation

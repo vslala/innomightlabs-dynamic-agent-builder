@@ -129,23 +129,53 @@ class AutomationRepository:
         item = response.get("Item")
         return AutomationTrigger.from_dynamo_item(item) if item else None
 
+    def list_triggers(self, automation_id: str) -> list[AutomationTrigger]:
+        triggers: list[AutomationTrigger] = []
+        query_kwargs = {
+            "KeyConditionExpression": Key("pk").eq(f"Automation#{automation_id}")
+            & Key("sk").begins_with("Trigger#")
+        }
+        while True:
+            response = self.table.query(**query_kwargs)
+            triggers.extend(
+                AutomationTrigger.from_dynamo_item(item)
+                for item in response.get("Items", [])
+                if item.get("entity_type") == "AutomationTrigger"
+            )
+
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                break
+            query_kwargs["ExclusiveStartKey"] = last_key
+
+        triggers.sort(key=lambda trigger: trigger.created_at)
+        return triggers
+
     def get_graph(
         self, automation_id: str
     ) -> tuple[list[AutomationNode], list[AutomationEdge], list[AutomationTrigger]]:
-        response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"Automation#{automation_id}")
-        )
         nodes: list[AutomationNode] = []
         edges: list[AutomationEdge] = []
         triggers: list[AutomationTrigger] = []
-        for item in response.get("Items", []):
-            entity_type = item.get("entity_type")
-            if entity_type == "AutomationNode":
-                nodes.append(AutomationNode.from_dynamo_item(item))
-            elif entity_type == "AutomationEdge":
-                edges.append(AutomationEdge.from_dynamo_item(item))
-            elif entity_type == "AutomationTrigger":
-                triggers.append(AutomationTrigger.from_dynamo_item(item))
+        query_kwargs = {
+            "KeyConditionExpression": Key("pk").eq(f"Automation#{automation_id}")
+        }
+        while True:
+            response = self.table.query(**query_kwargs)
+            for item in response.get("Items", []):
+                entity_type = item.get("entity_type")
+                if entity_type == "AutomationNode":
+                    nodes.append(AutomationNode.from_dynamo_item(item))
+                elif entity_type == "AutomationEdge":
+                    edges.append(AutomationEdge.from_dynamo_item(item))
+                elif entity_type == "AutomationTrigger":
+                    triggers.append(AutomationTrigger.from_dynamo_item(item))
+
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                break
+            query_kwargs["ExclusiveStartKey"] = last_key
+
         nodes.sort(key=lambda node: node.created_at)
         edges.sort(key=lambda edge: edge.created_at)
         triggers.sort(key=lambda trigger: trigger.created_at)

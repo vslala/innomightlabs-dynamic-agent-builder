@@ -361,8 +361,8 @@ async def list_triggers(
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> list[AutomationTriggerResponse]:
     try:
-        graph = service.get_graph(automation_id, get_user_email(request))
-        return [trigger.to_response() for trigger in graph.triggers]
+        triggers = service.list_triggers(automation_id, get_user_email(request))
+        return [trigger.to_response() for trigger in triggers]
     except Exception as exc:
         raise translate_error(exc) from exc
 
