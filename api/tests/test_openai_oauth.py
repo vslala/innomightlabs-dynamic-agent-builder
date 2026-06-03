@@ -1,3 +1,4 @@
+import base64
 import json
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
@@ -6,7 +7,11 @@ from fastapi.testclient import TestClient
 
 from src.config import settings
 from src.crypto import decrypt
-from src.auth.openai_oauth import encode_state_session, OpenAIOAuthState
+from src.auth.openai_oauth import (
+    OpenAIOAuthState,
+    encode_state_session,
+    extract_account_id_from_access_token,
+)
 from src.settings.repository import ProviderSettingsRepository
 from tests.mock_data import TEST_USER_EMAIL
 
@@ -117,6 +122,22 @@ class TestOpenAIOAuth:
 
         assert response.status_code == 200
         assert "Copy the full URL" in response.text
+
+    def test_extract_account_id_supports_chatgpt_claims(self):
+        payload = {
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "chatgpt-account-1",
+            },
+            "sub": "fallback-subject",
+        }
+        encoded_payload = (
+            base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8"))
+            .decode("utf-8")
+            .rstrip("=")
+        )
+        token = f"header.{encoded_payload}.signature"
+
+        assert extract_account_id_from_access_token(token) == "chatgpt-account-1"
 
 
 class TestOpenAISettings:

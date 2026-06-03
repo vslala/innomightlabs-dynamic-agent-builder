@@ -1,10 +1,11 @@
-import { BarChart3, History, Workflow } from "lucide-react";
+import { BarChart3, History, Timer, Workflow } from "lucide-react";
 import { NavLink, useLocation, useParams } from "react-router-dom";
 
 import { cn } from "../../../../lib/utils";
 
 const navItems = [
   { path: "", label: "Builder", icon: Workflow, end: true },
+  { path: "triggers", label: "Triggers", icon: Timer },
   { path: "runs", label: "Runs", icon: History },
   { path: "analytics", label: "Analytics", icon: BarChart3 },
 ];

@@ -167,6 +167,14 @@ export interface CreateAutomationTriggerRequest {
   config?: Record<string, unknown>;
 }
 
+export interface UpdateAutomationTriggerRequest {
+  type?: AutomationTriggerType;
+  name?: string;
+  enabled?: boolean;
+  entry_node_id?: string;
+  config?: Record<string, unknown>;
+}
+
 export interface SaveAutomationGraphRequest {
   nodes: CreateAutomationNodeRequest[];
   edges: CreateAutomationEdgeRequest[];

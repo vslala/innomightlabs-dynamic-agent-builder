@@ -14,6 +14,13 @@ def _required_context(context: dict[str, Any], key: str) -> str:
     return value
 
 
+def _required_argument(arguments: dict[str, Any], key: str) -> str:
+    value = str(arguments.get(key) or "").strip()
+    if not value:
+        raise ValueError(f"Missing scheduler argument: {key}")
+    return value
+
+
 def _required_argument_or_context(
     arguments: dict[str, Any],
     context: dict[str, Any],
@@ -132,9 +139,9 @@ async def schedule_automation(
         "automation_node_id": str(context.get("automation_node_id") or "").strip(),
     }
     service = SchedulerService()
-    schedule_id = str(arguments.get("schedule_id") or "").strip()
+    schedule_id = _required_argument(arguments, "schedule_id")
 
-    if schedule_id:
+    if service.repository.find_schedule(owner_email, schedule_id):
         schedule = service.update_schedule(
             schedule_id,
             UpdateScheduleRequest(
@@ -150,6 +157,7 @@ async def schedule_automation(
     else:
         schedule = service.create_schedule(
             CreateScheduleRequest(
+                schedule_id=schedule_id,
                 name=str(arguments.get("name") or "").strip(),
                 cron_expression=str(arguments.get("cron_expression") or "").strip(),
                 timezone=str(arguments.get("timezone") or "UTC").strip() or "UTC",

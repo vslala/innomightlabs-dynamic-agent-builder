@@ -26,6 +26,18 @@ class SkillAutomationConfig(BaseModel):
     enabled: bool = True
 
 
+class SkillLifecycleHook(BaseModel):
+    handler: str
+
+
+class SkillLifecycleManifest(BaseModel):
+    delete: Optional[SkillLifecycleHook] = None
+    create: Optional[SkillLifecycleHook] = None
+    update: Optional[SkillLifecycleHook] = None
+    enable: Optional[SkillLifecycleHook] = None
+    disable: Optional[SkillLifecycleHook] = None
+
+
 class SkillActionAutomationConfig(BaseModel):
     enabled: bool = True
 
@@ -37,6 +49,7 @@ class SkillActionManifest(BaseModel):
     input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
     action_form: Optional[form_models.Form] = None
     automation: SkillActionAutomationConfig = Field(default_factory=SkillActionAutomationConfig)
+    lifecycle: SkillLifecycleManifest = Field(default_factory=SkillLifecycleManifest)
     handler: str
 
 
@@ -58,6 +71,7 @@ class SkillManifest(BaseModel):
     oauth_provider_name: Optional[str] = None
     connectors: list[SkillConnectorDependency] = Field(default_factory=list)
     automation: SkillAutomationConfig = Field(default_factory=SkillAutomationConfig)
+    lifecycle: SkillLifecycleManifest = Field(default_factory=SkillLifecycleManifest)
     actions: list[SkillActionManifest] = Field(default_factory=list)
     form: list[form_models.FormInput] = Field(default_factory=list)
 

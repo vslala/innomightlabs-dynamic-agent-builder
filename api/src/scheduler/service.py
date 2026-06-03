@@ -37,6 +37,12 @@ class SchedulerService:
         expression = ScheduleExpression(body.cron_expression, body.timezone)
         validate_schedule_expression(expression)
         status = ScheduleStatus.ACTIVE if body.enabled else ScheduleStatus.PAUSED
+        schedule_kwargs: dict[str, str] = {}
+        if body.schedule_id:
+            schedule_id = body.schedule_id.strip()
+            if not schedule_id:
+                raise SchedulerValidationError("Schedule id cannot be empty")
+            schedule_kwargs["schedule_id"] = schedule_id
         schedule = Schedule(
             owner_email=owner_email,
             name=body.name,
@@ -49,6 +55,7 @@ class SchedulerService:
             source_ref=body.source_ref,
             next_run_at=next_run_at(expression) if status == ScheduleStatus.ACTIVE else None,
             created_by=created_by,
+            **schedule_kwargs,
         )
         saved = self.repository.save_schedule(schedule)
         if saved.status == ScheduleStatus.ACTIVE:

@@ -51,6 +51,7 @@ class ScheduleResponse(BaseModel):
 
 
 class CreateScheduleRequest(BaseModel):
+    schedule_id: Optional[str] = None
     name: str
     cron_expression: str
     timezone: str = "UTC"

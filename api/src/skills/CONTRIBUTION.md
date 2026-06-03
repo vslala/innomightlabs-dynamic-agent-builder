@@ -34,6 +34,8 @@ Avoid defining Pydantic models inline in `actions.py` once a skill has more than
 
 Every skill needs a `manifest.yml`:
 
+For the full manifest contract, including every supported key, form input shape, lifecycle hook, automation option, dynamic option source, and project examples, see [SKILL_MANIFEST.md](./SKILL_MANIFEST.md).
+
 ```yaml
 id: wordpress_search
 namespace: integrations.wordpress

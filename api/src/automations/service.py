@@ -39,7 +39,11 @@ from src.connectors.service import ConnectorService, get_connector_service
 from src.crypto import encrypt
 from src.form_options import FormOptionsContext, hydrate_form_options
 from src.skills.identity import installed_skill_id_for
+from src.skills.lifecycle import SkillLifecycleRunner
 from src.skills.registry import SkillRegistry, get_skill_registry
+from src.automations.triggers.models import ScheduleTriggerConfig
+from src.automations.triggers.service import AutomationTriggerLifecycleService
+from src.scheduler.cron import ScheduleExpression, validate_schedule_expression
 
 
 class AutomationNotFoundError(Exception):
@@ -75,11 +79,15 @@ class AutomationService:
         agent_repo: AgentRepository | None = None,
         skill_registry: SkillRegistry | None = None,
         connector_service: ConnectorService | None = None,
+        lifecycle_runner: SkillLifecycleRunner | None = None,
+        trigger_lifecycle: AutomationTriggerLifecycleService | None = None,
     ):
         self.repo = repo or AutomationRepository()
         self.agent_repo = agent_repo or AgentRepository()
         self.skill_registry = skill_registry or get_skill_registry()
         self.connector_service = connector_service or get_connector_service()
+        self.lifecycle_runner = lifecycle_runner or SkillLifecycleRunner(self.skill_registry)
+        self.trigger_lifecycle = trigger_lifecycle or AutomationTriggerLifecycleService()
 
     def create_automation(self, body: CreateAutomationRequest, user_email: str) -> AutomationGraph:
         automation = Automation(
@@ -131,6 +139,7 @@ class AutomationService:
         self, automation_id: str, body: UpdateAutomationRequest, user_email: str
     ) -> Automation:
         automation = self.get_automation(automation_id, user_email)
+        previous_status = automation.status
         if body.title is not None:
             automation.title = body.title
         if body.description is not None:
@@ -139,11 +148,29 @@ class AutomationService:
             if body.status == AutomationStatus.ACTIVE:
                 graph = self.get_graph(automation_id, user_email)
                 self.validate_graph(graph.nodes, graph.edges, graph.triggers, user_email, automation_id)
-            automation.status = body.status
+                automation.status = body.status
+                if previous_status != AutomationStatus.ACTIVE:
+                    for trigger in graph.triggers:
+                        self.trigger_lifecycle.sync_trigger(automation, trigger, user_email)
+            elif previous_status == AutomationStatus.ACTIVE:
+                graph = self.get_graph(automation_id, user_email)
+                self.trigger_lifecycle.pause_schedule_triggers(automation_id, graph.triggers, user_email)
+                automation.status = body.status
+            else:
+                automation.status = body.status
         return self.repo.save_automation(automation)
 
     def delete_automation(self, automation_id: str, user_email: str) -> None:
-        self.get_automation(automation_id, user_email)
+        graph = self.get_graph(automation_id, user_email)
+        for trigger in graph.triggers:
+            self.trigger_lifecycle.delete_trigger(automation_id, trigger.trigger_id, user_email)
+        for node in graph.nodes:
+            self._run_action_delete_lifecycle(
+                automation_id,
+                node,
+                user_email,
+                metadata={"automation_deleted": True},
+            )
         if not self.repo.soft_delete_automation(automation_id, user_email):
             raise AutomationValidationError("Failed to delete automation")
 
@@ -210,8 +237,28 @@ class AutomationService:
                     name=trigger.name,
                     entry_node_id=trigger.entry_node_id,
                 ).trigger_id
+        existing_nodes, _, existing_triggers = self.repo.get_graph(automation_id)
         self.validate_graph(nodes, edges, triggers, user_email, automation_id)
+        next_trigger_ids = {trigger.trigger_id for trigger in triggers}
+        for removed_trigger in existing_triggers:
+            if removed_trigger.trigger_id not in next_trigger_ids:
+                self.trigger_lifecycle.delete_trigger(
+                    automation_id,
+                    removed_trigger.trigger_id,
+                    user_email,
+                )
+        next_node_ids = {node.node_id for node in nodes}
+        for removed_node in existing_nodes:
+            if removed_node.node_id not in next_node_ids:
+                self._run_action_delete_lifecycle(
+                    automation_id,
+                    removed_node,
+                    user_email,
+                    metadata={"automation_deleted": False, "graph_replaced": True},
+                )
         self.repo.save_graph(automation_id, nodes, edges, triggers)
+        for trigger in triggers:
+            self.trigger_lifecycle.sync_trigger(automation, trigger, user_email)
         return AutomationGraph(automation, nodes, edges, triggers)
 
     def add_node(
@@ -269,6 +316,13 @@ class AutomationService:
         ]
         triggers = [trigger for trigger in graph.triggers if trigger.entry_node_id != node_id]
         self.validate_graph(nodes, edges, triggers, user_email, automation_id)
+        deleted_node = next(node for node in graph.nodes if node.node_id == node_id)
+        self._run_action_delete_lifecycle(
+            automation_id,
+            deleted_node,
+            user_email,
+            metadata={"automation_deleted": False},
+        )
         self.repo.delete_node(automation_id, node_id)
         for edge in graph.edges:
             if edge.source_node_id == node_id or edge.target_node_id == node_id:
@@ -349,8 +403,12 @@ class AutomationService:
                 name=trigger.name,
                 entry_node_id=trigger.entry_node_id,
             ).trigger_id
-        self.validate_graph(graph.nodes, graph.edges, [*graph.triggers, trigger], user_email, automation_id)
-        return self.repo.save_trigger(trigger)
+        if any(item.trigger_id == trigger.trigger_id for item in graph.triggers):
+            raise AutomationValidationError("Trigger IDs must be unique")
+        self._validate_trigger(graph.nodes, trigger)
+        saved = self.repo.save_trigger(trigger)
+        self.trigger_lifecycle.sync_trigger(graph.automation, saved, user_email)
+        return saved
 
     def update_trigger(
         self,
@@ -376,15 +434,20 @@ class AutomationService:
         updated_triggers = [
             trigger if item.trigger_id == trigger_id else item for item in graph.triggers
         ]
-        self.validate_graph(graph.nodes, graph.edges, updated_triggers, user_email, automation_id)
-        return self.repo.save_trigger(trigger)
+        trigger_ids = {item.trigger_id for item in updated_triggers}
+        if len(trigger_ids) != len(updated_triggers):
+            raise AutomationValidationError("Trigger IDs must be unique")
+        self._validate_trigger(graph.nodes, trigger)
+        saved = self.repo.save_trigger(trigger)
+        self.trigger_lifecycle.sync_trigger(graph.automation, saved, user_email)
+        return saved
 
     def delete_trigger(self, automation_id: str, trigger_id: str, user_email: str) -> None:
         graph = self.get_graph(automation_id, user_email)
         triggers = [trigger for trigger in graph.triggers if trigger.trigger_id != trigger_id]
         if len(triggers) == len(graph.triggers):
             raise AutomationNotFoundError("Trigger not found")
-        self.validate_graph(graph.nodes, graph.edges, triggers, user_email, automation_id)
+        self.trigger_lifecycle.delete_trigger(automation_id, trigger_id, user_email)
         self.repo.delete_trigger(automation_id, trigger_id)
 
     def validate_graph(
@@ -429,13 +492,7 @@ class AutomationService:
             outgoing[edge.source_node_id].append(edge)
 
         for trigger in triggers:
-            node = node_by_id.get(trigger.entry_node_id)
-            if not node:
-                raise AutomationValidationError(
-                    f"Trigger entry node not found: {trigger.entry_node_id}"
-                )
-            if node.type != AutomationNodeType.START:
-                raise AutomationValidationError("Triggers must reference a start node")
+            self._validate_trigger(nodes, trigger)
 
         entry_node_ids = {trigger.entry_node_id for trigger in triggers} or {
             node.node_id for node in start_nodes
@@ -464,6 +521,28 @@ class AutomationService:
                     )
             elif node.type == AutomationNodeType.ACTION:
                 self._validate_action_config(node.config, user_email, automation_id or node.automation_id)
+
+    def _validate_trigger(
+        self,
+        nodes: list[AutomationNode],
+        trigger: AutomationTrigger,
+    ) -> None:
+        node_by_id = {node.node_id: node for node in nodes}
+        node = node_by_id.get(trigger.entry_node_id)
+        if not node:
+            raise AutomationValidationError(
+                f"Trigger entry node not found: {trigger.entry_node_id}"
+            )
+        if node.type != AutomationNodeType.START:
+            raise AutomationValidationError("Triggers must reference a start node")
+        if trigger.type == AutomationTriggerType.SCHEDULE:
+            try:
+                config = ScheduleTriggerConfig.model_validate(trigger.config)
+                validate_schedule_expression(
+                    ScheduleExpression(config.cron_expression, config.timezone)
+                )
+            except Exception as exc:
+                raise AutomationValidationError(f"Invalid schedule trigger: {exc}") from exc
 
     def _validate_action_config(self, config: dict[str, Any], user_email: str, automation_id: str) -> None:
         action_type = config.get("action_type")
@@ -728,6 +807,53 @@ class AutomationService:
             updated_at=item.updated_at,
             config=item.config,
             connectors=connectors,
+        )
+
+    def _run_action_delete_lifecycle(
+        self,
+        automation_id: str,
+        node: AutomationNode,
+        user_email: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        if node.type != AutomationNodeType.ACTION:
+            return
+        if node.config.get("action_type") != AutomationActionType.SKILL_ACTION.value:
+            return
+        try:
+            skill_config = SkillActionConfig(**node.config)
+        except Exception:
+            return
+
+        enabled = self._resolve_automation_skill(
+            automation_id,
+            installed_skill_id=skill_config.installed_skill_id,
+            skill_id=skill_config.skill_id,
+            user_email=user_email,
+            allow_auto_enable=False,
+        )
+        skill_id = enabled.skill_id if enabled else skill_config.skill_id
+        if not skill_id:
+            return
+
+        lifecycle_metadata = {
+            **metadata,
+            "automation_id": automation_id,
+            "automation_node_id": node.node_id,
+            "node": node.model_dump(mode="json"),
+        }
+        self.lifecycle_runner.run_action_delete(
+            skill_id=skill_id,
+            installed_skill_id=(
+                enabled.installed_skill_id or enabled.skill_id
+                if enabled
+                else skill_config.installed_skill_id
+            ),
+            action_name=skill_config.action,
+            owner_email=user_email,
+            config=self.repo.get_skill_runtime_config(enabled) if enabled else {},
+            arguments=skill_config.arguments,
+            metadata=lifecycle_metadata,
         )
 
     def _split_skill_config(self, skill_id: str, config: dict[str, Any]) -> tuple[dict[str, Any], str, list[str]]:

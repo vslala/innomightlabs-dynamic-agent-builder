@@ -1,0 +1,1 @@
+"""Automation trigger lifecycle helpers."""

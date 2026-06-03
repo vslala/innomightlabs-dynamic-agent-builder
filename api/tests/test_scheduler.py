@@ -6,7 +6,7 @@ import pytest
 
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
-from src.automations.models import CreateAutomationRequest
+from src.automations.models import AutomationStatus, CreateAutomationRequest, UpdateAutomationRequest
 from src.automations.repository import AutomationRepository
 from src.automations.service import AutomationService
 from src.conversations.models import Conversation
@@ -94,6 +94,37 @@ def test_scheduler_repository_saves_schedule_lookup_items(dynamodb_table):
     assert dynamodb_table.get_item(
         Key={"pk": "Conversation#conversation-1", "sk": f"Schedule#{schedule.schedule_id}"}
     ).get("Item")
+
+
+def test_scheduler_repository_updates_schedule_with_same_lookup_key(dynamodb_table):
+    repository = SchedulerRepository()
+    schedule = Schedule(
+        schedule_id="schedule-1",
+        owner_email=TEST_USER_EMAIL,
+        name="Initial",
+        cron_expression="*/5 * * * *",
+        target_type=ScheduleTargetType.AUTOMATION_RUN,
+        target={"automation_id": "automation-1", "trigger_id": "trigger-1", "input": {}},
+        source_type="automation_trigger",
+        source_ref={"automation_id": "automation-1", "trigger_id": "trigger-1"},
+        created_by=TEST_USER_EMAIL,
+        next_run_at=datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc),
+    )
+    repository.save_schedule(schedule)
+
+    schedule.name = "Updated"
+    schedule.target = {
+        "automation_id": "automation-1",
+        "trigger_id": "trigger-1",
+        "input": {"source": "updated"},
+    }
+
+    repository.save_schedule(schedule)
+
+    saved = repository.find_schedule(TEST_USER_EMAIL, "schedule-1")
+    assert saved is not None
+    assert saved.name == "Updated"
+    assert saved.target["input"] == {"source": "updated"}
 
 
 def test_scheduler_repository_lists_active_schedules_from_gsi(dynamodb_table):
@@ -304,8 +335,14 @@ async def test_scheduler_dispatcher_invokes_automation_run_target(dynamodb_table
     backend = FakeSchedulerBackend()
     repository = SchedulerRepository()
     scheduler_service = SchedulerService(repository=repository, backend=backend)
-    automation_graph = AutomationService(repo=AutomationRepository()).create_automation(
+    automation_service = AutomationService(repo=AutomationRepository())
+    automation_graph = automation_service.create_automation(
         CreateAutomationRequest(title="Scheduled automation"),
+        TEST_USER_EMAIL,
+    )
+    automation_service.update_automation(
+        automation_graph.automation.automation_id,
+        UpdateAutomationRequest(status=AutomationStatus.ACTIVE),
         TEST_USER_EMAIL,
     )
     schedule = scheduler_service.create_schedule(

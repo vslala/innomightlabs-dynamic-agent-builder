@@ -7,6 +7,7 @@ import src.form_models as form_models
 from src.connectors.service import ConnectorService, connector_id_for_provider, get_connector_service
 from src.form_options import FormOptionsContext, hydrate_form_options, validate_form_options
 from src.skills.identity import installed_skill_id_for
+from src.skills.lifecycle import SkillLifecycleRunner
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import (
     AgentSkill,
@@ -26,11 +27,13 @@ class SkillService:
         repository: Optional[AgentSkillRepository] = None,
         provider_settings_repository: Optional[ProviderSettingsRepository] = None,
         connector_service: Optional[ConnectorService] = None,
+        lifecycle_runner: Optional[SkillLifecycleRunner] = None,
     ):
         self.registry = registry or get_skill_registry()
         self.repository = repository or get_agent_skill_repository()
         self.provider_settings_repository = provider_settings_repository or get_provider_settings_repository()
         self.connector_service = connector_service or get_connector_service()
+        self.lifecycle_runner = lifecycle_runner or SkillLifecycleRunner(self.registry)
 
     def list_catalog(self, user_email: str | None = None) -> list[SkillCatalogItemResponse]:
         items: list[SkillCatalogItemResponse] = []
@@ -169,6 +172,18 @@ class SkillService:
         disconnect_oauth: bool = False,
     ) -> bool:
         existing = self.repository.find_by_id(agent_id, installed_skill_id)
+        if existing:
+            self.lifecycle_runner.run_skill_delete(
+                skill_id=existing.skill_id,
+                installed_skill_id=existing.installed_skill_id or existing.skill_id,
+                owner_email=user_email,
+                config=self.repository.get_runtime_config(existing),
+                metadata={
+                    "agent_id": agent_id,
+                    "installed_skill": existing.model_dump(mode="json"),
+                    "disconnect_oauth": disconnect_oauth,
+                },
+            )
         deleted = self.repository.delete(agent_id, installed_skill_id)
         if disconnect_oauth:
             loaded = self.registry.get(existing.skill_id) if existing else self.registry.get(installed_skill_id)

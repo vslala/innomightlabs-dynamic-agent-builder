@@ -2,9 +2,18 @@
  * Form schema types matching backend form_models.py
  */
 
-export type FormInputType = "text" | "text_area" | "password" | "select" | "choice" | "file_upload";
+export type FormInputType =
+  | "text"
+  | "text_area"
+  | "password"
+  | "select"
+  | "choice"
+  | "file_upload"
+  | "key_value";
 
-export type FormValue = string | FileList | File[] | null;
+export type KeyValueFormValue = Record<string, string>;
+
+export type FormValue = string | FileList | File[] | KeyValueFormValue | null;
 
 export interface SelectOption {
   value: string;

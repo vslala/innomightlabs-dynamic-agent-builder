@@ -4,4 +4,5 @@ export { PasswordField } from "./PasswordField";
 export { SelectField } from "./SelectField";
 export { ChoiceField } from "./ChoiceField";
 export { FileUploadField } from "./FileUploadField";
+export { KeyValueField } from "./KeyValueField";
 export { DefaultField } from "./DefaultField";

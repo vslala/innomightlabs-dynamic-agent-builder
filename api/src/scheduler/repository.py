@@ -33,12 +33,16 @@ class SchedulerRepository:
             schedule.created_at = existing.created_at
             schedule.updated_at = datetime.now(timezone.utc)
 
+        existing_lookup_items = existing.to_lookup_items() if existing else []
+        next_lookup_items = schedule.to_lookup_items()
+        next_lookup_keys = {(item["pk"], item["sk"]) for item in next_lookup_items}
+
         with self.table.batch_writer() as batch:
-            if existing:
-                for item in existing.to_lookup_items():
+            for item in existing_lookup_items:
+                if (item["pk"], item["sk"]) not in next_lookup_keys:
                     batch.delete_item(Key={"pk": item["pk"], "sk": item["sk"]})
             batch.put_item(Item=schedule.to_dynamo_item())
-            for item in schedule.to_lookup_items():
+            for item in next_lookup_items:
                 batch.put_item(Item=item)
         return schedule
 
@@ -74,6 +78,21 @@ class SchedulerRepository:
             for item in response.get("Items", [])
             if item.get("entity_type") == "Schedule"
         ]
+
+    def list_schedules_for_automation(self, automation_id: str) -> list[Schedule]:
+        response = self.table.query(
+            KeyConditionExpression=Key("pk").eq(f"Automation#{automation_id}")
+            & Key("sk").begins_with("Schedule#")
+        )
+        schedules: list[Schedule] = []
+        for item in response.get("Items", []):
+            if item.get("entity_type") != "AutomationScheduleLookup":
+                continue
+            schedule = self.find_schedule(item["owner_email"], item["schedule_id"])
+            if schedule:
+                schedules.append(schedule)
+        schedules.sort(key=lambda item: item.created_at, reverse=True)
+        return schedules
 
     def delete_schedule(self, schedule: Schedule) -> None:
         with self.table.batch_writer() as batch:

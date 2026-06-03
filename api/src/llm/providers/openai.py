@@ -6,17 +6,19 @@ Uses OAuth-backed Codex/ChatGPT responses endpoint.
 
 import json
 import logging
+from uuid import uuid4
 from typing import Any, AsyncIterator, Optional
 
 import httpx
 
-from src.auth.openai_oauth import OpenAICredentials
+from src.auth.openai_oauth import OpenAICredentials, extract_account_id_from_access_token
 from src.config.settings import settings
 from .base import LLMEvent, LLMProvider
 
 log = logging.getLogger(__name__)
 
 DEFAULT_MODEL_NAME = "gpt-5.5"
+CODEX_INCLUDE_FIELDS = ["reasoning.encrypted_content"]
 
 
 class OpenAIProvider(LLMProvider):
@@ -57,7 +59,7 @@ class OpenAIProvider(LLMProvider):
         normalized = []
         for tool in tools:
             if tool.get("type") == "function":
-                normalized.append(tool)
+                normalized.append(self._normalize_function_tool(tool))
                 continue
 
             custom = tool.get("custom") or {}
@@ -76,14 +78,65 @@ class OpenAIProvider(LLMProvider):
             )
 
             normalized.append(
-                {
-                    "type": "function",
-                    "name": name,
-                    "description": custom.get("description") or tool.get("description", ""),
-                    "parameters": parameters,
-                }
+                self._normalize_function_tool(
+                    {
+                        "type": "function",
+                        "name": name,
+                        "description": custom.get("description") or tool.get("description", ""),
+                        "parameters": parameters,
+                    }
+                )
             )
         return normalized
+
+    def _normalize_function_tool(self, tool: dict[str, Any]) -> dict[str, Any]:
+        normalized = {
+            "type": "function",
+            "name": tool.get("name", ""),
+            "description": tool.get("description", ""),
+            "parameters": tool.get("parameters") or {"type": "object", "properties": {}},
+        }
+        if "strict" in tool:
+            normalized["strict"] = tool["strict"]
+        return normalized
+
+    def _request_headers(self, credentials: OpenAICredentials) -> dict[str, str]:
+        headers = {
+            "Authorization": f"Bearer {credentials.access_token}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        if settings.openai_oauth_originator:
+            headers["originator"] = settings.openai_oauth_originator
+        account_id = credentials.account_id or extract_account_id_from_access_token(credentials.access_token)
+        if account_id:
+            headers["ChatGPT-Account-ID"] = account_id
+        session_id = str(uuid4())
+        headers["session-id"] = session_id
+        headers["thread-id"] = session_id
+        return headers
+
+    def _request_body(
+        self,
+        model_id: str,
+        instructions: str,
+        request_messages: list[dict],
+        tools: list[dict] | None,
+    ) -> dict[str, Any]:
+        normalized_tools = self._normalize_tools(tools or [])
+        return {
+            "model": model_id,
+            "instructions": instructions,
+            "input": self._convert_messages(request_messages),
+            "tools": normalized_tools,
+            "tool_choice": "auto",
+            "parallel_tool_calls": bool(normalized_tools),
+            "reasoning": None,
+            "store": False,
+            "stream": True,
+            "include": CODEX_INCLUDE_FIELDS,
+            "text": {"verbosity": "medium"},
+        }
 
     def _convert_messages(self, messages: list[dict]) -> list[dict[str, Any]]:
         converted: list[dict[str, Any]] = []
@@ -152,21 +205,17 @@ class OpenAIProvider(LLMProvider):
     ) -> AsyncIterator[LLMEvent]:
         model_id = model or DEFAULT_MODEL_NAME
         typed_credentials = OpenAICredentials.model_validate(credentials)
-        access_token = typed_credentials.access_token
         instructions, request_messages = self._extract_instructions_and_messages(messages)
-
-        body: dict[str, Any] = {
-            "model": model_id,
-            "instructions": instructions,
-            "store": False,
-            "input": self._convert_messages(request_messages),
-            "stream": True,
-        }
-
-        if tools:
-            body["tools"] = self._normalize_tools(tools)
+        body = self._request_body(model_id, instructions, request_messages, tools)
 
         call_state: dict[str, dict[str, Any]] = {}
+        diagnostic_context = {
+            "model": model_id,
+            "message_count": len(messages),
+            "input_count": len(body.get("input", [])),
+            "tool_count": len(body.get("tools", [])),
+            "tool_names": [tool.get("name") for tool in body.get("tools", [])],
+        }
 
         log.info(
             "Calling OpenAI OAuth responses endpoint with model %s, %d messages, %d tools",
@@ -179,15 +228,23 @@ class OpenAIProvider(LLMProvider):
             async with client.stream(
                 "POST",
                 settings.openai_oauth_responses_url,
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
-                },
+                headers=self._request_headers(typed_credentials),
                 json=body,
             ) as response:
+                upstream_request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
                 if not response.is_success:
                     error_text = await response.aread()
-                    raise RuntimeError(f"OpenAI OAuth responses error: {error_text.decode('utf-8', errors='ignore')}")
+                    log.error(
+                        "OpenAI OAuth responses HTTP error: status=%s request_id=%s context=%s",
+                        response.status_code,
+                        upstream_request_id,
+                        diagnostic_context,
+                    )
+                    raise RuntimeError(
+                        "OpenAI OAuth responses error"
+                        f" ({response.status_code}, request_id={upstream_request_id}): "
+                        f"{error_text.decode('utf-8', errors='ignore')}"
+                    )
 
                 async for raw_line in response.aiter_lines():
                     line = raw_line.strip()
@@ -248,4 +305,16 @@ class OpenAIProvider(LLMProvider):
 
                     elif event_type == "error":
                         err = event.get("error") or {}
-                        raise RuntimeError(f"OpenAI stream error: {err}")
+                        request_id = (
+                            err.get("request_id")
+                            or err.get("requestId")
+                            or upstream_request_id
+                        )
+                        log.error(
+                            "OpenAI stream error event: request_id=%s error_type=%s error_code=%s context=%s",
+                            request_id,
+                            err.get("type"),
+                            err.get("code"),
+                            diagnostic_context,
+                        )
+                        raise RuntimeError(f"OpenAI stream error (request_id={request_id}): {err}")

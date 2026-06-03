@@ -7,6 +7,7 @@ from typing import Any, Protocol
 
 from src.agents.architectures.factory import get_agent_architecture
 from src.agents.repository import AgentRepository
+from src.automations.models import AutomationStatus, AutomationTriggerType
 from src.automations.runner import AutomationRunner
 from src.automations.service import AutomationService
 from src.conversations.repository import ConversationRepository
@@ -104,6 +105,32 @@ class AutomationScheduledRunExecutor:
             raise ValueError("Automation schedule input must be an object")
 
         graph = self.service.get_graph(automation_id, schedule.owner_email)
+        if graph.automation.status != AutomationStatus.ACTIVE:
+            return {
+                "scheduled_for": scheduled_for.isoformat(),
+                "automation_id": automation_id,
+                "status": "skipped",
+                "reason": f"automation_{graph.automation.status.value}",
+            }
+        trigger_id = str(schedule.target.get("trigger_id") or "").strip() or None
+        if trigger_id:
+            trigger = next((item for item in graph.triggers if item.trigger_id == trigger_id), None)
+            if not trigger:
+                return {
+                    "scheduled_for": scheduled_for.isoformat(),
+                    "automation_id": automation_id,
+                    "trigger_id": trigger_id,
+                    "status": "skipped",
+                    "reason": "trigger_missing",
+                }
+            if trigger.type != AutomationTriggerType.SCHEDULE or not trigger.enabled:
+                return {
+                    "scheduled_for": scheduled_for.isoformat(),
+                    "automation_id": automation_id,
+                    "trigger_id": trigger_id,
+                    "status": "skipped",
+                    "reason": "trigger_disabled",
+                }
         self.service.validate_graph(
             graph.nodes,
             graph.edges,
@@ -115,6 +142,7 @@ class AutomationScheduledRunExecutor:
             input_data=input_data,
             user_email=schedule.owner_email,
             schedule_id=schedule.schedule_id,
+            trigger_id=trigger_id,
         )
         completed = await self.runner.execute_run_graph(graph, run, schedule.owner_email)
 

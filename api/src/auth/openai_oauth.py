@@ -213,7 +213,28 @@ def extract_account_id_from_access_token(access_token: str) -> Optional[str]:
         decoded = base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8")
         claims = json.loads(decoded)
 
-        for key in ("account_id", "accountId", "org_id", "sub"):
+        auth_claims = claims.get("https://api.openai.com/auth")
+        if isinstance(auth_claims, dict):
+            value = auth_claims.get("chatgpt_account_id")
+            if isinstance(value, str) and value:
+                return value
+
+        organizations = claims.get("organizations")
+        if isinstance(organizations, list):
+            for organization in organizations:
+                if isinstance(organization, dict):
+                    value = organization.get("id")
+                    if isinstance(value, str) and value:
+                        return value
+
+        for key in (
+            "chatgpt_account_id",
+            "https://api.openai.com/auth.chatgpt_account_id",
+            "account_id",
+            "accountId",
+            "org_id",
+            "sub",
+        ):
             value = claims.get(key)
             if isinstance(value, str) and value:
                 return value

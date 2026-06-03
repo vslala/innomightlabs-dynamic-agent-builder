@@ -126,19 +126,10 @@ def test_automation_skills_and_action_catalog(test_client, auth_headers, dynamod
         item["skill_id"] == "scheduler" and item["action"] == "create_or_update"
         for item in catalog["actions"]
     )
-    scheduler_action = next(
-        item
+    assert not any(
+        item["skill_id"] == "scheduler" and item["action"] == "schedule_automation"
         for item in catalog["actions"]
-        if item["skill_id"] == "scheduler" and item["action"] == "schedule_automation"
     )
-    assert scheduler_action["action_form"]["form_name"] == "Schedule Automation"
-    assert [field["name"] for field in scheduler_action["action_form"]["form_inputs"]] == [
-        "schedule_id",
-        "name",
-        "cron_expression",
-        "timezone",
-        "input_json",
-    ]
 
     missing_connector_response = test_client.post(
         f"/automations/{automation_id}/skills?skill_id=google_mail",

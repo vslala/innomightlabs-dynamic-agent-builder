@@ -39,6 +39,7 @@ import { AutomationDetailLayout } from './pages/dashboard/automations/Automation
 import { AutomationBuilderPage } from './pages/dashboard/automations/AutomationBuilderPage';
 import { AutomationRunsPage } from './pages/dashboard/automations/AutomationRunsPage';
 import { AutomationAnalyticsPage } from './pages/dashboard/automations/AutomationAnalyticsPage';
+import { AutomationTriggersPage } from './pages/dashboard/automations/AutomationTriggersPage';
 
 const basename = import.meta.env.BASE_URL;
 
@@ -107,6 +108,7 @@ function App() {
           <Route path="automations" element={<AutomationsListPage />} />
           <Route path="automations/:automationId" element={<AutomationDetailLayout />}>
             <Route index element={<AutomationBuilderPage />} />
+            <Route path="triggers" element={<AutomationTriggersPage />} />
             <Route path="runs" element={<AutomationRunsPage />} />
             <Route path="analytics" element={<AutomationAnalyticsPage />} />
           </Route>

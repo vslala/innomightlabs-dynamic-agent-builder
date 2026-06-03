@@ -47,6 +47,8 @@ export function SchemaForm({
     schema.form_inputs.forEach((field) => {
       if (field.input_type === "file_upload") {
         initial[field.name] = stableInitialValues[field.name] || null;
+      } else if (field.input_type === "key_value") {
+        initial[field.name] = stableInitialValues[field.name] || {};
       } else {
         initial[field.name] = stableInitialValues[field.name] || field.value || "";
       }

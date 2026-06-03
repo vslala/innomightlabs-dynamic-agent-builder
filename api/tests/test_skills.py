@@ -12,7 +12,8 @@ from src.scheduler.repository import SchedulerRepository
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.lead_capture.forms import parse_custom_inputs
-from src.skills.service import SkillRuntimeService
+from src.skills.lifecycle import SkillLifecycleRunner
+from src.skills.service import SkillRuntimeService, SkillService
 
 
 def _create_agent_for_user(user_email: str) -> Agent:
@@ -139,6 +140,63 @@ def test_skill_install_update_and_uninstall_flow(test_client, auth_headers, dyna
     list_after_delete = test_client.get(f"/agents/{agent.agent_id}/skills", headers=auth_headers)
     assert list_after_delete.status_code == 200
     assert list_after_delete.json() == []
+
+
+def test_agent_skill_uninstall_runs_skill_delete_lifecycle(dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    calls = []
+
+    class FakeLifecycleRunner:
+        def run_skill_delete(self, **kwargs):
+            calls.append(kwargs)
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+    service = SkillService(lifecycle_runner=FakeLifecycleRunner())
+    service.install_skill(
+        agent_id=agent.agent_id,
+        skill_id="wordpress_search",
+        user_email=TEST_USER_EMAIL,
+        raw_config={
+            "site_url": "https://example.com",
+            "username": "admin",
+            "app_password": "secret-pass",
+        },
+    )
+
+    deleted = service.uninstall(
+        agent_id=agent.agent_id,
+        installed_skill_id="wordpress_search",
+        user_email=TEST_USER_EMAIL,
+    )
+
+    assert deleted is True
+    assert len(calls) == 1
+    assert calls[0]["skill_id"] == "wordpress_search"
+    assert calls[0]["installed_skill_id"] == "wordpress_search"
+    assert calls[0]["owner_email"] == TEST_USER_EMAIL
+    assert calls[0]["config"]["site_url"] == "https://example.com"
+    assert calls[0]["config"]["app_password"] == "secret-pass"
+    assert calls[0]["metadata"]["agent_id"] == agent.agent_id
+
+
+def test_skill_lifecycle_hook_failure_does_not_raise(monkeypatch):
+    runner = SkillLifecycleRunner()
+
+    def broken_handler(*args, **kwargs):
+        raise RuntimeError("hook failed")
+
+    monkeypatch.setattr(runner.registry, "_resolve_handler", broken_handler)
+
+    runner.run_action_delete(
+        skill_id="scheduler",
+        installed_skill_id="scheduler",
+        action_name="schedule_automation",
+        owner_email="user@example.com",
+        config={},
+        arguments={},
+        metadata={"automation_id": "automation-1", "automation_node_id": "node-1"},
+    )
 
 
 def test_google_drive_install_requires_connected_provider_settings(test_client, auth_headers, dynamodb_table):
@@ -546,10 +604,11 @@ def test_scheduler_skill_creates_automation_run_schedule(dynamodb_table):
     payload = asyncio.run(
         schedule_automation(
             arguments={
+                "schedule_id": "scheduled-workflow",
                 "name": "Scheduled workflow",
                 "cron_expression": "*/5 * * * *",
                 "timezone": "UTC",
-                "input_json": '{"source":"scheduler"}',
+                "input": {"source": "scheduler"},
             },
             config={},
             context={
@@ -564,6 +623,7 @@ def test_scheduler_skill_creates_automation_run_schedule(dynamodb_table):
     )
 
     schedule = payload["schedule"]
+    assert schedule["schedule_id"] == "scheduled-workflow"
     assert schedule["source_type"] == "automation_skill"
     assert schedule["target_type"] == "automation_run"
     assert schedule["target"] == {
@@ -571,6 +631,37 @@ def test_scheduler_skill_creates_automation_run_schedule(dynamodb_table):
         "input": {"source": "scheduler"},
         "trigger_id": "node-1",
     }
+
+    updated = asyncio.run(
+        schedule_automation(
+            arguments={
+                "schedule_id": "scheduled-workflow",
+                "name": "Updated scheduled workflow",
+                "cron_expression": "*/10 * * * *",
+                "timezone": "UTC",
+                "input": {"source": "updated"},
+            },
+            config={},
+            context={
+                "owner_email": TEST_USER_EMAIL,
+                "actor_email": TEST_USER_EMAIL,
+                "actor_id": TEST_USER_EMAIL,
+                "automation_id": "automation-1",
+                "automation_node_id": "node-1",
+                "orchestrator_type": "automation",
+            },
+        )
+    )
+
+    assert updated["schedule"]["schedule_id"] == "scheduled-workflow"
+    assert updated["schedule"]["name"] == "Updated scheduled workflow"
+    assert updated["schedule"]["cron_expression"] == "*/10 * * * *"
+    assert updated["schedule"]["target"]["input"] == {"source": "updated"}
+    assert [
+        schedule.schedule_id
+        for schedule in SchedulerRepository().list_schedules(TEST_USER_EMAIL)
+        if schedule.source_type == "automation_skill"
+    ] == ["scheduled-workflow"]
 
 
 def test_repeatable_skill_install_is_deterministic_by_identity_fields(test_client, auth_headers, dynamodb_table):

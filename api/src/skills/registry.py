@@ -99,8 +99,13 @@ class SkillRegistry:
                 form_models.FormInputType.PASSWORD,
                 form_models.FormInputType.SELECT,
                 form_models.FormInputType.CHOICE,
+                form_models.FormInputType.KEY_VALUE,
             }:
-                normalized[input_def.name] = validate_form_value(input_def, value)
+                normalized[input_def.name] = (
+                    value
+                    if input_def.input_type == form_models.FormInputType.KEY_VALUE
+                    else validate_form_value(input_def, value)
+                )
             else:
                 raise ValueError(f"Unsupported form input type for skill config: {input_def.input_type}")
 

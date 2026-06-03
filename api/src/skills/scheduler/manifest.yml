@@ -71,13 +71,18 @@ actions:
   - name: schedule_automation
     aliases: [create_automation_schedule, update_automation_schedule]
     description: Create or update a cron schedule that runs the current automation with configured input.
+    automation:
+      enabled: false
+    lifecycle:
+      delete:
+        handler: lifecycle.schedule_automation:on_delete
     input_schema:
       type: object
-      required: [name, cron_expression]
+      required: [schedule_id, name, cron_expression]
       properties:
         schedule_id:
           type: string
-          description: Optional existing schedule id to update.
+          description: Required stable schedule id. Reusing the same id updates the same schedule instead of creating another one.
         name:
           type: string
           description: Human-readable schedule name.
@@ -87,9 +92,11 @@ actions:
         timezone:
           type: string
           description: IANA timezone name. Defaults to UTC.
-        input_json:
-          type: string
-          description: Optional JSON object passed as automation input when the schedule fires.
+        input:
+          type: object
+          description: Optional key/value input passed to the automation when the schedule fires.
+          additionalProperties:
+            type: string
     action_form:
       form_name: Schedule Automation
       submit_path: ""
@@ -98,7 +105,8 @@ actions:
           name: schedule_id
           label: Schedule ID
           attr:
-            placeholder: "Leave empty to create a new schedule"
+            placeholder: "gmail-cleaner-schedule"
+            help_text: "Required. Use a stable id for this automation schedule. Future runs with the same id update the same schedule."
             smart_values: "true"
         - input_type: text
           name: name
@@ -119,12 +127,15 @@ actions:
           attr:
             placeholder: "UTC"
             smart_values: "true"
-        - input_type: text_area
-          name: input_json
-          label: Input JSON
+        - input_type: key_value
+          name: input
+          label: Input
           attr:
-            rows: "8"
-            placeholder: "{\"source\":\"scheduler\"}"
+            help_text: "Optional. Add values only when this automation expects scheduled run input. Downstream steps can use keys from the run input, for example input.customer_email."
+            empty_text: "No input values will be passed to the scheduled automation."
+            key_placeholder: "customer_email"
+            value_placeholder: "{{ input.email }}"
+            add_label: "Add input"
             smart_values: "true"
     handler: actions:schedule_automation
   - name: pause

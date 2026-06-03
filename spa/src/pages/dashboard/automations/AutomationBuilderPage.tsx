@@ -339,6 +339,10 @@ function formValuesToArguments(
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(values)) {
     if (value === null || value instanceof FileList || Array.isArray(value)) continue;
+    if (typeof value === "object") {
+      result[key] = value;
+      continue;
+    }
     const type = properties[key]?.type;
     if (type === "boolean") {
       result[key] = value === "true";
@@ -357,7 +361,12 @@ function formValuesToArguments(
 
 function argumentsToFormValues(argumentsValue: Record<string, unknown>): Record<string, FormValue> {
   return Object.fromEntries(
-    Object.entries(argumentsValue).map(([key, value]) => [key, value == null ? "" : String(value)])
+    Object.entries(argumentsValue).map(([key, value]) => {
+      if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+        return [key, value as Record<string, string>];
+      }
+      return [key, value == null ? "" : String(value)];
+    })
   );
 }
 

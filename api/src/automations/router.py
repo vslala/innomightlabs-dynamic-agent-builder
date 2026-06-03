@@ -19,6 +19,7 @@ from src.automations.models import (
     AutomationNodeResponse,
     AutomationEdgeResponse,
     AutomationTriggerResponse,
+    AutomationTriggerType,
     CreateAutomationEdgeRequest,
     CreateAutomationNodeRequest,
     CreateAutomationRequest,
@@ -32,6 +33,7 @@ from src.automations.models import (
     UpdateAutomationRequest,
     UpdateAutomationTriggerRequest,
 )
+from src.automations.triggers.schemas import build_manual_trigger_form, build_schedule_trigger_form
 from src.automations.repository import AutomationRepository
 from src.automations.runner import AutomationRunner
 from src.automations.service import (
@@ -41,6 +43,7 @@ from src.automations.service import (
 )
 from src.common.pagination import Paginated
 from src.config import settings
+from src.form_models import Form
 
 log = logging.getLogger(__name__)
 
@@ -347,6 +350,38 @@ async def add_trigger(
 ) -> AutomationTriggerResponse:
     try:
         return service.add_trigger(automation_id, body, get_user_email(request)).to_response()
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get("/{automation_id}/triggers", response_model=list[AutomationTriggerResponse])
+async def list_triggers(
+    request: Request,
+    automation_id: str,
+    service: Annotated[AutomationService, Depends(get_automation_service)],
+) -> list[AutomationTriggerResponse]:
+    try:
+        graph = service.get_graph(automation_id, get_user_email(request))
+        return [trigger.to_response() for trigger in graph.triggers]
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.get("/{automation_id}/triggers/forms/{trigger_type}", response_model=Form)
+async def get_trigger_form(
+    request: Request,
+    automation_id: str,
+    trigger_type: AutomationTriggerType,
+    service: Annotated[AutomationService, Depends(get_automation_service)],
+) -> Form:
+    try:
+        graph = service.get_graph(automation_id, get_user_email(request))
+        submit_path = f"/automations/{automation_id}/triggers"
+        if trigger_type == AutomationTriggerType.SCHEDULE:
+            return build_schedule_trigger_form(graph.nodes, submit_path=submit_path)
+        if trigger_type == AutomationTriggerType.MANUAL:
+            return build_manual_trigger_form(graph.nodes, submit_path=submit_path)
+        raise AutomationValidationError(f"Unsupported trigger form type: {trigger_type.value}")
     except Exception as exc:
         raise translate_error(exc) from exc
 

@@ -11,6 +11,7 @@ import {
   ChoiceField,
   DefaultField,
   FileUploadField,
+  KeyValueField,
   PasswordField,
   SelectField,
   TextAreaField,
@@ -44,6 +45,9 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
       case "file_upload":
         return <FileUploadField field={field} value={value} onChange={onChange} />;
 
+      case "key_value":
+        return <KeyValueField field={field} value={value} onChange={onChange} />;
+
       default:
         return <DefaultField field={field} value={value} onChange={onChange} />;
     }
@@ -52,6 +56,11 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
       <Label htmlFor={field.name}>{field.label}</Label>
+      {field.attr?.help_text && (
+        <p className="text-xs leading-5 text-[var(--text-muted)]">
+          {field.attr.help_text}
+        </p>
+      )}
       {renderInput()}
     </div>
   );

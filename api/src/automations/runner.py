@@ -99,6 +99,7 @@ class AutomationRunner:
         input_data: dict[str, Any],
         user_email: str,
         schedule_id: str,
+        trigger_id: str | None = None,
     ) -> AutomationRun:
         first_agent_id = self._first_agent_id(graph.nodes)
         run = AutomationRun(
@@ -108,7 +109,7 @@ class AutomationRunner:
                 "input": input_data,
                 "trigger": {
                     "type": AutomationTriggerType.SCHEDULE.value,
-                    "trigger_id": None,
+                    "trigger_id": trigger_id,
                     "schedule_id": schedule_id,
                 },
                 "nodes": {},

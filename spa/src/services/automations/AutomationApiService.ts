@@ -7,12 +7,17 @@ import type {
   AutomationRunDetailResponse,
   AutomationRunResponse,
   CreateAutomationRequest,
+  CreateAutomationTriggerRequest,
   EnableAutomationSkillRequest,
   PaginatedResponse,
   SaveAutomationGraphRequest,
   StartAutomationRunRequest,
+  AutomationTrigger,
+  AutomationTriggerType,
   UpdateAutomationRequest,
+  UpdateAutomationTriggerRequest,
 } from "../../types/automation";
+import type { FormSchema } from "../../types/form";
 
 class AutomationApiService {
   async listAutomations(): Promise<AutomationResponse[]> {
@@ -66,6 +71,41 @@ class AutomationApiService {
     data: SaveAutomationGraphRequest
   ): Promise<AutomationGraphResponse> {
     return httpClient.put<AutomationGraphResponse>(`/automations/${automationId}/graph`, data);
+  }
+
+  async listTriggers(automationId: string): Promise<AutomationTrigger[]> {
+    return httpClient.get<AutomationTrigger[]>(`/automations/${automationId}/triggers`);
+  }
+
+  async getTriggerForm(
+    automationId: string,
+    triggerType: AutomationTriggerType
+  ): Promise<FormSchema> {
+    return httpClient.get<FormSchema>(
+      `/automations/${automationId}/triggers/forms/${triggerType}`
+    );
+  }
+
+  async createTrigger(
+    automationId: string,
+    data: CreateAutomationTriggerRequest
+  ): Promise<AutomationTrigger> {
+    return httpClient.post<AutomationTrigger>(`/automations/${automationId}/triggers`, data);
+  }
+
+  async updateTrigger(
+    automationId: string,
+    triggerId: string,
+    data: UpdateAutomationTriggerRequest
+  ): Promise<AutomationTrigger> {
+    return httpClient.patch<AutomationTrigger>(
+      `/automations/${automationId}/triggers/${triggerId}`,
+      data
+    );
+  }
+
+  async deleteTrigger(automationId: string, triggerId: string): Promise<void> {
+    await httpClient.delete(`/automations/${automationId}/triggers/${triggerId}`);
   }
 
   async testRun(
