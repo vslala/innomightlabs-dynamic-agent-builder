@@ -40,6 +40,7 @@ import { AutomationBuilderPage } from './pages/dashboard/automations/AutomationB
 import { AutomationRunsPage } from './pages/dashboard/automations/AutomationRunsPage';
 import { AutomationAnalyticsPage } from './pages/dashboard/automations/AutomationAnalyticsPage';
 import { AutomationTriggersPage } from './pages/dashboard/automations/AutomationTriggersPage';
+import { WhatsNewPage } from './pages/dashboard/WhatsNewPage';
 
 const basename = import.meta.env.BASE_URL;
 
@@ -117,6 +118,7 @@ function App() {
           <Route path="knowledge-bases" element={<KnowledgeBases />} />
           <Route path="knowledge-bases/:kbId" element={<KnowledgeBaseDetail />} />
           <Route path="connectors" element={<ConnectorsPage />} />
+          <Route path="whats-new" element={<WhatsNewPage />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
