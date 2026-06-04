@@ -6,7 +6,7 @@ Uses namespace isolation per knowledge base.
 """
 
 import logging
-from typing import Optional, Any
+from typing import Optional, Any, cast
 from dataclasses import dataclass, field
 
 from pinecone import Pinecone
@@ -157,7 +157,7 @@ class PineconeClient:
             batch = vectors[i:i + batch_size]
 
             # Convert to Pinecone format
-            records = [
+            records: list[dict[str, Any]] = [
                 {
                     "id": v.id,
                     "values": v.values,
@@ -167,7 +167,7 @@ class PineconeClient:
             ]
 
             try:
-                self._index.upsert(vectors=records, namespace=namespace)
+                self._index.upsert(vectors=cast(Any, records), namespace=namespace)
                 total_upserted += len(batch)
                 log.debug(f"Upserted {len(batch)} vectors to namespace {namespace}")
             except Exception as e:
@@ -204,13 +204,13 @@ class PineconeClient:
         namespace = self._get_namespace(kb_id)
 
         try:
-            response = self._index.query(
+            response = cast(Any, self._index.query(
                 vector=vector,
                 namespace=namespace,
                 top_k=top_k,
                 filter=filter,
                 include_metadata=include_metadata,
-            )
+            ))
 
             results = []
             for match in response.get("matches", []):

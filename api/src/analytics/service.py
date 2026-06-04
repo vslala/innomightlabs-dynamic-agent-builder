@@ -241,24 +241,24 @@ class AnalyticsService:
             cursor: Optional[str] = None
             has_more = True
             while has_more and not context.truncated:
-                conversations, cursor, has_more = self.widget_conversation_repository.find_by_agent(
+                widget_conversations, cursor, has_more = self.widget_conversation_repository.find_by_agent(
                     context.agent_id,
                     limit=WIDGET_PAGE_SIZE,
                     cursor=cursor,
                 )
-                for conversation in conversations:
+                for widget_conversation in widget_conversations:
                     if context.conversations_scanned >= MAX_CONVERSATIONS_SCANNED:
                         self._truncate(context, "conversation scan limit reached")
                         break
-                    if not within_window(conversation.created_at, window_from, window_to):
+                    if not within_window(widget_conversation.created_at, window_from, window_to):
                         continue
                     context.conversation_records.append(
                         ConversationRecord(
-                            conversation_id=conversation.conversation_id,
-                            title=conversation.title,
+                            conversation_id=widget_conversation.conversation_id,
+                            title=widget_conversation.title,
                             source=AnalyticsSource.WIDGET,
-                            created_at=conversation.created_at,
-                            user_identity=conversation.visitor_email,
+                            created_at=widget_conversation.created_at,
+                            user_identity=widget_conversation.visitor_email,
                         )
                     )
                     context.conversations_scanned += 1
@@ -389,13 +389,16 @@ class AnalyticsService:
         timezone: ZoneInfo,
         include_source: bool,
     ) -> list[TimeseriesPoint]:
+        if include_source:
+            sources: list[AnalyticsSource | None] = sorted(
+                {record.source for record in records if record.source is not None},
+                key=lambda value: value.value if value else "",
+            )
+        else:
+            sources = [None]
         base_keys = [
             (source if include_source else None, bucket_start)
-            for source in (
-                sorted({record.source for record in records}, key=lambda value: value.value)
-                if include_source
-                else [None]
-            )
+            for source in sources
             for bucket_start in bucket_starts
         ]
 
@@ -428,7 +431,7 @@ class AnalyticsService:
                     counts[(source_key, bucket_start)] = counts.get((source_key, bucket_start), 0) + 1
 
         series: list[TimeseriesPoint] = []
-        for key in sorted(counts.keys(), key=lambda item: ((item[0] or "").value if item[0] else "", item[1])):
+        for key in sorted(counts.keys(), key=lambda item: (item[0].value if item[0] else "", item[1])):
             source_key, bucket_start = key
             series.append(
                 TimeseriesPoint(

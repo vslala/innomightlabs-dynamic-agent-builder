@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -141,7 +141,7 @@ class Schedule(BaseModel):
         if self.next_run_at and self.status == ScheduleStatus.ACTIVE:
             item["gsi2_pk"] = self.due_gsi_pk()
             item["gsi2_sk"] = self.due_gsi_sk()
-        return convert_floats_to_decimals(item)
+        return cast(dict[str, Any], convert_floats_to_decimals(item))
 
     def to_lookup_items(self) -> list[dict[str, Any]]:
         refs: list[tuple[str, str]] = []
@@ -156,18 +156,21 @@ class Schedule(BaseModel):
             refs.append((f"Automation#{automation_id}", "AutomationScheduleLookup"))
 
         return [
-            convert_floats_to_decimals(
-                {
-                    "pk": pk,
-                    "sk": self.sk,
-                    "entity_type": entity_type,
-                    "schedule_id": self.schedule_id,
-                    "owner_email": self.owner_email,
-                    "target_type": self.target_type.value,
-                    "status": self.status.value,
-                    "next_run_at": self.next_run_at.isoformat() if self.next_run_at else None,
-                    "created_at": self.created_at.isoformat(),
-                }
+            cast(
+                dict[str, Any],
+                convert_floats_to_decimals(
+                    {
+                        "pk": pk,
+                        "sk": self.sk,
+                        "entity_type": entity_type,
+                        "schedule_id": self.schedule_id,
+                        "owner_email": self.owner_email,
+                        "target_type": self.target_type.value,
+                        "status": self.status.value,
+                        "next_run_at": self.next_run_at.isoformat() if self.next_run_at else None,
+                        "created_at": self.created_at.isoformat(),
+                    }
+                ),
             )
             for pk, entity_type in refs
         ]
@@ -223,23 +226,26 @@ class ScheduleRun(BaseModel):
         return f"{schedule_id}:{scheduled_for.isoformat()}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        return convert_floats_to_decimals(
-            {
-                "pk": self.pk,
-                "sk": self.sk,
-                "entity_type": "ScheduleRun",
-                "run_id": self.run_id,
-                "schedule_id": self.schedule_id,
-                "owner_email": self.owner_email,
-                "scheduled_for": self.scheduled_for.isoformat(),
-                "status": self.status.value,
-                "target_type": self.target_type.value,
-                "target_ref": self.target_ref,
-                "output": self.output,
-                "error": self.error,
-                "started_at": self.started_at.isoformat(),
-                "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            }
+        return cast(
+            dict[str, Any],
+            convert_floats_to_decimals(
+                {
+                    "pk": self.pk,
+                    "sk": self.sk,
+                    "entity_type": "ScheduleRun",
+                    "run_id": self.run_id,
+                    "schedule_id": self.schedule_id,
+                    "owner_email": self.owner_email,
+                    "scheduled_for": self.scheduled_for.isoformat(),
+                    "status": self.status.value,
+                    "target_type": self.target_type.value,
+                    "target_ref": self.target_ref,
+                    "output": self.output,
+                    "error": self.error,
+                    "started_at": self.started_at.isoformat(),
+                    "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+                }
+            ),
         )
 
     @classmethod

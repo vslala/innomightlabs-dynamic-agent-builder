@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional, cast
 
 import httpx
 import stripe
@@ -51,7 +51,7 @@ class StripeClient:
             raise HTTPException(500, "Stripe not configured")
         self.headers = {"Authorization": f"Bearer {settings.stripe_secret_key}"}
     
-    async def _request(self, method: str, path: str, data: dict = None) -> dict:
+    async def _request(self, method: str, path: str, data: dict[Any, Any] | None = None) -> dict:
         async with httpx.AsyncClient(timeout=30.0) as client:
             kwargs = {"headers": self.headers}
             if data:
@@ -63,7 +63,8 @@ class StripeClient:
                 log.error(f"Stripe API error {response.status_code}: {response.text}")
                 raise HTTPException(502, "Stripe API request failed")
             
-            return response.json()
+            payload = response.json()
+            return cast(dict[Any, Any], payload) if isinstance(payload, dict) else {}
     
     async def get(self, path: str) -> dict:
         return await self._request("get", path)
@@ -257,7 +258,7 @@ def validate_checkout_request(user_email: str, plan_key: str) -> Optional[str]:
     if not active_sub:
         return None  # No active subscription, allow checkout
 
-    current_plan = active_sub.plan_name
+    current_plan = active_sub.plan_name or "free"
 
     # Block same plan purchase
     if current_plan == plan_key:
@@ -640,10 +641,10 @@ async def handle_invoice_payment_succeeded(invoice_data: dict) -> None:
     # Send subscription confirmed email
     await send_subscription_confirmed_email_safe(
         user_email=subscription.user_email,
-        plan_name=subscription.plan_name,
+        plan_name=subscription.plan_name or "",
         amount_cents=invoice_data.get("amount_paid", 0),
         currency=invoice_data.get("currency", "usd"),
-        current_period_end=subscription.current_period_end,
+        current_period_end=subscription.current_period_end or "",
     )
 
 async def handle_invoice_payment_failed(invoice_data: dict) -> None:
@@ -707,7 +708,7 @@ async def handle_invoice_payment_failed(invoice_data: dict) -> None:
     # Send payment failed email
     await send_payment_failed_email_safe(
         user_email=subscription.user_email,
-        plan_name=subscription.plan_name,
+        plan_name=subscription.plan_name or "",
         amount_cents=invoice_data.get("amount_due", 0),
         currency=invoice_data.get("currency", "usd"),
     )
@@ -751,10 +752,10 @@ async def handle_subscription_updated(subscription_data: dict) -> None:
 
                 await send_subscription_upgraded_email_safe(
                     user_email=subscription.user_email,
-                    plan_name=subscription.plan_name,
+                    plan_name=subscription.plan_name or "",
                     amount_cents=amount_cents,
                     currency=currency,
-                    current_period_end=subscription.current_period_end,
+                    current_period_end=subscription.current_period_end or "",
                 )
         except Exception as e:
             log.warning(f"Could not send subscription upgraded email (missing invoice): {e}")
@@ -785,6 +786,6 @@ async def handle_subscription_deleted(subscription_data: dict) -> None:
     # Send subscription cancelled email
     await send_subscription_cancelled_email_safe(
         user_email=subscription.user_email,
-        plan_name=subscription.plan_name,
-        current_period_end=subscription.current_period_end,
+        plan_name=subscription.plan_name or "",
+        current_period_end=subscription.current_period_end or "",
     )

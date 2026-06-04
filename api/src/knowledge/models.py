@@ -31,7 +31,7 @@ Key Structure:
 
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from uuid import uuid4
 from enum import Enum
 from decimal import Decimal
@@ -57,6 +57,10 @@ def convert_floats_to_decimals(obj: Any) -> Any:
     elif isinstance(obj, list):
         return [convert_floats_to_decimals(item) for item in obj]
     return obj
+
+
+def dynamo_item(value: Any) -> dict[str, Any]:
+    return cast(dict[str, Any], convert_floats_to_decimals(value))
 
 
 # =============================================================================
@@ -407,7 +411,7 @@ class CrawlJob(BaseModel):
         return f"CrawlJob#{self.job_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        return convert_floats_to_decimals({
+        return dynamo_item({
             "pk": self.pk,
             "sk": self.sk,
             "job_id": self.job_id,
@@ -550,7 +554,7 @@ class CrawledPage(BaseModel):
         return f"Page#{self.url_hash}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        return convert_floats_to_decimals({
+        return dynamo_item({
             "pk": self.pk,
             "sk": self.sk,
             "job_id": self.job_id,

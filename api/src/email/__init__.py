@@ -1,6 +1,6 @@
 """Email service module for sending emails via Mailjet."""
+from importlib import import_module
 import logging
-from mailjet_rest import Client
 from src.config import settings
 
 from .service import EmailService, EmailTemplate
@@ -13,6 +13,7 @@ from .helpers import (
 )
 
 log = logging.getLogger(__name__)
+Client = import_module("mailjet_rest").Client
 
 
 def send_email(to_email: str, subject: str, body: str) -> bool:

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from enum import Enum
 
 
@@ -40,8 +40,8 @@ class User:
     def sk(self) -> str:
         return "User#Metadata"
 
-    def to_dynamo_item(self) -> dict:
-        item = {
+    def to_dynamo_item(self) -> dict[str, Any]:
+        item: dict[str, Any] = {
             "pk": self.pk,
             "sk": self.sk,
             "email": self.email,

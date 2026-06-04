@@ -5,6 +5,7 @@ from src.agents.repository import AgentRepository
 from src.automations.models import (
     AutomationEdge,
     AutomationNode,
+    AutomationNodeType,
     AutomationStatus,
     AutomationTrigger,
     AutomationTriggerType,
@@ -30,8 +31,8 @@ def make_service() -> AutomationService:
 
 
 def make_default_graph():
-    start = AutomationNode(automation_id="auto-1", node_id="start", type="start", name="Start")
-    final = AutomationNode(automation_id="auto-1", node_id="final", type="final", name="Done")
+    start = AutomationNode(automation_id="auto-1", node_id="start", type=AutomationNodeType.START, name="Start")
+    final = AutomationNode(automation_id="auto-1", node_id="final", type=AutomationNodeType.FINAL, name="Done")
     edge = AutomationEdge(
         automation_id="auto-1",
         source_node_id=start.node_id,
@@ -40,7 +41,7 @@ def make_default_graph():
     )
     trigger = AutomationTrigger(
         automation_id="auto-1",
-        type="manual",
+        type=AutomationTriggerType.MANUAL,
         name="Manual",
         enabled=True,
         entry_node_id=start.node_id,
@@ -49,11 +50,11 @@ def make_default_graph():
 
 
 def make_scheduler_action_graph(automation_id: str):
-    start = AutomationNode(automation_id=automation_id, node_id="start", type="start", name="Start")
+    start = AutomationNode(automation_id=automation_id, node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
         automation_id=automation_id,
         node_id="schedule-node",
-        type="action",
+        type=AutomationNodeType.ACTION,
         name="Schedule Automation",
         config={
             "action_type": "skill_action",
@@ -67,7 +68,7 @@ def make_scheduler_action_graph(automation_id: str):
             },
         },
     )
-    final = AutomationNode(automation_id=automation_id, node_id="final", type="final", name="Done")
+    final = AutomationNode(automation_id=automation_id, node_id="final", type=AutomationNodeType.FINAL, name="Done")
     edges = [
         AutomationEdge(
             automation_id=automation_id,
@@ -91,7 +92,7 @@ def make_scheduler_action_graph(automation_id: str):
     trigger = AutomationTrigger(
         automation_id=automation_id,
         trigger_id="manual",
-        type="manual",
+        type=AutomationTriggerType.MANUAL,
         name="Manual",
         enabled=True,
         entry_node_id="start",
@@ -121,7 +122,7 @@ def test_validate_accepts_default_graph(dynamodb_table):
 
 
 def test_validate_rejects_missing_final(dynamodb_table):
-    start = AutomationNode(automation_id="auto-1", node_id="start", type="start", name="Start")
+    start = AutomationNode(automation_id="auto-1", node_id="start", type=AutomationNodeType.START, name="Start")
 
     with pytest.raises(AutomationValidationError, match="final"):
         make_service().validate_graph([start], [], [], TEST_USER_EMAIL)
@@ -140,7 +141,7 @@ def test_validate_rejects_invalid_edge_reference(dynamodb_table):
 
 
 def test_validate_rejects_invalid_condition_branches(dynamodb_table):
-    start = AutomationNode(automation_id="auto-1", node_id="start", type="start", name="Start")
+    start = AutomationNode(automation_id="auto-1", node_id="start", type=AutomationNodeType.START, name="Start")
     condition = AutomationNode(
         automation_id="auto-1",
         node_id="condition",
@@ -148,7 +149,7 @@ def test_validate_rejects_invalid_condition_branches(dynamodb_table):
         name="Check",
         config={"expression": "$.input.ok"},
     )
-    final = AutomationNode(automation_id="auto-1", node_id="final", type="final", name="Done")
+    final = AutomationNode(automation_id="auto-1", node_id="final", type=AutomationNodeType.FINAL, name="Done")
     edges = [
         AutomationEdge(
             automation_id="auto-1",
@@ -174,7 +175,7 @@ def test_validate_rejects_invalid_condition_branches(dynamodb_table):
 
 
 def test_validate_rejects_cycle(dynamodb_table):
-    start = AutomationNode(automation_id="auto-1", node_id="start", type="start", name="Start")
+    start = AutomationNode(automation_id="auto-1", node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
         automation_id="auto-1",
         node_id="action",
@@ -182,7 +183,7 @@ def test_validate_rejects_cycle(dynamodb_table):
         name="Action",
         config={"action_type": "invoke_agent", "agent_id": "agent-1", "prompt_template": "Hi"},
     )
-    final = AutomationNode(automation_id="auto-1", node_id="final", type="final", name="Done")
+    final = AutomationNode(automation_id="auto-1", node_id="final", type=AutomationNodeType.FINAL, name="Done")
     edges = [
         AutomationEdge(automation_id="auto-1", source_node_id="start", target_node_id="action"),
         AutomationEdge(automation_id="auto-1", source_node_id="action", target_node_id="start"),
@@ -209,7 +210,7 @@ def test_validate_invoke_agent_requires_owned_agent(dynamodb_table):
         created_by=TEST_USER_EMAIL,
     )
     AgentRepository().save(agent)
-    start = AutomationNode(automation_id="auto-1", node_id="start", type="start", name="Start")
+    start = AutomationNode(automation_id="auto-1", node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
         automation_id="auto-1",
         node_id="action",
@@ -217,7 +218,7 @@ def test_validate_invoke_agent_requires_owned_agent(dynamodb_table):
         name="Action",
         config={"action_type": "invoke_agent", "agent_id": agent.agent_id, "prompt_template": "Hi"},
     )
-    final = AutomationNode(automation_id="auto-1", node_id="final", type="final", name="Done")
+    final = AutomationNode(automation_id="auto-1", node_id="final", type=AutomationNodeType.FINAL, name="Done")
     edges = [
         AutomationEdge(automation_id="auto-1", source_node_id="start", target_node_id="action"),
         AutomationEdge(automation_id="auto-1", source_node_id="action", target_node_id="final"),
@@ -233,7 +234,7 @@ def test_validate_invoke_agent_requires_owned_agent(dynamodb_table):
 
 
 def test_validate_skill_action_requires_enabled_automation_skill(dynamodb_table):
-    start = AutomationNode(automation_id="auto-1", node_id="start", type="start", name="Start")
+    start = AutomationNode(automation_id="auto-1", node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
         automation_id="auto-1",
         node_id="action",
@@ -246,7 +247,7 @@ def test_validate_skill_action_requires_enabled_automation_skill(dynamodb_table)
             "arguments": {"recent_20": True},
         },
     )
-    final = AutomationNode(automation_id="auto-1", node_id="final", type="final", name="Done")
+    final = AutomationNode(automation_id="auto-1", node_id="final", type=AutomationNodeType.FINAL, name="Done")
     edges = [
         AutomationEdge(automation_id="auto-1", source_node_id="start", target_node_id="action"),
         AutomationEdge(automation_id="auto-1", source_node_id="action", target_node_id="final"),
@@ -278,7 +279,7 @@ def test_validate_skill_action_accepts_enabled_skill_with_connector(dynamodb_tab
         EnableAutomationSkillRequest(config={}),
         TEST_USER_EMAIL,
     )
-    start = AutomationNode(automation_id=automation.automation_id, node_id="start", type="start", name="Start")
+    start = AutomationNode(automation_id=automation.automation_id, node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
         automation_id=automation.automation_id,
         node_id="action",
@@ -291,7 +292,7 @@ def test_validate_skill_action_accepts_enabled_skill_with_connector(dynamodb_tab
             "arguments": {"recent_20": True},
         },
     )
-    final = AutomationNode(automation_id=automation.automation_id, node_id="final", type="final", name="Done")
+    final = AutomationNode(automation_id=automation.automation_id, node_id="final", type=AutomationNodeType.FINAL, name="Done")
     edges = [
         AutomationEdge(automation_id=automation.automation_id, source_node_id="start", target_node_id="action"),
         AutomationEdge(automation_id=automation.automation_id, source_node_id="action", target_node_id="final"),
@@ -315,7 +316,7 @@ def test_validate_skill_action_rejects_action_disabled_for_automation(dynamodb_t
         EnableAutomationSkillRequest(config={}),
         TEST_USER_EMAIL,
     )
-    start = AutomationNode(automation_id=automation.automation_id, node_id="start", type="start", name="Start")
+    start = AutomationNode(automation_id=automation.automation_id, node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
         automation_id=automation.automation_id,
         node_id="action",
@@ -332,7 +333,7 @@ def test_validate_skill_action_rejects_action_disabled_for_automation(dynamodb_t
             },
         },
     )
-    final = AutomationNode(automation_id=automation.automation_id, node_id="final", type="final", name="Done")
+    final = AutomationNode(automation_id=automation.automation_id, node_id="final", type=AutomationNodeType.FINAL, name="Done")
     edges = [
         AutomationEdge(automation_id=automation.automation_id, source_node_id="start", target_node_id="action"),
         AutomationEdge(automation_id=automation.automation_id, source_node_id="action", target_node_id="final"),
@@ -614,7 +615,7 @@ def test_validate_skill_action_requires_installed_id_when_repeatable_is_ambiguou
         EnableAutomationSkillRequest(config={"to": "second@example.com"}),
         TEST_USER_EMAIL,
     )
-    start = AutomationNode(automation_id=automation.automation_id, node_id="start", type="start", name="Start")
+    start = AutomationNode(automation_id=automation.automation_id, node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
         automation_id=automation.automation_id,
         node_id="action",
@@ -627,7 +628,7 @@ def test_validate_skill_action_requires_installed_id_when_repeatable_is_ambiguou
             "arguments": {"subject": "Hello", "body": "<p>Hello</p>"},
         },
     )
-    final = AutomationNode(automation_id=automation.automation_id, node_id="final", type="final", name="Done")
+    final = AutomationNode(automation_id=automation.automation_id, node_id="final", type=AutomationNodeType.FINAL, name="Done")
     edges = [
         AutomationEdge(automation_id=automation.automation_id, source_node_id="start", target_node_id="action"),
         AutomationEdge(automation_id=automation.automation_id, source_node_id="action", target_node_id="final"),

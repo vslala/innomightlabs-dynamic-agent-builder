@@ -1,7 +1,7 @@
 """Stripe service for subscription management operations."""
 
 import logging
-from typing import Optional
+from typing import Any, Optional, cast
 
 import httpx
 from fastapi import HTTPException
@@ -19,7 +19,7 @@ class StripeService:
             raise HTTPException(500, "Stripe not configured")
         self.headers = {"Authorization": f"Bearer {settings.stripe_secret_key}"}
 
-    async def _request(self, method: str, path: str, data: dict = None) -> dict:
+    async def _request(self, method: str, path: str, data: dict[Any, Any] | None = None) -> dict:
         async with httpx.AsyncClient(timeout=30.0) as client:
             kwargs = {"headers": self.headers}
             if data:
@@ -31,15 +31,16 @@ class StripeService:
                 log.error(f"Stripe API error {response.status_code}: {response.text}")
                 raise HTTPException(502, "Stripe API request failed")
 
-            return response.json()
+            payload = response.json()
+            return cast(dict[Any, Any], payload) if isinstance(payload, dict) else {}
 
     async def get(self, path: str) -> dict:
         return await self._request("get", path)
 
-    async def post(self, path: str, data: dict) -> dict:
+    async def post(self, path: str, data: dict[Any, Any]) -> dict:
         return await self._request("post", path, data)
 
-    async def delete(self, path: str, data: dict = None) -> dict:
+    async def delete(self, path: str, data: dict[Any, Any] | None = None) -> dict:
         return await self._request("delete", path, data)
 
     async def cancel_subscription(

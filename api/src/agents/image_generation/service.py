@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import AsyncIterator
+from typing import Any, AsyncIterator, cast
 
 from src.agents.image_generation.capabilities import (
     ImageCapability,
@@ -399,12 +399,13 @@ class AgentImageGenerationService:
             )
         return provider_settings
 
-    async def _load_credentials(self, provider_name: str, provider_settings) -> dict:
+    async def _load_credentials(self, provider_name: str, provider_settings) -> dict[Any, Any]:
         if provider_name == "OpenAI":
             openai_credentials = await ensure_valid_openai_credentials(
                 provider_settings,
                 self.provider_settings_repo,
             )
-            return openai_credentials.model_dump(mode="json")
+            return cast(dict[Any, Any], openai_credentials.model_dump(mode="json"))
 
-        return json.loads(decrypt(provider_settings.encrypted_credentials))
+        credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
+        return cast(dict[Any, Any], credentials) if isinstance(credentials, dict) else {}

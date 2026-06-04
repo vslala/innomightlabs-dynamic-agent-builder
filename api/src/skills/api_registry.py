@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import importlib
 import logging
-from typing import Optional
-
 from fastapi import APIRouter
 
 from src.skills.models import LoadedSkill
@@ -11,7 +9,7 @@ from src.skills.models import LoadedSkill
 log = logging.getLogger(__name__)
 
 
-def _resolve_router_attr(folder_name: str, handler: str) -> Optional[APIRouter]:
+def _resolve_router_attr(folder_name: str, handler: str) -> APIRouter:
     """Resolve an APIRouter from a handler string.
 
     Handler formats:

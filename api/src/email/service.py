@@ -1,14 +1,14 @@
 """Email service using Mailjet API."""
+from importlib import import_module
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 from enum import Enum
 
-from mailjet_rest import Client
-
 from src.config import settings
 
 log = logging.getLogger(__name__)
+Client = import_module("mailjet_rest").Client
 
 
 class EmailTemplate(Enum):

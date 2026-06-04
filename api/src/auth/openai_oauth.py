@@ -122,7 +122,7 @@ def parse_openai_callback_url(callback_url: str) -> tuple[str, str]:
         )
 
     params = parse_qs(parsed.query, keep_blank_values=True)
-    oauth_error = (params.get("error") or [None])[0]
+    oauth_error = (params.get("error") or [""])[0]
     if oauth_error:
         error_description = (params.get("error_description") or [""])[0]
         message = f"OpenAI OAuth error: {oauth_error}"
@@ -130,8 +130,8 @@ def parse_openai_callback_url(callback_url: str) -> tuple[str, str]:
             message += f" ({error_description})"
         raise OpenAIOAuthError(message)
 
-    code = (params.get("code") or [None])[0]
-    state = (params.get("state") or [None])[0]
+    code = (params.get("code") or [""])[0]
+    state = (params.get("state") or [""])[0]
     if not code or not state:
         raise OpenAIOAuthError("Callback URL must include both 'code' and 'state' query parameters.")
 

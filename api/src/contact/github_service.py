@@ -1,7 +1,7 @@
 """GitHub issue creation service for contact form submissions."""
 import logging
 import httpx
-from typing import List
+from typing import Any, List, cast
 
 from src.config import settings
 
@@ -60,9 +60,11 @@ class GitHubService:
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             issue_data = response.json()
+            if not isinstance(issue_data, dict):
+                raise ValueError("GitHub issue response was not an object")
 
             log.info(f"✓ Created GitHub issue #{issue_data['number']}: {title}")
-            return issue_data
+            return cast(dict[Any, Any], issue_data)
 
 
 def format_contact_issue_body(

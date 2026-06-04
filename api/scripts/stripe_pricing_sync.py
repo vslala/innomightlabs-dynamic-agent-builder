@@ -5,7 +5,7 @@ import re
 import sys
 import argparse
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import stripe
 from pydantic import BaseModel, Field
@@ -34,7 +34,7 @@ class PricingConfig(BaseModel):
     model_config = {"extra": "allow"}
 
 
-def _get_env_var(var_name: str, fallback_var: str = None) -> str | None:
+def _get_env_var(var_name: str, fallback_var: str | None = None) -> str | None:
     """
     Get environment variable with support for environment-specific prefixes.
     
@@ -93,10 +93,10 @@ def _get_product(
     lookup_key: str,
     existing_id: str | None,
     import_existing: bool,
-) -> dict | None:
+) -> dict[str, Any] | None:
     if existing_id:
         try:
-            product = stripe.Product.retrieve(existing_id)
+            product: dict[str, Any] = stripe.Product.retrieve(existing_id)
             return product
         except Exception:
             pass
@@ -128,7 +128,7 @@ def _get_price(
     amount: int,
     currency: str,
     import_existing: bool,
-) -> dict:
+) -> Optional[dict[str, Any]]:
     prices = _list_prices(product_id)
     results = _filter_by_metadata(
         prices,
@@ -281,7 +281,7 @@ def _sync_keys(
                 continue
             
             if price_ids.get(billing_cycle) != price.get("id"):
-                price_ids[billing_cycle] = price.get("id")
+                price_ids[billing_cycle] = str(price.get("id") or "")
                 print(f"   ✓ {billing_cycle.capitalize()}: {price.get('id')} ({currency.upper()}{amount_major})")
                 changed = True
             else:

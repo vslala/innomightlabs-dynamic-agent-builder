@@ -178,7 +178,7 @@ async def search(arguments: dict[str, Any], config: dict[str, Any], context: dic
 
     base_url = _normalize_site_url(site_url)
     endpoint = f"{base_url}/wp-json/wp/v2/posts"
-    params = {
+    params: dict[str, str | int] = {
         "search": query,
         "per_page": per_page,
         "page": page,

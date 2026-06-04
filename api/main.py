@@ -73,7 +73,7 @@ def patched_render(self, content):
         default=decimal_default,
     ).encode("utf-8")
 
-StarletteJSONResponse.render = patched_render
+    setattr(StarletteJSONResponse, "render", patched_render)
 
 
 @asynccontextmanager
@@ -237,14 +237,21 @@ def _handle_crawl_job(crawl_job: dict, context):
     kb_id = crawl_job.get("kb_id")
     user_email = crawl_job.get("user_email")
 
-    if not all([job_id, kb_id, user_email]):
+    if (
+        not isinstance(job_id, str)
+        or not isinstance(kb_id, str)
+        or not isinstance(user_email, str)
+        or not job_id
+        or not kb_id
+        or not user_email
+    ):
         log.error(f"Invalid crawl_job payload: {crawl_job}")
         return {"statusCode": 400, "body": "Invalid crawl_job payload"}
 
     log.info(f"Processing async crawl job {job_id} for KB {kb_id}")
 
     try:
-        from src.crawler import get_crawler_worker
+        from src.crawler.worker import get_crawler_worker
         crawler = get_crawler_worker()
 
         # Calculate timeout based on Lambda remaining time
@@ -275,7 +282,7 @@ def _handle_automation_run(automation_run: dict, context):  # noqa: ARG001
     run_id = automation_run.get("run_id")
     user_email = automation_run.get("user_email")
 
-    if not all([run_id, user_email]):
+    if not isinstance(run_id, str) or not isinstance(user_email, str) or not run_id or not user_email:
         log.error("Invalid automation_run payload: %s", automation_run)
         return {"statusCode": 400, "body": "Invalid automation_run payload"}
 

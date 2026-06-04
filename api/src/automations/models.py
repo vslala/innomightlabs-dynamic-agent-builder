@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -65,6 +65,10 @@ def convert_floats_to_decimals(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: convert_floats_to_decimals(item) for key, item in value.items()}
     return value
+
+
+def dynamo_item(value: Any) -> dict[str, Any]:
+    return cast(dict[str, Any], convert_floats_to_decimals(value))
 
 
 class InvokeAgentActionConfig(BaseModel):
@@ -389,7 +393,7 @@ class AutomationNode(BaseModel):
         return f"Node#{self.node_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        return convert_floats_to_decimals({
+        return dynamo_item({
             "pk": self.pk,
             "sk": self.sk,
             "node_id": self.node_id,
@@ -494,7 +498,7 @@ class AutomationTrigger(BaseModel):
         return f"Trigger#{self.trigger_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        item = convert_floats_to_decimals({
+        item = dynamo_item({
             "pk": self.pk,
             "sk": self.sk,
             "trigger_id": self.trigger_id,
@@ -557,7 +561,7 @@ class AutomationSkill(BaseModel):
         return f"Skill#{self.installed_skill_id or self.skill_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        return convert_floats_to_decimals({
+        return dynamo_item({
             "pk": self.pk,
             "sk": self.sk,
             "entity_type": "AutomationSkill",
@@ -626,7 +630,7 @@ class AutomationRun(BaseModel):
         return f"AutomationRun#{self.run_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        return convert_floats_to_decimals({
+        return dynamo_item({
             "pk": self.pk,
             "sk": self.sk,
             "run_id": self.run_id,
@@ -698,7 +702,7 @@ class AutomationRunNodeResult(BaseModel):
         return f"NodeResult#{self.started_at.isoformat()}#{self.node_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        return convert_floats_to_decimals({
+        return dynamo_item({
             "pk": self.pk,
             "sk": self.sk,
             "result_id": self.result_id,

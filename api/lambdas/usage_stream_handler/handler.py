@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
@@ -84,7 +84,8 @@ def _stripe_get(path: str) -> Optional[dict[str, Any]]:
         if response.status_code >= 400:
             log.warning("Stripe API error %s: %s", response.status_code, response.text)
             return None
-        return response.json()
+        payload = response.json()
+        return cast(dict[str, Any], payload) if isinstance(payload, dict) else None
     except Exception as exc:
         log.warning("Stripe API request failed: %s", exc)
         return None
@@ -94,12 +95,14 @@ def _get_invoice_url(subscription_id: str, invoice_id: Optional[str]) -> Optiona
     if invoice_id:
         invoice = _stripe_get(f"/invoices/{invoice_id}")
         if invoice:
-            return invoice.get("hosted_invoice_url") or invoice.get("invoice_pdf")
+            url = invoice.get("hosted_invoice_url") or invoice.get("invoice_pdf")
+            return str(url) if url else None
     invoice_list = _stripe_get(f"/invoices?subscription={subscription_id}&limit=1")
     if invoice_list:
         data = invoice_list.get("data", [])
         if data:
-            return data[0].get("hosted_invoice_url") or data[0].get("invoice_pdf")
+            url = data[0].get("hosted_invoice_url") or data[0].get("invoice_pdf")
+            return str(url) if url else None
     return None
 
 

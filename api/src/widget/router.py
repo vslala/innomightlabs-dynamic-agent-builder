@@ -638,7 +638,7 @@ async def generate_image_stream(
                     prompt=body.prompt,
                     size=body.size,
                     quality=body.quality,
-                    output_format=body.output_format,  # type: ignore[arg-type]
+                    output_format=body.output_format,
                 ),
             ):
                 yield event.to_sse()

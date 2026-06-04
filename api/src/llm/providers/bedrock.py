@@ -6,7 +6,7 @@ Uses the Bedrock Converse API with AWS access key authentication.
 
 import json
 import logging
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional
 
 import boto3
 
@@ -123,7 +123,7 @@ class BedrockProvider(LLMProvider):
                     })
 
         # Build request parameters
-        request_params = {
+        request_params: dict[str, Any] = {
             "modelId": model_id,
             "messages": bedrock_messages,
         }

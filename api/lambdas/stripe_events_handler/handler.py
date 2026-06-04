@@ -49,11 +49,12 @@ def _extract_user_email(subscription: StripeSubscriptionData, fallback_customer:
     metadata = subscription.metadata or {}
     user_email = metadata.get("user_email")
     if user_email:
-        return user_email
+        return str(user_email)
     if fallback_customer:
         try:
             customer = stripe.Customer.retrieve(fallback_customer)
-            return customer.get("email")
+            email = customer.get("email")
+            return str(email) if email else None
         except Exception as exc:
             log.warning("Failed to fetch customer email: %s", exc)
     return None
@@ -65,6 +66,9 @@ def _persist_subscription(subscription: StripeSubscriptionData) -> None:
     user_email = _extract_user_email(subscription, customer_id)
     if not user_email:
         log.warning("Stripe event missing user email; skipping subscription persistence.")
+        return
+    if not subscription.id:
+        log.warning("Stripe event missing subscription id; skipping subscription persistence.")
         return
 
     repo = SubscriptionRepository()

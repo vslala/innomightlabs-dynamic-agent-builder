@@ -3,7 +3,15 @@ from typing import AsyncIterator
 from src.agents.architectures.base import AgentArchitecture
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
-from src.automations.models import Automation, AutomationEdge, AutomationNode, AutomationSkill, AutomationTrigger
+from src.automations.models import (
+    Automation,
+    AutomationEdge,
+    AutomationNode,
+    AutomationNodeType,
+    AutomationSkill,
+    AutomationTrigger,
+    AutomationTriggerType,
+)
 from src.automations.repository import AutomationRepository
 from src.automations.runner import AutomationRunner
 from src.automations.service import AutomationGraph
@@ -66,11 +74,11 @@ def build_graph(agent_id: str, include_error_edge: bool = False) -> AutomationGr
         title="Workflow",
         created_by=TEST_USER_EMAIL,
     )
-    start = AutomationNode(automation_id="auto-1", node_id="start", type="start", name="Start")
+    start = AutomationNode(automation_id="auto-1", node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
         automation_id="auto-1",
         node_id="draft",
-        type="action",
+        type=AutomationNodeType.ACTION,
         name="Draft",
         config={
             "action_type": "invoke_agent",
@@ -78,7 +86,7 @@ def build_graph(agent_id: str, include_error_edge: bool = False) -> AutomationGr
             "prompt_template": "Hello {{ $.input.name }}",
         },
     )
-    final = AutomationNode(automation_id="auto-1", node_id="final", type="final", name="Done")
+    final = AutomationNode(automation_id="auto-1", node_id="final", type=AutomationNodeType.FINAL, name="Done")
     edges = [
         AutomationEdge(automation_id="auto-1", source_node_id="start", target_node_id="draft"),
         AutomationEdge(automation_id="auto-1", source_node_id="draft", target_node_id="final"),
@@ -95,7 +103,7 @@ def build_graph(agent_id: str, include_error_edge: bool = False) -> AutomationGr
     trigger = AutomationTrigger(
         automation_id="auto-1",
         trigger_id="trigger-1",
-        type="manual",
+        type=AutomationTriggerType.MANUAL,
         name="Manual",
         enabled=True,
         entry_node_id="start",
@@ -213,11 +221,11 @@ async def test_runner_executes_skill_action_and_renders_arguments(dynamodb_table
         title="Workflow",
         created_by=TEST_USER_EMAIL,
     )
-    start = AutomationNode(automation_id="auto-skill", node_id="start", type="start", name="Start")
+    start = AutomationNode(automation_id="auto-skill", node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
         automation_id="auto-skill",
         node_id="search",
-        type="action",
+        type=AutomationNodeType.ACTION,
         name="Search",
         config={
             "action_type": "skill_action",
@@ -227,7 +235,7 @@ async def test_runner_executes_skill_action_and_renders_arguments(dynamodb_table
             "arguments": {"query": "{{ $.input.query }}", "per_page": "{{ $.input.limit }}"},
         },
     )
-    final = AutomationNode(automation_id="auto-skill", node_id="final", type="final", name="Done")
+    final = AutomationNode(automation_id="auto-skill", node_id="final", type=AutomationNodeType.FINAL, name="Done")
     graph = AutomationGraph(
         automation,
         [start, action, final],

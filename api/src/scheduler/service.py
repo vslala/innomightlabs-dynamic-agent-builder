@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from src.scheduler.backends import get_scheduler_backend
 from src.scheduler.backends.base import SchedulerBackend
@@ -37,7 +37,7 @@ class SchedulerService:
         expression = ScheduleExpression(body.cron_expression, body.timezone)
         validate_schedule_expression(expression)
         status = ScheduleStatus.ACTIVE if body.enabled else ScheduleStatus.PAUSED
-        schedule_kwargs: dict[str, str] = {}
+        schedule_kwargs: dict[str, Any] = {}
         if body.schedule_id:
             schedule_id = body.schedule_id.strip()
             if not schedule_id:

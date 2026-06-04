@@ -2,6 +2,8 @@
 Tests for API Keys module.
 """
 
+from typing import cast
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -261,7 +263,7 @@ class TestApiKeysRouter:
             json=AGENT_CREATE_REQUEST,
             headers=auth_headers,
         )
-        return response.json()["agent_id"]
+        return cast(str, response.json()["agent_id"])
 
     def test_create_api_key_success(self, test_client: TestClient, auth_headers: dict):
         """Test creating a new API key."""

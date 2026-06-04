@@ -634,7 +634,7 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
         """
         Detect special structures that should be preserved (code blocks, lists, tables).
         """
-        structures = {
+        structures: dict[str, list[tuple[int, int]]] = {
             'code_blocks': [],
             'lists': [],
             'tables': [],

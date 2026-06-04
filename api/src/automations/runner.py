@@ -571,7 +571,8 @@ class AutomationRunner:
     def _next_label(self, node: AutomationNode, context: dict[str, Any]) -> str:
         if node.type == AutomationNodeType.CONDITION:
             result = context.get("nodes", {}).get(node.node_id, {}).get("output", {}).get("result")
-            return node.config.get("true_label", "true") if result else node.config.get("false_label", "false")
+            label = node.config.get("true_label", "true") if result else node.config.get("false_label", "false")
+            return str(label)
         return "next"
 
     def _store_context_node(
@@ -640,10 +641,10 @@ class AutomationRunner:
         expression = expression.strip()
         if "==" in expression:
             left, right = expression.split("==", 1)
-            return self._resolve_json_path(left.strip(), context) == self._literal_value(right.strip())
+            return bool(self._resolve_json_path(left.strip(), context) == self._literal_value(right.strip()))
         if "!=" in expression:
             left, right = expression.split("!=", 1)
-            return self._resolve_json_path(left.strip(), context) != self._literal_value(right.strip())
+            return bool(self._resolve_json_path(left.strip(), context) != self._literal_value(right.strip()))
         return bool(self._resolve_json_path(expression, context))
 
     def _literal_value(self, value: str) -> Any:

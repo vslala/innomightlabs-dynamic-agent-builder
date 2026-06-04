@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from croniter import croniter
+from croniter import croniter  # type: ignore[import-untyped]
 
 
 class ScheduleExpressionError(ValueError):
@@ -34,7 +35,7 @@ def next_run_at(value: ScheduleExpression, now: datetime | None = None) -> datet
     zone = _zone(value.timezone)
     localized = base.astimezone(zone)
     next_local = croniter(value.cron_expression.strip(), localized).get_next(datetime)
-    return next_local.astimezone(timezone.utc)
+    return cast(datetime, next_local).astimezone(timezone.utc)
 
 
 def _zone(name: str) -> ZoneInfo:

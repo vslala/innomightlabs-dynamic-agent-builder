@@ -1,3 +1,6 @@
+import hashlib
+import secrets
+import time
 from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -541,7 +544,7 @@ class LocalAuthResponse(BaseModel):
     name: str
 
 
-def _hash_password(password: str, salt: bytes = None) -> tuple[str, str]:
+def _hash_password(password: str, salt: bytes | None = None) -> tuple[str, str]:
     """Hash password using PBKDF2-SHA256."""
     if salt is None:
         salt = secrets.token_bytes(32)

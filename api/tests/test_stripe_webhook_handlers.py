@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,10 +17,10 @@ from src.payments.stripe.router import (
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "stripe"
 
 
-def load_fixture(filename: str) -> dict:
+def load_fixture(filename: str) -> dict[Any, Any]:
     """Load a JSON fixture file."""
     with open(FIXTURES_DIR / filename) as f:
-        return json.load(f)
+        return cast(dict[Any, Any], json.load(f))
 
 
 @pytest.fixture

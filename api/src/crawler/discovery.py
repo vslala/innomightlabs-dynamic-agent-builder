@@ -10,7 +10,7 @@ import httpx
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse, urljoin, urldefrag
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Optional, Set
+from typing import AsyncIterator, Optional, Set, cast
 from bs4 import BeautifulSoup
 import logging
 import re
@@ -110,8 +110,8 @@ class SitemapParser:
                 if loc is not None and loc.text:
                     child_url = loc.text.strip()
                     log.info(f"Found child sitemap: {child_url}")
-                    async for url in self._parse_sitemap(child_url, depth + 1):
-                        yield url
+                    async for discovered in self._parse_sitemap(child_url, depth + 1):
+                        yield discovered
 
             # Also try without namespace (some sitemaps don't use it)
             for sitemap in root.findall(".//sitemap"):
@@ -120,27 +120,27 @@ class SitemapParser:
                     child_url = loc.text.strip()
                     if child_url not in self._seen_urls:
                         log.info(f"Found child sitemap: {child_url}")
-                        async for url in self._parse_sitemap(child_url, depth + 1):
-                            yield url
+                        async for discovered in self._parse_sitemap(child_url, depth + 1):
+                            yield discovered
 
         elif root_tag == "urlset":
             # This is a regular sitemap - extract URLs
             for url_elem in root.findall(".//sitemap:url", self.NAMESPACES):
                 loc = url_elem.find("sitemap:loc", self.NAMESPACES)
                 if loc is not None and loc.text:
-                    url = loc.text.strip()
-                    if url not in self._seen_urls:
-                        self._seen_urls.add(url)
-                        yield DiscoveredUrl(url=url, depth=0, source="sitemap")
+                    discovered_url = loc.text.strip()
+                    if discovered_url not in self._seen_urls:
+                        self._seen_urls.add(discovered_url)
+                        yield DiscoveredUrl(url=discovered_url, depth=0, source="sitemap")
 
             # Also try without namespace
             for url_elem in root.findall(".//url"):
                 loc = url_elem.find("loc")
                 if loc is not None and loc.text:
-                    url = loc.text.strip()
-                    if url not in self._seen_urls:
-                        self._seen_urls.add(url)
-                        yield DiscoveredUrl(url=url, depth=0, source="sitemap")
+                    discovered_url = loc.text.strip()
+                    if discovered_url not in self._seen_urls:
+                        self._seen_urls.add(discovered_url)
+                        yield DiscoveredUrl(url=discovered_url, depth=0, source="sitemap")
 
 
 class UrlCrawler:
@@ -238,7 +238,7 @@ class UrlCrawler:
         links: list[str] = []
 
         for anchor in soup.find_all("a", href=True):
-            href = anchor["href"]
+            href = cast(str, anchor["href"])
 
             # Skip empty, javascript, and mailto links
             if not href or href.startswith(("javascript:", "mailto:", "tel:", "#")):

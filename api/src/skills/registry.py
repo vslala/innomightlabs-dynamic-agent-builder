@@ -4,9 +4,9 @@ import importlib
 import inspect
 import logging
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 import src.form_models as form_models
 from src.form_validation import validate_form_value
@@ -176,7 +176,7 @@ class SkillRegistry:
         func = getattr(module, function_name, None)
         if not callable(func):
             raise ValueError(f"Invalid action handler: {handler}")
-        return func
+        return cast(Callable[..., Any], func)
 
 
 _registry_singleton: Optional[SkillRegistry] = None

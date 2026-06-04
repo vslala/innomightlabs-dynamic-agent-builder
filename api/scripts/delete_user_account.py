@@ -30,7 +30,7 @@ Environment Variables:
 import sys
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Set
+from typing import DefaultDict, List, Dict, Any, Set, cast
 from datetime import datetime
 from collections import defaultdict
 
@@ -50,7 +50,7 @@ class UserAccountDeleter:
         self.dry_run = dry_run
         self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
-        self.deletion_stats = defaultdict(int)
+        self.deletion_stats: DefaultDict[str, int] = defaultdict(int)
         self.items_to_delete: List[Dict[str, Any]] = []
 
     def scan_user_data(self) -> Dict[str, List[Dict[str, Any]]]:
@@ -58,7 +58,7 @@ class UserAccountDeleter:
         print(f"\n{'🔍' if not self.dry_run else '🔎'} Scanning for data associated with: {self.email}")
         print("=" * 80)
 
-        all_data = {
+        all_data: Dict[str, List[Dict[str, Any]]] = {
             "user": [],
             "conversations": [],
             "messages": [],
@@ -199,7 +199,7 @@ class UserAccountDeleter:
 
         return all_data
 
-    def _query_items(self, pk: str, sk_prefix: str = None) -> List[Dict[str, Any]]:
+    def _query_items(self, pk: str, sk_prefix: str | None = None) -> List[Dict[str, Any]]:
         """Query items by PK and optional SK prefix."""
         try:
             if sk_prefix:
@@ -215,12 +215,12 @@ class UserAccountDeleter:
                     KeyConditionExpression="pk = :pk",
                     ExpressionAttributeValues={":pk": pk},
                 )
-            return response.get("Items", [])
+            return cast(List[Dict[str, Any]], response.get("Items", []))
         except Exception as e:
             print(f"    ⚠️  Error querying {pk} / {sk_prefix}: {e}")
             return []
 
-    def _query_gsi2(self, gsi2pk: str, sk_prefix: str = None) -> List[Dict[str, Any]]:
+    def _query_gsi2(self, gsi2pk: str, sk_prefix: str | None = None) -> List[Dict[str, Any]]:
         """Query items using GSI2 (gsi2pk, gsi2sk)."""
         try:
             if sk_prefix:
@@ -238,7 +238,7 @@ class UserAccountDeleter:
                     KeyConditionExpression="gsi2pk = :gsi2pk",
                     ExpressionAttributeValues={":gsi2pk": gsi2pk},
                 )
-            return response.get("Items", [])
+            return cast(List[Dict[str, Any]], response.get("Items", []))
         except Exception as e:
             print(f"    ⚠️  Error querying GSI2 {gsi2pk} / {sk_prefix}: {e}")
             return []

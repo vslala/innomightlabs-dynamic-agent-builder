@@ -1,5 +1,5 @@
 from anthropic import AsyncAnthropic
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional, cast
 import json
 
 from src.llm.providers.base import LLMEvent, LLMProvider
@@ -92,7 +92,7 @@ class AnthropicProvider(LLMProvider):
                     })
 
         # Build request parameters
-        request_params = {
+        request_params: dict[str, Any] = {
             "model": model_id,
             "messages": anthropic_messages,
             "max_tokens": 4096,  # Required parameter for Anthropic API
@@ -113,22 +113,20 @@ class AnthropicProvider(LLMProvider):
 
         try:
             # Call Anthropic streaming API
-            async with client.messages.stream(**request_params) as stream:
+            async with client.messages.stream(**cast(Any, request_params)) as stream:
                 # Track current tool use block being accumulated
-                current_tool_use = None
+                current_tool_use: dict[str, Any] | None = None
 
                 async for event in stream:
                     # Handle text deltas
                     if event.type == "content_block_delta":
                         delta = event.delta
-                        if not isinstance(delta, dict):
-                            delta = dict(delta.__dict__) if hasattr(delta, "__dict__") else {}
-                        text_delta = delta.get("text")
+                        text_delta = getattr(delta, "text", None)
                         if text_delta is not None:
                             yield LLMEvent(type="text", content=text_delta)
 
                         # Handle tool input deltas
-                        elif delta.get("partial_json") is not None:
+                        elif getattr(delta, "partial_json", None) is not None:
                             # Tool input is being streamed as partial JSON
                             pass  # Accumulate in content_block_stop
 

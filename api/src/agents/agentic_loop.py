@@ -14,27 +14,19 @@ We can evolve this to emit richer structured errors and metrics later.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Protocol
+from typing import Any, AsyncIterator, Optional, Protocol
 
 from src.common import MAX_TOOL_ITERATIONS
-
-
-class ProviderStreamEvent(Protocol):
-    type: str
-    content: str
-    tool_name: str
-    tool_input: dict[str, Any]
-    tool_use_id: str
 
 
 class LLMProvider(Protocol):
     def stream_response(
         self,
-        context: list[dict[str, Any]],
-        credentials: dict[str, Any],
-        tools: list[dict[str, Any]],
-        model: str,
-    ) -> AsyncIterator[ProviderStreamEvent]:
+        context: list[dict[Any, Any]],
+        credentials: dict[Any, Any],
+        tools: Optional[list[dict[Any, Any]]] = None,
+        model: Optional[str] = None,
+    ) -> AsyncIterator[Any]:
         ...
 
 
@@ -66,9 +58,9 @@ class AgenticLoopResult:
 async def run_agentic_tool_loop(
     *,
     provider: LLMProvider,
-    context: list[dict[str, Any]],
-    credentials: dict[str, Any],
-    tools: list[dict[str, Any]],
+    context: list[dict[Any, Any]],
+    credentials: dict[Any, Any],
+    tools: list[dict[Any, Any]],
     model: str,
     tool_router: ToolRouter,
     state: Any,
@@ -90,7 +82,7 @@ async def run_agentic_tool_loop(
 
     for _iteration in range(MAX_TOOL_ITERATIONS):
         has_tool_calls = False
-        pending_tool_calls: list[ProviderStreamEvent] = []
+        pending_tool_calls: list[Any] = []
         iteration_text = ""
 
         async for event in provider.stream_response(context, credentials, tools, model):

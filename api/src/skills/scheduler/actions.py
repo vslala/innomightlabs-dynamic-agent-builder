@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from src.scheduler.models import CreateScheduleRequest, ScheduleTargetType, UpdateScheduleRequest
 from src.scheduler.service import SchedulerService
@@ -33,7 +33,7 @@ def _required_argument_or_context(
 
 
 def _schedule_response(schedule) -> dict[str, Any]:
-    return schedule.to_response().model_dump(mode="json")
+    return cast(dict[str, Any], schedule.to_response().model_dump(mode="json"))
 
 
 def _agent_message_target(arguments: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -64,7 +64,7 @@ def _automation_input(arguments: dict[str, Any]) -> dict[str, Any]:
     parsed = json.loads(input_json)
     if not isinstance(parsed, dict):
         raise ValueError("Automation schedule input_json must parse to an object")
-    return parsed
+    return cast(dict[str, Any], parsed)
 
 
 async def create_or_update(

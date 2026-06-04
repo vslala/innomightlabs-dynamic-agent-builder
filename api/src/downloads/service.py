@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -60,7 +60,8 @@ class DownloadsService:
             raise DownloadsConfigurationError("Downloads artifacts bucket is not configured")
 
         try:
-            return json.loads(self._read_text_object(key))
+            manifest = json.loads(self._read_text_object(key))
+            return manifest if isinstance(manifest, dict) else {}
         except json.JSONDecodeError as exc:
             log.exception("Downloads manifest is not valid JSON")
             raise DownloadsConfigurationError("Downloads manifest is invalid") from exc
@@ -74,7 +75,7 @@ class DownloadsService:
                 Bucket=settings.downloads_artifacts_bucket,
                 Key=key,
             )
-            return response["Body"].read().decode("utf-8")
+            return cast(str, response["Body"].read().decode("utf-8"))
         except (ClientError, BotoCoreError) as exc:
             log.exception("Failed to read downloads artifact from S3: %s", key)
             raise DownloadsConfigurationError("Downloads artifacts are unavailable") from exc
@@ -114,8 +115,11 @@ class DownloadsService:
         if filename:
             params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
 
-        return self._s3.generate_presigned_url(
-            "get_object",
-            Params=params,
-            ExpiresIn=settings.downloads_presign_ttl_seconds,
+        return cast(
+            str,
+            self._s3.generate_presigned_url(
+                "get_object",
+                Params=params,
+                ExpiresIn=settings.downloads_presign_ttl_seconds,
+            ),
         )

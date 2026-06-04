@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi.testclient import TestClient
 
@@ -67,7 +68,7 @@ def save_message(
     *,
     conversation_id: str,
     created_at: datetime,
-    role: str,
+    role: Literal["user", "assistant", "system"],
     created_by: str,
     content: str,
 ) -> Message:
