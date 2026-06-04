@@ -743,8 +743,9 @@ export function ConversationDetail() {
       <Card style={{
         display: "flex",
         flexDirection: "column",
-        height: isExpanded ? "100vh" : "calc(100vh - 9rem)",
-        minHeight: isExpanded ? undefined : "42rem",
+        flex: isExpanded ? undefined : 1,
+        height: isExpanded ? "100vh" : undefined,
+        minHeight: 0,
         overflow: "hidden",
         border: "none",
         boxShadow: "none",

@@ -75,7 +75,9 @@ export function DashboardLayout() {
           flex: 1,
           display: "flex",
           flexDirection: "column",
-          minHeight: "100vh",
+          height: "100vh",
+          minHeight: 0,
+          overflow: "hidden",
         }}
       >
         <Header title={getTitle()} user={user || undefined} />
@@ -84,9 +86,10 @@ export function DashboardLayout() {
             flex: 1,
             padding: "2rem",
             overflowY: "auto",
+            minHeight: 0,
           }}
         >
-          <div style={{ maxWidth: "80rem", margin: "0 auto" }}>
+          <div style={{ maxWidth: "80rem", margin: "0 auto", height: "100%", minHeight: 0 }}>
             <Outlet context={{ user }} />
           </div>
         </main>
