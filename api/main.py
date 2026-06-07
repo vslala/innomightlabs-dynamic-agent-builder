@@ -21,6 +21,8 @@ from src.users import users_router
 from src.widget import widget_router, WidgetAuthMiddleware
 from src.contact.router import router as contact_router
 from src.connectors.router import router as connectors_router
+from src.connectors.mcp.router import public_router as mcp_connectors_public_router
+from src.connectors.mcp.router import router as mcp_connectors_router
 from src.skills import skills_router
 from src.skills.api_registry import build_skill_api_routers
 from src.skills.registry import get_skill_registry
@@ -147,6 +149,8 @@ def create_app() -> FastAPI:
     app.include_router(router=users_router)
     app.include_router(router=contact_router)
     app.include_router(router=connectors_router)
+    app.include_router(router=mcp_connectors_public_router)
+    app.include_router(router=mcp_connectors_router)
     app.include_router(router=skills_router)
     app.include_router(router=automations_router)
     app.include_router(router=downloads_router)

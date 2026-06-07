@@ -8,6 +8,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from src.agents.models import MemoryCapacityWarning
+from src.connectors.mcp.models import AgentMCPConnectionResponse
 from src.memory import MemoryRepository
 from src.memory.snapshot import CoreMemorySnapshot
 from src.skills.models import AgentSkill
@@ -32,6 +33,7 @@ def build_krishna_memgpt_system_prompt(
     user_id: str,
     kb_count: int | None = None,
     enabled_skills: list[AgentSkill] | None = None,
+    enabled_mcp_connections: list[AgentMCPConnectionResponse] | None = None,
     core_memory: CoreMemorySnapshot | None = None,
     capacity_warnings: list[MemoryCapacityWarning] | None = None,
 ) -> str:
@@ -46,5 +48,6 @@ def build_krishna_memgpt_system_prompt(
         core_memory=core_memory,
         kb_count=kb_count or 0,
         enabled_skills=enabled_skills or [],
+        enabled_mcp_connections=enabled_mcp_connections or [],
         capacity_warnings=capacity_warnings or [],
     ).strip()

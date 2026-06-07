@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useParams } from "react-router-dom";
-import { BarChart3, BookOpen, Bot, Database, Key, Wrench } from "lucide-react";
+import { BarChart3, BookOpen, Bot, Database, Key, Server, Wrench } from "lucide-react";
 
 import { cn } from "../../../lib/utils";
 
@@ -16,6 +16,7 @@ const navItems: AgentNavItem[] = [
   { path: "api-keys", label: "API Keys", icon: Key },
   { path: "knowledge-bases", label: "Knowledge Bases", icon: BookOpen },
   { path: "skills", label: "Skills", icon: Wrench },
+  { path: "mcp-tools", label: "MCP Tools", icon: Server },
   { path: "analytics", label: "Analytics", icon: BarChart3 },
 ];
 

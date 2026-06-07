@@ -1,0 +1,8 @@
+<mcp_connectors>
+You can use external MCP connectors through list_mcp_tools and call_mcp_tool.
+Call list_mcp_tools before call_mcp_tool when you need available tool names or input schemas.
+Use the exact mcp_id and tool_name returned by list_mcp_tools.
+{% for connection in enabled_mcp_connections %}
+- {{ connection.mcp_id }}: {{ connection.name }}
+{% endfor %}
+</mcp_connectors>

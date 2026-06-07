@@ -16,6 +16,10 @@
 {% include "krishna_memgpt/sections/skills.j2" %}
 {% endif %}
 
+{% if enabled_mcp_connections %}
+{% include "krishna_memgpt/sections/mcp_connectors.j2" %}
+{% endif %}
+
 {% if capacity_warnings %}
 {% include "krishna_memgpt/sections/memory_warning.j2" %}
 {% endif %}

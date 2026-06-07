@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from src.common import CAPACITY_WARNING_THRESHOLD
 from src.agents.models import MemoryCapacityWarning
+from src.connectors.mcp.runtime_tools import MCP_RUNTIME_TOOLS
+from src.connectors.mcp.service import MCPConnectorService
 from src.agents.tool_audit import ToolCallStart, build_tool_call_audit_message
 from src.crypto import decrypt
 from src.auth.openai_oauth import ensure_valid_openai_credentials
@@ -72,6 +74,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         self.provider_settings_repo = get_provider_settings_repository()
         self.agent_kb_repo = AgentKnowledgeBaseRepository()
         self.skill_runtime = SkillRuntimeService()
+        self.mcp_connector_service = MCPConnectorService()
         self.tool_handler = NativeToolHandler(self.memory_repo, message_repo=self.message_repo)
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
 
@@ -126,6 +129,16 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             self.tool_handler.set_knowledge_base_context(state.linked_kb_ids)
 
             state.enabled_skills = self.skill_runtime.list_enabled(agent.agent_id)
+            try:
+                state.enabled_mcp_connections = self.mcp_connector_service.list_agent_connections(
+                    owner_email=owner_email,
+                    agent_id=agent.agent_id,
+                    enabled_only=True,
+                    verify_agent=False,
+                )
+            except Exception as exc:
+                log.warning("Failed to load enabled MCP connectors for agent %s: %s", agent.agent_id, exc)
+                state.enabled_mcp_connections = []
 
             self._ensure_memory_initialized(agent.agent_id, actor_id)
 
@@ -187,6 +200,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 actor_id,
                 kb_count=kb_count,
                 enabled_skills=state.enabled_skills or None,
+                enabled_mcp_connections=state.enabled_mcp_connections or None,
                 core_memory=core_memory_snapshot,
                 capacity_warnings=capacity_warnings or None,
             )
@@ -221,12 +235,15 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 state.tools.extend(KNOWLEDGE_TOOLS)
             if state.enabled_skills:
                 state.tools.extend(self.skill_runtime.build_skill_tools())
+            if state.enabled_mcp_connections:
+                state.tools.extend(MCP_RUNTIME_TOOLS)
 
             from src.agents.agentic_loop import run_agentic_tool_loop
             from src.agents.tool_execution import ToolExecutionRouter
 
             tool_router = ToolExecutionRouter(
                 skill_runtime=self.skill_runtime,
+                mcp_runtime=self.mcp_connector_service,
                 native_tools=self.tool_handler,
             )
 
@@ -389,6 +406,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         *,
         kb_count: int | None = None,
         enabled_skills: list[AgentSkill] | None = None,
+        enabled_mcp_connections: list[Any] | None = None,
         core_memory: CoreMemorySnapshot | None = None,
         capacity_warnings: list[MemoryCapacityWarning] | None = None,
     ) -> str:
@@ -406,6 +424,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             user_id=user_id,
             kb_count=kb_count,
             enabled_skills=enabled_skills,
+            enabled_mcp_connections=enabled_mcp_connections,
             core_memory=core_memory,
             capacity_warnings=capacity_warnings,
         )

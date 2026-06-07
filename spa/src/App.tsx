@@ -33,6 +33,7 @@ import { AgentMemoryPage } from './pages/dashboard/agent-detail/AgentMemoryPage'
 import { AgentApiKeysPage } from './pages/dashboard/agent-detail/AgentApiKeysPage';
 import { AgentKnowledgeBasesPage } from './pages/dashboard/agent-detail/AgentKnowledgeBasesPage';
 import { AgentSkillsPage } from './pages/dashboard/agent-detail/AgentSkillsPage';
+import { AgentMCPToolsPage } from './pages/dashboard/agent-detail/AgentMCPToolsPage';
 import { AgentAnalyticsPage } from './pages/dashboard/agent-detail/AgentAnalyticsPage';
 import { AutomationsListPage } from './pages/dashboard/automations/AutomationsListPage';
 import { AutomationDetailLayout } from './pages/dashboard/automations/AutomationDetailLayout';
@@ -104,6 +105,7 @@ function App() {
             <Route path="api-keys" element={<AgentApiKeysPage />} />
             <Route path="knowledge-bases" element={<AgentKnowledgeBasesPage />} />
             <Route path="skills" element={<AgentSkillsPage />} />
+            <Route path="mcp-tools" element={<AgentMCPToolsPage />} />
             <Route path="analytics" element={<AgentAnalyticsPage />} />
           </Route>
           <Route path="automations" element={<AutomationsListPage />} />

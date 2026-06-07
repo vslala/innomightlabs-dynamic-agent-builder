@@ -66,6 +66,7 @@ class Settings:
     # Scheduler
     scheduler_backend: str = "in_app"
     scheduler_runtime_enabled: bool = True
+    mcp_oauth_redirect_uri: str = ""
 
     # DynamoDB endpoint (optional, for local development)
     dynamodb_endpoint: Optional[str] = None
@@ -331,6 +332,10 @@ class Settings:
             scheduler_backend=os.getenv("SCHEDULER_BACKEND", "in_app").strip().lower(),
             scheduler_runtime_enabled=os.getenv("SCHEDULER_RUNTIME_ENABLED", "true").strip().lower()
             not in {"0", "false", "no"},
+            mcp_oauth_redirect_uri=os.getenv(
+                "MCP_OAUTH_REDIRECT_URI",
+                f"{api_base_url}/connectors/mcp/oauth/callback",
+            ),
             google_client_id=google_client_id,
             google_client_secret=google_client_secret,
             google_redirect_uri=f"{api_base_url}/auth/callback",
