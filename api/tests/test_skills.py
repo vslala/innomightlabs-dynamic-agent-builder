@@ -383,7 +383,12 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
     install_resp = test_client.post(
         f"/agents/{source_agent.agent_id}/skills?skill_id=agent_invocation",
         headers=auth_headers,
-        json={"config": {"target_agent_id": target_agent.agent_id}},
+        json={
+            "config": {
+                "target_agent_id": target_agent.agent_id,
+                "usage_description": "Use for lead summaries that need a specialist agent.",
+            }
+        },
     )
     assert install_resp.status_code == 201
     installed_skill_id = install_resp.json()["installed_skill_id"]
@@ -482,6 +487,17 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
     )
     assert loaded_payload["installed_skill_id"] == installed_skill_id
     assert loaded_payload["execute_contract"]["required_shape"]["skill_id"] == installed_skill_id
+    assert loaded_payload["usage_context"] == [
+        {
+            "name": "usage_description",
+            "label": "Use when",
+            "value": "Use for lead summaries that need a specialist agent.",
+        }
+    ]
+    prompt_addendum = SkillRuntimeService().build_system_prompt_addendum(
+        SkillRuntimeService().list_enabled(source_agent.agent_id)
+    )
+    assert "Use when: Use for lead summaries that need a specialist agent." in prompt_addendum
 
 
 def test_agent_invocation_install_schema_hydrates_agent_options(test_client, auth_headers, dynamodb_table):
@@ -499,6 +515,9 @@ def test_agent_invocation_install_schema_hydrates_agent_options(test_client, aut
         "mode": "hydrate",
     }
     assert {"value": agent.agent_id, "label": agent.agent_name} in target_field["options"]
+    usage_field = next(field for field in schema["form_inputs"] if field["name"] == "usage_description")
+    assert usage_field["label"] == "When should this agent be invoked?"
+    assert usage_field["attr"]["expose_to_runtime"] == "true"
 
 
 def test_scheduler_skill_creates_conversation_bound_schedule(test_client, auth_headers, dynamodb_table):
@@ -669,7 +688,12 @@ def test_repeatable_skill_install_is_deterministic_by_identity_fields(test_clien
 
     source_agent = _create_agent_for_user(TEST_USER_EMAIL)
     target_agent = _create_agent_for_user(TEST_USER_EMAIL)
-    payload = {"config": {"target_agent_id": target_agent.agent_id}}
+    payload = {
+        "config": {
+            "target_agent_id": target_agent.agent_id,
+            "usage_description": "Use for delegated specialist work.",
+        }
+    }
 
     first = test_client.post(
         f"/agents/{source_agent.agent_id}/skills?skill_id=agent_invocation",
@@ -700,12 +724,22 @@ def test_repeatable_skill_base_id_requires_unambiguous_instance(test_client, aut
     first = test_client.post(
         f"/agents/{source_agent.agent_id}/skills?skill_id=agent_invocation",
         headers=auth_headers,
-        json={"config": {"target_agent_id": first_target.agent_id}},
+        json={
+            "config": {
+                "target_agent_id": first_target.agent_id,
+                "usage_description": "Use for first specialist work.",
+            }
+        },
     )
     second = test_client.post(
         f"/agents/{source_agent.agent_id}/skills?skill_id=agent_invocation",
         headers=auth_headers,
-        json={"config": {"target_agent_id": second_target.agent_id}},
+        json={
+            "config": {
+                "target_agent_id": second_target.agent_id,
+                "usage_description": "Use for second specialist work.",
+            }
+        },
     )
     assert first.status_code == 201
     assert second.status_code == 201

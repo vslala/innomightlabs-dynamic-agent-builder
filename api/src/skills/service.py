@@ -255,6 +255,11 @@ class SkillService:
 class SkillRuntimeService:
     """Runtime behavior for MemGPT tool-based skill loading/execution."""
 
+    _EXPOSE_TO_RUNTIME_ATTR = "expose_to_runtime"
+    _USAGE_CONTEXT_LABEL_ATTR = "usage_context_label"
+    _USAGE_CONTEXT_MAX_CHARS_ATTR = "usage_context_max_chars"
+    _DEFAULT_USAGE_CONTEXT_MAX_CHARS = 600
+
     def __init__(
         self,
         skill_service: Optional[SkillService] = None,
@@ -324,6 +329,8 @@ class SkillRuntimeService:
                 f"{skill.skill_name} - {skill.skill_description} "
                 f"(skill_id: {skill.skill_id})"
             )
+            for item in self._build_usage_context(skill):
+                lines.append(f"  {item['label']}: {item['value']}")
         lines.append("</installed_skills>")
         return "\n".join(lines)
 
@@ -357,6 +364,7 @@ class SkillRuntimeService:
                 "name": loaded.manifest.name,
                 "description": loaded.manifest.description,
                 "system_prompt": loaded.manifest.system_prompt,
+                "usage_context": self._build_usage_context(installed),
                 "execute_contract": {
                     "required_shape": {
                         "skill_id": installed.installed_skill_id or installed.skill_id,
@@ -433,6 +441,63 @@ class SkillRuntimeService:
                 f"Skill '{requested_id}' has multiple installed instances. Use one of: {ids}"
             )
         return None
+
+    def _build_usage_context(self, skill: AgentSkill) -> list[dict[str, str]]:
+        loaded = self.skill_service.registry.get(skill.skill_id)
+        if not loaded:
+            return []
+
+        summary: list[dict[str, str]] = []
+        for input_def in loaded.manifest.form:
+            attr = input_def.attr or {}
+            if attr.get("secret", "false").lower() == "true":
+                continue
+            if attr.get(self._EXPOSE_TO_RUNTIME_ATTR, "false").lower() != "true":
+                continue
+
+            value = skill.config.get(input_def.name)
+            rendered = self._render_usage_context_value(value, attr)
+            if not rendered:
+                continue
+
+            summary.append(
+                {
+                    "name": input_def.name,
+                    "label": attr.get(self._USAGE_CONTEXT_LABEL_ATTR) or input_def.label,
+                    "value": rendered,
+                }
+            )
+        return summary
+
+    def _render_usage_context_value(self, value: Any, attr: dict[str, str]) -> str:
+        if value is None or value == "":
+            return ""
+
+        if isinstance(value, str):
+            rendered = value.strip()
+        else:
+            rendered = json.dumps(value, ensure_ascii=True, sort_keys=True)
+
+        if not rendered:
+            return ""
+
+        max_chars = self._parse_positive_int(
+            attr.get(self._USAGE_CONTEXT_MAX_CHARS_ATTR),
+            self._DEFAULT_USAGE_CONTEXT_MAX_CHARS,
+        )
+        if len(rendered) <= max_chars:
+            return rendered
+        return f"{rendered[: max_chars - 1].rstrip()}..."
+
+    @staticmethod
+    def _parse_positive_int(value: str | None, default: int) -> int:
+        if not value:
+            return default
+        try:
+            parsed = int(value)
+        except ValueError:
+            return default
+        return parsed if parsed > 0 else default
 
 
 def get_skill_service() -> SkillService:

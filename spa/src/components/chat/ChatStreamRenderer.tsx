@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, ExternalLink, Image as ImageIcon, Loader2, User, Wrench, XCircle } from "lucide-react";
+import { ExternalLink, Image as ImageIcon, Loader2, User, Wrench } from "lucide-react";
 import { buildChatStreamRenderPlan } from '../../../packages/chat-stream-renderer/src';
 import { AttachmentChip } from "./AttachmentChip";
+import { ToolActivityCard } from "./ToolActivityCard";
 import { MarkdownRenderer } from '../ui/markdown-renderer';
 import { SubmittedFormMessage } from "./SubmittedFormMessage";
 import { isSubmittedFormMessage } from "./submittedFormParser";
@@ -294,62 +295,7 @@ export function ChatStreamRenderer({
             <Wrench style={{ height: "0.875rem", width: "0.875rem" }} />
             Agent Activity
           </div>
-          {toolActivities.map((activity) => (
-            <div
-              key={activity.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                fontSize: "0.875rem",
-                color: "var(--text-secondary)",
-              }}
-            >
-              {activity.status === "running" ? (
-                <Loader2
-                  style={{
-                    height: "0.875rem",
-                    width: "0.875rem",
-                    color: "var(--gradient-start)",
-                    animation: "spin 1s linear infinite",
-                    flexShrink: 0,
-                  }}
-                />
-              ) : activity.status === "success" ? (
-                <CheckCircle2 style={{ height: "0.875rem", width: "0.875rem", color: "#22c55e", flexShrink: 0 }} />
-              ) : (
-                <XCircle style={{ height: "0.875rem", width: "0.875rem", color: "#ef4444", flexShrink: 0 }} />
-              )}
-              <span
-                style={{
-                  fontFamily: "monospace",
-                  fontSize: "0.75rem",
-                  color: "var(--text-muted)",
-                  flexShrink: 0,
-                }}
-              >
-                {activity.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-              </span>
-              <span
-                style={{
-                  fontWeight: 500,
-                  color: activity.status === "running" ? "var(--gradient-start)" : "var(--text-primary)",
-                }}
-              >
-                {activity.tool_name.replace(/_/g, " ")}
-              </span>
-              <span
-                style={{
-                  color: "var(--text-muted)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {activity.content}
-              </span>
-            </div>
-          ))}
+          {toolActivities.map((activity) => <ToolActivityCard key={activity.id} activity={activity} />)}
         </div>
       )}
 

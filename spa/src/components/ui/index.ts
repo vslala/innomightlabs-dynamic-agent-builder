@@ -16,6 +16,7 @@ export * from "./separator";
 // Display components
 export * from "./avatar";
 export * from "./markdown-renderer";
+export * from "./json-viewer";
 
 // Feedback components
 export * from "./spinner";
@@ -31,3 +32,4 @@ export * from "./pill";
 // Card variants
 export * from "./expandable-card";
 export * from "./icon-card";
+export * from "./accordion-panel";

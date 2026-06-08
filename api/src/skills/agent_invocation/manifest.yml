@@ -12,6 +12,15 @@ form:
     label: Agent
     options_source:
       type: agents
+  - input_type: text_area
+    name: usage_description
+    label: When should this agent be invoked?
+    attr:
+      rows: "4"
+      placeholder: "Use this agent when the task needs SEO research, content planning, or recent blog summaries."
+      expose_to_runtime: "true"
+      usage_context_label: "Use when"
+      usage_context_max_chars: "500"
 actions:
   - name: invoke
     description: Invoke an agent and return response text, runtime events, and saved message ids.

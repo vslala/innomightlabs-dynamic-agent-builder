@@ -333,6 +333,35 @@ form:
 
 Use top-level `form` for stable values provided during skill activation. Use action `input_schema` and `action_form` for values supplied when the agent or automation invokes an action.
 
+Install form fields can also expose short, user-provided usage context back to the skill runtime. Use this for routing hints or human-readable purpose statements that help a runtime caller decide when to use a configured skill instance. Do not expose secrets or long internal instructions.
+
+Example from `agent_invocation`:
+
+```yaml
+form:
+  - input_type: select
+    name: target_agent_id
+    label: Agent
+    options_source:
+      type: agents
+  - input_type: text_area
+    name: usage_description
+    label: When should this agent be invoked?
+    attr:
+      rows: "4"
+      placeholder: "Use this agent when the task needs SEO research, content planning, or recent blog summaries."
+      expose_to_runtime: "true"
+      usage_context_label: "Use when"
+      usage_context_max_chars: "500"
+```
+
+When installed, the exposed field is rendered in the runtime skill context:
+
+```text
+- agent_invocation: Invoke Agent - Send a smart-value prompt to one of your agents. (skill_id: agent_invocation)
+  Use when: Use this agent when the task needs SEO research, content planning, or recent blog summaries.
+```
+
 ## Action Keys
 
 Each item in `actions` is a `SkillActionManifest`.
@@ -660,6 +689,31 @@ form:
 
 `mode: hydrate` resolves options on the backend before the form is returned. `mode: lazy` and `endpoint` are part of the schema contract, but only use them when the frontend supports that source and flow.
 
+### `attr`
+
+Optional string map for UI hints and runtime metadata.
+
+Common keys:
+
+- `placeholder`: placeholder text shown by the frontend.
+- `rows`: textarea row count.
+- `optional`: set to `"true"` to allow an empty install config value.
+- `secret`: set to `"true"` to encrypt the value and hide it from API responses.
+- `expose_to_runtime`: set to `"true"` to render this installed config value in the runtime installed-skill context.
+- `usage_context_label`: label used when rendering an exposed usage context value. Defaults to the field `label`.
+- `usage_context_max_chars`: maximum rendered characters for an exposed value. Defaults to `600`.
+
+Example:
+
+```yaml
+attr:
+  expose_to_runtime: "true"
+  usage_context_label: "Use when"
+  usage_context_max_chars: "500"
+```
+
+Only expose short, user-facing summaries. Never expose passwords, API keys, OAuth tokens, or full internal prompts. Fields marked `secret: "true"` are never rendered to the runtime skill context even if `expose_to_runtime` is also set.
+
 ### `validation`
 
 Optional declarative validation metadata.
@@ -764,6 +818,12 @@ form:
     label: Agent
     options_source:
       type: agents
+  - input_type: text_area
+    name: usage_description
+    label: When should this agent be invoked?
+    attr:
+      expose_to_runtime: "true"
+      usage_context_label: "Use when"
 actions:
   - name: invoke
     handler: actions:invoke
@@ -965,4 +1025,3 @@ Before adding a skill:
 - Relying only on prompt instructions instead of validating in action code.
 - Exposing an action to automations when it depends on current conversation context.
 - Adding global router code for behavior that belongs in `api_router`.
-

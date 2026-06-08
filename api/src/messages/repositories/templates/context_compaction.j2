@@ -1,0 +1,17 @@
+<compacted_working_context>
+Compacted at: {{ compacted_at }}
+
+Goal:
+{{ goal }}
+
+Summary:
+The previous transient conversation exceeded the in-memory context budget. The following compacted working context preserves recent user requests, decisions, tool findings, exact identifiers, URLs, dates, numbers, errors, and unfinished work while removing repeated wrappers and verbose formatting.
+
+{% for message in messages %}
+- {{ message.created_at }} {{ message.role }}:
+  {{ message.content }}
+{% endfor %}
+
+Next steps:
+Continue the goal using this compacted context. If exact values are present above, keep them exact.
+</compacted_working_context>
