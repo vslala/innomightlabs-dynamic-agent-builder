@@ -23,10 +23,14 @@ from src.connectors.mcp.models import (
     MCPToolCallRequest,
 )
 from src.connectors.mcp.oauth import (
+    MCPOAuthError,
     authorization_server_metadata_url,
+    authorization_server_metadata_urls,
     canonical_resource_url,
     discover_oauth_provider,
+    parse_www_authenticate,
     protected_resource_metadata_url,
+    protected_resource_metadata_url_for_path,
 )
 from src.connectors.mcp.service import MCPConnectorService
 from src.crypto import encrypt
@@ -255,30 +259,70 @@ def test_mcp_oauth_discovery_urls_follow_standard_locations() -> None:
     assert resource_url == "https://mcp.notion.com/mcp"
     assert protected_resource_metadata_url(resource_url) == "https://mcp.notion.com/.well-known/oauth-protected-resource"
     assert (
+        protected_resource_metadata_url_for_path(resource_url)
+        == "https://mcp.notion.com/.well-known/oauth-protected-resource/mcp"
+    )
+    assert (
         authorization_server_metadata_url("https://auth.example.com/tenant")
         == "https://auth.example.com/.well-known/oauth-authorization-server/tenant"
     )
+    assert authorization_server_metadata_urls("https://auth.example.com/tenant") == [
+        "https://auth.example.com/.well-known/oauth-authorization-server/tenant",
+        "https://auth.example.com/.well-known/openid-configuration/tenant",
+        "https://auth.example.com/tenant/.well-known/openid-configuration",
+    ]
+
+
+def test_mcp_oauth_parses_www_authenticate_challenge() -> None:
+    parsed = parse_www_authenticate(
+        [
+            'Bearer resource_metadata="https://mcp.notion.example/.well-known/oauth-protected-resource/mcp", '
+            'scope="files:read files:write"'
+        ]
+    )
+
+    assert parsed == {
+        "resource_metadata": "https://mcp.notion.example/.well-known/oauth-protected-resource/mcp",
+        "scope": "files:read files:write",
+    }
 
 
 @pytest.mark.asyncio
 async def test_mcp_oauth_discovery_maps_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_fetch_oauth_challenge(resource_url: str) -> dict[str, str]:
+        assert resource_url == "https://mcp.notion.example/mcp"
+        return {
+            "resource_metadata": "https://mcp.notion.example/.well-known/oauth-protected-resource/mcp",
+            "scope": "pages:read",
+        }
+
     async def fake_fetch_json(url: str) -> dict[str, Any]:
-        if url == "https://mcp.notion.example/.well-known/oauth-protected-resource":
-            return {"authorization_servers": ["https://auth.notion.example"]}
+        if url == "https://mcp.notion.example/.well-known/oauth-protected-resource/mcp":
+            return {
+                "authorization_servers": ["https://auth.notion.example"],
+                "scopes_supported": ["read", "write"],
+            }
         if url == "https://auth.notion.example/.well-known/oauth-authorization-server":
             return {
                 "authorization_endpoint": "https://auth.notion.example/oauth/authorize",
                 "token_endpoint": "https://auth.notion.example/oauth/token",
                 "registration_endpoint": "https://auth.notion.example/oauth/register",
-                "scopes_supported": ["read", "write"],
+                "token_endpoint_auth_methods_supported": ["none"],
             }
         raise AssertionError(f"Unexpected discovery URL {url}")
 
-    async def fake_register_client(registration_endpoint: str, scope: str) -> dict[str, Any]:
+    async def fake_register_client(
+        registration_endpoint: str,
+        scope: str,
+        *,
+        token_endpoint_auth_methods: list[str] | None = None,
+    ) -> dict[str, Any]:
         assert registration_endpoint == "https://auth.notion.example/oauth/register"
-        assert scope == "read write"
+        assert scope == "pages:read"
+        assert token_endpoint_auth_methods == ["none"]
         return {"client_id": "registered-client", "client_secret": "registered-secret"}
 
+    monkeypatch.setattr("src.connectors.mcp.oauth._fetch_oauth_challenge", fake_fetch_oauth_challenge)
     monkeypatch.setattr("src.connectors.mcp.oauth._fetch_json", fake_fetch_json)
     monkeypatch.setattr("src.connectors.mcp.oauth._register_client", fake_register_client)
 
@@ -289,7 +333,45 @@ async def test_mcp_oauth_discovery_maps_metadata(monkeypatch: pytest.MonkeyPatch
     assert discovered.resource_url == "https://mcp.notion.example/mcp"
     assert discovered.client_id == "registered-client"
     assert discovered.client_secret == "registered-secret"
+    assert discovered.scope == "pages:read"
     assert discovered.registered_client is True
+
+
+@pytest.mark.asyncio
+async def test_mcp_oauth_discovery_falls_back_to_path_metadata_and_oidc(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen_urls: list[str] = []
+
+    async def fake_fetch_oauth_challenge(resource_url: str) -> dict[str, str]:
+        assert resource_url == "https://mcp.notion.example/public/mcp"
+        return {}
+
+    async def fake_fetch_json(url: str) -> dict[str, Any]:
+        seen_urls.append(url)
+        if url == "https://mcp.notion.example/.well-known/oauth-protected-resource/public/mcp":
+            return {"authorization_servers": ["https://auth.notion.example/tenant"], "scopes_supported": ["read"]}
+        if url == "https://auth.notion.example/.well-known/oauth-authorization-server/tenant":
+            raise MCPOAuthError("use oidc fallback")
+        if url == "https://auth.notion.example/.well-known/openid-configuration/tenant":
+            return {
+                "authorization_endpoint": "https://auth.notion.example/oauth/authorize",
+                "token_endpoint": "https://auth.notion.example/oauth/token",
+            }
+        raise AssertionError(f"Unexpected discovery URL {url}")
+
+    monkeypatch.setattr("src.connectors.mcp.oauth._fetch_oauth_challenge", fake_fetch_oauth_challenge)
+    monkeypatch.setattr("src.connectors.mcp.oauth._fetch_json", fake_fetch_json)
+    monkeypatch.setattr("src.connectors.mcp.oauth._register_client", lambda *_args: {})
+
+    discovered = await discover_oauth_provider("https://mcp.notion.example/public/mcp")
+
+    assert discovered.authorization_url == "https://auth.notion.example/oauth/authorize"
+    assert discovered.token_url == "https://auth.notion.example/oauth/token"
+    assert discovered.scope == "read"
+    assert seen_urls == [
+        "https://mcp.notion.example/.well-known/oauth-protected-resource/public/mcp",
+        "https://auth.notion.example/.well-known/oauth-authorization-server/tenant",
+        "https://auth.notion.example/.well-known/openid-configuration/tenant",
+    ]
 
 
 @pytest.mark.asyncio
