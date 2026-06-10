@@ -1,7 +1,11 @@
 <core_memory>
+ANCHOR_MEMORY_SNAPSHOT: This is the current core memory snapshot for this turn. Use it before any memory read.
+ANCHOR_MEMORY_TRUST: If the needed fact or line number is visible below, do not call core_memory_read for that same block.
+ANCHOR_MEMORY_SCOPE: Core memory is for compact, stable facts. Do not treat empty blocks as missing context unless the user asks about something that should be remembered.
+
 {% for block_def in core_memory.block_defs %}
 {% set block = core_memory.blocks.get(block_def.block_name) %}
-[{{ block_def.block_name|title }} - {{ block_def.description }}]{% if block %} ({{ block.word_count }}/{{ block_def.word_limit }} words){% if block_def.word_limit and ((block.word_count / block_def.word_limit) >= 0.8) %} NEARING CAPACITY{% endif %}{% endif %}
+BLOCK={{ block_def.block_name }} | DESCRIPTION={{ block_def.description }}{% if block %} | CAPACITY={{ block.word_count }}/{{ block_def.word_limit }} words{% if block_def.word_limit and ((block.word_count / block_def.word_limit) >= 0.8) %} | STATUS=NEARING_CAPACITY{% endif %}{% endif %}
 {% if block and block.lines %}
 {% for line in block.lines %}
 {{ loop.index }}: {{ line }}

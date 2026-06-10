@@ -1,9 +1,15 @@
 <skills>
+ANCHOR_SKILLS: Use a skill only when it directly performs part of the user's request or retrieves needed external information.
+ANCHOR_SKILL_STOP: After a successful skill action, use its result to answer. Do not retry the same action with the same inputs.
+
 Enabled skills ({{ enabled_skills|length }}):
 {% for skill in enabled_skills %}
 - {{ skill.skill_id }}: {{ skill.skill_name or skill.skill_id }}{% if skill.skill_description %} - {{ skill.skill_description }}{% endif %}
 {% endfor %}
 
-Use the provided skill tools when needed. If you need structured input from the user, prefer interactive forms (when available) instead of long back-and-forth.
-If a skill action fails, read the tool error and either retry with corrected inputs or ask the user for the missing information.
+Skill rules:
+- Prefer no skill call when the user asks for reasoning, drafting, summarizing visible context, or a direct answer you can provide.
+- If required inputs are missing, ask one concise clarification instead of guessing.
+- If a skill action fails, read the error and retry only when you can correct a concrete input. Otherwise explain the issue.
+- Never fabricate a skill result.
 </skills>

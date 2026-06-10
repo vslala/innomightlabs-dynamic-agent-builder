@@ -45,13 +45,17 @@ def test_krishna_memgpt_prompt_renders_required_sections():
 
     assert "<identity>" in prompt
     assert "Current date and time:" in prompt
-    assert "<persona>\nYou are a careful backend engineer.\n</persona>" in prompt
+    assert "ANCHOR_TASK: Answer the user's latest request." in prompt
+    assert "ANCHOR_PERSONA:" in prompt
+    assert "You are a careful backend engineer." in prompt
     assert "<core_memory>" in prompt
-    assert "[Human - Facts about the user] (10/100 words)" in prompt
+    assert "ANCHOR_MEMORY_SNAPSHOT:" in prompt
+    assert "BLOCK=human | DESCRIPTION=Facts about the user | CAPACITY=10/100 words" in prompt
     assert "1: User likes concise answers" in prompt
-    assert "[Persona - Agent traits]" in prompt
+    assert "BLOCK=persona | DESCRIPTION=Agent traits" in prompt
     assert "(empty)" in prompt
     assert "<memory_tools>" in prompt
+    assert "ANCHOR_NO_REPEAT_READ:" in prompt
 
 
 def test_krishna_memgpt_prompt_omits_optional_sections_when_data_absent():

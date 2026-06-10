@@ -1,13 +1,15 @@
 <memory_warning>
+ANCHOR_CAPACITY: Capacity warnings matter, but the user's latest request still comes first unless memory capacity prevents completion.
 The following memory blocks are nearing capacity:
 {% for warning in capacity_warnings %}
 - [{{ warning.block_name }}]: {{ warning.word_count }}/{{ warning.word_limit }} words ({{ "%.0f"|format(warning.percent) }}%)
 {% endfor %}
 
-You should:
-1. Review and consolidate redundant information
-2. Move detailed information to archival memory
-3. Delete outdated entries
+When capacity action is needed:
+1. Use the visible <core_memory> snapshot first.
+2. Make the smallest useful consolidation, archive, or deletion.
+3. Stop after one successful cleanup pass and continue the user's task.
 
-If you don't take action, the system will auto-compact these blocks.
+Do not repeatedly read the same memory block while handling a capacity warning.
+If you do not take action, the system may auto-compact these blocks.
 </memory_warning>
