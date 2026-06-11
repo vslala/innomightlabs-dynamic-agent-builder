@@ -127,6 +127,72 @@ class AgentImageGenerationService:
             request=request,
         )
 
+    async def generate_for_agent_turn(
+        self,
+        *,
+        agent_id: str,
+        conversation_id: str,
+        owner_email: str,
+        actor_email: str,
+        request: GenerateImageRequest,
+        user_message_id: str | None = None,
+    ) -> GenerateImageResponse:
+        agent, conversation = self._load_agent_turn_context(
+            agent_id=agent_id,
+            conversation_id=conversation_id,
+            owner_email=owner_email,
+            actor_email=actor_email,
+        )
+        provider_settings = self._validate_and_load_provider_settings(agent, owner_email)
+        credentials = await self._load_credentials(agent.agent_provider, provider_settings)
+        provider = self.provider_factory.get(agent.agent_provider)
+        generated_images = await provider.generate(
+            prompt=request.prompt,
+            credentials=credentials,
+            model=agent.agent_model or "",
+            options=ImageGenerationOptions(
+                size=request.size,
+                quality=request.quality,
+                output_format=request.output_format,
+            ),
+        )
+
+        return self._persist_generated_images(
+            agent=agent,
+            conversation=conversation,
+            actor_email=actor_email,
+            prompt=request.prompt,
+            user_message_id=user_message_id or "",
+            generated_images=generated_images,
+            dashboard_urls=False,
+        )
+
+    async def stream_for_agent_turn(
+        self,
+        *,
+        agent_id: str,
+        conversation_id: str,
+        owner_email: str,
+        actor_email: str,
+        request: GenerateImageRequest,
+        user_message_id: str | None = None,
+    ) -> AsyncIterator[SSEEvent]:
+        agent, conversation = self._load_agent_turn_context(
+            agent_id=agent_id,
+            conversation_id=conversation_id,
+            owner_email=owner_email,
+            actor_email=actor_email,
+        )
+        async for event in self._stream_generate_existing_turn(
+            agent=agent,
+            conversation=conversation,
+            owner_email=owner_email,
+            actor_email=actor_email,
+            request=request,
+            user_message_id=user_message_id or "",
+        ):
+            yield event
+
     async def stream_for_widget(
         self,
         *,
@@ -283,6 +349,85 @@ class AgentImageGenerationService:
             content="Response complete",
         )
 
+    async def _stream_generate_existing_turn(
+        self,
+        *,
+        agent: Agent,
+        conversation: Conversation,
+        owner_email: str,
+        actor_email: str,
+        request: GenerateImageRequest,
+        user_message_id: str,
+    ) -> AsyncIterator[SSEEvent]:
+        provider_settings = self._validate_and_load_provider_settings(agent, owner_email)
+
+        yield SSEEvent(
+            event_type=SSEEventType.IMAGE_GENERATION_STARTED,
+            content="Starting image generation...",
+        )
+
+        credentials = await self._load_credentials(agent.agent_provider, provider_settings)
+        provider = self.provider_factory.get(agent.agent_provider)
+        generated_images: list[GeneratedImageBytes] = []
+
+        async for provider_event in provider.stream_generate(
+            prompt=request.prompt,
+            credentials=credentials,
+            model=agent.agent_model or "",
+            options=ImageGenerationOptions(
+                size=request.size,
+                quality=request.quality,
+                output_format=request.output_format,
+            ),
+        ):
+            if provider_event.kind == "partial" and provider_event.image_b64:
+                yield SSEEvent(
+                    event_type=SSEEventType.IMAGE_GENERATION_PARTIAL,
+                    content="Rendering image preview...",
+                    image_b64=provider_event.image_b64,
+                    image_mime_type=provider_event.mime_type,
+                    image_width=provider_event.width,
+                    image_height=provider_event.height,
+                )
+            elif provider_event.kind == "generating":
+                yield SSEEvent(
+                    event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+                    content="Generating image...",
+                )
+            elif provider_event.kind == "image" and provider_event.image:
+                generated_images.append(provider_event.image)
+
+        if not generated_images:
+            raise AgentImageGenerationError("Image generation completed without image output")
+
+        result = self._persist_generated_images(
+            agent=agent,
+            conversation=conversation,
+            actor_email=actor_email,
+            prompt=request.prompt,
+            user_message_id=user_message_id,
+            generated_images=generated_images,
+            dashboard_urls=False,
+        )
+        self._ensure_signed_image_urls(result)
+        first_image = result.images[0] if result.images else None
+        yield SSEEvent(
+            event_type=SSEEventType.IMAGE_GENERATION_COMPLETE,
+            content="Image generation complete",
+            message_id=result.assistant_message_id,
+            image_url=first_image.url if first_image else None,
+            image_id=first_image.image_id if first_image else None,
+            image_filename=first_image.filename if first_image else None,
+            image_mime_type=first_image.mime_type if first_image else None,
+            image_width=first_image.width if first_image else None,
+            image_height=first_image.height if first_image else None,
+            images=[image.model_dump(mode="json") for image in result.images],
+        )
+
+    def _ensure_signed_image_urls(self, result: GenerateImageResponse) -> None:
+        for image in result.images:
+            image.url = self.storage.presign_get_url(image.s3_key)
+
     def _persist_generated_images(
         self,
         *,
@@ -371,6 +516,29 @@ class AgentImageGenerationService:
             raise ImageGenerationNotFoundError("Agent not found")
 
         conversation = self.conversation_repo.find_by_id(conversation_id, user_email)
+        if not conversation:
+            raise ImageGenerationNotFoundError("Conversation not found")
+
+        if conversation.agent_id != agent_id:
+            raise ImageGenerationConflictError("Conversation does not belong to this agent")
+
+        return agent, conversation
+
+    def _load_agent_turn_context(
+        self,
+        *,
+        agent_id: str,
+        conversation_id: str,
+        owner_email: str,
+        actor_email: str,
+    ) -> tuple[Agent, Conversation]:
+        agent = self.agent_repo.find_agent_by_id(agent_id, owner_email)
+        if not agent:
+            raise ImageGenerationNotFoundError("Agent not found")
+
+        conversation = self.conversation_repo.find_by_id(conversation_id, actor_email)
+        if not conversation and actor_email != owner_email:
+            conversation = self.conversation_repo.find_by_id(conversation_id, owner_email)
         if not conversation:
             raise ImageGenerationNotFoundError("Conversation not found")
 

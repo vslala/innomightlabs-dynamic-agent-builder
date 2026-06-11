@@ -344,6 +344,7 @@ class SkillRuntimeService:
         actor_email: str,
         actor_id: str,
         conversation_id: str,
+        user_message_id: str | None = None,
     ) -> str:
         if tool_name == "load_skill":
             installed_skill_id = str(tool_input.get("skill_id", "")).strip()
@@ -415,6 +416,7 @@ class SkillRuntimeService:
                     "actor_email": actor_email,
                     "actor_id": actor_id,
                     "conversation_id": conversation_id,
+                    "user_message_id": user_message_id,
                 },
             )
             if isinstance(result, str):

@@ -59,14 +59,24 @@ function ImagePreview({ image }: { image: MessageImage }) {
 
     async function loadImage() {
       if (!image.url) {
+        if (image.preview_data_url) {
+          setFailed(false);
+          setObjectUrl(image.preview_data_url);
+          return;
+        }
         setFailed(true);
         return;
       }
 
       setFailed(false);
-      setObjectUrl(null);
+      setObjectUrl(image.preview_data_url || null);
 
       try {
+        if (!requiresAuthenticatedFetch(image.url)) {
+          setObjectUrl(image.url);
+          return;
+        }
+
         const token = localStorage.getItem("auth_token");
         const response = await fetch(image.url, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -98,9 +108,11 @@ function ImagePreview({ image }: { image: MessageImage }) {
         URL.revokeObjectURL(nextObjectUrl);
       }
     };
-  }, [image.url]);
+  }, [image.preview_data_url, image.url]);
 
-  if (!image.url || failed) {
+  const displayUrl = failed && image.preview_data_url ? image.preview_data_url : objectUrl;
+
+  if (!displayUrl) {
     return (
       <div
         style={{
@@ -152,7 +164,7 @@ function ImagePreview({ image }: { image: MessageImage }) {
 
   return (
     <a
-      href={objectUrl}
+      href={displayUrl}
       target="_blank"
       rel="noreferrer"
       title={label}
@@ -166,7 +178,7 @@ function ImagePreview({ image }: { image: MessageImage }) {
       }}
     >
       <img
-        src={objectUrl}
+        src={displayUrl}
         alt={label}
         onError={() => setFailed(true)}
         style={{
@@ -195,6 +207,21 @@ function ImagePreview({ image }: { image: MessageImage }) {
       </span>
     </a>
   );
+}
+
+function requiresAuthenticatedFetch(url: string): boolean {
+  if (url.startsWith("/")) {
+    return true;
+  }
+
+  try {
+    const parsedUrl = new URL(url, window.location.origin);
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+    const parsedApiBaseUrl = new URL(apiBaseUrl, window.location.origin);
+    return parsedUrl.origin === parsedApiBaseUrl.origin;
+  } catch {
+    return false;
+  }
 }
 
 function renderImages(images?: MessageImage[]) {

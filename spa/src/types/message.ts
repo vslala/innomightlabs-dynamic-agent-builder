@@ -68,6 +68,7 @@ export interface AttachmentInfo {
 export interface MessageImage {
   image_id: string;
   url?: string | null;
+  preview_data_url?: string | null;
   filename: string;
   mime_type: string;
   size_bytes: number;

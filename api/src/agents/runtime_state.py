@@ -30,6 +30,7 @@ class AgentTurnState:
     model_name: str
 
     user_message: str
+    user_message_id: str | None = None
     attachments: list[Attachment] = field(default_factory=list)
 
     # Enrichment (populated during preflight)

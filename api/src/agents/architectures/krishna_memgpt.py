@@ -151,6 +151,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 attachments=state.attachments,
             )
             self.message_repo.save(user_msg)
+            state.user_message_id = user_msg.message_id
 
             yield SSEEvent(
                 event_type=SSEEventType.USER_MESSAGE_SAVED,
@@ -361,6 +362,9 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                     # Replace the system prompt in-place.
                     if context and context[0].get("role") == "system":
                         context[0]["content"] = refreshed_prompt
+
+                elif loop_event.kind == "runtime_event":
+                    yield loop_event.payload["event"]
 
                 elif loop_event.kind == "complete":
                     full_response = loop_event.payload["full_text"]

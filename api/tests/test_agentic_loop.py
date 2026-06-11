@@ -2,7 +2,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.agents.agentic_loop import run_agentic_tool_loop
+from src.agents.turn_runtime import emit_turn_event
 from src.agents.tool_execution import ToolExecutionOutcome
+from src.llm.events import SSEEvent, SSEEventType
 
 
 @dataclass
@@ -64,6 +66,20 @@ class FakeToolRouter:
         return ToolExecutionOutcome(result="customer found", success=True)
 
 
+class FakeStreamingToolRouter:
+    async def execute(self, *, tool_name, tool_input, tool_use_id, state):
+        await emit_turn_event(
+            SSEEvent(
+                event_type=SSEEventType.IMAGE_GENERATION_PARTIAL,
+                content="Rendering image preview...",
+                image_b64="abc123",
+                image_mime_type="image/png",
+            ),
+            droppable=True,
+        )
+        return ToolExecutionOutcome(result="image generated", success=True)
+
+
 async def test_agentic_loop_emits_tool_call_id_on_start_and_result():
     events = [
         event
@@ -85,6 +101,33 @@ async def test_agentic_loop_emits_tool_call_id_on_start_and_result():
     assert start.payload["tool_name"] == "lookup_customer"
     assert result.payload["tool_call_id"] == "tooluse_1"
     assert result.payload["result"] == "customer found"
+
+
+async def test_agentic_loop_surfaces_runtime_events_during_tool_execution():
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=FakeProvider(),
+            context=[],
+            credentials={},
+            tools=[],
+            model="test-model",
+            tool_router=FakeStreamingToolRouter(),
+            state=object(),
+        )
+    ]
+
+    runtime_event_index = next(
+        index for index, event in enumerate(events) if event.kind == "runtime_event"
+    )
+    result_index = next(
+        index for index, event in enumerate(events) if event.kind == "tool_call_result"
+    )
+    runtime_event = events[runtime_event_index].payload["event"]
+
+    assert runtime_event_index < result_index
+    assert runtime_event.event_type == SSEEventType.IMAGE_GENERATION_PARTIAL
+    assert runtime_event.image_b64 == "abc123"
 
 
 async def test_agentic_loop_filters_internal_tool_markers_but_streams_status_text():

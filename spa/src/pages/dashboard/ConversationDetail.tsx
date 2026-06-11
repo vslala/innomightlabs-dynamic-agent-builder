@@ -84,6 +84,7 @@ export function ConversationDetail() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const streamingContentRef = useRef("");
+  const latestImagePreviewDataUrlRef = useRef<string | null>(null);
   const hadToolCallsRef = useRef(false);
   const renderedFormRef = useRef(false);
   const assistantMessageSavedRef = useRef(false);
@@ -318,6 +319,9 @@ export function ConversationDetail() {
       switch (event.event_type) {
         case SSEEventType.LIFECYCLE_NOTIFICATION:
           setStatusMessage(event.content);
+          setStreamingImagePreview((prev) =>
+            prev ? { ...prev, status: event.content } : prev
+          );
           break;
 
         case SSEEventType.AGENT_RESPONSE_TO_USER:
@@ -335,6 +339,67 @@ export function ConversationDetail() {
               submitLabel: event.submit_label || undefined,
             });
           }
+          break;
+
+        case SSEEventType.IMAGE_GENERATION_STARTED:
+          latestImagePreviewDataUrlRef.current = null;
+          setStatusMessage(event.content);
+          setStreamingImagePreview({
+            prompt: messageToSend || "Generated image",
+            dataUrl: null,
+            status: event.content,
+          });
+          break;
+
+        case SSEEventType.IMAGE_GENERATION_PARTIAL:
+          if (event.image_b64) {
+            const dataUrl = `data:${event.image_mime_type || "image/png"};base64,${event.image_b64}`;
+            latestImagePreviewDataUrlRef.current = dataUrl;
+            setStatusMessage(null);
+            setStreamingImagePreview({
+              prompt: messageToSend || "Generated image",
+              dataUrl,
+              status: "Painting preview...",
+            });
+          }
+          break;
+
+        case SSEEventType.IMAGE_GENERATION_COMPLETE:
+          {
+            const completedImages = event.images;
+            if (!completedImages || completedImages.length === 0) {
+              setStreamingImagePreview(null);
+              setStatusMessage(null);
+              break;
+            }
+
+            assistantMessageSavedRef.current = true;
+            setMessages((prev) => [
+              ...prev,
+              {
+                message_id: event.message_id || `assistant-image-${Date.now()}`,
+                conversation_id: conversation.conversation_id,
+                role: "assistant",
+                content: `Generated image: ${messageToSend || "Generated image"}`,
+                images: completedImages.map((image) => ({
+                  image_id: image.image_id,
+                  url: image.url,
+                  preview_data_url: latestImagePreviewDataUrlRef.current,
+                  filename: image.filename,
+                  mime_type: image.mime_type,
+                  size_bytes: image.size_bytes,
+                  width: image.width,
+                  height: image.height,
+                  prompt: image.prompt,
+                  revised_prompt: image.revised_prompt,
+                })),
+                created_at: new Date().toISOString(),
+              },
+            ]);
+          }
+          latestImagePreviewDataUrlRef.current = null;
+          setStreamingImagePreview(null);
+          setStatusMessage(null);
           break;
 
         case SSEEventType.USER_MESSAGE_SAVED:
@@ -375,7 +440,9 @@ export function ConversationDetail() {
             setIncompleteResponse(true);
           }
           streamingContentRef.current = "";
+          latestImagePreviewDataUrlRef.current = null;
           setStreamingContent("");
+          setStreamingImagePreview(null);
           setIsSending(false);
           setStatusMessage(null);
           break;
@@ -415,6 +482,8 @@ export function ConversationDetail() {
           setChatError(event.content);
           setIsSending(false);
           setStatusMessage(null);
+          latestImagePreviewDataUrlRef.current = null;
+          setStreamingImagePreview(null);
           break;
 
         default:
@@ -481,6 +550,7 @@ export function ConversationDetail() {
     setIsGeneratingImage(true);
     setChatError(null);
     setStatusMessage(null);
+    latestImagePreviewDataUrlRef.current = null;
     setStreamingImagePreview({
       prompt,
       dataUrl: null,
@@ -526,9 +596,11 @@ export function ConversationDetail() {
 
               case SSEEventType.IMAGE_GENERATION_PARTIAL:
                 if (event.image_b64) {
+                  const dataUrl = `data:${event.image_mime_type || "image/png"};base64,${event.image_b64}`;
+                  latestImagePreviewDataUrlRef.current = dataUrl;
                   setStreamingImagePreview({
                     prompt,
-                    dataUrl: `data:${event.image_mime_type || "image/png"};base64,${event.image_b64}`,
+                    dataUrl,
                     status: "Painting preview...",
                   });
                 }
@@ -551,6 +623,7 @@ export function ConversationDetail() {
                       images: completedImages.map((image) => ({
                         image_id: image.image_id,
                         url: image.url,
+                        preview_data_url: latestImagePreviewDataUrlRef.current,
                         filename: image.filename,
                         mime_type: image.mime_type,
                         size_bytes: image.size_bytes,
@@ -563,16 +636,19 @@ export function ConversationDetail() {
                     },
                   ]);
                 }
+                latestImagePreviewDataUrlRef.current = null;
                 setStreamingImagePreview(null);
                 break;
 
               case SSEEventType.ERROR:
                 setChatError(event.content);
+                latestImagePreviewDataUrlRef.current = null;
                 setStreamingImagePreview(null);
                 setIsGeneratingImage(false);
                 break;
 
               case SSEEventType.STREAM_COMPLETE:
+                latestImagePreviewDataUrlRef.current = null;
                 setStreamingImagePreview(null);
                 setIsGeneratingImage(false);
                 requestAnimationFrame(() => scrollToBottom());
@@ -584,6 +660,7 @@ export function ConversationDetail() {
           },
           onError: (err) => {
             setChatError(err.message);
+            latestImagePreviewDataUrlRef.current = null;
             setStreamingImagePreview(null);
             setIsGeneratingImage(false);
           },
@@ -594,6 +671,7 @@ export function ConversationDetail() {
       );
     } catch (err) {
       setChatError(err instanceof Error ? err.message : String(err));
+      latestImagePreviewDataUrlRef.current = null;
       setStreamingImagePreview(null);
       setIsGeneratingImage(false);
     } finally {

@@ -30,6 +30,7 @@ class SkillRuntime(Protocol):
         actor_email: str,
         actor_id: str,
         conversation_id: str,
+        user_message_id: str | None = None,
     ) -> str:
         ...
 
@@ -92,6 +93,7 @@ class ToolExecutionRouter:
                     actor_email=state.actor_email,
                     actor_id=state.actor_id,
                     conversation_id=state.conversation_id,
+                    user_message_id=state.user_message_id,
                 )
             elif tool_name in MCP_RUNTIME_TOOL_NAMES:
                 result = await self._execute_mcp_tool(tool_name=tool_name, tool_input=tool_input, state=state)

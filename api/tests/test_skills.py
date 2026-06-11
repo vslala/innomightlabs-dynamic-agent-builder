@@ -55,6 +55,9 @@ def test_list_skills_catalog(test_client, auth_headers):
         "delete",
         "list",
     ]
+    image_generation = next(item for item in payload if item["skill_id"] == "image_generation")
+    assert image_generation["name"] == "Image Generation"
+    assert image_generation["action_names"] == ["generate"]
 
 
 def test_list_skills_catalog_reports_google_drive_connected(test_client, auth_headers, dynamodb_table):
@@ -365,6 +368,116 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
     )
 
     assert result == "ok"
+
+
+def test_skill_runtime_passes_user_message_id_to_actions(test_client, auth_headers, dynamodb_table, monkeypatch):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+    install_resp = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=image_generation",
+        headers=auth_headers,
+        json={"config": {}},
+    )
+    assert install_resp.status_code == 201
+
+    runtime = SkillRuntimeService()
+
+    async def fake_execute_action(skill_id, action_name, arguments, config, context):
+        assert skill_id == "image_generation"
+        assert action_name == "generate"
+        assert arguments == {"prompt": "A product mockup"}
+        assert config == {}
+        assert context["user_message_id"] == "user-message-1"
+        return {"ok": True}
+
+    monkeypatch.setattr(runtime.skill_service.registry, "execute_action", fake_execute_action)
+
+    result = asyncio.run(
+        runtime.handle_tool_call(
+            tool_name="execute_skill_action",
+            tool_input={
+                "skill_id": "image_generation",
+                "action": "generate",
+                "arguments": {"prompt": "A product mockup"},
+            },
+            agent_id=agent.agent_id,
+            owner_email=TEST_USER_EMAIL,
+            actor_email=TEST_USER_EMAIL,
+            actor_id=TEST_USER_EMAIL,
+            conversation_id="conv-test",
+            user_message_id="user-message-1",
+        )
+    )
+
+    assert json.loads(result) == {"ok": True}
+
+
+def test_image_generation_skill_action_uses_agent_turn_service(monkeypatch):
+    from src.skills.image_generation.actions import generate
+    from src.llm.events import SSEEvent, SSEEventType
+
+    captured = {}
+
+    class FakeService:
+        async def stream_for_agent_turn(self, **kwargs):
+            captured.update(kwargs)
+            yield SSEEvent(
+                event_type=SSEEventType.IMAGE_GENERATION_PARTIAL,
+                content="Rendering image preview...",
+                image_b64="abc123",
+                image_mime_type="image/png",
+            )
+            yield SSEEvent(
+                event_type=SSEEventType.IMAGE_GENERATION_COMPLETE,
+                content="Image generation complete",
+                message_id="assistant-message-1",
+                images=[
+                    {
+                        "image_id": "image-1",
+                        "url": "https://signed.example/image.png",
+                        "filename": "generated-image-1.png",
+                        "mime_type": "image/png",
+                    }
+                ],
+            )
+
+    monkeypatch.setattr(
+        "src.skills.image_generation.actions.AgentImageGenerationService",
+        lambda: FakeService(),
+    )
+
+    result = asyncio.run(
+        generate(
+            arguments={
+                "prompt": "A clean SaaS dashboard hero image",
+                "size": "1024x1024",
+                "quality": "high",
+                "output_format": "webp",
+            },
+            config={},
+            context={
+                "agent_id": "agent-1",
+                "conversation_id": "conversation-1",
+                "owner_email": "owner@example.com",
+                "actor_email": "actor@example.com",
+                "user_message_id": "user-message-1",
+            },
+        )
+    )
+
+    assert captured["agent_id"] == "agent-1"
+    assert captured["conversation_id"] == "conversation-1"
+    assert captured["owner_email"] == "owner@example.com"
+    assert captured["actor_email"] == "actor@example.com"
+    assert captured["user_message_id"] == "user-message-1"
+    assert captured["request"].prompt == "A clean SaaS dashboard hero image"
+    assert captured["request"].size == "1024x1024"
+    assert captured["request"].quality == "high"
+    assert captured["request"].output_format == "webp"
+    assert result["type"] == "generated_image"
+    assert result["assistant_message_id"] == "assistant-message-1"
+    assert result["images"][0]["url"] == "https://signed.example/image.png"
 
 
 def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamodb_table, monkeypatch):
