@@ -18,6 +18,8 @@ from typing import Any, AsyncIterator, Optional, Protocol
 
 from src.common import MAX_TOOL_ITERATIONS
 
+INTERNAL_TOOL_MARKER_PREFIXES = ("[tool_call ", "[tool_result]")
+
 
 class LLMProvider(Protocol):
     def stream_response(
@@ -79,6 +81,7 @@ async def run_agentic_tool_loop(
     """
 
     full_response = ""
+    text_filter = UserVisibleTextFilter()
 
     for _iteration in range(MAX_TOOL_ITERATIONS):
         has_tool_calls = False
@@ -87,9 +90,11 @@ async def run_agentic_tool_loop(
 
         async for event in provider.stream_response(context, credentials, tools, model):
             if event.type == "text":
-                full_response += event.content
-                iteration_text += event.content
-                yield AgenticLoopEvent(kind="text", payload={"content": event.content})
+                visible_content = text_filter.feed(event.content)
+                if visible_content:
+                    full_response += visible_content
+                    iteration_text += visible_content
+                    yield AgenticLoopEvent(kind="text", payload={"content": visible_content})
 
             elif event.type == "tool_use":
                 has_tool_calls = True
@@ -106,6 +111,12 @@ async def run_agentic_tool_loop(
             elif event.type == "stop":
                 # Provider stop token
                 pass
+
+        visible_tail = text_filter.flush()
+        if visible_tail:
+            full_response += visible_tail
+            iteration_text += visible_tail
+            yield AgenticLoopEvent(kind="text", payload={"content": visible_tail})
 
         if pending_tool_calls:
             # Add assistant response to context (text + tool use)
@@ -168,3 +179,46 @@ async def run_agentic_tool_loop(
             break
 
     yield AgenticLoopEvent(kind="complete", payload={"full_text": full_response})
+
+
+class UserVisibleTextFilter:
+    """Remove internal tool transcript markers while preserving normal streaming text."""
+
+    def __init__(self) -> None:
+        self._pending = ""
+
+    def feed(self, chunk: str) -> str:
+        if not chunk:
+            return ""
+
+        self._pending += chunk
+        output: list[str] = []
+
+        while "\n" in self._pending:
+            line, separator, remainder = self._pending.partition("\n")
+            self._pending = remainder
+            sanitized = self._sanitize_line(line + separator)
+            if sanitized:
+                output.append(sanitized)
+
+        if self._pending and not self._could_be_internal_marker(self._pending):
+            output.append(self._pending)
+            self._pending = ""
+
+        return "".join(output)
+
+    def flush(self) -> str:
+        pending = self._pending
+        self._pending = ""
+        return self._sanitize_line(pending)
+
+    def _sanitize_line(self, line: str) -> str:
+        return "" if self._is_internal_marker(line) else line
+
+    def _is_internal_marker(self, text: str) -> bool:
+        stripped = text.lstrip()
+        return any(stripped.startswith(prefix) for prefix in INTERNAL_TOOL_MARKER_PREFIXES)
+
+    def _could_be_internal_marker(self, text: str) -> bool:
+        stripped = text.lstrip()
+        return any(prefix.startswith(stripped) or stripped.startswith(prefix) for prefix in INTERNAL_TOOL_MARKER_PREFIXES)

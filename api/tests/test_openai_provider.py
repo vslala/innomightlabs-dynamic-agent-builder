@@ -25,7 +25,7 @@ def test_openai_codex_request_body_uses_responses_envelope():
     assert body["store"] is False
     assert body["stream"] is True
     assert body["tool_choice"] == "auto"
-    assert body["parallel_tool_calls"] is True
+    assert body["parallel_tool_calls"] is False
     assert body["include"] == ["reasoning.encrypted_content"]
     assert body["text"] == {"verbosity": "medium"}
     assert body["tools"] == [

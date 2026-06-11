@@ -353,6 +353,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                         actor_id,
                         kb_count=kb_count,
                         enabled_skills=state.enabled_skills or None,
+                        enabled_mcp_connections=state.enabled_mcp_connections or None,
                         core_memory=refreshed_snapshot,
                         capacity_warnings=refreshed_warnings or None,
                     )

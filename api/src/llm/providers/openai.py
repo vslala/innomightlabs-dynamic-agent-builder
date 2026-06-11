@@ -130,7 +130,10 @@ class OpenAIProvider(LLMProvider):
             "input": self._convert_messages(request_messages),
             "tools": normalized_tools,
             "tool_choice": "auto",
-            "parallel_tool_calls": bool(normalized_tools),
+            # The Codex OAuth backend can emit multiple tool calls in a single
+            # turn. This architecture has side-effecting tools such as memory
+            # writes, so execute tool calls sequentially across loop iterations.
+            "parallel_tool_calls": False,
             "reasoning": None,
             "store": False,
             "stream": True,
