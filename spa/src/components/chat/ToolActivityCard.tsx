@@ -13,7 +13,7 @@ export function ToolActivityCard({ activity }: { activity: ToolActivity }) {
   return (
     <Card style={{ overflow: "hidden", backgroundColor: "rgba(255,255,255,0.035)" }}>
       <AccordionPanel
-        defaultOpen
+        defaultOpen={activity.status === "running"}
         style={{ border: 0, borderRadius: 0, backgroundColor: "transparent" }}
         summaryStyle={{
           gridTemplateColumns: "auto auto minmax(0, 1fr) auto",

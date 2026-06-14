@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Send, Loader2, Maximize2, Minimize2, Paperclip, Image as ImageIcon } from "lucide-react";
 import { ChatFormRenderer, type FormAnswer } from "../../components/chat/ChatFormRenderer";
 import { AttachmentChip } from "../../components/chat/AttachmentChip";
@@ -41,6 +41,7 @@ import styles from "./Conversation.module.css";
 export function ConversationDetail() {
   const { conversationId } = useParams<{ conversationId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [conversation, setConversation] = useState<ConversationResponse | null>(null);
   const [agents, setAgents] = useState<AgentResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,6 +89,7 @@ export function ConversationDetail() {
   const hadToolCallsRef = useRef(false);
   const renderedFormRef = useRef(false);
   const assistantMessageSavedRef = useRef(false);
+  const initialMessageSentRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
     attachments,
@@ -174,8 +176,36 @@ export function ConversationDetail() {
   };
 
   useEffect(() => {
+    initialMessageSentRef.current = false;
     loadData();
   }, [conversationId]);
+
+  useEffect(() => {
+    const state = location.state as { initialImagePrompt?: string; initialMessage?: string } | null;
+    const initialImagePrompt = state?.initialImagePrompt?.trim();
+    const initialMessage = state?.initialMessage?.trim();
+    if (
+      (!initialMessage && !initialImagePrompt) ||
+      initialMessageSentRef.current ||
+      !conversation ||
+      !initialMessagesLoaded ||
+      isSending ||
+      isGeneratingImage
+    ) {
+      return;
+    }
+
+    initialMessageSentRef.current = true;
+    navigate(`/dashboard/conversations/${conversation.conversation_id}`, {
+      replace: true,
+      state: null,
+    });
+    if (initialImagePrompt) {
+      void handleGenerateImage(initialImagePrompt);
+    } else if (initialMessage) {
+      void handleSendMessage(initialMessage);
+    }
+  }, [conversation, initialMessagesLoaded, isGeneratingImage, isSending, location.state, navigate]);
 
   const getAgentName = (agentId: string): string => {
     const agent = agents.find((a) => a.agent_id === agentId);
@@ -265,6 +295,12 @@ export function ConversationDetail() {
     }
   }, [streamingContent]);
 
+  useEffect(() => {
+    if (messages.length > 0 && (isSending || isGeneratingImage)) {
+      scrollToBottom();
+    }
+  }, [messages.length, isGeneratingImage, isSending]);
+
   // Handle Escape key to exit expanded mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -313,6 +349,7 @@ export function ConversationDetail() {
     };
     if (!isRetryMessage) {
       setMessages((prev) => [...prev, userMsg]);
+      await nextAnimationFrame();
     }
 
     const handleEvent = (event: SSEEvent) => {
@@ -543,10 +580,11 @@ export function ConversationDetail() {
     await handleSendMessage(lines.join("\n"), `Submitted: ${label}`);
   };
 
-  const handleGenerateImage = async () => {
-    if (!conversation || !imagePrompt.trim() || isGeneratingImage) return;
+  const handleGenerateImage = async (promptOverride?: string) => {
+    const promptValue = promptOverride ?? imagePrompt;
+    if (!conversation || !promptValue.trim() || isGeneratingImage) return;
 
-    const prompt = imagePrompt.trim();
+    const prompt = promptValue.trim();
     setIsGeneratingImage(true);
     setChatError(null);
     setStatusMessage(null);
@@ -1342,7 +1380,7 @@ export function ConversationDetail() {
               Cancel
             </Button>
             <Button
-              onClick={handleGenerateImage}
+              onClick={() => handleGenerateImage()}
               disabled={!imagePrompt.trim() || isGeneratingImage}
             >
               {isGeneratingImage ? "Generating..." : "Generate"}
@@ -1366,4 +1404,8 @@ export function ConversationDetail() {
       </Dialog>
     </div>
   );
+}
+
+function nextAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }

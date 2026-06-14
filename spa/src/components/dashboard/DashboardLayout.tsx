@@ -16,6 +16,7 @@ const pageTitles: Record<string, string> = {
 
 export function DashboardLayout() {
   const location = useLocation();
+  const isFullBleedPage = location.pathname === "/dashboard/conversations";
 
   // Get user from token - ProtectedRoute ensures we have a valid token
   const user: UserInfo | null = authService.getUserFromToken();
@@ -84,12 +85,19 @@ export function DashboardLayout() {
         <main
           style={{
             flex: 1,
-            padding: "2rem",
+            padding: isFullBleedPage ? 0 : "2rem",
             overflowY: "auto",
             minHeight: 0,
           }}
         >
-          <div style={{ maxWidth: "80rem", margin: "0 auto", height: "100%", minHeight: 0 }}>
+          <div
+            style={{
+              maxWidth: isFullBleedPage ? "none" : "80rem",
+              margin: isFullBleedPage ? 0 : "0 auto",
+              height: "100%",
+              minHeight: 0,
+            }}
+          >
             <Outlet context={{ user }} />
           </div>
         </main>
