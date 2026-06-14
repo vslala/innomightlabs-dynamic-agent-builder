@@ -77,14 +77,19 @@ export function SmartSuggestionControl({
   };
 
   return (
-    <div className="rounded-md border border-[var(--border-subtle)] bg-white/5 p-3">
-      <div className="flex flex-col gap-2 sm:flex-row">
+    <div className="rounded-lg border border-[var(--border-subtle)] bg-white/[0.04] p-3">
+      <div className="flex flex-col gap-2 min-[420px]:flex-row">
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={config.prompt_placeholder || `Describe ${field.label.toLowerCase()}`}
           disabled={!settingsLoaded || !isConfigured || loading}
-          className="h-9 min-w-0 flex-1 rounded-md border border-[var(--border-subtle)] bg-transparent px-3 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--gradient-start)]"
+          className="h-10 min-w-0 flex-1 rounded-md border border-[var(--border-subtle)] bg-transparent px-3.5 py-2 text-sm leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--gradient-start)]"
+          style={{
+            paddingInline: "0.875rem",
+            paddingBlock: "0.5rem",
+            boxSizing: "border-box",
+          }}
         />
         {isConfigured ? (
           <Button
@@ -92,10 +97,10 @@ export function SmartSuggestionControl({
             size="sm"
             onClick={handleSuggest}
             disabled={!query.trim() || loading}
-            className="w-full shrink-0 sm:w-auto sm:min-w-28"
+            className="h-10 w-full shrink-0 px-3 min-[420px]:w-auto min-[420px]:min-w-28"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {config.button_label || "Suggest"}
+            <span className="truncate">{config.button_label || "Suggest"}</span>
           </Button>
         ) : (
           <Button
@@ -104,9 +109,9 @@ export function SmartSuggestionControl({
             variant="outline"
             onClick={handleConfigure}
             disabled={!settingsLoaded}
-            className="w-full shrink-0 sm:w-auto"
+            className="h-10 w-full shrink-0 px-3 min-[420px]:w-auto"
           >
-            Configure model first
+            <span className="truncate">Configure model first</span>
           </Button>
         )}
       </div>

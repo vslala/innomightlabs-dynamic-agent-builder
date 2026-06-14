@@ -5,8 +5,8 @@
  * Each input_type implementation lives in its own component under ./fields.
  */
 
-import { Label } from "../ui/label";
 import type { FormInput, FormValue } from "../../types/form";
+import { FormFieldShell } from "./FormFieldShell";
 import { SmartSuggestionControl } from "./SmartSuggestionControl";
 import {
   ChoiceField,
@@ -56,13 +56,7 @@ export function FormField({ field, value, formData, onChange }: FormFieldProps) 
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-      <Label htmlFor={field.name}>{field.label}</Label>
-      {field.attr?.help_text && (
-        <p className="text-xs leading-5 text-[var(--text-muted)]">
-          {field.attr.help_text}
-        </p>
-      )}
+    <FormFieldShell field={field}>
       {renderInput()}
       {(field.input_type === "text" || field.input_type === "text_area") && field.smart_suggestion && (
         <SmartSuggestionControl
@@ -72,6 +66,6 @@ export function FormField({ field, value, formData, onChange }: FormFieldProps) 
           onApply={onChange}
         />
       )}
-    </div>
+    </FormFieldShell>
   );
 }

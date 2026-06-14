@@ -212,7 +212,7 @@ export function AutomationTriggersPage() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
-        <div className="space-y-3">
+        <div className="flex min-w-0 flex-col gap-4">
           {loading ? (
             <div className="h-24 rounded-lg border border-[var(--border-subtle)] bg-white/5" />
           ) : triggers.length === 0 ? (
@@ -223,11 +223,11 @@ export function AutomationTriggersPage() {
             triggers.map((trigger) => {
               const Icon = triggerIcon(trigger.type);
               return (
-                <Card key={trigger.trigger_id}>
+                <Card key={trigger.trigger_id} className="transition-colors hover:bg-white/[0.04]">
                   <CardContent className="flex items-center justify-between gap-4 p-4">
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gradient-start)]/50"
                       onClick={() => openEditor({ mode: "edit", triggerType: trigger.type, trigger })}
                     >
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-[var(--text-secondary)]">
