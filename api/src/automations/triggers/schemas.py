@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.automations.models import AutomationNode, AutomationNodeType
-from src.form_models import Form, FormInput, FormInputType, SelectOption
+from src.form_models import Form, FormInput, FormInputType, SelectOption, SmartSuggestionConfig
 
 
 def build_schedule_trigger_form(nodes: list[AutomationNode], submit_path: str = "") -> Form:
@@ -30,6 +30,11 @@ def build_schedule_trigger_form(nodes: list[AutomationNode], submit_path: str = 
                 input_type=FormInputType.TEXT,
                 name="cron_expression",
                 label="Cron expression",
+                smart_suggestion=SmartSuggestionConfig(
+                    suggestion_type="cron_expression",
+                    button_label="Suggest",
+                    prompt_placeholder="Every weekday at 9 AM",
+                ),
                 attr={
                     "placeholder": "0 9 * * 1-5",
                     "help_text": "Standard 5-field cron: minute hour day month weekday.",

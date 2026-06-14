@@ -7,6 +7,7 @@
 
 import { Label } from "../ui/label";
 import type { FormInput, FormValue } from "../../types/form";
+import { SmartSuggestionControl } from "./SmartSuggestionControl";
 import {
   ChoiceField,
   DefaultField,
@@ -21,10 +22,11 @@ import {
 interface FormFieldProps {
   field: FormInput;
   value: FormValue;
+  formData: Record<string, FormValue>;
   onChange: (value: FormValue) => void;
 }
 
-export function FormField({ field, value, onChange }: FormFieldProps) {
+export function FormField({ field, value, formData, onChange }: FormFieldProps) {
   const renderInput = () => {
     switch (field.input_type) {
       case "text":
@@ -62,6 +64,14 @@ export function FormField({ field, value, onChange }: FormFieldProps) {
         </p>
       )}
       {renderInput()}
+      {(field.input_type === "text" || field.input_type === "text_area") && field.smart_suggestion && (
+        <SmartSuggestionControl
+          field={field}
+          value={value}
+          formData={formData}
+          onApply={onChange}
+        />
+      )}
     </div>
   );
 }

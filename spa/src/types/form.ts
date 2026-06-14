@@ -36,6 +36,13 @@ export interface FormInputValidation {
   max_items?: number | null;
 }
 
+export interface SmartSuggestionConfig {
+  enabled?: boolean;
+  suggestion_type: string;
+  button_label?: string;
+  prompt_placeholder?: string | null;
+}
+
 export interface FormInput {
   input_type: FormInputType;
   name: string;
@@ -45,6 +52,7 @@ export interface FormInput {
   options?: SelectOption[] | null;  // For value/label pairs
   options_source?: FormOptionsSource | null;
   validation?: FormInputValidation | null;
+  smart_suggestion?: SmartSuggestionConfig | null;
   attr?: Record<string, string> | null;
 }
 

@@ -75,6 +75,7 @@ export function SchemaForm({
           key={field.name}
           field={field}
           value={formData[field.name] || ""}
+          formData={formData}
           onChange={(value) => handleFieldChange(field.name, value)}
         />
       ))}

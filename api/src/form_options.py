@@ -6,7 +6,6 @@ from typing import Any, Protocol
 
 from src.agents.repository import AgentRepository
 from src.form_models import Form, FormInput, SelectOption
-from src.llm.models import models_service
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 
 log = logging.getLogger(__name__)
@@ -100,6 +99,8 @@ class AgentModelChoices:
 
 
 def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
+    from src.llm.models import models_service
+
     cached = context.cache.get("agent_model_choices")
     if isinstance(cached, AgentModelChoices):
         return cached

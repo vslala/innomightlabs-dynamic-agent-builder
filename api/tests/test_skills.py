@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from types import SimpleNamespace
+from typing import Any, cast
 
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
@@ -732,7 +733,7 @@ def test_scheduler_skill_without_schedule_id_updates_existing_conversation_sched
                 conversation_id=conversation.conversation_id,
             )
         )
-        return json.loads(result)["schedule"]
+        return cast(dict[Any, Any], json.loads(result)["schedule"])
 
     first = run_scheduler_tool("Morning email", "Send the first version.")
     second = run_scheduler_tool("Updated morning email", "Send the updated version.")

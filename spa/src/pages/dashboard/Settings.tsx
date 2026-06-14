@@ -11,7 +11,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { SchemaForm } from "../../components/forms";
-import type { FormValue } from "../../types/form";
+import type { FormSchema, FormValue } from "../../types/form";
 import { ConfirmationDialog } from "../../components/ui/confirmation-dialog";
 import { authService } from "../../services/auth";
 import { httpClient } from "../../services/http";
@@ -19,6 +19,10 @@ import {
   providerSettingsService,
   type ProviderWithStatus,
 } from "../../services/settings/ProviderSettingsService";
+import {
+  smartSuggestionService,
+  type SmartSuggestionSettings,
+} from "../../services/smartSuggestions";
 import "./Settings.css";
 
 type SubscriptionStatus = {
@@ -40,6 +44,10 @@ export function Settings() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [openaiConnecting, setOpenaiConnecting] = useState(false);
   const [openaiDisconnecting, setOpenaiDisconnecting] = useState(false);
+  const [smartSuggestionSettings, setSmartSuggestionSettings] = useState<SmartSuggestionSettings | null>(null);
+  const [smartSuggestionSchema, setSmartSuggestionSchema] = useState<FormSchema | null>(null);
+  const [smartSuggestionLoading, setSmartSuggestionLoading] = useState(true);
+  const [smartSuggestionSaving, setSmartSuggestionSaving] = useState(false);
 
   // Track which provider is being configured
   const [configuringProvider, setConfiguringProvider] = useState<string | null>(null);
@@ -51,6 +59,7 @@ export function Settings() {
   useEffect(() => {
     loadProviders();
     loadSubscription();
+    loadSmartSuggestionSettings();
   }, []);
 
   const getErrorMessage = (err: unknown, fallback: string) => {
@@ -155,6 +164,45 @@ export function Settings() {
       setSubscription(null);
     } finally {
       setSubscriptionLoading(false);
+    }
+  };
+
+  const loadSmartSuggestionSettings = async () => {
+    setSmartSuggestionLoading(true);
+    try {
+      const [settings, schema] = await Promise.all([
+        smartSuggestionService.getSettings(),
+        smartSuggestionService.getSettingsSchema(),
+      ]);
+      setSmartSuggestionSettings(settings);
+      setSmartSuggestionSchema(schema);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to load smart suggestion settings. Please try again."));
+      console.error("Error loading smart suggestion settings:", err);
+    } finally {
+      setSmartSuggestionLoading(false);
+    }
+  };
+
+  const handleSaveSmartSuggestionSettings = async (data: Record<string, FormValue>) => {
+    setSmartSuggestionSaving(true);
+    setError(null);
+    try {
+      const enabled = data.enabled === "true";
+      const providerName = typeof data.provider_name === "string" ? data.provider_name : "";
+      const modelName = typeof data.model_name === "string" ? data.model_name : "";
+      const settings = await smartSuggestionService.saveSettings({
+        enabled,
+        provider_name: enabled ? providerName : null,
+        model_name: enabled ? modelName : null,
+      });
+      setSmartSuggestionSettings(settings);
+      await loadSmartSuggestionSettings();
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to save smart suggestion settings. Please try again."));
+      console.error("Error saving smart suggestion settings:", err);
+    } finally {
+      setSmartSuggestionSaving(false);
     }
   };
 
@@ -464,6 +512,46 @@ export function Settings() {
                 </div>
               ))}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Smart Suggestions</CardTitle>
+          <CardDescription>
+            Choose the model used by schema-driven field suggestions.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {smartSuggestionLoading ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
+              <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--gradient-start)" }} />
+            </div>
+          ) : smartSuggestionSchema ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                {smartSuggestionSettings?.is_configured ? (
+                  <CheckCircle className="h-5 w-5" style={{ color: "#4ade80" }} />
+                ) : (
+                  <AlertCircle className="h-5 w-5" style={{ color: "var(--text-muted)" }} />
+                )}
+                <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+                  {smartSuggestionSettings?.is_configured
+                    ? `Enabled with ${smartSuggestionSettings.provider_name} / ${smartSuggestionSettings.model_name}`
+                    : "Configure a provider and model before using smart suggestions in forms."}
+                </p>
+              </div>
+              <SchemaForm
+                key={`${smartSuggestionSettings?.enabled}-${smartSuggestionSettings?.provider_name}-${smartSuggestionSettings?.model_name}`}
+                schema={smartSuggestionSchema}
+                onSubmit={handleSaveSmartSuggestionSettings}
+                submitLabel="Save Smart Suggestions"
+                isLoading={smartSuggestionSaving}
+              />
+            </div>
+          ) : (
+            <p style={{ color: "var(--text-muted)" }}>Smart suggestion settings are unavailable.</p>
           )}
         </CardContent>
       </Card>

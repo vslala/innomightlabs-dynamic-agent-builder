@@ -41,6 +41,15 @@ class FormInputValidation(BaseModel):
     max_items: int | None = None
 
 
+class SmartSuggestionConfig(BaseModel):
+    """Optional AI suggestion metadata for text-like form inputs."""
+
+    enabled: bool = True
+    suggestion_type: str
+    button_label: str = "Suggest"
+    prompt_placeholder: str | None = None
+
+
 class FormInput(BaseModel):
     input_type: FormInputType
     name: str
@@ -51,6 +60,7 @@ class FormInput(BaseModel):
     options: None | list[SelectOption] = None  # New: for value/label pairs
     options_source: None | FormOptionsSource = None
     validation: None | FormInputValidation = None
+    smart_suggestion: None | SmartSuggestionConfig = None
     attr: None | dict[str, str] = None
 
 

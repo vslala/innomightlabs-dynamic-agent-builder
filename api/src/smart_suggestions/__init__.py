@@ -1,0 +1,2 @@
+"""Smart suggestions module."""
+

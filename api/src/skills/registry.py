@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
 
-import yaml  # type: ignore[import-untyped]
+import yaml  # type: ignore[import-untyped,unused-ignore]
 
 import src.form_models as form_models
 from src.form_validation import validate_form_value
