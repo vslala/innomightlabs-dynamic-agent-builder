@@ -27,9 +27,9 @@ from src.skills import skills_router
 from src.skills.api_registry import build_skill_api_routers
 from src.skills.registry import get_skill_registry
 from src.analytics import analytics_router
-from src.automations import automations_router
+from src.automations.router import router as automations_router
 from src.downloads import router as downloads_router
-from src.scheduler import scheduler_router
+from src.scheduler.router import router as scheduler_router
 from src.scheduler.runtime import get_scheduler_runtime
 from src.exceptions import register_exception_handlers
 from src.middleware.request_id import RequestIdMiddleware

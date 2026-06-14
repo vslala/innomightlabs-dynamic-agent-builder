@@ -3,6 +3,7 @@ import json
 from src.agents.agentic_loop import AgenticLoopEvent
 from src.agents.architectures.krishna_memgpt import KrishnaMemGPTArchitecture
 from src.agents.models import Agent
+from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_audit import ToolCallAuditMessage
 from src.conversations.models import Conversation
 from src.llm.events import SSEEventType
@@ -80,6 +81,10 @@ async def fake_prompt_refresh_loop(**kwargs):
     yield AgenticLoopEvent(kind="complete", payload={"full_text": ""})
 
 
+async def fake_load_provider_credentials(**kwargs):
+    return {}
+
+
 async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
     monkeypatch.setattr(
         "src.agents.agentic_loop.run_agentic_tool_loop",
@@ -90,8 +95,8 @@ async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
         lambda provider_name: object(),
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.decrypt",
-        lambda encrypted_credentials: "{}",
+        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        fake_load_provider_credentials,
     )
 
     architecture = KrishnaMemGPTArchitecture()
@@ -174,8 +179,8 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
         lambda provider_name: object(),
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.decrypt",
-        lambda encrypted_credentials: "{}",
+        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        fake_load_provider_credentials,
     )
 
     architecture = KrishnaMemGPTArchitecture()
@@ -227,3 +232,37 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
     assert len(prompt_calls) == 2
     assert prompt_calls[0]["enabled_mcp_connections"] == ["mcp-connection"]
     assert prompt_calls[1]["enabled_mcp_connections"] == ["mcp-connection"]
+
+
+def test_krishna_memgpt_builds_tool_definitions_from_command_registry():
+    architecture = KrishnaMemGPTArchitecture()
+    architecture.tool_handler = FakeToolHandler()
+    architecture.skill_runtime = FakeSkillRuntime()
+    architecture.mcp_connector_service = FakeMCPConnectorService()
+
+    state = AgentTurnState(
+        owner_email="owner@example.com",
+        actor_email="owner@example.com",
+        actor_id="owner@example.com",
+        conversation_id="conversation-1",
+        agent_id="agent-1",
+        provider_name="Bedrock",
+        model_name="test-model",
+        user_message="hello",
+    )
+    state.linked_kb_ids = ["kb-1"]
+    state.enabled_skills = [object()]
+    state.enabled_mcp_connections = [object()]
+
+    registry = architecture._build_tool_registry()
+    tool_names = {
+        definition["name"]
+        for definition in architecture._build_tool_definitions(state, registry)
+    }
+
+    assert "core_memory_append" in tool_names
+    assert "knowledge_base_search" in tool_names
+    assert "load_skill" in tool_names
+    assert "execute_skill_action" in tool_names
+    assert "list_mcp_tools" in tool_names
+    assert "call_mcp_tool" in tool_names

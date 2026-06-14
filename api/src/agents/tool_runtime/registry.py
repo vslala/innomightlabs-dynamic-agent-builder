@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from src.agents.tool_runtime.commands import ToolCommand
+from src.agents.tool_runtime.commands import ToolCommand, ToolCommandCategory
 
 
 class ToolCommandRegistry:
@@ -26,3 +26,13 @@ class ToolCommandRegistry:
 
     def definitions(self) -> list[dict[str, Any]]:
         return [command.definition for command in self._commands.values()]
+
+    def definitions_for_categories(
+        self,
+        categories: set[ToolCommandCategory],
+    ) -> list[dict[str, Any]]:
+        return [
+            command.definition
+            for command in self._commands.values()
+            if command.metadata.category in categories
+        ]

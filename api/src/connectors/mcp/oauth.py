@@ -427,6 +427,7 @@ def _unquote_auth_param(value: str) -> str:
     if len(value) < 2 or value[0] != '"' or value[-1] != '"':
         return value
     try:
-        return json.loads(value)
+        decoded = json.loads(value)
     except ValueError:
         return value[1:-1]
+    return decoded if isinstance(decoded, str) else value[1:-1]

@@ -26,6 +26,7 @@ from src.scheduler.models import (
     ScheduleTargetType,
 )
 from src.scheduler.repository import ScheduleRunAlreadyExists, SchedulerRepository
+from src.scheduler import runtime as scheduler_runtime_module
 from src.scheduler.runtime import SchedulerRuntime
 from src.scheduler.service import SchedulerService
 from tests.mock_data import TEST_USER_EMAIL
@@ -214,6 +215,54 @@ async def test_scheduler_runtime_registers_active_schedules_on_start(dynamodb_ta
         assert runtime.scheduler.get_job(schedule.schedule_id) is not None
     finally:
         await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_runtime_dispatch_uses_current_tick_not_mutable_next_run_at(
+    dynamodb_table,
+    monkeypatch,
+):
+    repository = SchedulerRepository()
+    schedule = Schedule(
+        owner_email=TEST_USER_EMAIL,
+        name="Active",
+        cron_expression="0 8 * * *",
+        target_type=ScheduleTargetType.AGENT_MESSAGE,
+        target={"agent_id": "agent-1", "conversation_id": "conversation-1", "message": "Check in"},
+        created_by=TEST_USER_EMAIL,
+        next_run_at=datetime(2026, 1, 2, 8, 0, tzinfo=timezone.utc),
+    )
+    repository.save_schedule(schedule)
+    fired_at = datetime(2026, 1, 1, 8, 0, tzinfo=timezone.utc)
+    calls = []
+
+    class CapturingDispatcher:
+        def __init__(self, repository: SchedulerRepository):
+            self.repository = repository
+
+        async def dispatch(self, *, schedule_id: str, owner_email: str, scheduled_for: datetime):
+            calls.append(
+                {
+                    "schedule_id": schedule_id,
+                    "owner_email": owner_email,
+                    "scheduled_for": scheduled_for,
+                }
+            )
+            return SimpleNamespace()
+
+    monkeypatch.setattr(scheduler_runtime_module, "_current_scheduler_tick", lambda: fired_at)
+    monkeypatch.setattr("src.scheduler.dispatcher.SchedulerDispatcher", CapturingDispatcher)
+
+    runtime = SchedulerRuntime(repository=repository)
+    await runtime._dispatch_job(schedule.schedule_id, TEST_USER_EMAIL)
+
+    assert calls == [
+        {
+            "schedule_id": schedule.schedule_id,
+            "owner_email": TEST_USER_EMAIL,
+            "scheduled_for": fired_at,
+        }
+    ]
 
 
 @pytest.mark.asyncio

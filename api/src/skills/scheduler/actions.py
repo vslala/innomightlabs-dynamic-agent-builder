@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
-from src.scheduler.models import CreateScheduleRequest, ScheduleTargetType, UpdateScheduleRequest
+from src.scheduler.models import CreateScheduleRequest, Schedule, ScheduleTargetType, UpdateScheduleRequest
 from src.scheduler.service import SchedulerService
 
 
@@ -67,6 +67,36 @@ def _automation_input(arguments: dict[str, Any]) -> dict[str, Any]:
     return cast(dict[str, Any], parsed)
 
 
+def _find_existing_agent_schedule(
+    service: SchedulerService,
+    *,
+    owner_email: str,
+    target: dict[str, Any],
+    cron_expression: str,
+    timezone: str,
+) -> Schedule | None:
+    agent_id = str(target.get("agent_id") or "").strip()
+    conversation_id = str(target.get("conversation_id") or "").strip()
+    normalized_cron = cron_expression.strip()
+    normalized_timezone = (timezone or "UTC").strip() or "UTC"
+
+    for schedule in service.list_schedules(owner_email):
+        if schedule.source_type != "agent_skill":
+            continue
+        if schedule.target_type != ScheduleTargetType.AGENT_MESSAGE:
+            continue
+        if schedule.target.get("agent_id") != agent_id:
+            continue
+        if schedule.target.get("conversation_id") != conversation_id:
+            continue
+        if schedule.cron_expression != normalized_cron:
+            continue
+        if schedule.timezone != normalized_timezone:
+            continue
+        return schedule
+    return None
+
+
 async def create_or_update(
     arguments: dict[str, Any],
     config: dict[str, Any],
@@ -82,14 +112,17 @@ async def create_or_update(
     }
     service = SchedulerService()
     schedule_id = str(arguments.get("schedule_id") or "").strip()
+    name = str(arguments.get("name") or "").strip()
+    cron_expression = str(arguments.get("cron_expression") or "").strip()
+    timezone = str(arguments.get("timezone") or "UTC").strip() or "UTC"
 
     if schedule_id:
         schedule = service.update_schedule(
             schedule_id,
             UpdateScheduleRequest(
-                name=str(arguments.get("name") or "").strip() or None,
-                cron_expression=str(arguments.get("cron_expression") or "").strip() or None,
-                timezone=str(arguments.get("timezone") or "").strip() or None,
+                name=name or None,
+                cron_expression=cron_expression or None,
+                timezone=timezone or None,
                 target=target,
                 source_ref=source_ref,
                 enabled=True,
@@ -97,20 +130,41 @@ async def create_or_update(
             owner_email,
         )
     else:
-        schedule = service.create_schedule(
-            CreateScheduleRequest(
-                name=str(arguments.get("name") or "").strip(),
-                cron_expression=str(arguments.get("cron_expression") or "").strip(),
-                timezone=str(arguments.get("timezone") or "UTC").strip() or "UTC",
-                target_type=ScheduleTargetType.AGENT_MESSAGE,
-                target=target,
-                source_type="agent_skill",
-                source_ref=source_ref,
-                enabled=True,
-            ),
+        existing = _find_existing_agent_schedule(
+            service,
             owner_email=owner_email,
-            created_by=str(context.get("actor_email") or owner_email),
+            target=target,
+            cron_expression=cron_expression,
+            timezone=timezone,
         )
+        if existing:
+            schedule = service.update_schedule(
+                existing.schedule_id,
+                UpdateScheduleRequest(
+                    name=name or None,
+                    cron_expression=cron_expression or None,
+                    timezone=timezone or None,
+                    target=target,
+                    source_ref=source_ref,
+                    enabled=True,
+                ),
+                owner_email,
+            )
+        else:
+            schedule = service.create_schedule(
+                CreateScheduleRequest(
+                    name=name,
+                    cron_expression=cron_expression,
+                    timezone=timezone,
+                    target_type=ScheduleTargetType.AGENT_MESSAGE,
+                    target=target,
+                    source_type="agent_skill",
+                    source_ref=source_ref,
+                    enabled=True,
+                ),
+                owner_email=owner_email,
+                created_by=str(context.get("actor_email") or owner_email),
+            )
 
     return {
         "schedule": _schedule_response(schedule),

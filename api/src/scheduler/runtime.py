@@ -71,7 +71,7 @@ class SchedulerRuntime:
             self.remove(schedule_id)
             return
 
-        scheduled_for = schedule.next_run_at or datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        scheduled_for = _current_scheduler_tick()
         from src.scheduler.dispatcher import SchedulerDispatcher
 
         await SchedulerDispatcher(repository=self.repository).dispatch(
@@ -92,3 +92,7 @@ def get_scheduler_runtime() -> SchedulerRuntime:
             if _runtime is None:
                 _runtime = SchedulerRuntime()
     return _runtime
+
+
+def _current_scheduler_tick() -> datetime:
+    return datetime.now(timezone.utc).replace(second=0, microsecond=0)

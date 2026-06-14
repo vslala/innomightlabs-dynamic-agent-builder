@@ -689,6 +689,63 @@ def test_scheduler_skill_creates_conversation_bound_schedule(test_client, auth_h
     assert saved.target["conversation_id"] == conversation.conversation_id
 
 
+def test_scheduler_skill_without_schedule_id_updates_existing_conversation_schedule(
+    test_client,
+    auth_headers,
+    dynamodb_table,
+):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+    conversation = ConversationRepository().save(
+        Conversation(
+            title="Scheduler skill duplicate guard",
+            agent_id=agent.agent_id,
+            created_by=TEST_USER_EMAIL,
+        )
+    )
+    install_resp = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=scheduler",
+        headers=auth_headers,
+        json={"config": {}},
+    )
+    assert install_resp.status_code == 201
+
+    def run_scheduler_tool(name: str, message: str) -> dict:
+        result = asyncio.run(
+            SkillRuntimeService().handle_tool_call(
+                tool_name="execute_skill_action",
+                tool_input={
+                    "skill_id": "scheduler",
+                    "action": "create_or_update",
+                    "arguments": {
+                        "name": name,
+                        "cron_expression": "0 6 * * *",
+                        "timezone": "Europe/London",
+                        "message": message,
+                    },
+                },
+                agent_id=agent.agent_id,
+                owner_email=TEST_USER_EMAIL,
+                actor_email=TEST_USER_EMAIL,
+                actor_id=TEST_USER_EMAIL,
+                conversation_id=conversation.conversation_id,
+            )
+        )
+        return json.loads(result)["schedule"]
+
+    first = run_scheduler_tool("Morning email", "Send the first version.")
+    second = run_scheduler_tool("Updated morning email", "Send the updated version.")
+
+    assert second["schedule_id"] == first["schedule_id"]
+    assert second["name"] == "Updated morning email"
+    assert second["target"]["message"] == "Send the updated version."
+    schedules = SchedulerRepository().list_schedules(TEST_USER_EMAIL)
+    assert [schedule.schedule_id for schedule in schedules if schedule.source_type == "agent_skill"] == [
+        first["schedule_id"]
+    ]
+
+
 def test_scheduler_skill_accepts_agent_id_argument_for_automation_context(dynamodb_table):
     from tests.mock_data import TEST_USER_EMAIL
     from src.skills.scheduler.actions import create_or_update

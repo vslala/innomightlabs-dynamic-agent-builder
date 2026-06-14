@@ -15,12 +15,16 @@ from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from src.common import CAPACITY_WARNING_THRESHOLD
 from src.agents.models import MemoryCapacityWarning
-from src.connectors.mcp.runtime_tools import MCP_RUNTIME_TOOLS
 from src.connectors.mcp.service import MCPConnectorService
 from src.agents.tool_audit import ToolCallStart, build_tool_call_audit_message
-from src.crypto import decrypt
-from src.auth.openai_oauth import ensure_valid_openai_credentials
+from src.agents.tool_execution import ToolExecutionRouter
+from src.agents.tool_runtime import (
+    ToolCommandCategory,
+    ToolCommandRegistry,
+    build_default_tool_command_registry,
+)
 from src.llm.conversation_strategy import FixedWindowStrategy
+from src.llm.credentials import load_provider_credentials
 from src.llm.events import SSEEvent, SSEEventType
 from src.llm.providers import get_llm_provider
 from src.memory import MemoryRepository
@@ -30,10 +34,13 @@ from src.memory.snapshot import CoreMemorySnapshot
 from src.settings.repository import get_provider_settings_repository
 from src.skills.models import AgentSkill
 from src.skills.service import SkillRuntimeService
-from src.tools.native import NATIVE_TOOLS, KNOWLEDGE_TOOLS, NativeToolHandler
+from src.tools.native import NativeToolHandler
 from src.knowledge.repository import AgentKnowledgeBaseRepository
 
 from .base import AgentArchitecture
+
+if TYPE_CHECKING:
+    from src.agents.runtime_state import AgentTurnState
 
 if TYPE_CHECKING:
     from src.agents.models import Agent
@@ -176,14 +183,11 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 )
                 return
 
-            if state.provider_name == "OpenAI":
-                openai_credentials = await ensure_valid_openai_credentials(
-                    provider_settings,
-                    self.provider_settings_repo,
-                )
-                state.credentials = openai_credentials.model_dump(mode="json")
-            else:
-                state.credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
+            state.credentials = await load_provider_credentials(
+                provider_name=state.provider_name,
+                provider_settings=provider_settings,
+                provider_settings_repo=self.provider_settings_repo,
+            )
 
             # 4. Load core memory and build system prompt
             yield SSEEvent(
@@ -231,21 +235,15 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
             provider = get_llm_provider(state.provider_name)
 
-            state.tools = NATIVE_TOOLS.copy()
-            if state.linked_kb_ids:
-                state.tools.extend(KNOWLEDGE_TOOLS)
-            if state.enabled_skills:
-                state.tools.extend(self.skill_runtime.build_skill_tools())
-            if state.enabled_mcp_connections:
-                state.tools.extend(MCP_RUNTIME_TOOLS)
-
             from src.agents.agentic_loop import run_agentic_tool_loop
-            from src.agents.tool_execution import ToolExecutionRouter
 
+            tool_registry = self._build_tool_registry()
+            state.tools = self._build_tool_definitions(state, tool_registry)
             tool_router = ToolExecutionRouter(
                 skill_runtime=self.skill_runtime,
                 mcp_runtime=self.mcp_connector_service,
                 native_tools=self.tool_handler,
+                registry=tool_registry,
             )
 
             full_response = ""
@@ -488,6 +486,27 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         return warnings
 
     # Capacity warning prompt rendering lives in CapacityWarningsLoader.
+
+    def _build_tool_registry(self) -> ToolCommandRegistry:
+        return build_default_tool_command_registry(
+            skill_runtime=self.skill_runtime,
+            native_tools=self.tool_handler,
+            mcp_runtime=self.mcp_connector_service,
+        )
+
+    def _build_tool_definitions(
+        self,
+        state: "AgentTurnState",
+        registry: ToolCommandRegistry,
+    ) -> list[dict[str, Any]]:
+        categories = {ToolCommandCategory.NATIVE}
+        if state.linked_kb_ids:
+            categories.add(ToolCommandCategory.KNOWLEDGE)
+        if state.enabled_skills:
+            categories.add(ToolCommandCategory.SKILL)
+        if state.enabled_mcp_connections:
+            categories.add(ToolCommandCategory.MCP)
+        return registry.definitions_for_categories(categories)
 
     def _format_content_with_attachments(
         self, content: str, attachments: list[Attachment]

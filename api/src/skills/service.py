@@ -271,44 +271,6 @@ class SkillRuntimeService:
     def list_enabled(self, agent_id: str) -> list[AgentSkill]:
         return [s for s in self.repository.list_by_agent(agent_id) if s.enabled]
 
-    def build_skill_tools(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "name": "load_skill",
-                "description": "Load full instructions and action contracts for an installed skill by skill_id.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "skill_id": {"type": "string", "description": "Installed skill id to load"},
-                    },
-                    "required": ["skill_id"],
-                },
-            },
-            {
-                "name": "execute_skill_action",
-                "description": (
-                    "Execute an action from an installed skill. "
-                    "IMPORTANT: pass action fields inside the `arguments` object only."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "skill_id": {"type": "string", "description": "Installed skill id"},
-                        "action": {"type": "string", "description": "Action name defined by the skill"},
-                        "arguments": {
-                            "type": "object",
-                            "description": (
-                                "Action arguments following the action input_schema. "
-                                "Example: {\"query\": \"pricing\"}"
-                            ),
-                        },
-                    },
-                    "required": ["skill_id", "action", "arguments"],
-                    "additionalProperties": False,
-                },
-            },
-        ]
-
     def build_system_prompt_addendum(self, enabled_skills: list[AgentSkill]) -> str:
         if not enabled_skills:
             return ""

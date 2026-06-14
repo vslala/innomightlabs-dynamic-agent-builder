@@ -1,6 +1,5 @@
 """Agent image generation orchestration service."""
 
-import json
 import logging
 from typing import Any, AsyncIterator, cast
 
@@ -19,11 +18,10 @@ from src.agents.image_generation.provider import ImageProviderFactory
 from src.agents.image_generation.storage import ConversationMediaStorage
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
-from src.auth.openai_oauth import ensure_valid_openai_credentials
 from src.config import settings
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
-from src.crypto import decrypt
+from src.llm.credentials import load_provider_credentials
 from src.messages.models import Message, MessageImage
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
@@ -568,12 +566,11 @@ class AgentImageGenerationService:
         return provider_settings
 
     async def _load_credentials(self, provider_name: str, provider_settings) -> dict[Any, Any]:
-        if provider_name == "OpenAI":
-            openai_credentials = await ensure_valid_openai_credentials(
-                provider_settings,
-                self.provider_settings_repo,
-            )
-            return cast(dict[Any, Any], openai_credentials.model_dump(mode="json"))
-
-        credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
-        return cast(dict[Any, Any], credentials) if isinstance(credentials, dict) else {}
+        return cast(
+            dict[Any, Any],
+            await load_provider_credentials(
+                provider_name=provider_name,
+                provider_settings=provider_settings,
+                provider_settings_repo=self.provider_settings_repo,
+            ),
+        )
