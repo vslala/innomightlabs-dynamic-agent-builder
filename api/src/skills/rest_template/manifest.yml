@@ -1,0 +1,160 @@
+id: rest_template
+namespace: core.http
+name: REST Template
+description: Send flexible GET and POST HTTP requests to external APIs.
+system_prompt: |
+  Use this skill when the user asks to call an HTTP API endpoint.
+  Use get for read-only requests and post for requests that create, submit, or trigger work.
+  Put every header in headers as key/value pairs.
+  Prefer json_body for JSON payloads. Use text_body only when the endpoint expects raw text.
+  Do not invent Authorization headers or API keys. If the user tells you to use a secret placeholder such as {{ api_token }},
+  pass that placeholder exactly; the runtime replaces it from environment variables before sending the request.
+  By default the result includes only ok, status_code, and body_preview. Set include_full_response=true only when headers,
+  content type, parsed JSON, elapsed time, or other metadata are required.
+actions:
+  - name: get
+    aliases: [http_get, send_get]
+    description: Send a GET request to any URL with optional headers and query parameters.
+    input_schema:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: Absolute http or https URL to request.
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional request headers as key/value pairs.
+        query:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional query parameters as key/value pairs.
+        timeout_seconds:
+          type: integer
+          description: Request timeout, clamped to a safe range.
+        max_response_chars:
+          type: integer
+          description: Maximum response body characters to return.
+        include_full_response:
+          type: boolean
+          description: Return response metadata, parsed JSON when available, and truncation details. Defaults to false.
+    action_form:
+      form_name: REST GET
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: url
+          label: URL
+          attr:
+            placeholder: "https://api.example.com/items"
+            smart_values: "true"
+        - input_type: key_value
+          name: headers
+          label: Headers
+          attr:
+            empty_text: "No headers configured."
+            key_placeholder: "Authorization"
+            value_placeholder: "Bearer {{ api_token }}"
+            add_label: "Add header"
+            smart_values: "true"
+        - input_type: key_value
+          name: query
+          label: Query parameters
+          attr:
+            empty_text: "No query parameters configured."
+            key_placeholder: "page"
+            value_placeholder: "1"
+            add_label: "Add query parameter"
+            smart_values: "true"
+        - input_type: choice
+          name: include_full_response
+          label: Full response
+          value: "false"
+          values: ["true", "false"]
+    handler: actions:get
+  - name: post
+    aliases: [http_post, send_post]
+    description: Send a POST request to any URL with optional headers, query parameters, and body.
+    input_schema:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: Absolute http or https URL to request.
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional request headers as key/value pairs.
+        query:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional query parameters as key/value pairs.
+        json_body:
+          description: Optional JSON payload. Prefer this for application/json APIs.
+        text_body:
+          type: string
+          description: Optional raw request body. Use only when JSON is not appropriate.
+        timeout_seconds:
+          type: integer
+          description: Request timeout, clamped to a safe range.
+        max_response_chars:
+          type: integer
+          description: Maximum response body characters to return.
+        include_full_response:
+          type: boolean
+          description: Return response metadata, parsed JSON when available, and truncation details. Defaults to false.
+    action_form:
+      form_name: REST POST
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: url
+          label: URL
+          attr:
+            placeholder: "https://api.example.com/items"
+            smart_values: "true"
+        - input_type: key_value
+          name: headers
+          label: Headers
+          attr:
+            empty_text: "No headers configured."
+            key_placeholder: "Content-Type"
+            value_placeholder: "application/json"
+            add_label: "Add header"
+            smart_values: "true"
+        - input_type: key_value
+          name: query
+          label: Query parameters
+          attr:
+            empty_text: "No query parameters configured."
+            key_placeholder: "dry_run"
+            value_placeholder: "true"
+            add_label: "Add query parameter"
+            smart_values: "true"
+        - input_type: text_area
+          name: json_body
+          label: JSON body
+          attr:
+            rows: "10"
+            optional: "true"
+            smart_values: "true"
+            placeholder: "{\"name\":\"Example\"}"
+        - input_type: text_area
+          name: text_body
+          label: Text body
+          attr:
+            rows: "6"
+            optional: "true"
+            smart_values: "true"
+        - input_type: choice
+          name: include_full_response
+          label: Full response
+          value: "false"
+          values: ["true", "false"]
+    handler: actions:post
