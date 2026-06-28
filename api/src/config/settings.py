@@ -135,6 +135,7 @@ class Settings:
     downloads_manifest_key: str = "artifacts/plugins/manifest.json"
     downloads_presign_ttl_seconds: int = 900
     conversation_media_bucket: str = "innomightlabs-conversations-meta"
+    conversation_media_region: str = "us-east-1"
     conversation_media_presign_ttl_seconds: int = 900
 
     def validate_core(self) -> None:
@@ -403,6 +404,7 @@ class Settings:
             downloads_manifest_key=os.getenv("DOWNLOADS_MANIFEST_KEY", "artifacts/plugins/manifest.json"),
             downloads_presign_ttl_seconds=int(os.getenv("DOWNLOADS_PRESIGN_TTL_SECONDS", "900")),
             conversation_media_bucket=os.getenv("CONVERSATION_MEDIA_BUCKET", "innomightlabs-conversations-meta"),
+            conversation_media_region=os.getenv("CONVERSATION_MEDIA_REGION", "us-east-1"),
             conversation_media_presign_ttl_seconds=int(os.getenv("CONVERSATION_MEDIA_PRESIGN_TTL_SECONDS", "900")),
         )
 

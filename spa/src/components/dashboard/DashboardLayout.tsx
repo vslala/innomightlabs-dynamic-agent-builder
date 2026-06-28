@@ -8,6 +8,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard/agents": "Agents",
   "/dashboard/automations": "Automations",
   "/dashboard/conversations": "Conversations",
+  "/dashboard/artifacts": "Artifacts",
   "/dashboard/knowledge-bases": "Knowledge Bases",
   "/dashboard/connectors": "Connectors",
   "/dashboard/whats-new": "What's New",
@@ -54,6 +55,9 @@ export function DashboardLayout() {
         return "Automation Analytics";
       }
       return "Automation Builder";
+    }
+    if (location.pathname.startsWith("/dashboard/artifacts/")) {
+      return "Artifact";
     }
     // Check for knowledge base detail page
     if (location.pathname.startsWith("/dashboard/knowledge-bases/")) {

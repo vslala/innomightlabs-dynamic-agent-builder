@@ -1,0 +1,142 @@
+id: league_insights_report
+namespace: games.league_of_legends
+name: League Insights Report
+description: Generate a browser-openable HTML League of Legends match or multi-match insights report.
+repeatable: true
+repeatable_identity_fields: [report_agent_id]
+system_prompt: |
+  Use this skill when the user asks for a League of Legends match analysis or recent-match trend report.
+  The skill creates a durable HTML artifact and returns a link the user can open in their browser.
+  Never expose the Riot API key. It is stored in encrypted skill configuration.
+form:
+  - input_type: select
+    name: report_agent_id
+    label: Report agent
+    options_source:
+      type: krishna_mini_agents
+  - input_type: password
+    name: riot_api_key
+    label: Riot API key
+    attr:
+      secret: "true"
+      placeholder: RGAPI-...
+  - input_type: select
+    name: default_routing_region
+    label: Default routing region
+    value: europe
+    options:
+      - label: Americas
+        value: americas
+      - label: Asia
+        value: asia
+      - label: Europe
+        value: europe
+      - label: SEA
+        value: sea
+actions:
+  - name: generate_match_report
+    aliases: [generate_lol_report, league_match_report]
+    description: Fetch League match data from Riot and create a detailed HTML report artifact.
+    input_schema:
+      type: object
+      required: [game_name, tag_line]
+      properties:
+        game_name:
+          type: string
+          description: Riot ID game name, for example ThePlayer.
+        tag_line:
+          type: string
+          description: Riot ID tag line without #, for example EUW.
+        report_scope:
+          type: string
+          enum: [single_match, multi_match]
+          description: Whether to generate a single-match report or a multi-match trend report.
+        match_id:
+          type: string
+          description: Optional Riot match id for a single-match report.
+        match_ids:
+          oneOf:
+            - type: array
+              items:
+                type: string
+            - type: string
+          description: Optional Riot match ids for a multi-match report. Automation forms may pass a comma-separated string; agents may pass an array.
+        match_count:
+          type: integer
+          description: Number of recent matches to analyze for multi-match reports, clamped to 1-10.
+        routing_region:
+          type: string
+          enum: [americas, asia, europe, sea]
+          description: Riot regional routing value. Defaults to skill configuration.
+        queue:
+          type: integer
+          description: Optional Riot queue id filter for latest-match lookup.
+        report_title:
+          type: string
+          description: Optional title for the generated artifact.
+    action_form:
+      form_name: League Insights Report
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: game_name
+          label: Riot game name
+          attr:
+            placeholder: ThePlayer
+            smart_values: "true"
+        - input_type: text
+          name: tag_line
+          label: Riot tag line
+          attr:
+            placeholder: EUW
+            smart_values: "true"
+        - input_type: text
+          name: match_id
+          label: Match id
+          attr:
+            optional: "true"
+            smart_values: "true"
+        - input_type: text
+          name: match_ids
+          label: Match ids
+          attr:
+            optional: "true"
+            smart_values: "true"
+            placeholder: "EUW1_123, EUW1_456"
+        - input_type: select
+          name: report_scope
+          label: Report scope
+          value: single_match
+          options:
+            - label: Single match
+              value: single_match
+            - label: Multi-match trend
+              value: multi_match
+        - input_type: text
+          name: match_count
+          label: Recent match count
+          value: "5"
+          attr:
+            optional: "true"
+            placeholder: "5"
+        - input_type: select
+          name: routing_region
+          label: Routing region
+          options:
+            - label: Use skill default
+              value: ""
+            - label: Americas
+              value: americas
+            - label: Asia
+              value: asia
+            - label: Europe
+              value: europe
+            - label: SEA
+              value: sea
+        - input_type: text
+          name: report_title
+          label: Report title
+          attr:
+            optional: "true"
+            smart_values: "true"
+    handler: actions:generate_match_report

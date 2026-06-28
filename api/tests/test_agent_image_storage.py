@@ -38,6 +38,24 @@ def test_build_image_key_uses_agent_conversation_message_prefix(monkeypatch):
     assert key.endswith(".png")
 
 
+def test_conversation_media_storage_uses_conversation_media_region(monkeypatch):
+    captured = {}
+
+    class FakeBoto3:
+        def client(self, service_name: str, *, region_name: str):
+            captured["service_name"] = service_name
+            captured["region_name"] = region_name
+            return object()
+
+    monkeypatch.setattr("src.agents.image_generation.storage.boto3", FakeBoto3())
+    monkeypatch.setattr("src.agents.image_generation.storage.settings.aws_region", "eu-west-2")
+    monkeypatch.setattr("src.agents.image_generation.storage.settings.conversation_media_region", "us-east-1")
+
+    ConversationMediaStorage()
+
+    assert captured == {"service_name": "s3", "region_name": "us-east-1"}
+
+
 def test_delete_agent_prefix_paginates_and_batches(monkeypatch):
     fake_client = FakeS3Client()
     monkeypatch.setattr("src.agents.image_generation.storage.settings.conversation_media_bucket", "test-media")

@@ -1,5 +1,6 @@
 // Core UI components
 export * from "./button";
+export * from "./link-button";
 export * from "./card";
 export * from "./dialog";
 export * from "./input";

@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 
 class FormOptionSourceType:
     AGENTS = "agents"
+    KRISHNA_MINI_AGENTS = "krishna_mini_agents"
     AGENT_MODEL_PROVIDERS = "agent_model_providers"
     AGENT_MODELS = "agent_models"
 
@@ -78,6 +79,16 @@ class AgentsOptionsResolver:
         return [
             SelectOption(value=agent.agent_id, label=agent.agent_name)
             for agent in repo.find_all_by_created_by(context.user_email)
+        ]
+
+
+class KrishnaMiniAgentsOptionsResolver:
+    def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
+        repo = context.agent_repository or AgentRepository()
+        return [
+            SelectOption(value=agent.agent_id, label=agent.agent_name)
+            for agent in repo.find_all_by_created_by(context.user_email)
+            if agent.agent_architecture == "krishna-mini"
         ]
 
 
@@ -152,6 +163,7 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
 
 FORM_OPTIONS_RESOLVERS: dict[str, FormOptionsResolver] = {
     FormOptionSourceType.AGENTS: AgentsOptionsResolver(),
+    FormOptionSourceType.KRISHNA_MINI_AGENTS: KrishnaMiniAgentsOptionsResolver(),
     FormOptionSourceType.AGENT_MODEL_PROVIDERS: AgentModelProvidersOptionsResolver(),
     FormOptionSourceType.AGENT_MODELS: AgentModelsOptionsResolver(),
 }

@@ -23,6 +23,8 @@ import { AgentsList } from './pages/dashboard/AgentsList';
 import { AgentCreate } from './pages/dashboard/AgentCreate';
 import { Conversations } from './pages/dashboard/Conversations';
 import { ConversationDetail } from './pages/dashboard/ConversationDetail';
+import { ArtifactsPage } from './pages/dashboard/ArtifactsPage';
+import { ArtifactOpenPage } from './pages/dashboard/ArtifactOpenPage';
 import { KnowledgeBases } from './pages/dashboard/KnowledgeBases';
 import { KnowledgeBaseDetail } from './pages/dashboard/KnowledgeBaseDetail';
 import { Settings } from './pages/dashboard/Settings';
@@ -117,6 +119,8 @@ function App() {
           </Route>
           <Route path="conversations" element={<Conversations />} />
           <Route path="conversations/:conversationId" element={<ConversationDetail />} />
+          <Route path="artifacts" element={<ArtifactsPage />} />
+          <Route path="artifacts/:artifactId" element={<ArtifactOpenPage />} />
           <Route path="knowledge-bases" element={<KnowledgeBases />} />
           <Route path="knowledge-bases/:kbId" element={<KnowledgeBaseDetail />} />
           <Route path="connectors" element={<ConnectorsPage />} />

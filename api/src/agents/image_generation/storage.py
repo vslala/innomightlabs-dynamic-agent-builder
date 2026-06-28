@@ -16,7 +16,7 @@ class ConversationMediaStorage:
 
     def __init__(self):
         self.bucket = settings.conversation_media_bucket
-        self.client = boto3.client("s3", region_name=settings.aws_region)
+        self.client = boto3.client("s3", region_name=settings.conversation_media_region)
 
     def build_image_key(
         self,
