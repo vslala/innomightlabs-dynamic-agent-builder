@@ -171,6 +171,32 @@ KNOWLEDGE_BASE_SEARCH = {
     }
 }
 
+WAIT = {
+    "name": "wait",
+    "description": (
+        "Wait for a bounded duration before continuing the current task. "
+        "Use this when an async tool job is still running and you need to check again later."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "seconds": {
+                "type": "integer",
+                "description": "Seconds to wait. Defaults to 20. Maximum is 600.",
+                "minimum": 1,
+                "maximum": 600,
+                "default": 20,
+            },
+            "reason": {
+                "type": "string",
+                "description": "Short reason for waiting.",
+            },
+        },
+        "required": [],
+        "additionalProperties": False,
+    },
+}
+
 
 NATIVE_TOOLS = [
     CORE_MEMORY_READ,
@@ -181,6 +207,7 @@ NATIVE_TOOLS = [
     ARCHIVAL_MEMORY_INSERT,
     ARCHIVAL_MEMORY_SEARCH,
     RECALL_CONVERSATION,
+    WAIT,
 ]
 
 KNOWLEDGE_TOOLS = [

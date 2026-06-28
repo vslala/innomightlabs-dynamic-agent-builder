@@ -4,6 +4,8 @@ Native tool handlers for the memGPT architecture.
 Handles execution of memory tools with idempotency and capacity management.
 """
 
+import asyncio
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -63,6 +65,8 @@ class NativeToolHandler:
     RECALL_PAGE_SIZE = 10
     KB_SEARCH_MAX_RESULTS = 10
     MEMORY_TOOL_PREFIXES = ("core_memory_", "archival_memory_")
+    DEFAULT_WAIT_SECONDS = 20
+    MAX_WAIT_SECONDS = 600
 
     def __init__(
         self,
@@ -114,6 +118,24 @@ class NativeToolHandler:
 
         result = await handler(arguments, agent_id)
         return result
+
+    async def _handle_wait(self, args: dict, agent_id: str) -> str:
+        del agent_id
+        raw_seconds = args.get("seconds", self.DEFAULT_WAIT_SECONDS)
+        try:
+            seconds = int(raw_seconds)
+        except (TypeError, ValueError):
+            seconds = self.DEFAULT_WAIT_SECONDS
+        seconds = max(1, min(self.MAX_WAIT_SECONDS, seconds))
+        await asyncio.sleep(seconds)
+        return json.dumps(
+            {
+                "ok": True,
+                "waited_seconds": seconds,
+                "message": "Wait complete.",
+            },
+            ensure_ascii=True,
+        )
 
     def _get_block_or_error(
         self, args: dict, agent_id: str, user_id: str

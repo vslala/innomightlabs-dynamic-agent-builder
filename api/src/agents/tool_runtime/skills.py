@@ -26,7 +26,8 @@ EXECUTE_SKILL_ACTION_TOOL = {
     "name": "execute_skill_action",
     "description": (
         "Execute an action from an installed skill. "
-        "IMPORTANT: pass action fields inside the `arguments` object only."
+        "IMPORTANT: pass action fields inside the `arguments` object only. "
+        "For long-running actions, set async to true."
     ),
     "parameters": {
         "type": "object",
@@ -40,8 +41,25 @@ EXECUTE_SKILL_ACTION_TOOL = {
                     "Example: {\"query\": \"pricing\"}"
                 ),
             },
+            "async": {
+                "type": "boolean",
+                "description": "Set true for long-running actions so the runtime can wait and check job status.",
+            },
         },
         "required": ["skill_id", "action", "arguments"],
+        "additionalProperties": False,
+    },
+}
+
+CHECK_TOOL_JOB_TOOL = {
+    "name": "check_tool_job",
+    "description": "Check the status and result of an asynchronous tool job.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "job_id": {"type": "string", "description": "Async tool job id"},
+        },
+        "required": ["job_id"],
         "additionalProperties": False,
     },
 }
@@ -60,6 +78,13 @@ SKILL_TOOL_SPECS = [
         ToolCommandMetadata(
             category=ToolCommandCategory.SKILL,
             idempotency=ToolIdempotency.NON_IDEMPOTENT_WRITE,
+        ),
+    ),
+    ToolSpec(
+        CHECK_TOOL_JOB_TOOL,
+        ToolCommandMetadata(
+            category=ToolCommandCategory.SKILL,
+            idempotency=ToolIdempotency.READ_ONLY,
         ),
     ),
 ]

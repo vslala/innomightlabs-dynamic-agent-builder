@@ -91,6 +91,7 @@ class SkillActionConfig(BaseModel):
     installed_skill_id: Optional[str] = None
     action: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    async_: bool = Field(default=False, alias="async")
 
     @field_validator("action_type")
     @classmethod

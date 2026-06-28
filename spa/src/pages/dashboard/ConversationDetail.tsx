@@ -352,6 +352,14 @@ export function ConversationDetail() {
       await nextAnimationFrame();
     }
 
+    let streamFinalized = false;
+    const finishStream = () => {
+      if (streamFinalized) return;
+      streamFinalized = true;
+      setIsSending(false);
+      setStatusMessage(null);
+    };
+
     const handleEvent = (event: SSEEvent) => {
       switch (event.event_type) {
         case SSEEventType.LIFECYCLE_NOTIFICATION:
@@ -480,8 +488,7 @@ export function ConversationDetail() {
           latestImagePreviewDataUrlRef.current = null;
           setStreamingContent("");
           setStreamingImagePreview(null);
-          setIsSending(false);
-          setStatusMessage(null);
+          finishStream();
           break;
 
         case SSEEventType.TOOL_CALL_START:
@@ -517,10 +524,9 @@ export function ConversationDetail() {
 
         case SSEEventType.ERROR:
           setChatError(event.content);
-          setIsSending(false);
-          setStatusMessage(null);
           latestImagePreviewDataUrlRef.current = null;
           setStreamingImagePreview(null);
+          finishStream();
           break;
 
         default:
@@ -528,24 +534,26 @@ export function ConversationDetail() {
       }
     };
 
-    await chatService.sendMessage(
-      conversation.agent_id,
-      conversation.conversation_id,
-      messageToSend || "",
-      attachmentsToSend,
-      {
-        onEvent: handleEvent,
-        onError: (err) => {
-          setChatError(err.message);
-          setIsSending(false);
-          setStatusMessage(null);
-        },
-        onComplete: () => {
-          setIsSending(false);
-          setStatusMessage(null);
-        },
-      }
-    );
+    try {
+      await chatService.sendMessage(
+        conversation.agent_id,
+        conversation.conversation_id,
+        messageToSend || "",
+        attachmentsToSend,
+        {
+          onEvent: handleEvent,
+          onError: (err) => {
+            setChatError(err.message);
+            finishStream();
+          },
+          onComplete: () => {
+            finishStream();
+          },
+        }
+      );
+    } finally {
+      finishStream();
+    }
   };
 
   // Handle retry for incomplete responses
@@ -1233,7 +1241,7 @@ export function ConversationDetail() {
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyPress}
               onPaste={handleChatPaste}
-              disabled={isSending}
+              aria-busy={isSending}
               rows={1}
               style={{
                 flex: 1,
@@ -1241,10 +1249,11 @@ export function ConversationDetail() {
                 maxHeight: "10rem",
                 resize: "none",
                 overflow: "auto",
-                border: "none",
+                border: "1px solid var(--border-subtle)",
                 borderRadius: "1.375rem",
-                backgroundColor: "#242427",
+                backgroundColor: "var(--bg-secondary)",
                 color: "var(--text-primary)",
+                caretColor: "var(--text-primary)",
                 padding: "0.75rem 1rem",
                 boxShadow: "none",
               }}

@@ -4,6 +4,7 @@ import json
 from typing import Any, Optional
 
 import src.form_models as form_models
+from src.agents.tool_runtime.jobs import ToolJobService
 from src.connectors.service import ConnectorService, connector_id_for_provider, get_connector_service
 from src.form_options import FormOptionsContext, hydrate_form_options, validate_form_options
 from src.skills.identity import installed_skill_id_for
@@ -264,9 +265,14 @@ class SkillRuntimeService:
         self,
         skill_service: Optional[SkillService] = None,
         repository: Optional[AgentSkillRepository] = None,
+        tool_job_service: Optional[ToolJobService] = None,
     ):
         self.skill_service = skill_service or SkillService()
         self.repository = repository or get_agent_skill_repository()
+        self.tool_job_service = tool_job_service or ToolJobService(
+            skill_repository=self.repository,
+            skill_registry=self.skill_service.registry,
+        )
 
     def list_enabled(self, agent_id: str) -> list[AgentSkill]:
         return [s for s in self.repository.list_by_agent(agent_id) if s.enabled]
@@ -284,6 +290,8 @@ class SkillRuntimeService:
             "Do not claim that you sent, rendered, showed, or displayed a form unless you actually call execute_skill_action for that form in the same turn.",
             "If you want to give narrative text and then show a form, still make the tool call in that same turn. Narrative text alone does not render UI.",
             "When a skill offers both a built-in default form and a custom-form action, use the custom-form action whenever the requested fields or choices are not exactly the built-in default form.",
+            "For long-running skill actions, call execute_skill_action with async: true.",
+            "When an async skill job starts, do not finish the response after queued/running status. Use wait, then check_tool_job, and repeat until the job succeeds or fails.",
         ]
         for skill in enabled_skills:
             lines.append(
@@ -353,10 +361,24 @@ class SkillRuntimeService:
             }
             return json.dumps(payload, ensure_ascii=True)
 
+        if tool_name == "check_tool_job":
+            job_id = str(tool_input.get("job_id", "")).strip()
+            if not job_id:
+                raise ValueError("Missing required argument: job_id")
+            result = self.tool_job_service.check_job_for_agent(
+                job_id=job_id,
+                owner_email=owner_email,
+                actor_email=actor_email,
+                agent_id=agent_id,
+                conversation_id=conversation_id,
+            )
+            return json.dumps(result, ensure_ascii=True)
+
         if tool_name == "execute_skill_action":
             installed_skill_id = str(tool_input.get("skill_id", "")).strip()
             action_name = str(tool_input.get("action", "")).strip()
             arguments = tool_input.get("arguments")
+            run_async = bool(tool_input.get("async", False))
             if not isinstance(arguments, dict):
                 raise ValueError("'arguments' must be an object")
             if not installed_skill_id or not action_name:
@@ -366,20 +388,38 @@ class SkillRuntimeService:
             if not installed or not installed.enabled:
                 raise ValueError(f"Skill '{installed_skill_id}' is not installed/enabled for this agent")
 
+            context = {
+                "agent_id": agent_id,
+                "owner_email": owner_email,
+                "actor_email": actor_email,
+                "actor_id": actor_id,
+                "conversation_id": conversation_id,
+                "user_message_id": user_message_id,
+            }
+            if run_async:
+                job = self.tool_job_service.create_skill_action_job(
+                    owner_email=owner_email,
+                    actor_email=actor_email,
+                    actor_id=actor_id,
+                    agent_id=agent_id,
+                    conversation_id=conversation_id,
+                    user_message_id=user_message_id,
+                    skill_id=installed.skill_id,
+                    installed_skill_id=installed.installed_skill_id or installed.skill_id,
+                    action=action_name,
+                    arguments=arguments,
+                    context=context,
+                )
+                self.tool_job_service.start_skill_action_job(job)
+                return json.dumps(job.to_start_payload(), ensure_ascii=True)
+
             config = self.repository.get_runtime_config(installed)
             result = await self.skill_service.registry.execute_action(
                 skill_id=installed.skill_id,
                 action_name=action_name,
                 arguments=arguments,
                 config=config,
-                context={
-                    "agent_id": agent_id,
-                    "owner_email": owner_email,
-                    "actor_email": actor_email,
-                    "actor_id": actor_id,
-                    "conversation_id": conversation_id,
-                    "user_message_id": user_message_id,
-                },
+                context=context,
             )
             if isinstance(result, str):
                 return result

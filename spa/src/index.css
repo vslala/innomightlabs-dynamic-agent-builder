@@ -21,6 +21,7 @@
   --code-bg: #121226;
   --code-text: #e5e7eb;
   --canvas-grid: rgba(255, 255, 255, 0.18);
+  --popover-bg: #101022;
   --border-subtle: rgba(255, 255, 255, 0.1);
   --accent-cyan: #00d4ff;
   --accent-pink: #ff6b9d;
@@ -48,6 +49,7 @@
   --code-bg: #f7f8f9;
   --code-text: #172b4d;
   --canvas-grid: rgba(9, 30, 66, 0.18);
+  --popover-bg: #ffffff;
   --border-subtle: #dcdfe4;
   --accent-cyan: #00b8d9;
   --accent-pink: #ae2a19;

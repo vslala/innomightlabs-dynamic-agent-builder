@@ -464,6 +464,7 @@ export function AgentSkillsPage() {
                         justifyContent: "space-between",
                         gap: "0.5rem",
                         width: "100%",
+                        minWidth: 0,
                         border: "none",
                         borderRadius: "0.5rem",
                         background: selected ? "rgba(99, 102, 241, 0.12)" : "transparent",
@@ -471,11 +472,12 @@ export function AgentSkillsPage() {
                         height: "auto",
                         padding: "0.55rem 0.65rem",
                         textAlign: "left",
+                        whiteSpace: "normal",
                         fontSize: "0.875rem",
                         fontWeight: selected ? 600 : 500,
                       }}
                     >
-                      <span>{category.label}</span>
+                      <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{category.label}</span>
                       <span style={{ fontSize: "0.75rem", color: selected ? "var(--gradient-start)" : "var(--text-muted)" }}>
                         {category.count}
                       </span>
@@ -534,6 +536,7 @@ export function AgentSkillsPage() {
                             position: "relative",
                             display: "block",
                             minHeight: "8.25rem",
+                            minWidth: 0,
                             height: "auto",
                             border: selected ? "2px solid var(--gradient-start)" : "1px solid var(--border-subtle)",
                             borderRadius: "0.5rem",
@@ -541,6 +544,7 @@ export function AgentSkillsPage() {
                             color: "inherit",
                             padding: "0.875rem",
                             textAlign: "left",
+                            whiteSpace: "normal",
                             cursor: installed ? "not-allowed" : "pointer",
                             opacity: installed ? 0.72 : 1,
                           }}
@@ -581,13 +585,13 @@ export function AgentSkillsPage() {
                               </span>
                             )}
                           </div>
-                          <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.35rem", lineHeight: 1.3 }}>
+                          <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.35rem", lineHeight: 1.3, overflowWrap: "anywhere" }}>
                             {skill.name}
                           </div>
-                          <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", lineHeight: 1.4 }}>
+                          <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", lineHeight: 1.4, overflowWrap: "anywhere" }}>
                             {skill.description}
                           </div>
-                          <div style={{ marginTop: "0.75rem", fontSize: "0.6875rem", color: "var(--text-muted)" }}>
+                          <div style={{ marginTop: "0.75rem", fontSize: "0.6875rem", color: "var(--text-muted)", overflowWrap: "anywhere" }}>
                             {skill.namespace}
                           </div>
                         </Button>
