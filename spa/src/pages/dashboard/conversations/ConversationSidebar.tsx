@@ -80,9 +80,12 @@ export function ConversationSidebar({
                     {getAgentName(agents, conversation.agent_id)}
                   </span>
                 </span>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon"
                   className="rounded-md p-1 text-red-300 opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-200 group-hover:opacity-100"
+                  style={{ height: "1.75rem", width: "1.75rem" }}
                   disabled={deletingId === conversation.conversation_id}
                   onClick={(event) => {
                     event.preventDefault();
@@ -96,7 +99,7 @@ export function ConversationSidebar({
                   ) : (
                     <Trash2 className="h-4 w-4" />
                   )}
-                </button>
+                </Button>
               </Link>
             ))
           )}

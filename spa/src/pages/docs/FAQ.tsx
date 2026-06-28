@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DocsLayout } from '../../components/docs/DocsLayout';
+import { Button } from '../../components/ui/button';
 import styles from './FAQ.module.css';
 
 interface FAQItem {
@@ -436,7 +437,9 @@ function FAQAccordion({ item }: { item: FAQItem }) {
 
   return (
     <div className={`${styles.accordion} ${isOpen ? styles.accordionOpen : ''}`}>
-      <button
+      <Button
+        type="button"
+        variant="ghost"
         className={styles.accordionTrigger}
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
@@ -458,7 +461,7 @@ function FAQAccordion({ item }: { item: FAQItem }) {
             strokeLinejoin="round"
           />
         </svg>
-      </button>
+      </Button>
       <div className={styles.accordionContent}>
         <div className={styles.accordionInner}>{item.answer}</div>
       </div>

@@ -119,10 +119,17 @@ export function AutomationRunsPage() {
           ) : (
             <div className="divide-y divide-[var(--border-subtle)]">
               {runs.map((run) => (
-                <button
+                <Button
                   key={run.run_id}
                   type="button"
-                  className="w-full text-left p-4 hover:bg-white/5 transition-colors"
+                  variant="ghost"
+                  className="w-full text-left transition-colors"
+                  style={{
+                    height: "auto",
+                    display: "block",
+                    padding: "1rem",
+                    borderRadius: 0,
+                  }}
                   onClick={() => void openRun(run.run_id)}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -132,7 +139,7 @@ export function AutomationRunsPage() {
                     <StatusBadge status={runBadgeStatus(run.status)} label={run.status} />
                   </div>
                   <p className="mt-1 text-xs text-[var(--text-muted)]">{run.run_id}</p>
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -226,8 +233,9 @@ function RuntimeEventTimeline({
             const isExpanded = expandedSteps.has(step.result_id);
             return (
               <article key={step.result_id} className="automation-runtime-events__step">
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
                   className="automation-runtime-events__step-trigger"
                   onClick={() => onToggle(step.result_id)}
                   aria-expanded={isExpanded}
@@ -242,7 +250,7 @@ function RuntimeEventTimeline({
                     <span>{step.events.length} runtime events</span>
                   </div>
                   <StatusBadge status={runBadgeStatus(step.status)} label={step.status} />
-                </button>
+                </Button>
 
                 {isExpanded && (
                   <div className="automation-runtime-events__body">

@@ -9,7 +9,7 @@ const Textarea = React.forwardRef<
     <textarea
       autoComplete={autoComplete ?? "off"}
       className={cn(
-        "flex min-h-[96px] w-full rounded-lg border border-[var(--border-subtle)] bg-white/5 px-4 py-3 text-sm leading-6 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--gradient-start)]/50 focus:border-[var(--gradient-start)] disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200 resize-none",
+        "flex min-h-[96px] w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-4 py-3 text-sm leading-6 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--gradient-start)]/50 focus:border-[var(--gradient-start)] disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200 resize-none",
         className
       )}
       style={{

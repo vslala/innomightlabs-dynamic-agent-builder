@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { subscriptionService } from '../services/subscription';
+import { Button } from './ui/button';
 import styles from './WaitlistForm.module.css';
 
 export function WaitlistForm() {
@@ -62,8 +63,9 @@ export function WaitlistForm() {
                   className={styles.input}
                   disabled={status === 'loading'}
                 />
-                <button
+                <Button
                   type="submit"
+                  variant="ghost"
                   className={styles.submitBtn}
                   disabled={status === 'loading'}
                 >
@@ -72,7 +74,7 @@ export function WaitlistForm() {
                   ) : (
                     'Get Early Access'
                   )}
-                </button>
+                </Button>
               </div>
 
               {message && (

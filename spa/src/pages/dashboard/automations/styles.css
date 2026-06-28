@@ -7,7 +7,7 @@
 
 .automation-builder__toolbar {
   align-items: center;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 0.75rem;
   display: flex;
@@ -56,7 +56,7 @@
 }
 
 .automation-builder__canvas {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 0.75rem;
   height: calc(100vh - 13rem);
@@ -74,10 +74,10 @@
 
 .automation-builder__canvas-rail {
   align-items: center;
-  background: rgba(22, 22, 47, 0.9);
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 0.65rem;
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 16px 42px var(--shadow-soft);
   display: flex;
   gap: 0.5rem;
   left: 1rem;
@@ -87,12 +87,17 @@
   z-index: 35;
 }
 
+.automation-builder__add-step-button {
+  min-width: 7.25rem;
+  white-space: nowrap;
+}
+
 .automation-builder__edge-actions {
   align-items: center;
-  background: rgba(22, 22, 47, 0.94);
-  border: 1px solid rgba(240, 147, 251, 0.34);
+  background: var(--bg-card);
+  border: 1px solid rgba(var(--gradient-start-rgb), 0.34);
   border-radius: 0.65rem;
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 16px 42px var(--shadow-soft);
   color: var(--text-secondary);
   display: flex;
   gap: 0.75rem;
@@ -164,9 +169,9 @@
 }
 
 .automation-json-editor__textarea {
-  background: #121226 !important;
-  border-color: rgba(102, 126, 234, 0.28) !important;
-  color: #e5e7eb !important;
+  background: var(--code-bg) !important;
+  border-color: rgba(var(--gradient-start-rgb), 0.28) !important;
+  color: var(--code-text) !important;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.78rem;
   line-height: 1.55;
@@ -198,10 +203,10 @@
 }
 
 .automation-json-tree__body {
-  background: #121226;
-  border: 1px solid rgba(102, 126, 234, 0.28);
+  background: var(--code-bg);
+  border: 1px solid rgba(var(--gradient-start-rgb), 0.28);
   border-radius: 0.5rem;
-  color: #e5e7eb;
+  color: var(--code-text);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.76rem;
   line-height: 1.55;
@@ -232,7 +237,7 @@
 }
 
 .automation-json-tree__line--button:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-tertiary);
 }
 
 .automation-json-tree__twisty {
@@ -242,25 +247,25 @@
 }
 
 .automation-json-tree__key {
-  color: #93c5fd;
+  color: var(--gradient-start);
 }
 
 .automation-json-tree__string {
-  color: #86efac;
+  color: #22c55e;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
 .automation-json-tree__literal {
-  color: #fbbf24;
+  color: #b45309;
 }
 
 .automation-json-tree__null {
-  color: #c4b5fd;
+  color: var(--accent-purple);
 }
 
 .automation-json-tree__brace {
-  color: #e5e7eb;
+  color: var(--code-text);
 }
 
 .automation-json-tree__summary {
@@ -269,7 +274,7 @@
 }
 
 .automation-run-log {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 0.6rem;
   padding: 0.75rem;
@@ -308,7 +313,7 @@
 
 .automation-run-log__step {
   align-items: center;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
   border-radius: 0.5rem;
   display: flex;
@@ -359,7 +364,7 @@
 }
 
 .automation-runtime-events__empty {
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
   border-radius: 0.5rem;
   color: var(--text-muted);
@@ -373,7 +378,7 @@
 }
 
 .automation-runtime-events__step {
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 0.6rem;
   overflow: hidden;
@@ -394,7 +399,7 @@
 }
 
 .automation-runtime-events__step-trigger:hover {
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--bg-tertiary);
 }
 
 .automation-runtime-events__step-trigger svg {
@@ -437,8 +442,8 @@
 }
 
 .automation-runtime-events__event {
-  background: rgba(18, 18, 38, 0.78);
-  border: 1px solid rgba(102, 126, 234, 0.22);
+  background: var(--code-bg);
+  border: 1px solid rgba(var(--gradient-start-rgb), 0.22);
   border-radius: 0.5rem;
   display: grid;
   gap: 0.4rem;
@@ -459,11 +464,11 @@
 }
 
 .automation-runtime-events__event-type {
-  color: #93c5fd;
+  color: var(--gradient-start);
 }
 
 .automation-runtime-events__event pre {
-  color: #e5e7eb;
+  color: var(--code-text);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.76rem;
   line-height: 1.5;
@@ -482,10 +487,10 @@
 
 .automation-builder__empty-canvas {
   align-items: flex-start;
-  background: #17172d;
-  border: 1px solid rgba(102, 126, 234, 0.45);
+  background: var(--bg-card);
+  border: 1px solid rgba(var(--gradient-start-rgb), 0.45);
   border-radius: 0.75rem;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 20px 60px var(--shadow-soft);
   color: var(--text-secondary);
   display: flex;
   gap: 1rem;
@@ -517,10 +522,10 @@
 }
 
 .automation-builder__side-panel {
-  background: rgba(22, 22, 47, 0.94);
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 0.75rem;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 24px 70px var(--shadow-soft);
   display: grid;
   grid-template-columns: 9rem minmax(0, 1fr);
   min-height: 16rem;
@@ -529,7 +534,7 @@
 
 .automation-builder__panel-tabs {
   align-content: start;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--bg-secondary);
   border-right: 1px solid var(--border-subtle);
   display: grid;
   gap: 0.35rem;
@@ -578,7 +583,7 @@
 }
 
 .automation-inspector__step-list button {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
   border-radius: 0.5rem;
   color: var(--text-primary);
@@ -590,7 +595,7 @@
 }
 
 .automation-inspector__step-list button:hover {
-  background: rgba(102, 126, 234, 0.16);
+  background: rgba(var(--gradient-start-rgb), 0.12);
   color: var(--text-primary);
 }
 
@@ -600,10 +605,10 @@
 }
 
 .automation-node-card {
-  background: #202040;
-  border: 1px solid rgba(102, 126, 234, 0.55);
+  background: var(--bg-card);
+  border: 1px solid rgba(var(--gradient-start-rgb), 0.32);
   border-radius: 0.5rem;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 14px 34px var(--shadow-soft);
   color: var(--text-primary);
   min-width: 12rem;
   padding: 0.75rem;
@@ -616,8 +621,8 @@
 
 .automation-node-card--start,
 .automation-node-card--final {
-  background: rgba(102, 126, 234, 0.16);
-  border-color: rgba(102, 126, 234, 0.45);
+  background: rgba(var(--gradient-start-rgb), 0.1);
+  border-color: rgba(var(--gradient-start-rgb), 0.3);
 }
 
 .automation-node-card--start {
@@ -634,8 +639,8 @@
 }
 
 .automation-node-card.selected {
-  border-color: #f093fb;
-  box-shadow: 0 0 0 2px rgba(240, 147, 251, 0.35), 0 18px 50px rgba(0, 0, 0, 0.32);
+  border-color: var(--gradient-start);
+  box-shadow: 0 0 0 2px rgba(var(--gradient-start-rgb), 0.28), 0 18px 50px var(--shadow-soft);
 }
 
 .automation-node-card__header {
@@ -652,7 +657,7 @@
 
 .automation-node-card__copy {
   align-items: center;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
   border-radius: 0.375rem;
   color: var(--text-secondary);
@@ -670,7 +675,7 @@
 }
 
 .automation-node-card__copy:hover {
-  background: rgba(102, 126, 234, 0.18);
+  background: rgba(var(--gradient-start-rgb), 0.12);
   color: var(--text-primary);
 }
 
@@ -711,8 +716,8 @@
 }
 
 .automation-inspector__notice {
-  background: rgba(102, 126, 234, 0.12);
-  border: 1px solid rgba(102, 126, 234, 0.25);
+  background: rgba(var(--gradient-start-rgb), 0.1);
+  border: 1px solid rgba(var(--gradient-start-rgb), 0.24);
   border-radius: 0.5rem;
   color: var(--text-secondary);
   font-size: 0.8125rem;
@@ -726,8 +731,8 @@
 }
 
 .automation-smart-values {
-  background: rgba(102, 126, 234, 0.1);
-  border: 1px solid rgba(102, 126, 234, 0.24);
+  background: rgba(var(--gradient-start-rgb), 0.08);
+  border: 1px solid rgba(var(--gradient-start-rgb), 0.22);
   border-radius: 0.5rem;
   margin-bottom: 1rem;
   padding: 0.75rem;
@@ -753,7 +758,7 @@
 
 .automation-smart-values__item {
   align-items: center;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
   border-radius: 0.5rem;
   color: var(--text-secondary);
@@ -765,7 +770,7 @@
 }
 
 .automation-smart-values__item:hover {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--bg-tertiary);
   color: var(--text-primary);
 }
 
@@ -788,14 +793,14 @@
 }
 
 .automation-smart-values__item code {
-  color: #c4b5fd;
+  color: var(--accent-purple);
   font-size: 0.7rem;
   margin-top: 0.35rem;
   overflow-wrap: anywhere;
 }
 
 .react-flow__attribution {
-  background: rgba(15, 15, 35, 0.72);
+  background: var(--bg-card);
   color: var(--text-muted);
 }
 
@@ -804,13 +809,13 @@
 }
 
 .react-flow__controls-button {
-  background: #16162f;
+  background: var(--bg-card);
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-secondary);
 }
 
 .react-flow__controls-button:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-tertiary);
   color: var(--text-primary);
 }
 
@@ -820,13 +825,13 @@
 
 .react-flow__handle {
   background: var(--gradient-start);
-  border: 2px solid #16162f;
+  border: 2px solid var(--bg-card);
   height: 0.65rem;
   width: 0.65rem;
 }
 
 .react-flow__edge-textbg {
-  fill: #16162f;
+  fill: var(--bg-card);
 }
 
 .react-flow__edge-text {

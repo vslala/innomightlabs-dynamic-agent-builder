@@ -1,4 +1,5 @@
 import { X, FileText } from "lucide-react";
+import { Button } from "../ui/button";
 
 interface AttachmentChipProps {
   filename: string;
@@ -51,21 +52,21 @@ export function AttachmentChip({
         ({formatSize(size)})
       </span>
       {!readonly && onRemove && (
-        <button
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
           onClick={onRemove}
           style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
             padding: "2px",
-            display: "flex",
-            alignItems: "center",
+            height: "1.25rem",
+            width: "1.25rem",
             color: "var(--text-muted, #707080)",
           }}
           aria-label={`Remove ${filename}`}
         >
           <X size={14} />
-        </button>
+        </Button>
       )}
     </div>
   );

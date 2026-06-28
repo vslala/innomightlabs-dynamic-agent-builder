@@ -225,9 +225,15 @@ export function AutomationTriggersPage() {
               return (
                 <Card key={trigger.trigger_id} className="transition-colors hover:bg-white/[0.04]">
                   <CardContent className="flex items-center justify-between gap-4 p-4">
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
                       className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gradient-start)]/50"
+                      style={{
+                        height: "auto",
+                        justifyContent: "flex-start",
+                        padding: 0,
+                      }}
                       onClick={() => openEditor({ mode: "edit", triggerType: trigger.type, trigger })}
                     >
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-[var(--text-secondary)]">
@@ -244,7 +250,7 @@ export function AutomationTriggersPage() {
                             : ""}
                         </span>
                       </span>
-                    </button>
+                    </Button>
                     <span className={trigger.enabled ? "text-xs text-emerald-300" : "text-xs text-[var(--text-muted)]"}>
                       {trigger.enabled ? "enabled" : "disabled"}
                     </span>

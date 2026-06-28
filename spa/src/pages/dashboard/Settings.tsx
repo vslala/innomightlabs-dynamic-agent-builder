@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Settings as SettingsIcon, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Settings as SettingsIcon, CheckCircle, AlertCircle, Loader2, Palette } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -23,6 +23,7 @@ import {
   smartSuggestionService,
   type SmartSuggestionSettings,
 } from "../../services/smartSuggestions";
+import { getStoredTheme, setStoredTheme, type AppTheme } from "../../lib/theme";
 import "./Settings.css";
 
 type SubscriptionStatus = {
@@ -48,6 +49,7 @@ export function Settings() {
   const [smartSuggestionSchema, setSmartSuggestionSchema] = useState<FormSchema | null>(null);
   const [smartSuggestionLoading, setSmartSuggestionLoading] = useState(true);
   const [smartSuggestionSaving, setSmartSuggestionSaving] = useState(false);
+  const [theme, setTheme] = useState<AppTheme>(() => getStoredTheme());
 
   // Track which provider is being configured
   const [configuringProvider, setConfiguringProvider] = useState<string | null>(null);
@@ -250,6 +252,11 @@ export function Settings() {
     return `${startFormatted} - ${endFormatted}`;
   };
 
+  const handleThemeChange = (nextTheme: AppTheme) => {
+    setTheme(nextTheme);
+    setStoredTheme(nextTheme);
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "42rem" }}>
       {/* Profile Section */}
@@ -284,6 +291,82 @@ export function Settings() {
             <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
               Profile settings are managed through your Google account
             </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Appearance</CardTitle>
+          <CardDescription>
+            Choose how the dashboard looks on this device.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.75rem" }}>
+            {[
+              {
+                id: "dark" as const,
+                label: "Dark",
+                description: "The current deep dashboard theme.",
+                swatches: ["#0f0f23", "#667eea", "#764ba2"],
+              },
+              {
+                id: "light" as const,
+                label: "Light",
+                description: "Atlassian-style blue and white palette.",
+                swatches: ["#ffffff", "#0c66e4", "#f7f8f9"],
+              },
+            ].map((option) => {
+              const selected = theme === option.id;
+              return (
+                <Button
+                  key={option.id}
+                  type="button"
+                  variant="ghost"
+                  onClick={() => handleThemeChange(option.id)}
+                  style={{
+                    border: selected ? "2px solid var(--gradient-start)" : "1px solid var(--border-subtle)",
+                    borderRadius: "0.75rem",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    height: "auto",
+                    padding: "1rem",
+                    textAlign: "left",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "stretch",
+                    justifyContent: "flex-start",
+                    gap: "0.75rem",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <Palette className="h-4 w-4" style={{ color: "var(--gradient-start)" }} />
+                      <span style={{ fontWeight: 700 }}>{option.label}</span>
+                    </div>
+                    {selected && <CheckCircle className="h-4 w-4" style={{ color: "var(--gradient-start)" }} />}
+                  </div>
+                  <div style={{ display: "flex", gap: "0.375rem" }}>
+                    {option.swatches.map((color) => (
+                      <span
+                        key={color}
+                        style={{
+                          width: "1.5rem",
+                          height: "1.5rem",
+                          borderRadius: "999px",
+                          background: color,
+                          border: "1px solid var(--border-subtle)",
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <p style={{ fontSize: "0.8125rem", color: "var(--text-muted)", lineHeight: 1.45 }}>
+                    {option.description}
+                  </p>
+                </Button>
+              );
+            })}
           </div>
         </CardContent>
       </Card>

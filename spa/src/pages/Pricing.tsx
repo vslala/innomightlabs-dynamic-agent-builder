@@ -6,6 +6,7 @@ import { pricingService } from '../services/pricing';
 import { authService } from '../services/auth';
 import { httpClient } from '../services/http';
 import type { PricingResponse } from '../types/pricing';
+import { Button } from '../components/ui/button';
 import styles from './Pricing.module.css';
 
 type BillingCycle = 'monthly' | 'annual';
@@ -163,20 +164,22 @@ export function Pricing() {
             </p>
 
             <div className={styles.billingToggle}>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 className={billingCycle === 'monthly' ? styles.toggleActive : styles.toggleButton}
                 onClick={() => setBillingCycle('monthly')}
               >
                 Monthly
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
                 className={billingCycle === 'annual' ? styles.toggleActive : styles.toggleButton}
                 onClick={() => setBillingCycle('annual')}
               >
                 Annual <span className={styles.toggleBadge}>Save 17%</span>
-              </button>
+              </Button>
             </div>
           </div>
         </section>
@@ -220,8 +223,9 @@ export function Pricing() {
                     )}
 
                     {canCheckout ? (
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
                         className={styles.tierCta}
                         onClick={() => handleCheckout(tier.planKey as string)}
                         disabled={checkoutStatus === 'loading' && activeCheckout === tier.planKey}
@@ -229,7 +233,7 @@ export function Pricing() {
                         {checkoutStatus === 'loading' && activeCheckout === tier.planKey
                           ? 'Redirecting...'
                           : tier.ctaLabel}
-                      </button>
+                      </Button>
                     ) : (
                       <a href={tier.ctaHref} className={styles.tierCta}>
                         {tier.ctaLabel}
@@ -279,8 +283,9 @@ export function Pricing() {
           <div className={styles.ctaContent}>
             <h2>Ready to build agents with long-term memory?</h2>
             <p>Start free today with a card on file, then upgrade when you need more capacity.</p>
-            <button
+            <Button
               type="button"
+              variant="ghost"
               className={styles.ctaButton}
               onClick={() => handleCheckout('free')}
               disabled={checkoutStatus === 'loading' && activeCheckout === 'free'}
@@ -288,7 +293,7 @@ export function Pricing() {
               {checkoutStatus === 'loading' && activeCheckout === 'free'
                 ? 'Redirecting...'
                 : 'Start Free'}
-            </button>
+            </Button>
           </div>
         </section>
       </main>

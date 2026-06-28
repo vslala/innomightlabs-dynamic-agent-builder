@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Send, CheckCircle, AlertCircle } from 'lucide-react';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
+import { Button } from '../components/ui/button';
 import { httpClient } from '../services/http';
 
 interface ContactFormData {
@@ -311,7 +312,7 @@ export function Contact() {
               </div>
 
               {/* Submit Button */}
-              <button
+              <Button
                 type="submit"
                 disabled={isSubmitting}
                 style={{
@@ -373,7 +374,7 @@ export function Contact() {
                     Submit
                   </>
                 )}
-              </button>
+              </Button>
             </form>
 
             {/* Rate Limit Notice */}

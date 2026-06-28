@@ -1439,11 +1439,14 @@ export function AgentDetail() {
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                   {availableSkills.map((skill) => (
-                    <button
+                    <Button
                       key={skill.skill_id}
                       type="button"
+                      variant="ghost"
                       onClick={() => selectSkillForInstall(skill)}
                       style={{
+                        display: "block",
+                        height: "auto",
                         border: selectedSkill?.skill_id === skill.skill_id
                           ? "2px solid var(--gradient-start)"
                           : "1px solid var(--border-subtle)",
@@ -1461,7 +1464,7 @@ export function AgentDetail() {
                       <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
                         {skill.description}
                       </div>
-                    </button>
+                    </Button>
                   ))}
                 </div>
               )}

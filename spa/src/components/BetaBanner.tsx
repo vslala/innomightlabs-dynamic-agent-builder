@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Sparkles } from 'lucide-react';
+import { Button } from './ui/button';
 
 const BANNER_DISMISSED_KEY = 'beta-banner-dismissed';
 const BANNER_HEIGHT = 52; // Approximate height in pixels
@@ -104,7 +105,9 @@ export default function BetaBanner() {
             </div>
 
             {/* Right - Dismiss button */}
-            <button
+            <Button
+              type="button"
+              variant="ghost"
               onClick={handleDismiss}
               style={{
                 display: 'flex',
@@ -137,7 +140,7 @@ export default function BetaBanner() {
             >
               <X style={{ width: '14px', height: '14px', strokeWidth: 2.5 }} />
               <span>Dismiss</span>
-            </button>
+            </Button>
           </div>
         </div>
       </div>

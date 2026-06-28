@@ -30,7 +30,7 @@ export function Sidebar() {
         width: "16rem",
         minWidth: "16rem",
         borderRight: "1px solid var(--border-subtle)",
-        backgroundColor: "#0a0a1a",
+        backgroundColor: "var(--bg-sidebar)",
       }}
     >
       <div
@@ -79,8 +79,8 @@ export function Sidebar() {
                   className={cn(
                     "transition-all duration-200",
                     isActive
-                      ? "bg-gradient-to-r from-[var(--gradient-start)]/15 to-[var(--gradient-mid)]/15 text-white"
-                      : "text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--text-primary)]"
+                      ? "text-[var(--nav-active-text)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                   )}
                   style={{
                     display: "flex",
@@ -90,6 +90,15 @@ export function Sidebar() {
                     padding: "0.625rem 0.75rem",
                     fontSize: "0.875rem",
                     fontWeight: 500,
+                    background: isActive
+                      ? "linear-gradient(90deg, rgba(12, 102, 228, 0.14), rgba(12, 102, 228, 0.06))"
+                      : undefined,
+                  }}
+                  onMouseEnter={(event) => {
+                    if (!isActive) event.currentTarget.style.background = "var(--nav-hover-bg)";
+                  }}
+                  onMouseLeave={(event) => {
+                    if (!isActive) event.currentTarget.style.background = "";
                   }}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />

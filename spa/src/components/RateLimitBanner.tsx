@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Button } from './ui/button';
 import styles from './RateLimitBanner.module.css';
 
 interface RateLimitDetail {
@@ -33,14 +34,16 @@ export function RateLimitBanner() {
           Upgrade plan
         </a>
       </div>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon"
         className={styles.dismiss}
         onClick={() => setDetail(null)}
         aria-label="Dismiss notification"
       >
         ✕
-      </button>
+      </Button>
     </div>
   );
 }

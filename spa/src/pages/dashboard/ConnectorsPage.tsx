@@ -797,33 +797,37 @@ function ConnectorSideNav({
         {connectorNavItems.map((item) => {
           const isActive = activeSection === item.id;
           return (
-            <button
+            <Button
               key={item.id}
               type="button"
+              variant="ghost"
               onClick={() => onChange(item.id)}
               className={
                 isActive
-                  ? "bg-gradient-to-r from-[var(--gradient-start)]/15 to-[var(--gradient-mid)]/15 text-white"
-                  : "text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--text-primary)]"
+                  ? "text-[var(--nav-active-text)]"
+                  : "text-[var(--text-muted)] hover:bg-[var(--nav-hover-bg)] hover:text-[var(--text-primary)]"
               }
               style={{
                 display: "flex",
                 alignItems: "center",
+                justifyContent: "flex-start",
                 gap: "0.75rem",
                 borderRadius: "0.75rem",
+                height: "auto",
                 padding: "0.75rem",
                 fontSize: "0.875rem",
                 fontWeight: 500,
-                border: 0,
-                cursor: "pointer",
                 textAlign: "left",
                 width: "100%",
                 transition: "all 0.2s",
+                background: isActive
+                  ? "linear-gradient(90deg, rgba(12, 102, 228, 0.14), rgba(12, 102, 228, 0.06))"
+                  : undefined,
               }}
             >
               <item.icon className="h-4 w-4 shrink-0" />
               {item.label}
-            </button>
+            </Button>
           );
         })}
       </nav>

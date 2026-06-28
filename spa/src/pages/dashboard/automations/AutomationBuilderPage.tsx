@@ -569,7 +569,7 @@ function toFlowEdges(edges: AutomationEdge[], selectedEdgeId?: string | null): A
     data: { automationEdge: edge },
     selected: selectedEdgeId === edge.edge_id,
     style: {
-      stroke: edge.label === "false" ? "#f97316" : edge.label === "true" ? "#22c55e" : "#667eea",
+      stroke: edge.label === "false" ? "#f97316" : edge.label === "true" ? "#22c55e" : "var(--gradient-start)",
       strokeWidth: selectedEdgeId === edge.edge_id ? 3 : 2,
     },
   }));
@@ -843,8 +843,10 @@ function AutomationNodeCard({ data, selected }: NodeProps<AutomationFlowNode>) {
       <div className="automation-node-card__header">
         <Icon className="h-4 w-4" />
         <span>{node.name}</span>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           className="automation-node-card__copy nodrag nopan"
           onClick={(event) => {
             event.stopPropagation();
@@ -854,7 +856,7 @@ function AutomationNodeCard({ data, selected }: NodeProps<AutomationFlowNode>) {
           aria-label={`Copy node ID for ${node.name}`}
         >
           {data.copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        </button>
+        </Button>
       </div>
       <div className="automation-node-card__meta">{node.type}</div>
       <Handle type="source" position={Position.Right} />
@@ -1409,9 +1411,20 @@ function AutomationBuilderContent() {
 
           <div className="automation-builder__canvas">
             <div className="automation-builder__canvas-rail">
-              <Button size="sm" onClick={addStep} title="Add step">
+              <Button
+                className="automation-builder__add-step-button"
+                size="sm"
+                onClick={addStep}
+                title="Add step"
+                style={{
+                  minWidth: "7.5rem",
+                  paddingInline: "1rem",
+                  color: "#ffffff",
+                  background: "var(--gradient-start)",
+                }}
+              >
                 <Plus className="h-4 w-4" />
-                Add Step
+                <span>Add Step</span>
               </Button>
               <Button
                 variant="outline"
@@ -1478,7 +1491,7 @@ function AutomationBuilderContent() {
               }}
               fitView
             >
-              <Background />
+              <Background color="var(--canvas-grid)" gap={18} size={1.4} />
               <Controls />
             </ReactFlow>
           </div>
@@ -1628,10 +1641,12 @@ function SmartValueHelper({
       <p>Copy a value and paste it into a prompt template or condition.</p>
       <div className="automation-smart-values__list">
         {examples.map((example) => (
-          <button
+          <Button
             key={`${example.label}-${example.value}`}
             type="button"
+            variant="ghost"
             className="automation-smart-values__item"
+            style={{ height: "auto" }}
             onClick={() => onCopy(example.value)}
           >
             <span>
@@ -1640,7 +1655,7 @@ function SmartValueHelper({
               <code>{example.value}</code>
             </span>
             {copiedValue === example.value ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-          </button>
+          </Button>
         ))}
       </div>
     </div>
@@ -1693,10 +1708,16 @@ function AutomationInspector({
             <p>Select a step to configure it.</p>
             <div className="automation-inspector__step-list">
               {steps.map((step) => (
-                <button key={step.node_id} type="button" onClick={() => onSelectNode(step.node_id)}>
+                <Button
+                  key={step.node_id}
+                  type="button"
+                  variant="ghost"
+                  onClick={() => onSelectNode(step.node_id)}
+                  style={{ height: "auto" }}
+                >
                   <span>{step.name}</span>
                   <small>{step.type === "condition" ? "IF/ELSE" : "Action"}</small>
-                </button>
+                </Button>
               ))}
             </div>
             <Button className="mt-4" variant="outline" onClick={onAddStep}>

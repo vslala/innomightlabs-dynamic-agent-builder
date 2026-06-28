@@ -2,19 +2,56 @@
 
 :root {
   --gradient-start: #667eea;
+  --gradient-start-rgb: 102, 126, 234;
   --gradient-mid: #764ba2;
   --gradient-end: #f093fb;
   --text-primary: #ffffff;
   --text-secondary: rgba(255, 255, 255, 0.85);
   --text-muted: rgba(255, 255, 255, 0.6);
   --bg-dark: #0f0f23;
+  --bg-primary: #0f0f23;
   --bg-card: rgba(255, 255, 255, 0.08);
   --bg-card-hover: rgba(255, 255, 255, 0.12);
   --bg-secondary: rgba(255, 255, 255, 0.1);
+  --bg-tertiary: rgba(255, 255, 255, 0.14);
+  --bg-sidebar: #0a0a1a;
+  --nav-active-text: #ffffff;
+  --nav-hover-bg: rgba(255, 255, 255, 0.05);
+  --shadow-soft: rgba(0, 0, 0, 0.28);
+  --code-bg: #121226;
+  --code-text: #e5e7eb;
+  --canvas-grid: rgba(255, 255, 255, 0.18);
   --border-subtle: rgba(255, 255, 255, 0.1);
   --accent-cyan: #00d4ff;
   --accent-pink: #ff6b9d;
   --accent-purple: #a855f7;
+}
+
+:root[data-theme="light"] {
+  --gradient-start: #0c66e4;
+  --gradient-start-rgb: 12, 102, 228;
+  --gradient-mid: #0055cc;
+  --gradient-end: #1d7afc;
+  --text-primary: #172b4d;
+  --text-secondary: #44546f;
+  --text-muted: #626f86;
+  --bg-dark: #ffffff;
+  --bg-primary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f7f8f9;
+  --bg-secondary: #f7f8f9;
+  --bg-tertiary: #f1f2f4;
+  --bg-sidebar: #ffffff;
+  --nav-active-text: #0c66e4;
+  --nav-hover-bg: #f1f2f4;
+  --shadow-soft: rgba(9, 30, 66, 0.12);
+  --code-bg: #f7f8f9;
+  --code-text: #172b4d;
+  --canvas-grid: rgba(9, 30, 66, 0.18);
+  --border-subtle: #dcdfe4;
+  --accent-cyan: #00b8d9;
+  --accent-pink: #ae2a19;
+  --accent-purple: #5e4db2;
 }
 
 * {
@@ -47,8 +84,6 @@ a {
 
 button {
   cursor: pointer;
-  border: none;
-  background: none;
   font-family: inherit;
 }
 

@@ -93,10 +93,11 @@ export function Login() {
         </div>
 
         <div className={styles.buttonGroup}>
-          <button
+          <Button
             onClick={handleGoogleLogin}
             className={styles.googleButton}
             type="button"
+            variant="ghost"
           >
             <svg className={styles.icon} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <path
@@ -117,16 +118,17 @@ export function Login() {
               />
             </svg>
             Continue with Google
-          </button>
+          </Button>
 
           <div className={styles.divider}>
             <span>or</span>
           </div>
 
-          <button
+          <Button
             onClick={handleEmailLogin}
             className={styles.emailButton}
             type="button"
+            variant="ghost"
           >
             <svg className={styles.icon} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path
@@ -138,7 +140,7 @@ export function Login() {
               />
             </svg>
             Continue with Email
-          </button>
+          </Button>
 
           {isLocalhost && (
             <>

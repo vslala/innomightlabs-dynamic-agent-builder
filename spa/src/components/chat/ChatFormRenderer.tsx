@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Button } from "../ui/button";
 import type { FormInput, FormSchema } from "../../types/form";
 
 export type FormAnswer = {
@@ -253,36 +254,21 @@ export function ChatFormRenderer({
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.625rem", paddingTop: "0.25rem" }}>
         {onCancel && (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={onCancel}
             disabled={isDisabled}
-            style={{
-              padding: "0.625rem 0.75rem",
-              borderRadius: "0.75rem",
-              border: "1px solid var(--border-subtle)",
-              background: "transparent",
-              color: "var(--text-secondary)",
-              cursor: isDisabled ? "not-allowed" : "pointer",
-            }}
           >
             Cancel
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           type="submit"
           disabled={isDisabled}
-          style={{
-            padding: "0.625rem 0.75rem",
-            borderRadius: "0.75rem",
-            border: "none",
-            background: "var(--gradient-start)",
-            color: "white",
-            cursor: isDisabled ? "not-allowed" : "pointer",
-          }}
         >
           {submitLabel}
-        </button>
+        </Button>
       </div>
     </form>
   );

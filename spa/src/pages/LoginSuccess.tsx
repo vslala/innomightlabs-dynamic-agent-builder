@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { pricingService } from '../services/pricing';
+import { Button } from '../components/ui/button';
 import styles from './LoginSuccess.module.css';
 
 interface UserInfo {
@@ -137,9 +138,9 @@ export function LoginSuccess() {
           </p>
         </div>
 
-        <button onClick={() => navigate('/dashboard')} className={styles.button}>
+        <Button onClick={() => navigate('/dashboard')} className={styles.button}>
           Go to Dashboard
-        </button>
+        </Button>
       </div>
     </div>
   );
