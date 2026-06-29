@@ -1,0 +1,95 @@
+id: upload_file
+namespace: core.artifacts
+name: Upload File
+description: Save agent-generated text content as a durable user artifact.
+system_prompt: |
+  Use this skill when you have generated file content that should be saved for the user.
+  Provide exactly one of text_content or base64_content.
+  Use html_report only for complete, safe HTML documents.
+  Use csv, markdown, json, text, or code for text-based artifacts.
+  Keep files under the maximum supported size.
+  The returned view_url opens the artifact page; download_url downloads the file.
+actions:
+  - name: upload_file
+    aliases: [save_artifact, upload_artifact, save_file]
+    description: Save text or base64 content as an artifact and return download/view links.
+    input_schema:
+      type: object
+      required: [artifact_type, title, filename]
+      properties:
+        artifact_type:
+          type: string
+          enum: [html_report, csv, markdown, json, text, code, file]
+          description: Artifact category for listing, validation, and display.
+        title:
+          type: string
+          description: Human-readable title shown in the artifact library.
+        filename:
+          type: string
+          description: Filename including extension.
+        mime_type:
+          type: string
+          description: Optional MIME type override. If omitted, the skill infers it from artifact type and filename.
+        text_content:
+          type: string
+          description: Text content to save. Use for HTML, CSV, Markdown, JSON, text, and code.
+        base64_content:
+          type: string
+          description: Base64-encoded content. Decoded content must be UTF-8 text in v1.
+        metadata:
+          type: object
+          description: Optional metadata to store in the artifact source.
+    action_form:
+      form_name: Upload File
+      submit_path: ""
+      form_inputs:
+        - input_type: select
+          name: artifact_type
+          label: Artifact type
+          value: text
+          options:
+            - label: HTML report
+              value: html_report
+            - label: CSV
+              value: csv
+            - label: Markdown
+              value: markdown
+            - label: JSON
+              value: json
+            - label: Text
+              value: text
+            - label: Code
+              value: code
+            - label: File
+              value: file
+        - input_type: text
+          name: title
+          label: Title
+          attr:
+            smart_values: "true"
+        - input_type: text
+          name: filename
+          label: Filename
+          attr:
+            smart_values: "true"
+        - input_type: text
+          name: mime_type
+          label: MIME type
+          attr:
+            optional: "true"
+            smart_values: "true"
+        - input_type: text_area
+          name: text_content
+          label: Text content
+          attr:
+            optional: "true"
+            rows: "12"
+            smart_values: "true"
+        - input_type: text_area
+          name: base64_content
+          label: Base64 content
+          attr:
+            optional: "true"
+            rows: "8"
+            smart_values: "true"
+    handler: actions:upload_file

@@ -5,6 +5,8 @@ from src.artifacts.repository import ArtifactRepository
 from src.artifacts.storage import ArtifactStorage, sanitize_filename
 from src.config import settings
 
+VIEWABLE_ARTIFACT_TYPES = {"html_report", "csv", "markdown", "json", "text", "code"}
+
 
 class ArtifactNotFoundError(Exception):
     pass
@@ -70,7 +72,7 @@ class ArtifactService:
 
     def view_url(self, owner_email: str, artifact_id: str) -> str:
         artifact = self._require_artifact(owner_email, artifact_id)
-        if artifact.artifact_type != "html_report":
+        if not is_browser_viewable_artifact(artifact):
             raise ArtifactNotViewableError(artifact_id)
         return self._view_url(artifact)
 
@@ -85,7 +87,7 @@ class ArtifactService:
             source=artifact.source,
             created_at=artifact.created_at,
             url=self.storage.presign_get_url(artifact.s3_key, filename=artifact.filename),
-            view_url=self._artifact_page_url(artifact) if artifact.artifact_type == "html_report" else None,
+            view_url=self._artifact_page_url(artifact) if is_browser_viewable_artifact(artifact) else None,
         )
 
     def _require_artifact(self, owner_email: str, artifact_id: str) -> Artifact:
@@ -99,7 +101,7 @@ class ArtifactService:
             artifact.s3_key,
             filename=artifact.filename,
             disposition="inline",
-            content_type="text/html; charset=utf-8",
+            content_type=artifact.mime_type,
         )
 
     def _artifact_page_url(self, artifact: Artifact) -> str:
@@ -107,3 +109,7 @@ class ArtifactService:
         if settings.frontend_url:
             return f"{settings.frontend_url.rstrip('/')}{path}"
         return path
+
+
+def is_browser_viewable_artifact(artifact: Artifact) -> bool:
+    return artifact.artifact_type in VIEWABLE_ARTIFACT_TYPES

@@ -7,7 +7,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 
-ArtifactType = Literal["html_report", "image", "file"]
+ArtifactType = Literal["html_report", "image", "file", "csv", "markdown", "json", "text", "code"]
 
 
 class ArtifactSource(BaseModel):

@@ -124,7 +124,28 @@ def test_artifacts_router_lists_gets_downloads_and_views(test_client: TestClient
     assert "response-content-disposition=inline" in view_response.json()["url"]
 
 
-def test_artifact_view_rejects_non_html_artifact(dynamodb_table, monkeypatch):
+def test_artifact_view_supports_text_artifacts(dynamodb_table, monkeypatch):
+    _create_media_bucket()
+    monkeypatch.setattr("src.artifacts.storage.settings.conversation_media_bucket", "innomightlabs-conversations-meta")
+
+    service = ArtifactService()
+    artifact = service.create_artifact(
+        owner_email=TEST_USER_EMAIL,
+        artifact_type="markdown",
+        title="Notes",
+        filename="notes.md",
+        mime_type="text/markdown; charset=utf-8",
+        body=b"# Notes",
+    )
+
+    assert artifact.view_url.endswith(f"/dashboard/artifacts/{artifact.artifact_id}")
+    view_url = service.view_url(TEST_USER_EMAIL, artifact.artifact_id)
+    assert "notes.md" in view_url
+    assert "response-content-disposition=inline" in view_url
+    assert "response-content-type=text%2Fmarkdown" in view_url
+
+
+def test_artifact_view_rejects_non_viewable_artifact(dynamodb_table, monkeypatch):
     _create_media_bucket()
     monkeypatch.setattr("src.artifacts.storage.settings.conversation_media_bucket", "innomightlabs-conversations-meta")
 
