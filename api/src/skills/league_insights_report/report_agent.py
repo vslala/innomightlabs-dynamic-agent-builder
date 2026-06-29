@@ -51,11 +51,12 @@ async def generate_report_html_with_agent(
 def build_report_prompt(*, report_data: dict[str, Any]) -> str:
     scope = report_data["report_scope"]
     sections = (
-        "overview, player performance, lane and macro insights, combat highlights, "
-        "objective control, mistakes, recommendations, and next-game checklist"
+        "overview, player performance, rune and summoner spell setup, itemization, "
+        "lane and macro insights, combat highlights, objective control, mistakes, "
+        "recommendations, and next-game checklist"
         if scope == "single_match"
-        else "trend overview, champion and role patterns, consistency, recurring strengths, "
-        "recurring mistakes, objective trends, improvement priorities, and practice checklist"
+        else "trend overview, champion and role patterns, rune and itemization patterns, consistency, "
+        "recurring strengths, recurring mistakes, objective trends, improvement priorities, and practice checklist"
     )
     data_json = json.dumps(report_data, ensure_ascii=True, separators=(",", ":"))
     return f"""Generate a complete, detailed League of Legends HTML report from the JSON data below.
@@ -67,6 +68,8 @@ Output requirements:
 - Make the report visually polished, readable, and consistent with a game analytics product.
 - Include these sections: {sections}.
 - Explain the insights in clear, human language and include concrete improvement advice.
+- Use rune ids, summoner spell ids, item ids, combat metrics, early-game metrics, and vision/objective data when they are present.
+- If ids are present without names, refer to them as ids and explain what the setup implies from the surrounding performance data instead of inventing names.
 - Use only the supplied data. Do not invent match ids, player stats, ranks, or champion facts.
 
 Report data JSON:

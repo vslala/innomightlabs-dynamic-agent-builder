@@ -125,6 +125,14 @@ def test_report_data_builds_multi_match_trends():
     assert payload["trends"]["wins"] == 1
     assert payload["trends"]["win_rate"] == 0.5
     assert payload["matches"][0]["kill_participation"] == 0.75
+    assert payload["matches"][0]["summoner_spells"] == {"spell1_id": 4, "spell2_id": 7}
+    assert payload["matches"][0]["runes"]["keystone_id"] == 8369
+    assert payload["matches"][0]["runes"]["primary_style_id"] == 8300
+    assert payload["matches"][0]["items"]["completed_item_ids"] == [1056, 6655, 3020, 4645, 3089, 3135]
+    assert payload["matches"][0]["items"]["trinket_item_id"] == 3363
+    assert payload["matches"][0]["combat"]["double_kills"] == 2
+    assert payload["matches"][0]["early_game"]["gold_per_minute"] == 420.5
+    assert payload["trends"]["keystone_perks"] == [{"value": "8369", "games": 2}]
 
 
 def test_report_agent_rejects_non_krishna_mini_agent():
@@ -376,17 +384,64 @@ def _match(match_id: str, win: bool, *, champion: str = "Ahri") -> dict:
                     "championName": champion,
                     "teamPosition": "MIDDLE",
                     "summonerName": "Player",
+                    "summoner1Id": 4,
+                    "summoner2Id": 7,
                     "kills": 5,
                     "deaths": 2,
                     "assists": 1,
                     "totalDamageDealtToChampions": 12000,
+                    "totalDamageTaken": 18000,
+                    "damageSelfMitigated": 9000,
                     "goldEarned": 11000,
+                    "goldSpent": 10300,
                     "totalMinionsKilled": 180,
                     "neutralMinionsKilled": 12,
                     "visionScore": 24,
                     "wardsPlaced": 9,
                     "wardsKilled": 3,
+                    "visionWardsBoughtInGame": 2,
                     "summonerLevel": 300,
+                    "item0": 1056,
+                    "item1": 6655,
+                    "item2": 3020,
+                    "item3": 4645,
+                    "item4": 3089,
+                    "item5": 3135,
+                    "item6": 3363,
+                    "itemsPurchased": 24,
+                    "consumablesPurchased": 6,
+                    "doubleKills": 2,
+                    "tripleKills": 1,
+                    "largestKillingSpree": 4,
+                    "largestMultiKill": 3,
+                    "firstBloodKill": True,
+                    "perks": {
+                        "statPerks": {"offense": 5008, "flex": 5008, "defense": 5002},
+                        "styles": [
+                            {
+                                "style": 8300,
+                                "selections": [
+                                    {"perk": 8369},
+                                    {"perk": 8304},
+                                    {"perk": 8345},
+                                    {"perk": 8347},
+                                ],
+                            },
+                            {
+                                "style": 8100,
+                                "selections": [{"perk": 8139}, {"perk": 8135}],
+                            },
+                        ],
+                    },
+                    "challenges": {
+                        "goldPerMinute": 420.5,
+                        "damagePerMinute": 650.1,
+                        "kdaAt10": 2.0,
+                        "controlWardsPlaced": 2,
+                        "skillshotsDodged": 12,
+                        "skillshotsHit": 55,
+                        "soloKills": 1,
+                    },
                 },
                 {
                     "puuid": "ally",
