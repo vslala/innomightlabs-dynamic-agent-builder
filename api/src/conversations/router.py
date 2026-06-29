@@ -17,7 +17,7 @@ from src.conversations.models import (
     UpdateConversationRequest,
 )
 from src.conversations.repository import ConversationRepository
-from src.messages.models import MessageResponse
+from src.messages.models import Message, MessageResponse
 from src.messages.repositories import get_message_repository
 from src.messages.responses import MessageResponseFactory
 
@@ -46,6 +46,40 @@ def validate_agent(agent_id: str, user_email: str) -> None:
             status_code=404,
             detail=f"Agent '{agent_id}' not found or does not belong to you",
         )
+
+
+def find_visible_messages_newest_first(
+    conversation_id: str,
+    *,
+    limit: int,
+    cursor: Optional[str],
+    include_system: bool,
+) -> tuple[list[Message], Optional[str], bool]:
+    if include_system:
+        return message_repository.find_by_conversation_newest_first(
+            conversation_id=conversation_id,
+            limit=limit,
+            cursor=cursor,
+        )
+
+    visible_messages: list[Message] = []
+    next_cursor = cursor
+    has_more = True
+
+    while len(visible_messages) < limit and has_more:
+        page_limit = max(1, limit - len(visible_messages))
+        page_messages, next_cursor, has_more = (
+            message_repository.find_by_conversation_newest_first(
+                conversation_id=conversation_id,
+                limit=page_limit,
+                cursor=next_cursor,
+            )
+        )
+        visible_messages.extend(
+            message for message in page_messages if message.role != "system"
+        )
+
+    return visible_messages[:limit], next_cursor, has_more
 
 
 @router.post("/", response_model=ConversationResponse, status_code=201)
@@ -147,15 +181,12 @@ async def get_messages(
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # Get messages (newest first)
-    messages, next_cursor, has_more = message_repository.find_by_conversation_newest_first(
-        conversation_id=conversation_id, limit=limit, cursor=cursor
+    visible_messages, next_cursor, has_more = find_visible_messages_newest_first(
+        conversation_id=conversation_id,
+        limit=limit,
+        cursor=cursor,
+        include_system=include_system,
     )
-    visible_messages = [
-        message
-        for message in messages
-        if include_system or message.role != "system"
-    ]
 
     return Paginated[MessageResponse](
         items=[message_response_factory.to_response(m) for m in visible_messages],

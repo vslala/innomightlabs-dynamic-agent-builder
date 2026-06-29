@@ -196,6 +196,69 @@ class TestConversationsRouter:
         roles = [item["role"] for item in response.json()["items"]]
         assert roles == ["assistant", "user"]
 
+    def test_get_messages_paginates_over_hidden_system_messages(
+        self, test_client: TestClient, auth_headers: dict
+    ):
+        from src.messages.models import Message
+        from src.messages.repositories import get_message_repository
+
+        request_data = {**CONVERSATION_CREATE_REQUEST, "agent_id": self.agent_id}
+        create_response = test_client.post(
+            "/conversations/", json=request_data, headers=auth_headers
+        )
+        conversation_id = create_response.json()["conversation_id"]
+
+        repo = get_message_repository("dynamodb")
+        now = datetime.now(timezone.utc)
+        repo.save(
+            Message(
+                conversation_id=conversation_id,
+                role="user",
+                content="First visible",
+                created_at=now,
+            )
+        )
+        repo.save(
+            Message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content="Second visible",
+                created_at=now + timedelta(seconds=1),
+            )
+        )
+        for offset in range(2, 7):
+            repo.save(
+                Message(
+                    conversation_id=conversation_id,
+                    role="system",
+                    content='{"type":"tool_call_audit"}',
+                    created_at=now + timedelta(seconds=offset),
+                )
+            )
+        repo.save(
+            Message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content="Latest visible",
+                created_at=now + timedelta(seconds=7),
+            )
+        )
+
+        response = test_client.get(
+            f"/conversations/{conversation_id}/messages?limit=3",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert [item["content"] for item in data["items"]] == [
+            "Latest visible",
+            "Second visible",
+            "First visible",
+        ]
+        assert data["has_more"] is False
+        assert data["next_cursor"] is None
+
     def test_get_messages_can_include_system_messages(
         self, test_client: TestClient, auth_headers: dict
     ):
