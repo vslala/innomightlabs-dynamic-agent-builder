@@ -1,0 +1,372 @@
+id: riot_lol_api_client
+namespace: games.league_of_legends
+name: Riot LOL API Client
+description: Query Riot's League of Legends APIs and return compact player, match, ranked, mastery, live-game, status, challenge, and clash summaries.
+system_prompt: |
+  Use this skill when the user asks for League of Legends data from Riot APIs.
+  The Riot API key is stored as encrypted skill configuration. Never ask the user to paste it into chat after the skill is installed.
+  Prefer get_recent_match_summaries for recent-game analysis.
+  Prefer lookup_player before other calls when the user provides a Riot ID and you need the player's PUUID.
+  Results are compact summaries, not full Riot payloads.
+  If an action returns ok:false, explain the error and ask for missing or corrected player/region details.
+form:
+  - input_type: password
+    name: riot_api_key
+    label: Riot developer API key
+    attr:
+      secret: "true"
+      placeholder: RGAPI-...
+  - input_type: select
+    name: default_routing_region
+    label: Default routing region
+    value: europe
+    options:
+      - label: Americas
+        value: americas
+      - label: Asia
+        value: asia
+      - label: Europe
+        value: europe
+      - label: SEA
+        value: sea
+  - input_type: select
+    name: default_platform_region
+    label: Default platform region
+    value: euw1
+    options:
+      - label: Brazil
+        value: br1
+      - label: Europe Nordic & East
+        value: eun1
+      - label: Europe West
+        value: euw1
+      - label: Japan
+        value: jp1
+      - label: Korea
+        value: kr
+      - label: Latin America North
+        value: la1
+      - label: Latin America South
+        value: la2
+      - label: Middle East
+        value: me1
+      - label: North America
+        value: na1
+      - label: Oceania
+        value: oc1
+      - label: Philippines
+        value: ph2
+      - label: Russia
+        value: ru
+      - label: Singapore
+        value: sg2
+      - label: Thailand
+        value: th2
+      - label: Turkey
+        value: tr1
+      - label: Taiwan
+        value: tw2
+      - label: Vietnam
+        value: vn2
+actions:
+  - name: lookup_player
+    aliases: [riot_lookup_player, lol_lookup_player]
+    description: Resolve a Riot ID or PUUID into compact account and summoner profile details.
+    input_schema:
+      type: object
+      properties:
+        game_name:
+          type: string
+          description: Riot ID game name.
+        tag_line:
+          type: string
+          description: Riot ID tag line without #.
+        puuid:
+          type: string
+          description: Optional PUUID if already known.
+        routing_region:
+          type: string
+          enum: [americas, asia, europe, sea]
+        platform_region:
+          type: string
+    action_form: &player_lookup_form
+      form_name: Riot Player Lookup
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: game_name
+          label: Riot game name
+          attr:
+            optional: "true"
+            smart_values: "true"
+        - input_type: text
+          name: tag_line
+          label: Riot tag line
+          attr:
+            optional: "true"
+            smart_values: "true"
+        - input_type: text
+          name: puuid
+          label: PUUID
+          attr:
+            optional: "true"
+            smart_values: "true"
+    handler: actions:lookup_player
+  - name: get_recent_match_summaries
+    aliases: [riot_recent_matches, lol_recent_matches]
+    description: Fetch recent match ids and details, returning compact per-match player summaries for analysis.
+    input_schema:
+      type: object
+      properties:
+        game_name:
+          type: string
+        tag_line:
+          type: string
+        puuid:
+          type: string
+        count:
+          type: integer
+          description: Number of recent matches, clamped to 1-10.
+        queue:
+          type: integer
+          description: Optional Riot queue id filter.
+        routing_region:
+          type: string
+          enum: [americas, asia, europe, sea]
+        platform_region:
+          type: string
+    action_form:
+      form_name: Recent League Matches
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: game_name
+          label: Riot game name
+          attr:
+            optional: "true"
+            smart_values: "true"
+        - input_type: text
+          name: tag_line
+          label: Riot tag line
+          attr:
+            optional: "true"
+            smart_values: "true"
+        - input_type: text
+          name: puuid
+          label: PUUID
+          attr:
+            optional: "true"
+            smart_values: "true"
+        - input_type: text
+          name: count
+          label: Match count
+          value: "5"
+          attr:
+            optional: "true"
+        - input_type: text
+          name: queue
+          label: Queue id
+          attr:
+            optional: "true"
+            smart_values: "true"
+    handler: actions:get_recent_match_summaries
+  - name: get_match_details
+    aliases: [riot_match_details, lol_match_details]
+    description: Fetch a match and return compact metadata, teams, participants, and optional selected-player performance.
+    input_schema: &match_schema
+      type: object
+      required: [match_id]
+      properties:
+        match_id:
+          type: string
+        game_name:
+          type: string
+        tag_line:
+          type: string
+        puuid:
+          type: string
+        routing_region:
+          type: string
+          enum: [americas, asia, europe, sea]
+    action_form: &match_form
+      form_name: League Match Details
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: match_id
+          label: Match id
+          attr:
+            smart_values: "true"
+        - input_type: text
+          name: game_name
+          label: Riot game name
+          attr:
+            optional: "true"
+            smart_values: "true"
+        - input_type: text
+          name: tag_line
+          label: Riot tag line
+          attr:
+            optional: "true"
+            smart_values: "true"
+        - input_type: text
+          name: puuid
+          label: PUUID
+          attr:
+            optional: "true"
+            smart_values: "true"
+    handler: actions:get_match_details
+  - name: get_match_timeline
+    aliases: [riot_match_timeline, lol_match_timeline]
+    description: Fetch a match timeline and return compact key objective, kill, and structure events.
+    input_schema:
+      <<: *match_schema
+      properties:
+        match_id:
+          type: string
+        routing_region:
+          type: string
+          enum: [americas, asia, europe, sea]
+        max_events:
+          type: integer
+          description: Maximum key events to return, clamped to 1-80.
+    action_form: *match_form
+    handler: actions:get_match_timeline
+  - name: get_ranked_profile
+    aliases: [riot_ranked_profile, lol_ranked_profile]
+    description: Return compact ranked queue entries, LP, wins, losses, win rate, and streak flags.
+    input_schema:
+      type: object
+      properties:
+        game_name:
+          type: string
+        tag_line:
+          type: string
+        puuid:
+          type: string
+        routing_region:
+          type: string
+          enum: [americas, asia, europe, sea]
+        platform_region:
+          type: string
+    action_form: *player_lookup_form
+    handler: actions:get_ranked_profile
+  - name: get_champion_mastery
+    aliases: [riot_champion_mastery, lol_champion_mastery]
+    description: Return top champion mastery rows or a specific champion mastery summary.
+    input_schema:
+      type: object
+      properties:
+        game_name:
+          type: string
+        tag_line:
+          type: string
+        puuid:
+          type: string
+        champion_id:
+          type: integer
+        limit:
+          type: integer
+          description: Top champion count, clamped to 1-20.
+        routing_region:
+          type: string
+          enum: [americas, asia, europe, sea]
+        platform_region:
+          type: string
+    action_form: *player_lookup_form
+    handler: actions:get_champion_mastery
+  - name: get_live_game
+    aliases: [riot_live_game, lol_live_game]
+    description: Return the player's current live game summary if they are in a game.
+    input_schema:
+      type: object
+      properties:
+        game_name:
+          type: string
+        tag_line:
+          type: string
+        puuid:
+          type: string
+        routing_region:
+          type: string
+          enum: [americas, asia, europe, sea]
+        platform_region:
+          type: string
+    action_form: *player_lookup_form
+    handler: actions:get_live_game
+  - name: get_champion_rotations
+    aliases: [riot_champion_rotations, lol_champion_rotations]
+    description: Return free champion rotation ids for a platform region.
+    input_schema: &platform_schema
+      type: object
+      properties:
+        platform_region:
+          type: string
+    action_form:
+      form_name: League Platform Region
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: platform_region
+          label: Platform region
+          attr:
+            optional: "true"
+            placeholder: euw1
+            smart_values: "true"
+    handler: actions:get_champion_rotations
+  - name: get_lol_status
+    aliases: [riot_lol_status, lol_status]
+    description: Return current platform maintenance and incident summaries.
+    input_schema: *platform_schema
+    action_form:
+      form_name: League Status
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: platform_region
+          label: Platform region
+          attr:
+            optional: "true"
+            placeholder: euw1
+            smart_values: "true"
+    handler: actions:get_lol_status
+  - name: get_challenges
+    aliases: [riot_challenges, lol_challenges]
+    description: Return compact player challenge progress data.
+    input_schema:
+      type: object
+      properties:
+        game_name:
+          type: string
+        tag_line:
+          type: string
+        puuid:
+          type: string
+        include_config:
+          type: boolean
+        routing_region:
+          type: string
+          enum: [americas, asia, europe, sea]
+        platform_region:
+          type: string
+    action_form: *player_lookup_form
+    handler: actions:get_challenges
+  - name: get_clash
+    aliases: [riot_clash, lol_clash]
+    description: Return current Clash player registration and team summaries.
+    input_schema:
+      type: object
+      properties:
+        game_name:
+          type: string
+        tag_line:
+          type: string
+        puuid:
+          type: string
+        routing_region:
+          type: string
+          enum: [americas, asia, europe, sea]
+        platform_region:
+          type: string
+    action_form: *player_lookup_form
+    handler: actions:get_clash
