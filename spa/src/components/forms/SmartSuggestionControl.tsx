@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import type { FormInput, FormValue } from "../../types/form";
 import {
   smartSuggestionService,
@@ -79,17 +80,13 @@ export function SmartSuggestionControl({
   return (
     <div className="rounded-lg border border-[var(--border-subtle)] bg-white/[0.04] p-3">
       <div className="flex flex-col gap-2 min-[420px]:flex-row">
-        <input
+        <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={config.prompt_placeholder || `Describe ${field.label.toLowerCase()}`}
           disabled={!settingsLoaded || !isConfigured || loading}
-          className="h-10 min-w-0 flex-1 rounded-md border border-[var(--border-subtle)] bg-transparent px-3.5 py-2 text-sm leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--gradient-start)]"
-          style={{
-            paddingInline: "0.875rem",
-            paddingBlock: "0.5rem",
-            boxSizing: "border-box",
-          }}
+          className="min-w-0 flex-1"
+          style={{ minHeight: "var(--control-height-sm)" }}
         />
         {isConfigured ? (
           <Button
@@ -97,7 +94,7 @@ export function SmartSuggestionControl({
             size="sm"
             onClick={handleSuggest}
             disabled={!query.trim() || loading}
-            className="h-10 w-full shrink-0 px-3 min-[420px]:w-auto min-[420px]:min-w-28"
+            className="w-full shrink-0 min-[420px]:w-auto min-[420px]:min-w-28"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             <span className="truncate">{config.button_label || "Suggest"}</span>
@@ -109,7 +106,7 @@ export function SmartSuggestionControl({
             variant="outline"
             onClick={handleConfigure}
             disabled={!settingsLoaded}
-            className="h-10 w-full shrink-0 px-3 min-[420px]:w-auto"
+            className="w-full shrink-0 min-[420px]:w-auto"
           >
             <span className="truncate">Configure model first</span>
           </Button>

@@ -1,5 +1,5 @@
-import clsx from "clsx";
 import type { FormInput, FormValue } from "../../../types/form";
+import { Button } from "../../ui/button";
 import styles from "./ChoiceField.module.css";
 
 interface Props {
@@ -16,17 +16,15 @@ export function ChoiceField({ field, value, onChange }: Props) {
   return (
     <div className={styles.container}>
       {choiceOptions.map((option) => (
-        <button
+        <Button
           key={option.value}
           type="button"
+          variant={value === option.value ? "default" : "outline"}
+          size="sm"
           onClick={() => onChange(option.value)}
-          className={clsx(
-            styles.choiceButton,
-            value === option.value && styles.choiceButtonActive
-          )}
         >
           {option.label}
-        </button>
+        </Button>
       ))}
     </div>
   );

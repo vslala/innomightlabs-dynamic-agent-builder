@@ -2,7 +2,16 @@ import { useState } from 'react';
 import { Send, CheckCircle, AlertCircle } from 'lucide-react';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
-import { Button } from '../components/ui/button';
+import {
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Textarea,
+} from '../components/ui';
 import { httpClient } from '../services/http';
 
 interface ContactFormData {
@@ -71,11 +80,13 @@ export function Contact() {
   };
 
   const handleChange = (
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleFieldChange = (name: keyof ContactFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -168,36 +179,17 @@ export function Contact() {
                 <label htmlFor="type" style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '8px' }}>
                   What can we help you with?
                 </label>
-                <select
-                  id="type"
-                  name="type"
-                  value={formData.type}
-                  onChange={handleChange}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid rgba(148, 163, 184, 0.2)',
-                    borderRadius: '10px',
-                    color: '#e2e8f0',
-                    fontSize: '0.9375rem',
-                    transition: 'all 0.2s ease',
-                    cursor: 'pointer',
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = 'rgba(102, 126, 234, 0.5)';
-                    e.target.style.outline = 'none';
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = 'rgba(148, 163, 184, 0.2)';
-                  }}
-                >
-                  <option value="support">Support Question</option>
-                  <option value="feedback">Product Feedback</option>
-                  <option value="bug-report">Bug Report</option>
-                  <option value="feature-request">Feature Request</option>
-                </select>
+                <Select value={formData.type} onValueChange={(value) => handleFieldChange('type', value)}>
+                  <SelectTrigger style={{ background: 'rgba(15, 23, 42, 0.6)', borderColor: 'rgba(148, 163, 184, 0.2)', color: '#e2e8f0' }}>
+                    <SelectValue placeholder="Select a request type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="support">Support Question</SelectItem>
+                    <SelectItem value="feedback">Product Feedback</SelectItem>
+                    <SelectItem value="bug-report">Bug Report</SelectItem>
+                    <SelectItem value="feature-request">Feature Request</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Email */}
@@ -205,7 +197,7 @@ export function Contact() {
                 <label htmlFor="email" style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '8px' }}>
                   Your Email
                 </label>
-                <input
+                <Input
                   type="email"
                   id="email"
                   name="email"
@@ -213,23 +205,7 @@ export function Contact() {
                   onChange={handleChange}
                   required
                   placeholder="you@example.com"
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid rgba(148, 163, 184, 0.2)',
-                    borderRadius: '10px',
-                    color: '#e2e8f0',
-                    fontSize: '0.9375rem',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = 'rgba(102, 126, 234, 0.5)';
-                    e.target.style.outline = 'none';
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = 'rgba(148, 163, 184, 0.2)';
-                  }}
+                  style={{ background: 'rgba(15, 23, 42, 0.6)', borderColor: 'rgba(148, 163, 184, 0.2)', color: '#e2e8f0' }}
                 />
               </div>
 
@@ -238,7 +214,7 @@ export function Contact() {
                 <label htmlFor="subject" style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '8px' }}>
                   Subject
                 </label>
-                <input
+                <Input
                   type="text"
                   id="subject"
                   name="subject"
@@ -248,23 +224,7 @@ export function Contact() {
                   minLength={5}
                   maxLength={200}
                   placeholder="Brief summary of your message"
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid rgba(148, 163, 184, 0.2)',
-                    borderRadius: '10px',
-                    color: '#e2e8f0',
-                    fontSize: '0.9375rem',
-                    transition: 'all 0.2s ease',
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = 'rgba(102, 126, 234, 0.5)';
-                    e.target.style.outline = 'none';
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = 'rgba(148, 163, 184, 0.2)';
-                  }}
+                  style={{ background: 'rgba(15, 23, 42, 0.6)', borderColor: 'rgba(148, 163, 184, 0.2)', color: '#e2e8f0' }}
                 />
                 <p style={{ marginTop: '4px', fontSize: '0.75rem', color: '#64748b' }}>
                   {formData.subject.length}/200 characters
@@ -276,7 +236,7 @@ export function Contact() {
                 <label htmlFor="description" style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '8px' }}>
                   Description
                 </label>
-                <textarea
+                <Textarea
                   id="description"
                   name="description"
                   value={formData.description}
@@ -287,23 +247,10 @@ export function Contact() {
                   rows={8}
                   placeholder="Please provide as much detail as possible..."
                   style={{
-                    width: '100%',
-                    padding: '12px 16px',
                     background: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid rgba(148, 163, 184, 0.2)',
-                    borderRadius: '10px',
+                    borderColor: 'rgba(148, 163, 184, 0.2)',
                     color: '#e2e8f0',
-                    fontSize: '0.9375rem',
-                    transition: 'all 0.2s ease',
                     resize: 'vertical',
-                    fontFamily: 'inherit',
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = 'rgba(102, 126, 234, 0.5)';
-                    e.target.style.outline = 'none';
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = 'rgba(148, 163, 184, 0.2)';
                   }}
                 />
                 <p style={{ marginTop: '4px', fontSize: '0.75rem', color: '#64748b' }}>

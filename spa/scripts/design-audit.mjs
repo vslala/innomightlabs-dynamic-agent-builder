@@ -4,14 +4,11 @@ import { join, relative } from "node:path";
 const root = process.cwd();
 const scanRoots = ["src/pages", "src/components"];
 const allowedRawControlFiles = [
-  "src/components/ui/button.tsx",
-  "src/components/ui/input.tsx",
-  "src/components/ui/select.tsx",
-  "src/components/ui/textarea.tsx",
+  "src/components/ui/",
 ];
 
 const rawControlPattern = /<(button|input|select|textarea)\b/g;
-const spacingOverridePattern = /\b(className|style)=\{?["'`][^"'`]*(?:\bp-\d|\bpx-\d|\bpy-\d|\bgap-\d|\bspace-y-\d)/g;
+const buttonClassNamePattern = /<Button\b[^>]*\bclassName=\{?["'`]([^"'`]*)/g;
 
 const findings = [];
 
@@ -21,7 +18,7 @@ for (const scanRoot of scanRoots) {
     const rel = relative(root, file);
     const source = readFileSync(file, "utf8");
 
-    if (!allowedRawControlFiles.includes(rel)) {
+    if (!allowedRawControlFiles.some((allowed) => rel === allowed || rel.startsWith(allowed))) {
       const rawControls = [...source.matchAll(rawControlPattern)].map((match) => match[1]);
       if (rawControls.length) {
         findings.push({
@@ -31,11 +28,13 @@ for (const scanRoot of scanRoots) {
       }
     }
 
-    const spacingOverrides = [...source.matchAll(spacingOverridePattern)];
-    if (spacingOverrides.length && rel.startsWith("src/pages/")) {
+    const buttonContractOverrides = [...source.matchAll(buttonClassNamePattern)].filter((match) =>
+      hasButtonContractOverride(match[1] ?? ""),
+    );
+    if (buttonContractOverrides.length) {
       findings.push({
         file: rel,
-        issue: "page-level spacing utilities should migrate to layout primitives",
+        issue: "button sizing/padding should come from Button size variants",
       });
     }
   }
@@ -62,4 +61,11 @@ function* walk(dir) {
       yield path;
     }
   }
+}
+
+function hasButtonContractOverride(className) {
+  return className.split(/\s+/).some((token) => {
+    const baseClass = token.split(":").pop() ?? token;
+    return /^(p|px|py)-\d/.test(baseClass) || /^h-\d/.test(baseClass) || /^w-\d/.test(baseClass);
+  });
 }

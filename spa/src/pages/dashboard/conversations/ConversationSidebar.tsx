@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Loader2, MessageSquare, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
 import type { AgentResponse } from "../../../services/agents/AgentApiService";
 import type { ConversationResponse } from "../../../types/conversation";
 
@@ -40,19 +41,18 @@ export function ConversationSidebar({
             variant="ghost"
             title="New conversation"
             onClick={onNewConversation}
-            className="h-8 w-8"
           >
             <Plus className="h-4 w-4" />
           </Button>
         </div>
 
-        <div className="mt-5 flex h-11 items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-white/5 px-4">
-          <Search className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
-          <input
+        <div className="relative mt-5">
+          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+          <Input
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search conversations"
-            className="min-w-0 flex-1 bg-transparent text-sm leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+            style={{ paddingLeft: "2.75rem" }}
           />
         </div>
       </div>
@@ -84,7 +84,7 @@ export function ConversationSidebar({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="rounded-md p-1 text-red-300 opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-200 group-hover:opacity-100"
+                  className="rounded-md text-red-300 opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-200 group-hover:opacity-100"
                   style={{ height: "1.75rem", width: "1.75rem" }}
                   disabled={deletingId === conversation.conversation_id}
                   onClick={(event) => {

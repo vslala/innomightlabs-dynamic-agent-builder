@@ -14,6 +14,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Checkbox,
   Input,
   Label,
   Textarea,
@@ -284,8 +285,7 @@ export function AgentOverviewPage() {
                       className="flex cursor-pointer items-start rounded-lg border border-[var(--border-default)] bg-[var(--surface-control)]"
                       style={{ gap: "var(--space-3)", padding: "var(--space-4)" }}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={publishForm.included_skill_ids.includes(skill.installed_skill_id)}
                         onChange={() => togglePublishSkill(skill.installed_skill_id)}
                         className="mt-1 shrink-0"

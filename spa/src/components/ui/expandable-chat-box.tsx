@@ -66,7 +66,7 @@ export function ExpandableChatBox({
         <Button
           type="button"
           size="icon"
-          className="h-10 w-10 rounded-full"
+          className="rounded-full"
           disabled={!value.trim() || disabled || isSubmitting}
           onClick={onSubmit}
         >
@@ -80,4 +80,3 @@ export function ExpandableChatBox({
     </div>
   );
 }
-

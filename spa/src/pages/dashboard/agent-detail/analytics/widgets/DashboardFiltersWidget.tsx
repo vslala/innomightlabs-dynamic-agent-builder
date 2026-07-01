@@ -2,6 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarRange } from "lucide-react";
 
 import { Button } from "../../../../../components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../../../components/ui/select";
 import { AnalyticsWidgetFrame } from "./AnalyticsWidgetFrame";
 import { emitAnalyticsFiltersChanged } from "../events";
 import type { AnalyticsWidgetBaseProps, DashboardFiltersChangedDetail, DashboardFiltersWidgetConfig } from "../types";
@@ -55,49 +62,45 @@ export function DashboardFiltersWidget({
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.75rem" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
             <label style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Date Range</label>
-            <select
+            <Select
               value={localConfig.preset}
-              onChange={(event) =>
+              onValueChange={(value) =>
                 updateConfig({
                   ...localConfig,
-                  preset: event.target.value as DashboardFiltersWidgetConfig["preset"],
+                  preset: value as DashboardFiltersWidgetConfig["preset"],
                 })
               }
-              style={{
-                height: "2.5rem",
-                borderRadius: "0.5rem",
-                border: "1px solid var(--border-subtle)",
-                background: "var(--bg-secondary)",
-                padding: "0 0.75rem",
-              }}
             >
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="90d">Last 90 days</option>
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="Select date range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7d">Last 7 days</SelectItem>
+                <SelectItem value="30d">Last 30 days</SelectItem>
+                <SelectItem value="90d">Last 90 days</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
             <label style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Source</label>
-            <select
+            <Select
               value={localConfig.sourceFilter}
-              onChange={(event) =>
+              onValueChange={(value) =>
                 updateConfig({
                   ...localConfig,
-                  sourceFilter: event.target.value as DashboardFiltersWidgetConfig["sourceFilter"],
+                  sourceFilter: value as DashboardFiltersWidgetConfig["sourceFilter"],
                 })
               }
-              style={{
-                height: "2.5rem",
-                borderRadius: "0.5rem",
-                border: "1px solid var(--border-subtle)",
-                background: "var(--bg-secondary)",
-                padding: "0 0.75rem",
-              }}
             >
-              <option value="all">All sources</option>
-              <option value="dashboard">Dashboard</option>
-              <option value="widget">Widget</option>
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder="Select source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sources</SelectItem>
+                <SelectItem value="dashboard">Dashboard</SelectItem>
+                <SelectItem value="widget">Widget</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

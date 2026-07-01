@@ -1,8 +1,10 @@
 // Core UI components
 export * from "./button";
+export * from "./checkbox";
 export * from "./link-button";
 export * from "./card";
 export * from "./dialog";
+export * from "./file-input";
 export * from "./input";
 export * from "./label";
 export * from "./select";
@@ -24,6 +26,7 @@ export * from "./read-only-content";
 export * from "./spinner";
 export * from "./alert";
 export * from "./progress";
+export * from "./radio";
 export * from "./status-badge";
 export * from "./empty-state";
 

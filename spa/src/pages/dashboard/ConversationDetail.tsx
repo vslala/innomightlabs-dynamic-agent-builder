@@ -11,6 +11,7 @@ import {
   CardContent,
 } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
+import { FileInput } from "../../components/ui/file-input";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { Label } from "../../components/ui/label";
@@ -1212,13 +1213,11 @@ export function ConversationDetail() {
             backgroundColor: "transparent",
           }}>
             {/* Hidden file input */}
-            <input
+            <FileInput
               ref={fileInputRef}
-              type="file"
               multiple
               accept={ALLOWED_EXTENSIONS.join(",")}
               onChange={(e) => e.target.files && addFiles(e.target.files)}
-              style={{ display: "none" }}
             />
 
             {/* Attachment button */}

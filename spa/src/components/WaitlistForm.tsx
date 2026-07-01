@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { subscriptionService } from '../services/subscription';
 import { Button } from './ui/button';
+import { Input } from './ui/input';
 import styles from './WaitlistForm.module.css';
 
 export function WaitlistForm() {
@@ -55,7 +56,7 @@ export function WaitlistForm() {
 
             <form onSubmit={handleSubmit} className={styles.form}>
               <div className={styles.inputWrapper}>
-                <input
+                <Input
                   type="email"
                   placeholder="Enter your email"
                   value={email}

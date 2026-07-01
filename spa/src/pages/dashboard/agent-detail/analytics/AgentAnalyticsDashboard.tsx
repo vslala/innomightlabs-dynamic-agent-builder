@@ -15,8 +15,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../../../components/ui/dialog";
+import { Checkbox } from "../../../../components/ui/checkbox";
 import { Input } from "../../../../components/ui/input";
 import { Label } from "../../../../components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../../components/ui/select";
 import { analyticsWidgetRegistry } from "./registry";
 import {
   createDefaultAnalyticsDashboardState,
@@ -333,41 +341,46 @@ function WidgetConfigEditor({
           <>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
               <Label htmlFor="widget-bucket">Bucket</Label>
-              <select
-                id="widget-bucket"
+              <Select
                 value={config.bucket}
-                onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                onValueChange={(value) =>
                   setConfig((prev) => ({
                     ...(prev as TimeseriesWidgetConfig),
-                    bucket: event.target.value as TimeseriesWidgetConfig["bucket"],
+                    bucket: value as TimeseriesWidgetConfig["bucket"],
                   }))
                 }
-                style={{ height: "2.5rem", borderRadius: "0.5rem", border: "1px solid var(--border-subtle)", background: "var(--bg-secondary)", padding: "0 0.75rem" }}
               >
-                <option value="day">Day</option>
-                <option value="week">Week</option>
-              </select>
+                <SelectTrigger id="widget-bucket">
+                  <SelectValue placeholder="Select bucket" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">Day</SelectItem>
+                  <SelectItem value="week">Week</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
               <Label htmlFor="widget-variant">Chart variant</Label>
-              <select
-                id="widget-variant"
+              <Select
                 value={config.chartVariant}
-                onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                onValueChange={(value) =>
                   setConfig((prev) => ({
                     ...(prev as TimeseriesWidgetConfig),
-                    chartVariant: event.target.value as TimeseriesWidgetConfig["chartVariant"],
+                    chartVariant: value as TimeseriesWidgetConfig["chartVariant"],
                   }))
                 }
-                style={{ height: "2.5rem", borderRadius: "0.5rem", border: "1px solid var(--border-subtle)", background: "var(--bg-secondary)", padding: "0 0.75rem" }}
               >
-                <option value="line">Line</option>
-                <option value="bar">Bar</option>
-              </select>
+                <SelectTrigger id="widget-variant">
+                  <SelectValue placeholder="Select chart type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="line">Line</SelectItem>
+                  <SelectItem value="bar">Bar</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", color: "var(--text-primary)" }}>
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={config.showSourceSplit}
                 onChange={(event: ChangeEvent<HTMLInputElement>) =>
                   setConfig((prev) => ({
@@ -401,21 +414,24 @@ function WidgetConfigEditor({
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
               <Label htmlFor="widget-mode">Mode</Label>
-              <select
-                id="widget-mode"
+              <Select
                 value={config.mode}
-                onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                onValueChange={(value) =>
                   setConfig((prev) => ({
                     ...(prev as TopActivityWidgetConfig),
-                    mode: event.target.value as TopActivityWidgetConfig["mode"],
+                    mode: value as TopActivityWidgetConfig["mode"],
                   }))
                 }
-                style={{ height: "2.5rem", borderRadius: "0.5rem", border: "1px solid var(--border-subtle)", background: "var(--bg-secondary)", padding: "0 0.75rem" }}
               >
-                <option value="both">Users + Conversations</option>
-                <option value="users">Users only</option>
-                <option value="conversations">Conversations only</option>
-              </select>
+                <SelectTrigger id="widget-mode">
+                  <SelectValue placeholder="Select mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="both">Users + Conversations</SelectItem>
+                  <SelectItem value="users">Users only</SelectItem>
+                  <SelectItem value="conversations">Conversations only</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </>
         )}

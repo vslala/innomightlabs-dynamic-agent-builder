@@ -1,5 +1,18 @@
-import { useMemo, useState } from "react";
-import { Button } from "../ui/button";
+import { useEffect, useMemo, useState } from "react";
+import { FieldGroup, FormActions, FormStack, Stack } from "../layout";
+import {
+  Button,
+  Checkbox,
+  Input,
+  Label,
+  Radio,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Textarea,
+} from "../ui";
 import type { FormInput, FormSchema } from "../../types/form";
 
 export type FormAnswer = {
@@ -54,6 +67,10 @@ export function ChatFormRenderer({
   const [values, setValues] = useState<Record<string, string>>(initial);
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    setValues(initial);
+  }, [initial]);
+
   const isDisabled = Boolean(disabled || submitting);
 
   const handleChange = (name: string, value: string) => {
@@ -93,7 +110,7 @@ export function ChatFormRenderer({
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ width: "100%", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+    <FormStack onSubmit={handleSubmit} style={{ width: "100%", gap: "var(--space-3)" }}>
       <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--text-primary)" }}>{form.form_name}</div>
 
       {form.form_inputs.map((input) => {
@@ -101,25 +118,17 @@ export function ChatFormRenderer({
 
         if (input.input_type === "text_area") {
           return (
-            <label key={input.name} style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-              <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{input.label}</span>
-              <textarea
+            <FieldGroup key={input.name}>
+              <Label>{input.label}</Label>
+              <Textarea
                 value={value}
                 placeholder={normalizePlaceholder(input)}
                 onChange={(e) => handleChange(input.name, e.target.value)}
                 disabled={isDisabled}
                 rows={4}
-                style={{
-                  width: "100%",
-                  padding: "0.625rem 0.75rem",
-                  borderRadius: "0.75rem",
-                  border: "1px solid var(--border-subtle)",
-                  background: "var(--bg-primary)",
-                  color: "var(--text-primary)",
-                  resize: "vertical",
-                }}
+                style={{ resize: "vertical" }}
               />
-            </label>
+            </FieldGroup>
           );
         }
 
@@ -129,29 +138,25 @@ export function ChatFormRenderer({
             : (input.values || []).map((item) => ({ value: item, label: item }));
 
           return (
-            <label key={input.name} style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-              <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{input.label}</span>
-              <select
-                value={value}
-                onChange={(e) => handleChange(input.name, e.target.value)}
+            <FieldGroup key={input.name}>
+              <Label>{input.label}</Label>
+              <Select
+                value={value || undefined}
+                onValueChange={(nextValue) => handleChange(input.name, nextValue)}
                 disabled={isDisabled}
-                style={{
-                  width: "100%",
-                  padding: "0.625rem 0.75rem",
-                  borderRadius: "0.75rem",
-                  border: "1px solid var(--border-subtle)",
-                  background: "var(--bg-primary)",
-                  color: "var(--text-primary)",
-                }}
               >
-                <option value="">Select...</option>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select..." />
+                </SelectTrigger>
+                <SelectContent>
                 {options.map((option) => (
-                  <option key={option.value} value={option.value}>
+                  <SelectItem key={option.value} value={option.value}>
                     {option.label}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
-            </label>
+                </SelectContent>
+              </Select>
+            </FieldGroup>
           );
         }
 
@@ -165,8 +170,7 @@ export function ChatFormRenderer({
 
             return (
               <label key={input.name} style={{ display: "flex", alignItems: "center", gap: "0.625rem", fontSize: "0.75rem", color: "var(--text-secondary)" }}>
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={checked}
                   onChange={(e) => handleChange(input.name, e.target.checked ? yesValue : "")}
                   disabled={isDisabled}
@@ -185,12 +189,12 @@ export function ChatFormRenderer({
             );
 
             return (
-              <fieldset key={input.name} disabled={isDisabled} style={{ margin: 0, padding: 0, border: 0, display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+              <fieldset key={input.name} disabled={isDisabled} style={{ margin: 0, padding: 0, border: 0 }}>
                 <legend style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>{input.label}</legend>
+                <Stack gap="xs">
                 {options.map((option) => (
                   <label key={option.value} style={{ display: "flex", alignItems: "center", gap: "0.625rem", fontSize: "0.8125rem", color: "var(--text-primary)" }}>
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={selected.has(option.value)}
                       onChange={(e) => {
                         const next = new Set(selected);
@@ -206,17 +210,18 @@ export function ChatFormRenderer({
                     <span>{option.label}</span>
                   </label>
                 ))}
+                </Stack>
               </fieldset>
             );
           }
 
           return (
-            <fieldset key={input.name} disabled={isDisabled} style={{ margin: 0, padding: 0, border: 0, display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+            <fieldset key={input.name} disabled={isDisabled} style={{ margin: 0, padding: 0, border: 0 }}>
               <legend style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>{input.label}</legend>
+              <Stack gap="xs">
               {options.map((option) => (
                 <label key={option.value} style={{ display: "flex", alignItems: "center", gap: "0.625rem", fontSize: "0.8125rem", color: "var(--text-primary)" }}>
-                  <input
-                    type="radio"
+                  <Radio
                     name={input.name}
                     value={option.value}
                     checked={value === option.value}
@@ -226,33 +231,26 @@ export function ChatFormRenderer({
                   <span>{option.label}</span>
                 </label>
               ))}
+              </Stack>
             </fieldset>
           );
         }
 
         return (
-          <label key={input.name} style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{input.label}</span>
-            <input
+          <FieldGroup key={input.name}>
+            <Label>{input.label}</Label>
+            <Input
               type="text"
               value={value}
               placeholder={normalizePlaceholder(input)}
               onChange={(e) => handleChange(input.name, e.target.value)}
               disabled={isDisabled}
-              style={{
-                width: "100%",
-                padding: "0.625rem 0.75rem",
-                borderRadius: "0.75rem",
-                border: "1px solid var(--border-subtle)",
-                background: "var(--bg-primary)",
-                color: "var(--text-primary)",
-              }}
             />
-          </label>
+          </FieldGroup>
         );
       })}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.625rem", paddingTop: "0.25rem" }}>
+      <FormActions align="end" style={{ paddingTop: "var(--space-1)" }}>
         {onCancel && (
           <Button
             type="button"
@@ -269,7 +267,7 @@ export function ChatFormRenderer({
         >
           {submitLabel}
         </Button>
-      </div>
-    </form>
+      </FormActions>
+    </FormStack>
   );
 }

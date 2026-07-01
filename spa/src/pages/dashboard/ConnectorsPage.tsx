@@ -22,6 +22,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Checkbox,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -716,8 +717,7 @@ export function ConnectorsPage() {
                 background: "rgba(255,255,255,0.03)",
               }}
             >
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={mcpForm.enabled}
                 onChange={(event) => setMCPForm((current) => ({ ...current, enabled: event.target.checked }))}
               />

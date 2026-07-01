@@ -139,14 +139,14 @@ export function KnowledgeBases() {
                   </div>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Link to={`/dashboard/knowledge-bases/${kb.kb_id}`}>
-                      <Button variant="ghost" size="icon" className="h-9 w-9">
+                      <Button variant="ghost" size="icon">
                         <Settings className="h-4 w-4" />
                       </Button>
                     </Link>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-9 w-9 text-red-400 hover:text-red-300"
+                      className="text-red-400 hover:text-red-300"
                       onClick={() => {
                         setSelectedKB(kb);
                         setIsDeleteDialogOpen(true);
