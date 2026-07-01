@@ -1,19 +1,46 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil } from "lucide-react";
+import type React from "react";
+import { useNavigate } from "react-router-dom";
+import { Pencil, ShoppingBag } from "lucide-react";
 
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Label,
+  Textarea,
+} from "../../../components/ui";
 import { SchemaForm, SchemaView } from "../../../components/forms";
 import { agentApiService } from "../../../services/agents/AgentApiService";
+import { agentMarketplaceApiService } from "../../../services/agentMarketplace";
+import { skillApiService } from "../../../services/skills";
 import type { FormSchema, FormValue } from "../../../types/form";
+import type { InstalledSkill } from "../../../types/skills";
 import { useAgentDetailContext } from "./types";
 
 export function AgentOverviewPage() {
   const { agent } = useAgentDetailContext();
+  const navigate = useNavigate();
   const [currentAgent, setCurrentAgent] = useState(agent);
   const [isEditing, setIsEditing] = useState(false);
   const [updateSchema, setUpdateSchema] = useState<FormSchema | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([]);
+  const [publishForm, setPublishForm] = useState({
+    title: agent.agent_name,
+    short_description: agent.agent_description || "",
+    full_description: agent.agent_description || agent.agent_persona,
+    tags: "",
+    included_skill_ids: [] as string[],
+  });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -23,18 +50,26 @@ export function AgentOverviewPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadUpdateSchema() {
+    async function loadPageData() {
       try {
-        const schema = await agentApiService.getUpdateSchema(agent.agent_id);
+        const [schema, skills] = await Promise.all([
+          agentApiService.getUpdateSchema(agent.agent_id),
+          skillApiService.listInstalledSkills(agent.agent_id),
+        ]);
         if (!cancelled) {
           setUpdateSchema(schema);
+          setInstalledSkills(skills);
+          setPublishForm((current) => ({
+            ...current,
+            included_skill_ids: skills.map((skill) => skill.installed_skill_id),
+          }));
         }
       } catch (err) {
-        console.error("Error loading update schema:", err);
+        console.error("Error loading agent overview data:", err);
       }
     }
 
-    loadUpdateSchema();
+    loadPageData();
 
     return () => {
       cancelled = true;
@@ -80,16 +115,56 @@ export function AgentOverviewPage() {
     }
   };
 
+  const handlePublish = async () => {
+    setPublishing(true);
+    setError(null);
+    try {
+      const published = await agentMarketplaceApiService.publishAgent({
+        agent_id: currentAgent.agent_id,
+        title: publishForm.title,
+        short_description: publishForm.short_description,
+        full_description: publishForm.full_description,
+        tags: publishForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+        included_skill_ids: publishForm.included_skill_ids,
+        status: "published",
+      });
+      navigate(`/dashboard/agents/marketplace/${published.template_id}`);
+    } catch (err) {
+      console.error("Error publishing agent:", err);
+      setError("Failed to publish agent. Please check the required fields and try again.");
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const togglePublishSkill = (installedSkillId: string) => {
+    setPublishForm((current) => {
+      const included = new Set(current.included_skill_ids);
+      if (included.has(installedSkillId)) {
+        included.delete(installedSkillId);
+      } else {
+        included.add(installedSkillId);
+      }
+      return { ...current, included_skill_ids: Array.from(included) };
+    });
+  };
+
   return (
     <Card>
       <CardHeader>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <CardTitle className="text-lg">{isEditing ? "Edit Agent" : "Agent Details"}</CardTitle>
           {!isEditing && (
-            <Button variant="outline" onClick={() => setIsEditing(true)}>
-              <Pencil className="h-4 w-4 mr-2" />
-              Edit
-            </Button>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => setPublishOpen(true)}>
+                <ShoppingBag className="h-4 w-4" />
+                Publish
+              </Button>
+              <Button variant="outline" onClick={() => setIsEditing(true)}>
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Button>
+            </div>
           )}
         </div>
       </CardHeader>
@@ -158,6 +233,93 @@ export function AgentOverviewPage() {
           </div>
         )}
       </CardContent>
+
+      <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
+        <DialogContent className="max-h-[88vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Publish to Marketplace</DialogTitle>
+            <DialogDescription>
+              Share a reusable agent template. Skill secrets and OAuth credentials are never published.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5">
+            <Field label="Title">
+              <Input
+                value={publishForm.title}
+                onChange={(event) => setPublishForm((current) => ({ ...current, title: event.target.value }))}
+              />
+            </Field>
+            <Field label="Short description">
+              <Input
+                value={publishForm.short_description}
+                onChange={(event) => setPublishForm((current) => ({ ...current, short_description: event.target.value }))}
+              />
+            </Field>
+            <Field label="Full description">
+              <Textarea
+                value={publishForm.full_description}
+                onChange={(event) => setPublishForm((current) => ({ ...current, full_description: event.target.value }))}
+              />
+            </Field>
+            <Field label="Tags">
+              <Input
+                value={publishForm.tags}
+                placeholder="league-of-legends, coaching, productivity"
+                onChange={(event) => setPublishForm((current) => ({ ...current, tags: event.target.value }))}
+              />
+            </Field>
+
+            <div className="space-y-3">
+              <Label>Included skills</Label>
+              {installedSkills.length === 0 ? (
+                <p className="text-sm text-[var(--text-muted)]">This agent has no installed skills.</p>
+              ) : (
+                <div className="space-y-2">
+                  {installedSkills.map((skill) => (
+                    <label
+                      key={skill.installed_skill_id}
+                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border-subtle)] p-3"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={publishForm.included_skill_ids.includes(skill.installed_skill_id)}
+                        onChange={() => togglePublishSkill(skill.installed_skill_id)}
+                        className="mt-1"
+                      />
+                      <span>
+                        <span className="block text-sm font-medium text-[var(--text-primary)]">{skill.name}</span>
+                        <span className="block text-xs text-[var(--text-muted)]">{skill.description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPublishOpen(false)} disabled={publishing}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handlePublish}
+              disabled={publishing || !publishForm.title.trim() || !publishForm.short_description.trim() || !publishForm.full_description.trim()}
+            >
+              {publishing ? "Publishing..." : "Publish"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      {children}
+    </div>
   );
 }

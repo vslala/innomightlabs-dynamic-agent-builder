@@ -182,7 +182,7 @@ export function AgentMemoryPage() {
               <CardTitle className="text-lg">Memory Blocks</CardTitle>
             </div>
             <Button size="sm" onClick={() => setIsCreateBlockDialogOpen(true)}>
-              <Plus style={{ height: "1rem", width: "1rem", marginRight: "0.375rem" }} />
+              <Plus style={{ height: "1rem", width: "1rem" }} />
               New Block
             </Button>
           </div>
@@ -269,7 +269,7 @@ export function AgentMemoryPage() {
                           {!block.is_default && (
                             <div style={{ marginTop: "0.75rem", display: "flex", justifyContent: "flex-end" }}>
                               <Button size="sm" variant="outline" onClick={() => handleStartEditContent(block.block_name)}>
-                                <Pencil style={{ height: "0.875rem", width: "0.875rem", marginRight: "0.375rem" }} />
+                                <Pencil style={{ height: "0.875rem", width: "0.875rem" }} />
                                 Edit Content
                               </Button>
                             </div>

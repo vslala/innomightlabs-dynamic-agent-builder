@@ -489,7 +489,7 @@ export function KnowledgeBaseDetail() {
         </div>
         {!isEditing && (
           <Button variant="outline" onClick={() => setIsEditing(true)}>
-            <Pencil className="h-4 w-4 mr-2" />
+            <Pencil className="h-4 w-4" />
             Edit
           </Button>
         )}
@@ -596,7 +596,7 @@ export function KnowledgeBaseDetail() {
               )}
             </div>
             <Button size="sm" onClick={() => setIsStartCrawlDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-1.5" />
+              <Plus className="h-4 w-4" />
               Start Crawl
             </Button>
           </div>
@@ -949,12 +949,12 @@ export function KnowledgeBaseDetail() {
             >
               {isStartingCrawl ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   Starting...
                 </>
               ) : (
                 <>
-                  <Play className="h-4 w-4 mr-2" />
+                  <Play className="h-4 w-4" />
                   Start Crawl
                 </>
               )}

@@ -96,12 +96,13 @@ class SkillService:
         skill_id: str,
         user_email: str,
         raw_config: dict[str, Any],
+        enabled: bool = True,
     ) -> AgentSkill:
         loaded = self.registry.get(skill_id)
         if not loaded:
             raise ValueError(f"Unknown skill: {skill_id}")
 
-        if loaded.manifest.requires_oauth and loaded.manifest.oauth_provider_name:
+        if enabled and loaded.manifest.requires_oauth and loaded.manifest.oauth_provider_name:
             provider_settings = self.provider_settings_repository.find_by_provider(
                 user_email,
                 loaded.manifest.oauth_provider_name,
@@ -110,18 +111,13 @@ class SkillService:
                 raise ValueError(
                     f"{loaded.manifest.name} requires a connected {loaded.manifest.oauth_provider_name} account before installation"
                 )
-        missing_connectors = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
+        missing_connectors = self.connector_service.missing_required_connectors(loaded.manifest, user_email) if enabled else []
         if missing_connectors:
             raise ValueError(
                 f"{loaded.manifest.name} requires connected connector(s): {', '.join(missing_connectors)}"
             )
 
-        normalized = self.registry.validate_config(skill_id, raw_config)
-        validate_form_options(
-            loaded.manifest.form,
-            normalized,
-            FormOptionsContext(user_email=user_email),
-        )
+        normalized = self.validate_install_config(skill_id, user_email, raw_config)
         secret_fields = self.registry.secret_fields(skill_id)
         plain_config = {k: v for k, v in normalized.items() if k not in secret_fields}
         secret_config = {k: v for k, v in normalized.items() if k in secret_fields}
@@ -134,12 +130,30 @@ class SkillService:
             namespace=loaded.manifest.namespace,
             skill_name=loaded.manifest.name,
             skill_description=loaded.manifest.description,
-            enabled=True,
+            enabled=enabled,
             installed_by=user_email,
             plain_config=plain_config,
             secret_config=secret_config,
             secret_fields=sorted(secret_fields),
         )
+
+    def validate_install_config(
+        self,
+        skill_id: str,
+        user_email: str,
+        raw_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        loaded = self.registry.get(skill_id)
+        if not loaded:
+            raise ValueError(f"Unknown skill: {skill_id}")
+
+        normalized = self.registry.validate_config(skill_id, raw_config)
+        validate_form_options(
+            loaded.manifest.form,
+            normalized,
+            FormOptionsContext(user_email=user_email),
+        )
+        return normalized
 
     def list_installed(self, agent_id: str) -> list[InstalledSkillResponse]:
         installed = self.repository.list_by_agent(agent_id)

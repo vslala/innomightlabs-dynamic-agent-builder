@@ -351,8 +351,8 @@ export function AgentSkillsPage() {
               <Wrench style={{ height: "1.25rem", width: "1.25rem", color: "var(--gradient-start)" }} />
               <CardTitle className="text-lg">Skills</CardTitle>
             </div>
-            <Button size="sm" onClick={openSkillDialog}>
-              <Plus style={{ height: "1rem", width: "1rem", marginRight: "0.375rem" }} />
+            <Button size="action" onClick={openSkillDialog}>
+              <Plus style={{ height: "1rem", width: "1rem" }} />
               Add Skill
             </Button>
           </div>
@@ -396,29 +396,30 @@ export function AgentSkillsPage() {
                         </div>
                       )}
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                      <Button variant="outline" size="sm" onClick={() => handleToggleSkill(skill)} disabled={updatingSkillId === installedSkillId}>
+                    <div style={{ display: "flex", width: "8.75rem", flexShrink: 0, flexDirection: "column", gap: "0.625rem", alignItems: "stretch" }}>
+                      <Button variant="outline" size="action" onClick={() => handleToggleSkill(skill)} disabled={updatingSkillId === installedSkillId} className="w-full">
                         {skill.enabled ? (
                           <>
-                            <PowerOff className="h-4 w-4 mr-2" />
+                            <PowerOff className="h-4 w-4" />
                             Disable
                           </>
                         ) : (
                           <>
-                            <Power className="h-4 w-4 mr-2" />
+                            <Power className="h-4 w-4" />
                             Enable
                           </>
                         )}
                       </Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleUninstallSkill(skill)} disabled={uninstallingSkillId === installedSkillId}>
+                      <Button variant="destructive" size="action" onClick={() => handleUninstallSkill(skill)} disabled={uninstallingSkillId === installedSkillId} className="w-full">
                         {uninstallingSkillId === installedSkillId ? "Removing..." : "Uninstall"}
                       </Button>
                       {Object.keys(skill.config).length > 0 && (
                         <Button
-                          variant="ghost"
-                          size="sm"
+                          variant="outline"
+                          size="action"
                           onClick={() => handleUpdateSkillConfig(skill, skill.config)}
                           disabled={updatingSkillId === installedSkillId}
+                          className="w-full"
                         >
                           {updatingSkillId === installedSkillId ? "Saving..." : "Refresh Config"}
                         </Button>

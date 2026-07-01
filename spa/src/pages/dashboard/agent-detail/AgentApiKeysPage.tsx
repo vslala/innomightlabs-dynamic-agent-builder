@@ -111,7 +111,7 @@ export function AgentApiKeysPage() {
               <CardTitle className="text-lg">Widget API Keys</CardTitle>
             </div>
             <Button size="sm" onClick={() => setIsCreateKeyDialogOpen(true)}>
-              <Plus style={{ height: "1rem", width: "1rem", marginRight: "0.375rem" }} />
+              <Plus style={{ height: "1rem", width: "1rem" }} />
               New Key
             </Button>
           </div>

@@ -730,7 +730,7 @@ export function AgentDetail() {
         </div>
         {!isEditing && (
           <Button variant="outline" onClick={handleStartEdit}>
-            <Pencil className="h-4 w-4 mr-2" />
+            <Pencil className="h-4 w-4" />
             Edit
           </Button>
         )}
@@ -822,7 +822,7 @@ export function AgentDetail() {
               <CardTitle className="text-lg">Memory Blocks</CardTitle>
             </div>
             <Button size="sm" onClick={() => setIsCreateBlockDialogOpen(true)}>
-              <Plus style={{ height: "1rem", width: "1rem", marginRight: "0.375rem" }} />
+              <Plus style={{ height: "1rem", width: "1rem" }} />
               New Block
             </Button>
           </div>
@@ -976,10 +976,10 @@ export function AgentDetail() {
                             <div style={{ marginTop: "0.75rem", display: "flex", justifyContent: "flex-end" }}>
                               <Button
                                 size="sm"
-                                variant="outline"
-                                onClick={() => handleStartEditContent(block.block_name)}
-                              >
-                                <Pencil style={{ height: "0.875rem", width: "0.875rem", marginRight: "0.375rem" }} />
+                              variant="outline"
+                              onClick={() => handleStartEditContent(block.block_name)}
+                            >
+                                <Pencil style={{ height: "0.875rem", width: "0.875rem" }} />
                                 Edit Content
                               </Button>
                             </div>
@@ -1015,7 +1015,7 @@ export function AgentDetail() {
               <CardTitle className="text-lg">Widget API Keys</CardTitle>
             </div>
             <Button size="sm" onClick={() => setIsCreateKeyDialogOpen(true)}>
-              <Plus style={{ height: "1rem", width: "1rem", marginRight: "0.375rem" }} />
+              <Plus style={{ height: "1rem", width: "1rem" }} />
               New Key
             </Button>
           </div>
@@ -1210,7 +1210,7 @@ export function AgentDetail() {
               <CardTitle className="text-lg">Knowledge Bases</CardTitle>
             </div>
             <Button size="sm" onClick={handleOpenLinkDialog}>
-              <Link2 style={{ height: "1rem", width: "1rem", marginRight: "0.375rem" }} />
+              <Link2 style={{ height: "1rem", width: "1rem" }} />
               Link KB
             </Button>
           </div>
@@ -1298,7 +1298,7 @@ export function AgentDetail() {
               <CardTitle className="text-lg">Skills</CardTitle>
             </div>
             <Button size="sm" onClick={openSkillDialog}>
-              <Plus style={{ height: "1rem", width: "1rem", marginRight: "0.375rem" }} />
+              <Plus style={{ height: "1rem", width: "1rem" }} />
               Add Skill
             </Button>
           </div>

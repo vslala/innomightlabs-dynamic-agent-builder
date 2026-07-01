@@ -206,7 +206,7 @@ export function AgentAnalyticsDashboard() {
               </p>
             </div>
             <Button variant="outline" onClick={handleResetDashboard}>
-              <RotateCcw className="h-4 w-4 mr-2" />
+              <RotateCcw className="h-4 w-4" />
               Reset Dashboard
             </Button>
           </div>
@@ -222,7 +222,7 @@ export function AgentAnalyticsDashboard() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.5rem" }}>
                     <p style={{ color: "var(--text-primary)", fontWeight: 600 }}>{definition.displayName}</p>
                     <Button size="sm" onClick={() => handleAddWidget(definition.widgetType)} disabled={disabled}>
-                      <Plus className="h-4 w-4 mr-1" />
+                      <Plus className="h-4 w-4" />
                       Add
                     </Button>
                   </div>

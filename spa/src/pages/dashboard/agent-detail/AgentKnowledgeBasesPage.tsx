@@ -89,7 +89,7 @@ export function AgentKnowledgeBasesPage() {
               <CardTitle className="text-lg">Knowledge Bases</CardTitle>
             </div>
             <Button size="sm" onClick={handleOpenLinkDialog}>
-              <Link2 style={{ height: "1rem", width: "1rem", marginRight: "0.375rem" }} />
+              <Link2 style={{ height: "1rem", width: "1rem" }} />
               Link KB
             </Button>
           </div>

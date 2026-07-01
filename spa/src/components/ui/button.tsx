@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex min-w-0 items-center justify-center gap-2 rounded-lg text-center text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&>span]:min-w-0 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex box-border shrink-0 items-center justify-center gap-2.5 whitespace-nowrap rounded-lg text-center text-sm font-medium leading-none transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&>span]:min-w-0 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -21,9 +21,10 @@ const buttonVariants = cva(
         link: "text-[var(--gradient-start)] underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-9 rounded-md px-4 py-2 text-sm",
-        lg: "h-12 rounded-xl px-8 text-base",
+        default: "min-h-11 px-6 py-2.5",
+        sm: "min-h-10 rounded-md px-5 py-2.5 text-sm",
+        action: "min-h-10 min-w-40 rounded-md px-6 py-2.5 text-sm",
+        lg: "min-h-12 rounded-xl px-8 py-3 text-base",
         icon: "h-10 w-10",
       },
     },
@@ -34,6 +35,35 @@ const buttonVariants = cva(
   }
 );
 
+const buttonSizeStyles: Record<string, React.CSSProperties> = {
+  default: {
+    minHeight: "2.75rem",
+    paddingInline: "1.5rem",
+    paddingBlock: "0.625rem",
+  },
+  sm: {
+    minHeight: "2.5rem",
+    paddingInline: "1.25rem",
+    paddingBlock: "0.625rem",
+  },
+  action: {
+    minHeight: "2.5rem",
+    minWidth: "10rem",
+    paddingInline: "1.5rem",
+    paddingBlock: "0.625rem",
+  },
+  lg: {
+    minHeight: "3rem",
+    paddingInline: "2rem",
+    paddingBlock: "0.75rem",
+  },
+  icon: {
+    height: "2.5rem",
+    width: "2.5rem",
+    padding: 0,
+  },
+};
+
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
@@ -41,11 +71,17 @@ export interface ButtonProps
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, style, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
+    const resolvedSize = size ?? "default";
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
+        style={{
+          boxSizing: "border-box",
+          ...(buttonSizeStyles[resolvedSize] ?? buttonSizeStyles.default),
+          ...style,
+        }}
         ref={ref}
         {...props}
       />

@@ -176,6 +176,17 @@ export function ConversationDetail() {
   };
 
   useEffect(() => {
+    if (!initialMessagesLoaded || isLoadingMessages || !hasMoreMessages) return;
+
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    if (container.scrollHeight <= container.clientHeight + 8) {
+      void loadOlderMessages();
+    }
+  }, [initialMessagesLoaded, messages.length, hasMoreMessages, isLoadingMessages]);
+
+  useEffect(() => {
     initialMessageSentRef.current = false;
     loadData();
   }, [conversationId]);

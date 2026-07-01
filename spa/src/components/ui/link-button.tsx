@@ -22,26 +22,9 @@ type ExternalLinkButtonProps = LinkButtonBaseProps &
 
 export type LinkButtonProps = InternalLinkButtonProps | ExternalLinkButtonProps;
 
-const linkButtonPaddingBySize: Record<string, React.CSSProperties> = {
-  sm: {
-    minHeight: "2.25rem",
-    paddingBlock: "0.5rem",
-    paddingInline: "1rem",
-  },
-};
-
-const getLinkButtonStyle = (
-  size: LinkButtonProps["size"],
-  style: React.CSSProperties | undefined
-): React.CSSProperties | undefined => {
-  const sizeStyle = size ? linkButtonPaddingBySize[size] : undefined;
-  return sizeStyle ? { ...sizeStyle, ...style } : style;
-};
-
 export const LinkButton = React.forwardRef<HTMLAnchorElement, LinkButtonProps>(
   ({ className, variant, size, children, external, style, ...props }, ref) => {
     const classes = cn(buttonVariants({ variant, size, className }), "no-underline");
-    const linkStyle = getLinkButtonStyle(size, style);
 
     if (external) {
       const { href, target = "_blank", rel, ...anchorProps } = props as ExternalLinkButtonProps;
@@ -52,7 +35,7 @@ export const LinkButton = React.forwardRef<HTMLAnchorElement, LinkButtonProps>(
           target={target}
           rel={rel ?? (target === "_blank" ? "noreferrer" : undefined)}
           className={classes}
-          style={linkStyle}
+          style={style}
           {...anchorProps}
         >
           {children}
@@ -62,7 +45,7 @@ export const LinkButton = React.forwardRef<HTMLAnchorElement, LinkButtonProps>(
 
   const linkProps = props as InternalLinkButtonProps;
   return (
-      <Link ref={ref} className={classes} style={linkStyle} {...linkProps}>
+      <Link ref={ref} className={classes} style={style} {...linkProps}>
         {children}
       </Link>
     );

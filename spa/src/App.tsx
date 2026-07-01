@@ -21,6 +21,8 @@ import BetaBanner from './components/BetaBanner';
 import { Overview } from './pages/dashboard/Overview';
 import { AgentsList } from './pages/dashboard/AgentsList';
 import { AgentCreate } from './pages/dashboard/AgentCreate';
+import { AgentMarketplacePage } from './pages/dashboard/agent-marketplace/AgentMarketplacePage';
+import { MarketplaceAgentDetail } from './pages/dashboard/agent-marketplace/MarketplaceAgentDetail';
 import { Conversations } from './pages/dashboard/Conversations';
 import { ConversationDetail } from './pages/dashboard/ConversationDetail';
 import { ArtifactsPage } from './pages/dashboard/ArtifactsPage';
@@ -101,6 +103,8 @@ function App() {
           <Route index element={<Overview />} />
           <Route path="agents" element={<AgentsList />} />
           <Route path="agents/new" element={<AgentCreate />} />
+          <Route path="agents/marketplace" element={<AgentMarketplacePage />} />
+          <Route path="agents/marketplace/:templateId" element={<MarketplaceAgentDetail />} />
           <Route path="agents/:agentId" element={<AgentDetailLayout />}>
             <Route index element={<AgentOverviewPage />} />
             <Route path="memory" element={<AgentMemoryPage />} />

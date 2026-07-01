@@ -30,6 +30,7 @@ from src.analytics import analytics_router
 from src.automations.router import router as automations_router
 from src.downloads import router as downloads_router
 from src.artifacts import artifacts_router
+from src.agent_marketplace import router as agent_marketplace_router
 from src.scheduler.router import router as scheduler_router
 from src.smart_suggestions.router import router as smart_suggestions_router
 from src.scheduler.runtime import get_scheduler_runtime
@@ -157,6 +158,7 @@ def create_app() -> FastAPI:
     app.include_router(router=automations_router)
     app.include_router(router=downloads_router)
     app.include_router(router=artifacts_router)
+    app.include_router(router=agent_marketplace_router)
     app.include_router(router=scheduler_router)
     app.include_router(router=smart_suggestions_router)
 

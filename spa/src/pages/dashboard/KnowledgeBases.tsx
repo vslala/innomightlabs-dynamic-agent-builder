@@ -112,7 +112,7 @@ export function KnowledgeBases() {
           </p>
         </div>
         <Button onClick={() => setIsCreateDialogOpen(true)} size="lg">
-          <Plus className="h-5 w-5 mr-2" />
+          <Plus className="h-5 w-5" />
           Create Knowledge Base
         </Button>
       </div>

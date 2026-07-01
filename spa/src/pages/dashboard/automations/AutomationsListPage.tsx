@@ -117,7 +117,7 @@ export function AutomationsListPage() {
           </p>
         </div>
         <Button size="lg" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-5 w-5 mr-2" />
+          <Plus className="h-5 w-5" />
           Create Automation
         </Button>
       </div>

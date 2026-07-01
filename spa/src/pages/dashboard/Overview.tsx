@@ -131,7 +131,7 @@ export function Overview() {
                 <p style={{ color: "var(--text-muted)", marginBottom: "1.5rem" }}>No agents yet</p>
                 <Link to="/dashboard/agents/new">
                   <Button>
-                    <Plus className="h-4 w-4 mr-2" />
+                    <Plus className="h-4 w-4" />
                     Create Your First Agent
                   </Button>
                 </Link>
@@ -259,7 +259,7 @@ export function Overview() {
               </p>
               <Link to="/dashboard/agents/new">
                 <Button size="lg">
-                  <Plus className="h-5 w-5 mr-2" />
+                  <Plus className="h-5 w-5" />
                   Create Your First Agent
                 </Button>
               </Link>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Bot, Plus, Trash2, Settings } from "lucide-react";
+import { Bot, Plus, ShoppingBag, Trash2, Settings } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -79,10 +79,16 @@ export function AgentsList() {
             Create and manage your AI agents
           </p>
         </div>
-        <Button onClick={() => navigate("/dashboard/agents/new")} size="lg">
-          <Plus className="h-5 w-5 mr-2" />
-          Create Agent
-        </Button>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={() => navigate("/dashboard/agents/marketplace")} size="lg">
+            <ShoppingBag className="h-5 w-5" />
+            Marketplace
+          </Button>
+          <Button onClick={() => navigate("/dashboard/agents/new")} size="lg">
+            <Plus className="h-5 w-5" />
+            Create Agent
+          </Button>
+        </div>
       </div>
 
       {agents.length === 0 ? (
