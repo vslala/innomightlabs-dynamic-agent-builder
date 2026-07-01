@@ -3,10 +3,12 @@ import type React from "react";
 import { useNavigate } from "react-router-dom";
 import { Pencil, ShoppingBag } from "lucide-react";
 
+import { FieldGroup, Stack } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -243,7 +245,7 @@ export function AgentOverviewPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5">
+          <DialogBody>
             <Field label="Title">
               <Input
                 value={publishForm.title}
@@ -270,33 +272,34 @@ export function AgentOverviewPage() {
               />
             </Field>
 
-            <div className="space-y-3">
+            <FieldGroup>
               <Label>Included skills</Label>
               {installedSkills.length === 0 ? (
                 <p className="text-sm text-[var(--text-muted)]">This agent has no installed skills.</p>
               ) : (
-                <div className="space-y-2">
+                <Stack gap="sm">
                   {installedSkills.map((skill) => (
                     <label
                       key={skill.installed_skill_id}
-                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--border-subtle)] p-3"
+                      className="flex cursor-pointer items-start rounded-lg border border-[var(--border-default)] bg-[var(--surface-control)]"
+                      style={{ gap: "var(--space-3)", padding: "var(--space-4)" }}
                     >
                       <input
                         type="checkbox"
                         checked={publishForm.included_skill_ids.includes(skill.installed_skill_id)}
                         onChange={() => togglePublishSkill(skill.installed_skill_id)}
-                        className="mt-1"
+                        className="mt-1 shrink-0"
                       />
-                      <span>
+                      <span className="min-w-0">
                         <span className="block text-sm font-medium text-[var(--text-primary)]">{skill.name}</span>
-                        <span className="block text-xs text-[var(--text-muted)]">{skill.description}</span>
+                        <span className="block text-xs leading-5 text-[var(--text-muted)]">{skill.description}</span>
                       </span>
                     </label>
                   ))}
-                </div>
+                </Stack>
               )}
-            </div>
-          </div>
+            </FieldGroup>
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setPublishOpen(false)} disabled={publishing}>
@@ -317,9 +320,9 @@ export function AgentOverviewPage() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-2">
+    <FieldGroup>
       <Label>{label}</Label>
       {children}
-    </div>
+    </FieldGroup>
   );
 }

@@ -26,6 +26,40 @@
   --accent-cyan: #00d4ff;
   --accent-pink: #ff6b9d;
   --accent-purple: #a855f7;
+  --surface-page: var(--bg-dark);
+  --surface-panel: var(--bg-card);
+  --surface-panel-hover: var(--bg-card-hover);
+  --surface-control: var(--bg-secondary);
+  --surface-popover: var(--popover-bg);
+  --border-default: var(--border-subtle);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --control-height-sm: 2.5rem;
+  --control-height-md: 2.75rem;
+  --control-height-lg: 3rem;
+  --control-padding-x-sm: 1rem;
+  --control-padding-x-md: 1.5rem;
+  --control-padding-x-lg: 2rem;
+  --page-gap: var(--space-8);
+  --section-gap: var(--space-6);
+  --card-padding: var(--space-6);
+  --card-padding-lg: var(--space-8);
+  --dialog-padding: var(--space-8);
+  --form-gap: var(--space-5);
+  --field-gap: var(--space-2);
 }
 
 :root[data-theme="light"] {
@@ -54,6 +88,13 @@
   --accent-cyan: #00b8d9;
   --accent-pink: #ae2a19;
   --accent-purple: #5e4db2;
+  --surface-page: var(--bg-dark);
+  --surface-panel: var(--bg-card);
+  --surface-panel-hover: var(--bg-card-hover);
+  --surface-control: var(--bg-secondary);
+  --surface-popover: var(--popover-bg);
+  --border-default: var(--border-subtle);
+  --border-strong: #b6c2cf;
 }
 
 * {
@@ -89,7 +130,9 @@ button {
   font-family: inherit;
 }
 
-input {
+input,
+select,
+textarea {
   font-family: inherit;
 }
 

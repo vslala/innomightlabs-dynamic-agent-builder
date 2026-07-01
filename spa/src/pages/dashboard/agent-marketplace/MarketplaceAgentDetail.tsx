@@ -3,22 +3,26 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Bot, CheckCircle2, ChevronLeft, Download, ShieldCheck } from "lucide-react";
 
 import { SchemaForm } from "../../../components/forms";
+import { Inline, Page, PageBody, Stack } from "../../../components/layout";
 import {
   Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogSection,
   DialogTitle,
   ErrorState,
   Input,
   Label,
   LoadingState,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+  ReadOnlyContent,
   Select,
   SelectContent,
   SelectItem,
@@ -116,8 +120,8 @@ export function MarketplaceAgentDetail() {
   if (!agent || !plan) return <ErrorState message="Marketplace agent not found." />;
 
   return (
-    <div className="space-y-10">
-      <div className="flex items-center gap-5">
+    <Page>
+      <Inline gap="md" wrap={false}>
         <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard/agents/marketplace")}>
           <ChevronLeft className="h-5 w-5" />
         </Button>
@@ -128,7 +132,7 @@ export function MarketplaceAgentDetail() {
           <h1 className="text-2xl font-semibold text-[var(--text-primary)]">{agent.title}</h1>
           <p className="text-sm text-[var(--text-muted)]">by {agent.publisher_display_name} · v{agent.template_version}</p>
         </div>
-      </div>
+      </Inline>
 
       {error && (
         <div
@@ -139,13 +143,14 @@ export function MarketplaceAgentDetail() {
         </div>
       )}
 
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="space-y-8">
-          <Card>
-            <CardHeader style={{ padding: "1.5rem 1.75rem 1rem" }}>
-              <CardTitle>Overview</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5" style={{ padding: "0.75rem 1.75rem 1.75rem" }}>
+      <PageBody className="grid xl:grid-cols-[minmax(0,1fr)_22rem]" style={{ gap: "var(--space-8)" }}>
+        <Stack gap="xl">
+          <Panel>
+            <PanelHeader>
+              <PanelTitle>Overview</PanelTitle>
+            </PanelHeader>
+            <PanelBody>
+              <Stack gap="md">
               <p className="text-sm leading-7 text-[var(--text-secondary)]">{agent.full_description}</p>
               <div className="flex flex-wrap gap-2">
                 {agent.tags.map((tag) => (
@@ -154,38 +159,29 @@ export function MarketplaceAgentDetail() {
                   </span>
                 ))}
               </div>
-            </CardContent>
-          </Card>
+              </Stack>
+            </PanelBody>
+          </Panel>
 
-          <Card>
-            <CardHeader style={{ padding: "1.5rem 1.75rem 1rem" }}>
-              <CardTitle>Instructions</CardTitle>
-            </CardHeader>
-            <CardContent style={{ padding: "0.75rem 1.75rem 1.75rem" }}>
-              <pre
-                className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] text-sm leading-7 text-[var(--text-secondary)]"
-                style={{
-                  boxSizing: "border-box",
-                  margin: 0,
-                  maxWidth: "100%",
-                  overflowX: "auto",
-                  padding: "1.5rem",
-                  whiteSpace: "pre-wrap",
-                  userSelect: "none",
-                }}
-              >
+          <Panel>
+            <PanelHeader>
+              <PanelTitle>Instructions</PanelTitle>
+            </PanelHeader>
+            <PanelBody>
+              <ReadOnlyContent variant="instructions" selectable={false}>
                 {agent.agent_persona}
-              </pre>
-            </CardContent>
-          </Card>
-        </div>
+              </ReadOnlyContent>
+            </PanelBody>
+          </Panel>
+        </Stack>
 
-        <div className="space-y-8">
-          <Card>
-            <CardHeader style={{ padding: "1.5rem 1.5rem 1rem" }}>
-              <CardTitle>Import</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5" style={{ padding: "0.75rem 1.5rem 1.5rem" }}>
+        <Stack gap="xl">
+          <Panel>
+            <PanelHeader>
+              <PanelTitle>Import</PanelTitle>
+            </PanelHeader>
+            <PanelBody>
+              <Stack gap="md">
               <MetaRow label="Architecture" value={agent.agent_architecture} />
               <MetaRow label="Provider" value={agent.agent_provider} />
               <MetaRow label="Model" value={agent.agent_model || "Default"} />
@@ -194,21 +190,23 @@ export function MarketplaceAgentDetail() {
                 <Download className="h-4 w-4" />
                 Import Agent
               </Button>
-            </CardContent>
-          </Card>
+              </Stack>
+            </PanelBody>
+          </Panel>
 
-          <Card>
-            <CardHeader style={{ padding: "1.5rem 1.5rem 1rem" }}>
-              <CardTitle>Skills</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3.5" style={{ padding: "0.75rem 1.5rem 1.5rem" }}>
+          <Panel>
+            <PanelHeader>
+              <PanelTitle>Skills</PanelTitle>
+            </PanelHeader>
+            <PanelBody>
+              <Stack gap="sm">
               {agent.skills.length === 0 ? (
                 <p className="text-sm text-[var(--text-muted)]">No skills attached.</p>
               ) : (
                 agent.skills.map((skill) => (
                   <div
                     key={skill.template_skill_key}
-                    className="rounded-lg border border-[var(--border-subtle)]"
+                    className="rounded-lg border border-[var(--border-default)]"
                     style={{ padding: "0.875rem 1rem" }}
                   >
                     <div className="flex items-center gap-2">
@@ -225,15 +223,15 @@ export function MarketplaceAgentDetail() {
                   </div>
                 ))
               )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+              </Stack>
+            </PanelBody>
+          </Panel>
+        </Stack>
+      </PageBody>
 
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent
           className="max-h-[88vh] max-w-3xl overflow-y-auto"
-          style={{ gap: "1.75rem", padding: "2rem" }}
         >
           <DialogHeader>
             <DialogTitle>Import {agent.title}</DialogTitle>
@@ -242,26 +240,26 @@ export function MarketplaceAgentDetail() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-8">
-            <div className="grid gap-5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] md:grid-cols-3" style={{ padding: "1.25rem" }}>
-              <div className="space-y-2.5 md:col-span-3">
+          <DialogBody>
+            <DialogSection className="grid md:grid-cols-3" style={{ gap: "var(--space-5)" }}>
+              <Stack gap="xs" className="md:col-span-3">
                 <Label>Agent name</Label>
                 <Input value={agentName} onChange={(event) => setAgentName(event.target.value)} />
-              </div>
+              </Stack>
               {plan.agent.allow_model_override && (
                 <>
                   <SelectBlock label="Provider" value={provider} options={providerOptions} onChange={setProvider} />
                   <SelectBlock label="Model" value={model} options={modelOptions} onChange={setModel} className="md:col-span-2" />
                 </>
               )}
-            </div>
+            </DialogSection>
 
             {plan.skill_forms.map((skillForm) => (
-              <Card key={skillForm.template_skill_key}>
-                <CardHeader style={{ padding: "1.5rem 1.5rem 1rem" }}>
-                  <CardTitle>{skillForm.skill_name}</CardTitle>
-                </CardHeader>
-                <CardContent style={{ padding: "0.75rem 1.5rem 1.5rem" }}>
+              <Panel key={skillForm.template_skill_key}>
+                <PanelHeader>
+                  <PanelTitle>{skillForm.skill_name}</PanelTitle>
+                </PanelHeader>
+                <PanelBody>
                   {skillForm.form.form_inputs.length === 0 ? (
                     <p className="text-sm text-[var(--text-muted)]">No configuration required.</p>
                   ) : (
@@ -276,10 +274,10 @@ export function MarketplaceAgentDetail() {
                       }}
                     />
                   )}
-                </CardContent>
-              </Card>
+                </PanelBody>
+              </Panel>
             ))}
-          </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setImportOpen(false)} disabled={importing}>
@@ -291,14 +289,14 @@ export function MarketplaceAgentDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Page>
   );
 }
 
 function MetaRow({ label, value }: { label: string; value: string }) {
   return (
     <div
-      className="flex items-center justify-between gap-4 border-b border-[var(--border-subtle)] last:border-b-0"
+      className="flex items-center justify-between gap-4 border-b border-[var(--border-default)] last:border-b-0"
       style={{ paddingBottom: "0.875rem" }}
     >
       <span className="text-sm text-[var(--text-muted)]">{label}</span>
@@ -321,7 +319,7 @@ function SelectBlock({
   className?: string;
 }) {
   return (
-    <div className={`space-y-2.5 ${className ?? ""}`}>
+    <Stack gap="xs" className={className}>
       <Label>{label}</Label>
       <Select value={value || undefined} onValueChange={onChange}>
         <SelectTrigger>
@@ -335,7 +333,7 @@ function SelectBlock({
           ))}
         </SelectContent>
       </Select>
-    </div>
+    </Stack>
   );
 }
 

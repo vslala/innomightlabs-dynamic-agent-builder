@@ -2,9 +2,22 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Plus, Power, PowerOff, Search, Wrench } from "lucide-react";
 
 import { SchemaForm } from "../../../components/forms";
-import { Button } from "../../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
+import { Inline, Stack } from "../../../components/layout";
+import {
+  Button,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogSection,
+  DialogTitle,
+  Input,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+} from "../../../components/ui";
 import { connectorApiService } from "../../../services/connectors";
 import { skillApiService } from "../../../services/skills";
 import type { FormValue, FormSchema } from "../../../types/form";
@@ -344,20 +357,20 @@ export function AgentSkillsPage() {
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+      <Panel>
+        <PanelHeader>
+          <Inline justify="space-between" style={{ width: "100%" }}>
+            <Inline gap="sm">
               <Wrench style={{ height: "1.25rem", width: "1.25rem", color: "var(--gradient-start)" }} />
-              <CardTitle className="text-lg">Skills</CardTitle>
-            </div>
+              <PanelTitle className="text-lg">Skills</PanelTitle>
+            </Inline>
             <Button size="action" onClick={openSkillDialog}>
               <Plus style={{ height: "1rem", width: "1rem" }} />
               Add Skill
             </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
+          </Inline>
+        </PanelHeader>
+        <PanelBody>
           <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
             Install reusable skills to give this agent task-specific capabilities with secure configuration.
           </p>
@@ -372,12 +385,12 @@ export function AgentSkillsPage() {
               <p style={{ fontSize: "0.875rem" }}>Install a skill to enable specialized actions.</p>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <Stack gap="md">
               {installedSkills.map((skill) => {
                 const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
                 return (
-                <div key={installedSkillId} style={{ border: "1px solid var(--border-subtle)", borderRadius: "0.75rem", padding: "1rem" }}>
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
+                <DialogSection key={installedSkillId}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--space-5)", flexWrap: "wrap" }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
                         <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{skill.name}</span>
@@ -396,8 +409,8 @@ export function AgentSkillsPage() {
                         </div>
                       )}
                     </div>
-                    <div style={{ display: "flex", width: "8.75rem", flexShrink: 0, flexDirection: "column", gap: "0.625rem", alignItems: "stretch" }}>
-                      <Button variant="outline" size="action" onClick={() => handleToggleSkill(skill)} disabled={updatingSkillId === installedSkillId} className="w-full">
+                    <Stack gap="sm" style={{ width: "max-content", minWidth: "9.5rem", flexShrink: 0 }}>
+                      <Button variant="outline" size="action" onClick={() => handleToggleSkill(skill)} disabled={updatingSkillId === installedSkillId}>
                         {skill.enabled ? (
                           <>
                             <PowerOff className="h-4 w-4" />
@@ -410,7 +423,7 @@ export function AgentSkillsPage() {
                           </>
                         )}
                       </Button>
-                      <Button variant="destructive" size="action" onClick={() => handleUninstallSkill(skill)} disabled={uninstallingSkillId === installedSkillId} className="w-full">
+                      <Button variant="destructive" size="action" onClick={() => handleUninstallSkill(skill)} disabled={uninstallingSkillId === installedSkillId}>
                         {uninstallingSkillId === installedSkillId ? "Removing..." : "Uninstall"}
                       </Button>
                       {Object.keys(skill.config).length > 0 && (
@@ -419,20 +432,19 @@ export function AgentSkillsPage() {
                           size="action"
                           onClick={() => handleUpdateSkillConfig(skill, skill.config)}
                           disabled={updatingSkillId === installedSkillId}
-                          className="w-full"
                         >
                           {updatingSkillId === installedSkillId ? "Saving..." : "Refresh Config"}
                         </Button>
                       )}
-                    </div>
+                    </Stack>
                   </div>
-                </div>
+                </DialogSection>
               );
               })}
-            </div>
+            </Stack>
           )}
-        </CardContent>
-      </Card>
+        </PanelBody>
+      </Panel>
 
       <Dialog open={isSkillDialogOpen} onOpenChange={setIsSkillDialogOpen}>
         <DialogContent style={{ width: "min(92vw, 88rem)", maxWidth: "88rem" }}>
@@ -442,9 +454,12 @@ export function AgentSkillsPage() {
               Install a skill and configure it for this agent.
             </DialogDescription>
           </DialogHeader>
-          <div style={{ display: "grid", gridTemplateColumns: "13rem minmax(0, 1fr) 24rem", gap: "1rem", minHeight: "40rem" }}>
-            <aside style={{ borderRight: "1px solid var(--border-subtle)", paddingRight: "0.75rem" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+          <DialogBody
+            className="grid"
+            style={{ gridTemplateColumns: "13rem minmax(0, 1fr) 24rem", gap: "var(--space-5)", minHeight: "40rem" }}
+          >
+            <aside style={{ borderRight: "1px solid var(--border-default)", paddingRight: "var(--space-3)" }}>
+              <Stack gap="xs">
                 {skillCategories.map((category) => {
                   const selected = selectedCategory === category.id;
                   return (
@@ -470,8 +485,6 @@ export function AgentSkillsPage() {
                         borderRadius: "0.5rem",
                         background: selected ? "rgba(99, 102, 241, 0.12)" : "transparent",
                         color: selected ? "var(--text-primary)" : "var(--text-muted)",
-                        height: "auto",
-                        padding: "0.55rem 0.65rem",
                         textAlign: "left",
                         whiteSpace: "normal",
                         fontSize: "0.875rem",
@@ -485,36 +498,29 @@ export function AgentSkillsPage() {
                     </Button>
                   );
                 })}
-              </div>
+              </Stack>
             </aside>
 
-            <section style={{ display: "flex", flexDirection: "column", gap: "0.875rem", minWidth: 0 }}>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  border: "1px solid var(--border-subtle)",
-                  borderRadius: "0.5rem",
-                  padding: "0.625rem 0.75rem",
-                  background: "var(--bg-secondary)",
-                }}
-              >
-                <Search className="h-4 w-4" style={{ color: "var(--text-muted)" }} />
-                <input
+            <section style={{ minWidth: 0 }}>
+              <Stack gap="sm">
+              <div style={{ position: "relative" }}>
+                <Search
+                  className="h-4 w-4"
+                  style={{
+                    color: "var(--text-muted)",
+                    left: "var(--space-4)",
+                    position: "absolute",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                  }}
+                />
+                <Input
                   value={skillSearch}
                   onChange={(event) => setSkillSearch(event.target.value)}
                   placeholder="Search for a skill you want to use"
-                  style={{
-                    width: "100%",
-                    border: "none",
-                    outline: "none",
-                    background: "transparent",
-                    color: "var(--text-primary)",
-                    fontSize: "0.875rem",
-                  }}
+                  style={{ paddingLeft: "2.75rem" }}
                 />
-              </label>
+              </div>
 
               <div style={{ maxHeight: "36rem", overflowY: "auto", paddingRight: "0.25rem" }}>
                 {availableSkills.length === 0 ? (
@@ -543,7 +549,6 @@ export function AgentSkillsPage() {
                             borderRadius: "0.5rem",
                             background: installed ? "rgba(255, 255, 255, 0.03)" : "var(--bg-secondary)",
                             color: "inherit",
-                            padding: "0.875rem",
                             textAlign: "left",
                             whiteSpace: "normal",
                             cursor: installed ? "not-allowed" : "pointer",
@@ -601,20 +606,21 @@ export function AgentSkillsPage() {
                   </div>
                 )}
               </div>
+              </Stack>
             </section>
 
-            <section style={{ borderLeft: "1px solid var(--border-subtle)", paddingLeft: "1rem", minWidth: 0 }}>
+            <section style={{ borderLeft: "1px solid var(--border-default)", paddingLeft: "var(--space-4)", minWidth: 0 }}>
               {!selectedSkill ? (
-                <div style={{ border: "1px dashed var(--border-subtle)", borderRadius: "0.75rem", padding: "1rem", color: "var(--text-muted)" }}>
+                <DialogSection style={{ borderStyle: "dashed", color: "var(--text-muted)" }}>
                   <p style={{ fontSize: "0.875rem", marginBottom: "0.25rem", color: "var(--text-primary)", fontWeight: 600 }}>
                     Select a skill
                   </p>
                   <p style={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
                     Choose a skill from the catalog to configure and install it for this agent.
                   </p>
-                </div>
+                </DialogSection>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <Stack gap="sm">
                   <div>
                     <p style={{ fontWeight: 600, color: "var(--text-primary)" }}>{selectedSkill.name}</p>
                     <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>{selectedSkill.description}</p>
@@ -661,10 +667,10 @@ export function AgentSkillsPage() {
                       {installingSkill ? "Installing..." : "Install Skill"}
                     </Button>
                   )}
-                </div>
+                </Stack>
               )}
             </section>
-          </div>
+          </DialogBody>
         </DialogContent>
       </Dialog>
     </>

@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle, ExternalLink, Plug, RefreshCw, Server } from "lucide-react";
 import { Link } from "react-router-dom";
 
+import { Inline, Stack } from "../../../components/layout";
 import {
   Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
   LoadingState,
+  Panel,
+  PanelBody,
+  PanelDescription,
+  PanelHeader,
+  PanelTitle,
   StatusBadge,
 } from "../../../components/ui";
 import { connectorApiService } from "../../../services/connectors";
@@ -72,22 +73,22 @@ export function AgentMCPToolsPage() {
   if (loading) return <LoadingState />;
 
   return (
-    <Card>
-      <CardHeader>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
+    <Panel>
+      <PanelHeader>
+        <Inline justify="space-between" style={{ width: "100%" }}>
           <div>
-            <CardTitle className="text-lg">MCP Tools</CardTitle>
-            <CardDescription>
+            <PanelTitle className="text-lg">MCP Tools</PanelTitle>
+            <PanelDescription>
               Enable configured MCP connectors for this agent. The agent can list and call MCP tools at runtime.
-            </CardDescription>
+            </PanelDescription>
           </div>
           <Button size="sm" variant="outline" onClick={() => void loadMCPConnections()}>
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
+        </Inline>
+      </PanelHeader>
+      <PanelBody>
         {error && <div style={{ color: "var(--error)", fontSize: "0.875rem", marginBottom: "1rem" }}>{error}</div>}
 
         {mcpConnections.length === 0 ? (
@@ -119,7 +120,7 @@ export function AgentMCPToolsPage() {
             </Link>
           </div>
         ) : (
-          <div style={{ display: "grid", gap: "1rem" }}>
+          <Stack gap="md">
             {mcpConnections.map((connection) => {
               const isAgentEnabled = enabledById.has(connection.mcp_id);
               const disabledByConnector = !connection.enabled;
@@ -129,12 +130,13 @@ export function AgentMCPToolsPage() {
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
-                    gap: "1rem",
+                    gap: "var(--space-5)",
                     alignItems: "center",
-                    padding: "1rem",
-                    border: "1px solid var(--border-subtle)",
+                    padding: "var(--space-5)",
+                    border: "1px solid var(--border-default)",
                     borderRadius: "0.75rem",
-                    background: "rgba(255,255,255,0.03)",
+                    background: "var(--surface-control)",
+                    flexWrap: "wrap",
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "0.875rem", minWidth: 0 }}>
@@ -162,7 +164,7 @@ export function AgentMCPToolsPage() {
                       </p>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <Inline justify="flex-end">
                     <Link to="/dashboard/connectors">
                       <Button variant="outline" size="sm">
                         <ExternalLink className="h-4 w-4" />
@@ -182,14 +184,14 @@ export function AgentMCPToolsPage() {
                           ? "Disable"
                           : "Enable"}
                     </Button>
-                  </div>
+                  </Inline>
                 </div>
               );
             })}
-          </div>
+          </Stack>
         )}
-      </CardContent>
-    </Card>
+      </PanelBody>
+    </Panel>
   );
 }
 

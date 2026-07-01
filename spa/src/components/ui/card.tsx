@@ -8,7 +8,7 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)]",
+      "rounded-lg border border-[var(--border-default)] bg-[var(--surface-panel)]",
       className
     )}
     {...props}
@@ -23,7 +23,7 @@ const CardHeader = React.forwardRef<
   <div
     ref={ref}
     className={cn("flex flex-col", className)}
-    style={{ padding: "1.5rem", paddingBottom: "0.75rem", ...style }}
+    style={{ gap: "var(--space-2)", padding: "var(--card-padding)", paddingBottom: "var(--space-3)", ...style }}
     {...props}
   />
 ));
@@ -63,7 +63,7 @@ const CardContent = React.forwardRef<
   <div
     ref={ref}
     className={cn("", className)}
-    style={{ padding: "1.5rem", paddingTop: "0.75rem", ...style }}
+    style={{ padding: "var(--card-padding)", paddingTop: "var(--space-3)", ...style }}
     {...props}
   />
 ));
@@ -72,13 +72,102 @@ CardContent.displayName = "CardContent";
 const CardFooter = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
+>(({ className, style, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex items-center p-5 pt-0", className)}
+    className={cn("flex items-center", className)}
+    style={{ gap: "var(--space-3)", padding: "var(--card-padding)", paddingTop: "var(--space-3)", ...style }}
     {...props}
   />
 ));
 CardFooter.displayName = "CardFooter";
 
-export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent };
+interface PanelProps extends React.HTMLAttributes<HTMLDivElement> {
+  density?: "compact" | "default" | "spacious";
+}
+
+const panelPadding: Record<NonNullable<PanelProps["density"]>, string> = {
+  compact: "var(--space-4)",
+  default: "var(--card-padding)",
+  spacious: "var(--card-padding-lg)",
+};
+
+const Panel = React.forwardRef<HTMLDivElement, PanelProps>(
+  ({ className, density = "default", style, ...props }, ref) => (
+    <Card
+      ref={ref}
+      className={cn("min-w-0", className)}
+      style={{ "--panel-padding": panelPadding[density], ...style } as React.CSSProperties}
+      {...props}
+    />
+  )
+);
+Panel.displayName = "Panel";
+
+const PanelHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, style, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn("flex min-w-0 items-start justify-between", className)}
+      style={{
+        gap: "var(--space-4)",
+        padding: "var(--panel-padding, var(--card-padding))",
+        paddingBottom: "var(--space-3)",
+        ...style,
+      }}
+      {...props}
+    />
+  )
+);
+PanelHeader.displayName = "PanelHeader";
+
+const PanelBody = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, style, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn("min-w-0", className)}
+      style={{
+        padding: "var(--panel-padding, var(--card-padding))",
+        paddingTop: "var(--space-3)",
+        ...style,
+      }}
+      {...props}
+    />
+  )
+);
+PanelBody.displayName = "PanelBody";
+
+const PanelFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, style, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn("flex flex-wrap items-center justify-end", className)}
+      style={{
+        gap: "var(--space-3)",
+        padding: "var(--panel-padding, var(--card-padding))",
+        paddingTop: "var(--space-3)",
+        ...style,
+      }}
+      {...props}
+    />
+  )
+);
+PanelFooter.displayName = "PanelFooter";
+
+const PanelTitle = CardTitle;
+const PanelDescription = CardDescription;
+
+export {
+  Card,
+  CardHeader,
+  CardFooter,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  Panel,
+  PanelHeader,
+  PanelBody,
+  PanelFooter,
+  PanelTitle,
+  PanelDescription,
+};

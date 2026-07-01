@@ -13,6 +13,7 @@
 
 import { useState } from "react";
 import { Button } from "../ui/button";
+import { FormActions, FormStack } from "../layout";
 import { FormField } from "./FormField";
 import type { FormSchema, FormValue } from "../../types/form";
 
@@ -24,6 +25,8 @@ interface SchemaFormProps {
   submitLabel?: string;
   cancelLabel?: string;
   isLoading?: boolean;
+  hideActions?: boolean;
+  actionAlign?: "start" | "end" | "stretch";
 }
 
 // Empty object constant to avoid creating new references
@@ -37,6 +40,8 @@ export function SchemaForm({
   submitLabel = "Submit",
   cancelLabel = "Cancel",
   isLoading = false,
+  hideActions = false,
+  actionAlign = "stretch",
 }: SchemaFormProps) {
   // Memoize initial values to avoid reference changes
   const stableInitialValues = initialValues || EMPTY_INITIAL_VALUES;
@@ -69,7 +74,7 @@ export function SchemaForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+    <FormStack onSubmit={handleSubmit}>
       {schema.form_inputs.map((field) => (
         <FormField
           key={field.name}
@@ -80,21 +85,23 @@ export function SchemaForm({
         />
       ))}
 
-      <div style={{ display: "flex", gap: "0.75rem", paddingTop: "1rem" }}>
-        {onCancel && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-            disabled={isLoading}
-          >
-            {cancelLabel}
+      {!hideActions && (
+        <FormActions align={actionAlign}>
+          {onCancel && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={isLoading}
+            >
+              {cancelLabel}
+            </Button>
+          )}
+          <Button type="submit" disabled={isLoading} style={actionAlign === "stretch" ? { width: "100%" } : undefined}>
+            {isLoading ? "Loading..." : submitLabel}
           </Button>
-        )}
-        <Button type="submit" disabled={isLoading} style={{ flex: 1 }}>
-          {isLoading ? "Loading..." : submitLabel}
-        </Button>
-      </div>
-    </form>
+        </FormActions>
+      )}
+    </FormStack>
   );
 }

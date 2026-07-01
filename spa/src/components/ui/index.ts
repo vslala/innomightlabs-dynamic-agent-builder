@@ -18,6 +18,7 @@ export * from "./separator";
 export * from "./avatar";
 export * from "./markdown-renderer";
 export * from "./json-viewer";
+export * from "./read-only-content";
 
 // Feedback components
 export * from "./spinner";

@@ -1,12 +1,25 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Database, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 
-import { Button } from "../../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
-import { Input } from "../../../components/ui/input";
-import { Label } from "../../../components/ui/label";
-import { Textarea } from "../../../components/ui/textarea";
+import { FieldGroup, Inline, Stack } from "../../../components/layout";
+import {
+  Button,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogSection,
+  DialogTitle,
+  Input,
+  Label,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+  Textarea,
+} from "../../../components/ui";
 import {
   memoryApiService,
   type MemoryBlockContentResponse,
@@ -174,20 +187,20 @@ export function AgentMemoryPage() {
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+      <Panel>
+        <PanelHeader>
+          <Inline justify="space-between" style={{ width: "100%" }}>
+            <Inline gap="sm">
               <Database style={{ height: "1.25rem", width: "1.25rem", color: "var(--gradient-start)" }} />
-              <CardTitle className="text-lg">Memory Blocks</CardTitle>
-            </div>
+              <PanelTitle className="text-lg">Memory Blocks</PanelTitle>
+            </Inline>
             <Button size="sm" onClick={() => setIsCreateBlockDialogOpen(true)}>
               <Plus style={{ height: "1rem", width: "1rem" }} />
               New Block
             </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
+          </Inline>
+        </PanelHeader>
+        <PanelBody>
           {loadingBlocks ? (
             <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
               <div style={{ height: "2rem", width: "2rem", animation: "spin 1s linear infinite", borderRadius: "50%", border: "2px solid var(--gradient-start)", borderTopColor: "transparent" }} />
@@ -199,11 +212,11 @@ export function AgentMemoryPage() {
               <p style={{ fontSize: "0.875rem" }}>Memory blocks will be created when you start chatting with this agent</p>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <Stack gap="sm">
               {memoryBlocks.map((block) => (
-                <div key={block.block_name} style={{ border: "1px solid var(--border-subtle)", borderRadius: "0.5rem", overflow: "hidden" }}>
+                <div key={block.block_name} style={{ border: "1px solid var(--border-default)", borderRadius: "0.75rem", overflow: "hidden" }}>
                   <div
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", backgroundColor: "var(--bg-secondary)", cursor: "pointer" }}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-4)", padding: "var(--space-4) var(--space-5)", backgroundColor: "var(--surface-control)", cursor: "pointer", flexWrap: "wrap" }}
                     onClick={() => toggleBlockExpansion(block.block_name)}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
@@ -251,13 +264,13 @@ export function AgentMemoryPage() {
                   </div>
 
                   {expandedBlocks.has(block.block_name) && (
-                    <div style={{ padding: "1rem", borderTop: "1px solid var(--border-subtle)" }}>
+                    <div style={{ padding: "var(--space-5)", borderTop: "1px solid var(--border-default)" }}>
                       {blockContents[block.block_name] ? (
                         <>
                           {blockContents[block.block_name].lines.length === 0 ? (
                             <p style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "0.875rem" }}>No content yet</p>
                           ) : (
-                            <div style={{ fontFamily: "monospace", fontSize: "0.8125rem", backgroundColor: "var(--bg-tertiary)", padding: "0.75rem", borderRadius: "0.375rem", maxHeight: "12rem", overflowY: "auto" }}>
+                            <div style={{ fontFamily: "monospace", fontSize: "0.8125rem", backgroundColor: "var(--bg-tertiary)", padding: "var(--space-4)", borderRadius: "0.5rem", maxHeight: "12rem", overflowY: "auto" }}>
                               {blockContents[block.block_name].lines.map((line, idx) => (
                                 <div key={idx} style={{ display: "flex", gap: "0.75rem", lineHeight: "1.5" }}>
                                   <span style={{ color: "var(--text-muted)", minWidth: "1.5rem", textAlign: "right" }}>{idx + 1}:</span>
@@ -284,10 +297,10 @@ export function AgentMemoryPage() {
                   )}
                 </div>
               ))}
-            </div>
+            </Stack>
           )}
-        </CardContent>
-      </Card>
+        </PanelBody>
+      </Panel>
 
       <Dialog open={isCreateBlockDialogOpen} onOpenChange={setIsCreateBlockDialogOpen}>
         <DialogContent>
@@ -297,25 +310,25 @@ export function AgentMemoryPage() {
               Create a new custom memory block for this agent. The agent can store and recall information in this block.
             </DialogDescription>
           </DialogHeader>
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <DialogBody>
             {createBlockError && (
               <div style={{ padding: "0.75rem", borderRadius: "0.5rem", backgroundColor: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#f87171", fontSize: "0.875rem" }}>
                 {createBlockError}
               </div>
             )}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <FieldGroup>
               <Label htmlFor="block-name">Block Name *</Label>
               <Input id="block-name" placeholder="e.g., projects, goals, preferences" value={newBlockName} onChange={(e) => setNewBlockName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            </FieldGroup>
+            <FieldGroup>
               <Label htmlFor="block-description">Description *</Label>
               <Input id="block-description" placeholder="What information will be stored in this block?" value={newBlockDescription} onChange={(e) => setNewBlockDescription(e.target.value)} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            </FieldGroup>
+            <FieldGroup>
               <Label htmlFor="block-limit">Word Limit</Label>
               <Input id="block-limit" type="number" min={100} max={50000} value={newBlockWordLimit} onChange={(e) => setNewBlockWordLimit(parseInt(e.target.value, 10) || 5000)} />
-            </div>
-          </div>
+            </FieldGroup>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateBlockDialogOpen(false)} disabled={isCreatingBlock}>Cancel</Button>
             <Button onClick={handleCreateBlock} disabled={!newBlockName.trim() || !newBlockDescription.trim() || isCreatingBlock}>
@@ -350,10 +363,12 @@ export function AgentMemoryPage() {
               Edit the content of the "{editingBlock}" memory block. Each line represents one piece of information.
             </DialogDescription>
           </DialogHeader>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <DialogSection>
+          <FieldGroup>
             <Label htmlFor="edit-content">Content (one item per line)</Label>
             <Textarea id="edit-content" rows={10} value={editContent} onChange={(e) => setEditContent(e.target.value)} style={{ fontFamily: "monospace", fontSize: "0.875rem" }} />
-          </div>
+          </FieldGroup>
+          </DialogSection>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingBlock(null)} disabled={isSavingContent}>Cancel</Button>
             <Button onClick={handleSaveContent} disabled={isSavingContent}>

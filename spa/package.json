@@ -7,6 +7,7 @@
     "dev": "vite --mode dev",
     "debug": "vite --mode debug",
     "build": "tsc -b && vite build",
+    "design:audit": "node scripts/design-audit.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

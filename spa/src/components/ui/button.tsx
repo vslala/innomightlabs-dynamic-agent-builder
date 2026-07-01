@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex box-border shrink-0 items-center justify-center gap-2.5 whitespace-nowrap rounded-lg text-center text-sm font-medium leading-none transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&>span]:min-w-0 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex box-border shrink-0 items-center justify-center whitespace-nowrap rounded-lg text-center text-sm font-medium leading-none transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gradient-start)]/50 disabled:pointer-events-none disabled:opacity-50 [&>span]:min-w-0 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -21,11 +21,11 @@ const buttonVariants = cva(
         link: "text-[var(--gradient-start)] underline-offset-4 hover:underline",
       },
       size: {
-        default: "min-h-11 px-6 py-2.5",
-        sm: "min-h-10 rounded-md px-5 py-2.5 text-sm",
-        action: "min-h-10 min-w-40 rounded-md px-6 py-2.5 text-sm",
-        lg: "min-h-12 rounded-xl px-8 py-3 text-base",
-        icon: "h-10 w-10",
+        default: "",
+        sm: "rounded-md text-sm",
+        action: "rounded-md text-sm",
+        lg: "rounded-xl text-base",
+        icon: "",
       },
     },
     defaultVariants: {
@@ -37,29 +37,29 @@ const buttonVariants = cva(
 
 const buttonSizeStyles: Record<string, React.CSSProperties> = {
   default: {
-    minHeight: "2.75rem",
-    paddingInline: "1.5rem",
-    paddingBlock: "0.625rem",
+    minHeight: "var(--control-height-md)",
+    paddingInline: "var(--control-padding-x-md)",
+    paddingBlock: "var(--space-3)",
   },
   sm: {
-    minHeight: "2.5rem",
-    paddingInline: "1.25rem",
-    paddingBlock: "0.625rem",
+    minHeight: "var(--control-height-sm)",
+    paddingInline: "var(--control-padding-x-sm)",
+    paddingBlock: "var(--space-2)",
   },
   action: {
-    minHeight: "2.5rem",
-    minWidth: "10rem",
-    paddingInline: "1.5rem",
-    paddingBlock: "0.625rem",
+    minHeight: "var(--control-height-sm)",
+    minWidth: "max-content",
+    paddingInline: "var(--control-padding-x-md)",
+    paddingBlock: "var(--space-2)",
   },
   lg: {
-    minHeight: "3rem",
-    paddingInline: "2rem",
-    paddingBlock: "0.75rem",
+    minHeight: "var(--control-height-lg)",
+    paddingInline: "var(--control-padding-x-lg)",
+    paddingBlock: "var(--space-3)",
   },
   icon: {
-    height: "2.5rem",
-    width: "2.5rem",
+    height: "var(--control-height-sm)",
+    width: "var(--control-height-sm)",
     padding: 0,
   },
 };
@@ -79,6 +79,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         className={cn(buttonVariants({ variant, size, className }))}
         style={{
           boxSizing: "border-box",
+          gap: "var(--space-2)",
           ...(buttonSizeStyles[resolvedSize] ?? buttonSizeStyles.default),
           ...style,
         }}

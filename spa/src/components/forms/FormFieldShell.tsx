@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Label } from "../ui/label";
+import { FieldGroup, Stack } from "../layout";
 import type { FormInput } from "../../types/form";
 
 interface FormFieldShellProps {
@@ -9,8 +10,8 @@ interface FormFieldShellProps {
 
 export function FormFieldShell({ field, children }: FormFieldShellProps) {
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex min-w-0 flex-col gap-1">
+    <FieldGroup>
+      <Stack gap="xs">
         <Label htmlFor={field.name} className="text-sm font-medium leading-5 text-[var(--text-primary)]">
           {field.label}
         </Label>
@@ -19,10 +20,10 @@ export function FormFieldShell({ field, children }: FormFieldShellProps) {
             {field.attr.help_text}
           </p>
         )}
-      </div>
-      <div className="flex min-w-0 flex-col gap-2">
+      </Stack>
+      <Stack gap="xs">
         {children}
-      </div>
-    </div>
+      </Stack>
+    </FieldGroup>
   );
 }
