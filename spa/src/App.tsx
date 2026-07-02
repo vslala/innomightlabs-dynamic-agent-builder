@@ -3,7 +3,6 @@ import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 import { RateLimitBanner } from './components/RateLimitBanner';
-import BetaBanner from './components/BetaBanner';
 import { LoadingState } from './components/ui';
 
 const basename = import.meta.env.BASE_URL;
@@ -84,7 +83,6 @@ function App() {
   return (
     <BrowserRouter basename={basename}>
       <ScrollToHash />
-      <BetaBanner />
       <RateLimitBanner />
       <Suspense fallback={<LoadingState />}>
         <Routes>
