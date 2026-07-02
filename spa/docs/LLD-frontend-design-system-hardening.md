@@ -17,6 +17,7 @@ The fix is to make the design system explicit:
 - Layout components own page/section/form spacing.
 - Pages compose those components instead of inventing local spacing.
 - Tooling catches new raw controls and common spacing overrides before they spread.
+- Row, column, and grid primitives own fixed gap scales so page margins do not drift.
 
 This should be implemented incrementally. Do not rewrite the full SPA in one risky pass.
 
@@ -50,6 +51,7 @@ The problem is contract drift:
 - Some components/pages still use raw `<button>`, `<input>`, `<select>`, and `<textarea>`.
 - `index.css` defines colors but not a full spacing/control/radius scale.
 - Page layouts repeatedly use local `space-y-*`, `gap-*`, `p-*`, and inline spacing.
+- Rows and columns are often built from raw flex/grid utilities, so adjacent sections and cards do not share one spacing rhythm.
 - Dialogs do not provide a standard body/footer layout with enough default internal spacing.
 - Read-only surfaces are not a first-class component, so pages use `pre`, `div`, or `Card` differently.
 
@@ -289,6 +291,37 @@ Use instead of repeated `space-y-*`.
 ```
 
 Use instead of repeated `flex gap-* items-* justify-*`.
+
+### Grid
+
+```tsx
+<Grid gap="md" className="grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+  ...
+</Grid>
+```
+
+Use instead of repeated `grid gap-*` for repeated cards and multi-column layouts. The grid primitive owns row and column gap values through the shared gap scale.
+
+### Row And Column Spacing Rules
+
+- Use `Stack` for vertical rows.
+- Use `Inline` for horizontal rows and action groups.
+- Use `Grid` for repeated cards and multi-column layouts.
+- Use the shared gap scale: `xs`, `sm`, `md`, `lg`, `xl`.
+- Page-specific spacing should be rare and expressed through design tokens when unavoidable.
+- Inputs with adornments should not use Tailwind padding classes to override component-owned padding. Pass token-backed style overrides or add an adornment prop on the primitive.
+
+Initial migration target:
+
+- `AgentMarketplacePage` should use `Page`, `PageHeader`, `PageBody`, `Inline`, `Stack`, and `Grid` so the marketplace list, search row, and cards follow the same spacing contract as the rest of the dashboard.
+
+Follow-up migration inventory:
+
+- Main list pages: `AgentsList`, `KnowledgeBases`, and `AutomationsListPage` should share the same `Page` + `Grid` card pattern.
+- Conversation surfaces: `Conversations`, `ConversationSidebar`, `ConversationStartComposer`, and `ConversationDetail` should be reviewed as one layout family because they use a split-pane shell rather than a normal page stack.
+- Automation nested pages: `AutomationDetailLayout`, `AutomationRunsPage`, `AutomationTriggersPage`, and `AutomationBuilderPage` should be migrated carefully because builder/editor surfaces need denser spacing than standard content pages.
+- Knowledge base nested pages: `KnowledgeBaseDetail` still has local section/form/grid spacing and should move dialogs/forms to `FormStack` and `FieldGroup`.
+- Legacy agent detail surfaces: `AgentDetail` and nested agent-detail pages should continue moving to `Page`, `Section`, `Stack`, `Inline`, and `Grid` as they are touched.
 
 ### FormStack and FieldGroup
 

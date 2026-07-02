@@ -19,6 +19,7 @@ import {
   agentApiService,
   type AgentResponse,
 } from "../../services/agents/AgentApiService";
+import { Grid, Inline, Page, PageActions, PageBody, PageDescription, PageHeader, Stack } from "../../components/layout";
 
 export function AgentsList() {
   const navigate = useNavigate();
@@ -72,14 +73,10 @@ export function AgentsList() {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[var(--text-secondary)] text-base">
-            Create and manage your AI agents
-          </p>
-        </div>
-        <div className="flex gap-3">
+    <Page>
+      <PageHeader>
+        <PageDescription>Create and manage your AI agents</PageDescription>
+        <PageActions>
           <Button variant="outline" onClick={() => navigate("/dashboard/agents/marketplace")} size="lg">
             <ShoppingBag className="h-5 w-5" />
             Marketplace
@@ -88,30 +85,32 @@ export function AgentsList() {
             <Plus className="h-5 w-5" />
             Create Agent
           </Button>
-        </div>
-      </div>
+        </PageActions>
+      </PageHeader>
 
-      {agents.length === 0 ? (
-        <EmptyState
-          icon={Bot}
-          title="No agents yet"
-          description="Create your first AI agent to get started. You can customize its persona and connect it to different LLM providers."
-          actionLabel="Create Your First Agent"
-          onAction={() => navigate("/dashboard/agents/new")}
-        />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {agents.map((agent) => (
-            <Card
-              key={agent.agent_id}
-              className="group hover:border-[var(--gradient-start)]/50 transition-all duration-200"
-            >
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-5">
+      <PageBody>
+        {agents.length === 0 ? (
+          <EmptyState
+            icon={Bot}
+            title="No agents yet"
+            description="Create your first AI agent to get started. You can customize its persona and connect it to different LLM providers."
+            actionLabel="Create Your First Agent"
+            onAction={() => navigate("/dashboard/agents/new")}
+          />
+        ) : (
+          <Grid className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3" gap="lg">
+            {agents.map((agent) => (
+              <Card
+                key={agent.agent_id}
+                className="group hover:border-[var(--gradient-start)]/50 transition-all duration-200"
+              >
+                <CardContent>
+                  <Stack gap="md">
+                    <Inline justify="space-between" align="flex-start" wrap={false}>
                   <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
                     <Bot className="h-7 w-7 text-white" />
                   </div>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Inline gap="xs" className="opacity-0 transition-opacity group-hover:opacity-100">
                     <Link to={`/dashboard/agents/${agent.agent_id}`}>
                       <Button variant="ghost" size="icon">
                         <Settings className="h-4 w-4" />
@@ -128,28 +127,32 @@ export function AgentsList() {
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
-                  </div>
-                </div>
+                  </Inline>
+                    </Inline>
 
-                <Link to={`/dashboard/agents/${agent.agent_id}`}>
-                  <h3 className="font-semibold text-lg text-[var(--text-primary)] mb-2 hover:text-[var(--gradient-start)] transition-colors">
-                    {agent.agent_name}
-                  </h3>
-                </Link>
-                <p className="text-sm text-[var(--text-muted)] line-clamp-2 mb-4 leading-relaxed">
-                  {agent.agent_persona}
-                </p>
+                    <Stack gap="xs">
+                      <Link to={`/dashboard/agents/${agent.agent_id}`}>
+                        <h3 className="text-lg font-semibold text-[var(--text-primary)] transition-colors hover:text-[var(--gradient-start)]">
+                          {agent.agent_name}
+                        </h3>
+                      </Link>
+                      <p className="line-clamp-2 text-sm leading-relaxed text-[var(--text-muted)]">
+                        {agent.agent_persona}
+                      </p>
+                    </Stack>
 
-                <div className="flex items-center gap-2 pt-2">
+                    <Inline gap="xs">
                   <span className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--gradient-start)]/10 text-[var(--gradient-start)]">
                     {agent.agent_provider}
                   </span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+                    </Inline>
+                  </Stack>
+                </CardContent>
+              </Card>
+            ))}
+          </Grid>
+        )}
+      </PageBody>
 
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent>
@@ -178,6 +181,6 @@ export function AgentsList() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Page>
   );
 }

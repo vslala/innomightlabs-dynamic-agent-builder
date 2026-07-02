@@ -15,6 +15,162 @@ export interface ChangeLogEntry {
 
 export const changeLogEntries: ChangeLogEntry[] = [
   {
+    date: "2026-07-02",
+    title: "Design system hardening",
+    summary:
+      "The dashboard UI is moving to shared layout and control primitives so spacing, buttons, forms, and cards stay consistent across pages.",
+    items: [
+      {
+        title: "Consistent page layouts",
+        description:
+          "Core dashboard list pages now use shared page, stack, inline, and grid primitives for more predictable margins and card spacing.",
+        category: "improved",
+      },
+      {
+        title: "Button and form consistency",
+        description:
+          "Shared buttons, inputs, textareas, selects, checkboxes, radios, and file inputs now own their sizing and padding instead of relying on page-specific fixes.",
+        category: "improved",
+      },
+      {
+        title: "Frontend design audit",
+        description:
+          "A design audit command now catches raw controls and common button contract violations before they spread to new pages.",
+        category: "developer",
+      },
+      {
+        title: "Faster route loading",
+        description:
+          "Dashboard and public pages are now lazy-loaded so the initial application bundle is smaller and heavy pages load only when needed.",
+        category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-06-30",
+    title: "Agent marketplace",
+    summary:
+      "Users can publish reusable agents, browse shared templates, inspect instructions, and import configured copies into their own workspace.",
+    items: [
+      {
+        title: "Marketplace browsing",
+        description:
+          "The Agents page now links to a marketplace where users can search shared agents and open detailed template previews.",
+        category: "new",
+      },
+      {
+        title: "Importable agent templates",
+        description:
+          "Marketplace imports create a private agent copy and ask for the importing user's required skill configuration before installation.",
+        category: "new",
+      },
+      {
+        title: "User publishing",
+        description:
+          "Agents can be published as versioned marketplace templates without copying private skill secrets or OAuth credentials.",
+        category: "new",
+      },
+    ],
+  },
+  {
+    date: "2026-06-29",
+    title: "Artifacts and report sharing",
+    summary:
+      "Generated files are now treated as durable user artifacts that can be opened or downloaded from a central artifact library.",
+    items: [
+      {
+        title: "Artifact library",
+        description:
+          "Generated reports and files are stored as user-owned artifacts, making them accessible after the skill or automation that created them has finished.",
+        category: "new",
+      },
+      {
+        title: "Browser-openable HTML reports",
+        description:
+          "HTML report artifacts can return a browser view link while still keeping download behavior for normal file access.",
+        category: "new",
+      },
+      {
+        title: "Upload File skill",
+        description:
+          "Agents can save generated text, Markdown, JSON, CSV, code, or HTML as durable artifacts and return a link to the user.",
+        category: "new",
+      },
+    ],
+  },
+  {
+    date: "2026-06-28",
+    title: "Async tool execution",
+    summary:
+      "Long-running skill actions can now run through an async job path while the agent keeps the user informed and resumes with the final result.",
+    items: [
+      {
+        title: "Async skill jobs",
+        description:
+          "Skill actions can run in the background with persisted job status, progress, result, error state, and seven-day TTL cleanup.",
+        category: "new",
+      },
+      {
+        title: "Agent wait tool",
+        description:
+          "Agents can wait for a bounded duration before checking long-running jobs again, keeping the conversation active without frontend polling.",
+        category: "new",
+      },
+      {
+        title: "Long report reliability",
+        description:
+          "Report generation and other slow tool calls are less likely to hit request timeouts because the runtime can separate job execution from immediate tool response.",
+        category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-06-27",
+    title: "League reports and Riot API skills",
+    summary:
+      "League of Legends workflows now have dedicated Riot data access and browser-openable report generation.",
+    items: [
+      {
+        title: "League Insights Report skill",
+        description:
+          "Agents and automations can generate detailed League of Legends HTML reports from Riot match data and save them as artifacts.",
+        category: "new",
+      },
+      {
+        title: "Riot LOL API Client skill",
+        description:
+          "Agents can query Riot League APIs for compact account, match, ranked, mastery, live-game, status, challenge, and clash summaries.",
+        category: "new",
+      },
+      {
+        title: "Richer match analysis",
+        description:
+          "League reports include more match context such as player performance, objectives, recommendations, and rune-related details.",
+        category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-06-17",
+    title: "REST API and external service skills",
+    summary:
+      "Agents and automations can now call more external systems through generic and provider-specific skills.",
+    items: [
+      {
+        title: "REST Template skill",
+        description:
+          "Agents and automations can send flexible GET and POST requests with headers, query parameters, body payloads, timeouts, and structured responses.",
+        category: "new",
+      },
+      {
+        title: "Safer HTTP responses",
+        description:
+          "REST responses include bounded body previews, JSON parsing when available, elapsed time, and redaction for sensitive headers.",
+        category: "improved",
+      },
+    ],
+  },
+  {
     date: "2026-06-04",
     title: "Automation triggers are now managed directly",
     summary:

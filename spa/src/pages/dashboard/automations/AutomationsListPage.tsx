@@ -20,6 +20,7 @@ import {
   StatusBadge,
   Textarea,
 } from "../../../components/ui";
+import { FieldGroup, Grid, Inline, Page, PageActions, PageBody, PageDescription, PageHeader, Stack } from "../../../components/layout";
 import { automationApiService } from "../../../services/automations";
 import type { AutomationResponse } from "../../../types/automation";
 
@@ -109,79 +110,83 @@ export function AutomationsListPage() {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-[var(--text-secondary)] text-base">
-            Build and test workflow automations for your agents
-          </p>
-        </div>
+    <Page>
+      <PageHeader>
+        <PageDescription>Build and test workflow automations for your agents</PageDescription>
+        <PageActions>
         <Button size="lg" onClick={() => setCreateOpen(true)}>
           <Plus className="h-5 w-5" />
           Create Automation
         </Button>
-      </div>
+        </PageActions>
+      </PageHeader>
 
-      {automations.length === 0 ? (
-        <EmptyState
-          icon={Workflow}
-          title="No automations yet"
-          description="Create your first automation to orchestrate agent work through a reusable workflow."
-          actionLabel="Create Automation"
-          onAction={() => setCreateOpen(true)}
-        />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {automations.map((automation) => (
-            <Card
-              key={automation.automation_id}
-              className="group hover:border-[var(--gradient-start)]/50 transition-all duration-200"
-            >
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-5">
-                  <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
-                    <Workflow className="h-7 w-7 text-white" />
-                  </div>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Link to={`/dashboard/automations/${automation.automation_id}`}>
-                      <Button variant="ghost" size="icon">
-                        <Settings className="h-4 w-4" />
-                      </Button>
-                    </Link>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-red-400 hover:text-red-300"
-                      onClick={() => {
-                        setSelectedAutomation(automation);
-                        setDeleteOpen(true);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+      <PageBody>
+        {automations.length === 0 ? (
+          <EmptyState
+            icon={Workflow}
+            title="No automations yet"
+            description="Create your first automation to orchestrate agent work through a reusable workflow."
+            actionLabel="Create Automation"
+            onAction={() => setCreateOpen(true)}
+          />
+        ) : (
+          <Grid className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3" gap="lg">
+            {automations.map((automation) => (
+              <Card
+                key={automation.automation_id}
+                className="group hover:border-[var(--gradient-start)]/50 transition-all duration-200"
+              >
+                <CardContent>
+                  <Stack gap="md">
+                    <Inline justify="space-between" align="flex-start" wrap={false}>
+                      <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
+                        <Workflow className="h-7 w-7 text-white" />
+                      </div>
+                      <Inline gap="xs" className="opacity-0 transition-opacity group-hover:opacity-100">
+                        <Link to={`/dashboard/automations/${automation.automation_id}`}>
+                          <Button variant="ghost" size="icon">
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-red-400 hover:text-red-300"
+                          onClick={() => {
+                            setSelectedAutomation(automation);
+                            setDeleteOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </Inline>
+                    </Inline>
 
-                <Link to={`/dashboard/automations/${automation.automation_id}`}>
-                  <h3 className="font-semibold text-lg text-[var(--text-primary)] mb-2 hover:text-[var(--gradient-start)] transition-colors">
-                    {automation.title}
-                  </h3>
-                </Link>
-                <p className="text-sm text-[var(--text-muted)] line-clamp-2 mb-4 leading-relaxed">
-                  {automation.description || "No description provided."}
-                </p>
+                    <Stack gap="xs">
+                      <Link to={`/dashboard/automations/${automation.automation_id}`}>
+                        <h3 className="text-lg font-semibold text-[var(--text-primary)] transition-colors hover:text-[var(--gradient-start)]">
+                          {automation.title}
+                        </h3>
+                      </Link>
+                      <p className="line-clamp-2 text-sm leading-relaxed text-[var(--text-muted)]">
+                        {automation.description || "No description provided."}
+                      </p>
+                    </Stack>
 
-                <div className="flex items-center justify-between gap-3 pt-2">
-                  <StatusBadge status={badgeStatus(automation.status)} label={automation.status} />
-                  <span className="text-xs text-[var(--text-muted)]">
-                    Updated {formatDate(automation.updated_at ?? automation.created_at)}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+                    <Inline justify="space-between">
+                      <StatusBadge status={badgeStatus(automation.status)} label={automation.status} />
+                      <span className="text-xs text-[var(--text-muted)]">
+                        Updated {formatDate(automation.updated_at ?? automation.created_at)}
+                      </span>
+                    </Inline>
+                  </Stack>
+                </CardContent>
+              </Card>
+            ))}
+          </Grid>
+        )}
+      </PageBody>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
@@ -189,8 +194,8 @@ export function AutomationsListPage() {
             <DialogTitle>Create Automation</DialogTitle>
             <DialogDescription>Name the workflow before opening the builder.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
+          <Stack gap="md">
+            <FieldGroup>
               <Label htmlFor="automation-title">Title</Label>
               <Input
                 id="automation-title"
@@ -198,8 +203,8 @@ export function AutomationsListPage() {
                 onChange={(event) => setTitle(event.target.value)}
                 placeholder="Customer intake workflow"
               />
-            </div>
-            <div className="space-y-2">
+            </FieldGroup>
+            <FieldGroup>
               <Label htmlFor="automation-description">Description</Label>
               <Textarea
                 id="automation-description"
@@ -207,8 +212,8 @@ export function AutomationsListPage() {
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="Describe what this workflow automates"
               />
-            </div>
-          </div>
+            </FieldGroup>
+          </Stack>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={saving}>
               Cancel
@@ -238,6 +243,6 @@ export function AutomationsListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Page>
   );
 }

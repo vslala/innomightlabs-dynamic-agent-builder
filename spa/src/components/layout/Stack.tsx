@@ -56,3 +56,20 @@ export function Inline({
     />
   );
 }
+
+export interface GridProps extends React.HTMLAttributes<HTMLDivElement> {
+  gap?: Gap;
+}
+
+export function Grid({ className, gap = "lg", style, ...props }: GridProps) {
+  return (
+    <div
+      className={cn("grid min-w-0", className)}
+      style={{
+        ...gapStyles[gap],
+        ...style,
+      }}
+      {...props}
+    />
+  );
+}

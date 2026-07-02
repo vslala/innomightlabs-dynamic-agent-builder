@@ -18,6 +18,7 @@ import {
   ErrorState,
   EmptyState,
 } from "../../components/ui";
+import { FieldGroup, Grid, Inline, Page, PageActions, PageBody, PageDescription, PageHeader, Stack } from "../../components/layout";
 import { knowledgeApiService } from "../../services/knowledge";
 import type { KnowledgeBase } from "../../types/knowledge";
 
@@ -104,87 +105,89 @@ export function KnowledgeBases() {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[var(--text-secondary)] text-base">
-            Create and manage knowledge bases for your AI agents
-          </p>
-        </div>
+    <Page>
+      <PageHeader>
+        <PageDescription>Create and manage knowledge bases for your AI agents</PageDescription>
+        <PageActions>
         <Button onClick={() => setIsCreateDialogOpen(true)} size="lg">
           <Plus className="h-5 w-5" />
           Create Knowledge Base
         </Button>
-      </div>
+        </PageActions>
+      </PageHeader>
 
-      {knowledgeBases.length === 0 ? (
-        <EmptyState
-          icon={Database}
-          title="No knowledge bases yet"
-          description="Create a knowledge base to store and search content for your AI agents. You can crawl websites or upload documents."
-          actionLabel="Create Your First Knowledge Base"
-          onAction={() => setIsCreateDialogOpen(true)}
-        />
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {knowledgeBases.map((kb) => (
-            <Card
-              key={kb.kb_id}
-              className="group hover:border-[var(--gradient-start)]/50 transition-all duration-200"
-            >
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-5">
-                  <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
-                    <Database className="h-7 w-7 text-white" />
-                  </div>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Link to={`/dashboard/knowledge-bases/${kb.kb_id}`}>
-                      <Button variant="ghost" size="icon">
-                        <Settings className="h-4 w-4" />
-                      </Button>
-                    </Link>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-red-400 hover:text-red-300"
-                      onClick={() => {
-                        setSelectedKB(kb);
-                        setIsDeleteDialogOpen(true);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+      <PageBody>
+        {knowledgeBases.length === 0 ? (
+          <EmptyState
+            icon={Database}
+            title="No knowledge bases yet"
+            description="Create a knowledge base to store and search content for your AI agents. You can crawl websites or upload documents."
+            actionLabel="Create Your First Knowledge Base"
+            onAction={() => setIsCreateDialogOpen(true)}
+          />
+        ) : (
+          <Grid className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3" gap="lg">
+            {knowledgeBases.map((kb) => (
+              <Card
+                key={kb.kb_id}
+                className="group hover:border-[var(--gradient-start)]/50 transition-all duration-200"
+              >
+                <CardContent>
+                  <Stack gap="md">
+                    <Inline justify="space-between" align="flex-start" wrap={false}>
+                      <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
+                        <Database className="h-7 w-7 text-white" />
+                      </div>
+                      <Inline gap="xs" className="opacity-0 transition-opacity group-hover:opacity-100">
+                        <Link to={`/dashboard/knowledge-bases/${kb.kb_id}`}>
+                          <Button variant="ghost" size="icon">
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-red-400 hover:text-red-300"
+                          onClick={() => {
+                            setSelectedKB(kb);
+                            setIsDeleteDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </Inline>
+                    </Inline>
 
-                <Link to={`/dashboard/knowledge-bases/${kb.kb_id}`}>
-                  <h3 className="font-semibold text-lg text-[var(--text-primary)] mb-2 hover:text-[var(--gradient-start)] transition-colors">
-                    {kb.name}
-                  </h3>
-                </Link>
-                <p className="text-sm text-[var(--text-muted)] line-clamp-2 mb-4 leading-relaxed">
-                  {kb.description || "No description"}
-                </p>
+                    <Stack gap="xs">
+                      <Link to={`/dashboard/knowledge-bases/${kb.kb_id}`}>
+                        <h3 className="text-lg font-semibold text-[var(--text-primary)] transition-colors hover:text-[var(--gradient-start)]">
+                          {kb.name}
+                        </h3>
+                      </Link>
+                      <p className="line-clamp-2 text-sm leading-relaxed text-[var(--text-muted)]">
+                        {kb.description || "No description"}
+                      </p>
+                    </Stack>
 
-                <div className="flex items-center gap-4 pt-2 border-t border-[var(--border-subtle)]">
-                  <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-                    <FileText className="h-3.5 w-3.5" />
-                    <span>{kb.total_pages} pages</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-                    <Database className="h-3.5 w-3.5" />
-                    <span>{kb.total_chunks} chunks</span>
-                  </div>
-                </div>
+                    <Inline className="border-t border-[var(--border-subtle)]" style={{ paddingTop: "var(--space-3)" }}>
+                      <Inline gap="xs" className="text-xs text-[var(--text-muted)]">
+                        <FileText className="h-3.5 w-3.5" />
+                        <span>{kb.total_pages} pages</span>
+                      </Inline>
+                      <Inline gap="xs" className="text-xs text-[var(--text-muted)]">
+                        <Database className="h-3.5 w-3.5" />
+                        <span>{kb.total_chunks} chunks</span>
+                      </Inline>
+                    </Inline>
 
-                <div className="mt-3 text-xs text-[var(--text-muted)]">
-                  Created {formatDate(kb.created_at)}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+                    <div className="text-xs text-[var(--text-muted)]">Created {formatDate(kb.created_at)}</div>
+                  </Stack>
+                </CardContent>
+              </Card>
+            ))}
+          </Grid>
+        )}
+      </PageBody>
 
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent>
@@ -194,8 +197,8 @@ export function KnowledgeBases() {
               Create a new knowledge base to store content for your AI agents.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
+          <Stack gap="md" style={{ paddingBlock: "var(--space-4)" }}>
+            <FieldGroup>
               <Label htmlFor="name">Name</Label>
               <Input
                 id="name"
@@ -203,8 +206,8 @@ export function KnowledgeBases() {
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="e.g., Company Documentation"
               />
-            </div>
-            <div className="space-y-2">
+            </FieldGroup>
+            <FieldGroup>
               <Label htmlFor="description">Description (optional)</Label>
               <Textarea
                 id="description"
@@ -213,8 +216,8 @@ export function KnowledgeBases() {
                 placeholder="Describe what this knowledge base contains..."
                 rows={3}
               />
-            </div>
-          </div>
+            </FieldGroup>
+          </Stack>
           <DialogFooter>
             <Button
               variant="outline"
@@ -260,6 +263,6 @@ export function KnowledgeBases() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Page>
   );
 }
