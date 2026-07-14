@@ -48,6 +48,8 @@ const AutomationBuilderPage = lazyRoute(() => import('./pages/dashboard/automati
 const AutomationRunsPage = lazyRoute(() => import('./pages/dashboard/automations/AutomationRunsPage'), 'AutomationRunsPage');
 const AutomationAnalyticsPage = lazyRoute(() => import('./pages/dashboard/automations/AutomationAnalyticsPage'), 'AutomationAnalyticsPage');
 const AutomationTriggersPage = lazyRoute(() => import('./pages/dashboard/automations/AutomationTriggersPage'), 'AutomationTriggersPage');
+const AutomationMarketplacePage = lazyRoute(() => import('./pages/dashboard/automation-marketplace/AutomationMarketplacePage'), 'AutomationMarketplacePage');
+const AutomationMarketplaceDetail = lazyRoute(() => import('./pages/dashboard/automation-marketplace/AutomationMarketplaceDetail'), 'AutomationMarketplaceDetail');
 const WhatsNewPage = lazyRoute(() => import('./pages/dashboard/WhatsNewPage'), 'WhatsNewPage');
 
 function lazyRoute<T extends Record<string, ComponentType>>(
@@ -126,6 +128,8 @@ function App() {
             <Route path="analytics" element={<AgentAnalyticsPage />} />
           </Route>
           <Route path="automations" element={<AutomationsListPage />} />
+          <Route path="automations/marketplace" element={<AutomationMarketplacePage />} />
+          <Route path="automations/marketplace/:templateId" element={<AutomationMarketplaceDetail />} />
           <Route path="automations/:automationId" element={<AutomationDetailLayout />}>
             <Route index element={<AutomationBuilderPage />} />
             <Route path="triggers" element={<AutomationTriggersPage />} />

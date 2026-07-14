@@ -597,17 +597,55 @@ class AutomationService:
         user_email: str,
     ) -> AutomationSkillResponse:
         self.get_automation(automation_id, user_email)
+        skill = self.install_skill(
+            automation_id=automation_id,
+            skill_id=skill_id,
+            raw_config=body.config,
+            user_email=user_email,
+        )
+        return self._skill_response(skill, user_email)
+
+    def validate_skill_config(
+        self,
+        *,
+        skill_id: str,
+        raw_config: dict[str, Any],
+        user_email: str,
+        validate_connectors: bool = True,
+    ) -> dict[str, Any]:
         loaded = self.skill_registry.get(skill_id)
         if not loaded:
             raise AutomationValidationError(f"Unknown skill: {skill_id}")
         if not loaded.manifest.automation.enabled:
             raise AutomationValidationError(f"{loaded.manifest.name} is not available for automations")
-        missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
-        if missing:
-            raise AutomationValidationError(
-                f"{loaded.manifest.name} requires connected connectors: {', '.join(missing)}"
-            )
-        normalized_config = self.skill_registry.validate_config(skill_id, body.config)
+        if validate_connectors:
+            missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
+            if missing:
+                raise AutomationValidationError(
+                    f"{loaded.manifest.name} requires connected connectors: {', '.join(missing)}"
+                )
+        return self.skill_registry.validate_config(skill_id, raw_config)
+
+    def install_skill(
+        self,
+        *,
+        automation_id: str,
+        skill_id: str,
+        raw_config: dict[str, Any],
+        user_email: str,
+        enabled: bool = True,
+        validate_connectors: bool = True,
+    ) -> AutomationSkill:
+        self.get_automation(automation_id, user_email)
+        loaded = self.skill_registry.get(skill_id)
+        if not loaded:
+            raise AutomationValidationError(f"Unknown skill: {skill_id}")
+        normalized_config = self.validate_skill_config(
+            skill_id=skill_id,
+            raw_config=raw_config,
+            user_email=user_email,
+            validate_connectors=validate_connectors,
+        )
         installed_skill_id = installed_skill_id_for(loaded.manifest, normalized_config)
         plain_config, encrypted_secrets, secret_fields = self._split_skill_config(skill_id, normalized_config)
         skill = AutomationSkill(
@@ -617,13 +655,13 @@ class AutomationService:
             namespace=loaded.manifest.namespace,
             skill_name=loaded.manifest.name,
             skill_description=loaded.manifest.description,
-            enabled=True,
+            enabled=enabled,
             config=plain_config,
             encrypted_secrets=encrypted_secrets,
             secret_fields=secret_fields,
             enabled_by=user_email,
         )
-        return self._skill_response(self.repo.save_skill(skill), user_email)
+        return self.repo.save_skill(skill)
 
     def update_skill(
         self,
@@ -981,3 +1019,4 @@ class ConditionNodeConfigAdapter:
             return ConditionNodeConfig(**config)
         except Exception as exc:
             raise AutomationValidationError("Condition node requires a valid expression") from exc
+

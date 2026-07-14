@@ -1,10 +1,13 @@
 """Automation runner for manual/test execution."""
 
+import asyncio
 import json
+import logging
 import re
+from contextlib import suppress
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Awaitable, Callable, TypeVar
 
 from src.agents.architectures import get_agent_architecture
 from src.agents.repository import AgentRepository
@@ -23,12 +26,42 @@ from src.automations.models import (
     AutomationTriggerType,
 )
 from src.automations.repository import AutomationRepository
+from src.automations.run_state import (
+    AUTOMATION_RUN_HEARTBEAT_INTERVAL_SECONDS,
+    AutomationRunStateService,
+)
 from src.automations.service import AutomationGraph, AutomationService, AutomationValidationError
 from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
 from src.connectors.service import ConnectorService, get_connector_service
 from src.skills.service import SkillService
 from src.skills.service import get_skill_service
+
+log = logging.getLogger(__name__)
+T = TypeVar("T")
+
+
+async def _await_with_heartbeat(
+    awaitable: Awaitable[T],
+    *,
+    heartbeat: Callable[[], Any],
+    interval_seconds: int = AUTOMATION_RUN_HEARTBEAT_INTERVAL_SECONDS,
+) -> T:
+    task = asyncio.ensure_future(awaitable)
+    try:
+        while True:
+            try:
+                return await asyncio.wait_for(asyncio.shield(task), timeout=interval_seconds)
+            except asyncio.TimeoutError:
+                try:
+                    heartbeat()
+                except Exception:
+                    log.exception("Automation run heartbeat update failed")
+    except asyncio.CancelledError:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        raise
 
 
 class AutomationRunner:
@@ -41,12 +74,14 @@ class AutomationRunner:
         conversation_repo: ConversationRepository | None = None,
         skill_service: SkillService | None = None,
         connector_service: ConnectorService | None = None,
+        run_state: AutomationRunStateService | None = None,
     ):
         self.automation_repo = automation_repo or AutomationRepository()
         self.agent_repo = agent_repo or AgentRepository()
         self.conversation_repo = conversation_repo or ConversationRepository()
         self.skill_service = skill_service or get_skill_service()
         self.connector_service = connector_service or get_connector_service()
+        self.run_state = run_state or AutomationRunStateService(self.automation_repo)
 
     async def run_test(
         self,
@@ -159,9 +194,7 @@ class AutomationRunner:
             raise AutomationValidationError("Run conversation not found")
 
         if run.status == AutomationRunStatus.PENDING:
-            run.status = AutomationRunStatus.RUNNING
-            run.started_at = datetime.now(timezone.utc)
-            self.automation_repo.save_run(run)
+            run = self.run_state.start(run)
 
         try:
             current_node_id = trigger.entry_node_id if trigger else self._default_start_node(graph.nodes).node_id
@@ -170,12 +203,10 @@ class AutomationRunner:
 
             while True:
                 node = node_by_id[current_node_id]
+                run = self.run_state.heartbeat(run, current_node_id=node.node_id, node_started=True)
                 if node.type == AutomationNodeType.FINAL:
                     self._store_context_node(run, node.node_id, "succeeded", {}, {})
-                    run.status = AutomationRunStatus.SUCCEEDED
-                    run.completed_at = datetime.now(timezone.utc)
-                    self.automation_repo.save_run(run)
-                    return run
+                    return self.run_state.succeed(run)
 
                 result = await self._execute_node(
                     automation=graph.automation,
@@ -194,18 +225,14 @@ class AutomationRunner:
                     result.message_ids,
                     result.error,
                 )
-                self.automation_repo.save_run(run)
+                run = self.run_state.complete_node(run)
 
                 if result.status == AutomationNodeRunStatus.FAILED:
                     error_edge = self._edge_for_label(outgoing.get(node.node_id, []), "error")
                     if error_edge:
                         current_node_id = error_edge.target_node_id
                         continue
-                    run.status = AutomationRunStatus.FAILED
-                    run.error = result.error
-                    run.completed_at = datetime.now(timezone.utc)
-                    self.automation_repo.save_run(run)
-                    return run
+                    return self.run_state.fail(run, result.error)
 
                 next_label = self._next_label(node, run.context)
                 edge = self._edge_for_label(outgoing.get(node.node_id, []), next_label)
@@ -215,11 +242,7 @@ class AutomationRunner:
                     )
                 current_node_id = edge.target_node_id
         except Exception as exc:
-            run.status = AutomationRunStatus.FAILED
-            run.error = str(exc)
-            run.completed_at = datetime.now(timezone.utc)
-            self.automation_repo.save_run(run)
-            return run
+            return self.run_state.fail(run, str(exc))
 
     async def _execute_node(
         self,
@@ -296,13 +319,16 @@ class AutomationRunner:
 
         prompt = self._render_template(node.config["prompt_template"], run.context)
         architecture = get_agent_architecture(agent.agent_architecture)
-        invocation = await architecture.handle_message_buffered(
-            agent=agent,
-            conversation=conversation,
-            user_message=prompt,
-            owner_email=user_email,
-            actor_email=user_email,
-            actor_id=user_email,
+        invocation = await _await_with_heartbeat(
+            architecture.handle_message_buffered(
+                agent=agent,
+                conversation=conversation,
+                user_message=prompt,
+                owner_email=user_email,
+                actor_email=user_email,
+                actor_id=user_email,
+            ),
+            heartbeat=lambda: self.run_state.heartbeat(run, current_node_id=node.node_id),
         )
         return AutomationRunNodeResult(
             run_id=run.run_id,
@@ -426,22 +452,25 @@ class AutomationRunner:
 
         arguments = self._render_smart_values(deepcopy(raw_arguments), run.context)
         try:
-            result = await self.skill_service.registry.execute_action(
-                skill_id=enabled.skill_id,
-                action_name=action_name,
-                arguments=arguments,
-                config=self.automation_repo.get_skill_runtime_config(enabled),
-                context={
-                    "owner_email": user_email,
-                    "actor_email": user_email,
-                    "actor_id": user_email,
-                    "conversation_id": conversation.conversation_id,
-                    "automation_id": automation.automation_id,
-                    "automation_run_id": run.run_id,
-                    "automation_node_id": node.node_id,
-                    "orchestrator_type": "automation",
-                    "orchestrator_id": automation.automation_id,
-                },
+            result = await _await_with_heartbeat(
+                self.skill_service.registry.execute_action(
+                    skill_id=enabled.skill_id,
+                    action_name=action_name,
+                    arguments=arguments,
+                    config=self.automation_repo.get_skill_runtime_config(enabled),
+                    context={
+                        "owner_email": user_email,
+                        "actor_email": user_email,
+                        "actor_id": user_email,
+                        "conversation_id": conversation.conversation_id,
+                        "automation_id": automation.automation_id,
+                        "automation_run_id": run.run_id,
+                        "automation_node_id": node.node_id,
+                        "orchestrator_type": "automation",
+                        "orchestrator_id": automation.automation_id,
+                    },
+                ),
+                heartbeat=lambda: self.run_state.heartbeat(run, current_node_id=node.node_id),
             )
         except Exception as exc:
             return AutomationRunNodeResult(

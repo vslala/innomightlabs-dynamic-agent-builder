@@ -180,6 +180,9 @@ async def test_runner_creates_pending_run_then_executes_by_id(dynamodb_table, mo
     assert completed.status == "succeeded"
     assert completed.started_at is not None
     assert completed.completed_at is not None
+    assert completed.last_heartbeat_at is not None
+    assert completed.current_node_id is None
+    assert completed.current_node_started_at is None
     assert completed.context["nodes"]["draft"]["output"]["response_text"] == "Echo: Hello Ada"
 
 

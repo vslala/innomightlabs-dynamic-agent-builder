@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Settings, Trash2, Workflow } from "lucide-react";
+import { Plus, Settings, ShoppingBag, Trash2, Workflow } from "lucide-react";
 
 import {
   Button,
@@ -114,10 +114,14 @@ export function AutomationsListPage() {
       <PageHeader>
         <PageDescription>Build and test workflow automations for your agents</PageDescription>
         <PageActions>
-        <Button size="lg" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-5 w-5" />
-          Create Automation
-        </Button>
+          <Button variant="outline" size="lg" onClick={() => navigate("/dashboard/automations/marketplace")}>
+            <ShoppingBag className="h-5 w-5" />
+            Marketplace
+          </Button>
+          <Button size="lg" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-5 w-5" />
+            Create Automation
+          </Button>
         </PageActions>
       </PageHeader>
 

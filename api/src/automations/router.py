@@ -36,6 +36,7 @@ from src.automations.models import (
 from src.automations.triggers.schemas import build_manual_trigger_form, build_schedule_trigger_form
 from src.automations.repository import AutomationRepository
 from src.automations.runner import AutomationRunner
+from src.automations.run_state import AutomationRunStateService
 from src.automations.service import (
     AutomationNotFoundError,
     AutomationService,
@@ -450,6 +451,8 @@ async def list_runs(
     try:
         service.get_automation(automation_id, get_user_email(request))
         runs, next_cursor, has_more = repo.find_runs_by_automation(automation_id, limit, cursor)
+        run_state = AutomationRunStateService(repo)
+        runs = [run_state.fail_if_stale(run) for run in runs]
         return Paginated[AutomationRunResponse](
             items=[run.to_response() for run in runs],
             next_cursor=next_cursor,
@@ -473,6 +476,7 @@ async def get_run(
         run = repo.find_run_by_id(run_id, user_email)
         if not run or run.automation_id != automation_id:
             raise AutomationNotFoundError("Run not found")
+        run = AutomationRunStateService(repo).fail_if_stale(run)
         return AutomationRunDetailResponse(
             run=run.to_response(),
             context=run.context,

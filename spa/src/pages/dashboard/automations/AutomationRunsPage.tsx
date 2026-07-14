@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import "./styles.css";
 
 import {
@@ -7,8 +6,12 @@ import {
   Card,
   CardContent,
   ErrorState,
+  AccordionPanel,
+  JsonTreeViewer,
   LoadingState,
   StatusBadge,
+  StepInspector,
+  type StepInspectorItem,
   type StatusBadgeProps,
 } from "../../../components/ui";
 import { automationApiService } from "../../../services/automations";
@@ -19,8 +22,13 @@ import type {
   AutomationRunStatus,
   PaginatedResponse,
 } from "../../../types/automation";
-import { AutomationJsonTreeViewer } from "./components/AutomationJsonEditor";
-import { filterRuntimeLogContext, getRuntimeLogSteps, type RuntimeLogStep } from "./runDisplay";
+import {
+  getLifecycleEvents,
+  getRuntimeLogSteps,
+  getToolCalls,
+  type RuntimeLogEvent,
+  type RuntimeToolCall,
+} from "./runDisplay";
 import { useAutomationDetailContext } from "./types";
 
 type RunBadgeStatus = StatusBadgeProps["status"];
@@ -47,10 +55,10 @@ export function AutomationRunsPage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [selectedRun, setSelectedRun] = useState<AutomationRunDetailResponse | null>(null);
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expandedRuntimeSteps, setExpandedRuntimeSteps] = useState<Set<string>>(new Set());
 
   const loadRuns = useCallback(async (cursor?: string | null) => {
     const isLoadMore = Boolean(cursor);
@@ -86,38 +94,28 @@ export function AutomationRunsPage() {
     try {
       const detail = await automationApiService.getRun(automation.automation_id, runId);
       setSelectedRun(detail);
-      const firstStepWithEvents = getRuntimeLogSteps(detail.node_results).find(
-        (step) => step.events.length > 0
-      );
-      setExpandedRuntimeSteps(new Set(firstStepWithEvents ? [firstStepWithEvents.result_id] : []));
+      setSelectedStepId(detail.node_results[0]?.result_id ?? null);
     } catch (err) {
       console.error("Error loading run detail:", err);
     }
   };
 
-  const toggleRuntimeStep = (resultId: string) => {
-    setExpandedRuntimeSteps((current) => {
-      const next = new Set(current);
-      if (next.has(resultId)) {
-        next.delete(resultId);
-      } else {
-        next.add(resultId);
-      }
-      return next;
-    });
-  };
-
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={() => loadRuns()} />;
 
+  const selectedRunStepItems = selectedRun ? toStepInspectorItems(selectedRun.node_results) : [];
+  const selectedStep =
+    selectedRunStepItems.find((step) => step.id === selectedStepId) ?? selectedRunStepItems[0] ?? null;
+  const selectedNodeResult = selectedRun?.node_results.find((result) => result.result_id === selectedStep?.id) ?? null;
+
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] gap-6">
-      <Card>
-        <CardContent className="p-0">
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
+      <Card className="xl:max-h-[calc(100vh-13rem)] xl:overflow-hidden">
+        <CardContent className="p-0 xl:flex xl:max-h-[calc(100vh-13rem)] xl:flex-col">
           {runs.length === 0 ? (
             <div className="p-8 text-sm text-[var(--text-muted)]">No runs yet.</div>
           ) : (
-            <div className="divide-y divide-[var(--border-subtle)]">
+            <div className="min-h-0 divide-y divide-[var(--border-subtle)] xl:overflow-y-auto">
               {runs.map((run) => (
                 <Button
                   key={run.run_id}
@@ -169,116 +167,179 @@ export function AutomationRunsPage() {
                 </div>
                 <StatusBadge status={runBadgeStatus(selectedRun.run.status)} label={selectedRun.run.status} />
               </div>
-              <div>
-                <h3 className="text-sm font-medium text-[var(--text-primary)] mb-2">Node Results</h3>
-                <div className="space-y-2">
-                  {selectedRun.node_results.map((result) => (
-                    <div
-                      key={result.result_id}
-                      className="rounded-lg border border-[var(--border-subtle)] p-3"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm text-[var(--text-secondary)]">{result.node_id}</span>
-                        <StatusBadge status={runBadgeStatus(result.status)} label={result.status} />
-                      </div>
-                      {result.error && <p className="mt-2 text-xs text-red-300">{result.error}</p>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <RuntimeEventTimeline
-                steps={getRuntimeLogSteps(selectedRun.node_results)}
-                expandedSteps={expandedRuntimeSteps}
-                onToggle={toggleRuntimeStep}
-                runBadgeStatus={runBadgeStatus}
+              <StepInspector
+                title="Step inputs and outputs"
+                description="Steps are shown in execution order. Select one to inspect input, output, tool calls, and lifecycle events."
+                steps={selectedRunStepItems}
+                emptyMessage="No node input or output was captured for this run."
+                selectedStepId={selectedStepId}
+                onSelectedStepChange={setSelectedStepId}
+                showDetails={false}
               />
-              <AutomationJsonTreeViewer label="Context" value={filterRuntimeLogContext(selectedRun.context)} />
             </div>
           ) : (
             <div className="text-sm text-[var(--text-muted)]">Select a run to inspect its context.</div>
           )}
         </CardContent>
       </Card>
+
+      {selectedRun && selectedStep && (
+        <Card className="xl:col-span-2">
+          <CardContent className="p-6">
+            {selectedNodeResult && <RunStepAnalysis result={selectedNodeResult} />}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
-function RuntimeEventTimeline({
-  steps,
-  expandedSteps,
-  onToggle,
-  runBadgeStatus,
-}: {
-  steps: RuntimeLogStep[];
-  expandedSteps: Set<string>;
-  onToggle: (resultId: string) => void;
-  runBadgeStatus: (status: AutomationRunStatus | AutomationNodeRunStatus) => RunBadgeStatus;
-}) {
-  const visibleSteps = steps.filter((step) => step.events.length > 0 || step.error);
+function toStepInspectorItems(
+  results: AutomationRunDetailResponse["node_results"]
+): StepInspectorItem[] {
+  return results.map((result) => ({
+    id: result.result_id,
+    title: result.node_id,
+    subtitle: result.result_id,
+    input: result.input,
+    output: extractOutputResponse(result.output),
+    error: result.error,
+    status: <StatusBadge status={runBadgeStatus(result.status)} label={result.status} />,
+    meta: result.completed_at ? (
+      <span className="text-xs text-[var(--text-muted)]">{formatDate(result.completed_at)}</span>
+    ) : null,
+  }));
+}
 
+function omitRuntimeEvents(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => omitRuntimeEvents(item));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== "events")
+      .map(([key, item]) => [key, omitRuntimeEvents(item)])
+  );
+}
+
+function RunStepAnalysis({ result }: { result: AutomationRunDetailResponse["node_results"][number] }) {
+  const events = getRuntimeLogSteps([result])[0]?.events ?? [];
+  const outputResponse = extractOutputResponse(result.output);
   return (
-    <section className="automation-runtime-events">
-      <div className="automation-runtime-events__header">
+    <section className="automation-run-analysis">
+      <div className="automation-run-analysis__node">
         <div>
-          <h3>Runtime events</h3>
-          <p>Tool calls and lifecycle activity captured during this run.</p>
+          <h3>{result.node_id}</h3>
+          <p>{result.result_id}</p>
         </div>
+        <StatusBadge status={runBadgeStatus(result.status)} label={result.status} />
       </div>
 
-      {visibleSteps.length === 0 ? (
-        <div className="automation-runtime-events__empty">No visible runtime events for this run.</div>
-      ) : (
-        <div className="automation-runtime-events__steps">
-          {visibleSteps.map((step) => {
-            const isExpanded = expandedSteps.has(step.result_id);
-            return (
-              <article key={step.result_id} className="automation-runtime-events__step">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="automation-runtime-events__step-trigger"
-                  onClick={() => onToggle(step.result_id)}
-                  aria-expanded={isExpanded}
-                >
-                  {isExpanded ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                  <div>
-                    <strong>{step.node_id}</strong>
-                    <span>{step.events.length} runtime events</span>
-                  </div>
-                  <StatusBadge status={runBadgeStatus(step.status)} label={step.status} />
-                </Button>
-
-                {isExpanded && (
-                  <div className="automation-runtime-events__body">
-                    {step.error && (
-                      <div className="automation-runtime-events__error">{step.error}</div>
-                    )}
-                    {step.events.map((event, index) => (
-                      <div
-                        key={`${step.result_id}-${event.event_type}-${index}`}
-                        className="automation-runtime-events__event"
-                      >
-                        <div className="automation-runtime-events__event-meta">
-                          <span className="automation-runtime-events__event-type">{event.event_type}</span>
-                          {event.tool_name && <span>{event.tool_name}</span>}
-                          {typeof event.success === "boolean" && (
-                            <span>{event.success ? "success" : "failed"}</span>
-                          )}
-                        </div>
-                        <pre>{event.content || "(empty event)"}</pre>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </article>
-            );
-          })}
+      {result.error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+          {result.error}
         </div>
       )}
+
+      <div className="automation-run-analysis__grid">
+        <JsonTreeViewer label="Input" value={result.input ?? {}} maxHeight="42rem" />
+        <OutputLog events={events} output={outputResponse} />
+      </div>
     </section>
   );
+}
+
+function OutputLog({ events, output }: { events: RuntimeLogEvent[]; output: unknown }) {
+  const toolCalls = getToolCalls(events);
+  const lifecycleEvents = getLifecycleEvents(events);
+  return (
+    <section className="automation-output-log">
+      <div className="automation-output-log__header">
+        <h3>Output log</h3>
+        <p>Lifecycle, tool calls, and final node response.</p>
+      </div>
+      <LifecyclePanel events={lifecycleEvents} />
+      <ToolCallPanel calls={toolCalls} />
+      <JsonTreeViewer label="Output response" value={output ?? {}} maxHeight="32rem" />
+    </section>
+  );
+}
+
+function LifecyclePanel({ events }: { events: RuntimeLogEvent[] }) {
+  return (
+    <AccordionPanel
+      defaultOpen={events.length > 0}
+      title={<span className="text-sm font-semibold text-[var(--text-primary)]">Lifecycle</span>}
+      subtitle={`${events.length} event${events.length === 1 ? "" : "s"}`}
+    >
+      {events.length === 0 ? (
+        <div className="automation-runtime-events__empty">No lifecycle events were captured for this step.</div>
+      ) : (
+        <ol className="automation-runtime-events__list">
+          {events.map((event, index) => (
+            <li key={`${event.event_type}-${index}`} className="automation-runtime-events__list-item">
+              <span>{index + 1}</span>
+              <p>{event.content || event.event_type}</p>
+            </li>
+          ))}
+        </ol>
+      )}
+    </AccordionPanel>
+  );
+}
+
+function ToolCallPanel({ calls }: { calls: RuntimeToolCall[] }) {
+  return (
+    <AccordionPanel
+      defaultOpen={calls.length > 0}
+      title={<span className="text-sm font-semibold text-[var(--text-primary)]">Tool calls</span>}
+      subtitle={`${calls.length} call${calls.length === 1 ? "" : "s"}`}
+    >
+      {calls.length === 0 ? (
+        <div className="automation-runtime-events__empty">No tool calls were captured for this step.</div>
+      ) : (
+        <div className="automation-runtime-events__accordions">
+          {calls.map((call, index) => (
+            <AccordionPanel
+              key={call.id}
+              defaultOpen={index === 0}
+              title={<span className="text-sm font-semibold text-[var(--text-primary)]">{call.title}</span>}
+              subtitle={call.subtitle}
+              trailing={
+                call.success === null ? (
+                  <StatusBadge status="info" label="started" />
+                ) : (
+                  <StatusBadge status={call.success ? "success" : "failed"} label={call.success ? "success" : "failed"} />
+                )
+              }
+            >
+              <div className="grid min-w-0 gap-4">
+                {call.args && <JsonTreeViewer label="Arguments" value={call.args} maxHeight="18rem" />}
+                <JsonTreeViewer label="Tool response" value={call.result} maxHeight="26rem" />
+              </div>
+            </AccordionPanel>
+          ))}
+        </div>
+      )}
+    </AccordionPanel>
+  );
+}
+
+function extractOutputResponse(output: Record<string, unknown>): unknown {
+  const cleaned = omitRuntimeEvents(output);
+  if (!cleaned || typeof cleaned !== "object") {
+    return cleaned;
+  }
+  const record = cleaned as Record<string, unknown>;
+  if (record.result && typeof record.result === "object") {
+    const result = record.result as Record<string, unknown>;
+    if ("response_text" in result) {
+      return { response_text: result.response_text };
+    }
+    return result;
+  }
+  return cleaned;
 }

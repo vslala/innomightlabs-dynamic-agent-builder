@@ -177,6 +177,10 @@ class AutomationRunResponse(BaseModel):
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    last_heartbeat_at: Optional[datetime] = None
+    current_node_id: Optional[str] = None
+    current_node_started_at: Optional[datetime] = None
+    heartbeat_timeout_seconds: int = 30 * 60
 
 
 class AutomationRunNodeResultResponse(BaseModel):
@@ -613,6 +617,10 @@ class AutomationRun(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    last_heartbeat_at: Optional[datetime] = None
+    current_node_id: Optional[str] = None
+    current_node_started_at: Optional[datetime] = None
+    heartbeat_timeout_seconds: int = 30 * 60
 
     @property
     def pk(self) -> str:
@@ -645,6 +653,12 @@ class AutomationRun(BaseModel):
             "created_at": self.created_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "last_heartbeat_at": self.last_heartbeat_at.isoformat() if self.last_heartbeat_at else None,
+            "current_node_id": self.current_node_id,
+            "current_node_started_at": (
+                self.current_node_started_at.isoformat() if self.current_node_started_at else None
+            ),
+            "heartbeat_timeout_seconds": self.heartbeat_timeout_seconds,
             "entity_type": "AutomationRun",
         })
 
@@ -674,6 +688,18 @@ class AutomationRun(BaseModel):
             created_at=datetime.fromisoformat(item["created_at"]),
             started_at=datetime.fromisoformat(item["started_at"]) if item.get("started_at") else None,
             completed_at=datetime.fromisoformat(item["completed_at"]) if item.get("completed_at") else None,
+            last_heartbeat_at=(
+                datetime.fromisoformat(item["last_heartbeat_at"])
+                if item.get("last_heartbeat_at")
+                else None
+            ),
+            current_node_id=item.get("current_node_id"),
+            current_node_started_at=(
+                datetime.fromisoformat(item["current_node_started_at"])
+                if item.get("current_node_started_at")
+                else None
+            ),
+            heartbeat_timeout_seconds=int(item.get("heartbeat_timeout_seconds") or 30 * 60),
         )
 
     def to_response(self) -> AutomationRunResponse:

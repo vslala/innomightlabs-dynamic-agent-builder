@@ -343,6 +343,83 @@
   gap: 0.75rem;
 }
 
+.automation-run-analysis {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.automation-run-analysis__node {
+  align-items: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.automation-run-analysis__node h3 {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-run-analysis__node p {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin: 0.25rem 0 0;
+  word-break: break-all;
+}
+
+.automation-run-analysis__grid {
+  align-items: start;
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.35fr);
+  min-width: 0;
+}
+
+.automation-output-log {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.automation-output-log__header {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.automation-output-log__header h3 {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.automation-output-log__header p {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+@media (max-width: 1024px) {
+  .automation-run-analysis__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .automation-runtime-events__header {
   align-items: flex-end;
   display: flex;
@@ -430,6 +507,50 @@
   display: grid;
   gap: 0.55rem;
   padding: 0.75rem;
+}
+
+.automation-runtime-events__accordions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.automation-runtime-events__list {
+  display: grid;
+  gap: 0.55rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.automation-runtime-events__list-item {
+  align-items: flex-start;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 0.75rem;
+}
+
+.automation-runtime-events__list-item span {
+  align-items: center;
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 700;
+  height: 1.45rem;
+  justify-content: center;
+  width: 1.45rem;
+}
+
+.automation-runtime-events__list-item p {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin: 0;
 }
 
 .automation-runtime-events__error {

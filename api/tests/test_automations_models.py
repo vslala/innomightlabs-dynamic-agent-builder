@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from src.automations.models import (
     Automation,
     AutomationEdge,
@@ -52,6 +54,10 @@ def test_run_and_node_result_round_trip():
         status="running",
         context={"input": {"name": "Ada"}},
         created_by=TEST_USER_EMAIL,
+        last_heartbeat_at=datetime.now(timezone.utc),
+        current_node_id="node-1",
+        current_node_started_at=datetime.now(timezone.utc),
+        heartbeat_timeout_seconds=900,
     )
     result = AutomationRunNodeResult(
         run_id=run.run_id,
@@ -62,7 +68,15 @@ def test_run_and_node_result_round_trip():
         message_ids={"assistant_message_id": "m-1"},
     )
 
-    assert AutomationRun.from_dynamo_item(run.to_dynamo_item()).context == run.context
+    hydrated_run = AutomationRun.from_dynamo_item(run.to_dynamo_item())
+    assert hydrated_run.context == run.context
+    assert hydrated_run.last_heartbeat_at == run.last_heartbeat_at
+    assert hydrated_run.current_node_id == "node-1"
+    assert hydrated_run.current_node_started_at == run.current_node_started_at
+    assert hydrated_run.heartbeat_timeout_seconds == 900
+    response = hydrated_run.to_response()
+    assert response.current_node_id == "node-1"
+    assert response.heartbeat_timeout_seconds == 900
     assert run.to_owner_lookup_item()["sk"] == f"AutomationRun#{run.run_id}"
     assert AutomationRunNodeResult.from_dynamo_item(
         result.to_dynamo_item()

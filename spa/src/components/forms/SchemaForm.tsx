@@ -15,12 +15,14 @@ import { useState } from "react";
 import { Button } from "../ui/button";
 import { FormActions, FormStack } from "../layout";
 import { FormField } from "./FormField";
+import { useHydratedFormSchema } from "./useHydratedFormSchema";
 import type { FormSchema, FormValue } from "../../types/form";
 
 interface SchemaFormProps {
   schema: FormSchema;
   initialValues?: Record<string, FormValue>;
   onSubmit: (data: Record<string, FormValue>) => void | Promise<void>;
+  onChange?: (data: Record<string, FormValue>) => void;
   onCancel?: () => void;
   submitLabel?: string;
   cancelLabel?: string;
@@ -36,6 +38,7 @@ export function SchemaForm({
   schema,
   initialValues,
   onSubmit,
+  onChange,
   onCancel,
   submitLabel = "Submit",
   cancelLabel = "Cancel",
@@ -43,13 +46,14 @@ export function SchemaForm({
   hideActions = false,
   actionAlign = "stretch",
 }: SchemaFormProps) {
+  const { schema: hydratedSchema, loading: hydratingOptions } = useHydratedFormSchema(schema);
   // Memoize initial values to avoid reference changes
   const stableInitialValues = initialValues || EMPTY_INITIAL_VALUES;
 
   // Initialize form state from schema fields
   const [formData, setFormData] = useState<Record<string, FormValue>>(() => {
     const initial: Record<string, FormValue> = {};
-    schema.form_inputs.forEach((field) => {
+    hydratedSchema.form_inputs.forEach((field) => {
       if (field.input_type === "file_upload") {
         initial[field.name] = stableInitialValues[field.name] || null;
       } else if (field.input_type === "key_value") {
@@ -62,10 +66,14 @@ export function SchemaForm({
   });
 
   const handleFieldChange = (fieldName: string, value: FormValue) => {
-    setFormData((prev) => ({
-      ...prev,
-      [fieldName]: value,
-    }));
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        [fieldName]: value,
+      };
+      onChange?.(next);
+      return next;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -75,7 +83,7 @@ export function SchemaForm({
 
   return (
     <FormStack onSubmit={handleSubmit}>
-      {schema.form_inputs.map((field) => (
+      {hydratedSchema.form_inputs.map((field) => (
         <FormField
           key={field.name}
           field={field}
@@ -97,8 +105,12 @@ export function SchemaForm({
               {cancelLabel}
             </Button>
           )}
-          <Button type="submit" disabled={isLoading} style={actionAlign === "stretch" ? { width: "100%" } : undefined}>
-            {isLoading ? "Loading..." : submitLabel}
+          <Button
+            type="submit"
+            disabled={isLoading || hydratingOptions}
+            style={actionAlign === "stretch" ? { width: "100%" } : undefined}
+          >
+            {isLoading || hydratingOptions ? "Loading..." : submitLabel}
           </Button>
         </FormActions>
       )}

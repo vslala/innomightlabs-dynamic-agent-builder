@@ -1,3 +1,7 @@
+from datetime import datetime, timedelta, timezone
+
+from src.automations.models import AutomationRun, AutomationRunStatus
+from src.automations.repository import AutomationRepository
 from tests.mock_data import AUTOMATION_CREATE_REQUEST
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
@@ -103,6 +107,67 @@ def test_test_run_returns_accepted_run_id(test_client, auth_headers, monkeypatch
     detail = detail_response.json()
     assert detail["run"]["run_id"] == payload["run_id"]
     assert detail["context"]["input"] == {"input": "hello"}
+
+
+def test_get_run_marks_expired_heartbeat_run_failed(test_client, auth_headers):
+    create_response = test_client.post(
+        "/automations",
+        json=AUTOMATION_CREATE_REQUEST,
+        headers=auth_headers,
+    )
+    automation_id = create_response.json()["automation"]["automation_id"]
+    run = AutomationRun(
+        automation_id=automation_id,
+        status=AutomationRunStatus.RUNNING,
+        context={"nodes": {}},
+        created_by=TEST_USER_EMAIL,
+        started_at=datetime.now(timezone.utc) - timedelta(minutes=31),
+        last_heartbeat_at=datetime.now(timezone.utc) - timedelta(minutes=31),
+        current_node_id="slow-node",
+    )
+    AutomationRepository().save_run(run)
+
+    response = test_client.get(
+        f"/automations/{automation_id}/runs/{run.run_id}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == "failed"
+    assert "heartbeat expired" in payload["run"]["error"]
+    assert "slow-node" in payload["run"]["error"]
+    assert payload["run"]["completed_at"] is not None
+
+
+def test_get_run_keeps_old_run_with_fresh_heartbeat_running(test_client, auth_headers):
+    create_response = test_client.post(
+        "/automations",
+        json=AUTOMATION_CREATE_REQUEST,
+        headers=auth_headers,
+    )
+    automation_id = create_response.json()["automation"]["automation_id"]
+    run = AutomationRun(
+        automation_id=automation_id,
+        status=AutomationRunStatus.RUNNING,
+        context={"nodes": {}},
+        created_by=TEST_USER_EMAIL,
+        started_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        last_heartbeat_at=datetime.now(timezone.utc),
+        current_node_id="slow-node",
+    )
+    AutomationRepository().save_run(run)
+
+    response = test_client.get(
+        f"/automations/{automation_id}/runs/{run.run_id}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["status"] == "running"
+    assert payload["run"]["current_node_id"] == "slow-node"
+    assert payload["run"]["completed_at"] is None
 
 
 def test_automation_skills_and_action_catalog(test_client, auth_headers, dynamodb_table):

@@ -25,11 +25,15 @@ export function SelectField({ field, value, onChange }: Props) {
         <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
       </SelectTrigger>
       <SelectContent>
-        {selectOptions.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
+        {selectOptions.length === 0 ? (
+          <div className="px-3 py-2 text-sm text-[var(--text-muted)]">No options available</div>
+        ) : (
+          selectOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))
+        )}
       </SelectContent>
     </Select>
   );

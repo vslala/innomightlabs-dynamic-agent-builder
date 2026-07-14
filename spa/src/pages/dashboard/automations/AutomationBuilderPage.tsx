@@ -35,6 +35,8 @@ import {
   SelectTrigger,
   SelectValue,
   StatusBadge,
+  StepInspector,
+  type StepInspectorItem,
   Textarea,
 } from "../../../components/ui";
 import { SchemaForm } from "../../../components/forms";
@@ -55,8 +57,7 @@ import type {
   SkillActionConfig,
 } from "../../../types/automation";
 import type { FormSchema, FormValue, SelectOption } from "../../../types/form";
-import { AutomationJsonEditor, AutomationJsonTreeViewer } from "./components/AutomationJsonEditor";
-import { filterRuntimeLogContext } from "./runDisplay";
+import { AutomationJsonEditor } from "./components/AutomationJsonEditor";
 import { useAutomationDetailContext } from "./types";
 
 type AutomationFlowNode = Node<{
@@ -832,6 +833,23 @@ function automationRunBadgeStatus(status: string) {
   return status as "pending" | "failed" | "cancelled" | "success" | "in_progress" | "inactive";
 }
 
+function automationRunStepItems(run: AutomationRunDetailResponse): StepInspectorItem[] {
+  return run.node_results.map((result) => ({
+    id: result.result_id,
+    title: result.node_id,
+    subtitle: result.result_id,
+    input: result.input,
+    output: result.output,
+    error: result.error,
+    status: (
+      <StatusBadge
+        status={automationRunBadgeStatus(result.status)}
+        label={result.status}
+      />
+    ),
+  }));
+}
+
 function AutomationNodeCard({ data, selected }: NodeProps<AutomationFlowNode>) {
   const node = data.automationNode;
   const Icon = node.type === "action" ? Bot : node.type === "condition" ? GitBranch : Workflow;
@@ -1589,33 +1607,18 @@ function AutomationRunPanel({
           </div>
         )}
         {latestRun ? (
-          <div className="automation-run-log__steps">
-            {latestRun.node_results.map((result) => (
-              <div className="automation-run-log__step" key={result.result_id}>
-                <div>
-                  <strong>{result.node_id}</strong>
-                  <small>{result.error ?? result.status}</small>
-                </div>
-                <StatusBadge
-                  status={automationRunBadgeStatus(result.status)}
-                  label={result.status}
-                />
-              </div>
-            ))}
-          </div>
+          <StepInspector
+            title="Step inputs and outputs"
+            description="Select a node to inspect what it received and returned."
+            steps={automationRunStepItems(latestRun)}
+            emptyMessage="No node input or output was captured for this run."
+          />
         ) : !running ? (
           <div className="automation-run-log__empty">Run the automation to see step results here.</div>
         ) : (
           <div className="automation-run-log__empty">Waiting for the first step result.</div>
         )}
       </div>
-
-      {latestRun && (
-        <AutomationJsonTreeViewer
-          label="Run context"
-          value={filterRuntimeLogContext(latestRun.context)}
-        />
-      )}
     </div>
   );
 }
@@ -1863,6 +1866,14 @@ function AutomationInspector({
                 schema={actionForm}
                 initialValues={argumentsToFormValues(skillConfig.arguments)}
                 submitLabel="Apply Arguments"
+                onChange={(values) =>
+                  onChange(node.node_id, {
+                    config: {
+                      ...skillConfig,
+                      arguments: formValuesToArguments(values, selectedAction.input_schema),
+                    },
+                  })
+                }
                 onSubmit={(values) =>
                   onSaveChange(node.node_id, {
                     config: {
