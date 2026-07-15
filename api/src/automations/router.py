@@ -37,11 +37,8 @@ from src.automations.triggers.schemas import build_manual_trigger_form, build_sc
 from src.automations.repository import AutomationRepository
 from src.automations.runner import AutomationRunner
 from src.automations.run_state import AutomationRunStateService
-from src.automations.service import (
-    AutomationNotFoundError,
-    AutomationService,
-    AutomationValidationError,
-)
+from src.automations.errors import AutomationNotFoundError, AutomationValidationError
+from src.automations.service import AutomationService
 from src.common.pagination import Paginated
 from src.config import settings
 from src.form_models import Form

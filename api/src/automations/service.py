@@ -1,4 +1,4 @@
-"""Automation business logic and graph validation."""
+"""Automation business logic and graph orchestration."""
 
 import json
 from collections import defaultdict
@@ -34,24 +34,24 @@ from src.automations.models import (
     UpdateAutomationRequest,
     UpdateAutomationTriggerRequest,
 )
+from src.automations.errors import AutomationNotFoundError, AutomationValidationError
 from src.automations.repository import AutomationRepository
+from src.automations.validation import (
+    ActionNodeValidationPolicy,
+    AutomationGraphValidator,
+    ConditionNodeValidationPolicy,
+    FinalNodeValidationPolicy,
+    InvokeAgentActionValidator,
+    SkillActionValidator,
+    StartNodeValidationPolicy,
+)
 from src.connectors.service import ConnectorService, get_connector_service
 from src.crypto import encrypt
 from src.form_options import FormOptionsContext, hydrate_form_options
 from src.skills.identity import installed_skill_id_for
 from src.skills.lifecycle import SkillLifecycleRunner
 from src.skills.registry import SkillRegistry, get_skill_registry
-from src.automations.triggers.models import ScheduleTriggerConfig
 from src.automations.triggers.service import AutomationTriggerLifecycleService
-from src.scheduler.cron import ScheduleExpression, validate_schedule_expression
-
-
-class AutomationNotFoundError(Exception):
-    """Raised when an automation does not exist or is not owned by the user."""
-
-
-class AutomationValidationError(Exception):
-    """Raised when an automation graph or state transition is invalid."""
 
 
 @dataclass
@@ -88,6 +88,22 @@ class AutomationService:
         self.connector_service = connector_service or get_connector_service()
         self.lifecycle_runner = lifecycle_runner or SkillLifecycleRunner(self.skill_registry)
         self.trigger_lifecycle = trigger_lifecycle or AutomationTriggerLifecycleService()
+        action_validators = [
+            InvokeAgentActionValidator(self.agent_repo),
+            SkillActionValidator(
+                skill_registry=self.skill_registry,
+                connector_service=self.connector_service,
+                resolve_skill=self._resolve_automation_skill_for_validation,
+            ),
+        ]
+        self.graph_validator = AutomationGraphValidator(
+            node_policies=[
+                StartNodeValidationPolicy(),
+                FinalNodeValidationPolicy(),
+                ConditionNodeValidationPolicy(),
+                ActionNodeValidationPolicy(action_validators),
+            ]
+        )
 
     def create_automation(self, body: CreateAutomationRequest, user_email: str) -> AutomationGraph:
         automation = Automation(
@@ -97,31 +113,7 @@ class AutomationService:
             created_by=user_email,
         )
         saved = self.repo.save_automation(automation)
-        start = AutomationNode(
-            automation_id=saved.automation_id,
-            type=AutomationNodeType.START,
-            name="Start",
-            position={"x": 0, "y": 0},
-        )
-        final = AutomationNode(
-            automation_id=saved.automation_id,
-            type=AutomationNodeType.FINAL,
-            name="Done",
-            position={"x": 400, "y": 0},
-        )
-        edge = AutomationEdge(
-            automation_id=saved.automation_id,
-            source_node_id=start.node_id,
-            target_node_id=final.node_id,
-            label="next",
-        )
-        trigger = AutomationTrigger(
-            automation_id=saved.automation_id,
-            type=AutomationTriggerType.MANUAL,
-            name="Manual",
-            enabled=True,
-            entry_node_id=start.node_id,
-        )
+        start, final, edge, trigger = self._default_graph_entities(saved.automation_id)
         self.repo.save_graph(saved.automation_id, [start, final], [edge], [trigger])
         self._enable_builtin_skill(saved.automation_id, "agent_invocation", user_email)
         return AutomationGraph(saved, [start, final], [edge], [trigger])
@@ -145,19 +137,7 @@ class AutomationService:
         if body.description is not None:
             automation.description = body.description
         if body.status is not None:
-            if body.status == AutomationStatus.ACTIVE:
-                graph = self.get_graph(automation_id, user_email)
-                self.validate_graph(graph.nodes, graph.edges, graph.triggers, user_email, automation_id)
-                automation.status = body.status
-                if previous_status != AutomationStatus.ACTIVE:
-                    for trigger in graph.triggers:
-                        self.trigger_lifecycle.sync_trigger(automation, trigger, user_email)
-            elif previous_status == AutomationStatus.ACTIVE:
-                graph = self.get_graph(automation_id, user_email)
-                self.trigger_lifecycle.pause_schedule_triggers(automation_id, graph.triggers, user_email)
-                automation.status = body.status
-            else:
-                automation.status = body.status
+            self._apply_status_update(automation, previous_status, body.status, user_email)
         return self.repo.save_automation(automation)
 
     def delete_automation(self, automation_id: str, user_email: str) -> None:
@@ -184,11 +164,70 @@ class AutomationService:
         self.get_automation(automation_id, user_email)
         return self.repo.list_triggers(automation_id)
 
-    def save_graph(
-        self, automation_id: str, body: SaveAutomationGraphRequest, user_email: str
-    ) -> AutomationGraph:
-        automation = self.get_automation(automation_id, user_email)
-        nodes = [
+    def _default_graph_entities(
+        self,
+        automation_id: str,
+    ) -> tuple[AutomationNode, AutomationNode, AutomationEdge, AutomationTrigger]:
+        start = AutomationNode(
+            automation_id=automation_id,
+            type=AutomationNodeType.START,
+            name="Start",
+            position={"x": 0, "y": 0},
+        )
+        final = AutomationNode(
+            automation_id=automation_id,
+            type=AutomationNodeType.FINAL,
+            name="Done",
+            position={"x": 400, "y": 0},
+        )
+        edge = AutomationEdge(
+            automation_id=automation_id,
+            source_node_id=start.node_id,
+            target_node_id=final.node_id,
+            label="next",
+        )
+        trigger = AutomationTrigger(
+            automation_id=automation_id,
+            type=AutomationTriggerType.MANUAL,
+            name="Manual",
+            enabled=True,
+            entry_node_id=start.node_id,
+        )
+        return start, final, edge, trigger
+
+    def _apply_status_update(
+        self,
+        automation: Automation,
+        previous_status: AutomationStatus,
+        next_status: AutomationStatus,
+        user_email: str,
+    ) -> None:
+        if next_status == AutomationStatus.ACTIVE:
+            graph = self.get_graph(automation.automation_id, user_email)
+            self.validate_graph(
+                graph.nodes,
+                graph.edges,
+                graph.triggers,
+                user_email,
+                automation.automation_id,
+            )
+            automation.status = next_status
+            if previous_status != AutomationStatus.ACTIVE:
+                for trigger in graph.triggers:
+                    self.trigger_lifecycle.sync_trigger(automation, trigger, user_email)
+            return
+
+        if previous_status == AutomationStatus.ACTIVE:
+            graph = self.get_graph(automation.automation_id, user_email)
+            self.trigger_lifecycle.pause_schedule_triggers(
+                automation.automation_id,
+                graph.triggers,
+                user_email,
+            )
+        automation.status = next_status
+
+    def _node_from_graph_item(self, automation_id: str, item: Any) -> AutomationNode:
+        return self._ensure_node_id(
             AutomationNode(
                 node_id=item.node_id or "",
                 automation_id=automation_id,
@@ -198,12 +237,36 @@ class AutomationService:
                 position=item.position,
                 config=item.config,
             )
-            for item in body.nodes
-        ]
-        for node in nodes:
-            if not node.node_id:
-                node.node_id = AutomationNode(automation_id=automation_id, type=node.type, name=node.name).node_id
-        edges = [
+        )
+
+    def _node_from_create_request(
+        self,
+        automation_id: str,
+        body: CreateAutomationNodeRequest,
+    ) -> AutomationNode:
+        return self._ensure_node_id(
+            AutomationNode(
+                node_id=body.node_id or "",
+                automation_id=automation_id,
+                type=body.type,
+                name=body.name,
+                description=body.description,
+                position=body.position,
+                config=body.config,
+            )
+        )
+
+    def _ensure_node_id(self, node: AutomationNode) -> AutomationNode:
+        if not node.node_id:
+            node.node_id = AutomationNode(
+                automation_id=node.automation_id,
+                type=node.type,
+                name=node.name,
+            ).node_id
+        return node
+
+    def _edge_from_graph_item(self, automation_id: str, item: Any) -> AutomationEdge:
+        return self._ensure_edge_id(
             AutomationEdge(
                 edge_id=item.edge_id or "",
                 automation_id=automation_id,
@@ -212,18 +275,41 @@ class AutomationService:
                 label=item.label,
                 condition=item.condition,
             )
-            for item in body.edges
-        ]
-        for edge in edges:
-            if not edge.edge_id:
-                edge.edge_id = AutomationEdge(
-                    automation_id=automation_id,
-                    source_node_id=edge.source_node_id,
-                    target_node_id=edge.target_node_id,
-                ).edge_id
-        existing_nodes, _, existing_triggers = self.repo.get_graph(automation_id)
-        self.validate_graph(nodes, edges, existing_triggers, user_email, automation_id)
-        next_node_ids = {node.node_id for node in nodes}
+        )
+
+    def _edge_from_create_request(
+        self,
+        automation_id: str,
+        body: CreateAutomationEdgeRequest,
+    ) -> AutomationEdge:
+        return self._ensure_edge_id(
+            AutomationEdge(
+                edge_id=body.edge_id or "",
+                automation_id=automation_id,
+                source_node_id=body.source_node_id,
+                target_node_id=body.target_node_id,
+                label=body.label,
+                condition=body.condition,
+            )
+        )
+
+    def _ensure_edge_id(self, edge: AutomationEdge) -> AutomationEdge:
+        if not edge.edge_id:
+            edge.edge_id = AutomationEdge(
+                automation_id=edge.automation_id,
+                source_node_id=edge.source_node_id,
+                target_node_id=edge.target_node_id,
+            ).edge_id
+        return edge
+
+    def _run_removed_node_lifecycle(
+        self,
+        automation_id: str,
+        existing_nodes: list[AutomationNode],
+        next_nodes: list[AutomationNode],
+        user_email: str,
+    ) -> None:
+        next_node_ids = {node.node_id for node in next_nodes}
         for removed_node in existing_nodes:
             if removed_node.node_id not in next_node_ids:
                 self._run_action_delete_lifecycle(
@@ -232,6 +318,16 @@ class AutomationService:
                     user_email,
                     metadata={"automation_deleted": False, "graph_replaced": True},
                 )
+
+    def save_graph(
+        self, automation_id: str, body: SaveAutomationGraphRequest, user_email: str
+    ) -> AutomationGraph:
+        automation = self.get_automation(automation_id, user_email)
+        nodes = [self._node_from_graph_item(automation_id, item) for item in body.nodes]
+        edges = [self._edge_from_graph_item(automation_id, item) for item in body.edges]
+        existing_nodes, _, existing_triggers = self.repo.get_graph(automation_id)
+        self.validate_graph(nodes, edges, existing_triggers, user_email, automation_id)
+        self._run_removed_node_lifecycle(automation_id, existing_nodes, nodes, user_email)
         self.repo.save_graph(automation_id, nodes, edges, existing_triggers)
         return AutomationGraph(automation, nodes, edges, existing_triggers)
 
@@ -239,17 +335,7 @@ class AutomationService:
         self, automation_id: str, body: CreateAutomationNodeRequest, user_email: str
     ) -> AutomationNode:
         graph = self.get_graph(automation_id, user_email)
-        node = AutomationNode(
-            node_id=body.node_id or "",
-            automation_id=automation_id,
-            type=body.type,
-            name=body.name,
-            description=body.description,
-            position=body.position,
-            config=body.config,
-        )
-        if not node.node_id:
-            node.node_id = AutomationNode(automation_id=automation_id, type=body.type, name=body.name).node_id
+        node = self._node_from_create_request(automation_id, body)
         self.validate_graph([*graph.nodes, node], graph.edges, graph.triggers, user_email, automation_id)
         return self.repo.save_node(node)
 
@@ -309,20 +395,7 @@ class AutomationService:
         self, automation_id: str, body: CreateAutomationEdgeRequest, user_email: str
     ) -> AutomationEdge:
         graph = self.get_graph(automation_id, user_email)
-        edge = AutomationEdge(
-            edge_id=body.edge_id or "",
-            automation_id=automation_id,
-            source_node_id=body.source_node_id,
-            target_node_id=body.target_node_id,
-            label=body.label,
-            condition=body.condition,
-        )
-        if not edge.edge_id:
-            edge.edge_id = AutomationEdge(
-                automation_id=automation_id,
-                source_node_id=edge.source_node_id,
-                target_node_id=edge.target_node_id,
-            ).edge_id
+        edge = self._edge_from_create_request(automation_id, body)
         self.validate_graph(graph.nodes, [*graph.edges, edge], graph.triggers, user_email, automation_id)
         return self.repo.save_edge(edge)
 
@@ -379,7 +452,7 @@ class AutomationService:
             ).trigger_id
         if any(item.trigger_id == trigger.trigger_id for item in graph.triggers):
             raise AutomationValidationError("Trigger IDs must be unique")
-        self._validate_trigger(graph.nodes, trigger)
+        self.graph_validator.validate_trigger(graph.nodes, trigger)
         saved = self.repo.save_trigger(trigger)
         self.trigger_lifecycle.sync_trigger(graph.automation, saved, user_email)
         return saved
@@ -411,7 +484,7 @@ class AutomationService:
         trigger_ids = {item.trigger_id for item in updated_triggers}
         if len(trigger_ids) != len(updated_triggers):
             raise AutomationValidationError("Trigger IDs must be unique")
-        self._validate_trigger(graph.nodes, trigger)
+        self.graph_validator.validate_trigger(graph.nodes, trigger)
         saved = self.repo.save_trigger(trigger)
         self.trigger_lifecycle.sync_trigger(graph.automation, saved, user_email)
         return saved
@@ -432,158 +505,7 @@ class AutomationService:
         user_email: str,
         automation_id: str | None = None,
     ) -> None:
-        node_by_id = {node.node_id: node for node in nodes}
-        if len(node_by_id) != len(nodes):
-            raise AutomationValidationError("Node IDs must be unique")
-        edge_ids = {edge.edge_id for edge in edges}
-        if len(edge_ids) != len(edges):
-            raise AutomationValidationError("Edge IDs must be unique")
-        trigger_ids = {trigger.trigger_id for trigger in triggers}
-        if len(trigger_ids) != len(triggers):
-            raise AutomationValidationError("Trigger IDs must be unique")
-
-        start_nodes = [node for node in nodes if node.type == AutomationNodeType.START]
-        final_nodes = [node for node in nodes if node.type == AutomationNodeType.FINAL]
-        if not start_nodes:
-            raise AutomationValidationError("Graph must include at least one start node")
-        if not final_nodes:
-            raise AutomationValidationError("Graph must include at least one final node")
-
-        start_ids = {node.node_id for node in start_nodes}
-        if len(start_nodes) > 1:
-            trigger_entry_ids = {trigger.entry_node_id for trigger in triggers}
-            if not start_ids.issubset(trigger_entry_ids):
-                raise AutomationValidationError(
-                    "Multiple start nodes require distinct triggers for each start"
-                )
-
-        outgoing: dict[str, list[AutomationEdge]] = defaultdict(list)
-        for edge in edges:
-            if edge.source_node_id not in node_by_id:
-                raise AutomationValidationError(f"Edge source node not found: {edge.source_node_id}")
-            if edge.target_node_id not in node_by_id:
-                raise AutomationValidationError(f"Edge target node not found: {edge.target_node_id}")
-            outgoing[edge.source_node_id].append(edge)
-
-        for trigger in triggers:
-            self._validate_trigger(nodes, trigger)
-
-        entry_node_ids = {trigger.entry_node_id for trigger in triggers} or {
-            node.node_id for node in start_nodes
-        }
-        reachable = self._reachable_nodes(entry_node_ids, outgoing)
-        orphaned = [node.node_id for node in nodes if node.node_id not in reachable]
-        if orphaned:
-            raise AutomationValidationError(f"Required nodes are unreachable: {', '.join(orphaned)}")
-
-        self._reject_cycles(entry_node_ids, outgoing)
-
-        for node in nodes:
-            node_edges = outgoing.get(node.node_id, [])
-            if node.type == AutomationNodeType.FINAL:
-                if node_edges:
-                    raise AutomationValidationError("Final nodes cannot have outgoing edges")
-                continue
-            if not node_edges:
-                raise AutomationValidationError(f"Node '{node.node_id}' must have an outgoing edge")
-            if node.type == AutomationNodeType.CONDITION:
-                config = ConditionNodeConfigAdapter.validate(node.config)
-                labels = {edge.label for edge in node_edges}
-                if config.true_label not in labels or config.false_label not in labels:
-                    raise AutomationValidationError(
-                        "Condition nodes must have valid true and false outgoing branches"
-                    )
-            elif node.type == AutomationNodeType.ACTION:
-                self._validate_action_config(node.config, user_email, automation_id or node.automation_id)
-
-    def _validate_trigger(
-        self,
-        nodes: list[AutomationNode],
-        trigger: AutomationTrigger,
-    ) -> None:
-        node_by_id = {node.node_id: node for node in nodes}
-        node = node_by_id.get(trigger.entry_node_id)
-        if not node:
-            raise AutomationValidationError(
-                f"Trigger entry node not found: {trigger.entry_node_id}"
-            )
-        if node.type != AutomationNodeType.START:
-            raise AutomationValidationError("Triggers must reference a start node")
-        if trigger.type == AutomationTriggerType.SCHEDULE:
-            try:
-                config = ScheduleTriggerConfig.model_validate(trigger.config)
-                validate_schedule_expression(
-                    ScheduleExpression(config.cron_expression, config.timezone)
-                )
-            except Exception as exc:
-                raise AutomationValidationError(f"Invalid schedule trigger: {exc}") from exc
-
-    def _validate_action_config(self, config: dict[str, Any], user_email: str, automation_id: str) -> None:
-        action_type = config.get("action_type")
-        if action_type == AutomationActionType.INVOKE_AGENT.value:
-            agent_id = config.get("agent_id")
-            prompt_template = config.get("prompt_template")
-            if not agent_id or not isinstance(agent_id, str):
-                raise AutomationValidationError("invoke_agent action requires agent_id")
-            if not prompt_template or not isinstance(prompt_template, str):
-                raise AutomationValidationError("invoke_agent action requires prompt_template")
-            if not self.agent_repo.find_agent_by_id(agent_id, user_email):
-                raise AutomationValidationError("invoke_agent action references an unknown agent")
-            return
-        if action_type == AutomationActionType.SKILL_ACTION.value:
-            try:
-                skill_config = SkillActionConfig(**config)
-            except Exception as exc:
-                raise AutomationValidationError(
-                    "skill_action requires installed_skill_id or skill_id, action, and arguments"
-                ) from exc
-            enabled = self._resolve_automation_skill(
-                automation_id,
-                installed_skill_id=skill_config.installed_skill_id,
-                skill_id=skill_config.skill_id,
-                user_email=user_email,
-                allow_auto_enable=True,
-            )
-            if not enabled or not enabled.enabled:
-                raise AutomationValidationError(
-                    "skill_action references a skill that is not enabled for this automation"
-                )
-            loaded = self.skill_registry.get(enabled.skill_id)
-            if not loaded:
-                raise AutomationValidationError("skill_action references an unavailable skill")
-            if not loaded.manifest.automation.enabled:
-                raise AutomationValidationError("skill_action references a skill that is not available for automations")
-            missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
-            if missing:
-                raise AutomationValidationError(
-                    "skill_action requires connected connectors: " + ", ".join(missing)
-                )
-            action = next(
-                (
-                    item
-                    for item in loaded.manifest.actions
-                    if item.name == skill_config.action or skill_config.action in item.aliases
-                ),
-                None,
-            )
-            if not action:
-                raise AutomationValidationError("skill_action references an unknown skill action")
-            if not action.automation.enabled:
-                raise AutomationValidationError("skill_action references a skill action that is not available for automations")
-            if not isinstance(skill_config.arguments, dict):
-                raise AutomationValidationError("skill_action arguments must be an object")
-            for field_name in action.input_schema.get("required", []):
-                if field_name not in skill_config.arguments:
-                    raise AutomationValidationError(
-                        f"skill_action missing required action argument: {field_name}"
-                    )
-            return
-        if action_type in {
-            AutomationActionType.SEND_EMAIL.value,
-            AutomationActionType.WEBHOOK_CALL.value,
-        }:
-            raise AutomationValidationError(f"Action type '{action_type}' is not implemented yet")
-        raise AutomationValidationError("Action node requires a supported action_type")
+        self.graph_validator.validate(nodes, edges, triggers, user_email, automation_id)
 
     def list_skills(self, automation_id: str, user_email: str) -> list[AutomationSkillResponse]:
         self.get_automation(automation_id, user_email)
@@ -976,47 +898,18 @@ class AutomationService:
             )
         return None
 
-    def _reachable_nodes(
-        self, entry_node_ids: set[str], outgoing: dict[str, list[AutomationEdge]]
-    ) -> set[str]:
-        visited: set[str] = set()
-        stack = list(entry_node_ids)
-        while stack:
-            node_id = stack.pop()
-            if node_id in visited:
-                continue
-            visited.add(node_id)
-            stack.extend(edge.target_node_id for edge in outgoing.get(node_id, []))
-        return visited
-
-    def _reject_cycles(
-        self, entry_node_ids: set[str], outgoing: dict[str, list[AutomationEdge]]
-    ) -> None:
-        visiting: set[str] = set()
-        visited: set[str] = set()
-
-        def visit(node_id: str) -> None:
-            if node_id in visiting:
-                raise AutomationValidationError("Graph cycles are not supported yet")
-            if node_id in visited:
-                return
-            visiting.add(node_id)
-            for edge in outgoing.get(node_id, []):
-                visit(edge.target_node_id)
-            visiting.remove(node_id)
-            visited.add(node_id)
-
-        for entry_node_id in entry_node_ids:
-            visit(entry_node_id)
-
-
-class ConditionNodeConfigAdapter:
-    @staticmethod
-    def validate(config: dict[str, Any]) -> Any:
-        from src.automations.models import ConditionNodeConfig
-
-        try:
-            return ConditionNodeConfig(**config)
-        except Exception as exc:
-            raise AutomationValidationError("Condition node requires a valid expression") from exc
-
+    def _resolve_automation_skill_for_validation(
+        self,
+        automation_id: str,
+        installed_skill_id: str | None,
+        skill_id: str | None,
+        user_email: str,
+        allow_auto_enable: bool,
+    ) -> AutomationSkill | None:
+        return self._resolve_automation_skill(
+            automation_id,
+            installed_skill_id=installed_skill_id,
+            skill_id=skill_id,
+            user_email=user_email,
+            allow_auto_enable=allow_auto_enable,
+        )

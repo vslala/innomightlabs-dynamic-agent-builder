@@ -6,6 +6,7 @@ import logging
 import re
 from contextlib import suppress
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, TypeVar
 
@@ -30,7 +31,8 @@ from src.automations.run_state import (
     AUTOMATION_RUN_HEARTBEAT_INTERVAL_SECONDS,
     AutomationRunStateService,
 )
-from src.automations.service import AutomationGraph, AutomationService, AutomationValidationError
+from src.automations.errors import AutomationValidationError
+from src.automations.service import AutomationGraph, AutomationService
 from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
 from src.connectors.service import ConnectorService, get_connector_service
@@ -39,6 +41,19 @@ from src.skills.service import get_skill_service
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class NodeExecutionContext:
+    automation: Automation
+    node: AutomationNode
+    run: AutomationRun
+    conversation: AutomationConversation
+    user_email: str
+    started_at: datetime
+
+
+NodeExecutor = Callable[[NodeExecutionContext], Awaitable[AutomationRunNodeResult]]
 
 
 async def _await_with_heartbeat(
@@ -82,6 +97,15 @@ class AutomationRunner:
         self.skill_service = skill_service or get_skill_service()
         self.connector_service = connector_service or get_connector_service()
         self.run_state = run_state or AutomationRunStateService(self.automation_repo)
+        self._node_executors: dict[AutomationNodeType, NodeExecutor] = {
+            AutomationNodeType.START: self._execute_start_node,
+            AutomationNodeType.CONDITION: self._execute_condition_node,
+            AutomationNodeType.ACTION: self._execute_action_node,
+        }
+        self._action_executors: dict[str, NodeExecutor] = {
+            AutomationActionType.INVOKE_AGENT.value: self._execute_agent_action,
+            AutomationActionType.SKILL_ACTION.value: self._execute_skill_action,
+        }
 
     async def run_test(
         self,
@@ -253,68 +277,62 @@ class AutomationRunner:
         user_email: str,
     ) -> AutomationRunNodeResult:
         started_at = datetime.now(timezone.utc)
-        if node.type == AutomationNodeType.START:
-            return AutomationRunNodeResult(
-                run_id=run.run_id,
-                automation_id=automation.automation_id,
-                node_id=node.node_id,
-                status=AutomationNodeRunStatus.SUCCEEDED,
-                input=deepcopy(run.context.get("input", {})),
-                output=deepcopy(run.context.get("input", {})),
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
-            )
-
-        if node.type == AutomationNodeType.CONDITION:
-            value = self._evaluate_condition(node.config.get("expression", ""), run.context)
-            return AutomationRunNodeResult(
-                run_id=run.run_id,
-                automation_id=automation.automation_id,
-                node_id=node.node_id,
-                status=AutomationNodeRunStatus.SUCCEEDED,
-                input={"expression": node.config.get("expression")},
-                output={"result": value},
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
-            )
-
-        if node.type != AutomationNodeType.ACTION:
+        executor = self._node_executors.get(node.type)
+        if not executor:
             raise AutomationValidationError(f"Unsupported node type: {node.type}")
-
-        action_type = node.config.get("action_type")
-        if action_type != AutomationActionType.INVOKE_AGENT.value:
-            if action_type == AutomationActionType.SKILL_ACTION.value:
-                return await self._execute_skill_action(
-                    automation=automation,
-                    node=node,
-                    run=run,
-                    conversation=conversation,
-                    user_email=user_email,
-                    started_at=started_at,
-                )
-            return AutomationRunNodeResult(
-                run_id=run.run_id,
-                automation_id=automation.automation_id,
-                node_id=node.node_id,
-                status=AutomationNodeRunStatus.FAILED,
-                input=node.config,
-                error=f"Action type '{action_type}' is not implemented",
+        return await executor(
+            NodeExecutionContext(
+                automation=automation,
+                node=node,
+                run=run,
+                conversation=conversation,
+                user_email=user_email,
                 started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
             )
+        )
+
+    async def _execute_start_node(self, ctx: NodeExecutionContext) -> AutomationRunNodeResult:
+        input_data = deepcopy(ctx.run.context.get("input", {}))
+        return self._node_result(
+            ctx,
+            status=AutomationNodeRunStatus.SUCCEEDED,
+            input_data=input_data,
+            output=input_data,
+        )
+
+    async def _execute_condition_node(self, ctx: NodeExecutionContext) -> AutomationRunNodeResult:
+        expression = ctx.node.config.get("expression", "")
+        return self._node_result(
+            ctx,
+            status=AutomationNodeRunStatus.SUCCEEDED,
+            input_data={"expression": expression},
+            output={"result": self._evaluate_condition(expression, ctx.run.context)},
+        )
+
+    async def _execute_action_node(self, ctx: NodeExecutionContext) -> AutomationRunNodeResult:
+        action_type = ctx.node.config.get("action_type")
+        executor = self._action_executors.get(str(action_type))
+        if executor:
+            return await executor(ctx)
+        return self._failed_node_result(
+            ctx,
+            input_data=ctx.node.config,
+            error=f"Action type '{action_type}' is not implemented",
+        )
+
+    async def _execute_agent_action(self, ctx: NodeExecutionContext) -> AutomationRunNodeResult:
+        node = ctx.node
+        run = ctx.run
+        user_email = ctx.user_email
+        conversation = ctx.conversation
 
         agent_id = node.config["agent_id"]
         agent = self.agent_repo.find_agent_by_id(agent_id, user_email)
         if not agent:
-            return AutomationRunNodeResult(
-                run_id=run.run_id,
-                automation_id=automation.automation_id,
-                node_id=node.node_id,
-                status=AutomationNodeRunStatus.FAILED,
-                input={"agent_id": agent_id},
+            return self._failed_node_result(
+                ctx,
+                input_data={"agent_id": agent_id},
                 error="Agent not found",
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
             )
 
         prompt = self._render_template(node.config["prompt_template"], run.context)
@@ -330,16 +348,14 @@ class AutomationRunner:
             ),
             heartbeat=lambda: self.run_state.heartbeat(run, current_node_id=node.node_id),
         )
-        return AutomationRunNodeResult(
-            run_id=run.run_id,
-            automation_id=automation.automation_id,
-            node_id=node.node_id,
+        return self._node_result(
+            ctx,
             status=(
                 AutomationNodeRunStatus.SUCCEEDED
                 if invocation.success
                 else AutomationNodeRunStatus.FAILED
             ),
-            input={"agent_id": agent_id, "prompt": prompt},
+            input_data={"agent_id": agent_id, "prompt": prompt},
             output={
                 "response_text": invocation.response_text,
                 "events": [
@@ -356,44 +372,33 @@ class AutomationRunner:
                 }.items()
                 if value
             },
-            started_at=started_at,
-            completed_at=datetime.now(timezone.utc),
         )
 
     async def _execute_skill_action(
         self,
-        automation: Automation,
-        node: AutomationNode,
-        run: AutomationRun,
-        conversation: AutomationConversation,
-        user_email: str,
-        started_at: datetime,
+        ctx: NodeExecutionContext,
     ) -> AutomationRunNodeResult:
+        automation = ctx.automation
+        node = ctx.node
+        run = ctx.run
+        conversation = ctx.conversation
+        user_email = ctx.user_email
         installed_skill_id = str(node.config.get("installed_skill_id", "")).strip()
         skill_id = str(node.config.get("skill_id", "")).strip()
         action_name = str(node.config.get("action", "")).strip()
         raw_arguments = node.config.get("arguments", {})
+        base_input = {"installed_skill_id": installed_skill_id, "skill_id": skill_id, "action": action_name}
         if not isinstance(raw_arguments, dict):
-            return AutomationRunNodeResult(
-                run_id=run.run_id,
-                automation_id=automation.automation_id,
-                node_id=node.node_id,
-                status=AutomationNodeRunStatus.FAILED,
-                input=node.config,
+            return self._failed_node_result(
+                ctx,
+                input_data=node.config,
                 error="skill_action arguments must be an object",
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
             )
         if not (installed_skill_id or skill_id) or not action_name:
-            return AutomationRunNodeResult(
-                run_id=run.run_id,
-                automation_id=automation.automation_id,
-                node_id=node.node_id,
-                status=AutomationNodeRunStatus.FAILED,
-                input=node.config,
+            return self._failed_node_result(
+                ctx,
+                input_data=node.config,
                 error="skill_action requires installed_skill_id or skill_id and action",
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
             )
 
         try:
@@ -403,54 +408,36 @@ class AutomationRunner:
                 skill_id=skill_id,
             )
         except ValueError as exc:
-            return AutomationRunNodeResult(
-                run_id=run.run_id,
-                automation_id=automation.automation_id,
-                node_id=node.node_id,
-                status=AutomationNodeRunStatus.FAILED,
-                input={"installed_skill_id": installed_skill_id, "skill_id": skill_id, "action": action_name},
-                error=str(exc),
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
-            )
+            return self._failed_node_result(ctx, input_data=base_input, error=str(exc))
         if not enabled or not enabled.enabled:
-            return AutomationRunNodeResult(
-                run_id=run.run_id,
-                automation_id=automation.automation_id,
-                node_id=node.node_id,
-                status=AutomationNodeRunStatus.FAILED,
-                input={"installed_skill_id": installed_skill_id, "skill_id": skill_id, "action": action_name},
+            return self._failed_node_result(
+                ctx,
+                input_data=base_input,
                 error="Skill is not enabled for this automation",
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
             )
 
         loaded = self.skill_service.registry.get(enabled.skill_id)
         if not loaded:
-            return AutomationRunNodeResult(
-                run_id=run.run_id,
-                automation_id=automation.automation_id,
-                node_id=node.node_id,
-                status=AutomationNodeRunStatus.FAILED,
-                input={"installed_skill_id": installed_skill_id, "skill_id": skill_id, "action": action_name},
+            return self._failed_node_result(
+                ctx,
+                input_data=base_input,
                 error="Skill is not available",
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
             )
         missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
         if missing:
-            return AutomationRunNodeResult(
-                run_id=run.run_id,
-                automation_id=automation.automation_id,
-                node_id=node.node_id,
-                status=AutomationNodeRunStatus.FAILED,
-                input={"installed_skill_id": installed_skill_id, "skill_id": skill_id, "action": action_name},
+            return self._failed_node_result(
+                ctx,
+                input_data=base_input,
                 error="Missing connected connectors: " + ", ".join(missing),
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
             )
 
         arguments = self._render_smart_values(deepcopy(raw_arguments), run.context)
+        executed_input = {
+            "installed_skill_id": enabled.installed_skill_id or enabled.skill_id,
+            "skill_id": enabled.skill_id,
+            "action": action_name,
+            "arguments": arguments,
+        }
         try:
             result = await _await_with_heartbeat(
                 self.skill_service.registry.execute_action(
@@ -473,42 +460,53 @@ class AutomationRunner:
                 heartbeat=lambda: self.run_state.heartbeat(run, current_node_id=node.node_id),
             )
         except Exception as exc:
-            return AutomationRunNodeResult(
-                run_id=run.run_id,
-                automation_id=automation.automation_id,
-                node_id=node.node_id,
-                status=AutomationNodeRunStatus.FAILED,
-                input={
-                    "installed_skill_id": enabled.installed_skill_id or enabled.skill_id,
-                    "skill_id": enabled.skill_id,
-                    "action": action_name,
-                    "arguments": arguments,
-                },
-                error=str(exc),
-                started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
-            )
+            return self._failed_node_result(ctx, input_data=executed_input, error=str(exc))
 
-        return AutomationRunNodeResult(
-            run_id=run.run_id,
-            automation_id=automation.automation_id,
-            node_id=node.node_id,
+        return self._node_result(
+            ctx,
             status=AutomationNodeRunStatus.SUCCEEDED,
-            input={
-                "installed_skill_id": enabled.installed_skill_id or enabled.skill_id,
-                "skill_id": enabled.skill_id,
-                "action": action_name,
-                "arguments": arguments,
-            },
+            input_data=executed_input,
             output={
-                "installed_skill_id": enabled.installed_skill_id or enabled.skill_id,
-                "skill_id": enabled.skill_id,
-                "action": action_name,
-                "arguments": arguments,
+                **executed_input,
                 "result": result,
             },
-            started_at=started_at,
+        )
+
+    def _node_result(
+        self,
+        ctx: NodeExecutionContext,
+        *,
+        status: AutomationNodeRunStatus,
+        input_data: dict[str, Any],
+        output: dict[str, Any] | None = None,
+        error: str | None = None,
+        message_ids: dict[str, str] | None = None,
+    ) -> AutomationRunNodeResult:
+        return AutomationRunNodeResult(
+            run_id=ctx.run.run_id,
+            automation_id=ctx.automation.automation_id,
+            node_id=ctx.node.node_id,
+            status=status,
+            input=input_data,
+            output=output or {},
+            error=error,
+            message_ids=message_ids or {},
+            started_at=ctx.started_at,
             completed_at=datetime.now(timezone.utc),
+        )
+
+    def _failed_node_result(
+        self,
+        ctx: NodeExecutionContext,
+        *,
+        input_data: dict[str, Any],
+        error: str,
+    ) -> AutomationRunNodeResult:
+        return self._node_result(
+            ctx,
+            status=AutomationNodeRunStatus.FAILED,
+            input_data=input_data,
+            error=error,
         )
 
     def _resolve_automation_skill(

@@ -23,7 +23,7 @@ from src.contact.router import router as contact_router
 from src.connectors.router import router as connectors_router
 from src.connectors.mcp.router import public_router as mcp_connectors_public_router
 from src.connectors.mcp.router import router as mcp_connectors_router
-from src.skills import skills_router
+from src.skills.router import router as skills_router
 from src.skills.api_registry import build_skill_api_routers
 from src.skills.registry import get_skill_registry
 from src.analytics import analytics_router
