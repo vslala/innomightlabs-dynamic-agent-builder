@@ -1,0 +1,122 @@
+.agent-detail-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  width: 100%;
+}
+
+.agent-detail-layout__loading {
+  align-items: center;
+  display: flex;
+  height: 16rem;
+  justify-content: center;
+}
+
+.agent-detail-layout__spinner {
+  animation: spin 1s linear infinite;
+  border: 2px solid var(--gradient-start);
+  border-radius: 999px;
+  border-top-color: transparent;
+  height: 32px;
+  width: 32px;
+}
+
+.agent-detail-layout__error {
+  display: grid;
+  gap: 24px;
+}
+
+.agent-detail-layout__error-header,
+.agent-detail-layout__header,
+.agent-detail-layout__title-group {
+  align-items: center;
+  display: flex;
+}
+
+.agent-detail-layout__error-header {
+  gap: 16px;
+}
+
+.agent-detail-layout__header {
+  gap: 24px;
+  justify-content: space-between;
+}
+
+.agent-detail-layout__title-group {
+  gap: 16px;
+  min-width: 0;
+}
+
+.agent-detail-layout__title-icon {
+  align-items: center;
+  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-mid));
+  border-radius: 12px;
+  color: #fff;
+  display: flex;
+  flex: 0 0 auto;
+  height: 48px;
+  justify-content: center;
+  width: 48px;
+}
+
+.agent-detail-layout__title-icon-svg {
+  height: 24px;
+  width: 24px;
+}
+
+.agent-detail-layout__title {
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.agent-detail-layout__subtitle {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.agent-detail-layout__error-card {
+  padding: 48px;
+}
+
+.agent-detail-layout__error-content {
+  text-align: center;
+}
+
+.agent-detail-layout__error-icon {
+  color: var(--text-muted);
+  height: 64px;
+  margin: 0 auto 16px;
+  width: 64px;
+}
+
+.agent-detail-layout__error-message {
+  color: var(--text-muted);
+  margin-bottom: 24px;
+}
+
+.agent-detail-layout__workspace {
+  align-items: start;
+  display: grid;
+  gap: 32px;
+  grid-template-columns: 16rem minmax(0, 1fr);
+  width: 100%;
+}
+
+.agent-detail-layout__content {
+  min-width: 0;
+}
+
+@media (min-width: 1600px) {
+  .agent-detail-layout__workspace {
+    grid-template-columns: 17rem minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .agent-detail-layout__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

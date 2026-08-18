@@ -1,0 +1,16 @@
+.search-input {
+  position: relative;
+  width: 100%;
+}
+
+.search-input__icon {
+  color: var(--text-muted);
+  height: 16px;
+  left: 16px;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  z-index: 1;
+}

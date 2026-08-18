@@ -6,6 +6,7 @@ import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
 import { agentApiService, type AgentResponse } from "../../../services/agents/AgentApiService";
 import { AgentSideNav } from "./AgentSideNav";
+import "./AgentDetailLayout.css";
 
 export function AgentDetailLayout() {
   const { agentId } = useParams<{ agentId: string }>();
@@ -48,26 +49,26 @@ export function AgentDetailLayout() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--gradient-start)] border-t-transparent" />
+      <div className="agent-detail-layout__loading">
+        <div className="agent-detail-layout__spinner" />
       </div>
     );
   }
 
   if (error || !agent) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
+      <div className="agent-detail-layout__error">
+        <div className="agent-detail-layout__error-header">
           <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard/agents")}>
-            <ChevronLeft className="h-5 w-5" />
+            <ChevronLeft className="agent-detail-layout__title-icon-svg" />
           </Button>
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">Agent Not Found</h1>
+          <h1 className="agent-detail-layout__title">Agent Not Found</h1>
         </div>
         <Card>
-          <CardContent className="p-12">
-            <div className="text-center">
-              <Bot className="h-16 w-16 mx-auto text-[var(--text-muted)] mb-4" />
-              <p className="text-[var(--text-muted)] mb-6">
+          <CardContent className="agent-detail-layout__error-card">
+            <div className="agent-detail-layout__error-content">
+              <Bot className="agent-detail-layout__error-icon" />
+              <p className="agent-detail-layout__error-message">
                 {error ?? "Failed to load agent."}
               </p>
               <Button onClick={() => navigate("/dashboard/agents")}>Back to Agents</Button>
@@ -79,36 +80,29 @@ export function AgentDetailLayout() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-      <div className="flex items-center justify-between gap-6">
-        <div className="flex items-center gap-4">
+    <div className="agent-detail-layout">
+      <div className="agent-detail-layout__header">
+        <div className="agent-detail-layout__title-group">
           <Button variant="ghost" size="icon" asChild>
             <Link to="/dashboard/agents">
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="agent-detail-layout__title-icon-svg" />
             </Link>
           </Button>
-          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
-            <Bot className="h-6 w-6 text-white" />
+          <div className="agent-detail-layout__title-icon">
+            <Bot className="agent-detail-layout__title-icon-svg" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-[var(--text-primary)]">
+            <h1 className="agent-detail-layout__title">
               {agent.agent_name}
             </h1>
-            <p className="text-sm text-[var(--text-muted)]">{agent.agent_provider}</p>
+            <p className="agent-detail-layout__subtitle">{agent.agent_provider}</p>
           </div>
         </div>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "15rem minmax(0, 1fr)",
-          gap: "2rem",
-          alignItems: "start",
-        }}
-      >
+      <div className="agent-detail-layout__workspace">
         <AgentSideNav />
-        <div style={{ minWidth: 0 }}>
+        <div className="agent-detail-layout__content">
           <Outlet context={{ agent }} />
         </div>
       </div>

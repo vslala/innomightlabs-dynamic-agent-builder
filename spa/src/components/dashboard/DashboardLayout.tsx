@@ -1,7 +1,9 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { cn } from "../../lib/utils";
 import { authService, type UserInfo } from "../../services/auth";
+import "./DashboardLayout.css";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Overview",
@@ -67,41 +69,17 @@ export function DashboardLayout() {
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        minHeight: "100vh",
-        backgroundColor: "var(--bg-dark)",
-      }}
-    >
+    <div className="dashboard-layout">
       <Sidebar />
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          height: "100vh",
-          minHeight: 0,
-          overflow: "hidden",
-        }}
-      >
+      <div className="dashboard-layout__body">
         <Header title={getTitle()} user={user || undefined} />
         <main
-          style={{
-            flex: 1,
-            padding: isFullBleedPage ? 0 : "2rem",
-            overflowY: "auto",
-            minHeight: 0,
-          }}
+          className={cn(
+            "dashboard-layout__main",
+            isFullBleedPage && "dashboard-layout__main--full-bleed"
+          )}
         >
-          <div
-            style={{
-              maxWidth: isFullBleedPage ? "none" : "80rem",
-              margin: isFullBleedPage ? 0 : "0 auto",
-              height: "100%",
-              minHeight: 0,
-            }}
-          >
+          <div className="dashboard-layout__content">
             <Outlet context={{ user }} />
           </div>
         </main>

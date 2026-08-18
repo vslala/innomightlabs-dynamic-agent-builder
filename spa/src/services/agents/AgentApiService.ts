@@ -15,9 +15,68 @@ export interface AgentResponse {
   agent_persona: string;
   agent_description?: string | null;
   capabilities?: string[];
+  is_agent2agent_enabled?: boolean;
   created_by: string;
   created_at: string;
   updated_at: string | null;
+}
+
+export interface Agent2AgentSharingResponse {
+  agent_id: string;
+  enabled: boolean;
+  agent_card_url: string;
+  service_url: string;
+  has_active_api_key: boolean;
+}
+
+export type Agent2AgentTaskState =
+  | "TASK_STATE_SUBMITTED"
+  | "TASK_STATE_WORKING"
+  | "TASK_STATE_INPUT_REQUIRED"
+  | "TASK_STATE_COMPLETED"
+  | "TASK_STATE_FAILED"
+  | "TASK_STATE_CANCELED"
+  | "TASK_STATE_REJECTED";
+
+export interface Agent2AgentTextPart {
+  kind?: "text";
+  text: string;
+}
+
+export interface Agent2AgentMessage {
+  messageId: string;
+  role: "ROLE_USER" | "ROLE_AGENT";
+  parts: Agent2AgentTextPart[];
+  taskId?: string | null;
+  contextId?: string | null;
+}
+
+export interface Agent2AgentTaskStatus {
+  state: Agent2AgentTaskState;
+  message?: Agent2AgentMessage | null;
+}
+
+export interface Agent2AgentTask {
+  id: string;
+  contextId: string;
+  agentId: string;
+  ownerEmail: string;
+  clientKeyId: string;
+  conversationId: string;
+  status: Agent2AgentTaskStatus;
+  history: Agent2AgentMessage[];
+  artifacts: Record<string, unknown>[];
+  createdAt: string;
+  updatedAt: string;
+  ttl?: number | null;
+}
+
+export interface Agent2AgentTaskListResponse {
+  items: Agent2AgentTask[];
+}
+
+export interface Agent2AgentTaskResponse {
+  task: Agent2AgentTask;
 }
 
 class AgentApiService {
@@ -64,6 +123,33 @@ class AgentApiService {
     data: Record<string, string>
   ): Promise<AgentResponse> {
     return httpClient.put<AgentResponse>(`/agents/${agentId}`, data);
+  }
+
+  async getAgent2AgentSharing(agentId: string): Promise<Agent2AgentSharingResponse> {
+    return httpClient.get<Agent2AgentSharingResponse>(`/agents/${agentId}/a2a-sharing`);
+  }
+
+  async updateAgent2AgentSharing(
+    agentId: string,
+    enabled: boolean
+  ): Promise<Agent2AgentSharingResponse> {
+    return httpClient.put<Agent2AgentSharingResponse>(
+      `/agents/${agentId}/a2a-sharing`,
+      { enabled }
+    );
+  }
+
+  async listAgent2AgentTasks(agentId: string): Promise<Agent2AgentTaskListResponse> {
+    return httpClient.get<Agent2AgentTaskListResponse>(`/agents/${agentId}/a2a-tasks`);
+  }
+
+  async getAgent2AgentTask(
+    agentId: string,
+    taskId: string
+  ): Promise<Agent2AgentTaskResponse> {
+    return httpClient.get<Agent2AgentTaskResponse>(
+      `/agents/${agentId}/a2a-tasks/${taskId}`
+    );
   }
 
   /**

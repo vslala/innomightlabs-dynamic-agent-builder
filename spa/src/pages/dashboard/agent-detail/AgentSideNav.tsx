@@ -1,7 +1,8 @@
 import { NavLink, useLocation, useParams } from "react-router-dom";
-import { BarChart3, BookOpen, Bot, Database, Key, Server, Wrench } from "lucide-react";
+import { BarChart3, BookOpen, Bot, Database, Key, Network, Server, Wrench } from "lucide-react";
 
 import { cn } from "../../../lib/utils";
+import "./AgentSideNav.css";
 
 interface AgentNavItem {
   path: string;
@@ -17,6 +18,7 @@ const navItems: AgentNavItem[] = [
   { path: "knowledge-bases", label: "Knowledge Bases", icon: BookOpen },
   { path: "skills", label: "Skills", icon: Wrench },
   { path: "mcp-tools", label: "MCP Tools", icon: Server },
+  { path: "a2a-tasks", label: "A2A Tasks", icon: Network },
   { path: "analytics", label: "Analytics", icon: BarChart3 },
 ];
 
@@ -27,15 +29,8 @@ export function AgentSideNav() {
   if (!agentId) return null;
 
   return (
-    <aside
-      style={{
-        width: "15rem",
-        minWidth: "15rem",
-        borderRight: "1px solid var(--border-subtle)",
-        paddingRight: "1rem",
-      }}
-    >
-      <nav style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+    <aside className="agent-side-nav">
+      <nav className="agent-side-nav__list">
         {navItems.map((item) => {
           const to = item.path
             ? `/dashboard/agents/${agentId}/${item.path}`
@@ -48,25 +43,11 @@ export function AgentSideNav() {
             <NavLink key={to} to={to} end={item.end}>
               <div
                 className={cn(
-                  "transition-all duration-200",
-                  isActive
-                    ? "text-[var(--nav-active-text)]"
-                    : "text-[var(--text-muted)] hover:bg-[var(--nav-hover-bg)] hover:text-[var(--text-primary)]"
+                  "agent-side-nav__item",
+                  isActive ? "agent-side-nav__item--active" : "agent-side-nav__item--idle"
                 )}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.75rem",
-                  borderRadius: "0.75rem",
-                  padding: "0.75rem",
-                  fontSize: "0.875rem",
-                  fontWeight: 500,
-                  background: isActive
-                    ? "linear-gradient(90deg, rgba(12, 102, 228, 0.14), rgba(12, 102, 228, 0.06))"
-                    : undefined,
-                }}
               >
-                <item.icon className="h-4 w-4 shrink-0" />
+                <item.icon className="agent-side-nav__icon" />
                 {item.label}
               </div>
             </NavLink>

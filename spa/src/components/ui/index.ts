@@ -6,6 +6,7 @@ export * from "./card";
 export * from "./dialog";
 export * from "./file-input";
 export * from "./input";
+export * from "./search-input";
 export * from "./label";
 export * from "./select";
 export * from "./tabs";

@@ -41,6 +41,7 @@ const AgentApiKeysPage = lazyRoute(() => import('./pages/dashboard/agent-detail/
 const AgentKnowledgeBasesPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentKnowledgeBasesPage'), 'AgentKnowledgeBasesPage');
 const AgentSkillsPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentSkillsPage'), 'AgentSkillsPage');
 const AgentMCPToolsPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentMCPToolsPage'), 'AgentMCPToolsPage');
+const AgentA2ATasksPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentA2ATasksPage'), 'AgentA2ATasksPage');
 const AgentAnalyticsPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentAnalyticsPage'), 'AgentAnalyticsPage');
 const AutomationsListPage = lazyRoute(() => import('./pages/dashboard/automations/AutomationsListPage'), 'AutomationsListPage');
 const AutomationDetailLayout = lazyRoute(() => import('./pages/dashboard/automations/AutomationDetailLayout'), 'AutomationDetailLayout');
@@ -125,6 +126,7 @@ function App() {
             <Route path="knowledge-bases" element={<AgentKnowledgeBasesPage />} />
             <Route path="skills" element={<AgentSkillsPage />} />
             <Route path="mcp-tools" element={<AgentMCPToolsPage />} />
+            <Route path="a2a-tasks" element={<AgentA2ATasksPage />} />
             <Route path="analytics" element={<AgentAnalyticsPage />} />
           </Route>
           <Route path="automations" element={<AutomationsListPage />} />

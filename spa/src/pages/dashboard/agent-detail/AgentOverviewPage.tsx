@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type React from "react";
 import { useNavigate } from "react-router-dom";
-import { Pencil, ShoppingBag } from "lucide-react";
+import { Check, Copy, Key, Network, Pencil, ShoppingBag } from "lucide-react";
 
 import { FieldGroup, Stack } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
@@ -20,7 +20,7 @@ import {
   Textarea,
 } from "../../../components/ui";
 import { SchemaForm, SchemaView } from "../../../components/forms";
-import { agentApiService } from "../../../services/agents/AgentApiService";
+import { agentApiService, type Agent2AgentSharingResponse } from "../../../services/agents/AgentApiService";
 import { agentMarketplaceApiService } from "../../../services/agentMarketplace";
 import { skillApiService } from "../../../services/skills";
 import type { FormSchema, FormValue } from "../../../types/form";
@@ -36,6 +36,11 @@ export function AgentOverviewPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [a2aSharing, setA2aSharing] = useState<Agent2AgentSharingResponse | null>(null);
+  const [loadingA2aSharing, setLoadingA2aSharing] = useState(false);
+  const [updatingA2aSharing, setUpdatingA2aSharing] = useState(false);
+  const [a2aError, setA2aError] = useState<string | null>(null);
+  const [copiedA2aUrl, setCopiedA2aUrl] = useState<string | null>(null);
   const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([]);
   const [publishForm, setPublishForm] = useState({
     title: agent.agent_name,
@@ -73,6 +78,36 @@ export function AgentOverviewPage() {
     }
 
     loadPageData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.agent_id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadA2aSharing() {
+      setLoadingA2aSharing(true);
+      setA2aError(null);
+      try {
+        const sharing = await agentApiService.getAgent2AgentSharing(agent.agent_id);
+        if (!cancelled) {
+          setA2aSharing(sharing);
+        }
+      } catch (err) {
+        console.error("Error loading Agent2Agent sharing settings:", err);
+        if (!cancelled) {
+          setA2aError("Failed to load Agent2Agent settings.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingA2aSharing(false);
+        }
+      }
+    }
+
+    loadA2aSharing();
 
     return () => {
       cancelled = true;
@@ -150,6 +185,34 @@ export function AgentOverviewPage() {
       }
       return { ...current, included_skill_ids: Array.from(included) };
     });
+  };
+
+  const handleToggleA2aSharing = async (enabled: boolean) => {
+    setUpdatingA2aSharing(true);
+    setA2aError(null);
+    try {
+      const sharing = await agentApiService.updateAgent2AgentSharing(agent.agent_id, enabled);
+      setA2aSharing(sharing);
+      setCurrentAgent((current) => ({
+        ...current,
+        is_agent2agent_enabled: sharing.enabled,
+      }));
+    } catch (err) {
+      console.error("Error updating Agent2Agent sharing settings:", err);
+      setA2aError(err instanceof Error ? err.message : "Failed to update Agent2Agent settings.");
+    } finally {
+      setUpdatingA2aSharing(false);
+    }
+  };
+
+  const handleCopyA2aUrl = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedA2aUrl(label);
+      setTimeout(() => setCopiedA2aUrl(null), 2000);
+    } catch (err) {
+      console.error("Failed to copy Agent2Agent URL:", err);
+    }
   };
 
   return (
@@ -233,6 +296,102 @@ export function AgentOverviewPage() {
                 </div>
               )}
             </div>
+
+            <div
+              style={{
+                borderTop: "1px solid var(--border-subtle)",
+                paddingTop: "1.5rem",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", marginBottom: "1rem" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
+                  <div
+                    style={{
+                      height: "2.25rem",
+                      width: "2.25rem",
+                      borderRadius: "0.5rem",
+                      backgroundColor: "var(--bg-tertiary)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Network className="h-4 w-4 text-[var(--gradient-start)]" />
+                  </div>
+                  <div>
+                    <p style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: "0.25rem" }}>
+                      Agent2Agent Discovery
+                    </p>
+                    <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", lineHeight: 1.5 }}>
+                      Share this agent through the public A2A facilitator card. Calls still require an active API key for this agent.
+                    </p>
+                  </div>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-secondary)", fontSize: "0.875rem", whiteSpace: "nowrap" }}>
+                  <Checkbox
+                    checked={Boolean(a2aSharing?.enabled)}
+                    disabled={loadingA2aSharing || updatingA2aSharing}
+                    onChange={(event) => handleToggleA2aSharing(event.target.checked)}
+                  />
+                  Enabled
+                </label>
+              </div>
+
+              {a2aError && (
+                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                  {a2aError}
+                </div>
+              )}
+
+              {a2aSharing && !a2aSharing.has_active_api_key && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "1rem",
+                    marginBottom: "1rem",
+                    padding: "0.875rem",
+                    border: "1px solid rgba(234, 179, 8, 0.25)",
+                    borderRadius: "0.5rem",
+                    backgroundColor: "rgba(234, 179, 8, 0.08)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-secondary)", fontSize: "0.875rem" }}>
+                    <Key className="h-4 w-4 text-yellow-400" />
+                    <span>Create an active API key before enabling A2A discovery.</span>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/agents/${agent.agent_id}/api-keys`)}>
+                    API Keys
+                  </Button>
+                </div>
+              )}
+
+              {loadingA2aSharing ? (
+                <div style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
+                  Loading Agent2Agent settings...
+                </div>
+              ) : a2aSharing ? (
+                <div style={{ display: "grid", gap: "0.75rem" }}>
+                  <CopyableA2AUrl
+                    label="Facilitator card"
+                    value={a2aSharing.agent_card_url}
+                    copied={copiedA2aUrl === "Facilitator card"}
+                    onCopy={handleCopyA2aUrl}
+                  />
+                  <CopyableA2AUrl
+                    label="Agent service"
+                    value={a2aSharing.service_url}
+                    copied={copiedA2aUrl === "Agent service"}
+                    onCopy={handleCopyA2aUrl}
+                  />
+                  <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", lineHeight: 1.5 }}>
+                    The public card uses this agent's name and description. Use Edit above to change what other A2A clients discover.
+                  </p>
+                </div>
+              ) : null}
+            </div>
           </div>
         )}
       </CardContent>
@@ -315,6 +474,50 @@ export function AgentOverviewPage() {
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+interface CopyableA2AUrlProps {
+  label: string;
+  value: string;
+  copied: boolean;
+  onCopy: (label: string, value: string) => void;
+}
+
+function CopyableA2AUrl({ label, value, copied, onCopy }: CopyableA2AUrlProps) {
+  return (
+    <div>
+      <p style={{ color: "var(--text-muted)", marginBottom: "0.375rem", fontSize: "0.75rem" }}>
+        {label}
+      </p>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+          minWidth: 0,
+          fontFamily: "monospace",
+          fontSize: "0.8125rem",
+          backgroundColor: "var(--bg-tertiary)",
+          border: "1px solid var(--border-subtle)",
+          padding: "0.5rem 0.75rem",
+          borderRadius: "0.375rem",
+        }}
+      >
+        <code style={{ color: "var(--text-secondary)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {value}
+        </code>
+        <Button
+          variant="ghost"
+          size="icon"
+          style={{ height: "1.5rem", width: "1.5rem" }}
+          onClick={() => onCopy(label, value)}
+          aria-label={`Copy ${label}`}
+        >
+          {copied ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
+        </Button>
+      </div>
+    </div>
   );
 }
 
