@@ -32,6 +32,7 @@ class TestAgentRepository:
         assert saved_agent.agent_id == agent.agent_id
         assert saved_agent.agent_name == AGENT_CREATE_REQUEST["agent_name"]
         assert saved_agent.created_by == TEST_USER_EMAIL
+        assert saved_agent.is_agent2agent_enabled is False
 
     def test_find_agent_by_id(self, agent_repository):
         """Test that find_agent_by_id() retrieves the correct agent."""
@@ -154,3 +155,34 @@ class TestAgentRepository:
         assert updated_agent.agent_persona == "Updated persona"
         assert updated_agent.created_at == original_created_at
         assert updated_agent.updated_at is not None
+
+    def test_list_agent2agent_enabled_returns_only_enabled_agents(self, agent_repository):
+        """Test listing agents enabled for A2A discovery."""
+        enabled_agent = Agent(
+            agent_name=AGENT_CREATE_REQUEST["agent_name"],
+            agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
+            agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
+            agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
+            created_by=TEST_USER_EMAIL,
+            is_agent2agent_enabled=True,
+        )
+        disabled_agent = Agent(
+            agent_name=AGENT_CREATE_REQUEST_2["agent_name"],
+            agent_architecture=AGENT_CREATE_REQUEST_2["agent_architecture"],
+            agent_provider=AGENT_CREATE_REQUEST_2["agent_provider"],
+            agent_persona=AGENT_CREATE_REQUEST_2["agent_persona"],
+            created_by=TEST_USER_EMAIL,
+            is_agent2agent_enabled=False,
+        )
+        agent_repository.save(enabled_agent)
+        agent_repository.save(disabled_agent)
+
+        agents, next_cursor = agent_repository.list_agent2agent_enabled()
+
+        assert next_cursor is None
+        assert [agent.agent_id for agent in agents] == [enabled_agent.agent_id]
+
+        found = agent_repository.find_agent2agent_enabled_by_id(enabled_agent.agent_id)
+        assert found is not None
+        assert found.agent_id == enabled_agent.agent_id
+        assert agent_repository.find_agent2agent_enabled_by_id(disabled_agent.agent_id) is None

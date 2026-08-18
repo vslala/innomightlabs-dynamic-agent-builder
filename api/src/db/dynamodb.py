@@ -28,6 +28,8 @@ def get_dynamodb_resource():
 
     if settings.dynamodb_endpoint:
         kwargs["endpoint_url"] = settings.dynamodb_endpoint
+        kwargs["aws_access_key_id"] = "dummy"
+        kwargs["aws_secret_access_key"] = "dummy"
 
     return boto3.resource("dynamodb", **kwargs)
 
@@ -46,5 +48,7 @@ def get_dynamodb_client():
 
     if settings.dynamodb_endpoint:
         kwargs["endpoint_url"] = settings.dynamodb_endpoint
+        kwargs["aws_access_key_id"] = "dummy"
+        kwargs["aws_secret_access_key"] = "dummy"
 
     return boto3.client("dynamodb", **kwargs)

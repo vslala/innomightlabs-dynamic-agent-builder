@@ -214,6 +214,76 @@ class TestAgentsRouter:
 
         assert response.status_code == 404
 
+    def test_get_agent2agent_sharing_defaults(self, test_client: TestClient, auth_headers: dict):
+        """Test A2A sharing settings default to disabled."""
+        create_response = test_client.post("/agents", json=AGENT_CREATE_REQUEST, headers=auth_headers)
+        agent_id = create_response.json()["agent_id"]
+
+        response = test_client.get(f"/agents/{agent_id}/a2a-sharing", headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["agent_id"] == agent_id
+        assert data["enabled"] is False
+        assert data["has_active_api_key"] is False
+        assert data["agent_card_url"].endswith("/.well-known/agent-card.json")
+        assert data["service_url"].endswith(f"/a2a/agents/{agent_id}")
+
+    def test_enable_agent2agent_sharing_requires_active_api_key(
+        self,
+        test_client: TestClient,
+        auth_headers: dict,
+    ):
+        """Test enabling A2A sharing requires an active API key."""
+        create_response = test_client.post("/agents", json=AGENT_CREATE_REQUEST, headers=auth_headers)
+        agent_id = create_response.json()["agent_id"]
+
+        response = test_client.put(
+            f"/agents/{agent_id}/a2a-sharing",
+            json={"enabled": True},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Create an active API key before enabling Agent2Agent discovery"
+
+    def test_enable_and_disable_agent2agent_sharing(
+        self,
+        test_client: TestClient,
+        auth_headers: dict,
+    ):
+        """Test enabling and disabling A2A sharing."""
+        create_response = test_client.post("/agents", json=AGENT_CREATE_REQUEST, headers=auth_headers)
+        agent_id = create_response.json()["agent_id"]
+        key_response = test_client.post(
+            f"/agents/{agent_id}/api-keys",
+            json={"name": "A2A Key", "allowed_origins": []},
+            headers=auth_headers,
+        )
+        assert key_response.status_code == 201
+
+        enable_response = test_client.put(
+            f"/agents/{agent_id}/a2a-sharing",
+            json={"enabled": True},
+            headers=auth_headers,
+        )
+
+        assert enable_response.status_code == 200
+        data = enable_response.json()
+        assert data["enabled"] is True
+        assert data["has_active_api_key"] is True
+        agent_response = test_client.get(f"/agents/{agent_id}", headers=auth_headers)
+        assert agent_response.json()["is_agent2agent_enabled"] is True
+
+        disable_response = test_client.put(
+            f"/agents/{agent_id}/a2a-sharing",
+            json={"enabled": False},
+            headers=auth_headers,
+        )
+
+        assert disable_response.status_code == 200
+        assert disable_response.json()["enabled"] is False
+
     def test_delete_agent(self, test_client: TestClient, auth_headers: dict):
         """Test deleting an agent."""
         # Create an agent first

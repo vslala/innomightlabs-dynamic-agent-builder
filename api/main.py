@@ -27,6 +27,7 @@ from src.skills.router import router as skills_router
 from src.skills.api_registry import build_skill_api_routers
 from src.skills.registry import get_skill_registry
 from src.analytics import analytics_router
+from src.a2a import router as a2a_router
 from src.automations.router import router as automations_router
 from src.downloads import router as downloads_router
 from src.artifacts import artifacts_router
@@ -139,6 +140,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(auth_router)
+    app.include_router(router=a2a_router)
     app.include_router(router=agent_router)
     app.include_router(router=apikeys_router)
     app.include_router(router=conversation_router)

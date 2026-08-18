@@ -19,6 +19,9 @@ from src.agents.image_generation.service import (
 from src.agents.models import Agent, CreateAgentRequest, AgentResponse
 from src.agents.repository import AgentRepository
 from src.agents.schemas import get_create_agent_form, get_update_agent_form, UPDATE_AGENT_FORM
+from src.a2a.models import A2ATaskListResponse, A2ATaskResponse
+from src.a2a.repository import A2ATaskRepository
+from src.apikeys.repository import ApiKeyRepository
 from src.conversations.repository import ConversationRepository
 from src.crypto import encrypt_secret_fields
 from src.form_options import FormOptionsContext, hydrate_form_options
@@ -60,14 +63,58 @@ class SendMessageRequest(BaseModel):
         return [Attachment(**att) for att in v]
 
 
+class Agent2AgentSharingRequest(BaseModel):
+    """Request body for toggling Agent2Agent discovery."""
+
+    enabled: bool
+
+
+class Agent2AgentSharingResponse(BaseModel):
+    """Agent2Agent sharing settings for an agent."""
+
+    agent_id: str
+    enabled: bool
+    agent_card_url: str
+    service_url: str
+    has_active_api_key: bool
+
+
 def get_agent_repository() -> AgentRepository:
     """Dependency for AgentRepository"""
     return AgentRepository()
 
 
+def get_api_key_repository() -> ApiKeyRepository:
+    """Dependency for ApiKeyRepository."""
+    return ApiKeyRepository()
+
+
+def get_a2a_task_repository() -> A2ATaskRepository:
+    """Dependency for A2ATaskRepository."""
+    return A2ATaskRepository()
+
+
 def get_agent_image_generation_service() -> AgentImageGenerationService:
     """Dependency for AgentImageGenerationService."""
     return AgentImageGenerationService()
+
+
+def _agent2agent_sharing_response(
+    *,
+    agent: Agent,
+    api_key_repo: ApiKeyRepository,
+) -> Agent2AgentSharingResponse:
+    active_keys = [key for key in api_key_repo.find_all_by_agent(agent.agent_id) if key.is_active]
+    from src.config import settings
+
+    base_url = settings.api_base_url.rstrip("/")
+    return Agent2AgentSharingResponse(
+        agent_id=agent.agent_id,
+        enabled=agent.is_agent2agent_enabled,
+        agent_card_url=f"{base_url}/.well-known/agent-card.json",
+        service_url=f"{base_url}/a2a/agents/{agent.agent_id}",
+        has_active_api_key=bool(active_keys),
+    )
 
 
 @router.get("/supported-models", response_model=form_models.Form, response_model_exclude_none=True)
@@ -187,6 +234,84 @@ async def get_agent(
         raise HTTPException(status_code=404, detail="Agent not found")
 
     return agent.to_response()
+
+
+@router.get("/{agent_id}/a2a-sharing", response_model=Agent2AgentSharingResponse)
+async def get_agent2agent_sharing(
+    request: Request,
+    agent_id: str,
+    repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
+) -> Agent2AgentSharingResponse:
+    """Get Agent2Agent discovery sharing settings for an agent."""
+    user_email: str = request.state.user_email
+    agent = repo.find_agent_by_id(agent_id, user_email)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    return _agent2agent_sharing_response(agent=agent, api_key_repo=api_key_repo)
+
+
+@router.put("/{agent_id}/a2a-sharing", response_model=Agent2AgentSharingResponse)
+async def update_agent2agent_sharing(
+    request: Request,
+    agent_id: str,
+    body: Agent2AgentSharingRequest,
+    repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
+) -> Agent2AgentSharingResponse:
+    """Toggle Agent2Agent discovery sharing for an agent."""
+    user_email: str = request.state.user_email
+    agent = repo.find_agent_by_id(agent_id, user_email)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    active_keys = [key for key in api_key_repo.find_all_by_agent(agent.agent_id) if key.is_active]
+    if body.enabled and not active_keys:
+        raise HTTPException(
+            status_code=400,
+            detail="Create an active API key before enabling Agent2Agent discovery",
+        )
+
+    agent.is_agent2agent_enabled = body.enabled
+    saved_agent = repo.save(agent)
+    return _agent2agent_sharing_response(agent=saved_agent, api_key_repo=api_key_repo)
+
+
+@router.get("/{agent_id}/a2a-tasks", response_model=A2ATaskListResponse)
+async def list_agent2agent_tasks(
+    request: Request,
+    agent_id: str,
+    repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    task_repo: Annotated[A2ATaskRepository, Depends(get_a2a_task_repository)],
+) -> A2ATaskListResponse:
+    """List Agent2Agent tasks for an agent owned by the dashboard user."""
+    user_email: str = request.state.user_email
+    agent = repo.find_agent_by_id(agent_id, user_email)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    return A2ATaskListResponse(items=task_repo.find_by_agent(agent_id=agent_id))
+
+
+@router.get("/{agent_id}/a2a-tasks/{task_id}", response_model=A2ATaskResponse)
+async def get_agent2agent_task(
+    request: Request,
+    agent_id: str,
+    task_id: str,
+    repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    task_repo: Annotated[A2ATaskRepository, Depends(get_a2a_task_repository)],
+) -> A2ATaskResponse:
+    """Get one Agent2Agent task for an agent owned by the dashboard user."""
+    user_email: str = request.state.user_email
+    agent = repo.find_agent_by_id(agent_id, user_email)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    task = task_repo.find_by_id(agent_id=agent_id, task_id=task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return A2ATaskResponse(task=task)
 
 
 @router.put("/{agent_id}", response_model=AgentResponse)

@@ -89,6 +89,65 @@ class AgentRepository:
         log.info(f"Found {len(agents)} agents for user {created_by}")
         return agents
 
+    def list_agent2agent_enabled(
+        self,
+        *,
+        limit: int = 50,
+        cursor: Optional[dict] = None,
+    ) -> tuple[list[Agent], Optional[dict]]:
+        """
+        List agents enabled for public Agent2Agent discovery.
+
+        V1 intentionally scans Agent rows to avoid duplicating agent metadata or
+        adding pointer items. If discovery volume grows, replace this with a GSI
+        on the Agent row keyed by is_agent2agent_enabled.
+        """
+        bounded_limit = max(1, min(limit, 100))
+        agents: list[Agent] = []
+        exclusive_start_key = cursor
+
+        while len(agents) < bounded_limit:
+            scan_kwargs = {
+                "FilterExpression": Attr("entity_type").eq("Agent")
+                & Attr("is_agent2agent_enabled").eq(True),
+                "Limit": bounded_limit,
+            }
+            if exclusive_start_key:
+                scan_kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+            response = self.table.scan(**scan_kwargs)
+            agents.extend(
+                Agent.from_dynamo_item(item)
+                for item in response.get("Items", [])
+            )
+            exclusive_start_key = response.get("LastEvaluatedKey")
+            if not exclusive_start_key:
+                break
+
+        return agents[:bounded_limit], exclusive_start_key
+
+    def find_agent2agent_enabled_by_id(self, agent_id: str) -> Optional[Agent]:
+        """Find a single A2A-enabled agent by id using the v1 scan-based discovery path."""
+        exclusive_start_key = None
+        while True:
+            scan_kwargs = {
+                "FilterExpression": Attr("entity_type").eq("Agent")
+                & Attr("is_agent2agent_enabled").eq(True)
+                & Attr("agent_id").eq(agent_id),
+                "Limit": 100,
+            }
+            if exclusive_start_key:
+                scan_kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+            response = self.table.scan(**scan_kwargs)
+            items = response.get("Items", [])
+            if items:
+                return Agent.from_dynamo_item(items[0])
+
+            exclusive_start_key = response.get("LastEvaluatedKey")
+            if not exclusive_start_key:
+                return None
+
     def find_by_name(self, agent_name: str, created_by: str) -> Optional[Agent]:
         """
         Find an agent by name for a specific user.

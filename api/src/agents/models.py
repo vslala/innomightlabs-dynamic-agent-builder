@@ -28,6 +28,7 @@ class AgentResponse(BaseModel):
     agent_description: Optional[str] = None
     capabilities: list[str] = Field(default_factory=list)
     session_timeout_minutes: int = 60  # Default 60 minutes
+    is_agent2agent_enabled: bool = False
     created_by: str
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -50,6 +51,7 @@ class Agent(BaseModel):
     agent_persona: str
     agent_description: Optional[str] = None  # Short human-readable description
     session_timeout_minutes: int = 60  # Session timeout in minutes, 0 = no timeout
+    is_agent2agent_enabled: bool = False
     created_by: str  # User email who created this agent
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
@@ -77,6 +79,7 @@ class Agent(BaseModel):
             "agent_persona": self.agent_persona,
             "agent_description": self.agent_description,
             "session_timeout_minutes": self.session_timeout_minutes,
+            "is_agent2agent_enabled": self.is_agent2agent_enabled,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
@@ -105,6 +108,7 @@ class Agent(BaseModel):
             agent_persona=item["agent_persona"],
             agent_description=item.get("agent_description"),
             session_timeout_minutes=item.get("session_timeout_minutes", 60),
+            is_agent2agent_enabled=bool(item.get("is_agent2agent_enabled", False)),
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
@@ -125,6 +129,7 @@ class Agent(BaseModel):
                 self.agent_model,
             ),
             session_timeout_minutes=self.session_timeout_minutes,
+            is_agent2agent_enabled=self.is_agent2agent_enabled,
             created_by=self.created_by,
             created_at=self.created_at,
             updated_at=self.updated_at,

@@ -46,12 +46,14 @@ PUBLIC_PATHS = {
     "/payments/stripe/webhook",
     "/payments/stripe/pricing",
     "/contact/submit",
+    "/.well-known/agent-card.json",
 }
 
 # Path prefixes that use different authentication (not JWT)
 WIDGET_PATH_PREFIX = "/widget"
 ANALYTICS_AGENT_PATH_PREFIX = "/analytics/agents/"
 DOWNLOADS_PLUGINS_PATH_PREFIX = "/downloads/plugins"
+A2A_PATH_PREFIX = "/a2a/"
 
 
 def decode_token_without_verification(token: str) -> Optional[dict[str, Any]]:
@@ -122,6 +124,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Skip auth for widget routes (handled by WidgetAuthMiddleware)
         if request.url.path.startswith(WIDGET_PATH_PREFIX):
+            return await call_next(request)
+
+        # Skip auth for A2A routes (handled by A2A auth dependencies where needed)
+        if request.url.path.startswith(A2A_PATH_PREFIX):
             return await call_next(request)
 
         # Skip auth for OPTIONS (CORS preflight)
