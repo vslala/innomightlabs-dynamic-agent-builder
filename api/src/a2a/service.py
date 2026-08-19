@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 import logging
+import re
 import time
 from typing import Any
 from uuid import uuid4
@@ -33,6 +34,8 @@ from src.config import settings
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
+from src.skills.models import AgentSkill
+from src.skills.repository import AgentSkillRepository
 
 
 A2A_PROTOCOL_VERSION = "1.0.0"
@@ -43,8 +46,13 @@ log = logging.getLogger(__name__)
 
 
 class A2ADiscoveryService:
-    def __init__(self, agent_repository: AgentRepository | None = None):
+    def __init__(
+        self,
+        agent_repository: AgentRepository | None = None,
+        skill_repository: AgentSkillRepository | None = None,
+    ):
         self.agent_repository = agent_repository or AgentRepository()
+        self.skill_repository = skill_repository or AgentSkillRepository()
 
     def facilitator_card(self) -> A2AAgentCard:
         return A2AAgentCard(
@@ -100,14 +108,7 @@ class A2ADiscoveryService:
             security=[{"agentApiKey": []}],
             defaultInputModes=[TEXT_MODE],
             defaultOutputModes=[TEXT_MODE],
-            skills=[
-                A2ASkill(
-                    id="chat",
-                    name="Chat With Agent",
-                    description="Send a task or question to this agent.",
-                    tags=["text"],
-                )
-            ],
+            skills=self._agent_skills(agent.agent_id),
         )
 
     def list_agents(self, *, limit: int, cursor: str | None) -> A2AAgentListResponse:
@@ -144,9 +145,45 @@ class A2ADiscoveryService:
     def _base_url(self) -> str:
         return settings.api_base_url.rstrip("/")
 
+    def _agent_skills(self, agent_id: str) -> list[A2ASkill]:
+        skills = [
+            A2ASkill(
+                id="chat",
+                name="Chat With Agent",
+                description="Send a task or question to this agent.",
+                tags=["text"],
+            )
+        ]
+
+        installed_skills = self.skill_repository.list_by_agent(agent_id)
+        for skill in sorted(installed_skills, key=lambda item: item.skill_name.lower()):
+            if not skill.enabled:
+                continue
+            skills.append(_skill_to_a2a_skill(skill))
+
+        return skills
+
 
 def get_a2a_discovery_service() -> A2ADiscoveryService:
     return A2ADiscoveryService()
+
+
+def _skill_to_a2a_skill(skill: AgentSkill) -> A2ASkill:
+    return A2ASkill(
+        id=_sanitize_skill_id(skill.installed_skill_id or skill.skill_id),
+        name=_sanitize_text(skill.skill_name, max_length=100) or skill.skill_id,
+        description=_sanitize_text(skill.skill_description, max_length=500)
+        or "Installed agent skill.",
+        tags=[
+            tag
+            for tag in [
+                "installed_skill",
+                _sanitize_skill_id(skill.namespace) if skill.namespace else "",
+                _sanitize_skill_id(skill.skill_id),
+            ]
+            if tag
+        ],
+    )
 
 
 class A2AInvocationService:
@@ -424,6 +461,11 @@ def _sanitize_text(value: str | None, *, max_length: int) -> str | None:
     if not compact:
         return None
     return compact[:max_length]
+
+
+def _sanitize_skill_id(value: str) -> str:
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]+", "_", value.strip())
+    return sanitized.strip("_")[:100] or "skill"
 
 
 def _encode_cursor(cursor: dict[str, Any] | None) -> str | None:

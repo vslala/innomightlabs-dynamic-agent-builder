@@ -130,3 +130,57 @@ def test_agent_scoped_card_is_public_for_enabled_agent(
     assert data["url"].endswith(f"/a2a/agents/{agent_id}")
     assert data["skills"][0]["id"] == "chat"
     assert "SECRET PERSONA" not in response.text
+
+
+def test_agent_scoped_card_lists_enabled_installed_skills_without_config(
+    test_client: TestClient,
+    auth_headers: dict,
+):
+    """Test agent cards publish enabled skill descriptions but not skill configuration."""
+    from src.skills.models import AgentSkill
+    from src.skills.repository import AgentSkillRepository
+    from tests.mock_data import TEST_USER_EMAIL
+
+    agent_id = _create_agent(test_client, auth_headers, name="Skilled A2A Agent")
+    _create_api_key(test_client, auth_headers, agent_id)
+    _enable_a2a(test_client, auth_headers, agent_id)
+
+    repository = AgentSkillRepository()
+    repository.save(
+        AgentSkill(
+            agent_id=agent_id,
+            installed_skill_id="send-email-primary",
+            skill_id="send_email",
+            namespace="email",
+            skill_name="Send Email",
+            skill_description="Send a templated email to configured recipients.",
+            enabled=True,
+            config={"to": "private@example.com"},
+            installed_by=TEST_USER_EMAIL,
+        )
+    )
+    repository.save(
+        AgentSkill(
+            agent_id=agent_id,
+            installed_skill_id="disabled-skill",
+            skill_id="disabled_skill",
+            namespace="internal",
+            skill_name="Disabled Skill",
+            skill_description="This should not be published.",
+            enabled=False,
+            installed_by=TEST_USER_EMAIL,
+        )
+    )
+
+    response = test_client.get(f"/a2a/agents/{agent_id}/agent-card")
+
+    assert response.status_code == 200
+    data = response.json()
+    skills_by_id = {skill["id"]: skill for skill in data["skills"]}
+    assert "chat" in skills_by_id
+    assert skills_by_id["send-email-primary"]["name"] == "Send Email"
+    assert skills_by_id["send-email-primary"]["description"] == "Send a templated email to configured recipients."
+    assert "installed_skill" in skills_by_id["send-email-primary"]["tags"]
+    assert "disabled-skill" not in skills_by_id
+    assert "private@example.com" not in response.text
+    assert "This should not be published" not in response.text

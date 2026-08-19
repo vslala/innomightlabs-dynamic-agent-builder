@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 API_DIR="$PROJECT_ROOT/api"
 
+RAILWAY_PROJECT_ID="${RAILWAY_PROJECT_ID:-f71e184d-415c-40ce-886e-b8e293a568ca}"
 RAILWAY_SERVICE="${RAILWAY_SERVICE:-InnomightLabs API}"
 RAILWAY_ENVIRONMENT="${RAILWAY_ENVIRONMENT:-production}"
 
@@ -18,8 +19,18 @@ command -v railway >/dev/null 2>&1 || {
   exit 1
 }
 
-echo "Checking Railway project link..."
-railway status >/dev/null
+echo "Checking Railway project/service..."
+if ! railway service list \
+  --project "$RAILWAY_PROJECT_ID" \
+  --environment "$RAILWAY_ENVIRONMENT" \
+  --json | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"$RAILWAY_SERVICE\""; then
+  echo "Error: service '$RAILWAY_SERVICE' not found in Railway project '$RAILWAY_PROJECT_ID' environment '$RAILWAY_ENVIRONMENT'." >&2
+  echo "Available services:" >&2
+  railway service list \
+    --project "$RAILWAY_PROJECT_ID" \
+    --environment "$RAILWAY_ENVIRONMENT"
+  exit 1
+fi
 
 echo ""
 echo "Generating terraform.tfvars for PROD..."
@@ -167,6 +178,7 @@ set_railway_var "ACCOUNT_DELETION_LAMBDA_NAME" "$(get_var 'ACCOUNT_DELETION_LAMB
 
 if [[ ${#RAILWAY_VAR_ARGS[@]} -gt 0 ]]; then
   railway variable set \
+    --project "$RAILWAY_PROJECT_ID" \
     --service "$RAILWAY_SERVICE" \
     --environment "$RAILWAY_ENVIRONMENT" \
     --skip-deploys \
@@ -177,6 +189,7 @@ echo "Railway variables synced."
 echo ""
 echo "=========================================="
 echo "WARNING: You are about to deploy the API to Railway PRODUCTION."
+echo "Project ID: $RAILWAY_PROJECT_ID"
 echo "Service: $RAILWAY_SERVICE"
 echo "Railway environment: $RAILWAY_ENVIRONMENT"
 echo "API_BASE_URL: ${api_base_url:-not set}"
@@ -194,6 +207,7 @@ echo ""
 echo "Deploying API to Railway..."
 railway up "$API_DIR" \
   --path-as-root \
+  --project "$RAILWAY_PROJECT_ID" \
   --service "$RAILWAY_SERVICE" \
   --environment "$RAILWAY_ENVIRONMENT" \
   --message "prod api deploy from scripts/deploy_prod_railway.sh"
