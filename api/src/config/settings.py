@@ -137,6 +137,8 @@ class Settings:
     conversation_media_bucket: str = "innomightlabs-conversations-meta"
     conversation_media_region: str = "us-east-1"
     conversation_media_presign_ttl_seconds: int = 900
+    a2a_supported_protocols: list[str] = field(default_factory=lambda: ["JSONRPC", "HTTP+JSON"])
+    a2a_primary_protocol: str = "JSONRPC"
 
     def validate_core(self) -> None:
         """
@@ -406,7 +408,28 @@ class Settings:
             conversation_media_bucket=os.getenv("CONVERSATION_MEDIA_BUCKET", "innomightlabs-conversations-meta"),
             conversation_media_region=os.getenv("CONVERSATION_MEDIA_REGION", "us-east-1"),
             conversation_media_presign_ttl_seconds=int(os.getenv("CONVERSATION_MEDIA_PRESIGN_TTL_SECONDS", "900")),
+            a2a_supported_protocols=_normalize_a2a_protocols(
+                parse_env_list("A2A_SUPPORTED_PROTOCOLS", ["JSONRPC", "HTTP+JSON"])
+            ),
+            a2a_primary_protocol=_normalize_a2a_protocol(
+                os.getenv("A2A_PRIMARY_PROTOCOL", "JSONRPC")
+            ),
         )
+
+
+def _normalize_a2a_protocols(values: list[str]) -> list[str]:
+    protocols = [_normalize_a2a_protocol(value) for value in values]
+    supported = [protocol for protocol in protocols if protocol in {"JSONRPC", "HTTP+JSON"}]
+    return list(dict.fromkeys(supported)) or ["JSONRPC"]
+
+
+def _normalize_a2a_protocol(value: str) -> str:
+    normalized = value.strip().upper().replace("_", "-")
+    if normalized in {"JSON-RPC", "JSONRPC", "JSON RPC"}:
+        return "JSONRPC"
+    if normalized in {"HTTP+JSON", "HTTP JSON", "HTTP-JSON", "REST"}:
+        return "HTTP+JSON"
+    return normalized
 
 
 # Global settings instance

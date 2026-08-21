@@ -43,6 +43,7 @@ def test_facilitator_agent_card_is_public(test_client: TestClient):
     assert data["name"] == "InnomightLabs A2A Facilitator"
     assert data["supportedInterfaces"][0]["url"].endswith("/a2a")
     assert data["supportedInterfaces"][0]["protocolBinding"] == "JSONRPC"
+    assert "tenant" not in data["supportedInterfaces"][0]
     assert data["securitySchemes"]["agentApiKey"]["apiKeySecurityScheme"]["location"] == "header"
     assert data["securityRequirements"][0]["schemes"]["agentApiKey"]["list"] == []
     validate_agent_card_payload(data)

@@ -7,11 +7,13 @@ repeatable_identity_fields: [registry_set_name]
 system_prompt: |
   Use this skill when the user asks you to find another agent or delegate work to another A2A-compatible agent.
   Always call discover_agents before send_message unless a previous tool result already provided a valid agent_ref.
-  Discovery is keyword based. Use short capability keywords such as gmail, calendar, research, finance, drive, email, scheduler, or report.
+  Discovery is keyword based. Use short capability keywords such as gmail, calendar, research, finance, drive, email, scheduler, or report. Use an empty keyword to list available agents.
   If discover_agents returns next_cursor, call discover_agents again with the same keyword and that cursor to inspect the next page.
   Prefer agents whose name, description, or skills directly match the user's requested capability.
   Do not send secrets, API keys, OAuth tokens, or unrelated private conversation history to remote agents.
   When sending context, summarize only the task state the remote agent needs.
+  For send_message, use execute_skill_action with async: true by default because remote agents can take longer than a normal chat turn.
+  If send_message returns auth_required with credential_setup_url, give that exact link to the user so they can add the credential, then ask them to retry.
   send_message requires agent_ref from discover_agents or get_agent_card. Do not invent service URLs.
 form:
   - input_type: text
@@ -43,14 +45,13 @@ form:
 actions:
   - name: discover_agents
     aliases: [search_agents, find_agents]
-    description: Search configured A2A registries for agents matching a keyword.
+    description: Search configured A2A registries for agents. Empty keyword lists available agents.
     input_schema:
       type: object
-      required: [keyword]
       properties:
         keyword:
           type: string
-          description: Simple keyword to match against remote agent name, description, and skills.
+          description: Optional keyword to match against remote agent name, description, and skills. Empty string returns all available agents.
         limit:
           type: integer
           description: Maximum results to return, capped at 10.
@@ -73,7 +74,7 @@ actions:
     handler: actions:get_agent_card
   - name: send_message
     aliases: [delegate_to_agent]
-    description: Send a text A2A message to a selected remote agent_ref.
+    description: Send a text A2A message to a selected remote agent_ref. Prefer async execution for this action.
     input_schema:
       type: object
       required: [agent_ref, message]

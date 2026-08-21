@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -23,9 +23,14 @@ from src.apikeys.models import AgentApiKey
 
 router = APIRouter(tags=["a2a"])
 A2A_JSON_MEDIA_TYPE = "application/a2a+json"
+JSON_RPC_VERSION = "2.0"
 
 
-@router.get("/.well-known/agent-card.json", response_model=A2AAgentCard)
+@router.get(
+    "/.well-known/agent-card.json",
+    response_model=A2AAgentCard,
+    response_model_exclude_none=True,
+)
 async def get_facilitator_agent_card(
     service: Annotated[A2ADiscoveryService, Depends(get_a2a_discovery_service)],
 ) -> A2AAgentCard:
@@ -43,7 +48,11 @@ async def list_a2a_agents(
     return service.list_agents(limit=limit, cursor=cursor)
 
 
-@router.get("/a2a/agents/{agent_id}/agent-card", response_model=A2AAgentCard)
+@router.get(
+    "/a2a/agents/{agent_id}/agent-card",
+    response_model=A2AAgentCard,
+    response_model_exclude_none=True,
+)
 async def get_agent_card(
     agent_id: str,
     service: Annotated[A2ADiscoveryService, Depends(get_a2a_discovery_service)],
@@ -53,6 +62,48 @@ async def get_agent_card(
     if not card:
         raise HTTPException(status_code=404, detail="Agent not found")
     return card
+
+
+@router.post("/a2a/agents/{agent_id}")
+async def handle_a2a_jsonrpc(
+    agent_id: str,
+    body: dict[str, Any],
+    api_key: Annotated[AgentApiKey, Depends(get_a2a_client)],
+    service: Annotated[A2AInvocationService, Depends(get_a2a_invocation_service)],
+):
+    """Primary A2A JSON-RPC endpoint for one agent."""
+    request_id = body.get("id")
+    method = str(body.get("method") or "").strip()
+    params = body.get("params") if isinstance(body.get("params"), dict) else {}
+
+    if body.get("jsonrpc") != JSON_RPC_VERSION:
+        return _jsonrpc_error(request_id, -32600, "Invalid JSON-RPC version")
+
+    try:
+        if method == "message/send":
+            request = A2AMessageSendRequest.model_validate(params)
+            response = await service.send_message(agent_id=agent_id, request=request, api_key=api_key)
+            return _jsonrpc_result(request_id, response.model_dump(mode="json", by_alias=True, exclude_none=True))
+        if method == "tasks/get":
+            task_id = str(params.get("id") or params.get("taskId") or "").strip()
+            if not task_id:
+                return _jsonrpc_error(request_id, -32602, "tasks/get requires id")
+            task = service.get_task(agent_id=agent_id, task_id=task_id, api_key=api_key)
+            if not task:
+                return _jsonrpc_error(request_id, -32004, "Task not found")
+            return _jsonrpc_result(
+                request_id,
+                A2ATaskResponse(task=task).model_dump(mode="json", by_alias=True, exclude_none=True),
+            )
+        if method == "tasks/list":
+            response = A2ATaskListResponse(items=service.list_tasks(agent_id=agent_id, api_key=api_key))
+            return _jsonrpc_result(request_id, response.model_dump(mode="json", by_alias=True, exclude_none=True))
+        if method in {"tasks/cancel", "tasks/subscribe"}:
+            return _jsonrpc_error(request_id, -32001, f"{method} is not supported yet")
+    except ValueError as exc:
+        return _jsonrpc_error(request_id, -32602, str(exc))
+
+    return _jsonrpc_error(request_id, -32601, f"Unsupported A2A method: {method}")
 
 
 @router.post("/a2a/agents/{agent_id}/message:send")
@@ -149,4 +200,22 @@ def _a2a_error(code: A2AErrorCode, message: str, *, status_code: int) -> JSONRes
         status_code=status_code,
         content=A2AErrorResponse(code=code, message=message).model_dump(mode="json"),
         media_type=A2A_JSON_MEDIA_TYPE,
+    )
+
+
+def _jsonrpc_result(request_id: Any, result: dict[str, Any]) -> JSONResponse:
+    return JSONResponse(
+        content={"jsonrpc": JSON_RPC_VERSION, "id": request_id, "result": result},
+        media_type="application/json",
+    )
+
+
+def _jsonrpc_error(request_id: Any, code: int, message: str) -> JSONResponse:
+    return JSONResponse(
+        content={
+            "jsonrpc": JSON_RPC_VERSION,
+            "id": request_id,
+            "error": {"code": code, "message": message},
+        },
+        media_type="application/json",
     )

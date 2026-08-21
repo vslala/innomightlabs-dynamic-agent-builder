@@ -119,6 +119,71 @@ def test_message_send_invokes_existing_architecture_and_persists_task(
     assert lookup_response.json()["task"]["id"] == task["id"]
 
 
+def test_jsonrpc_message_send_invokes_existing_architecture(
+    test_client: TestClient,
+    auth_headers: dict,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "src.a2a.service.get_agent_architecture",
+        lambda _architecture: FakeA2AArchitecture(),
+    )
+    agent_id, api_key = _create_enabled_agent_with_key(test_client, auth_headers)
+
+    response = test_client.post(
+        f"/a2a/agents/{agent_id}",
+        json={
+            "jsonrpc": "2.0",
+            "id": "rpc-test",
+            "method": "message/send",
+            "params": _message_payload(text="Use JSON-RPC"),
+        },
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["jsonrpc"] == "2.0"
+    assert payload["id"] == "rpc-test"
+    task = payload["result"]["task"]
+    assert task["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert task["status"]["message"]["parts"][0]["text"] == "Echo: Use JSON-RPC"
+
+
+def test_jsonrpc_tasks_get_returns_persisted_task(
+    test_client: TestClient,
+    auth_headers: dict,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "src.a2a.service.get_agent_architecture",
+        lambda _architecture: FakeA2AArchitecture(),
+    )
+    agent_id, api_key = _create_enabled_agent_with_key(test_client, auth_headers)
+    headers = {"Authorization": f"Bearer {api_key}"}
+    send_response = test_client.post(
+        f"/a2a/agents/{agent_id}/message:send",
+        json=_message_payload(text="Persist me"),
+        headers=headers,
+    )
+    task_id = send_response.json()["task"]["id"]
+
+    response = test_client.post(
+        f"/a2a/agents/{agent_id}",
+        json={
+            "jsonrpc": "2.0",
+            "id": "task-get",
+            "method": "tasks/get",
+            "params": {"id": task_id},
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["result"]["task"]["id"] == task_id
+
+
 def test_context_id_reuses_internal_conversation(
     test_client: TestClient,
     auth_headers: dict,

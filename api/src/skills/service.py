@@ -240,7 +240,8 @@ class SkillService:
         if raw_config is not None:
             # Merge update payload with existing runtime config, validate complete shape, then split
             merged = self.repository.get_runtime_config(existing)
-            merged.update(raw_config)
+            secret_fields = self.registry.secret_fields(existing.skill_id)
+            merged.update(_merge_secret_map_fields(merged, raw_config, secret_fields))
             normalized = self.registry.validate_config(existing.skill_id, merged)
             validate_form_options(
                 loaded.manifest.form,
@@ -251,7 +252,6 @@ class SkillService:
             next_installed_skill_id = installed_skill_id_for(loaded.manifest, normalized)
             if next_installed_skill_id != existing.installed_skill_id:
                 raise ValueError("Repeatable skill identity fields cannot be changed")
-            secret_fields = self.registry.secret_fields(existing.skill_id)
             plain_config = {k: v for k, v in normalized.items() if k not in secret_fields}
             secret_config = {k: v for k, v in normalized.items() if k in secret_fields}
             secret_field_list = sorted(secret_fields)
@@ -433,6 +433,8 @@ class SkillRuntimeService:
 
             context = {
                 "agent_id": agent_id,
+                "installed_skill_id": installed.installed_skill_id or installed.skill_id,
+                "skill_id": installed.skill_id,
                 "owner_email": owner_email,
                 "actor_email": actor_email,
                 "actor_id": actor_id,
@@ -549,3 +551,24 @@ class SkillRuntimeService:
 
 def get_skill_service() -> SkillService:
     return SkillService()
+
+
+def _merge_secret_map_fields(
+    existing_config: dict[str, Any],
+    raw_config: dict[str, Any],
+    secret_fields: set[str],
+) -> dict[str, Any]:
+    merged = dict(raw_config)
+    for field_name in secret_fields:
+        existing_value = existing_config.get(field_name)
+        incoming_value = raw_config.get(field_name)
+        if isinstance(existing_value, dict) and isinstance(incoming_value, dict):
+            merged[field_name] = {
+                **existing_value,
+                **{
+                    str(key): value
+                    for key, value in incoming_value.items()
+                    if str(key).strip() and str(value).strip()
+                },
+            }
+    return merged

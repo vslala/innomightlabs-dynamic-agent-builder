@@ -62,7 +62,7 @@ class A2ADiscoveryService:
         return A2AAgentCard(
             name="InnomightLabs A2A Facilitator",
             description="Discovery entrypoint for InnomightLabs agents enabled for Agent2Agent communication.",
-            supportedInterfaces=[self._agent_interface(f"{self._base_url()}/a2a")],
+            supportedInterfaces=self._agent_interfaces(f"{self._base_url()}/a2a"),
             provider=A2AAgentProvider(
                 organization="InnomightLabs",
                 url="https://innomightlabs.com",
@@ -92,7 +92,7 @@ class A2ADiscoveryService:
             name=_sanitize_text(agent.agent_name, max_length=100) or "Agent",
             description=_sanitize_text(agent.agent_description, max_length=1000)
             or "InnomightLabs agent enabled for Agent2Agent communication.",
-            supportedInterfaces=[self._agent_interface(self._agent_service_url(agent.agent_id))],
+            supportedInterfaces=self._agent_interfaces(self._agent_service_url(agent.agent_id)),
             provider=A2AAgentProvider(
                 organization="InnomightLabs",
                 url="https://innomightlabs.com",
@@ -142,12 +142,27 @@ class A2ADiscoveryService:
             )
         ]
 
-    def _agent_interface(self, url: str) -> A2AAgentInterface:
-        return A2AAgentInterface(
-            url=url,
-            protocolBinding="JSONRPC",
-            protocolVersion="1.0",
-        )
+    def _agent_interfaces(self, url: str) -> list[A2AAgentInterface]:
+        protocols = self._ordered_protocols()
+        return [
+            A2AAgentInterface(
+                url=url,
+                protocolBinding=protocol,
+                protocolVersion="1.0",
+            )
+            for protocol in protocols
+        ]
+
+    def _ordered_protocols(self) -> list[str]:
+        supported = [
+            protocol
+            for protocol in settings.a2a_supported_protocols
+            if protocol in {"JSONRPC", "HTTP+JSON"}
+        ]
+        primary = settings.a2a_primary_protocol
+        if primary in supported:
+            return [primary, *[protocol for protocol in supported if protocol != primary]]
+        return supported or ["JSONRPC"]
 
     def _agent_service_url(self, agent_id: str) -> str:
         return f"{self._base_url()}/a2a/agents/{agent_id}"

@@ -4,9 +4,11 @@ from enum import Enum
 from typing import Annotated, Any
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 MAX_DISCOVERY_LIMIT = 10
+A2A_PROTOCOL_JSONRPC = "JSONRPC"
+A2A_PROTOCOL_HTTP_JSON = "HTTP+JSON"
 
 
 class A2AAuthResult(str, Enum):
@@ -22,15 +24,60 @@ class A2ASkillSummary(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class A2AAgentInterfaceView(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    url: str
+    protocol_binding: str = Field(alias="protocolBinding")
+    protocol_version: str | None = Field(default=None, alias="protocolVersion")
+
+    @model_validator(mode="after")
+    def normalize_protocol(self) -> "A2AAgentInterfaceView":
+        self.protocol_binding = normalize_protocol_binding(self.protocol_binding)
+        return self
+
+
 class A2AAgentCardView(BaseModel):
-    protocol_version: str = Field(alias="protocolVersion")
+    model_config = ConfigDict(populate_by_name=True)
+
+    protocol_version: str | None = Field(default=None, alias="protocolVersion")
     name: str
     description: str = ""
-    url: str
+    url: str | None = None
+    supported_interfaces: list[A2AAgentInterfaceView] = Field(default_factory=list, alias="supportedInterfaces")
     security_schemes: dict[str, dict[str, Any]] = Field(default_factory=dict, alias="securitySchemes")
+    security_requirements: list[dict[str, Any]] = Field(default_factory=list, alias="securityRequirements")
     security: list[dict[str, list[str]]] = Field(default_factory=list)
     skills: list[A2ASkillSummary] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def preferred_interface(
+        self,
+        preferred_protocols: list[str] | None = None,
+    ) -> A2AAgentInterfaceView | None:
+        if not self.supported_interfaces:
+            return None
+        preferences = [
+            normalize_protocol_binding(protocol)
+            for protocol in (preferred_protocols or [A2A_PROTOCOL_JSONRPC, A2A_PROTOCOL_HTTP_JSON])
+        ]
+        for protocol in preferences:
+            for interface in self.supported_interfaces:
+                if interface.protocol_binding == protocol:
+                    return interface
+        return self.supported_interfaces[0]
+
+    def service_url(self, preferred_protocols: list[str] | None = None) -> str:
+        interface = self.preferred_interface(preferred_protocols)
+        if interface:
+            return interface.url
+        return self.url or ""
+
+    def protocol_binding(self, preferred_protocols: list[str] | None = None) -> str:
+        interface = self.preferred_interface(preferred_protocols)
+        if interface:
+            return interface.protocol_binding
+        return A2A_PROTOCOL_HTTP_JSON
 
 
 class A2ARegistryConfig(BaseModel):
@@ -56,7 +103,7 @@ class A2ARegistryConfig(BaseModel):
 
 
 class DiscoverAgentsRequest(BaseModel):
-    keyword: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    keyword: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
     limit: int = MAX_DISCOVERY_LIMIT
     cursor: str | None = None
     include_cards: bool = False
@@ -109,6 +156,8 @@ class SendMessageResponse(BaseModel):
     auth_required: bool = False
     unsupported_auth: bool = False
     message: str | None = None
+    credential_setup_url: str | None = None
+    credential_setup_label: str | None = None
     task: dict[str, Any] | None = None
     response_text: str | None = None
     status_code: int | None = None
@@ -121,6 +170,7 @@ class AgentRef(BaseModel):
     service_url: str
     card_url: str | None = None
     name: str
+    protocol_binding: str | None = None
 
 
 class RegistryAgentCandidate(BaseModel):
@@ -131,6 +181,7 @@ class RegistryAgentCandidate(BaseModel):
     description: str | None = None
     skills: list[A2ASkillSummary] = Field(default_factory=list)
     card: A2AAgentCardView | None = None
+    protocol_binding: str | None = None
 
 
 def _parse_registry_urls(raw: Any) -> list[str]:
@@ -167,3 +218,12 @@ def _validate_url(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError(f"Invalid Agent2Agent URL: {url}")
+
+
+def normalize_protocol_binding(value: str | None) -> str:
+    normalized = str(value or "").strip().upper().replace("_", "-")
+    if normalized in {"JSON-RPC", "JSONRPC", "JSON RPC"}:
+        return A2A_PROTOCOL_JSONRPC
+    if normalized in {"HTTP+JSON", "HTTP JSON", "HTTP-JSON", "REST"}:
+        return A2A_PROTOCOL_HTTP_JSON
+    return normalized

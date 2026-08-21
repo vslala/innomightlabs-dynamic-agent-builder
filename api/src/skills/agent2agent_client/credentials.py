@@ -16,7 +16,7 @@ class ResolvedCredential:
 
 class A2ACredentialResolver:
     def resolve(self, *, card: dict[str, Any], target_url: str, config: A2ARegistryConfig) -> ResolvedCredential:
-        security = card.get("security")
+        security = card.get("securityRequirements") or card.get("security")
         if not security:
             return ResolvedCredential(result=A2AAuthResult.READY, headers={})
 
@@ -61,7 +61,14 @@ class A2ACredentialResolver:
         schemes = card.get("securitySchemes")
         if not isinstance(schemes, dict):
             return False
-        return any(isinstance(scheme, dict) and scheme.get("type") == "apiKey" for scheme in schemes.values())
+        return any(
+            isinstance(scheme, dict)
+            and (
+                scheme.get("type") == "apiKey"
+                or isinstance(scheme.get("apiKeySecurityScheme"), dict)
+            )
+            for scheme in schemes.values()
+        )
 
 
 def _origin(url: str) -> str:

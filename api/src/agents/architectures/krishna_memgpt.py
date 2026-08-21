@@ -247,6 +247,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             )
 
             full_response = ""
+            fallback_assistant_response: str | None = None
             tool_call_sequence = 0
             tool_call_starts: dict[str, ToolCallStart] = {}
             async for loop_event in run_agentic_tool_loop(
@@ -333,6 +334,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                             form_label=form_label,
                         )
 
+                    if isinstance(parsed, dict):
+                        fallback_assistant_response = (
+                            fallback_assistant_response
+                            or _auth_required_credential_message(parsed)
+                        )
+
                     # Always emit a tool result for the timeline.
                     yield SSEEvent(
                         event_type=SSEEventType.TOOL_CALL_RESULT,
@@ -368,6 +375,13 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                     full_response = loop_event.payload["full_text"]
 
             # 8. Save assistant message (text response only)
+            if not full_response.strip() and fallback_assistant_response:
+                full_response = fallback_assistant_response
+                yield SSEEvent(
+                    event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
+                    content=fallback_assistant_response,
+                )
+
             if full_response.strip():
                 assistant_msg = Message(
                     conversation_id=conversation.conversation_id,
@@ -541,3 +555,18 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         except Exception as e:
             log.warning(f"Failed to load linked KBs for agent {agent_id}: {e}")
             return []
+
+
+def _auth_required_credential_message(payload: dict[str, Any]) -> str | None:
+    if payload.get("auth_required") is not True:
+        return None
+    setup_url = payload.get("credential_setup_url")
+    if not isinstance(setup_url, str) or not setup_url.strip():
+        return None
+    agent_name = payload.get("agent_name")
+    label = str(agent_name).strip() if isinstance(agent_name, str) and agent_name.strip() else "the remote agent"
+    return (
+        f"{label} requires credentials before I can continue. "
+        f"Add the credential here: {setup_url.strip()} "
+        "Then retry the request."
+    )

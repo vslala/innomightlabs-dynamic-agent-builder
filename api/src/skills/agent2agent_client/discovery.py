@@ -5,6 +5,7 @@ import json
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from src.config import settings
 from src.skills.agent2agent_client.client import A2AHttpClient
 from src.skills.agent2agent_client.models import (
     A2AAgentCardView,
@@ -65,17 +66,32 @@ class A2ADiscoveryClient:
 
         agents_url = card.metadata.get("agentsUrl") if isinstance(card.metadata, dict) else None
         if isinstance(agents_url, str) and agents_url.strip():
-            return await self._from_agent_list(registry_url, await self.http_client.get_json(_list_url(agents_url.strip())))
+            return await self._from_agent_list(
+                registry_url,
+                await self.http_client.get_json(_list_url(agents_url.strip())),
+            )
 
+        inferred_agents_url = _inferred_agent_list_url(registry_url)
+        if inferred_agents_url:
+            try:
+                return await self._from_agent_list(
+                    registry_url,
+                    await self.http_client.get_json(_list_url(inferred_agents_url)),
+                )
+            except Exception:
+                pass
+
+        service_url = card.service_url(_preferred_protocols())
         return [
             RegistryAgentCandidate(
                 registry_url=registry_url,
-                service_url=card.url,
+                service_url=service_url,
                 card_url=registry_url,
                 name=card.name,
                 description=card.description,
                 skills=card.skills,
                 card=card,
+                protocol_binding=card.protocol_binding(_preferred_protocols()),
             )
         ]
 
@@ -112,11 +128,15 @@ class A2ADiscoveryClient:
                 "description": card.description or candidate.description,
                 "skills": card.skills,
                 "card": card,
+                "service_url": card.service_url(_preferred_protocols()) or candidate.service_url,
+                "protocol_binding": card.protocol_binding(_preferred_protocols()),
             }
         )
 
     def _matches(self, candidate: RegistryAgentCandidate, keyword: str) -> bool:
-        needle = keyword.casefold()
+        needle = keyword.strip().casefold()
+        if not needle:
+            return True
         haystack = " ".join(
             [
                 candidate.name,
@@ -137,6 +157,7 @@ class A2ADiscoveryClient:
                     service_url=candidate.service_url,
                     card_url=candidate.card_url,
                     name=candidate.name,
+                    protocol_binding=candidate.protocol_binding,
                 )
             ),
             registry_url=candidate.registry_url,
@@ -169,6 +190,13 @@ def _agent_card_url(service_url: str) -> str:
     return f"{service_url.rstrip('/')}/agent-card"
 
 
+def _inferred_agent_list_url(registry_url: str) -> str:
+    parsed = urlparse(registry_url)
+    if parsed.path.rstrip("/") in {"/.well-known/agent-card.json", "/.well-known/agent.json"}:
+        return f"{parsed.scheme}://{parsed.netloc}/a2a/agents"
+    return ""
+
+
 def _looks_like_agent_list(payload: dict[str, Any]) -> bool:
     return isinstance(payload.get("items"), list)
 
@@ -180,6 +208,18 @@ def _list_url(url: str) -> str:
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
     query.setdefault("limit", "100")
     return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def _preferred_protocols() -> list[str]:
+    supported = [
+        protocol
+        for protocol in settings.a2a_supported_protocols
+        if protocol in {"JSONRPC", "HTTP+JSON"}
+    ]
+    primary = settings.a2a_primary_protocol
+    if primary in supported:
+        return [primary, *[protocol for protocol in supported if protocol != primary]]
+    return supported or ["JSONRPC"]
 
 
 def _encode_cursor(offset: int) -> str:
