@@ -1,0 +1,108 @@
+id: agent2agent_client
+namespace: core.agent2agent
+name: Agent2Agent Client
+description: Discover and message A2A-compatible agents from configured registries.
+repeatable: true
+repeatable_identity_fields: [registry_set_name]
+system_prompt: |
+  Use this skill when the user asks you to find another agent or delegate work to another A2A-compatible agent.
+  Always call discover_agents before send_message unless a previous tool result already provided a valid agent_ref.
+  Discovery is keyword based. Use short capability keywords such as gmail, calendar, research, finance, drive, email, scheduler, or report.
+  If discover_agents returns next_cursor, call discover_agents again with the same keyword and that cursor to inspect the next page.
+  Prefer agents whose name, description, or skills directly match the user's requested capability.
+  Do not send secrets, API keys, OAuth tokens, or unrelated private conversation history to remote agents.
+  When sending context, summarize only the task state the remote agent needs.
+  send_message requires agent_ref from discover_agents or get_agent_card. Do not invent service URLs.
+form:
+  - input_type: text
+    name: registry_set_name
+    label: Registry Set Name
+    attr:
+      placeholder: Internal A2A Network
+      expose_to_runtime: "true"
+      usage_context_label: Registry set
+  - input_type: text_area
+    name: registry_urls
+    label: Agent Discovery URLs
+    attr:
+      rows: "6"
+      placeholder: "https://api.example.com/.well-known/agent-card.json\nhttps://api.example.com/a2a/agents"
+      expose_to_runtime: "true"
+      usage_context_label: Discovery URLs
+      usage_context_max_chars: "800"
+  - input_type: key_value
+    name: default_credentials
+    label: Default Registry Credentials
+    attr:
+      optional: "true"
+      secret: "true"
+      key_placeholder: "https://api.example.com"
+      value_placeholder: "Bearer token or API key"
+      empty_text: "No registry credentials configured."
+      add_label: "Add credential"
+actions:
+  - name: discover_agents
+    aliases: [search_agents, find_agents]
+    description: Search configured A2A registries for agents matching a keyword.
+    input_schema:
+      type: object
+      required: [keyword]
+      properties:
+        keyword:
+          type: string
+          description: Simple keyword to match against remote agent name, description, and skills.
+        limit:
+          type: integer
+          description: Maximum results to return, capped at 10.
+        cursor:
+          type: string
+          description: Cursor returned by a previous discover_agents call.
+        include_cards:
+          type: boolean
+          description: Include skill/card detail in each result when useful.
+    handler: actions:discover_agents
+  - name: get_agent_card
+    description: Fetch and return a sanitized Agent Card for a discovered agent_ref.
+    input_schema:
+      type: object
+      required: [agent_ref]
+      properties:
+        agent_ref:
+          type: string
+          description: Opaque reference returned by discover_agents.
+    handler: actions:get_agent_card
+  - name: send_message
+    aliases: [delegate_to_agent]
+    description: Send a text A2A message to a selected remote agent_ref.
+    input_schema:
+      type: object
+      required: [agent_ref, message]
+      properties:
+        agent_ref:
+          type: string
+          description: Opaque reference returned by discover_agents.
+        message:
+          type: string
+          description: Text task or question to send to the remote agent.
+        context_id:
+          type: string
+          description: Optional remote A2A context id to continue an existing remote conversation.
+        task_id:
+          type: string
+          description: Optional remote A2A task id.
+        timeout_seconds:
+          type: integer
+          description: Request timeout, clamped from 5 to 120 seconds.
+        max_response_chars:
+          type: integer
+          description: Maximum remote response characters to return.
+    handler: actions:send_message
+  - name: resume_message
+    description: Reserved for the next phase credential/OAuth resume flow.
+    input_schema:
+      type: object
+      properties:
+        pending_call_id:
+          type: string
+          description: Pending A2A call id returned by a prior auth_required result.
+    handler: actions:resume_message

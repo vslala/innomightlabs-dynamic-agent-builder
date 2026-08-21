@@ -184,17 +184,34 @@ class A2AAgentProvider(BaseModel):
 class A2AAgentCapabilities(BaseModel):
     streaming: bool = True
     pushNotifications: bool = False
-    stateTransitionHistory: bool = True
     extendedAgentCard: bool = False
 
 
-class A2ASecurityScheme(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+class A2AAgentInterface(BaseModel):
+    url: str
+    protocolBinding: str
+    protocolVersion: str = "1.0"
+    tenant: str | None = None
 
-    type: str
-    location: str = Field(alias="in")
+
+class A2AApiKeySecurityScheme(BaseModel):
+    location: str
     name: str
     description: str | None = None
+
+
+class A2ASecurityScheme(BaseModel):
+    apiKeySecurityScheme: A2AApiKeySecurityScheme
+
+
+class A2AStringList(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    values: list[str] = Field(default_factory=list, alias="list")
+
+
+class A2ASecurityRequirement(BaseModel):
+    schemes: dict[str, A2AStringList]
 
 
 class A2ASkill(BaseModel):
@@ -205,16 +222,14 @@ class A2ASkill(BaseModel):
 
 
 class A2AAgentCard(BaseModel):
-    protocolVersion: str
     name: str
     description: str
-    url: str
+    supportedInterfaces: list[A2AAgentInterface]
     provider: A2AAgentProvider | None = None
     version: str
     capabilities: A2AAgentCapabilities
     securitySchemes: dict[str, A2ASecurityScheme]
-    security: list[dict[str, list[str]]]
+    securityRequirements: list[A2ASecurityRequirement]
     defaultInputModes: list[str]
     defaultOutputModes: list[str]
     skills: list[A2ASkill]
-    metadata: dict[str, Any] = Field(default_factory=dict)

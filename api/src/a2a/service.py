@@ -10,14 +10,18 @@ from uuid import uuid4
 from src.a2a.models import (
     A2AAgentCapabilities,
     A2AAgentCard,
+    A2AAgentInterface,
     A2AAgentListResponse,
     A2AAgentProvider,
     A2AAgentSummary,
+    A2AApiKeySecurityScheme,
     A2AMessage,
     A2AMessageRole,
     A2AMessageSendRequest,
     A2ASecurityScheme,
+    A2ASecurityRequirement,
     A2ASkill,
+    A2AStringList,
     A2ATask,
     A2ATaskResponse,
     A2ATaskState,
@@ -56,10 +60,9 @@ class A2ADiscoveryService:
 
     def facilitator_card(self) -> A2AAgentCard:
         return A2AAgentCard(
-            protocolVersion=A2A_PROTOCOL_VERSION,
             name="InnomightLabs A2A Facilitator",
             description="Discovery entrypoint for InnomightLabs agents enabled for Agent2Agent communication.",
-            url=f"{self._base_url()}/a2a",
+            supportedInterfaces=[self._agent_interface(f"{self._base_url()}/a2a")],
             provider=A2AAgentProvider(
                 organization="InnomightLabs",
                 url="https://innomightlabs.com",
@@ -67,7 +70,7 @@ class A2ADiscoveryService:
             version=A2A_PROTOCOL_VERSION,
             capabilities=A2AAgentCapabilities(),
             securitySchemes=self._security_schemes(),
-            security=[{"agentApiKey": []}],
+            securityRequirements=self._security_requirements(),
             defaultInputModes=[TEXT_MODE],
             defaultOutputModes=[TEXT_MODE],
             skills=[
@@ -78,13 +81,6 @@ class A2ADiscoveryService:
                     tags=["discovery", "facilitator"],
                 )
             ],
-            metadata={
-                "agentsUrl": f"{self._base_url()}/a2a/agents",
-                "agents": [
-                    summary.model_dump()
-                    for summary in self.list_agents(limit=50, cursor=None).items
-                ],
-            },
         )
 
     def agent_card(self, agent_id: str) -> A2AAgentCard | None:
@@ -93,11 +89,10 @@ class A2ADiscoveryService:
             return None
 
         return A2AAgentCard(
-            protocolVersion=A2A_PROTOCOL_VERSION,
             name=_sanitize_text(agent.agent_name, max_length=100) or "Agent",
             description=_sanitize_text(agent.agent_description, max_length=1000)
             or "InnomightLabs agent enabled for Agent2Agent communication.",
-            url=self._agent_service_url(agent.agent_id),
+            supportedInterfaces=[self._agent_interface(self._agent_service_url(agent.agent_id))],
             provider=A2AAgentProvider(
                 organization="InnomightLabs",
                 url="https://innomightlabs.com",
@@ -105,7 +100,7 @@ class A2ADiscoveryService:
             version=A2A_PROTOCOL_VERSION,
             capabilities=A2AAgentCapabilities(),
             securitySchemes=self._security_schemes(),
-            security=[{"agentApiKey": []}],
+            securityRequirements=self._security_requirements(),
             defaultInputModes=[TEXT_MODE],
             defaultOutputModes=[TEXT_MODE],
             skills=self._agent_skills(agent.agent_id),
@@ -132,12 +127,27 @@ class A2ADiscoveryService:
     def _security_schemes(self) -> dict[str, A2ASecurityScheme]:
         return {
             "agentApiKey": A2ASecurityScheme(
-                type="apiKey",
-                location="header",
-                name="Authorization",
-                description="Use Authorization: Bearer <agent API key>.",
+                apiKeySecurityScheme=A2AApiKeySecurityScheme(
+                    location="header",
+                    name="Authorization",
+                    description="Use Authorization: Bearer <agent API key>.",
+                )
             )
         }
+
+    def _security_requirements(self) -> list[A2ASecurityRequirement]:
+        return [
+            A2ASecurityRequirement(
+                schemes={"agentApiKey": A2AStringList(list=[])}
+            )
+        ]
+
+    def _agent_interface(self, url: str) -> A2AAgentInterface:
+        return A2AAgentInterface(
+            url=url,
+            protocolBinding="JSONRPC",
+            protocolVersion="1.0",
+        )
 
     def _agent_service_url(self, agent_id: str) -> str:
         return f"{self._base_url()}/a2a/agents/{agent_id}"

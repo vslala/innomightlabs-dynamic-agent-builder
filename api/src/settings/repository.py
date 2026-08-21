@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Optional
 import logging
 
-from src.settings.models import ProviderSettings
+from src.settings.models import Agent2AgentSettings, ProviderSettings
 from src.config import settings
 
 log = logging.getLogger(__name__)
@@ -120,3 +120,41 @@ class ProviderSettingsRepository:
 def get_provider_settings_repository() -> ProviderSettingsRepository:
     """Dependency for ProviderSettingsRepository"""
     return ProviderSettingsRepository()
+
+
+class Agent2AgentSettingsRepository:
+    """
+    Repository for user-level Agent2Agent outbound trust settings.
+
+    Key Structure:
+        pk: User#{user_email}
+        sk: Agent2AgentSettings
+    """
+
+    def __init__(self):
+        self.dynamodb = get_dynamodb_resource()
+        self.table = self.dynamodb.Table(settings.dynamodb_table)
+
+    def save(self, a2a_settings: Agent2AgentSettings) -> Agent2AgentSettings:
+        existing = self.find_by_user(a2a_settings.user_email)
+        if existing:
+            a2a_settings.created_at = existing.created_at
+            a2a_settings.updated_at = datetime.now(timezone.utc)
+
+        self.table.put_item(Item=a2a_settings.to_dynamo_item())
+        log.info("Saved Agent2Agent settings for user %s", a2a_settings.user_email)
+        return a2a_settings
+
+    def find_by_user(self, user_email: str) -> Optional[Agent2AgentSettings]:
+        response = self.table.get_item(
+            Key={
+                "pk": f"User#{user_email}",
+                "sk": "Agent2AgentSettings",
+            }
+        )
+        item = response.get("Item")
+        return Agent2AgentSettings.from_dynamo_item(item) if item else None
+
+
+def get_agent2agent_settings_repository() -> Agent2AgentSettingsRepository:
+    return Agent2AgentSettingsRepository()

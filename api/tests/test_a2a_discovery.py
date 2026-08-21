@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from tests.mock_data import AGENT_CREATE_REQUEST
+from tools.a2a_agent_card_validator import validate_agent_card_payload
 
 
 def _create_agent(test_client: TestClient, auth_headers: dict, *, name: str = "A2A Agent") -> str:
@@ -39,11 +40,12 @@ def test_facilitator_agent_card_is_public(test_client: TestClient):
 
     assert response.status_code == 200
     data = response.json()
-    assert data["protocolVersion"] == "1.0.0"
     assert data["name"] == "InnomightLabs A2A Facilitator"
-    assert data["url"].endswith("/a2a")
-    assert data["securitySchemes"]["agentApiKey"]["in"] == "header"
-    assert data["security"] == [{"agentApiKey": []}]
+    assert data["supportedInterfaces"][0]["url"].endswith("/a2a")
+    assert data["supportedInterfaces"][0]["protocolBinding"] == "JSONRPC"
+    assert data["securitySchemes"]["agentApiKey"]["apiKeySecurityScheme"]["location"] == "header"
+    assert data["securityRequirements"][0]["schemes"]["agentApiKey"]["list"] == []
+    validate_agent_card_payload(data)
 
 
 def test_facilitator_card_lists_only_enabled_agents(
@@ -69,10 +71,10 @@ def test_facilitator_card_lists_only_enabled_agents(
     _create_api_key(test_client, auth_headers, enabled_agent_id)
     _enable_a2a(test_client, auth_headers, enabled_agent_id)
 
-    response = test_client.get("/.well-known/agent-card.json")
+    response = test_client.get("/a2a/agents")
 
     assert response.status_code == 200
-    agents = response.json()["metadata"]["agents"]
+    agents = response.json()["items"]
     agent_ids = {agent["agent_id"] for agent in agents}
     assert enabled_agent_id in agent_ids
     assert disabled_agent.agent_id not in agent_ids
@@ -124,12 +126,13 @@ def test_agent_scoped_card_is_public_for_enabled_agent(
 
     assert response.status_code == 200
     data = response.json()
-    assert data["protocolVersion"] == "1.0.0"
     assert data["name"] == "Public A2A Agent"
     assert data["description"] == "Helps with A2A discovery."
-    assert data["url"].endswith(f"/a2a/agents/{agent_id}")
+    assert data["supportedInterfaces"][0]["url"].endswith(f"/a2a/agents/{agent_id}")
+    assert data["supportedInterfaces"][0]["protocolBinding"] == "JSONRPC"
     assert data["skills"][0]["id"] == "chat"
     assert "SECRET PERSONA" not in response.text
+    validate_agent_card_payload(data)
 
 
 def test_agent_scoped_card_lists_enabled_installed_skills_without_config(

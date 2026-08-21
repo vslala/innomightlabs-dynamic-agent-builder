@@ -4,15 +4,33 @@ Settings router for managing user provider configurations.
 
 from fastapi import APIRouter, Depends, Request, HTTPException, status
 from fastapi.security import HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing import Annotated
 import json
 import logging
 
 import src.form_models as form_models
-from src.settings.models import ProviderSettings, ProviderSettingsResponse
-from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
-from src.settings.schemas import PROVIDER_SCHEMAS, SUPPORTED_PROVIDERS, get_provider_schema
+from src.settings.agent2agent_policy import (
+    Agent2AgentPolicy,
+    Agent2AgentPolicyError,
+    Agent2AgentSettingsRequest,
+    settings_to_response_map,
+)
+from src.settings.models import (
+    Agent2AgentSettingsResponse,
+    ProviderSettings,
+    ProviderSettingsResponse,
+)
+from src.settings.repository import (
+    ProviderSettingsRepository,
+    get_provider_settings_repository,
+)
+from src.settings.schemas import (
+    PROVIDER_SCHEMAS,
+    SUPPORTED_PROVIDERS,
+    get_agent2agent_settings_schema,
+    get_provider_schema,
+)
 from src.crypto import encrypt, decrypt
 
 log = logging.getLogger(__name__)
@@ -32,6 +50,48 @@ class ProviderWithStatus(BaseModel):
     provider_name: str
     form: form_models.Form
     is_configured: bool
+
+
+def get_agent2agent_policy() -> Agent2AgentPolicy:
+    return Agent2AgentPolicy()
+
+
+def _to_agent2agent_response(settings) -> Agent2AgentSettingsResponse:
+    return Agent2AgentSettingsResponse(
+        allowed_origins=settings.allowed_origins,
+        allowed_origins_map=settings_to_response_map(settings),
+        created_at=settings.created_at,
+        updated_at=settings.updated_at,
+    )
+
+
+@router.get("/agent2agent", response_model=Agent2AgentSettingsResponse)
+async def get_agent2agent_settings(
+    request: Request,
+    policy: Annotated[Agent2AgentPolicy, Depends(get_agent2agent_policy)],
+) -> Agent2AgentSettingsResponse:
+    user_email: str = request.state.user_email
+    return _to_agent2agent_response(policy.settings_for_user(user_email))
+
+
+@router.get("/agent2agent/schema", response_model=form_models.Form, response_model_exclude_none=True)
+async def get_agent2agent_settings_form() -> form_models.Form:
+    return get_agent2agent_settings_schema()
+
+
+@router.put("/agent2agent", response_model=Agent2AgentSettingsResponse)
+async def save_agent2agent_settings(
+    request: Request,
+    body: dict,
+    policy: Annotated[Agent2AgentPolicy, Depends(get_agent2agent_policy)],
+) -> Agent2AgentSettingsResponse:
+    user_email: str = request.state.user_email
+    try:
+        settings_request = Agent2AgentSettingsRequest.model_validate(body)
+        saved = policy.save_settings(user_email=user_email, request=settings_request)
+    except (Agent2AgentPolicyError, ValidationError) as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return _to_agent2agent_response(saved)
 
 
 @router.get("/providers", response_model=list[ProviderWithStatus])

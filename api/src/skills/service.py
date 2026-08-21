@@ -9,6 +9,7 @@ from src.connectors.service import ConnectorService, connector_id_for_provider, 
 from src.form_options import FormOptionsContext, hydrate_form_options, validate_form_options
 from src.skills.identity import installed_skill_id_for
 from src.skills.lifecycle import SkillLifecycleRunner
+from src.settings.agent2agent_policy import Agent2AgentPolicy, Agent2AgentPolicyError
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import (
     AgentSkill,
@@ -29,12 +30,14 @@ class SkillService:
         provider_settings_repository: Optional[ProviderSettingsRepository] = None,
         connector_service: Optional[ConnectorService] = None,
         lifecycle_runner: Optional[SkillLifecycleRunner] = None,
+        agent2agent_policy: Optional[Agent2AgentPolicy] = None,
     ):
         self.registry = registry or get_skill_registry()
         self.repository = repository or get_agent_skill_repository()
         self.provider_settings_repository = provider_settings_repository or get_provider_settings_repository()
         self.connector_service = connector_service or get_connector_service()
         self.lifecycle_runner = lifecycle_runner or SkillLifecycleRunner(self.registry)
+        self.agent2agent_policy = agent2agent_policy or Agent2AgentPolicy()
 
     def list_catalog(self, user_email: str | None = None) -> list[SkillCatalogItemResponse]:
         items: list[SkillCatalogItemResponse] = []
@@ -153,6 +156,7 @@ class SkillService:
             normalized,
             FormOptionsContext(user_email=user_email),
         )
+        self._validate_skill_policy(skill_id, user_email, normalized)
         return normalized
 
     def list_installed(self, agent_id: str) -> list[InstalledSkillResponse]:
@@ -243,6 +247,7 @@ class SkillService:
                 normalized,
                 FormOptionsContext(user_email=existing.installed_by),
             )
+            self._validate_skill_policy(existing.skill_id, existing.installed_by, normalized)
             next_installed_skill_id = installed_skill_id_for(loaded.manifest, normalized)
             if next_installed_skill_id != existing.installed_skill_id:
                 raise ValueError("Repeatable skill identity fields cannot be changed")
@@ -266,6 +271,30 @@ class SkillService:
             secret_config=secret_config,
             secret_fields=secret_field_list,
         )
+
+    def _validate_skill_policy(
+        self,
+        skill_id: str,
+        user_email: str,
+        normalized_config: dict[str, Any],
+    ) -> None:
+        if skill_id != "agent2agent_client":
+            return
+        registry_urls = normalized_config.get("registry_urls")
+        if isinstance(registry_urls, str):
+            urls = [line.strip() for line in registry_urls.replace(",", "\n").splitlines() if line.strip()]
+        elif isinstance(registry_urls, list):
+            urls = [str(item).strip() for item in registry_urls if str(item).strip()]
+        else:
+            urls = []
+        credential_urls = normalized_config.get("default_credentials")
+        if isinstance(credential_urls, dict):
+            urls.extend(str(key).strip() for key in credential_urls if str(key).strip())
+        try:
+            self.agent2agent_policy.validate_urls_for_user(user_email=user_email, urls=urls)
+        except Agent2AgentPolicyError as exc:
+            raise ValueError(str(exc)) from exc
+
 
 class SkillRuntimeService:
     """Runtime behavior for MemGPT tool-based skill loading/execution."""

@@ -75,3 +75,23 @@ def get_provider_schema(provider_name: str) -> Form | None:
         Form schema if provider is supported, None otherwise
     """
     return PROVIDER_SCHEMAS.get(provider_name)
+
+
+def get_agent2agent_settings_schema() -> Form:
+    return Form(
+        form_name="Agent2Agent Trust Settings",
+        submit_path="/settings/agent2agent",
+        form_inputs=[
+            FormInput(
+                input_type=FormInputType.KEY_VALUE,
+                name="allowed_origins",
+                label="Allowed Agent2Agent Origins",
+                attr={
+                    "key_placeholder": "https://api.example.com or http://localhost:1455",
+                    "value_placeholder": "Optional label",
+                    "add_label": "Add origin",
+                    "empty_text": "No Agent2Agent origins are allowlisted.",
+                },
+            )
+        ],
+    )

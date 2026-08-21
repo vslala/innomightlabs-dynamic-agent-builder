@@ -245,6 +245,82 @@ def test_google_drive_install_succeeds_when_provider_connected(test_client, auth
     assert payload["oauth_provider_name"] == "GoogleDrive"
 
 
+def test_agent2agent_settings_round_trip_normalizes_origins(test_client, auth_headers):
+    response = test_client.put(
+        "/settings/agent2agent",
+        headers=auth_headers,
+        json={
+            "allowed_origins": {
+                "http://localhost:1455/.well-known/agent-card.json": "Local API",
+                "https://API.EXAMPLE.com/a2a/agents": "Example",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["allowed_origins_map"] == {
+        "http://localhost:1455": "Local API",
+        "https://api.example.com": "Example",
+    }
+
+    schema_response = test_client.get("/settings/agent2agent/schema", headers=auth_headers)
+    assert schema_response.status_code == 200
+    fields = schema_response.json()["form_inputs"]
+    assert fields[0]["input_type"] == "key_value"
+    assert fields[0]["name"] == "allowed_origins"
+
+
+def test_agent2agent_skill_install_requires_allowlisted_registry(test_client, auth_headers, dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+
+    install_resp = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=agent2agent_client",
+        headers=auth_headers,
+        json={
+            "config": {
+                "registry_set_name": "Local",
+                "registry_urls": "http://localhost:1455/.well-known/agent-card.json",
+                "default_credentials": {},
+            }
+        },
+    )
+
+    assert install_resp.status_code == 400
+    assert "No Agent2Agent allowed origins are configured" in install_resp.json()["detail"]
+
+
+def test_agent2agent_skill_install_accepts_allowlisted_registry(test_client, auth_headers, dynamodb_table):
+    from tests.mock_data import TEST_USER_EMAIL
+
+    agent = _create_agent_for_user(TEST_USER_EMAIL)
+    settings_resp = test_client.put(
+        "/settings/agent2agent",
+        headers=auth_headers,
+        json={"allowed_origins": {"http://localhost:1455": "Local API"}},
+    )
+    assert settings_resp.status_code == 200
+
+    install_resp = test_client.post(
+        f"/agents/{agent.agent_id}/skills?skill_id=agent2agent_client",
+        headers=auth_headers,
+        json={
+            "config": {
+                "registry_set_name": "Local",
+                "registry_urls": "http://localhost:1455/.well-known/agent-card.json",
+                "default_credentials": {},
+            }
+        },
+    )
+
+    assert install_resp.status_code == 201
+    payload = install_resp.json()
+    assert payload["skill_id"] == "agent2agent_client"
+    assert payload["config"]["registry_urls"] == "http://localhost:1455/.well-known/agent-card.json"
+
+
 def test_oauth_skill_uninstall_keeps_provider_settings_by_default(test_client, auth_headers, dynamodb_table):
     from tests.mock_data import TEST_USER_EMAIL
 
