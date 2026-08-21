@@ -35,6 +35,39 @@ Use this guide when changing the React/Vite dashboard frontend.
 - Use `aria-current` for selected navigation/list items and `aria-label` for icon-only or copy actions.
 - Avoid relying on color alone for failure/selected states; combine color with badges, borders, labels, or layout.
 
+## Schema-Driven Validation
+
+- Prefer backend-owned validation for settings and skill installation flows. The SPA should render the form schema, submit the typed values, and display the API error instead of duplicating trust or credential rules.
+- Use `SchemaForm` for fields described by `FormSchema`. Add a bespoke field only when the schema contract cannot represent the interaction.
+- Keep client-side validation limited to basic UI affordances such as required browser inputs, disabled loading states, and clear copy. Security and allowlist decisions belong in the API.
+- For Agent2Agent, the user first configures trusted origins in Settings, then the Agent2Agent Client skill install form is validated by the backend against those saved origins.
+- Runtime calls are validated again by the API because install-time validation is not enough when settings or stored configs change.
+
+```mermaid
+flowchart TD
+  UserOpensSettings["User opens Settings > Agent2Agent"]
+  SpaLoadsSettingsSchema["SPA loads Agent2Agent settings schema"]
+  UserSavesAllowedOrigins["User saves allowed origins"]
+  ApiNormalizesOrigins["API normalizes origins and stores user settings"]
+  UserInstallsSkill["User opens Agent2Agent Client install form"]
+  SpaSubmitsSkillConfig["SPA submits registry URLs from SchemaForm"]
+  ApiValidatesInstall["API validates registry URLs against saved allowed origins"]
+  SkillInstalled["Skill install succeeds"]
+  InstallBlocked["Skill install returns a field-level error"]
+  AgentUsesSkill["Agent calls discover_agents or send_message"]
+  ApiValidatesRuntime["API validates outbound registry, card, and service URLs again"]
+  OutboundCallAllowed["Outbound A2A call proceeds"]
+  RuntimeBlocked["Runtime call is blocked with a policy error"]
+
+  UserOpensSettings --> SpaLoadsSettingsSchema --> UserSavesAllowedOrigins --> ApiNormalizesOrigins
+  ApiNormalizesOrigins --> UserInstallsSkill --> SpaSubmitsSkillConfig --> ApiValidatesInstall
+  ApiValidatesInstall -->|All origins allowlisted| SkillInstalled
+  ApiValidatesInstall -->|Any origin missing| InstallBlocked
+  SkillInstalled --> AgentUsesSkill --> ApiValidatesRuntime
+  ApiValidatesRuntime -->|All target origins still allowlisted| OutboundCallAllowed
+  ApiValidatesRuntime -->|Settings changed or target not trusted| RuntimeBlocked
+```
+
 ## Verification
 
 - For frontend changes, run focused eslint on touched files and `yarn build`.

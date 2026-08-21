@@ -20,6 +20,10 @@ import {
   type ProviderWithStatus,
 } from "../../services/settings/ProviderSettingsService";
 import {
+  agent2AgentSettingsService,
+  type Agent2AgentSettings,
+} from "../../services/settings/Agent2AgentSettingsService";
+import {
   smartSuggestionService,
   type SmartSuggestionSettings,
 } from "../../services/smartSuggestions";
@@ -35,6 +39,13 @@ type SubscriptionStatus = {
   cancel_at_period_end?: boolean | null;
 };
 
+const isKeyValueRecord = (value: FormValue): value is Record<string, string> => (
+  value !== null
+  && typeof value === "object"
+  && !(value instanceof FileList)
+  && !Array.isArray(value)
+);
+
 export function Settings() {
   const [providers, setProviders] = useState<ProviderWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +60,10 @@ export function Settings() {
   const [smartSuggestionSchema, setSmartSuggestionSchema] = useState<FormSchema | null>(null);
   const [smartSuggestionLoading, setSmartSuggestionLoading] = useState(true);
   const [smartSuggestionSaving, setSmartSuggestionSaving] = useState(false);
+  const [agent2AgentSettings, setAgent2AgentSettings] = useState<Agent2AgentSettings | null>(null);
+  const [agent2AgentSchema, setAgent2AgentSchema] = useState<FormSchema | null>(null);
+  const [agent2AgentLoading, setAgent2AgentLoading] = useState(true);
+  const [agent2AgentSaving, setAgent2AgentSaving] = useState(false);
   const [theme, setTheme] = useState<AppTheme>(() => getStoredTheme());
 
   // Track which provider is being configured
@@ -62,6 +77,7 @@ export function Settings() {
     loadProviders();
     loadSubscription();
     loadSmartSuggestionSettings();
+    loadAgent2AgentSettings();
   }, []);
 
   const getErrorMessage = (err: unknown, fallback: string) => {
@@ -205,6 +221,41 @@ export function Settings() {
       console.error("Error saving smart suggestion settings:", err);
     } finally {
       setSmartSuggestionSaving(false);
+    }
+  };
+
+  const loadAgent2AgentSettings = async () => {
+    setAgent2AgentLoading(true);
+    try {
+      const [settings, schema] = await Promise.all([
+        agent2AgentSettingsService.getSettings(),
+        agent2AgentSettingsService.getSettingsSchema(),
+      ]);
+      setAgent2AgentSettings(settings);
+      setAgent2AgentSchema(schema);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to load Agent2Agent settings. Please try again."));
+      console.error("Error loading Agent2Agent settings:", err);
+    } finally {
+      setAgent2AgentLoading(false);
+    }
+  };
+
+  const handleSaveAgent2AgentSettings = async (data: Record<string, FormValue>) => {
+    setAgent2AgentSaving(true);
+    setError(null);
+    try {
+      const allowedOrigins = data.allowed_origins;
+      const settings = await agent2AgentSettingsService.saveSettings({
+        allowed_origins: isKeyValueRecord(allowedOrigins) ? allowedOrigins : {},
+      });
+      setAgent2AgentSettings(settings);
+      await loadAgent2AgentSettings();
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to save Agent2Agent settings. Please try again."));
+      console.error("Error saving Agent2Agent settings:", err);
+    } finally {
+      setAgent2AgentSaving(false);
     }
   };
 
@@ -595,6 +646,47 @@ export function Settings() {
                 </div>
               ))}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Agent2Agent</CardTitle>
+          <CardDescription>
+            Allow outbound Agent2Agent registry and service origins before agents can install or use A2A client skills.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {agent2AgentLoading ? (
+            <div className="settings-loading-row">
+              <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--gradient-start)" }} />
+            </div>
+          ) : agent2AgentSchema ? (
+            <div className="settings-form-section">
+              <div className="settings-status-row">
+                {agent2AgentSettings?.allowed_origins.length ? (
+                  <CheckCircle className="h-5 w-5 settings-status-icon settings-status-icon--success" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 settings-status-icon" />
+                )}
+                <p className="settings-muted-text">
+                  {agent2AgentSettings?.allowed_origins.length
+                    ? `${agent2AgentSettings.allowed_origins.length} origin${agent2AgentSettings.allowed_origins.length === 1 ? "" : "s"} allowlisted.`
+                    : "No Agent2Agent origins are allowlisted. A2A client skill installs and calls will be blocked."}
+                </p>
+              </div>
+              <SchemaForm
+                key={JSON.stringify(agent2AgentSettings?.allowed_origins_map ?? {})}
+                schema={agent2AgentSchema}
+                initialValues={{ allowed_origins: agent2AgentSettings?.allowed_origins_map ?? {} }}
+                onSubmit={handleSaveAgent2AgentSettings}
+                submitLabel="Save Agent2Agent Settings"
+                isLoading={agent2AgentSaving}
+              />
+            </div>
+          ) : (
+            <p className="settings-muted-text">Agent2Agent settings are unavailable.</p>
           )}
         </CardContent>
       </Card>

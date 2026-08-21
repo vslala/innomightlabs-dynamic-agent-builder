@@ -1,5 +1,8 @@
 import type { FormSchema } from "./form";
 
+export type SkillConfigValue = string | Record<string, string>;
+export type SkillConfig = Record<string, SkillConfigValue>;
+
 export interface SkillConnectorStatus {
   connector_id: string;
   provider_name: string;
@@ -33,19 +36,19 @@ export interface InstalledSkill {
   enabled: boolean;
   installed_at: string;
   updated_at: string | null;
-  config: Record<string, string>;
+  config: SkillConfig;
   secret_fields: string[];
   requires_oauth: boolean;
   oauth_provider_name: string | null;
 }
 
 export interface SkillInstallRequest {
-  config: Record<string, string>;
+  config: SkillConfig;
 }
 
 export interface SkillUpdateRequest {
   enabled?: boolean;
-  config?: Record<string, string>;
+  config?: SkillConfig;
 }
 
 export type SkillInstallSchema = FormSchema;

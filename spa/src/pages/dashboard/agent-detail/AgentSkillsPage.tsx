@@ -23,6 +23,7 @@ import { skillApiService } from "../../../services/skills";
 import type { FormValue, FormSchema } from "../../../types/form";
 import type { InstalledSkill, SkillCatalogItem, SkillConnectorStatus } from "../../../types/skills";
 import { useAgentDetailContext } from "./types";
+import "./AgentSkillsPage.css";
 
 function getMissingRequiredConnectors(skill: SkillCatalogItem): SkillConnectorStatus[] {
   return (skill.connectors ?? []).filter((connector) => connector.required && !connector.connected);
@@ -37,6 +38,25 @@ function canInstallSkill(skill: SkillCatalogItem): boolean {
     return getMissingRequiredConnectors(skill).length === 0;
   }
   return !skill.requires_oauth || skill.oauth_connected === true;
+}
+
+function skillConfigPayload(data: Record<string, FormValue>): Record<string, string | Record<string, string>> {
+  const payload: Record<string, string | Record<string, string>> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === "string") {
+      payload[key] = value;
+    } else if (value && !Array.isArray(value) && !(value instanceof FileList)) {
+      payload[key] = value;
+    }
+  }
+  return payload;
+}
+
+function formatSkillConfigValue(value: string | Record<string, string>): string {
+  if (typeof value === "string") return value;
+  const entries = Object.entries(value);
+  if (entries.length === 0) return "{}";
+  return entries.map(([key]) => `${key}: configured`).join(", ");
 }
 
 const ALL_SKILLS_CATEGORY = "__all__";
@@ -65,10 +85,16 @@ export function AgentSkillsPage() {
   const [skillSearch, setSkillSearch] = useState("");
   const [installSkillError, setInstallSkillError] = useState<string | null>(null);
   const [installingSkill, setInstallingSkill] = useState(false);
+  const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false);
+  const [configuringSkill, setConfiguringSkill] = useState<InstalledSkill | null>(null);
+  const [configSkillSchema, setConfigSkillSchema] = useState<FormSchema | null>(null);
+  const [configInitialValues, setConfigInitialValues] = useState<Record<string, FormValue>>({});
+  const [configSkillError, setConfigSkillError] = useState<string | null>(null);
   const [connectingSkillId, setConnectingSkillId] = useState<string | null>(null);
   const [updatingSkillId, setUpdatingSkillId] = useState<string | null>(null);
   const [uninstallingSkillId, setUninstallingSkillId] = useState<string | null>(null);
   const handledSkillOAuthCallbackRef = useRef(false);
+  const handledConfigDeepLinkRef = useRef(false);
 
   const loadInstalledSkills = async (): Promise<InstalledSkill[]> => {
     setLoadingSkills(true);
@@ -239,11 +265,7 @@ export function AgentSkillsPage() {
     setInstallingSkill(true);
     setInstallSkillError(null);
     try {
-      const payload: Record<string, string> = {};
-      for (const [key, value] of Object.entries(data)) {
-        if (typeof value === "string") payload[key] = value;
-      }
-      await skillApiService.installSkill(agent.agent_id, selectedSkill.skill_id, { config: payload });
+      await skillApiService.installSkill(agent.agent_id, selectedSkill.skill_id, { config: skillConfigPayload(data) });
       setIsSkillDialogOpen(false);
       setSelectedSkill(null);
       setSelectedSkillSchema(null);
@@ -316,26 +338,76 @@ export function AgentSkillsPage() {
     }
   };
 
-  const handleUpdateSkillConfig = async (skill: InstalledSkill, data: Record<string, FormValue>) => {
+  const openConfigureSkill = async (
+    skill: InstalledSkill,
+    options?: { focus?: string | null; credentialOrigin?: string | null }
+  ) => {
     const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+    setConfiguringSkill(skill);
+    setConfigSkillSchema(null);
+    setConfigSkillError(null);
+    setIsConfigDialogOpen(true);
     setUpdatingSkillId(installedSkillId);
     try {
-      const payload: Record<string, string> = {};
-      for (const [key, value] of Object.entries(data)) {
-        if (typeof value === "string") payload[key] = value;
+      const schema = await skillApiService.getSkillInstallSchema(skill.skill_id);
+      const initialValues: Record<string, FormValue> = { ...skill.config };
+      if (options?.focus === "default_credentials" && options.credentialOrigin) {
+        const current = initialValues.default_credentials;
+        initialValues.default_credentials = {
+          ...(current && typeof current === "object" && !(current instanceof FileList) && !Array.isArray(current)
+            ? current
+            : {}),
+          [options.credentialOrigin]: "",
+        };
       }
-      const updated = await skillApiService.updateInstalledSkill(agent.agent_id, installedSkillId, {
-        config: payload,
-      });
-      setInstalledSkills((prev) =>
-        prev.map((item) => ((item.installed_skill_id ?? item.skill_id) === updated.installed_skill_id ? updated : item))
-      );
-    } catch (err) {
-      console.error("Error updating skill config:", err);
+      setConfigInitialValues(initialValues);
+      setConfigSkillSchema(schema);
+    } catch (err: unknown) {
+      setConfigSkillError(err instanceof Error ? err.message : "Failed to load skill configuration");
     } finally {
       setUpdatingSkillId(null);
     }
   };
+
+  const handleUpdateSkillConfig = async (skill: InstalledSkill, data: Record<string, FormValue>) => {
+    const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+    setUpdatingSkillId(installedSkillId);
+    setConfigSkillError(null);
+    try {
+      const updated = await skillApiService.updateInstalledSkill(agent.agent_id, installedSkillId, {
+        config: skillConfigPayload(data),
+      });
+      setInstalledSkills((prev) =>
+        prev.map((item) => ((item.installed_skill_id ?? item.skill_id) === updated.installed_skill_id ? updated : item))
+      );
+      setIsConfigDialogOpen(false);
+      setConfiguringSkill(null);
+      setConfigSkillSchema(null);
+      setConfigInitialValues({});
+    } catch (err: unknown) {
+      console.error("Error updating skill config:", err);
+      setConfigSkillError(err instanceof Error ? err.message : "Failed to update skill configuration");
+    } finally {
+      setUpdatingSkillId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (handledConfigDeepLinkRef.current || installedSkills.length === 0) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const targetSkillId = params.get("configure_skill");
+    if (!targetSkillId) return;
+
+    const targetSkill = installedSkills.find((skill) => (skill.installed_skill_id ?? skill.skill_id) === targetSkillId);
+    if (!targetSkill) return;
+
+    handledConfigDeepLinkRef.current = true;
+    void openConfigureSkill(targetSkill, {
+      focus: params.get("focus"),
+      credentialOrigin: params.get("credential_origin"),
+    });
+  }, [installedSkills]);
 
   const handleUninstallSkill = async (skill: InstalledSkill) => {
     const disconnectOAuth = skill.requires_oauth && skill.oauth_provider_name
@@ -403,7 +475,7 @@ export function AgentSkillsPage() {
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
                           {Object.entries(skill.config).map(([key, value]) => (
                             <div key={key}>
-                              <span style={{ color: "var(--text-primary)" }}>{key}:</span> {value}
+                              <span style={{ color: "var(--text-primary)" }}>{key}:</span> {formatSkillConfigValue(value)}
                             </div>
                           ))}
                         </div>
@@ -426,16 +498,14 @@ export function AgentSkillsPage() {
                       <Button variant="destructive" size="action" onClick={() => handleUninstallSkill(skill)} disabled={uninstallingSkillId === installedSkillId}>
                         {uninstallingSkillId === installedSkillId ? "Removing..." : "Uninstall"}
                       </Button>
-                      {Object.keys(skill.config).length > 0 && (
-                        <Button
-                          variant="outline"
-                          size="action"
-                          onClick={() => handleUpdateSkillConfig(skill, skill.config)}
-                          disabled={updatingSkillId === installedSkillId}
-                        >
-                          {updatingSkillId === installedSkillId ? "Saving..." : "Refresh Config"}
-                        </Button>
-                      )}
+                      <Button
+                        variant="outline"
+                        size="action"
+                        onClick={() => void openConfigureSkill(skill)}
+                        disabled={updatingSkillId === installedSkillId}
+                      >
+                        {updatingSkillId === installedSkillId ? "Loading..." : "Configure"}
+                      </Button>
                     </Stack>
                   </div>
                 </DialogSection>
@@ -447,7 +517,10 @@ export function AgentSkillsPage() {
       </Panel>
 
       <Dialog open={isSkillDialogOpen} onOpenChange={setIsSkillDialogOpen}>
-        <DialogContent style={{ width: "min(92vw, 88rem)", maxWidth: "88rem" }}>
+        <DialogContent
+          className="agent-skill-install-dialog"
+          style={{ width: "min(92vw, 88rem)", maxWidth: "88rem" }}
+        >
           <DialogHeader>
             <DialogTitle>Add Skill</DialogTitle>
             <DialogDescription>
@@ -455,10 +528,10 @@ export function AgentSkillsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogBody
-            className="grid"
-            style={{ gridTemplateColumns: "13rem minmax(0, 1fr) 24rem", gap: "var(--space-5)", minHeight: "40rem" }}
+            className="agent-skill-install-dialog__body"
+            style={{ gridTemplateColumns: "13rem minmax(0, 1fr) 24rem", gap: "var(--space-5)" }}
           >
-            <aside style={{ borderRight: "1px solid var(--border-default)", paddingRight: "var(--space-3)" }}>
+            <aside className="agent-skill-install-dialog__categories">
               <Stack gap="xs">
                 {skillCategories.map((category) => {
                   const selected = selectedCategory === category.id;
@@ -501,7 +574,7 @@ export function AgentSkillsPage() {
               </Stack>
             </aside>
 
-            <section style={{ minWidth: 0 }}>
+            <section className="agent-skill-install-dialog__catalog">
               <Stack gap="sm">
               <div style={{ position: "relative" }}>
                 <Search
@@ -522,7 +595,7 @@ export function AgentSkillsPage() {
                 />
               </div>
 
-              <div style={{ maxHeight: "36rem", overflowY: "auto", paddingRight: "0.25rem" }}>
+              <div className="agent-skill-install-dialog__catalog-scroll">
                 {availableSkills.length === 0 ? (
                   <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>No skills available.</p>
                 ) : visibleSkills.length === 0 ? (
@@ -609,7 +682,7 @@ export function AgentSkillsPage() {
               </Stack>
             </section>
 
-            <section style={{ borderLeft: "1px solid var(--border-default)", paddingLeft: "var(--space-4)", minWidth: 0 }}>
+            <section className="agent-skill-install-dialog__config">
               {!selectedSkill ? (
                 <DialogSection style={{ borderStyle: "dashed", color: "var(--text-muted)" }}>
                   <p style={{ fontSize: "0.875rem", marginBottom: "0.25rem", color: "var(--text-primary)", fontWeight: 600 }}>
@@ -670,6 +743,47 @@ export function AgentSkillsPage() {
                 </Stack>
               )}
             </section>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
+        <DialogContent style={{ width: "min(92vw, 44rem)", maxWidth: "44rem" }}>
+          <DialogHeader>
+            <DialogTitle>{configuringSkill ? `Configure ${configuringSkill.name}` : "Configure Skill"}</DialogTitle>
+            <DialogDescription>
+              Update this installed skill's runtime configuration and credentials.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <Stack gap="md">
+              {configSkillError && (
+                <div style={{ padding: "0.75rem", borderRadius: "0.5rem", backgroundColor: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#f87171", fontSize: "0.875rem" }}>
+                  {configSkillError}
+                </div>
+              )}
+              {configuringSkill && configSkillSchema ? (
+                <SchemaForm
+                  key={`${configuringSkill.installed_skill_id ?? configuringSkill.skill_id}-${JSON.stringify(configInitialValues)}`}
+                  schema={configSkillSchema}
+                  initialValues={configInitialValues}
+                  onSubmit={(data) => handleUpdateSkillConfig(configuringSkill, data)}
+                  onCancel={() => {
+                    setIsConfigDialogOpen(false);
+                    setConfiguringSkill(null);
+                    setConfigSkillSchema(null);
+                    setConfigInitialValues({});
+                    setConfigSkillError(null);
+                  }}
+                  submitLabel={updatingSkillId ? "Saving..." : "Save Configuration"}
+                  isLoading={Boolean(updatingSkillId)}
+                />
+              ) : (
+                <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
+                  <div style={{ height: "2rem", width: "2rem", animation: "spin 1s linear infinite", borderRadius: "50%", border: "2px solid var(--gradient-start)", borderTopColor: "transparent" }} />
+                </div>
+              )}
+            </Stack>
           </DialogBody>
         </DialogContent>
       </Dialog>
