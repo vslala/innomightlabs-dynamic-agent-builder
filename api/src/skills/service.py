@@ -280,13 +280,9 @@ class SkillService:
     ) -> None:
         if skill_id != "agent2agent_client":
             return
-        registry_urls = normalized_config.get("registry_urls")
-        if isinstance(registry_urls, str):
-            urls = [line.strip() for line in registry_urls.replace(",", "\n").splitlines() if line.strip()]
-        elif isinstance(registry_urls, list):
-            urls = [str(item).strip() for item in registry_urls if str(item).strip()]
-        else:
-            urls = []
+        urls = _agent2agent_discovery_urls(normalized_config)
+        if not urls:
+            raise ValueError("At least one Agent2Agent registry URL is required")
         credential_urls = normalized_config.get("default_credentials")
         if isinstance(credential_urls, dict):
             urls.extend(str(key).strip() for key in credential_urls if str(key).strip())
@@ -294,6 +290,19 @@ class SkillService:
             self.agent2agent_policy.validate_urls_for_user(user_email=user_email, urls=urls)
         except Agent2AgentPolicyError as exc:
             raise ValueError(str(exc)) from exc
+
+
+def _agent2agent_discovery_urls(config: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
+    registry_url = str(config.get("registry_url") or "").strip()
+    if registry_url:
+        urls.append(registry_url)
+    registry_urls = config.get("registry_urls")
+    if isinstance(registry_urls, str):
+        urls.extend(line.strip() for line in registry_urls.replace(",", "\n").splitlines() if line.strip())
+    elif isinstance(registry_urls, list):
+        urls.extend(str(item).strip() for item in registry_urls if str(item).strip())
+    return list(dict.fromkeys(urls))
 
 
 class SkillRuntimeService:

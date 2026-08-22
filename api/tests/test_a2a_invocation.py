@@ -84,6 +84,7 @@ def test_message_send_requires_agent_api_key(test_client: TestClient, auth_heade
     )
 
     assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 def test_message_send_invokes_existing_architecture_and_persists_task(
@@ -135,7 +136,7 @@ def test_jsonrpc_message_send_invokes_existing_architecture(
         json={
             "jsonrpc": "2.0",
             "id": "rpc-test",
-            "method": "message/send",
+            "method": "SendMessage",
             "params": _message_payload(text="Use JSON-RPC"),
         },
         headers={"Authorization": f"Bearer {api_key}"},
@@ -173,7 +174,7 @@ def test_jsonrpc_tasks_get_returns_persisted_task(
         json={
             "jsonrpc": "2.0",
             "id": "task-get",
-            "method": "tasks/get",
+            "method": "GetTask",
             "params": {"id": task_id},
         },
         headers=headers,
@@ -181,7 +182,7 @@ def test_jsonrpc_tasks_get_returns_persisted_task(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["result"]["task"]["id"] == task_id
+    assert payload["result"]["id"] == task_id
 
 
 def test_context_id_reuses_internal_conversation(

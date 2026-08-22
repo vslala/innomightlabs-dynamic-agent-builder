@@ -165,15 +165,20 @@ class A2AErrorResponse(BaseModel):
 
 
 class A2AAgentSummary(BaseModel):
-    agent_id: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    agent_id: str = Field(alias="id")
     name: str
     description: str | None = None
-    service_url: str
+    agent_card_url: str = Field(alias="agentCardUrl")
+    agent_card: "A2AAgentCard" = Field(alias="agentCard")
 
 
 class A2AAgentListResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     items: list[A2AAgentSummary] = Field(default_factory=list)
-    next_cursor: str | None = None
+    next_cursor: str | None = Field(default=None, alias="nextCursor")
 
 
 class A2AAgentProvider(BaseModel):
@@ -200,8 +205,15 @@ class A2AApiKeySecurityScheme(BaseModel):
     description: str | None = None
 
 
+class A2AHttpAuthSecurityScheme(BaseModel):
+    scheme: str
+    bearerFormat: str | None = None
+    description: str | None = None
+
+
 class A2ASecurityScheme(BaseModel):
-    apiKeySecurityScheme: A2AApiKeySecurityScheme
+    apiKeySecurityScheme: A2AApiKeySecurityScheme | None = None
+    httpAuthSecurityScheme: A2AHttpAuthSecurityScheme | None = None
 
 
 class A2AStringList(BaseModel):
@@ -227,6 +239,7 @@ class A2AAgentCard(BaseModel):
     supportedInterfaces: list[A2AAgentInterface]
     provider: A2AAgentProvider | None = None
     version: str
+    documentationUrl: str | None = None
     capabilities: A2AAgentCapabilities
     securitySchemes: dict[str, A2ASecurityScheme]
     securityRequirements: list[A2ASecurityRequirement]

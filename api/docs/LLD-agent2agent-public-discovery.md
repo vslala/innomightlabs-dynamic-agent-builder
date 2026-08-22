@@ -6,9 +6,9 @@ Owner: InnomightLabs API / SPA
 
 ## Summary
 
-Add an Agent2Agent (A2A) public sharing mode for InnomightLabs agents. A user can opt an agent into public A2A discovery, then external agents can discover it through the standard well-known Agent Card endpoint and invoke it through A2A-compatible HTTP endpoints.
+Add an Agent2Agent (A2A) public sharing mode for InnomightLabs agents. A user can opt an agent into public A2A discovery, then external agents can discover it through the InnomightLabs registry endpoint and fetch an individual Agent Card for each listed agent before invoking it through A2A-compatible endpoints.
 
-The implementation should target only A2A `1.0.0` as published at `https://a2a-protocol.org/latest/specification/`. This design uses the current well-known URI `/.well-known/agent-card.json` and HTTP+JSON binding paths. Do not add legacy `/.well-known/agent.json` compatibility in v1.
+The implementation should target only A2A `1.0.0` as published at `https://a2a-protocol.org/latest/specification/`. Because this API host publishes multiple user-owned agents, do not use `/.well-known/agent-card.json` as the generic discovery source for all agents. Treat `/a2a/agents` as an InnomightLabs custom registry/catalog endpoint that returns links to individual Agent Cards. Do not add legacy `/.well-known/agent.json` compatibility in v1.
 
 Public sharing must not publish internal prompts, provider API keys, OAuth tokens, installed skill secrets, or user-owned credentials. The public Agent Card is a capability and routing document only.
 
@@ -23,7 +23,8 @@ Primary sources:
 Relevant requirements and design implications:
 
 - A2A is designed for interoperable agent discovery, modality negotiation, task management, and secure exchange between opaque agent systems.
-- A2A Servers must publish an Agent Card for discovery. The current well-known path is `https://{server_domain}/.well-known/agent-card.json`.
+- A2A Servers publish Agent Cards for discovery. The current well-known path is `https://{server_domain}/.well-known/agent-card.json` for a server/agent that can be represented by one Agent Card.
+- A2A discovery guidance also permits curated registries/catalogs, but it does not standardize a registry API shape or path. `/a2a/agents` is therefore an InnomightLabs registry endpoint, not a core A2A path.
 - The current spec declares protocol operations independently of binding, then maps HTTP+JSON paths such as:
   - `POST /message:send`
   - `POST /message:stream`
@@ -33,7 +34,7 @@ Relevant requirements and design implications:
   - `POST /tasks/{id}:subscribe`
 - A2A authentication is handled at the HTTP transport layer. The public Agent Card declares `securitySchemes` and `security`; credentials are obtained out of band.
 - Production A2A endpoints should use HTTPS and should enforce input validation, authorization scoping, rate limits, and resource limits.
-- The public Agent Card should not include secrets. Extended Agent Cards can expose more detail only after authentication, via the spec's authenticated extended-card operation.
+- The public registry and public Agent Cards should not include secrets. Extended Agent Cards can expose more detail only after authentication, via the spec's authenticated extended-card operation.
 
 ## Current Architecture Fit
 
@@ -69,7 +70,8 @@ On the agent settings/detail surface:
 - Add an `Agent2Agent` sharing section.
 - Add a toggle: `Share in Agent2Agent discovery`.
 - When enabled, show:
-  - Public Agent Card URL: `{API_BASE_URL}/.well-known/agent-card.json`
+  - Public registry URL: `{API_BASE_URL}/a2a/agents`
+  - Public Agent Card URL: `{API_BASE_URL}/a2a/agents/{agent_id}/card`
   - A2A service URL: `{API_BASE_URL}/a2a/agents/{agent_id}`
   - Required credential: active API key for that agent
   - Button/link to create or manage API keys if none exists
@@ -87,11 +89,12 @@ Implement v1 in two layers:
 
 1. Discovery:
    - Opt-in persistence.
-   - Root well-known card returning a facilitator Agent Card.
-   - Facilitator metadata listing enabled agents using existing agent fields.
+   - Custom public registry endpoint returning enabled agent summaries.
+   - Registry entries linking to individual public Agent Cards.
+   - Agent-scoped Agent Cards built from existing agent fields.
 
 2. Invocation:
-   - Authenticated A2A message send and stream endpoints for one agent.
+   - Authenticated A2A JSON-RPC endpoint for one agent.
    - Basic task persistence for A2A task status/history.
    - Mapping from InnomightLabs SSE events to A2A messages, task status updates, and final task state.
 
@@ -190,61 +193,97 @@ a2a-{agent_id}-{sha256(client_key_id + context_id)[:16]}
 
 The conversation `created_by` is the agent owner email, not the remote caller. Use `actor_id = "a2a:{client_key_id}"` and `actor_email = owner_email` unless the architecture requires a real email. Do not store remote client secrets in messages/history.
 
-## Agent Card Shape
+## Discovery And Agent Card Shape
 
-### Facilitator Card
+### Registry Endpoint
 
-`GET /.well-known/agent-card.json` returns the public InnomightLabs facilitator Agent Card. The facilitator is the single well-known A2A entrypoint for this API host. It exposes discovery as a skill and includes enabled agents in metadata built dynamically from existing Agent rows where `is_agent2agent_enabled = true`.
+`GET /a2a/agents` is the public InnomightLabs A2A registry. It is a custom catalog endpoint, not a standardized A2A operation. A2A-compatible clients can use it when explicitly configured with this registry URL.
+
+The registry returns public entries for existing agents that have A2A enabled. Each item must include an `agentCardUrl` and an embedded `agentCard`. Clients can use the embedded card immediately, then fetch `agentCardUrl` when they need a fresh copy. They should not guess card paths.
 
 Example:
 
 ```json
 {
-  "protocolVersion": "1.0.0",
-  "name": "InnomightLabs A2A Facilitator",
-  "description": "Discovery entrypoint for public InnomightLabs A2A agents.",
-  "url": "https://api.example.com/a2a",
+  "items": [
+    {
+      "id": "agent_123",
+      "name": "SEO Research Agent",
+      "description": "Researches search intent and drafts content briefs.",
+      "agentCardUrl": "https://api.example.com/a2a/agents/agent_123/card",
+      "agentCard": {
+        "name": "SEO Research Agent",
+        "description": "Researches search intent and drafts content briefs.",
+        "supportedInterfaces": [
+          {
+            "url": "https://api.example.com/a2a/agents/agent_123",
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0"
+          }
+        ],
+        "version": "1.0.0",
+        "capabilities": {
+          "streaming": false,
+          "pushNotifications": false,
+          "extendedAgentCard": false
+        },
+        "defaultInputModes": ["text/plain"],
+        "defaultOutputModes": ["text/plain"],
+        "skills": []
+      }
+    }
+  ]
+}
+```
+
+Field rules:
+
+- `id`: stable agent identifier.
+- `name`: sanitized public name.
+- `description`: sanitized public description.
+- `agentCardUrl`: absolute URL for the individual Agent Card.
+- `agentCard`: embedded scoped Agent Card for this registry row.
+- `nextCursor`: optional cursor for pagination, omitted when there is no next page.
+
+The embedded `agentCard` and the fetched `agentCardUrl` response must be produced by the same builder. If they ever differ, clients must treat the freshly fetched Agent Card as authoritative. Clients must read the callable A2A interface URL from `agentCard.supportedInterfaces`; the registry does not expose a separate `serviceUrl`.
+
+### Agent-Scoped Card
+
+`GET /a2a/agents/{agent_id}/card` returns the public Agent Card for one A2A-enabled agent. This card is the protocol contract for the selected agent.
+
+Example:
+
+```json
+{
+  "name": "SEO Research Agent",
+  "description": "Researches search intent and drafts content briefs.",
+  "supportedInterfaces": [
+    {
+      "url": "https://api.example.com/a2a/agents/agent_123",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
   "provider": {
     "organization": "InnomightLabs",
     "url": "https://innomightlabs.com"
   },
   "version": "1.0.0",
   "capabilities": {
-    "streaming": true,
+    "streaming": false,
     "pushNotifications": false,
-    "stateTransitionHistory": true,
     "extendedAgentCard": false
   },
-  "securitySchemes": {
-    "agentApiKey": {
-      "type": "apiKey",
-      "in": "header",
-      "name": "Authorization",
-      "description": "Use Authorization: Bearer <agent API key>."
-    }
-  },
-  "security": [{"agentApiKey": []}],
   "defaultInputModes": ["text/plain"],
   "defaultOutputModes": ["text/plain"],
   "skills": [
     {
-      "id": "discover_public_agents",
-      "name": "Discover Public Agents",
-      "description": "List InnomightLabs agents enabled for Agent2Agent communication.",
-      "tags": ["discovery", "facilitator"]
+      "id": "chat",
+      "name": "Chat With Agent",
+      "description": "Send a task or question to this agent.",
+      "tags": ["text"]
     }
-  ],
-  "metadata": {
-    "agentsUrl": "https://api.example.com/a2a/agents",
-    "agents": [
-      {
-        "agentId": "agent_123",
-        "name": "SEO Research Agent",
-        "description": "Researches search intent and drafts content briefs.",
-        "url": "https://api.example.com/a2a/agents/agent_123"
-      }
-    ]
-  }
+  ]
 }
 ```
 
@@ -254,6 +293,12 @@ The card builder must sanitize values:
 - `description`: `agent_description`, max 1000 chars.
 - Never expose `agent_persona`.
 - Never expose provider API key, OAuth provider settings, installed skill configs, or secret fields.
+
+### Root Well-Known Card
+
+Do not rely on `/.well-known/agent-card.json` for multi-agent discovery in v1. A generic well-known Agent Card can represent only one callable A2A server/agent cleanly. Since InnomightLabs exposes many user-owned agents on one host, the public registry URL must be documented and configured explicitly.
+
+If a root well-known card is kept for compatibility or future use, it must not advertise unimplemented A2A interfaces. In particular, do not advertise `HTTP+JSON` at `https://api.example.com/a2a` unless `POST /a2a/message:send` and the related standard HTTP+JSON paths actually work. If `/a2a` is not a callable A2A server, either remove the root card or return a card that does not claim unsupported interfaces.
 
 ## API Contract
 
@@ -293,55 +338,67 @@ Behavior:
 Add to `api/src/a2a/router.py`. These must bypass dashboard auth.
 
 ```http
-GET /.well-known/agent-card.json
 GET /a2a/agents?query=&limit=20&cursor=
-GET /a2a/agents/{agent_id}/agent-card
+GET /a2a/agents/{agent_id}/card
 ```
 
-`/a2a/agents` returns compact summaries of existing agents that have A2A enabled. This is an auxiliary facilitator API, not a separate persisted registry:
+`/a2a/agents` returns compact summaries of existing agents that have A2A enabled. This is a custom InnomightLabs registry, not a separate persisted registry:
 
 ```json
 {
   "items": [
     {
-      "agent_id": "agent_123",
+      "id": "agent_123",
       "name": "SEO Research Agent",
       "description": "Researches search intent and drafts content briefs.",
-      "service_url": "https://api.example.com/a2a/agents/agent_123"
+      "agentCardUrl": "https://api.example.com/a2a/agents/agent_123/card",
+      "agentCard": {
+        "name": "SEO Research Agent",
+        "description": "Researches search intent and drafts content briefs.",
+        "supportedInterfaces": [
+          {
+            "url": "https://api.example.com/a2a/agents/agent_123",
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0"
+          }
+        ],
+        "version": "1.0.0",
+        "capabilities": {
+          "streaming": false,
+          "pushNotifications": false,
+          "extendedAgentCard": false
+        },
+        "defaultInputModes": ["text/plain"],
+        "defaultOutputModes": ["text/plain"],
+        "skills": []
+      }
     }
-  ],
-  "next_cursor": null
+  ]
 }
 ```
 
-`/a2a/agents/{agent_id}/agent-card` can return an agent-scoped Agent Card for clients that already discovered a specific agent through the facilitator metadata. It is not a well-known URL and it should still be built from the same Agent row.
+`/a2a/agents/{agent_id}/card` returns an agent-scoped Agent Card for clients that discovered a specific agent through the registry. It is not a well-known URL and it should still be built from the same Agent row.
 
 ### A2A Invocation Endpoints
 
-Use HTTP+JSON binding paths nested under the agent service URL:
+Use the JSON-RPC binding at the agent service URL:
 
 ```http
-POST /a2a/agents/{agent_id}/message:send
-POST /a2a/agents/{agent_id}/message:stream
-GET /a2a/agents/{agent_id}/tasks/{task_id}
-GET /a2a/agents/{agent_id}/tasks
-POST /a2a/agents/{agent_id}/tasks/{task_id}:cancel
-POST /a2a/agents/{agent_id}/tasks/{task_id}:subscribe
+POST /a2a/agents/{agent_id}
 ```
 
 Initial support:
 
-- `message:send`: accepts text parts, runs the existing agent non-streamingly by collecting stream chunks, returns a completed or failed `Task`.
-- `message:stream`: accepts text parts, streams A2A SSE task updates.
-- `tasks/{task_id}`: returns persisted task if visible to the authenticated key.
-- `tasks`: lists tasks for this `agent_id` and authenticated `client_key_id`.
-- `cancel` and `subscribe`: return `UnsupportedOperationError` until cancellation and durable stream resubscription are implemented.
+- JSON-RPC `SendMessage`: accepts text parts, runs the existing agent non-streamingly by collecting stream chunks, returns a completed or failed `Task`.
+- JSON-RPC `GetTask`: returns persisted task if visible to the authenticated key.
+- JSON-RPC `ListTasks`: lists tasks for this `agent_id` and authenticated `client_key_id`.
+- JSON-RPC `CancelTask` and `SubscribeToTask`: return unsupported-operation errors until cancellation and durable stream resubscription are implemented.
 
 Content types:
 
 - Accept `application/a2a+json` and `application/json`.
 - Return `application/a2a+json` for non-stream responses.
-- Return `text/event-stream` for streaming.
+- Do not advertise HTTP+JSON in Agent Cards until standard HTTP+JSON operation routes are implemented.
 
 ## Authentication
 
@@ -385,19 +442,24 @@ Future hardening:
 
 ### Request Parsing
 
-Support the current HTTP+JSON message shape:
+Support the A2A JSON-RPC `SendMessage` shape:
 
 ```json
 {
-  "message": {
-    "messageId": "msg-uuid",
-    "role": "ROLE_USER",
-    "parts": [{"text": "Hello"}],
-    "taskId": "optional-existing-task-id",
-    "contextId": "optional-context-id"
-  },
-  "configuration": {
-    "acceptedOutputModes": ["text/plain"]
+  "jsonrpc": "2.0",
+  "id": "request-uuid",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "messageId": "msg-uuid",
+      "role": "ROLE_USER",
+      "parts": [{"text": "Hello"}],
+      "taskId": "optional-existing-task-id",
+      "contextId": "optional-context-id"
+    },
+    "configuration": {
+      "acceptedOutputModes": ["text/plain"]
+    }
   }
 }
 ```
@@ -455,14 +517,12 @@ Example completed task response:
 }
 ```
 
-For streaming, emit SSE `data:` lines containing JSON objects compatible with A2A stream response events.
+Do not document streaming support until `message/stream` or an equivalent A2A-compatible streaming operation is implemented and advertised in the scoped Agent Card.
 
 ## Middleware Changes
 
 Update `api/src/auth/middleware.py`:
 
-- Add public path:
-  - `/.well-known/agent-card.json`
 - Add public prefixes:
   - `/a2a/`
 
@@ -486,7 +546,7 @@ def list_agent2agent_enabled(self, *, limit: int, cursor: str | None = None) -> 
 For known `agent_id` requests, avoid public unauthenticated lookup when possible:
 
 - For invocation, validate the API key first and use `api_key.created_by` plus `api_key.agent_id` to load the target agent with `find_agent_by_id(...)`.
-- For the facilitator card and `/a2a/agents`, use `list_agent2agent_enabled(...)` and build response data from the current Agent rows.
+- For `/a2a/agents`, use `list_agent2agent_enabled(...)` and build response data from the current Agent rows.
 - Do not add separate registry or pointer items in v1.
 
 Methods:
@@ -529,11 +589,12 @@ Backend tests:
   - enabling without active API key returns `400`.
 
 - `api/tests/test_a2a_discovery.py`
-  - root well-known card is public.
-  - root well-known card represents the InnomightLabs facilitator.
-  - root well-known card includes only agents with `is_agent2agent_enabled = true`.
-  - agent-scoped `/a2a/agents/{agent_id}/agent-card` returns `404` for disabled agents.
+  - registry endpoint is public.
+  - registry lists only agents with `is_agent2agent_enabled = true`.
+  - registry entries include `agentCardUrl` and embedded `agentCard`.
+  - agent-scoped `/a2a/agents/{agent_id}/card` returns `404` for disabled agents.
   - agent-scoped card returns sanitized data for enabled agents.
+  - agent-scoped card advertises only implemented bindings, initially `JSONRPC`.
   - card does not include `agent_persona`, provider credentials, or installed skill secrets.
 
 - `api/tests/test_a2a_auth.py`
@@ -543,9 +604,9 @@ Backend tests:
   - valid key authorizes invocation.
 
 - `api/tests/test_a2a_invocation.py`
-  - `message:send` accepts text and returns completed task.
+  - JSON-RPC `SendMessage` accepts text and returns completed task.
   - unsupported file/data parts return protocol error.
-  - `message:stream` emits SSE events and terminal state.
+  - unsupported JSON-RPC methods return protocol errors.
   - task lookup is scoped to the authenticated key.
 
 Run:
@@ -559,32 +620,32 @@ uv run pytest -v
 
 1. Add backend model/repository fields and tests.
 2. Add dashboard sharing endpoints.
-3. Add public discovery card builder and routes.
+3. Add public registry and agent-card builders/routes.
 4. Add A2A auth dependency.
-5. Add `message:send` with text-only invocation.
-6. Add `message:stream`.
+5. Add JSON-RPC `SendMessage` with text-only invocation.
+6. Add JSON-RPC task lookup/list methods.
 7. Add SPA settings UI.
 8. Enable in one non-production environment and verify:
-   - `/.well-known/agent-card.json`
    - `/a2a/agents`
-   - `/a2a/agents/{agent_id}/agent-card`
-   - `/a2a/agents/{agent_id}/message:send`
-   - `/a2a/agents/{agent_id}/message:stream`
+   - `/a2a/agents/{agent_id}/card`
+   - JSON-RPC `SendMessage` at `/a2a/agents/{agent_id}`
 9. Add API documentation examples.
 
 ## Open Questions
 
-- Should `/a2a/agents` remain public long term, or should all machine discovery happen only through the facilitator card metadata?
+- Should `/a2a/agents` stay unauthenticated long term, or should private/team registries require credentials?
 - What request and task retention limits should apply per API key?
 - Should future client id/secret credentials be introduced as a separate API key mode, or should existing API keys evolve in place?
 
 ## Recommended V1 Decisions
 
-- Use the current A2A `1.0.0` shape and `/.well-known/agent-card.json`.
-- Make `/.well-known/agent-card.json` the public facilitator Agent Card.
+- Use the current A2A `1.0.0` shape for individual Agent Cards.
+- Make `/a2a/agents` the documented InnomightLabs registry endpoint.
+- Make `/a2a/agents/{agent_id}/card` the authoritative Agent Card URL for listed agents.
+- Do not advertise unimplemented HTTP+JSON bindings.
 - Make A2A sharing available to all users in v1; keep the service boundary flexible enough for future plan or policy gates.
 - Rename user-facing "widget keys" to "API keys".
 - Treat the existing API key as a bearer API key, not a true client id/secret pair.
-- Keep v1 text-only and streaming-capable.
+- Keep v1 text-only.
 - Do not expose installed skills individually unless there is a safe, explicit public description for each skill.
 - Store A2A tasks with TTL, for example 30 days, to avoid unbounded growth.

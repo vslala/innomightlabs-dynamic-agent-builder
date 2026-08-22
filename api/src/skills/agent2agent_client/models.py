@@ -87,9 +87,13 @@ class A2ARegistryConfig(BaseModel):
 
     @classmethod
     def from_runtime_config(cls, config: dict[str, Any]) -> "A2ARegistryConfig":
+        registry_urls = [
+            *_parse_registry_urls(config.get("registry_url")),
+            *_parse_registry_urls(config.get("registry_urls")),
+        ]
         return cls(
             registry_set_name=str(config.get("registry_set_name") or "A2A Registry").strip(),
-            registry_urls=_parse_registry_urls(config.get("registry_urls")),
+            registry_urls=registry_urls,
             default_credentials=_parse_credentials(config.get("default_credentials")),
         )
 

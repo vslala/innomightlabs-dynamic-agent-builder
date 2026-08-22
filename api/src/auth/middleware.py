@@ -54,6 +54,7 @@ WIDGET_PATH_PREFIX = "/widget"
 ANALYTICS_AGENT_PATH_PREFIX = "/analytics/agents/"
 DOWNLOADS_PLUGINS_PATH_PREFIX = "/downloads/plugins"
 A2A_PATH_PREFIX = "/a2a/"
+A2A_WELL_KNOWN_PATH_PREFIX = "/.well-known/agents/"
 
 
 def decode_token_without_verification(token: str) -> Optional[dict[str, Any]]:
@@ -119,7 +120,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
         # Skip auth for public paths
-        if request.url.path in PUBLIC_PATHS or request.url.path.startswith("/payments/stripe/session/") or request.url.path.startswith(DOWNLOADS_PLUGINS_PATH_PREFIX):
+        if (
+            request.url.path in PUBLIC_PATHS
+            or request.url.path.startswith("/payments/stripe/session/")
+            or request.url.path.startswith(DOWNLOADS_PLUGINS_PATH_PREFIX)
+            or request.url.path.startswith(A2A_WELL_KNOWN_PATH_PREFIX)
+        ):
             return await call_next(request)
 
         # Skip auth for widget routes (handled by WidgetAuthMiddleware)

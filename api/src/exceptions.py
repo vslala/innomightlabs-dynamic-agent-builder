@@ -40,6 +40,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "detail": exc.detail,
                 "path": request.url.path,
             },
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)

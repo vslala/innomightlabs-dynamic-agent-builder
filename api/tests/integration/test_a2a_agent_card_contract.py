@@ -10,7 +10,6 @@ from tools.a2a_agent_card_validator import (
 )
 
 
-DEFAULT_AGENT_CARD_URL = "http://localhost:1455/.well-known/agent-card.json"
 RUN_CONTRACT_TEST_ENV = "RUN_A2A_AGENT_CARD_CONTRACT_TEST"
 AGENT_CARD_URL_ENV = "A2A_AGENT_CARD_URL"
 
@@ -22,7 +21,14 @@ def test_agent_card_matches_official_a2a_v1_proto_schema():
             f"Set {RUN_CONTRACT_TEST_ENV}=1 to validate a running A2A endpoint."
         )
 
-    agent_card_url = os.getenv(AGENT_CARD_URL_ENV, DEFAULT_AGENT_CARD_URL)
+    agent_card_url = os.getenv(AGENT_CARD_URL_ENV)
+    if not agent_card_url:
+        pytest.fail(
+            f"Set {AGENT_CARD_URL_ENV} to an agent-specific card URL such as "
+            "http://localhost:1455/a2a/agents/{agent_id}/card.",
+            pytrace=False,
+        )
+
     error_message = None
     try:
         validate_agent_card_url(agent_card_url)

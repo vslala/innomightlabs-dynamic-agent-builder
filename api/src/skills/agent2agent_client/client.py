@@ -4,6 +4,12 @@ import uuid
 from typing import Any
 
 import httpx
+from a2a.client import ClientCallContext, ClientConfig, ClientFactory
+from a2a.client.card_resolver import parse_agent_card
+from a2a.client.errors import A2AClientError, A2AClientTimeoutError
+from a2a.types import AgentCard, SendMessageRequest as A2ASdkSendMessageRequest
+from a2a.utils.constants import TransportProtocol
+from google.protobuf.json_format import MessageToDict, ParseDict
 
 from src.skills.agent2agent_client.models import (
     A2A_PROTOCOL_HTTP_JSON,
@@ -17,7 +23,12 @@ class A2AHttpClient:
     def __init__(self, *, timeout_seconds: float = 20.0) -> None:
         self.timeout_seconds = timeout_seconds
 
-    async def get_json(self, url: str, *, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    async def get_json(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=True) as client:
             response = await client.get(url, headers=self._headers(headers))
         response.raise_for_status()
@@ -26,106 +37,67 @@ class A2AHttpClient:
             raise ValueError(f"A2A endpoint returned a non-object payload: {url}")
         return payload
 
+    async def get_agent_card(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        payload = await self.get_json(url, headers=headers)
+        return self.normalize_agent_card(payload)
+
+    def normalize_agent_card(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return _agent_card_to_dict(parse_agent_card(payload))
+
     async def send_message(
         self,
         *,
-        service_url: str,
+        agent_card: dict[str, Any],
         request: SendMessageRequest,
         headers: dict[str, str],
-        protocol_binding: str | None = None,
+        preferred_protocols: list[str] | None = None,
     ) -> dict[str, Any]:
-        body = {
-            "message": {
-                "messageId": str(uuid.uuid4()),
-                "role": "ROLE_USER",
-                "parts": [{"text": request.message}],
-            },
-            "configuration": {"acceptedOutputModes": ["text/plain"]},
-        }
-        if request.context_id:
-            body["message"]["contextId"] = request.context_id
-        if request.task_id:
-            body["message"]["taskId"] = request.task_id
+        sdk_card = _parse_agent_card(agent_card)
+        sdk_request = _build_send_message_request(request)
+        protocol_bindings = _transport_protocols(preferred_protocols)
 
-        protocol = normalize_protocol_binding(protocol_binding or A2A_PROTOCOL_JSONRPC)
-        if protocol == A2A_PROTOCOL_JSONRPC:
-            return await self._send_jsonrpc_message(
-                service_url=service_url,
-                body=body,
-                request=request,
-                headers=headers,
-            )
-        if protocol == A2A_PROTOCOL_HTTP_JSON:
-            return await self._send_http_json_message(
-                service_url=service_url,
-                body=body,
-                request=request,
-                headers=headers,
-            )
-        raise ValueError(f"Unsupported A2A protocol binding: {protocol}")
-
-    async def _send_jsonrpc_message(
-        self,
-        *,
-        service_url: str,
-        body: dict[str, Any],
-        request: SendMessageRequest,
-        headers: dict[str, str],
-    ) -> dict[str, Any]:
-        endpoint = service_url.rstrip("/")
-        rpc_body = {
-            "jsonrpc": "2.0",
-            "id": str(uuid.uuid4()),
-            "method": "message/send",
-            "params": body,
-        }
         try:
-            async with httpx.AsyncClient(timeout=request.timeout_seconds, follow_redirects=True) as client:
-                response = await client.post(endpoint, json=rpc_body, headers=self._headers(headers))
-        except httpx.TimeoutException:
+            async with httpx.AsyncClient(
+                timeout=request.timeout_seconds,
+                follow_redirects=True,
+                headers=self._headers(headers),
+            ) as client:
+                sdk_client = ClientFactory(
+                    ClientConfig(
+                        streaming=False,
+                        httpx_client=client,
+                        supported_protocol_bindings=protocol_bindings,
+                        use_client_preference=True,
+                        accepted_output_modes=["text/plain"],
+                    )
+                ).create(sdk_card)
+                context = ClientCallContext(
+                    timeout=request.timeout_seconds,
+                    service_parameters=headers,
+                )
+                final_event: dict[str, Any] | None = None
+                async for event in sdk_client.send_message(sdk_request, context=context):
+                    final_event = MessageToDict(event)
+        except (A2AClientTimeoutError, httpx.TimeoutException):
             return _timeout_payload(request.timeout_seconds)
+        except A2AClientError as exc:
+            return _error_payload(str(exc))
+        except httpx.HTTPError as exc:
+            return _error_payload(str(exc))
+        except ValueError as exc:
+            return _error_payload(str(exc))
 
-        payload = self._parse_response(response, request.max_response_chars)
-        error = payload.get("error") if isinstance(payload.get("error"), dict) else None
-        if error:
-            return {
-                "ok": False,
-                "status_code": response.status_code,
-                "message": str(error.get("message") or "Remote A2A JSON-RPC request failed"),
-            }
-        result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
-        result["status_code"] = response.status_code
-        result["ok"] = response.is_success
-        return result
+        if not final_event:
+            return _error_payload("Remote A2A agent returned no response.")
 
-    async def _send_http_json_message(
-        self,
-        *,
-        service_url: str,
-        body: dict[str, Any],
-        request: SendMessageRequest,
-        headers: dict[str, str],
-    ) -> dict[str, Any]:
-        endpoint = f"{service_url.rstrip('/')}/message:send"
-        try:
-            async with httpx.AsyncClient(timeout=request.timeout_seconds, follow_redirects=True) as client:
-                response = await client.post(endpoint, json=body, headers=self._headers(headers))
-        except httpx.TimeoutException:
-            return _timeout_payload(request.timeout_seconds)
-
-        payload = self._parse_response(response, request.max_response_chars)
-        payload["status_code"] = response.status_code
-        payload["ok"] = response.is_success
-        return payload
-
-    def _parse_response(self, response: httpx.Response, max_response_chars: int) -> dict[str, Any]:
-        payload: dict[str, Any] = {}
-        try:
-            parsed = response.json()
-            if isinstance(parsed, dict):
-                payload = parsed
-        except ValueError:
-            payload = {"body_preview": response.text[:max_response_chars]}
+        payload = _payload_from_stream_response(final_event)
+        payload["status_code"] = 200
+        payload["ok"] = True
         return payload
 
     def _headers(self, headers: dict[str, str] | None = None) -> dict[str, str]:
@@ -136,6 +108,60 @@ class A2AHttpClient:
         }
         merged.update(headers or {})
         return merged
+
+
+def _build_send_message_request(request: SendMessageRequest) -> A2ASdkSendMessageRequest:
+    body = {
+        "message": {
+            "messageId": str(uuid.uuid4()),
+            "role": "ROLE_USER",
+            "parts": [{"text": request.message}],
+        },
+        "configuration": {"acceptedOutputModes": ["text/plain"]},
+    }
+    if request.context_id:
+        body["message"]["contextId"] = request.context_id
+    if request.task_id:
+        body["message"]["taskId"] = request.task_id
+    return ParseDict(body, A2ASdkSendMessageRequest(), ignore_unknown_fields=False)
+
+
+def _parse_agent_card(payload: dict[str, Any]) -> AgentCard:
+    return parse_agent_card(payload)
+
+
+def _agent_card_to_dict(card: AgentCard) -> dict[str, Any]:
+    return MessageToDict(card)
+
+
+def _transport_protocols(protocols: list[str] | None) -> list[str]:
+    bindings = [
+        normalize_protocol_binding(protocol)
+        for protocol in protocols or [A2A_PROTOCOL_JSONRPC]
+    ]
+    mapped = []
+    for binding in bindings:
+        if binding == A2A_PROTOCOL_JSONRPC:
+            mapped.append(TransportProtocol.JSONRPC.value)
+        elif binding == A2A_PROTOCOL_HTTP_JSON:
+            mapped.append(TransportProtocol.HTTP_JSON.value)
+    return list(dict.fromkeys(mapped)) or [TransportProtocol.JSONRPC.value]
+
+
+def _payload_from_stream_response(event: dict[str, Any]) -> dict[str, Any]:
+    for key in ("task", "message", "statusUpdate", "artifactUpdate"):
+        value = event.get(key)
+        if isinstance(value, dict):
+            return {key: value}
+    return {}
+
+
+def _error_payload(message: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "status_code": 502,
+        "message": message,
+    }
 
 
 def _timeout_payload(timeout_seconds: int) -> dict[str, Any]:

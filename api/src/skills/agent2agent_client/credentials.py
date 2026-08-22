@@ -27,7 +27,7 @@ class A2ACredentialResolver:
                 headers=self._headers_for_credential(credential),
             )
 
-        if self._supports_api_key(card):
+        if self._supports_bearer_or_api_key(card):
             return ResolvedCredential(
                 result=A2AAuthResult.REQUIRED,
                 headers={},
@@ -57,7 +57,7 @@ class A2ACredentialResolver:
             return {"Authorization": value}
         return {"Authorization": f"Bearer {value}"}
 
-    def _supports_api_key(self, card: dict[str, Any]) -> bool:
+    def _supports_bearer_or_api_key(self, card: dict[str, Any]) -> bool:
         schemes = card.get("securitySchemes")
         if not isinstance(schemes, dict):
             return False
@@ -66,9 +66,16 @@ class A2ACredentialResolver:
             and (
                 scheme.get("type") == "apiKey"
                 or isinstance(scheme.get("apiKeySecurityScheme"), dict)
+                or self._is_bearer_http_auth(scheme)
             )
             for scheme in schemes.values()
         )
+
+    def _is_bearer_http_auth(self, scheme: dict[str, Any]) -> bool:
+        http_auth = scheme.get("httpAuthSecurityScheme")
+        if not isinstance(http_auth, dict):
+            return False
+        return str(http_auth.get("scheme") or "").lower() == "bearer"
 
 
 def _origin(url: str) -> str:

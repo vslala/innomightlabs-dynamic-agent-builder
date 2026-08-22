@@ -45,11 +45,12 @@ async def send_message(arguments: dict[str, Any], config: dict[str, Any], contex
     agent_ref = decode_agent_ref(request.agent_ref)
     _validate_allowed_urls(context, _agent_ref_urls(agent_ref))
     http_client = A2AHttpClient()
-    raw_card = await http_client.get_json(agent_ref.card_url or f"{agent_ref.service_url.rstrip('/')}/agent-card")
+    if not agent_ref.card_url:
+        raise ValueError("Discovered A2A agent is missing an Agent Card URL; run discovery again.")
+    raw_card = await http_client.get_agent_card(agent_ref.card_url)
     card = A2AAgentCardView.model_validate(raw_card)
     preferred_protocols = _preferred_protocols()
     service_url = card.service_url(preferred_protocols) or agent_ref.service_url
-    protocol_binding = card.protocol_binding(preferred_protocols) or agent_ref.protocol_binding
     _validate_allowed_urls(context, [service_url])
     credential = A2ACredentialResolver().resolve(
         card=raw_card,
@@ -74,17 +75,19 @@ async def send_message(arguments: dict[str, Any], config: dict[str, Any], contex
         ).model_dump(mode="json", exclude_none=True)
 
     payload = await http_client.send_message(
-        service_url=service_url,
+        agent_card=raw_card,
         request=request,
         headers=credential.headers,
-        protocol_binding=protocol_binding,
+        preferred_protocols=preferred_protocols,
     )
     task = payload.get("task") if isinstance(payload.get("task"), dict) else None
+    message = payload.get("message") if isinstance(payload.get("message"), dict) else None
     return SendMessageResponse(
         ok=bool(payload.get("ok")),
         status_code=int(payload.get("status_code", 0) or 0),
         task=task,
-        response_text=_extract_response_text(task, request.max_response_chars),
+        response_text=_extract_response_text(task, request.max_response_chars)
+        or _extract_message_text(message, request.max_response_chars),
         message=None if payload.get("ok") else _error_preview(payload),
         service_url=service_url,
         agent_name=agent_ref.name,
@@ -179,6 +182,12 @@ def _extract_response_text(task: dict[str, Any] | None, max_chars: int) -> str |
         return None
     message = status.get("message")
     if not isinstance(message, dict):
+        return None
+    return _extract_message_text(message, max_chars)
+
+
+def _extract_message_text(message: dict[str, Any] | None, max_chars: int) -> str | None:
+    if not message:
         return None
     parts = message.get("parts")
     if not isinstance(parts, list):

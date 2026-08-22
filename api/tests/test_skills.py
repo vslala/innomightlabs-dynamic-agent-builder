@@ -251,7 +251,7 @@ def test_agent2agent_settings_round_trip_normalizes_origins(test_client, auth_he
         headers=auth_headers,
         json={
             "allowed_origins": {
-                "http://localhost:1455/.well-known/agent-card.json": "Local API",
+                "http://localhost:1455/a2a/agents": "Local API",
                 "https://API.EXAMPLE.com/a2a/agents": "Example",
             }
         },
@@ -282,7 +282,7 @@ def test_agent2agent_skill_install_requires_allowlisted_registry(test_client, au
         json={
             "config": {
                 "registry_set_name": "Local",
-                "registry_urls": "http://localhost:1455/.well-known/agent-card.json",
+                "registry_url": "http://localhost:1455/a2a/agents",
                 "default_credentials": {},
             }
         },
@@ -309,7 +309,7 @@ def test_agent2agent_skill_install_accepts_allowlisted_registry(test_client, aut
         json={
             "config": {
                 "registry_set_name": "Local",
-                "registry_urls": "http://localhost:1455/.well-known/agent-card.json",
+                "registry_url": "http://localhost:1455/a2a/agents",
                 "default_credentials": {},
             }
         },
@@ -318,7 +318,7 @@ def test_agent2agent_skill_install_accepts_allowlisted_registry(test_client, aut
     assert install_resp.status_code == 201
     payload = install_resp.json()
     assert payload["skill_id"] == "agent2agent_client"
-    assert payload["config"]["registry_urls"] == "http://localhost:1455/.well-known/agent-card.json"
+    assert payload["config"]["registry_url"] == "http://localhost:1455/a2a/agents"
 
 
 def test_oauth_skill_uninstall_keeps_provider_settings_by_default(test_client, auth_headers, dynamodb_table):

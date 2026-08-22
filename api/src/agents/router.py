@@ -111,7 +111,7 @@ def _agent2agent_sharing_response(
     return Agent2AgentSharingResponse(
         agent_id=agent.agent_id,
         enabled=agent.is_agent2agent_enabled,
-        agent_card_url=f"{base_url}/.well-known/agent-card.json",
+        agent_card_url=f"{base_url}/a2a/agents/{agent.agent_id}/card",
         service_url=f"{base_url}/a2a/agents/{agent.agent_id}",
         has_active_api_key=bool(active_keys),
     )

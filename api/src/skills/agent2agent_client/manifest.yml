@@ -23,14 +23,25 @@ form:
       placeholder: Internal A2A Network
       expose_to_runtime: "true"
       usage_context_label: Registry set
+  - input_type: text
+    name: registry_url
+    label: Registry URL
+    attr:
+      placeholder: https://api.example.com/a2a/agents
+      help_text: Enter the primary registry URL. For InnomightLabs, use /a2a/agents.
+      optional: "true"
+      expose_to_runtime: "true"
+      usage_context_label: Primary discovery URL
   - input_type: text_area
     name: registry_urls
-    label: Agent Discovery URLs
+    label: Additional Discovery URLs
     attr:
-      rows: "6"
-      placeholder: "https://api.example.com/.well-known/agent-card.json\nhttps://api.example.com/a2a/agents"
+      rows: "4"
+      placeholder: "https://agent.example.com/.well-known/agent-card.json\nhttps://partner.example.com/a2a/agents"
+      help_text: Optional. Add one extra registry or single-agent card URL per line.
+      optional: "true"
       expose_to_runtime: "true"
-      usage_context_label: Discovery URLs
+      usage_context_label: Additional discovery URLs
       usage_context_max_chars: "800"
   - input_type: key_value
     name: default_credentials

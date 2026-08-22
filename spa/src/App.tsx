@@ -14,6 +14,7 @@ const Pricing = lazyRoute(() => import('./pages/Pricing'), 'Pricing');
 const PaymentSuccess = lazyRoute(() => import('./pages/PaymentSuccess'), 'PaymentSuccess');
 const PaymentCancel = lazyRoute(() => import('./pages/PaymentCancel'), 'PaymentCancel');
 const QuickStart = lazyRoute(() => import('./pages/docs/QuickStart'), 'QuickStart');
+const AgentToAgent = lazyRoute(() => import('./pages/docs/AgentToAgent'), 'AgentToAgent');
 const FAQ = lazyRoute(() => import('./pages/docs/FAQ'), 'FAQ');
 const Terms = lazyRoute(() => import('./pages/legal/Terms'), 'Terms');
 const PricingPolicy = lazyRoute(() => import('./pages/legal/PricingPolicy'), 'PricingPolicy');
@@ -97,6 +98,7 @@ function App() {
           <Route path="/payments/cancel" element={<PaymentCancel />} />
           <Route path="/login-success" element={<LoginSuccess />} />
           <Route path="/docs/quick-start" element={<QuickStart />} />
+          <Route path="/docs/agent-to-agent" element={<AgentToAgent />} />
           <Route path="/docs/faq" element={<FAQ />} />
           <Route path="/legal/terms" element={<Terms />} />
           <Route path="/legal/privacy" element={<Privacy />} />

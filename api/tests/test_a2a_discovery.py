@@ -34,26 +34,18 @@ def _enable_a2a(test_client: TestClient, auth_headers: dict, agent_id: str) -> N
     assert response.status_code == 200
 
 
-def test_facilitator_agent_card_is_public(test_client: TestClient):
-    """Test the well-known facilitator Agent Card is public."""
+def test_common_well_known_agent_card_is_not_exposed(test_client: TestClient):
+    """Test the common well-known Agent Card is not used for multi-agent discovery."""
     response = test_client.get("/.well-known/agent-card.json")
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["name"] == "InnomightLabs A2A Facilitator"
-    assert data["supportedInterfaces"][0]["url"].endswith("/a2a")
-    assert data["supportedInterfaces"][0]["protocolBinding"] == "JSONRPC"
-    assert "tenant" not in data["supportedInterfaces"][0]
-    assert data["securitySchemes"]["agentApiKey"]["apiKeySecurityScheme"]["location"] == "header"
-    assert data["securityRequirements"][0]["schemes"]["agentApiKey"]["list"] == []
-    validate_agent_card_payload(data)
+    assert response.status_code == 404
 
 
-def test_facilitator_card_lists_only_enabled_agents(
+def test_registry_lists_only_enabled_agents(
     test_client: TestClient,
     auth_headers: dict,
 ):
-    """Test facilitator metadata lists only A2A-enabled agents."""
+    """Test the registry lists only A2A-enabled agents."""
     from src.agents.models import Agent
     from src.agents.repository import AgentRepository
     from tests.mock_data import TEST_USER_EMAIL
@@ -76,7 +68,7 @@ def test_facilitator_card_lists_only_enabled_agents(
 
     assert response.status_code == 200
     agents = response.json()["items"]
-    agent_ids = {agent["agent_id"] for agent in agents}
+    agent_ids = {agent["id"] for agent in agents}
     assert enabled_agent_id in agent_ids
     assert disabled_agent.agent_id not in agent_ids
 
@@ -94,11 +86,20 @@ def test_list_a2a_agents_is_public_and_sanitized(
 
     assert response.status_code == 200
     data = response.json()
-    assert data["next_cursor"] is None
-    item = next(agent for agent in data["items"] if agent["agent_id"] == agent_id)
+    assert "nextCursor" not in data
+    item = next(agent for agent in data["items"] if agent["id"] == agent_id)
     assert item["name"] == "Public Agent"
     assert item["description"] == "Helps with A2A discovery."
-    assert item["service_url"].endswith(f"/a2a/agents/{agent_id}")
+    assert item["agentCardUrl"].endswith(f"/a2a/agents/{agent_id}/card")
+    assert "serviceUrl" not in item
+    assert item["agentCard"]["name"] == "Public Agent"
+    assert item["agentCard"]["supportedInterfaces"][0]["url"].endswith(f"/a2a/agents/{agent_id}")
+    assert item["agentCard"]["supportedInterfaces"][0]["protocolBinding"] == "JSONRPC"
+    assert {interface["protocolBinding"] for interface in item["agentCard"]["supportedInterfaces"]} == {"JSONRPC"}
+    assert "documentationUrl" not in item["agentCard"]
+    assert "tenant" not in item["agentCard"].get("provider", {})
+    assert "apiKeySecurityScheme" not in item["agentCard"]["securitySchemes"]["agentApiKey"]
+    validate_agent_card_payload(item["agentCard"])
     assert "SECRET PERSONA" not in response.text
 
 
@@ -109,7 +110,7 @@ def test_agent_scoped_card_requires_enabled_agent(
     """Test disabled agents do not expose an agent-scoped card."""
     agent_id = _create_agent(test_client, auth_headers)
 
-    response = test_client.get(f"/a2a/agents/{agent_id}/agent-card")
+    response = test_client.get(f"/a2a/agents/{agent_id}/card")
 
     assert response.status_code == 404
 
@@ -123,7 +124,7 @@ def test_agent_scoped_card_is_public_for_enabled_agent(
     _create_api_key(test_client, auth_headers, agent_id)
     _enable_a2a(test_client, auth_headers, agent_id)
 
-    response = test_client.get(f"/a2a/agents/{agent_id}/agent-card")
+    response = test_client.get(f"/a2a/agents/{agent_id}/card")
 
     assert response.status_code == 200
     data = response.json()
@@ -131,16 +132,32 @@ def test_agent_scoped_card_is_public_for_enabled_agent(
     assert data["description"] == "Helps with A2A discovery."
     assert data["supportedInterfaces"][0]["url"].endswith(f"/a2a/agents/{agent_id}")
     assert data["supportedInterfaces"][0]["protocolBinding"] == "JSONRPC"
+    assert {interface["protocolBinding"] for interface in data["supportedInterfaces"]} == {"JSONRPC"}
+    assert data["capabilities"]["streaming"] is False
     assert data["skills"][0]["id"] == "chat"
     assert "SECRET PERSONA" not in response.text
     validate_agent_card_payload(data)
 
 
-def test_agent_scoped_card_lists_enabled_installed_skills_without_config(
+def test_agent_scoped_well_known_card_is_not_exposed(
     test_client: TestClient,
     auth_headers: dict,
 ):
-    """Test agent cards publish enabled skill descriptions but not skill configuration."""
+    """Test enabled agents do not expose well-known agent card URLs."""
+    agent_id = _create_agent(test_client, auth_headers, name="Public A2A Agent")
+    _create_api_key(test_client, auth_headers, agent_id)
+    _enable_a2a(test_client, auth_headers, agent_id)
+
+    response = test_client.get(f"/.well-known/agents/{agent_id}/agent-card.json")
+
+    assert response.status_code == 404
+
+
+def test_agent_scoped_card_does_not_expose_installed_internal_skills(
+    test_client: TestClient,
+    auth_headers: dict,
+):
+    """Test public agent cards do not publish installed skill metadata."""
     from src.skills.models import AgentSkill
     from src.skills.repository import AgentSkillRepository
     from tests.mock_data import TEST_USER_EMAIL
@@ -176,15 +193,14 @@ def test_agent_scoped_card_lists_enabled_installed_skills_without_config(
         )
     )
 
-    response = test_client.get(f"/a2a/agents/{agent_id}/agent-card")
+    response = test_client.get(f"/a2a/agents/{agent_id}/card")
 
     assert response.status_code == 200
     data = response.json()
     skills_by_id = {skill["id"]: skill for skill in data["skills"]}
     assert "chat" in skills_by_id
-    assert skills_by_id["send-email-primary"]["name"] == "Send Email"
-    assert skills_by_id["send-email-primary"]["description"] == "Send a templated email to configured recipients."
-    assert "installed_skill" in skills_by_id["send-email-primary"]["tags"]
+    assert "send-email-primary" not in skills_by_id
     assert "disabled-skill" not in skills_by_id
+    assert "Send Email" not in response.text
     assert "private@example.com" not in response.text
     assert "This should not be published" not in response.text

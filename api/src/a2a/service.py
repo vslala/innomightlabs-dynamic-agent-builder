@@ -14,7 +14,7 @@ from src.a2a.models import (
     A2AAgentListResponse,
     A2AAgentProvider,
     A2AAgentSummary,
-    A2AApiKeySecurityScheme,
+    A2AHttpAuthSecurityScheme,
     A2AMessage,
     A2AMessageRole,
     A2AMessageSendRequest,
@@ -38,7 +38,6 @@ from src.config import settings
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
-from src.skills.models import AgentSkill
 from src.skills.repository import AgentSkillRepository
 
 
@@ -58,47 +57,27 @@ class A2ADiscoveryService:
         self.agent_repository = agent_repository or AgentRepository()
         self.skill_repository = skill_repository or AgentSkillRepository()
 
-    def facilitator_card(self) -> A2AAgentCard:
-        return A2AAgentCard(
-            name="InnomightLabs A2A Facilitator",
-            description="Discovery entrypoint for InnomightLabs agents enabled for Agent2Agent communication.",
-            supportedInterfaces=self._agent_interfaces(f"{self._base_url()}/a2a"),
-            provider=A2AAgentProvider(
-                organization="InnomightLabs",
-                url="https://innomightlabs.com",
-            ),
-            version=A2A_PROTOCOL_VERSION,
-            capabilities=A2AAgentCapabilities(),
-            securitySchemes=self._security_schemes(),
-            securityRequirements=self._security_requirements(),
-            defaultInputModes=[TEXT_MODE],
-            defaultOutputModes=[TEXT_MODE],
-            skills=[
-                A2ASkill(
-                    id="discover_public_agents",
-                    name="Discover Public Agents",
-                    description="List InnomightLabs agents enabled for Agent2Agent communication.",
-                    tags=["discovery", "facilitator"],
-                )
-            ],
-        )
-
     def agent_card(self, agent_id: str) -> A2AAgentCard | None:
         agent = self.agent_repository.find_agent2agent_enabled_by_id(agent_id)
         if not agent:
             return None
+        return self._agent_card(agent)
 
+    def _agent_card(self, agent: Agent) -> A2AAgentCard:
         return A2AAgentCard(
             name=_sanitize_text(agent.agent_name, max_length=100) or "Agent",
             description=_sanitize_text(agent.agent_description, max_length=1000)
             or "InnomightLabs agent enabled for Agent2Agent communication.",
-            supportedInterfaces=self._agent_interfaces(self._agent_service_url(agent.agent_id)),
+            supportedInterfaces=self._agent_interfaces(
+                self._agent_service_url(agent.agent_id),
+                protocols=["JSONRPC"],
+            ),
             provider=A2AAgentProvider(
                 organization="InnomightLabs",
                 url="https://innomightlabs.com",
             ),
             version=A2A_PROTOCOL_VERSION,
-            capabilities=A2AAgentCapabilities(),
+            capabilities=A2AAgentCapabilities(streaming=False),
             securitySchemes=self._security_schemes(),
             securityRequirements=self._security_requirements(),
             defaultInputModes=[TEXT_MODE],
@@ -117,20 +96,22 @@ class A2ADiscoveryService:
         )
 
     def _summary(self, agent: Agent) -> A2AAgentSummary:
+        agent_card = self._agent_card(agent)
         return A2AAgentSummary(
             agent_id=agent.agent_id,
-            name=_sanitize_text(agent.agent_name, max_length=100) or "Agent",
-            description=_sanitize_text(agent.agent_description, max_length=1000),
-            service_url=self._agent_service_url(agent.agent_id),
+            name=agent_card.name,
+            description=agent_card.description,
+            agent_card_url=self._agent_card_url(agent.agent_id),
+            agent_card=agent_card,
         )
 
     def _security_schemes(self) -> dict[str, A2ASecurityScheme]:
         return {
             "agentApiKey": A2ASecurityScheme(
-                apiKeySecurityScheme=A2AApiKeySecurityScheme(
-                    location="header",
-                    name="Authorization",
-                    description="Use Authorization: Bearer <agent API key>.",
+                httpAuthSecurityScheme=A2AHttpAuthSecurityScheme(
+                    scheme="Bearer",
+                    bearerFormat="Opaque API key",
+                    description="Agent API key supplied as a Bearer credential.",
                 )
             )
         }
@@ -142,15 +123,19 @@ class A2ADiscoveryService:
             )
         ]
 
-    def _agent_interfaces(self, url: str) -> list[A2AAgentInterface]:
-        protocols = self._ordered_protocols()
+    def _agent_interfaces(
+        self,
+        url: str,
+        protocols: list[str] | None = None,
+    ) -> list[A2AAgentInterface]:
+        ordered_protocols = protocols or self._ordered_protocols()
         return [
             A2AAgentInterface(
                 url=url,
                 protocolBinding=protocol,
                 protocolVersion="1.0",
             )
-            for protocol in protocols
+            for protocol in ordered_protocols
         ]
 
     def _ordered_protocols(self) -> list[str]:
@@ -167,11 +152,14 @@ class A2ADiscoveryService:
     def _agent_service_url(self, agent_id: str) -> str:
         return f"{self._base_url()}/a2a/agents/{agent_id}"
 
+    def _agent_card_url(self, agent_id: str) -> str:
+        return f"{self._base_url()}/a2a/agents/{agent_id}/card"
+
     def _base_url(self) -> str:
         return settings.api_base_url.rstrip("/")
 
     def _agent_skills(self, agent_id: str) -> list[A2ASkill]:
-        skills = [
+        return [
             A2ASkill(
                 id="chat",
                 name="Chat With Agent",
@@ -180,36 +168,9 @@ class A2ADiscoveryService:
             )
         ]
 
-        installed_skills = self.skill_repository.list_by_agent(agent_id)
-        for skill in sorted(installed_skills, key=lambda item: item.skill_name.lower()):
-            if not skill.enabled:
-                continue
-            skills.append(_skill_to_a2a_skill(skill))
-
-        return skills
-
 
 def get_a2a_discovery_service() -> A2ADiscoveryService:
     return A2ADiscoveryService()
-
-
-def _skill_to_a2a_skill(skill: AgentSkill) -> A2ASkill:
-    return A2ASkill(
-        id=_sanitize_skill_id(skill.installed_skill_id or skill.skill_id),
-        name=_sanitize_text(skill.skill_name, max_length=100) or skill.skill_id,
-        description=_sanitize_text(skill.skill_description, max_length=500)
-        or "Installed agent skill.",
-        tags=[
-            tag
-            for tag in [
-                "installed_skill",
-                _sanitize_skill_id(skill.namespace) if skill.namespace else "",
-                _sanitize_skill_id(skill.skill_id),
-            ]
-            if tag
-        ],
-    )
-
 
 class A2AInvocationService:
     def __init__(

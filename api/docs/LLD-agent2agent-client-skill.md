@@ -33,7 +33,7 @@ Reuse existing code and patterns:
   - `api/src/form_models.py`
   - SPA `SchemaForm`
 
-The official Python SDK exists as `a2a-sdk` and supports A2A protocol `1.0` clients and servers across JSON-RPC, HTTP+JSON/REST, and gRPC. For the first implementation, keep the skill dependency-light and use a small local HTTP+JSON client behind an isolated module. That avoids a lockfile/dependency rollout during this phase and lets us validate the exact wire shape against the InnomightLabs A2A server first. The `client.py` boundary should remain narrow enough to replace with the SDK client later without changing actions, discovery, credentials, or tests.
+The official Python SDK exists as `a2a-sdk` and supports A2A protocol `1.0` clients and servers across JSON-RPC, HTTP+JSON/REST, and gRPC. For the first implementation, keep the skill dependency-light and use the SDK client behind an isolated module, with JSON-RPC as the preferred binding for InnomightLabs agents. The `client.py` boundary keeps SDK usage isolated from actions, discovery, credentials, and tests.
 
 Create a new isolated skill package:
 
@@ -52,7 +52,7 @@ No skill-owned router is required in this phase because OAuth and browser creden
 
 ## Product Behavior
 
-The user installs the skill on an agent and provides one or more trusted discovery URLs. At runtime, the agent can:
+The user installs the skill on an agent and provides one or more trusted discovery URLs. InnomightLabs multi-agent discovery uses a custom registry URL such as `https://api.innomightlabs.com/a2a/agents`; generic A2A Agent Cards can still be configured directly when the remote endpoint represents one callable agent. At runtime, the agent can:
 
 1. Call `discover_agents` with a simple keyword.
 2. Receive up to 10 matching agents from all configured registries.
@@ -76,7 +76,7 @@ The skill handles:
 - credential lookup
 - secure credential collection links when a selected agent needs credentials
 - pending delegation resume after credentials are saved
-- HTTP+JSON A2A `message:send`
+- A2A JSON-RPC `SendMessage`
 - response trimming and safety bounds
 
 The skill does not decide trust automatically. It returns enough metadata for the reasoning agent to choose, and the install configuration defines which registries are trusted.
@@ -110,14 +110,25 @@ form:
       placeholder: Internal A2A Network
       expose_to_runtime: "true"
       usage_context_label: Registry set
+  - input_type: text
+    name: registry_url
+    label: Registry URL
+    attr:
+      placeholder: https://api.example.com/a2a/agents
+      help_text: Enter the primary registry URL. For InnomightLabs, use /a2a/agents.
+      optional: "true"
+      expose_to_runtime: "true"
+      usage_context_label: Primary discovery URL
   - input_type: text_area
     name: registry_urls
-    label: Agent Discovery URLs
+    label: Additional Discovery URLs
     attr:
-      rows: "6"
-      placeholder: "https://api.example.com/.well-known/agent-card.json\nhttps://api.example.com/a2a/agents"
+      rows: "4"
+      placeholder: "https://agent.example.com/.well-known/agent-card.json\nhttps://partner.example.com/a2a/agents"
+      help_text: Optional. Add one extra registry or single-agent card URL per line.
+      optional: "true"
       expose_to_runtime: "true"
-      usage_context_label: Discovery URLs
+      usage_context_label: Additional discovery URLs
       usage_context_max_chars: "800"
   - input_type: key_value
     name: default_credentials
@@ -144,22 +155,24 @@ actions:
     handler: actions:resume_message
 ```
 
-`registry_urls` is a newline-separated list for v1 because the current form schema does not have a native repeatable list input. `default_credentials` is secret config and is not exposed to runtime prompts or Agent Cards. Per-agent credentials are added later through the skill-owned credential connection page.
+`registry_url` is the primary discovery URL and is the common path for InnomightLabs registries such as `https://api.innomightlabs.com/a2a/agents`. `registry_urls` remains as an optional newline-separated additional list because the current form schema does not have a native repeatable list input. Runtime config merges both fields and deduplicates URLs before discovery. `default_credentials` is secret config and is not exposed to runtime prompts or Agent Cards. Per-agent credentials are added later through the skill-owned credential connection page.
 
 Accepted URL forms:
 
-- Root facilitator card: `https://host/.well-known/agent-card.json`
-- Agent list endpoint: `https://host/a2a/agents`
-- Agent-scoped card: `https://host/a2a/agents/{agent_id}/agent-card`
+- InnomightLabs registry endpoint: `https://host/a2a/agents`
+- Agent-scoped card: `https://host/a2a/agents/{agent_id}/card`
 - Agent-specific well-known card when available: `https://host/.well-known/agents/{agent_id}/agent-card.json`
+- Generic single-agent well-known card: `https://agent-host/.well-known/agent-card.json`
 
 For InnomightLabs-to-InnomightLabs usage, the user will usually provide:
 
 ```text
-https://api.innomightlabs.com/.well-known/agent-card.json
+https://api.innomightlabs.com/a2a/agents
 ```
 
 and one API key per registry host when invocation should be allowed.
+
+Do not infer `https://host/a2a/agents` from `https://host/.well-known/agent-card.json`. A generic well-known Agent Card represents one callable A2A server/agent. If a registry is needed, it must be configured as a registry URL or explicitly returned by a documented registry integration.
 
 ## Models
 
@@ -226,9 +239,9 @@ The `agent_ref` must be opaque to the LLM. Encode a small JSON payload with base
 
 ```json
 {
-  "registry_url": "https://api.example.com/.well-known/agent-card.json",
+  "registry_url": "https://api.example.com/a2a/agents",
   "service_url": "https://api.example.com/a2a/agents/agent_123",
-  "card_url": "https://api.example.com/a2a/agents/agent_123/agent-card",
+  "card_url": "https://api.example.com/a2a/agents/agent_123/card",
   "name": "Research Agent"
 }
 ```
@@ -255,11 +268,11 @@ Flow:
 1. Parse and normalize install config.
 2. Decode cursor into per-registry offsets/cursors.
 3. For each configured registry URL:
-   - If URL ends with `/.well-known/agent-card.json`, fetch facilitator card.
-   - If facilitator metadata contains `agents`, use those summaries directly.
-   - If facilitator metadata contains `agentsUrl`, call it with `limit` and registry cursor.
    - If URL is `/a2a/agents`, call it directly with `query=<keyword>`, `limit`, and cursor.
+   - If the registry returns embedded `agentCard`, use it for keyword matching and candidate metadata.
+   - If the registry returns `agentCardUrl`, retain it for `get_agent_card` and refreshes.
    - If URL is an agent-scoped card URL, fetch it and treat it as a single candidate.
+   - If URL ends with `/.well-known/agent-card.json`, fetch it and treat it as a single generic Agent Card candidate. Do not derive `/a2a/agents` from the well-known URL.
 4. Normalize each candidate into `DiscoveredAgent`.
 5. Apply simple case-insensitive keyword containment matching against:
    - agent `name`
@@ -288,19 +301,19 @@ Inputs:
 Flow:
 
 1. Decode `agent_ref`.
-2. Fetch `card_url` if present; otherwise try `{service_url}/agent-card`.
+2. Fetch `card_url` if present; otherwise use the already-fetched embedded card from discovery. Do not guess `{service_url}/agent-card` for InnomightLabs registry results; the registry must provide `agentCardUrl` and/or embedded `agentCard`.
 3. Validate protocol version is `1.0.0`.
 4. Return sanitized fields:
    - `name`
    - `description`
-   - `url`
+   - selected `supportedInterfaces`
    - `capabilities`
    - `defaultInputModes`
    - `defaultOutputModes`
    - `skills`
    - credential requirement names, not values
 
-Do not return full metadata blindly. Keep allowlisted metadata only, such as `agentsUrl`, if useful.
+Do not return full metadata blindly. Keep allowlisted metadata only when it is part of a documented integration contract.
 
 ## Message Sending
 
@@ -332,24 +345,31 @@ Flow:
    - Current phase: return `ok=false`, `auth_required=true`, and a bounded message asking the user to add an API key to the skill installation.
    - OAuth/credential phase: create a `PendingA2ACall` record and return `pending_call_id` plus `connect_url`.
    - Do not ask the LLM or user to paste credentials into chat.
-5. POST to `{service_url}/message:send`.
-6. Body:
+5. Select a compatible interface from the Agent Card. Prefer `JSONRPC` for current InnomightLabs agents. Use `HTTP+JSON` only when the card advertises it and the standard operation route is expected to exist.
+6. For JSON-RPC, POST to `{service_url}` with method `SendMessage`.
+7. Body:
 
 ```json
 {
-  "message": {
-    "role": "ROLE_USER",
-    "parts": [{"kind": "text", "text": "..."}],
-    "contextId": "...",
-    "taskId": "..."
-  },
-  "configuration": {
-    "acceptedOutputModes": ["text/plain"]
+  "jsonrpc": "2.0",
+  "id": "request-id",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "role": "ROLE_USER",
+      "parts": [{"kind": "text", "text": "..."}],
+      "contextId": "...",
+      "taskId": "..."
+    },
+    "configuration": {
+      "acceptedOutputModes": ["text/plain"]
+    }
   }
 }
 ```
 
-7. Return compact structured data:
+8. For HTTP+JSON, POST the `params` object to `{service_url}/message:send`.
+9. Return compact structured data:
 
 ```json
 {
@@ -363,7 +383,7 @@ Flow:
 }
 ```
 
-For v1, use non-streaming `message:send`. Add `send_message_stream` only after the skill runtime has a clear UX for streamed nested agent output.
+For v1, use non-streaming `SendMessage` over JSON-RPC for InnomightLabs agents. Add streaming only after the skill runtime has a clear UX for streamed nested agent output.
 
 ## Credential Challenge And Resume Flow
 
@@ -477,7 +497,8 @@ Config shape after validation:
 ```json
 {
   "registry_set_name": "Internal A2A Network",
-  "registry_urls": "https://api.innomightlabs.com/.well-known/agent-card.json",
+  "registry_url": "https://api.innomightlabs.com/a2a/agents",
+  "registry_urls": "https://partner.example.com/a2a/agents",
   "default_credentials": {
     "https://api.innomightlabs.com": "pk_live_..."
   }
@@ -618,11 +639,14 @@ Network failures should not abort discovery across all registries. `discover_age
    - no-auth and bearer/API-key credential resolution
    - structured OAuth-required response when OAuth is required but unavailable
    - Agent Card GET
-   - A2A `message:send` POST
+   - A2A JSON-RPC `SendMessage` POST
+   - HTTP+JSON `message:send` POST only for cards that explicitly advertise HTTP+JSON
 4. Add `discovery.py`:
    - registry URL classification
-   - facilitator metadata handling
    - `/a2a/agents` pagination
+   - registry `agentCardUrl` handling
+   - registry embedded `agentCard` handling
+   - generic single-card handling for well-known Agent Cards
    - simple keyword containment filtering
    - opaque `agent_ref` encoding/decoding
 5. Add `credentials.py`:
@@ -645,18 +669,19 @@ Network failures should not abort discovery across all registries. `discover_age
 9. Add tests:
    - manifest loads.
    - install config parses newline registry URLs and encrypted default credential map.
-   - discovery from facilitator `metadata.agents`.
    - discovery from `/a2a/agents` paginated endpoint.
+   - discovery uses embedded `agentCard`, stores `agentCardUrl`, and does not guess card paths.
+   - well-known Agent Card input is treated as one candidate and does not infer `/a2a/agents`.
    - keyword matching checks agent name, description, skills, and tags.
    - pagination returns at most 10 results and provides `next_cursor` when more matches exist.
    - disabled or malformed cards are ignored with registry errors.
-   - `send_message` posts A2A `1.0.0` shape with `Authorization: Bearer`.
+   - `send_message` posts A2A `1.0.0` JSON-RPC shape with `Authorization: Bearer`.
    - `send_message` returns `auth_required` when credentials are missing.
    - `send_message` returns `unsupported_auth=true` for OAuth/non-API-key auth in this phase.
    - credentials are not returned in action output or logs.
    - production URL validation rejects localhost/private addresses.
 10. Add a developer-manual notebook section after implementation showing:
-   - install skill with `http://localhost:1455/.well-known/agent-card.json`
+   - install skill with `http://localhost:1455/a2a/agents`
    - discover agents
    - get selected card
    - send message with a stable `context_id`
@@ -693,7 +718,7 @@ uv run pytest -v
 - Allow arbitrary external registry URLs in v1.
 - Support multiple configured registry URLs in one install.
 - Allow multiple installed skill instances when the user wants separate registry sets.
-- Use non-streaming `message:send` first.
+- Use non-streaming JSON-RPC `SendMessage` first.
 - Use installed skill encrypted secrets for registry/agent API keys.
 - Support per-registry and origin-level bearer credentials in the current phase.
 - Defer per-agent credential records, credential connect URL, and pending-call resume flow to the OAuth/credential phase.

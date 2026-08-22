@@ -42,8 +42,10 @@ class A2ADiscoveryClient:
         )
 
     async def get_card(self, agent_ref: AgentRef) -> A2AAgentCardView:
-        card_url = agent_ref.card_url or _agent_card_url(agent_ref.service_url)
-        payload = await self.http_client.get_json(card_url)
+        if not agent_ref.card_url:
+            raise ValueError("Discovered A2A agent is missing an Agent Card URL")
+        card_url = agent_ref.card_url
+        payload = await self.http_client.get_agent_card(card_url)
         return A2AAgentCardView.model_validate(payload)
 
     async def _load_candidates(self, config: A2ARegistryConfig) -> list[RegistryAgentCandidate]:
@@ -59,27 +61,7 @@ class A2ADiscoveryClient:
         return await self._from_agent_card(registry_url, payload)
 
     async def _from_agent_card(self, registry_url: str, payload: dict[str, Any]) -> list[RegistryAgentCandidate]:
-        card = A2AAgentCardView.model_validate(payload)
-        agents = card.metadata.get("agents") if isinstance(card.metadata, dict) else None
-        if isinstance(agents, list):
-            return await self._from_agent_summaries(registry_url, agents)
-
-        agents_url = card.metadata.get("agentsUrl") if isinstance(card.metadata, dict) else None
-        if isinstance(agents_url, str) and agents_url.strip():
-            return await self._from_agent_list(
-                registry_url,
-                await self.http_client.get_json(_list_url(agents_url.strip())),
-            )
-
-        inferred_agents_url = _inferred_agent_list_url(registry_url)
-        if inferred_agents_url:
-            try:
-                return await self._from_agent_list(
-                    registry_url,
-                    await self.http_client.get_json(_list_url(inferred_agents_url)),
-                )
-            except Exception:
-                pass
+        card = A2AAgentCardView.model_validate(self.http_client.normalize_agent_card(payload))
 
         service_url = card.service_url(_preferred_protocols())
         return [
@@ -108,22 +90,37 @@ class A2ADiscoveryClient:
         for summary in summaries:
             if not isinstance(summary, dict):
                 continue
-            candidate = _candidate_from_summary(registry_url, summary)
-            if not candidate.service_url:
+            candidate = _candidate_from_summary(
+                registry_url,
+                summary,
+                normalize_agent_card=self.http_client.normalize_agent_card,
+            )
+            if not candidate.service_url and not candidate.card and not candidate.card_url:
                 continue
             enriched = await self._enrich_candidate(candidate)
             candidates.append(enriched)
         return candidates
 
     async def _enrich_candidate(self, candidate: RegistryAgentCandidate) -> RegistryAgentCandidate:
-        card_url = candidate.card_url or _agent_card_url(candidate.service_url)
+        if candidate.card:
+            card = candidate.card
+            return candidate.model_copy(
+                update={
+                    "name": card.name or candidate.name,
+                    "description": card.description or candidate.description,
+                    "skills": card.skills,
+                    "service_url": card.service_url(_preferred_protocols()) or candidate.service_url,
+                    "protocol_binding": card.protocol_binding(_preferred_protocols()),
+                }
+            )
+        if not candidate.card_url:
+            return candidate
         try:
-            card = A2AAgentCardView.model_validate(await self.http_client.get_json(card_url))
+            card = A2AAgentCardView.model_validate(await self.http_client.get_agent_card(candidate.card_url))
         except Exception:
             return candidate
         return candidate.model_copy(
             update={
-                "card_url": card_url,
                 "name": card.name or candidate.name,
                 "description": card.description or candidate.description,
                 "skills": card.skills,
@@ -169,9 +166,30 @@ class A2ADiscoveryClient:
         )
 
 
-def _candidate_from_summary(registry_url: str, summary: dict[str, Any]) -> RegistryAgentCandidate:
-    service_url = str(summary.get("service_url") or summary.get("url") or "").strip()
-    card_url = str(summary.get("agent_card_url") or summary.get("card_url") or "").strip() or None
+def _candidate_from_summary(
+    registry_url: str,
+    summary: dict[str, Any],
+    *,
+    normalize_agent_card,
+) -> RegistryAgentCandidate:
+    raw_card = summary.get("agentCard") or summary.get("agent_card")
+    card = None
+    if isinstance(raw_card, dict):
+        card = A2AAgentCardView.model_validate(normalize_agent_card(raw_card))
+    service_url = str(
+        summary.get("serviceUrl")
+        or summary.get("service_url")
+        or summary.get("url")
+        or (card.service_url(_preferred_protocols()) if card else "")
+        or ""
+    ).strip()
+    card_url = str(
+        summary.get("agentCardUrl")
+        or summary.get("agent_card_url")
+        or summary.get("cardUrl")
+        or summary.get("card_url")
+        or ""
+    ).strip() or None
     return RegistryAgentCandidate(
         registry_url=registry_url,
         service_url=service_url,
@@ -183,18 +201,8 @@ def _candidate_from_summary(registry_url: str, summary: dict[str, Any]) -> Regis
             for skill in summary.get("skills", [])
             if isinstance(skill, dict)
         ],
+        card=card,
     )
-
-
-def _agent_card_url(service_url: str) -> str:
-    return f"{service_url.rstrip('/')}/agent-card"
-
-
-def _inferred_agent_list_url(registry_url: str) -> str:
-    parsed = urlparse(registry_url)
-    if parsed.path.rstrip("/") in {"/.well-known/agent-card.json", "/.well-known/agent.json"}:
-        return f"{parsed.scheme}://{parsed.netloc}/a2a/agents"
-    return ""
 
 
 def _looks_like_agent_list(payload: dict[str, Any]) -> bool:

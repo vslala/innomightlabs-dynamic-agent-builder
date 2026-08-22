@@ -6,6 +6,8 @@ from src.agents.repository import AgentRepository
 from src.apikeys.models import AgentApiKey
 from src.apikeys.repository import ApiKeyRepository
 
+BEARER_CHALLENGE = {"WWW-Authenticate": "Bearer"}
+
 
 def get_api_key_repository() -> ApiKeyRepository:
     return ApiKeyRepository()
@@ -35,11 +37,19 @@ def get_a2a_client(
         credential = request.headers.get("X-API-Key")
 
     if not credential:
-        raise HTTPException(status_code=401, detail="Missing A2A credential")
+        raise HTTPException(
+            status_code=401,
+            detail="Missing A2A credential",
+            headers=BEARER_CHALLENGE,
+        )
 
     api_key = api_key_repo.find_by_public_key(credential)
     if not api_key or not api_key.is_active or api_key.agent_id != agent_id:
-        raise HTTPException(status_code=401, detail="Invalid A2A credential")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid A2A credential",
+            headers=BEARER_CHALLENGE,
+        )
 
     agent = agent_repo.find_agent_by_id(agent_id, api_key.created_by)
     if not agent or not agent.is_agent2agent_enabled:

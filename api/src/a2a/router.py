@@ -27,18 +27,10 @@ JSON_RPC_VERSION = "2.0"
 
 
 @router.get(
-    "/.well-known/agent-card.json",
-    response_model=A2AAgentCard,
+    "/a2a/agents",
+    response_model=A2AAgentListResponse,
     response_model_exclude_none=True,
 )
-async def get_facilitator_agent_card(
-    service: Annotated[A2ADiscoveryService, Depends(get_a2a_discovery_service)],
-) -> A2AAgentCard:
-    """Return the public A2A facilitator Agent Card."""
-    return service.facilitator_card()
-
-
-@router.get("/a2a/agents", response_model=A2AAgentListResponse)
 async def list_a2a_agents(
     service: Annotated[A2ADiscoveryService, Depends(get_a2a_discovery_service)],
     limit: int = Query(20, ge=1, le=100),
@@ -49,7 +41,7 @@ async def list_a2a_agents(
 
 
 @router.get(
-    "/a2a/agents/{agent_id}/agent-card",
+    "/a2a/agents/{agent_id}/card",
     response_model=A2AAgentCard,
     response_model_exclude_none=True,
 )
@@ -80,25 +72,22 @@ async def handle_a2a_jsonrpc(
         return _jsonrpc_error(request_id, -32600, "Invalid JSON-RPC version")
 
     try:
-        if method == "message/send":
+        if method == "SendMessage":
             request = A2AMessageSendRequest.model_validate(params)
             response = await service.send_message(agent_id=agent_id, request=request, api_key=api_key)
-            return _jsonrpc_result(request_id, response.model_dump(mode="json", by_alias=True, exclude_none=True))
-        if method == "tasks/get":
+            return _jsonrpc_result(request_id, {"task": _sdk_task(response.task)})
+        if method == "GetTask":
             task_id = str(params.get("id") or params.get("taskId") or "").strip()
             if not task_id:
-                return _jsonrpc_error(request_id, -32602, "tasks/get requires id")
+                return _jsonrpc_error(request_id, -32602, "GetTask requires id")
             task = service.get_task(agent_id=agent_id, task_id=task_id, api_key=api_key)
             if not task:
                 return _jsonrpc_error(request_id, -32004, "Task not found")
-            return _jsonrpc_result(
-                request_id,
-                A2ATaskResponse(task=task).model_dump(mode="json", by_alias=True, exclude_none=True),
-            )
-        if method == "tasks/list":
-            response = A2ATaskListResponse(items=service.list_tasks(agent_id=agent_id, api_key=api_key))
-            return _jsonrpc_result(request_id, response.model_dump(mode="json", by_alias=True, exclude_none=True))
-        if method in {"tasks/cancel", "tasks/subscribe"}:
+            return _jsonrpc_result(request_id, _sdk_task(task))
+        if method == "ListTasks":
+            tasks = service.list_tasks(agent_id=agent_id, api_key=api_key)
+            return _jsonrpc_result(request_id, {"tasks": [_sdk_task(task) for task in tasks]})
+        if method in {"CancelTask", "SubscribeToTask"}:
             return _jsonrpc_error(request_id, -32001, f"{method} is not supported yet")
     except ValueError as exc:
         return _jsonrpc_error(request_id, -32602, str(exc))
@@ -219,3 +208,30 @@ def _jsonrpc_error(request_id: Any, code: int, message: str) -> JSONResponse:
         },
         media_type="application/json",
     )
+
+
+def _sdk_task(task) -> dict[str, Any]:
+    payload = {
+        "id": task.task_id,
+        "contextId": task.context_id,
+        "status": {
+            "state": task.status.state.value,
+        },
+        "history": [_sdk_message(message) for message in task.history],
+    }
+    if task.status.message:
+        payload["status"]["message"] = _sdk_message(task.status.message)
+    return payload
+
+
+def _sdk_message(message) -> dict[str, Any]:
+    payload = {
+        "messageId": message.message_id,
+        "role": message.role.value,
+        "parts": [{"text": part.text} for part in message.parts],
+    }
+    if message.task_id:
+        payload["taskId"] = message.task_id
+    if message.context_id:
+        payload["contextId"] = message.context_id
+    return payload

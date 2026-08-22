@@ -226,7 +226,7 @@ class TestAgentsRouter:
         assert data["agent_id"] == agent_id
         assert data["enabled"] is False
         assert data["has_active_api_key"] is False
-        assert data["agent_card_url"].endswith("/.well-known/agent-card.json")
+        assert data["agent_card_url"].endswith(f"/a2a/agents/{agent_id}/card")
         assert data["service_url"].endswith(f"/a2a/agents/{agent_id}")
 
     def test_enable_agent2agent_sharing_requires_active_api_key(

@@ -27,20 +27,26 @@ class FakeA2AHttpClient:
             raise AssertionError(f"Unexpected GET {url}")
         return payload
 
+    async def get_agent_card(self, url: str, *, headers: dict[str, str] | None = None) -> dict[str, Any]:
+        return await self.get_json(url, headers=headers)
+
+    def normalize_agent_card(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return payload
+
     async def send_message(
         self,
         *,
-        service_url: str,
+        agent_card: dict[str, Any],
         request,
         headers: dict[str, str],
-        protocol_binding: str | None = None,
+        preferred_protocols: list[str] | None = None,
     ) -> dict[str, Any]:
         self.sent.append(
             {
-                "service_url": service_url,
+                "agent_card": agent_card,
                 "request": request,
                 "headers": headers,
-                "protocol_binding": protocol_binding,
+                "preferred_protocols": preferred_protocols,
             }
         )
         return {
@@ -61,6 +67,9 @@ def test_agent2agent_client_manifest_loads():
 
     assert manifest is not None
     assert manifest.manifest.repeatable is True
+    field_names = [field.name for field in manifest.manifest.form]
+    assert "registry_url" in field_names
+    assert "registry_urls" in field_names
     assert [action.name for action in manifest.manifest.actions] == [
         "discover_agents",
         "get_agent_card",
@@ -70,42 +79,57 @@ def test_agent2agent_client_manifest_loads():
     assert "registry_set_name" in manifest.manifest.repeatable_identity_fields
 
 
+def test_registry_config_merges_primary_and_additional_urls():
+    config = A2ARegistryConfig.from_runtime_config(
+        {
+            "registry_set_name": "Test",
+            "registry_url": "https://primary.test/a2a/agents",
+            "registry_urls": "https://primary.test/a2a/agents\nhttps://secondary.test/a2a/agents",
+        }
+    )
+
+    assert config.registry_urls == [
+        "https://primary.test/a2a/agents",
+        "https://secondary.test/a2a/agents",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_discovery_searches_agent_card_skills_and_returns_opaque_refs():
     http_client = FakeA2AHttpClient(
         {
-            "https://registry.test/.well-known/agent-card.json": {
-                "protocolVersion": "1.0.0",
-                "name": "Registry",
-                "description": "Registry",
-                "url": "https://registry.test/a2a",
-                "version": "1.0.0",
-                "securitySchemes": {},
-                "security": [],
-                "skills": [],
-                "metadata": {
-                    "agents": [
-                        {
-                            "name": "Mail Agent",
-                            "description": "Handles communication",
-                            "service_url": "https://registry.test/a2a/agents/mail",
-                        },
-                        {
-                            "name": "Research Agent",
-                            "description": "Searches documents",
-                            "service_url": "https://registry.test/a2a/agents/research",
-                        },
-                    ]
-                },
+            "https://registry.test/a2a/agents?limit=100": {
+                "items": [
+                    {
+                        "id": "mail",
+                        "name": "Mail Agent",
+                        "description": "Handles communication",
+                        "agentCardUrl": "https://registry.test/a2a/agents/mail/card",
+                    },
+                    {
+                        "id": "research",
+                        "name": "Research Agent",
+                        "description": "Searches documents",
+                        "agentCardUrl": "https://registry.test/a2a/agents/research/card",
+                    },
+                ]
             },
-            "https://registry.test/a2a/agents/mail/agent-card": {
-                "protocolVersion": "1.0.0",
+            "https://registry.test/a2a/agents/mail/card": {
                 "name": "Mail Agent",
                 "description": "Handles communication",
-                "url": "https://registry.test/a2a/agents/mail",
+                "supportedInterfaces": [
+                    {
+                        "url": "https://registry.test/a2a/agents/mail",
+                        "protocolBinding": "JSONRPC",
+                        "protocolVersion": "1.0",
+                    }
+                ],
                 "version": "1.0.0",
+                "capabilities": {},
                 "securitySchemes": {},
-                "security": [],
+                "securityRequirements": [],
+                "defaultInputModes": ["text/plain"],
+                "defaultOutputModes": ["text/plain"],
                 "skills": [
                     {
                         "id": "gmail",
@@ -114,25 +138,31 @@ async def test_discovery_searches_agent_card_skills_and_returns_opaque_refs():
                         "tags": ["email"],
                     }
                 ],
-                "metadata": {},
             },
-            "https://registry.test/a2a/agents/research/agent-card": {
-                "protocolVersion": "1.0.0",
+            "https://registry.test/a2a/agents/research/card": {
                 "name": "Research Agent",
                 "description": "Searches documents",
-                "url": "https://registry.test/a2a/agents/research",
+                "supportedInterfaces": [
+                    {
+                        "url": "https://registry.test/a2a/agents/research",
+                        "protocolBinding": "JSONRPC",
+                        "protocolVersion": "1.0",
+                    }
+                ],
                 "version": "1.0.0",
+                "capabilities": {},
                 "securitySchemes": {},
-                "security": [],
+                "securityRequirements": [],
+                "defaultInputModes": ["text/plain"],
+                "defaultOutputModes": ["text/plain"],
                 "skills": [],
-                "metadata": {},
             },
         }
     )
     config = A2ARegistryConfig.from_runtime_config(
         {
             "registry_set_name": "Test",
-            "registry_urls": "https://registry.test/.well-known/agent-card.json",
+            "registry_url": "https://registry.test/a2a/agents",
         }
     )
 
@@ -146,6 +176,7 @@ async def test_discovery_searches_agent_card_skills_and_returns_opaque_refs():
     assert result.items[0].skills[0].id == "gmail"
     ref = decode_agent_ref(result.items[0].agent_ref)
     assert ref.service_url == "https://registry.test/a2a/agents/mail"
+    assert ref.card_url == "https://registry.test/a2a/agents/mail/card"
 
 
 @pytest.mark.asyncio
@@ -154,14 +185,15 @@ async def test_discovery_paginates_keyword_matches():
         {
             "name": f"Email Agent {index}",
             "description": "email",
-            "service_url": f"https://registry.test/a2a/agents/{index}",
+            "serviceUrl": f"https://registry.test/a2a/agents/{index}",
+            "agentCardUrl": f"https://registry.test/a2a/agents/{index}/card",
         }
         for index in range(12)
     ]
     payloads = {
         "https://registry.test/a2a/agents?limit=100": {"items": items},
         **{
-            f"https://registry.test/a2a/agents/{index}/agent-card": {
+            f"https://registry.test/a2a/agents/{index}/card": {
                 "protocolVersion": "1.0.0",
                 "name": f"Email Agent {index}",
                 "description": "email",
@@ -198,14 +230,15 @@ async def test_discovery_empty_keyword_returns_first_page_of_all_agents():
         {
             "name": f"Agent {index}",
             "description": "available",
-            "service_url": f"https://registry.test/a2a/agents/{index}",
+            "serviceUrl": f"https://registry.test/a2a/agents/{index}",
+            "agentCardUrl": f"https://registry.test/a2a/agents/{index}/card",
         }
         for index in range(12)
     ]
     payloads = {
         "https://registry.test/a2a/agents?limit=100": {"items": items},
         **{
-            f"https://registry.test/a2a/agents/{index}/agent-card": {
+            f"https://registry.test/a2a/agents/{index}/card": {
                 "protocolVersion": "1.0.0",
                 "name": f"Agent {index}",
                 "description": "available",
@@ -234,36 +267,11 @@ async def test_discovery_empty_keyword_returns_first_page_of_all_agents():
 
 
 @pytest.mark.asyncio
-async def test_discovery_expands_current_facilitator_card_without_legacy_metadata():
+async def test_discovery_treats_well_known_card_as_single_agent_without_registry_inference():
     http_client = FakeA2AHttpClient(
         {
             "https://registry.test/.well-known/agent-card.json": {
-                "name": "Registry",
-                "description": "Registry",
-                "supportedInterfaces": [
-                    {
-                        "url": "https://registry.test/a2a",
-                        "protocolBinding": "JSONRPC",
-                        "protocolVersion": "1.0",
-                    }
-                ],
-                "version": "1.0.0",
-                "securitySchemes": {},
-                "securityRequirements": [],
-                "skills": [{"id": "discover_public_agents", "name": "Discover Public Agents"}],
-            },
-            "https://registry.test/a2a/agents?limit=100": {
-                "items": [
-                    {
-                        "name": "Local Mail Agent",
-                        "description": "Handles mail requests",
-                        "service_url": "https://registry.test/a2a/agents/mail",
-                        "agent_card_url": "https://registry.test/a2a/agents/mail/agent-card",
-                    }
-                ]
-            },
-            "https://registry.test/a2a/agents/mail/agent-card": {
-                "name": "Local Mail Agent",
+                "name": "Standalone Mail Agent",
                 "description": "Handles mail requests",
                 "supportedInterfaces": [
                     {
@@ -273,8 +281,11 @@ async def test_discovery_expands_current_facilitator_card_without_legacy_metadat
                     }
                 ],
                 "version": "1.0.0",
+                "capabilities": {},
                 "securitySchemes": {},
                 "securityRequirements": [],
+                "defaultInputModes": ["text/plain"],
+                "defaultOutputModes": ["text/plain"],
                 "skills": [{"id": "mail", "name": "Mail", "description": "Email support"}],
             },
         }
@@ -292,9 +303,10 @@ async def test_discovery_expands_current_facilitator_card_without_legacy_metadat
     )
 
     assert len(result.items) == 1
-    assert result.items[0].name == "Local Mail Agent"
+    assert result.items[0].name == "Standalone Mail Agent"
     ref = decode_agent_ref(result.items[0].agent_ref)
     assert ref.protocol_binding == "JSONRPC"
+    assert ref.card_url == "https://registry.test/.well-known/agent-card.json"
 
 
 def test_credential_resolver_uses_origin_default_api_key():
@@ -322,6 +334,29 @@ def test_credential_resolver_uses_origin_default_api_key():
 
     assert credential.result == A2AAuthResult.READY
     assert credential.headers == {"Authorization": "Bearer pk_live_test"}
+
+
+def test_credential_resolver_accepts_bearer_http_auth_scheme_without_credential():
+    credential = A2ACredentialResolver().resolve(
+        card={
+            "securitySchemes": {
+                "agentApiKey": {
+                    "httpAuthSecurityScheme": {
+                        "scheme": "Bearer",
+                        "bearerFormat": "Opaque API key",
+                    }
+                }
+            },
+            "securityRequirements": [{"schemes": {"agentApiKey": {"list": []}}}],
+        },
+        target_url="https://registry.test/a2a/agents/mail",
+        config=A2ARegistryConfig.from_runtime_config(
+            {"registry_set_name": "Test", "registry_urls": "https://registry.test/.well-known/agent-card.json"}
+        ),
+    )
+
+    assert credential.result == A2AAuthResult.REQUIRED
+    assert "API key" in (credential.message or "")
 
 
 def test_credential_resolver_reports_unsupported_non_api_key_auth():
@@ -358,13 +393,13 @@ async def test_send_message_uses_install_time_api_key(monkeypatch):
         AgentRef(
             registry_url="https://registry.test/a2a/agents",
             service_url="https://registry.test/a2a/agents/mail",
-            card_url="https://registry.test/a2a/agents/mail/agent-card",
+            card_url="https://registry.test/a2a/agents/mail/card",
             name="Mail Agent",
         )
     )
     fake_http = FakeA2AHttpClient(
         {
-            "https://registry.test/a2a/agents/mail/agent-card": {
+            "https://registry.test/a2a/agents/mail/card": {
                 "name": "Mail Agent",
                 "description": "mail",
                 "supportedInterfaces": [
@@ -395,7 +430,7 @@ async def test_send_message_uses_install_time_api_key(monkeypatch):
     )
 
     monkeypatch.setattr("src.skills.agent2agent_client.actions.Agent2AgentPolicy", FakePolicy)
-    monkeypatch.setattr(A2AHttpClient, "get_json", fake_http.get_json)
+    monkeypatch.setattr(A2AHttpClient, "get_agent_card", fake_http.get_agent_card)
     monkeypatch.setattr(A2AHttpClient, "send_message", fake_http.send_message)
 
     result = await send_message(
@@ -411,7 +446,7 @@ async def test_send_message_uses_install_time_api_key(monkeypatch):
     assert result["ok"] is True
     assert result["response_text"] == "Remote agent response"
     assert fake_http.sent[0]["headers"] == {"Authorization": "Bearer pk_live_test"}
-    assert fake_http.sent[0]["protocol_binding"] == "JSONRPC"
+    assert fake_http.sent[0]["preferred_protocols"][0] == "JSONRPC"
 
 
 @pytest.mark.asyncio
@@ -424,13 +459,13 @@ async def test_send_message_missing_api_key_returns_credential_setup_link(monkey
         AgentRef(
             registry_url="https://registry.test/a2a/agents",
             service_url="https://registry.test/a2a/agents/notion",
-            card_url="https://registry.test/a2a/agents/notion/agent-card",
+            card_url="https://registry.test/a2a/agents/notion/card",
             name="Notion Manager",
         )
     )
     fake_http = FakeA2AHttpClient(
         {
-            "https://registry.test/a2a/agents/notion/agent-card": {
+            "https://registry.test/a2a/agents/notion/card": {
                 "name": "Notion Manager",
                 "description": "notion",
                 "supportedInterfaces": [
@@ -457,7 +492,7 @@ async def test_send_message_missing_api_key_returns_credential_setup_link(monkey
 
     monkeypatch.setattr("src.skills.agent2agent_client.actions.Agent2AgentPolicy", FakePolicy)
     monkeypatch.setattr("src.skills.agent2agent_client.actions.settings.frontend_url", "http://localhost:5173")
-    monkeypatch.setattr(A2AHttpClient, "get_json", fake_http.get_json)
+    monkeypatch.setattr(A2AHttpClient, "get_agent_card", fake_http.get_agent_card)
     monkeypatch.setattr(A2AHttpClient, "send_message", fake_http.send_message)
 
     result = await send_message(
@@ -487,13 +522,30 @@ async def test_a2a_client_returns_structured_timeout(monkeypatch):
     async def raise_timeout(*args, **kwargs):
         raise httpx.ReadTimeout("timed out")
 
-    monkeypatch.setattr(httpx.AsyncClient, "post", raise_timeout)
+    monkeypatch.setattr(httpx.AsyncClient, "send", raise_timeout)
 
     result = await A2AHttpClient().send_message(
-        service_url="https://registry.test/a2a/agents/slow",
+        agent_card={
+            "name": "Slow Agent",
+            "description": "slow",
+            "supportedInterfaces": [
+                {
+                    "url": "https://registry.test/a2a/agents/slow",
+                    "protocolBinding": "JSONRPC",
+                    "protocolVersion": "1.0",
+                }
+            ],
+            "version": "1.0.0",
+            "capabilities": {},
+            "securitySchemes": {},
+            "securityRequirements": [],
+            "defaultInputModes": ["text/plain"],
+            "defaultOutputModes": ["text/plain"],
+            "skills": [],
+        },
         request=SendMessageRequest(agent_ref="unused", message="hello", timeout_seconds=7),
         headers={},
-        protocol_binding="JSONRPC",
+        preferred_protocols=["JSONRPC"],
     )
 
     assert result == {
