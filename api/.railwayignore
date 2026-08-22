@@ -7,6 +7,6 @@ dynamodb-data/
 tests/
 docs/
 scripts/
-tools/
+/tools/
 *.pyc
 *.pyo
