@@ -25,7 +25,7 @@
 .orb1 {
   width: 600px;
   height: 600px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-mid) 100%);
   top: -200px;
   right: -100px;
   animation: float 8s ease-in-out infinite;
@@ -34,7 +34,7 @@
 .orb2 {
   width: 400px;
   height: 400px;
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  background: linear-gradient(135deg, var(--gradient-end) 0%, #de350b 100%);
   bottom: -100px;
   left: -100px;
   animation: float 10s ease-in-out infinite;
@@ -44,7 +44,7 @@
 .orb3 {
   width: 300px;
   height: 300px;
-  background: linear-gradient(135deg, #00d4ff 0%, #667eea 100%);
+  background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--gradient-start) 100%);
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -132,12 +132,12 @@
   font-size: 1rem;
   border-radius: 12px;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 20px rgba(var(--gradient-start-rgb), 0.4);
 }
 
 .primaryBtn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 30px rgba(102, 126, 234, 0.5);
+  box-shadow: 0 6px 30px rgba(var(--gradient-start-rgb), 0.5);
 }
 
 .secondaryBtn {

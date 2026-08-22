@@ -9,25 +9,29 @@ import {
   Clock,
 } from "lucide-react";
 
-const statusBadgeVariants = cva("inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded font-medium", {
+const statusBadgeVariants = cva(
+  "inline-flex min-h-[1.625rem] items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-transparent px-3 py-1 text-sm font-semibold leading-[1.15] tracking-normal",
+  {
   variants: {
     status: {
-      pending: "bg-yellow-500/10 text-yellow-400",
-      in_progress: "bg-blue-500/10 text-blue-400",
-      completed: "bg-green-500/10 text-green-400",
-      failed: "bg-red-500/10 text-red-400",
-      cancelled: "bg-gray-500/10 text-gray-400",
-      active: "bg-green-500/10 text-green-400",
-      inactive: "bg-gray-500/10 text-gray-400",
-      success: "bg-green-500/10 text-green-400",
-      error: "bg-red-500/10 text-red-400",
-      warning: "bg-yellow-500/10 text-yellow-400",
-      info: "bg-blue-500/10 text-blue-400",
+      pending: "bg-[var(--warning-bg)] text-[var(--warning)]",
+      draft: "bg-[var(--warning-bg)] text-[var(--warning)]",
+      in_progress: "bg-[var(--accent-blue-bg)] text-[var(--link-color)]",
+      completed: "bg-[var(--success-bg)] text-[var(--success)]",
+      failed: "bg-[var(--danger-bg)] text-[var(--danger)]",
+      cancelled: "bg-[var(--surface-subtle)] text-[var(--text-muted)]",
+      active: "bg-[var(--success-bg)] text-[var(--success)]",
+      inactive: "bg-[var(--surface-subtle)] text-[var(--text-muted)]",
+      success: "bg-[var(--success-bg)] text-[var(--success)]",
+      error: "bg-[var(--danger-bg)] text-[var(--danger)]",
+      warning: "bg-[var(--warning-bg)] text-[var(--warning)]",
+      info: "bg-[var(--accent-blue-bg)] text-[var(--link-color)]",
+      no_status: "bg-[var(--surface-subtle)] text-[var(--text-muted)]",
     },
     size: {
-      sm: "text-xs px-1.5 py-0.5",
-      default: "text-xs px-2 py-1",
-      lg: "text-sm px-2.5 py-1.5",
+      sm: "min-h-5 px-2.5 py-0.5 text-xs",
+      default: "min-h-[1.625rem] px-3 py-1 text-sm",
+      lg: "min-h-7 px-3.5 py-1.5 text-base",
     },
   },
   defaultVariants: {
@@ -38,6 +42,7 @@ const statusBadgeVariants = cva("inline-flex items-center gap-1.5 text-xs px-2 p
 
 type StatusType =
   | "pending"
+  | "draft"
   | "in_progress"
   | "completed"
   | "failed"
@@ -47,7 +52,8 @@ type StatusType =
   | "success"
   | "error"
   | "warning"
-  | "info";
+  | "info"
+  | "no_status";
 
 export interface StatusBadgeProps
   extends React.HTMLAttributes<HTMLSpanElement>,
@@ -59,6 +65,7 @@ export interface StatusBadgeProps
 
 const statusIcons: Record<StatusType, React.ReactNode> = {
   pending: <Clock className="h-3 w-3" />,
+  draft: <Clock className="h-3 w-3" />,
   in_progress: <Loader2 className="h-3 w-3 animate-spin" />,
   completed: <CheckCircle className="h-3 w-3" />,
   failed: <AlertCircle className="h-3 w-3" />,
@@ -69,10 +76,12 @@ const statusIcons: Record<StatusType, React.ReactNode> = {
   error: <AlertCircle className="h-3 w-3" />,
   warning: <AlertCircle className="h-3 w-3" />,
   info: <AlertCircle className="h-3 w-3" />,
+  no_status: <XCircle className="h-3 w-3" />,
 };
 
 const statusLabels: Record<StatusType, string> = {
   pending: "Pending",
+  draft: "Draft",
   in_progress: "In Progress",
   completed: "Completed",
   failed: "Failed",
@@ -83,6 +92,7 @@ const statusLabels: Record<StatusType, string> = {
   error: "Error",
   warning: "Warning",
   info: "Info",
+  no_status: "No Status",
 };
 
 const StatusBadge = React.forwardRef<HTMLSpanElement, StatusBadgeProps>(
@@ -110,17 +120,18 @@ function StatusIcon({ status, className }: StatusIconProps) {
   const iconClass = cn(
     "h-4 w-4",
     {
-      "text-yellow-400": status === "pending" || status === "warning",
-      "text-blue-400": status === "in_progress" || status === "info",
-      "text-green-400": status === "completed" || status === "active" || status === "success",
-      "text-red-400": status === "failed" || status === "error",
-      "text-gray-400": status === "cancelled" || status === "inactive",
+      "text-[var(--warning)]": status === "pending" || status === "draft" || status === "warning",
+      "text-[var(--link-color)]": status === "in_progress" || status === "info",
+      "text-[var(--success)]": status === "completed" || status === "active" || status === "success",
+      "text-[var(--danger)]": status === "failed" || status === "error",
+      "text-[var(--text-muted)]": status === "cancelled" || status === "inactive" || status === "no_status",
     },
     className
   );
 
   switch (status) {
     case "pending":
+    case "draft":
     case "warning":
       return <Clock className={iconClass} />;
     case "in_progress":
@@ -135,6 +146,7 @@ function StatusIcon({ status, className }: StatusIconProps) {
       return <AlertCircle className={iconClass} />;
     case "cancelled":
     case "inactive":
+    case "no_status":
       return <XCircle className={iconClass} />;
   }
 }

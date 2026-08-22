@@ -1313,7 +1313,10 @@ function AutomationBuilderContent() {
           <h1>{automation.title}</h1>
         </div>
         <div className="automation-builder__toolbar-actions">
-          <StatusBadge status={automation.status === "active" ? "active" : "inactive"} label={automation.status} />
+          <StatusBadge
+            status={automation.status === "active" ? "active" : automation.status === "draft" ? "draft" : "inactive"}
+            label={automation.status}
+          />
           <Button variant={panelMode === "test" ? "default" : "outline"} size="sm" onClick={() => setPanelMode("test")}>
             <Play className="h-4 w-4" />
             Test Run

@@ -821,7 +821,7 @@ function ConnectorSideNav({
                 width: "100%",
                 transition: "all 0.2s",
                 background: isActive
-                  ? "linear-gradient(90deg, rgba(12, 102, 228, 0.14), rgba(12, 102, 228, 0.06))"
+                  ? "var(--nav-active-bg)"
                   : undefined,
               }}
             >

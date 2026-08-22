@@ -95,7 +95,7 @@ export function Contact() {
       <Navbar />
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #0a0a1a 0%, #1a1a2e 50%, #16213e 100%)',
+        background: 'linear-gradient(135deg, var(--bg-sidebar) 0%, var(--bg-dark) 50%, var(--bg-secondary) 100%)',
         paddingTop: '120px',
         paddingBottom: '80px',
       }}>
@@ -105,7 +105,7 @@ export function Contact() {
             <h1 style={{
               fontSize: '3rem',
               fontWeight: 800,
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)',
+              background: 'linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-mid) 50%, var(--gradient-end) 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
@@ -268,7 +268,7 @@ export function Contact() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '14px 24px',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  background: 'linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-mid) 100%)',
                   color: 'white',
                   fontSize: '1rem',
                   fontWeight: 600,
@@ -277,17 +277,17 @@ export function Contact() {
                   cursor: isSubmitting ? 'not-allowed' : 'pointer',
                   opacity: isSubmitting ? 0.6 : 1,
                   transition: 'all 0.3s ease',
-                  boxShadow: '0 4px 15px rgba(102, 126, 234, 0.3)',
+                  boxShadow: '0 4px 15px rgba(var(--gradient-start-rgb), 0.3)',
                 }}
                 onMouseEnter={(e) => {
                   if (!isSubmitting) {
                     e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+                    e.currentTarget.style.boxShadow = '0 6px 20px rgba(var(--gradient-start-rgb), 0.4)';
                   }
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.3)';
+                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(var(--gradient-start-rgb), 0.3)';
                 }}
               >
                 {isSubmitting ? (

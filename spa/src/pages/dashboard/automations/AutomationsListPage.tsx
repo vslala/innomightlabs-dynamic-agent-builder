@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Settings, ShoppingBag, Trash2, Workflow } from "lucide-react";
+import { CalendarClock, GitBranch, Plus, Settings, ShoppingBag, Trash2, Workflow, type LucideIcon } from "lucide-react";
+import "./AutomationsListPage.css";
 
 import {
   Button,
@@ -20,9 +21,9 @@ import {
   StatusBadge,
   Textarea,
 } from "../../../components/ui";
-import { FieldGroup, Grid, Inline, Page, PageActions, PageBody, PageDescription, PageHeader, Stack } from "../../../components/layout";
+import { FieldGroup, Page, PageBody, PageTitle, Stack } from "../../../components/layout";
 import { automationApiService } from "../../../services/automations";
-import type { AutomationResponse } from "../../../types/automation";
+import type { AutomationResponse, AutomationStatus } from "../../../types/automation";
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
@@ -33,7 +34,16 @@ function formatDate(value: string): string {
 }
 
 function badgeStatus(status: AutomationResponse["status"]) {
-  return status === "active" ? "active" : "inactive";
+  if (status === "active") return "active";
+  if (status === "draft") return "draft";
+  return "inactive";
+}
+
+function statusLabel(status: AutomationStatus): string {
+  if (status === "active") return "Active";
+  if (status === "draft") return "Draft";
+  if (status === "disabled") return "Disabled";
+  return status;
 }
 
 export function AutomationsListPage() {
@@ -109,87 +119,160 @@ export function AutomationsListPage() {
     return <ErrorState message={error} onRetry={loadAutomations} />;
   }
 
+  const activeCount = automations.filter((automation) => automation.status === "active").length;
+  const draftCount = automations.filter((automation) => automation.status === "draft").length;
+  const disabledCount = automations.filter((automation) => automation.status === "disabled").length;
+  const recentlyUpdatedCount = automations.filter((automation) => {
+    const updatedAt = new Date(automation.updated_at ?? automation.created_at).getTime();
+    return Number.isFinite(updatedAt) && Date.now() - updatedAt < 7 * 24 * 60 * 60 * 1000;
+  }).length;
+
   return (
-    <Page>
-      <PageHeader>
-        <PageDescription>Build and test workflow automations for your agents</PageDescription>
-        <PageActions>
-          <Button variant="outline" size="lg" onClick={() => navigate("/dashboard/automations/marketplace")}>
-            <ShoppingBag className="h-5 w-5" />
+    <Page className="automations-page">
+      <section className="automations-hero">
+        <div className="automations-hero__copy">
+          <span className="automations-hero__eyebrow">Automation workspace</span>
+          <PageTitle>Build repeatable agent workflows</PageTitle>
+          <p>
+            Chain agent calls, skill actions, schedules, and run history into workflows that are easy to test,
+            publish, and reuse.
+          </p>
+        </div>
+        <div className="automations-hero__actions">
+          <Button variant="outline" onClick={() => navigate("/dashboard/automations/marketplace")}>
+            <ShoppingBag />
             Marketplace
           </Button>
-          <Button size="lg" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-5 w-5" />
-            Create Automation
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus />
+            New automation
           </Button>
-        </PageActions>
-      </PageHeader>
+        </div>
+      </section>
 
       <PageBody>
-        {automations.length === 0 ? (
-          <EmptyState
-            icon={Workflow}
-            title="No automations yet"
-            description="Create your first automation to orchestrate agent work through a reusable workflow."
-            actionLabel="Create Automation"
-            onAction={() => setCreateOpen(true)}
-          />
-        ) : (
-          <Grid className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3" gap="lg">
-            {automations.map((automation) => (
-              <Card
-                key={automation.automation_id}
-                className="group hover:border-[var(--gradient-start)]/50 transition-all duration-200"
-              >
-                <CardContent>
-                  <Stack gap="md">
-                    <Inline justify="space-between" align="flex-start" wrap={false}>
-                      <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
-                        <Workflow className="h-7 w-7 text-white" />
+        <section className="automations-metrics" aria-label="Automation metrics">
+          <MetricCard label="Total" value={automations.length} detail="Reusable workflows" icon={Workflow} />
+          <MetricCard label="Active" value={activeCount} detail="Available to run" icon={CalendarClock} />
+          <MetricCard label="Draft" value={draftCount} detail="Needs review" icon={GitBranch} />
+          <MetricCard label="Updated" value={recentlyUpdatedCount} detail="Changed this week" icon={Settings} />
+        </section>
+
+        <div className="automations-layout">
+          <Card className="automations-list-card">
+            <CardContent className="automations-list-card__content">
+              <div className="automations-section-header">
+                <div>
+                  <h2>Automations</h2>
+                  <p>{disabledCount} disabled, {draftCount} draft, {activeCount} active</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setCreateOpen(true)}>
+                  <Plus />
+                  Create
+                </Button>
+              </div>
+
+              {automations.length === 0 ? (
+                <EmptyState
+                  icon={Workflow}
+                  title="No automations yet"
+                  description="Create your first automation to orchestrate agent work through a reusable workflow."
+                  actionLabel="Create Automation"
+                  onAction={() => setCreateOpen(true)}
+                />
+              ) : (
+                <div className="automations-table" role="list">
+                  {automations.map((automation) => (
+                    <article key={automation.automation_id} className="automations-row" role="listitem">
+                      <Link className="automations-row__main" to={`/dashboard/automations/${automation.automation_id}`}>
+                        <span className="automations-row__icon">
+                          <Workflow />
+                        </span>
+                        <span className="automations-row__text">
+                          <strong>{automation.title}</strong>
+                          <span>{automation.description || "No description provided."}</span>
+                        </span>
+                      </Link>
+                      <div className="automations-row__meta">
+                        <StatusBadge status={badgeStatus(automation.status)} label={statusLabel(automation.status)} />
+                        <span>v{automation.version}</span>
+                        <span>Updated {formatDate(automation.updated_at ?? automation.created_at)}</span>
                       </div>
-                      <Inline gap="xs" className="opacity-0 transition-opacity group-hover:opacity-100">
-                        <Link to={`/dashboard/automations/${automation.automation_id}`}>
-                          <Button variant="ghost" size="icon">
-                            <Settings className="h-4 w-4" />
-                          </Button>
-                        </Link>
+                      <div className="automations-row__actions">
+                        <Button variant="ghost" size="icon" asChild>
+                          <Link to={`/dashboard/automations/${automation.automation_id}`} aria-label={`Open ${automation.title}`}>
+                            <Settings />
+                          </Link>
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="text-red-400 hover:text-red-300"
+                          className="text-[var(--danger)] hover:text-[var(--danger)]"
+                          aria-label={`Delete ${automation.title}`}
                           onClick={() => {
                             setSelectedAutomation(automation);
                             setDeleteOpen(true);
                           }}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 />
                         </Button>
-                      </Inline>
-                    </Inline>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-                    <Stack gap="xs">
-                      <Link to={`/dashboard/automations/${automation.automation_id}`}>
-                        <h3 className="text-lg font-semibold text-[var(--text-primary)] transition-colors hover:text-[var(--gradient-start)]">
-                          {automation.title}
-                        </h3>
-                      </Link>
-                      <p className="line-clamp-2 text-sm leading-relaxed text-[var(--text-muted)]">
-                        {automation.description || "No description provided."}
-                      </p>
-                    </Stack>
+          <aside className="automations-aside">
+            <Card>
+              <CardContent className="automations-aside-card">
+                <div className="automations-section-header">
+                  <div>
+                    <h2>Workflow Setup</h2>
+                    <p>Recommended path for reliable runs.</p>
+                  </div>
+                </div>
+                <ol className="automations-checklist">
+                  <li>
+                    <span>1</span>
+                    <div>
+                      <strong>Build the graph</strong>
+                      <p>Add steps, branches, and final outputs.</p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>2</span>
+                    <div>
+                      <strong>Test with sample input</strong>
+                      <p>Inspect step inputs, outputs, and tool calls.</p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>3</span>
+                    <div>
+                      <strong>Add triggers</strong>
+                      <p>Run manually or schedule recurring work.</p>
+                    </div>
+                  </li>
+                </ol>
+              </CardContent>
+            </Card>
 
-                    <Inline justify="space-between">
-                      <StatusBadge status={badgeStatus(automation.status)} label={automation.status} />
-                      <span className="text-xs text-[var(--text-muted)]">
-                        Updated {formatDate(automation.updated_at ?? automation.created_at)}
-                      </span>
-                    </Inline>
-                  </Stack>
-                </CardContent>
-              </Card>
-            ))}
-          </Grid>
-        )}
+            <Card>
+              <CardContent className="automations-aside-card">
+                <div className="automations-aside-card__icon">
+                  <ShoppingBag />
+                </div>
+                <h2>Use a template</h2>
+                <p>Import a proven workflow and configure only the agents, skills, and secrets you own.</p>
+                <Button variant="outline" size="sm" onClick={() => navigate("/dashboard/automations/marketplace")}>
+                  Browse marketplace
+                </Button>
+              </CardContent>
+            </Card>
+          </aside>
+        </div>
       </PageBody>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -248,5 +331,32 @@ export function AutomationsListPage() {
         </DialogContent>
       </Dialog>
     </Page>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  detail,
+  icon: Icon,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  icon: LucideIcon;
+}) {
+  return (
+    <Card className="automations-metric">
+      <CardContent className="automations-metric__content">
+        <span className="automations-metric__icon">
+          <Icon />
+        </span>
+        <span>
+          <span className="automations-metric__label">{label}</span>
+          <strong>{value}</strong>
+          <span className="automations-metric__detail">{detail}</span>
+        </span>
+      </CardContent>
+    </Card>
   );
 }

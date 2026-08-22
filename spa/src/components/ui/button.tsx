@@ -9,16 +9,16 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-gradient-to-r from-[var(--gradient-start)] to-[var(--gradient-mid)] text-white hover:opacity-90 hover:shadow-lg hover:shadow-[var(--gradient-start)]/25",
+          "bg-[var(--button-primary-bg)] text-[var(--text-inverse)] hover:bg-[var(--button-primary-bg-hover)] hover:shadow-sm",
         destructive:
           "bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20",
         outline:
-          "border border-[var(--border-subtle)] bg-transparent hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+          "border border-[var(--border-default)] bg-[var(--surface-control)] hover:bg-[var(--surface-control-hover)] text-[var(--text-primary)] hover:text-[var(--text-primary)]",
         secondary:
-          "bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]",
+          "bg-[var(--surface-subtle)] text-[var(--text-primary)] hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]",
         ghost:
-          "hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
-        link: "text-[var(--gradient-start)] underline-offset-4 hover:underline",
+          "hover:bg-[var(--surface-control-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+        link: "text-[var(--link-color)] underline-offset-4 hover:underline",
       },
       size: {
         default: "",
@@ -74,12 +74,14 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, style, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
     const resolvedSize = size ?? "default";
+    const resolvedVariant = variant ?? "default";
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         style={{
           boxSizing: "border-box",
           gap: "var(--space-2)",
+          color: resolvedVariant === "default" ? "var(--text-inverse)" : undefined,
           ...(buttonSizeStyles[resolvedSize] ?? buttonSizeStyles.default),
           ...style,
         }}

@@ -216,8 +216,8 @@ export function AutomationTriggersPage() {
           {loading ? (
             <div className="h-24 rounded-lg border border-[var(--border-subtle)] bg-white/5" />
           ) : triggers.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[var(--border-subtle)] bg-white/5 p-8 text-center text-sm text-[var(--text-muted)]">
-              No triggers configured.
+            <div className="flex min-h-24 items-center justify-center rounded-lg border border-[var(--border-default)] bg-[var(--surface-panel)] p-6 text-sm text-[var(--text-muted)]">
+              <span>No triggers configured.</span>
             </div>
           ) : (
             triggers.map((trigger) => {

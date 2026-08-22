@@ -94,7 +94,7 @@ export function AgentMarketplacePage() {
                 <CardContent>
                   <Stack gap="md">
                     <Inline gap="md" align="flex-start" wrap={false}>
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)]">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--button-primary-bg)]">
                         <Bot className="h-6 w-6 text-white" />
                       </div>
                       <Stack gap="xs">

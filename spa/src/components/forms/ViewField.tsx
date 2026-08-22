@@ -29,7 +29,7 @@ export function ViewField({ field, value }: ViewFieldProps) {
             borderRadius: "0.375rem",
             fontSize: "0.75rem",
             fontWeight: 500,
-            backgroundColor: "rgba(102, 126, 234, 0.1)",
+            backgroundColor: "rgba(var(--gradient-start-rgb), 0.1)",
             color: "var(--gradient-start)",
           }}
         >

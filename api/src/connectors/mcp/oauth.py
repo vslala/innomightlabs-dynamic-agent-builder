@@ -6,7 +6,7 @@ import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-from urllib.parse import urlparse, urlencode
+from urllib.parse import parse_qs, urlparse, urlencode
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -345,15 +345,46 @@ async def _post_token(token_url: str, data: dict[str, str]) -> dict[str, Any]:
         response = await client.post(
             token_url,
             data=data,
-            headers={"content-type": "application/x-www-form-urlencoded"},
+            headers={
+                "accept": "application/json",
+                "content-type": "application/x-www-form-urlencoded",
+            },
         )
     if not response.is_success:
         raise MCPOAuthError(f"MCP OAuth token request failed: {response.text}")
 
-    payload = response.json()
+    payload = _parse_token_response(response)
     if not isinstance(payload, dict):
         raise MCPOAuthError("MCP OAuth token response must be a JSON object")
     return payload
+
+
+def _parse_token_response(response: httpx.Response) -> dict[str, Any]:
+    content_type = response.headers.get("content-type", "").lower()
+    if "json" in content_type:
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
+
+    if "application/x-www-form-urlencoded" in content_type:
+        return _parse_form_encoded_token_response(response.text)
+
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            return payload
+    except ValueError:
+        pass
+
+    form_payload = _parse_form_encoded_token_response(response.text)
+    if form_payload:
+        return form_payload
+
+    raise MCPOAuthError("MCP OAuth token response must be JSON or form-encoded")
+
+
+def _parse_form_encoded_token_response(body: str) -> dict[str, str]:
+    parsed = parse_qs(body, keep_blank_values=True)
+    return {key: values[-1] for key, values in parsed.items() if values}
 
 
 def build_credentials(

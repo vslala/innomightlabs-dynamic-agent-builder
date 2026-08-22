@@ -9,7 +9,7 @@
 }
 
 .scrolled {
-  background: rgba(15, 15, 35, 0.9);
+  background: var(--surface-panel);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -39,10 +39,7 @@
 .logoText {
   font-size: 1.25rem;
   font-weight: 800;
-  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-mid), var(--gradient-end));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--link-color);
 }
 
 .links {
@@ -66,15 +63,16 @@
   font-size: 0.9375rem;
   font-weight: 600;
   padding: 0.625rem 1.25rem;
-  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-mid));
-  color: white;
+  background: var(--button-primary-bg);
+  color: var(--text-inverse);
   border-radius: 10px;
   transition: all 0.3s ease;
 }
 
 .ctaLink:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  background: var(--button-primary-bg-hover);
+  box-shadow: 0 4px 12px var(--shadow-soft);
 }
 
 .betaLogin {

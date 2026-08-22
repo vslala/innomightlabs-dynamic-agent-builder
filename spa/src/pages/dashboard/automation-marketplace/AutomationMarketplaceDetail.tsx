@@ -151,7 +151,7 @@ export function AutomationMarketplaceDetail() {
         <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard/automations/marketplace")}>
           <ChevronLeft className="h-5 w-5" />
         </Button>
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)]">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--button-primary-bg)]">
           <Workflow className="h-6 w-6 text-white" />
         </div>
         <div>

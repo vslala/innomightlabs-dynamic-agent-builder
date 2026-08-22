@@ -1,272 +1,593 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bot, MessageSquare, Wrench, Brain, Plus, ArrowRight } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import {
+  Archive,
+  ArrowRight,
+  Bot,
+  BookOpen,
+  CheckCircle2,
+  CircleAlert,
+  Database,
+  FileText,
+  MessageSquare,
+  Network,
+  Plug,
+  Plus,
+  Rocket,
+  ShoppingBag,
+  Sparkles,
+  Workflow,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
 import { Button } from "../../components/ui/button";
-import { Grid, Stack, Center } from "../../components/ui/grid";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
+import { artifactApiService, type ArtifactResponse } from "../../services/artifacts";
+import { automationApiService } from "../../services/automations";
+import { connectorApiService } from "../../services/connectors";
 import { conversationApiService } from "../../services/conversations";
+import { knowledgeApiService } from "../../services/knowledge";
+import type { AutomationResponse } from "../../types/automation";
+import type { ConnectorStatus, MCPConnection } from "../../types/connectors";
 import type { ConversationResponse } from "../../types/conversation";
+import type { KnowledgeBase } from "../../types/knowledge";
 import { userVisibleConversations } from "../../utils/conversations";
+import { changeLogEntries } from "./whatsNewData";
+import "./Overview.css";
+
+interface DashboardData {
+  agents: AgentResponse[];
+  conversations: ConversationResponse[];
+  automations: AutomationResponse[];
+  knowledgeBases: KnowledgeBase[];
+  connectors: ConnectorStatus[];
+  mcpConnections: MCPConnection[];
+  artifacts: ArtifactResponse[];
+}
+
+const emptyDashboardData: DashboardData = {
+  agents: [],
+  conversations: [],
+  automations: [],
+  knowledgeBases: [],
+  connectors: [],
+  mcpConnections: [],
+  artifacts: [],
+};
 
 export function Overview() {
-  const [agents, setAgents] = useState<AgentResponse[]>([]);
-  const [conversations, setConversations] = useState<ConversationResponse[]>([]);
+  const [data, setData] = useState<DashboardData>(emptyDashboardData);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [agentsData, conversationsData] = await Promise.all([
-          agentApiService.listAgents(),
-          conversationApiService.listConversations(),
-        ]);
-        setAgents(agentsData);
-        setConversations(userVisibleConversations(conversationsData.items));
-      } catch (err) {
-        console.error("Error loading data:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    let cancelled = false;
 
-    loadData();
+    async function loadData() {
+      setLoading(true);
+      const [
+        agentsResult,
+        conversationsResult,
+        automationsResult,
+        knowledgeResult,
+        connectorsResult,
+        mcpResult,
+        artifactsResult,
+      ] = await Promise.allSettled([
+        agentApiService.listAgents(),
+        conversationApiService.listConversations(),
+        automationApiService.listAutomations(),
+        knowledgeApiService.listKnowledgeBases(),
+        connectorApiService.listConnectors(),
+        connectorApiService.listMCPConnections(),
+        artifactApiService.listArtifacts(25),
+      ]);
+
+      if (cancelled) return;
+
+      setData({
+        agents: settledValue(agentsResult, []),
+        conversations: userVisibleConversations(
+          settledValue(conversationsResult, { items: [], next_cursor: null, has_more: false }).items
+        ),
+        automations: settledValue(automationsResult, []),
+        knowledgeBases: settledValue(knowledgeResult, []),
+        connectors: settledValue(connectorsResult, []),
+        mcpConnections: settledValue(mcpResult, []),
+        artifacts: settledValue(artifactsResult, { items: [] }).items,
+      });
+      setLoading(false);
+    }
+
+    void loadData();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Calculate active conversations (updated within a week)
-  const getActiveConversationsCount = (): number => {
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  const activeConversations = useMemo(
+    () => countRecentItems(data.conversations, (conversation) => conversation.updated_at || conversation.created_at),
+    [data.conversations]
+  );
+  const activeAutomations = data.automations.filter((automation) => automation.status === "active").length;
+  const enabledA2AAgents = data.agents.filter((agent) => agent.is_agent2agent_enabled).length;
+  const connectedSystems =
+    data.connectors.filter((connector) => connector.connected).length +
+    data.mcpConnections.filter((connection) => connection.enabled && connection.oauth_connected).length;
+  const totalKnowledgeVectors = data.knowledgeBases.reduce((sum, kb) => sum + kb.total_vectors, 0);
+  const recentAgents = sortByActivity(data.agents, (agent) => agent.updated_at || agent.created_at).slice(0, 4);
+  const recentConversations = sortByActivity(
+    data.conversations,
+    (conversation) => conversation.updated_at || conversation.created_at
+  ).slice(0, 4);
+  const latestRelease = changeLogEntries[0];
 
-    return conversations.filter((conv) => {
-      const lastActivity = conv.updated_at || conv.created_at;
-      return new Date(lastActivity) >= oneWeekAgo;
-    }).length;
-  };
-
-  const getAgentName = (agentId: string): string => {
-    const agent = agents.find((a) => a.agent_id === agentId);
-    return agent?.agent_name || "Unknown Agent";
-  };
-
-  const stats = [
+  const metrics: MetricCardProps[] = [
     {
-      label: "Total Agents",
-      value: agents.length,
+      label: "Agents",
+      value: data.agents.length,
+      detail: `${enabledA2AAgents} discoverable through A2A`,
       icon: Bot,
-      color: "from-[var(--gradient-start)] to-[var(--gradient-mid)]",
+      tone: "blue",
     },
     {
-      label: "Active Conversations",
-      value: getActiveConversationsCount(),
+      label: "Active chats",
+      value: activeConversations,
+      detail: "Updated in the last 7 days",
       icon: MessageSquare,
-      color: "from-emerald-500 to-teal-500",
+      tone: "green",
     },
     {
-      label: "Tools Configured",
-      value: 0,
-      icon: Wrench,
-      color: "from-orange-500 to-amber-500",
+      label: "Automations",
+      value: data.automations.length,
+      detail: `${activeAutomations} currently active`,
+      icon: Workflow,
+      tone: "orange",
     },
     {
-      label: "Memory Blocks",
-      value: 0,
-      icon: Brain,
-      color: "from-pink-500 to-rose-500",
+      label: "Knowledge",
+      value: data.knowledgeBases.length,
+      detail: `${formatCompactNumber(totalKnowledgeVectors)} indexed vectors`,
+      icon: Database,
+      tone: "pink",
+    },
+  ];
+
+  const featureCards: FeatureCardProps[] = [
+    {
+      title: "Build an agent",
+      description: "Create a focused assistant with model settings, instructions, skills, memory, and knowledge.",
+      to: "/dashboard/agents/new",
+      icon: Bot,
+      action: "Create",
+    },
+    {
+      title: "Browse agent templates",
+      description: "Import reusable agents from the marketplace and configure only the secrets you own.",
+      to: "/dashboard/agents/marketplace",
+      icon: ShoppingBag,
+      action: "Browse",
+    },
+    {
+      title: "Automate workflows",
+      description: "Chain agent calls, skill actions, schedules, webhooks, and run history into repeatable processes.",
+      to: "/dashboard/automations",
+      icon: Workflow,
+      action: "Open",
+    },
+    {
+      title: "Ground answers",
+      description: "Upload files or crawl sites into knowledge bases that agents can retrieve from during work.",
+      to: "/dashboard/knowledge-bases",
+      icon: BookOpen,
+      action: "Add knowledge",
+    },
+    {
+      title: "Share artifacts",
+      description: "Keep generated reports, files, images, and HTML outputs in a central user-owned library.",
+      to: "/dashboard/artifacts",
+      icon: Archive,
+      action: "View",
+    },
+    {
+      title: "Connect systems",
+      description: "Authorize provider connectors and MCP servers so agents can work with external tools.",
+      to: "/dashboard/connectors",
+      icon: Plug,
+      action: "Connect",
+    },
+    {
+      title: "Expose Agent2Agent",
+      description: "Publish agent cards through the custom registry and let trusted clients send A2A messages.",
+      to: "/docs/agent-to-agent",
+      icon: Network,
+      action: "Docs",
+    },
+    {
+      title: "Track product updates",
+      description: "See new capabilities as they ship and find workflows worth trying in your workspace.",
+      to: "/dashboard/whats-new",
+      icon: Sparkles,
+      action: "What's new",
+    },
+  ];
+
+  const setupItems: SetupItemProps[] = [
+    {
+      label: "Create an agent",
+      complete: data.agents.length > 0,
+      to: "/dashboard/agents/new",
+    },
+    {
+      label: "Start a conversation",
+      complete: data.conversations.length > 0,
+      to: "/dashboard/conversations",
+    },
+    {
+      label: "Add knowledge",
+      complete: data.knowledgeBases.length > 0,
+      to: "/dashboard/knowledge-bases",
+    },
+    {
+      label: "Connect a system",
+      complete: connectedSystems > 0,
+      to: "/dashboard/connectors",
+    },
+    {
+      label: "Create an automation",
+      complete: data.automations.length > 0,
+      to: "/dashboard/automations",
     },
   ];
 
   if (loading) {
     return (
-      <Center className="h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--gradient-start)] border-t-transparent" />
-      </Center>
+      <div className="overview__loading">
+        <div />
+      </div>
     );
   }
 
   return (
-    <Stack gap="lg">
-      {/* Stats Grid */}
-      <Grid cols={1} colsSm={2} colsLg={4} gap="md">
-        {stats.map((stat) => (
-          <Card key={stat.label}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
-                    {stat.label}
-                  </p>
-                  <p className="text-2xl font-bold text-[var(--text-primary)] mt-2">
-                    {stat.value}
-                  </p>
+    <div className="overview">
+      <section className="overview__top-grid">
+        <Card className="overview__command-panel">
+          <CardHeader>
+            <div className="overview__eyebrow">Workspace</div>
+            <CardTitle className="overview__command-title">Build, run, and share agent workflows</CardTitle>
+            <CardDescription>
+              Start from an agent, connect it to tools and knowledge, then turn repeatable work into automations and artifacts.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overview__quick-actions">
+              <Button asChild>
+                <Link to="/dashboard/agents/new">
+                  <Plus />
+                  New agent
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/dashboard/agents/marketplace">
+                  <ShoppingBag />
+                  Marketplace
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/dashboard/automations">
+                  <Workflow />
+                  Automations
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/dashboard/knowledge-bases">
+                  <BookOpen />
+                  Knowledge
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="overview__release-panel">
+          <CardHeader>
+            <div className="overview__panel-heading">
+              <div>
+                <CardTitle>What's New</CardTitle>
+                <CardDescription>{formatDate(latestRelease.date)}</CardDescription>
+              </div>
+              <Sparkles className="overview__panel-icon" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <h3>{latestRelease.title}</h3>
+            <p>{latestRelease.summary}</p>
+            <div className="overview__release-items">
+              {latestRelease.items.slice(0, 2).map((item) => (
+                <div key={item.title}>
+                  <span>{item.title}</span>
+                  <small>{item.category}</small>
                 </div>
-                <div
-                  className={`h-12 w-12 rounded-lg bg-gradient-to-br ${stat.color} flex items-center justify-center`}
-                >
-                  <stat.icon className="h-6 w-6 text-white" />
-                </div>
+              ))}
+            </div>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/dashboard/whats-new">
+                View updates
+                <ArrowRight />
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="overview__metric-grid" aria-label="Workspace metrics">
+        {metrics.map((metric) => (
+          <MetricCard key={metric.label} {...metric} />
+        ))}
+      </section>
+
+      <section className="overview__body-grid">
+        <div className="overview__main-column">
+          <Card>
+            <CardHeader>
+              <CardTitle>Explore the Platform</CardTitle>
+              <CardDescription>Entry points for the work users can create from this dashboard.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overview__feature-grid">
+                {featureCards.map((feature) => (
+                  <FeatureCard key={feature.title} {...feature} />
+                ))}
               </div>
             </CardContent>
           </Card>
-        ))}
-      </Grid>
 
-      {/* Quick Actions */}
-      <Grid cols={1} colsLg={2} gap="md">
-        {/* Recent Agents */}
-        <Card>
-          <CardHeader style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <CardTitle>Recent Agents</CardTitle>
-            <Link to="/dashboard/agents">
-              <Button variant="ghost" size="sm">
-                View All
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {agents.length === 0 ? (
-              <Center style={{ padding: "4rem 0" }}>
-                <Bot className="h-16 w-16 text-[var(--text-muted)]" style={{ marginBottom: "1rem" }} />
-                <p style={{ color: "var(--text-muted)", marginBottom: "1.5rem" }}>No agents yet</p>
-                <Link to="/dashboard/agents/new">
-                  <Button>
-                    <Plus className="h-4 w-4" />
-                    Create Your First Agent
-                  </Button>
-                </Link>
-              </Center>
-            ) : (
-              <Stack gap="xs">
-                {agents.slice(0, 5).map((agent) => (
-                  <Link
-                    key={agent.agent_id}
-                    to={`/dashboard/agents/${agent.agent_id}`}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "1rem",
-                      padding: "1rem",
-                      borderRadius: "0.5rem",
-                      transition: "background-color 0.2s",
-                    }}
-                    className="hover:bg-white/5"
-                  >
-                    <div
-                      className="bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)]"
-                      style={{
-                        height: "3rem",
-                        width: "3rem",
-                        borderRadius: "0.5rem",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Bot className="h-6 w-6 text-white" />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {agent.agent_name}
-                      </p>
-                      <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: "0.25rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {agent.agent_provider}
-                      </p>
-                    </div>
-                  </Link>
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Work</CardTitle>
+              <CardDescription>Continue from the agents and conversations that changed most recently.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overview__recent-grid">
+                <RecentList
+                  title="Agents"
+                  emptyTitle="No agents yet"
+                  emptyAction="Create agent"
+                  emptyTo="/dashboard/agents/new"
+                  viewAllTo="/dashboard/agents"
+                  icon={Bot}
+                  items={recentAgents.map((agent) => ({
+                    id: agent.agent_id,
+                    title: agent.agent_name,
+                    subtitle: [agent.agent_provider, agent.agent_model].filter(Boolean).join(" · "),
+                    to: `/dashboard/agents/${agent.agent_id}`,
+                    date: agent.updated_at || agent.created_at,
+                  }))}
+                />
+                <RecentList
+                  title="Conversations"
+                  emptyTitle="No conversations yet"
+                  emptyAction="Open conversations"
+                  emptyTo="/dashboard/conversations"
+                  viewAllTo="/dashboard/conversations"
+                  icon={MessageSquare}
+                  items={recentConversations.map((conversation) => ({
+                    id: conversation.conversation_id,
+                    title: conversation.title,
+                    subtitle: getAgentName(data.agents, conversation.agent_id),
+                    to: `/dashboard/conversations/${conversation.conversation_id}`,
+                    date: conversation.updated_at || conversation.created_at,
+                  }))}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <aside className="overview__side-column">
+          <Card>
+            <CardHeader>
+              <CardTitle>Setup Health</CardTitle>
+              <CardDescription>Suggested steps based on this workspace.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overview__setup-list">
+                {setupItems.map((item) => (
+                  <SetupItem key={item.label} {...item} />
                 ))}
-              </Stack>
-            )}
-          </CardContent>
-        </Card>
+              </div>
+            </CardContent>
+          </Card>
 
-        {/* Recent Conversations */}
-        <Card>
-          <CardHeader style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <CardTitle>Recent Conversations</CardTitle>
-            <Link to="/dashboard/conversations">
-              <Button variant="ghost" size="sm">
-                View All
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {conversations.length === 0 ? (
-              <Center style={{ padding: "4rem 0" }}>
-                <MessageSquare className="h-16 w-16 text-[var(--text-muted)]" style={{ marginBottom: "1rem" }} />
-                <p style={{ color: "var(--text-muted)" }}>No conversations yet</p>
-                <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
-                  Start chatting with your agents
-                </p>
-              </Center>
-            ) : (
-              <Stack gap="xs">
-                {conversations.slice(0, 5).map((conversation) => (
-                  <Link
-                    key={conversation.conversation_id}
-                    to={`/dashboard/conversations/${conversation.conversation_id}`}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "1rem",
-                      padding: "1rem",
-                      borderRadius: "0.5rem",
-                      transition: "background-color 0.2s",
-                    }}
-                    className="hover:bg-white/5"
-                  >
-                    <div
-                      style={{
-                        height: "3rem",
-                        width: "3rem",
-                        borderRadius: "0.5rem",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        background: "linear-gradient(to bottom right, #10b981, #14b8a6)",
-                      }}
-                    >
-                      <MessageSquare className="h-6 w-6 text-white" />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {conversation.title}
-                      </p>
-                      <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginTop: "0.25rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {getAgentName(conversation.agent_id)}
-                      </p>
-                    </div>
-                  </Link>
-                ))}
-              </Stack>
-            )}
-          </CardContent>
-        </Card>
-      </Grid>
+          <Card>
+            <CardHeader>
+              <CardTitle>Workspace Inventory</CardTitle>
+              <CardDescription>Assets available to agents and automations.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overview__inventory">
+                <InventoryRow label="Artifacts" value={data.artifacts.length} icon={FileText} to="/dashboard/artifacts" />
+                <InventoryRow label="Connected systems" value={connectedSystems} icon={Plug} to="/dashboard/connectors" />
+                <InventoryRow label="A2A-enabled agents" value={enabledA2AAgents} icon={Network} to="/docs/agent-to-agent" />
+                <InventoryRow label="Active automations" value={activeAutomations} icon={Rocket} to="/dashboard/automations" />
+              </div>
+            </CardContent>
+          </Card>
+        </aside>
+      </section>
+    </div>
+  );
+}
 
-      {/* Getting Started */}
-      {agents.length === 0 && (
-        <Card>
-          <CardContent style={{ padding: "5rem 2rem" }}>
-            <Center style={{ maxWidth: "42rem", margin: "0 auto" }}>
-              <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: "1rem" }}>
-                Welcome to InnoMight Labs!
-              </h2>
-              <p style={{ color: "var(--text-secondary)", marginBottom: "2rem", lineHeight: 1.6 }}>
-                Get started by creating your first AI agent. You can customize its
-                persona, configure memory blocks, and add tools to make it powerful.
-              </p>
-              <Link to="/dashboard/agents/new">
-                <Button size="lg">
-                  <Plus className="h-5 w-5" />
-                  Create Your First Agent
-                </Button>
-              </Link>
-            </Center>
-          </CardContent>
-        </Card>
+function settledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
+  return result.status === "fulfilled" ? result.value : fallback;
+}
+
+function countRecentItems<T>(items: T[], getDate: (item: T) => string | null | undefined): number {
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  return items.filter((item) => {
+    const date = getDate(item);
+    return date ? new Date(date) >= oneWeekAgo : false;
+  }).length;
+}
+
+function sortByActivity<T>(items: T[], getDate: (item: T) => string | null | undefined): T[] {
+  return [...items].sort((left, right) => {
+    const leftTime = new Date(getDate(left) || 0).getTime();
+    const rightTime = new Date(getDate(right) || 0).getTime();
+    return rightTime - leftTime;
+  });
+}
+
+function getAgentName(agents: AgentResponse[], agentId: string): string {
+  return agents.find((agent) => agent.agent_id === agentId)?.agent_name || "Unknown agent";
+}
+
+function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatCompactNumber(value: number): string {
+  return Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+interface MetricCardProps {
+  label: string;
+  value: number;
+  detail: string;
+  icon: LucideIcon;
+  tone: "blue" | "green" | "orange" | "pink";
+}
+
+function MetricCard({ label, value, detail, icon: Icon, tone }: MetricCardProps) {
+  return (
+    <Card className={`overview__metric-card overview__metric-card--${tone}`}>
+      <div className="overview__metric-icon">
+        <Icon />
+      </div>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <p>{detail}</p>
+      </div>
+    </Card>
+  );
+}
+
+interface FeatureCardProps {
+  title: string;
+  description: string;
+  to: string;
+  icon: LucideIcon;
+  action: string;
+}
+
+function FeatureCard({ title, description, to, icon: Icon, action }: FeatureCardProps) {
+  return (
+    <Link className="overview__feature-card" to={to}>
+      <div className="overview__feature-icon">
+        <Icon />
+      </div>
+      <div>
+        <strong>{title}</strong>
+        <p>{description}</p>
+      </div>
+      <span>
+        {action}
+        <ArrowRight />
+      </span>
+    </Link>
+  );
+}
+
+interface RecentListItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  to: string;
+  date?: string | null;
+}
+
+interface RecentListProps {
+  title: string;
+  emptyTitle: string;
+  emptyAction: string;
+  emptyTo: string;
+  viewAllTo: string;
+  icon: LucideIcon;
+  items: RecentListItem[];
+}
+
+function RecentList({ title, emptyTitle, emptyAction, emptyTo, viewAllTo, icon: Icon, items }: RecentListProps) {
+  return (
+    <div className="overview__recent-list">
+      <div className="overview__recent-header">
+        <h3>{title}</h3>
+        <Link to={viewAllTo}>View all</Link>
+      </div>
+      {items.length ? (
+        items.map((item) => (
+          <Link key={item.id} className="overview__recent-item" to={item.to}>
+            <div>
+              <Icon />
+            </div>
+            <span>
+              <strong>{item.title}</strong>
+              <small>{item.subtitle || "No details"}</small>
+            </span>
+            <time>{item.date ? formatDate(item.date) : ""}</time>
+          </Link>
+        ))
+      ) : (
+        <div className="overview__empty-panel">
+          <Icon />
+          <strong>{emptyTitle}</strong>
+          <Button asChild variant="outline" size="sm">
+            <Link to={emptyTo}>{emptyAction}</Link>
+          </Button>
+        </div>
       )}
-    </Stack>
+    </div>
+  );
+}
+
+interface SetupItemProps {
+  label: string;
+  complete: boolean;
+  to: string;
+}
+
+function SetupItem({ label, complete, to }: SetupItemProps) {
+  return (
+    <Link className="overview__setup-item" to={to}>
+      <div className={complete ? "overview__setup-icon overview__setup-icon--done" : "overview__setup-icon"}>
+        {complete ? <CheckCircle2 /> : <CircleAlert />}
+      </div>
+      <span>{label}</span>
+      <small>{complete ? "Ready" : "Open"}</small>
+    </Link>
+  );
+}
+
+interface InventoryRowProps {
+  label: string;
+  value: number;
+  icon: LucideIcon;
+  to: string;
+}
+
+function InventoryRow({ label, value, icon: Icon, to }: InventoryRowProps) {
+  return (
+    <Link className="overview__inventory-row" to={to}>
+      <Icon />
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </Link>
   );
 }

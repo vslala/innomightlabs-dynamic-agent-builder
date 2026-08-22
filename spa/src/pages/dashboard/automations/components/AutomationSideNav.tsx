@@ -50,7 +50,7 @@ export function AutomationSideNav() {
                   fontSize: "0.875rem",
                   fontWeight: 500,
                   background: isActive
-                    ? "linear-gradient(90deg, rgba(12, 102, 228, 0.14), rgba(12, 102, 228, 0.06))"
+                    ? "var(--nav-active-bg)"
                     : undefined,
                 }}
               >

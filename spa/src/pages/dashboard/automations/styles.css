@@ -298,7 +298,7 @@
 
 .automation-run-log__spinner {
   animation: automation-spin 0.8s linear infinite;
-  border: 2px solid rgba(102, 126, 234, 0.22);
+  border: 2px solid rgba(var(--gradient-start-rgb), 0.22);
   border-top-color: var(--gradient-start);
   border-radius: 999px;
   height: 1.25rem;

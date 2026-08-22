@@ -214,10 +214,10 @@ const actionsStyle: CSSProperties = {
 };
 
 const bodyStyle: CSSProperties = {
-  background: "#121226",
-  border: "1px solid rgba(102, 126, 234, 0.28)",
+  background: "var(--json-bg)",
+  border: "1px solid var(--json-border)",
   borderRadius: "0.5rem",
-  color: "#e5e7eb",
+  color: "var(--code-text)",
   fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
   fontSize: "0.76rem",
   lineHeight: 1.55,
@@ -247,31 +247,31 @@ const buttonLineStyle: CSSProperties = {
 };
 
 const twistyStyle: CSSProperties = {
-  color: "var(--gradient-start)",
+  color: "var(--json-toggle)",
   display: "inline-block",
   width: "0.75rem",
 };
 
 const keyStyle: CSSProperties = {
-  color: "#93c5fd",
+  color: "var(--json-key)",
 };
 
 const stringStyle: CSSProperties = {
-  color: "#86efac",
+  color: "var(--json-string)",
   overflowWrap: "anywhere",
   whiteSpace: "pre-wrap",
 };
 
 const literalStyle: CSSProperties = {
-  color: "#fbbf24",
+  color: "var(--json-literal)",
 };
 
 const nullStyle: CSSProperties = {
-  color: "#c4b5fd",
+  color: "var(--json-null)",
 };
 
 const braceStyle: CSSProperties = {
-  color: "#e5e7eb",
+  color: "var(--json-brace)",
 };
 
 const summaryStyle: CSSProperties = {

@@ -42,7 +42,7 @@ function ProgressBar({
         )}
       >
         <div
-          className="h-full bg-gradient-to-r from-[var(--gradient-start)] to-[var(--gradient-mid)] transition-all duration-300"
+          className="h-full bg-[var(--button-primary-bg)] transition-all duration-300"
           style={{ width: `${percentage}%` }}
         />
       </div>

@@ -23,7 +23,7 @@
 }
 
 .accordion:hover {
-  border-color: rgba(102, 126, 234, 0.3);
+  border-color: rgba(var(--gradient-start-rgb), 0.3);
 }
 
 .accordionOpen {
@@ -178,7 +178,7 @@
 .contactCard:hover {
   border-color: var(--gradient-start);
   transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.15);
+  box-shadow: 0 8px 24px rgba(var(--gradient-start-rgb), 0.15);
 }
 
 .contactIcon {

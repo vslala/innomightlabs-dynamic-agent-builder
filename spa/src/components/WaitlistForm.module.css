@@ -10,8 +10,8 @@
 
 .card {
   position: relative;
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
-  border: 1px solid rgba(102, 126, 234, 0.3);
+  background: linear-gradient(135deg, rgba(var(--gradient-start-rgb), 0.15), rgba(56, 139, 255, 0.15));
+  border: 1px solid rgba(var(--gradient-start-rgb), 0.3);
   border-radius: 32px;
   padding: 4rem;
   overflow: hidden;
@@ -100,7 +100,7 @@
 
 .submitBtn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 25px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 6px 25px rgba(var(--gradient-start-rgb), 0.4);
 }
 
 .submitBtn:disabled {

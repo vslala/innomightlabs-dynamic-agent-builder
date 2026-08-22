@@ -359,14 +359,14 @@ export function Settings() {
               {
                 id: "dark" as const,
                 label: "Dark",
-                description: "The current deep dashboard theme.",
-                swatches: ["#0f0f23", "#667eea", "#764ba2"],
+                description: "Dark neutral surfaces with a crisp blue accent.",
+                swatches: ["#101214", "#579dff", "#1d2125"],
               },
               {
                 id: "light" as const,
                 label: "Light",
-                description: "Atlassian-style blue and white palette.",
-                swatches: ["#ffffff", "#0c66e4", "#f7f8f9"],
+                description: "Clean light surfaces with a crisp blue accent.",
+                swatches: ["#f7f8f9", "#0c66e4", "#ffffff"],
               },
             ].map((option) => {
               const selected = theme === option.id;

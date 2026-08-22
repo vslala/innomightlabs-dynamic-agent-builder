@@ -20,7 +20,7 @@ export function Header({ title, user }: HeaderProps) {
 
   return (
     <header
-      className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--bg-dark)]/95 backdrop-blur-md"
+      className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--surface-panel)]"
       style={{
         display: "flex",
         alignItems: "center",

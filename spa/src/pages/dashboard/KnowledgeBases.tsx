@@ -135,7 +135,7 @@ export function KnowledgeBases() {
                 <CardContent>
                   <Stack gap="md">
                     <Inline justify="space-between" align="flex-start" wrap={false}>
-                      <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
+                      <div className="h-14 w-14 rounded-xl bg-[var(--button-primary-bg)] flex items-center justify-center">
                         <Database className="h-7 w-7 text-white" />
                       </div>
                       <Inline gap="xs" className="opacity-0 transition-opacity group-hover:opacity-100">

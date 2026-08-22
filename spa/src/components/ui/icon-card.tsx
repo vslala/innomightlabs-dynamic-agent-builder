@@ -33,8 +33,8 @@ function IconCard({
     >
       <CardContent className="p-6">
         <div className="flex items-start justify-between mb-5">
-          <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
-            <Icon className="h-7 w-7 text-white" />
+          <div className="h-14 w-14 rounded-xl bg-[var(--button-primary-bg)] flex items-center justify-center">
+            <Icon className="h-7 w-7 text-[var(--text-inverse)]" />
           </div>
           {actions && (
             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -87,11 +87,11 @@ function IconHeader({
       <div className="flex items-center gap-4">
         <div
           className={cn(
-            "bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center",
+            "bg-[var(--button-primary-bg)] flex items-center justify-center",
             s.container
           )}
         >
-          <Icon className={cn("text-white", s.icon)} />
+          <Icon className={cn("text-[var(--text-inverse)]", s.icon)} />
         </div>
         <div>
           <h1 className={cn("font-semibold text-[var(--text-primary)]", s.title)}>

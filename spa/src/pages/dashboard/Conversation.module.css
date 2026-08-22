@@ -83,8 +83,8 @@
   width: 2.75rem;
   height: 2.75rem;
   border-radius: 0.75rem;
-  background: rgba(102, 126, 234, 0.14);
-  border: 1px solid rgba(102, 126, 234, 0.24);
+  background: rgba(var(--gradient-start-rgb), 0.14);
+  border: 1px solid rgba(var(--gradient-start-rgb), 0.24);
   display: flex;
   align-items: center;
   justify-content: center;

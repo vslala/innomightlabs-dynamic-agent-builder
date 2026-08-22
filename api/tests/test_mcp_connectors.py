@@ -28,6 +28,7 @@ from src.connectors.mcp.oauth import (
     authorization_server_metadata_urls,
     canonical_resource_url,
     discover_oauth_provider,
+    exchange_code_for_tokens,
     parse_www_authenticate,
     protected_resource_metadata_url,
     protected_resource_metadata_url_for_path,
@@ -284,6 +285,75 @@ def test_mcp_oauth_parses_www_authenticate_challenge() -> None:
     assert parsed == {
         "resource_metadata": "https://mcp.notion.example/.well-known/oauth-protected-resource/mcp",
         "scope": "files:read files:write",
+    }
+
+
+@pytest.mark.asyncio
+async def test_exchange_code_for_tokens_accepts_json_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_async_client = httpx.AsyncClient
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={"access_token": "json-token", "token_type": "bearer"},
+        )
+
+    monkeypatch.setattr(
+        "httpx.AsyncClient",
+        lambda **kwargs: original_async_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+
+    tokens = await exchange_code_for_tokens(
+        provider=MCPOAuthProviderConfig(
+            authorization_url="https://github.com/login/oauth/authorize",
+            token_url="https://github.com/login/oauth/access_token",
+            client_id="client-id",
+            client_secret="client-secret",
+            resource_url="https://api.githubcopilot.com/mcp/",
+        ),
+        code="code",
+        code_verifier="verifier",
+    )
+
+    assert tokens["access_token"] == "json-token"
+    assert requests[0].headers["accept"] == "application/json"
+
+
+@pytest.mark.asyncio
+async def test_exchange_code_for_tokens_accepts_form_encoded_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_async_client = httpx.AsyncClient
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/x-www-form-urlencoded; charset=utf-8"},
+            text="access_token=form-token&scope=repo+read%3Auser&token_type=bearer",
+        )
+
+    monkeypatch.setattr(
+        "httpx.AsyncClient",
+        lambda **kwargs: original_async_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+
+    tokens = await exchange_code_for_tokens(
+        provider=MCPOAuthProviderConfig(
+            authorization_url="https://github.com/login/oauth/authorize",
+            token_url="https://github.com/login/oauth/access_token",
+            client_id="client-id",
+            client_secret="client-secret",
+            resource_url="https://api.githubcopilot.com/mcp/",
+        ),
+        code="code",
+        code_verifier="verifier",
+    )
+
+    assert tokens == {
+        "access_token": "form-token",
+        "scope": "repo read:user",
+        "token_type": "bearer",
     }
 
 

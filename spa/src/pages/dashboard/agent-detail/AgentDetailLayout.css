@@ -49,9 +49,9 @@
 
 .agent-detail-layout__title-icon {
   align-items: center;
-  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-mid));
+  background: var(--button-primary-bg);
   border-radius: 12px;
-  color: #fff;
+  color: var(--text-inverse);
   display: flex;
   flex: 0 0 auto;
   height: 48px;

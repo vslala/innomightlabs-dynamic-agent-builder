@@ -475,7 +475,7 @@ export function KnowledgeBaseDetail() {
           >
             <ChevronLeft className="h-5 w-5" />
           </Button>
-          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
+          <div className="h-12 w-12 rounded-xl bg-[var(--button-primary-bg)] flex items-center justify-center">
             <Database className="h-6 w-6 text-white" />
           </div>
           <div>

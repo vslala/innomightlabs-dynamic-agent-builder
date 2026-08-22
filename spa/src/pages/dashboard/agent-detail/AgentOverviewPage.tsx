@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import type React from "react";
 import { useNavigate } from "react-router-dom";
-import { Check, Copy, Key, Network, Pencil, ShoppingBag } from "lucide-react";
+import {
+  BookOpen,
+  Check,
+  CircleAlert,
+  Copy,
+  Key,
+  Network,
+  Pencil,
+  Rocket,
+  ShoppingBag,
+  Wrench,
+} from "lucide-react";
 
 import { FieldGroup, Stack } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
 import {
   Dialog,
   DialogBody,
@@ -19,13 +30,16 @@ import {
   Label,
   Textarea,
 } from "../../../components/ui";
-import { SchemaForm, SchemaView } from "../../../components/forms";
+import { SchemaForm } from "../../../components/forms";
 import { agentApiService, type Agent2AgentSharingResponse } from "../../../services/agents/AgentApiService";
 import { agentMarketplaceApiService } from "../../../services/agentMarketplace";
+import { knowledgeApiService } from "../../../services/knowledge";
 import { skillApiService } from "../../../services/skills";
 import type { FormSchema, FormValue } from "../../../types/form";
+import type { KnowledgeBase } from "../../../types/knowledge";
 import type { InstalledSkill } from "../../../types/skills";
 import { useAgentDetailContext } from "./types";
+import "./AgentOverviewPage.css";
 
 export function AgentOverviewPage() {
   const { agent } = useAgentDetailContext();
@@ -42,6 +56,7 @@ export function AgentOverviewPage() {
   const [a2aError, setA2aError] = useState<string | null>(null);
   const [copiedA2aUrl, setCopiedA2aUrl] = useState<string | null>(null);
   const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([]);
+  const [linkedKnowledgeBases, setLinkedKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [publishForm, setPublishForm] = useState({
     title: agent.agent_name,
     short_description: agent.agent_description || "",
@@ -60,13 +75,15 @@ export function AgentOverviewPage() {
 
     async function loadPageData() {
       try {
-        const [schema, skills] = await Promise.all([
+        const [schema, skills, knowledgeBases] = await Promise.all([
           agentApiService.getUpdateSchema(agent.agent_id),
           skillApiService.listInstalledSkills(agent.agent_id),
+          knowledgeApiService.listAgentKnowledgeBases(agent.agent_id),
         ]);
         if (!cancelled) {
           setUpdateSchema(schema);
           setInstalledSkills(skills);
+          setLinkedKnowledgeBases(knowledgeBases);
           setPublishForm((current) => ({
             ...current,
             included_skill_ids: skills.map((skill) => skill.installed_skill_id),
@@ -215,186 +232,338 @@ export function AgentOverviewPage() {
     }
   };
 
+  const enabledSkills = installedSkills.filter((skill) => skill.enabled);
+  const registryUrl = deriveA2ARegistryUrl(a2aSharing);
+  const hasActiveApiKey = Boolean(a2aSharing?.has_active_api_key);
+  const isA2aEnabled = Boolean(a2aSharing?.enabled);
+  const readinessItems = [
+    {
+      label: "Agent configured",
+      complete: Boolean(currentAgent.agent_name && currentAgent.agent_persona),
+      action: "Edit agent",
+      onAction: () => setIsEditing(true),
+    },
+    {
+      label: "API key ready",
+      complete: hasActiveApiKey,
+      action: "API keys",
+      onAction: () => navigate(`/dashboard/agents/${agent.agent_id}/api-keys`),
+    },
+    {
+      label: "A2A discovery enabled",
+      complete: isA2aEnabled,
+      action: "Enable",
+      onAction: () => void handleToggleA2aSharing(true),
+      disabled: updatingA2aSharing || loadingA2aSharing || !hasActiveApiKey,
+    },
+    {
+      label: "Skills installed",
+      complete: enabledSkills.length > 0,
+      action: "Add skills",
+      onAction: () => navigate(`/dashboard/agents/${agent.agent_id}/skills`),
+    },
+    {
+      label: "Knowledge linked",
+      complete: linkedKnowledgeBases.length > 0,
+      action: "Link knowledge",
+      onAction: () => navigate(`/dashboard/agents/${agent.agent_id}/knowledge-bases`),
+    },
+  ];
+
   return (
-    <Card>
-      <CardHeader>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <CardTitle className="text-lg">{isEditing ? "Edit Agent" : "Agent Details"}</CardTitle>
-          {!isEditing && (
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setPublishOpen(true)}>
-                <ShoppingBag className="h-4 w-4" />
-                Publish
-              </Button>
-              <Button variant="outline" onClick={() => setIsEditing(true)}>
-                <Pencil className="h-4 w-4" />
-                Edit
-              </Button>
-            </div>
-          )}
+    <div className="agent-overview">
+      <div className="agent-overview__toolbar">
+        <div className="agent-overview__title-block">
+          <p className="agent-overview__eyebrow">Agent Overview</p>
+          <h2>{isEditing ? "Edit agent configuration" : currentAgent.agent_name}</h2>
+          <p>{currentAgent.agent_description || "Review setup, sharing, and the next actions for this agent."}</p>
         </div>
-      </CardHeader>
-      <CardContent>
-        {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-            {error}
+        {!isEditing && (
+          <div className="agent-overview__actions">
+            <Button variant="outline" onClick={() => setPublishOpen(true)}>
+              <ShoppingBag />
+              Publish
+            </Button>
+            <Button onClick={() => setIsEditing(true)}>
+              <Pencil />
+              Edit
+            </Button>
           </div>
         )}
+      </div>
 
-        {isEditing && updateSchema ? (
-          <SchemaForm
-            schema={updateSchema}
-            initialValues={initialValues}
-            onSubmit={handleUpdate}
-            onCancel={() => setIsEditing(false)}
-            submitLabel="Save Changes"
-            isLoading={isSubmitting}
-          />
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            <div>
-              <p style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block", fontSize: "0.875rem" }}>
-                Agent Name
-              </p>
-              <p style={{ color: "var(--text-primary)", fontSize: "1rem" }}>
-                {currentAgent.agent_name}
-              </p>
+      {error && (
+        <div className="agent-overview__error">
+          {error}
+        </div>
+      )}
+
+      {isEditing && updateSchema ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Edit Agent</CardTitle>
+            <CardDescription>Update the public name, description, model, and instructions for this agent.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SchemaForm
+              schema={updateSchema}
+              initialValues={initialValues}
+              onSubmit={handleUpdate}
+              onCancel={() => setIsEditing(false)}
+              submitLabel="Save Changes"
+              isLoading={isSubmitting}
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <div className="agent-overview__status-grid">
+            <StatusCard
+              icon={<Network />}
+              label="A2A"
+              value={isA2aEnabled ? "Enabled" : "Disabled"}
+              tone={isA2aEnabled ? "good" : "muted"}
+            />
+            <StatusCard
+              icon={<Key />}
+              label="API key"
+              value={hasActiveApiKey ? "Ready" : "Needed"}
+              tone={hasActiveApiKey ? "good" : "warning"}
+            />
+            <StatusCard
+              icon={<Wrench />}
+              label="Skills"
+              value={`${enabledSkills.length} active`}
+              tone={enabledSkills.length ? "good" : "muted"}
+            />
+            <StatusCard
+              icon={<BookOpen />}
+              label="Knowledge"
+              value={`${linkedKnowledgeBases.length} linked`}
+              tone={linkedKnowledgeBases.length ? "good" : "muted"}
+            />
+          </div>
+
+          <div className="agent-overview__grid">
+            <div className="agent-overview__column">
+              <Card className="agent-overview__panel agent-overview__readiness">
+                <CardHeader>
+                  <CardTitle>Readiness</CardTitle>
+                  <CardDescription>Setup checks for a useful, shareable agent.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="agent-overview__checklist">
+                    {readinessItems.map((item) => (
+                      <ReadinessItem key={item.label} {...item} />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="agent-overview__panel agent-overview__a2a">
+                <CardHeader>
+                  <div className="agent-overview__panel-heading">
+                    <div>
+                      <CardTitle>Agent2Agent</CardTitle>
+                      <CardDescription>Expose this agent through the custom registry and scoped Agent Card.</CardDescription>
+                    </div>
+                    <label className="agent-overview__toggle">
+                      <Checkbox
+                        checked={Boolean(a2aSharing?.enabled)}
+                        disabled={loadingA2aSharing || updatingA2aSharing}
+                        onChange={(event) => handleToggleA2aSharing(event.target.checked)}
+                      />
+                      Enabled
+                    </label>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {a2aError && (
+                    <div className="agent-overview__error agent-overview__error--compact">
+                      {a2aError}
+                    </div>
+                  )}
+
+                  {a2aSharing && !a2aSharing.has_active_api_key && (
+                    <div className="agent-overview__notice">
+                      <div>
+                        <Key />
+                        <span>Create an active API key before enabling A2A discovery.</span>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/agents/${agent.agent_id}/api-keys`)}>
+                        API Keys
+                      </Button>
+                    </div>
+                  )}
+
+                  {loadingA2aSharing ? (
+                    <p className="agent-overview__muted">Loading Agent2Agent settings...</p>
+                  ) : a2aSharing ? (
+                    <div className="agent-overview__a2a-body">
+                      {registryUrl && (
+                        <CopyableA2AUrl
+                          label="Registry URL"
+                          value={registryUrl}
+                          copied={copiedA2aUrl === "Registry URL"}
+                          onCopy={handleCopyA2aUrl}
+                        />
+                      )}
+                      <CopyableA2AUrl
+                        label="Agent Card URL"
+                        value={a2aSharing.agent_card_url}
+                        copied={copiedA2aUrl === "Agent Card URL"}
+                        onCopy={handleCopyA2aUrl}
+                      />
+                      <CopyableA2AUrl
+                        label="Agent Service URL"
+                        value={a2aSharing.service_url}
+                        copied={copiedA2aUrl === "Agent Service URL"}
+                        onCopy={handleCopyA2aUrl}
+                      />
+
+                      <div className="agent-overview__public-preview">
+                        <span>Public discovery preview</span>
+                        <strong>{currentAgent.agent_name}</strong>
+                        <p>{currentAgent.agent_description || "InnomightLabs agent enabled for Agent2Agent communication."}</p>
+                        <div>
+                          <code>JSONRPC</code>
+                          <code>chat</code>
+                          <code>text/plain</code>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card className="agent-overview__panel">
+                <CardHeader>
+                  <div className="agent-overview__panel-heading">
+                    <div>
+                      <CardTitle>Knowledge</CardTitle>
+                      <CardDescription>Linked sources available for retrieval-augmented answers.</CardDescription>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/agents/${agent.agent_id}/knowledge-bases`)}>
+                      Manage
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {linkedKnowledgeBases.length ? (
+                    <div className="agent-overview__list">
+                      {linkedKnowledgeBases.slice(0, 4).map((kb) => (
+                        <div key={kb.kb_id} className="agent-overview__list-item">
+                          <BookOpen />
+                          <div>
+                            <strong>{kb.name}</strong>
+                            <span>{kb.description || "Linked knowledge base"}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyPanel
+                      icon={<BookOpen />}
+                      title="No knowledge linked"
+                      description="Attach knowledge bases so the agent can answer from your crawled content."
+                      action="Link knowledge"
+                      onAction={() => navigate(`/dashboard/agents/${agent.agent_id}/knowledge-bases`)}
+                    />
+                  )}
+                </CardContent>
+              </Card>
             </div>
 
-            {updateSchema && (
-              <SchemaView
-                schema={updateSchema}
-                data={currentAgent as unknown as Record<string, unknown>}
-              />
-            )}
+            <div className="agent-overview__column">
+              <Card className="agent-overview__panel agent-overview__details">
+                <CardHeader>
+                  <div className="agent-overview__panel-heading">
+                    <div>
+                      <CardTitle>Configuration</CardTitle>
+                      <CardDescription>Core runtime settings and public description.</CardDescription>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+                      <Pencil />
+                      Edit
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="agent-overview__detail-grid">
+                    <DetailItem label="Provider" value={currentAgent.agent_provider} />
+                    <DetailItem label="Model" value={currentAgent.agent_model || "Default"} />
+                    <DetailItem label="Architecture" value={currentAgent.agent_architecture} />
+                    <DetailItem label="Created" value={formatDate(currentAgent.created_at)} />
+                    <DetailItem label="Updated" value={currentAgent.updated_at ? formatDate(currentAgent.updated_at) : "Not updated"} />
+                  </div>
+                  <div className="agent-overview__description-block">
+                    <span>Instructions Preview</span>
+                    <p>{currentAgent.agent_persona}</p>
+                  </div>
+                </CardContent>
+              </Card>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "1rem",
-                paddingTop: "1.5rem",
-                borderTop: "1px solid var(--border-subtle)",
-              }}
-            >
-              <div>
-                <p style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block", fontSize: "0.875rem" }}>
-                  Created
-                </p>
-                <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-                  {new Date(currentAgent.created_at).toLocaleDateString()}
-                </p>
-              </div>
-              {currentAgent.updated_at && (
-                <div>
-                  <p style={{ color: "var(--text-muted)", marginBottom: "0.5rem", display: "block", fontSize: "0.875rem" }}>
-                    Last Updated
+              <Card className="agent-overview__panel">
+                <CardHeader>
+                  <div className="agent-overview__panel-heading">
+                    <div>
+                      <CardTitle>Skills</CardTitle>
+                      <CardDescription>Installed actions this agent can use during conversations.</CardDescription>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/agents/${agent.agent_id}/skills`)}>
+                      Manage
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {enabledSkills.length ? (
+                    <div className="agent-overview__list">
+                      {enabledSkills.slice(0, 4).map((skill) => (
+                        <div key={skill.installed_skill_id} className="agent-overview__list-item">
+                          <Wrench />
+                          <div>
+                            <strong>{skill.name}</strong>
+                            <span>{skill.description}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyPanel
+                      icon={<Wrench />}
+                      title="No active skills"
+                      description="Add skills to let this agent call tools, APIs, and platform workflows."
+                      action="Add skills"
+                      onAction={() => navigate(`/dashboard/agents/${agent.agent_id}/skills`)}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="agent-overview__panel agent-overview__marketplace">
+                <CardHeader>
+                  <div className="agent-overview__panel-heading">
+                    <div>
+                      <CardTitle>Marketplace</CardTitle>
+                      <CardDescription>Publish a reusable template without copying private secrets.</CardDescription>
+                    </div>
+                    <Rocket className="agent-overview__panel-icon" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="agent-overview__muted">
+                    Package this agent's public instructions and selected skill setup for other users to import.
                   </p>
-                  <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-                    {new Date(currentAgent.updated_at).toLocaleDateString()}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div
-              style={{
-                borderTop: "1px solid var(--border-subtle)",
-                paddingTop: "1.5rem",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", marginBottom: "1rem" }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
-                  <div
-                    style={{
-                      height: "2.25rem",
-                      width: "2.25rem",
-                      borderRadius: "0.5rem",
-                      backgroundColor: "var(--bg-tertiary)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Network className="h-4 w-4 text-[var(--gradient-start)]" />
-                  </div>
-                  <div>
-                    <p style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: "0.25rem" }}>
-                      Agent2Agent Discovery
-                    </p>
-                    <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", lineHeight: 1.5 }}>
-                      Share this agent through the public A2A facilitator card. Calls still require an active API key for this agent.
-                    </p>
-                  </div>
-                </div>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-secondary)", fontSize: "0.875rem", whiteSpace: "nowrap" }}>
-                  <Checkbox
-                    checked={Boolean(a2aSharing?.enabled)}
-                    disabled={loadingA2aSharing || updatingA2aSharing}
-                    onChange={(event) => handleToggleA2aSharing(event.target.checked)}
-                  />
-                  Enabled
-                </label>
-              </div>
-
-              {a2aError && (
-                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                  {a2aError}
-                </div>
-              )}
-
-              {a2aSharing && !a2aSharing.has_active_api_key && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "1rem",
-                    marginBottom: "1rem",
-                    padding: "0.875rem",
-                    border: "1px solid rgba(234, 179, 8, 0.25)",
-                    borderRadius: "0.5rem",
-                    backgroundColor: "rgba(234, 179, 8, 0.08)",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-                    <Key className="h-4 w-4 text-yellow-400" />
-                    <span>Create an active API key before enabling A2A discovery.</span>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/agents/${agent.agent_id}/api-keys`)}>
-                    API Keys
+                  <Button variant="outline" onClick={() => setPublishOpen(true)}>
+                    <ShoppingBag />
+                    Publish template
                   </Button>
-                </div>
-              )}
-
-              {loadingA2aSharing ? (
-                <div style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
-                  Loading Agent2Agent settings...
-                </div>
-              ) : a2aSharing ? (
-                <div style={{ display: "grid", gap: "0.75rem" }}>
-                  <CopyableA2AUrl
-                    label="Facilitator card"
-                    value={a2aSharing.agent_card_url}
-                    copied={copiedA2aUrl === "Facilitator card"}
-                    onCopy={handleCopyA2aUrl}
-                  />
-                  <CopyableA2AUrl
-                    label="Agent service"
-                    value={a2aSharing.service_url}
-                    copied={copiedA2aUrl === "Agent service"}
-                    onCopy={handleCopyA2aUrl}
-                  />
-                  <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", lineHeight: 1.5 }}>
-                    The public card uses this agent's name and description. Use Edit above to change what other A2A clients discover.
-                  </p>
-                </div>
-              ) : null}
+                </CardContent>
+              </Card>
             </div>
           </div>
-        )}
-      </CardContent>
+        </>
+      )}
 
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
         <DialogContent className="max-h-[88vh] max-w-2xl overflow-y-auto">
@@ -473,7 +642,7 @@ export function AgentOverviewPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   );
 }
 
@@ -484,33 +653,90 @@ interface CopyableA2AUrlProps {
   onCopy: (label: string, value: string) => void;
 }
 
+interface StatusCardProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone: "good" | "warning" | "muted";
+}
+
+function StatusCard({ icon, label, value, tone }: StatusCardProps) {
+  return (
+    <Card className={`agent-overview__status-card agent-overview__status-card--${tone}`}>
+      <div className="agent-overview__status-icon">{icon}</div>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </div>
+    </Card>
+  );
+}
+
+interface ReadinessItemProps {
+  label: string;
+  complete: boolean;
+  action: string;
+  onAction: () => void;
+  disabled?: boolean;
+}
+
+function ReadinessItem({ label, complete, action, onAction, disabled }: ReadinessItemProps) {
+  return (
+    <div className="agent-overview__checklist-item">
+      <div className={complete ? "agent-overview__check agent-overview__check--done" : "agent-overview__check"}>
+        {complete ? <Check /> : <CircleAlert />}
+      </div>
+      <span>{label}</span>
+      {complete ? (
+        <small>Ready</small>
+      ) : (
+        <Button variant="ghost" size="sm" onClick={onAction} disabled={disabled}>
+          {action}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="agent-overview__detail-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+interface EmptyPanelProps {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  action: string;
+  onAction: () => void;
+}
+
+function EmptyPanel({ icon, title, description, action, onAction }: EmptyPanelProps) {
+  return (
+    <div className="agent-overview__empty">
+      <div className="agent-overview__empty-icon">{icon}</div>
+      <strong>{title}</strong>
+      <p>{description}</p>
+      <Button variant="outline" size="sm" onClick={onAction}>
+        {action}
+      </Button>
+    </div>
+  );
+}
+
 function CopyableA2AUrl({ label, value, copied, onCopy }: CopyableA2AUrlProps) {
   return (
-    <div>
-      <p style={{ color: "var(--text-muted)", marginBottom: "0.375rem", fontSize: "0.75rem" }}>
-        {label}
-      </p>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "0.5rem",
-          minWidth: 0,
-          fontFamily: "monospace",
-          fontSize: "0.8125rem",
-          backgroundColor: "var(--bg-tertiary)",
-          border: "1px solid var(--border-subtle)",
-          padding: "0.5rem 0.75rem",
-          borderRadius: "0.375rem",
-        }}
-      >
-        <code style={{ color: "var(--text-secondary)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {value}
-        </code>
+    <div className="agent-overview__copy-row">
+      <p>{label}</p>
+      <div>
+        <code>{value}</code>
         <Button
           variant="ghost"
           size="icon"
-          style={{ height: "1.5rem", width: "1.5rem" }}
           onClick={() => onCopy(label, value)}
           aria-label={`Copy ${label}`}
         >
@@ -519,6 +745,25 @@ function CopyableA2AUrl({ label, value, copied, onCopy }: CopyableA2AUrlProps) {
       </div>
     </div>
   );
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function deriveA2ARegistryUrl(sharing: Agent2AgentSharingResponse | null): string {
+  const sourceUrl = sharing?.service_url || sharing?.agent_card_url;
+  if (!sourceUrl) return "";
+  try {
+    const parsed = new URL(sourceUrl);
+    return `${parsed.origin}/a2a/agents`;
+  } catch {
+    return "";
+  }
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

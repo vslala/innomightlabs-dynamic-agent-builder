@@ -89,10 +89,8 @@ export function Sidebar() {
                     borderRadius: "0.5rem",
                     padding: "0.625rem 0.75rem",
                     fontSize: "0.875rem",
-                    fontWeight: 500,
-                    background: isActive
-                      ? "linear-gradient(90deg, rgba(12, 102, 228, 0.14), rgba(12, 102, 228, 0.06))"
-                      : undefined,
+                    fontWeight: isActive ? 700 : 600,
+                    background: isActive ? "var(--nav-active-bg)" : undefined,
                   }}
                   onMouseEnter={(event) => {
                     if (!isActive) event.currentTarget.style.background = "var(--nav-hover-bg)";

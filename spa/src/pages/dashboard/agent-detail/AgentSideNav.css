@@ -23,7 +23,7 @@
 }
 
 .agent-side-nav__item--active {
-  background: linear-gradient(90deg, rgba(12, 102, 228, 0.14), rgba(12, 102, 228, 0.06));
+  background: var(--nav-active-bg);
   color: var(--nav-active-text);
 }
 

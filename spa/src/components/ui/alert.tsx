@@ -112,7 +112,7 @@ function ErrorState({ message, onRetry, className }: ErrorStateProps) {
       {onRetry && (
         <button
           onClick={onRetry}
-          className="px-4 py-2 rounded-lg bg-gradient-to-r from-[var(--gradient-start)] to-[var(--gradient-mid)] text-white hover:opacity-90 transition-opacity"
+          className="px-4 py-2 rounded-lg bg-[var(--button-primary-bg)] text-[var(--text-inverse)] hover:bg-[var(--button-primary-bg-hover)] transition-colors"
         >
           Try Again
         </button>

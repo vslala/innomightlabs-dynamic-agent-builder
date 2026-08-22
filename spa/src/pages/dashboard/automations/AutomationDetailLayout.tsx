@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, Share2, Workflow } from "lucide-react";
 import { Link, Outlet, useNavigate, useParams } from "react-router-dom";
+import "./AutomationDetailLayout.css";
 
 import {
   Button,
@@ -31,7 +32,9 @@ import type { MarketplaceAutomationImportInput } from "../../../types/automation
 import { AutomationSideNav } from "./components/AutomationSideNav";
 
 function toBadgeStatus(status: AutomationResponse["status"]) {
-  return status === "active" ? "active" : "inactive";
+  if (status === "active") return "active";
+  if (status === "draft") return "draft";
+  return "inactive";
 }
 
 export function AutomationDetailLayout() {
@@ -168,45 +171,36 @@ export function AutomationDetailLayout() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-      <div className="flex items-center justify-between gap-6">
-        <div className="flex items-center gap-4">
+    <div className="automation-detail">
+      <div className="automation-detail__header">
+        <div className="automation-detail__title-row">
           <Button variant="ghost" size="icon" asChild>
             <Link to="/dashboard/automations">
               <ChevronLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[var(--gradient-start)] to-[var(--gradient-mid)] flex items-center justify-center">
-            <Workflow className="h-6 w-6 text-white" />
+          <div className="automation-detail__icon">
+            <Workflow />
           </div>
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl font-semibold text-[var(--text-primary)]">{automation.title}</h1>
+            <div className="automation-detail__heading">
+              <h1>{automation.title}</h1>
               <StatusBadge status={toBadgeStatus(automation.status)} label={automation.status} />
             </div>
-            <p className="text-sm text-[var(--text-muted)]">
-              {automation.description || "Automation workflow"}
-            </p>
+            <p>{automation.description || "Automation workflow"}</p>
           </div>
         </div>
-        <Button variant="outline" onClick={openPublishDialog}>
+        <Button className="automation-detail__publish" variant="outline" onClick={openPublishDialog}>
           <Share2 className="h-4 w-4" />
           Publish
         </Button>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "15rem minmax(0, 1fr)",
-          gap: "2rem",
-          alignItems: "start",
-        }}
-      >
+      <div className="automation-detail__workspace">
         <AutomationSideNav />
-        <div style={{ minWidth: 0 }}>
+        <main className="automation-detail__content">
           <Outlet context={{ automation, reloadAutomation: loadAutomation }} />
-        </div>
+        </main>
       </div>
 
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
