@@ -31,7 +31,7 @@ def build_smart_suggestion_settings_form(settings: SmartSuggestionSettings | Non
                 options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODEL_PROVIDERS),
             ),
             FormInput(
-                input_type=FormInputType.SELECT,
+                input_type=FormInputType.SEARCH,
                 name="model_name",
                 label="Model",
                 value=settings.model_name if settings else None,
@@ -39,4 +39,3 @@ def build_smart_suggestion_settings_form(settings: SmartSuggestionSettings | Non
             ),
         ],
     )
-

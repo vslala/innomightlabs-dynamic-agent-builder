@@ -67,7 +67,7 @@ def get_create_agent_form() -> Form:
                 label="Model",
                 name="agent_model",
                 options=DEFAULT_MODEL_OPTIONS,
-                input_type=FormInputType.SELECT,
+                input_type=FormInputType.SEARCH,
                 options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODELS),
             ),
             FormInput(
@@ -121,7 +121,7 @@ def get_update_agent_form(
                 label="Model",
                 name="agent_model",
                 options=DEFAULT_MODEL_OPTIONS,
-                input_type=FormInputType.SELECT,
+                input_type=FormInputType.SEARCH,
                 options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODELS),
             ),
             FormInput(
@@ -159,14 +159,14 @@ UPDATE_AGENT_FORM = Form(
         FormInput(
             label="Provider Name",
             name="agent_provider",
-            values=["Bedrock", "Anthropic", "OpenAI"],
+            values=["Bedrock", "Anthropic", "OpenAI", "Gemini"],
             input_type=FormInputType.SELECT,
         ),
         FormInput(
             label="Model",
             name="agent_model",
             options=DEFAULT_MODEL_OPTIONS,
-            input_type=FormInputType.SELECT,
+            input_type=FormInputType.SEARCH,
         ),
         FormInput(
             label="Session Timeout",

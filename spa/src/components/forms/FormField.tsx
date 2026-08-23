@@ -14,6 +14,7 @@ import {
   FileUploadField,
   KeyValueField,
   PasswordField,
+  SearchSelectField,
   SelectField,
   TextAreaField,
   TextField,
@@ -40,6 +41,9 @@ export function FormField({ field, value, formData, onChange }: FormFieldProps) 
 
       case "select":
         return <SelectField field={field} value={value} onChange={onChange} />;
+
+      case "search":
+        return <SearchSelectField field={field} value={value} onChange={onChange} />;
 
       case "choice":
         return <ChoiceField field={field} value={value} onChange={onChange} />;

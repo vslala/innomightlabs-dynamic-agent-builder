@@ -41,5 +41,11 @@ async def get_available_models(
         if not provider_settings:
             return []
         return models_service.get_openai_models()
+    if provider.lower() == "gemini":
+        user_email = request.state.user_email
+        provider_settings = provider_settings_repo.find_by_provider(user_email=user_email, provider_name="Gemini")
+        if not provider_settings:
+            return []
+        return models_service.get_gemini_models(provider_settings=provider_settings)
 
     return []

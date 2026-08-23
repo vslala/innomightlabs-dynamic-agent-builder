@@ -98,6 +98,7 @@ class SkillRegistry:
                 form_models.FormInputType.TEXT_AREA,
                 form_models.FormInputType.PASSWORD,
                 form_models.FormInputType.SELECT,
+                form_models.FormInputType.SEARCH,
                 form_models.FormInputType.CHOICE,
                 form_models.FormInputType.KEY_VALUE,
             }:
@@ -109,7 +110,11 @@ class SkillRegistry:
             else:
                 raise ValueError(f"Unsupported form input type for skill config: {input_def.input_type}")
 
-            if input_def.input_type in {form_models.FormInputType.SELECT, form_models.FormInputType.CHOICE}:
+            if input_def.input_type in {
+                form_models.FormInputType.SELECT,
+                form_models.FormInputType.SEARCH,
+                form_models.FormInputType.CHOICE,
+            }:
                 allowed = set(input_def.values or [])
                 if input_def.options:
                     allowed.update(opt.value for opt in input_def.options)

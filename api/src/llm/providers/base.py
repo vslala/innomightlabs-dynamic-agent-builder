@@ -26,6 +26,7 @@ class LLMEvent:
     tool_use_id: str = ""
     tool_name: str = ""
     tool_input: dict = field(default_factory=dict)
+    thought_signature: bytes | None = None
 
 
 class LLMProvider(ABC):

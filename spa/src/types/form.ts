@@ -7,6 +7,7 @@ export type FormInputType =
   | "text_area"
   | "password"
   | "select"
+  | "search"
   | "choice"
   | "file_upload"
   | "key_value";

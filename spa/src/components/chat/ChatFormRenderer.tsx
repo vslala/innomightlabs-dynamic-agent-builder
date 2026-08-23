@@ -132,7 +132,7 @@ export function ChatFormRenderer({
           );
         }
 
-        if (input.input_type === "select") {
+        if (input.input_type === "select" || input.input_type === "search") {
           const options = input.options?.length
             ? input.options
             : (input.values || []).map((item) => ({ value: item, label: item }));

@@ -19,7 +19,7 @@ export function ViewField({ field, value }: ViewFieldProps) {
     }
 
     // Select and choice fields render as badges
-    if (field.input_type === "select" || field.input_type === "choice") {
+    if (field.input_type === "select" || field.input_type === "search" || field.input_type === "choice") {
       return (
         <span
           style={{

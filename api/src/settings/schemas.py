@@ -37,6 +37,18 @@ ANTHROPIC_PROVIDER_FORM = Form(
     ]
 )
 
+GEMINI_PROVIDER_FORM = Form(
+    form_name="Google Gemini Configuration",
+    submit_path="/settings/providers/Gemini",
+    form_inputs=[
+        FormInput(
+            input_type=FormInputType.PASSWORD,
+            name="api_key",
+            label="Gemini API Key"
+        )
+    ]
+)
+
 OPENAI_PROVIDER_FORM = Form(
     form_name="OpenAI OAuth Configuration",
     submit_path="/auth/openai/complete",
@@ -58,6 +70,7 @@ PROVIDER_SCHEMAS: dict[str, Form] = {
     "Bedrock": BEDROCK_PROVIDER_FORM,
     "Anthropic": ANTHROPIC_PROVIDER_FORM,
     "OpenAI": OPENAI_PROVIDER_FORM,
+    "Gemini": GEMINI_PROVIDER_FORM,
 }
 
 # List of all supported provider names

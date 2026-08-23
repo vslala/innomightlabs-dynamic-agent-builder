@@ -183,13 +183,17 @@ async def run_agentic_tool_loop(
                     assistant_content.append({"text": iteration_text})
 
                 for tool_event in pending_tool_calls:
+                    tool_use = {
+                        "toolUseId": tool_event.tool_use_id,
+                        "name": tool_event.tool_name,
+                        "input": tool_event.tool_input,
+                    }
+                    thought_signature = getattr(tool_event, "thought_signature", None)
+                    if thought_signature:
+                        tool_use["thoughtSignature"] = thought_signature
                     assistant_content.append(
                         {
-                            "toolUse": {
-                                "toolUseId": tool_event.tool_use_id,
-                                "name": tool_event.tool_name,
-                                "input": tool_event.tool_input,
-                            }
+                            "toolUse": tool_use
                         }
                     )
 

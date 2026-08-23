@@ -90,6 +90,7 @@ class TestAgentsRouter:
             "type": "agent_models",
             "mode": "hydrate",
         }
+        assert model_field["input_type"] == "search"
         assert provider_field["options"] == [{"value": "Bedrock", "label": "Bedrock"}]
         assert model_field["options"]
 
@@ -147,6 +148,7 @@ class TestAgentsRouter:
             "type": "agent_models",
             "mode": "hydrate",
         }
+        assert model_field["input_type"] == "search"
         assert provider_field["options"] == [{"value": "Bedrock", "label": "Bedrock"}]
         assert model_field["options"]
 

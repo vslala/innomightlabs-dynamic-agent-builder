@@ -14,6 +14,7 @@ class FakeProviderEvent:
     tool_name: str = ""
     tool_input: dict[str, Any] | None = None
     tool_use_id: str = ""
+    thought_signature: bytes | None = None
 
 
 class FakeProvider:
@@ -61,6 +62,29 @@ class FakeMarkerProvider:
         yield FakeProviderEvent(type="stop")
 
 
+class FakeThoughtSignatureProvider:
+    def __init__(self):
+        self.calls = 0
+        self.contexts = []
+
+    async def stream_response(self, context, credentials, tools, model):
+        self.calls += 1
+        self.contexts.append(context.copy())
+        if self.calls == 1:
+            yield FakeProviderEvent(
+                type="tool_use",
+                tool_name="lookup_customer",
+                tool_input={"customer_id": "cus_123"},
+                tool_use_id="tooluse_1",
+                thought_signature=b"gemini-signature",
+            )
+            yield FakeProviderEvent(type="stop")
+            return
+
+        yield FakeProviderEvent(type="text", content="done")
+        yield FakeProviderEvent(type="stop")
+
+
 class FakeToolRouter:
     async def execute(self, *, tool_name, tool_input, tool_use_id, state):
         return ToolExecutionOutcome(result="customer found", success=True)
@@ -101,6 +125,28 @@ async def test_agentic_loop_emits_tool_call_id_on_start_and_result():
     assert start.payload["tool_name"] == "lookup_customer"
     assert result.payload["tool_call_id"] == "tooluse_1"
     assert result.payload["result"] == "customer found"
+
+
+async def test_agentic_loop_preserves_provider_thought_signature_in_tool_context():
+    provider = FakeThoughtSignatureProvider()
+
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=provider,
+            context=[],
+            credentials={},
+            tools=[],
+            model="test-model",
+            tool_router=FakeToolRouter(),
+            state=object(),
+        )
+    ]
+
+    assert next(event for event in events if event.kind == "complete")
+    second_call_context = provider.contexts[1]
+    assistant_tool_use = second_call_context[0]["content"][0]["toolUse"]
+    assert assistant_tool_use["thoughtSignature"] == b"gemini-signature"
 
 
 async def test_agentic_loop_surfaces_runtime_events_during_tool_execution():

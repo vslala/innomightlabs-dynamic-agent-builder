@@ -156,6 +156,23 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
         except Exception as e:
             log.warning("Failed to load OpenAI models for user %s: %s", context.user_email, e)
 
+    gemini_settings = repo.find_by_provider(
+        user_email=context.user_email,
+        provider_name="Gemini",
+    )
+    if gemini_settings:
+        providers.append("Gemini")
+        try:
+            gemini_models = models_service.get_gemini_models(
+                provider_settings=gemini_settings
+            )
+            model_options.extend(
+                SelectOption(value=model.model_name, label=model.display_name)
+                for model in gemini_models
+            )
+        except Exception as e:
+            log.warning("Failed to load Gemini models for user %s: %s", context.user_email, e)
+
     choices = AgentModelChoices(providers=providers, models=model_options)
     context.cache["agent_model_choices"] = choices
     return choices

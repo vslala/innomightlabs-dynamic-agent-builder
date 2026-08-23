@@ -7,6 +7,7 @@ Returns the appropriate LLM provider based on the agent's provider configuration
 from src.llm.providers.anthropic import AnthropicProvider
 from .base import LLMProvider
 from .bedrock import BedrockProvider
+from .gemini import GeminiProvider
 from .openai import OpenAIProvider
 
 
@@ -27,8 +28,7 @@ def get_llm_provider(provider_name: str) -> LLMProvider:
         "Bedrock": BedrockProvider(),
         "Anthropic": AnthropicProvider(),
         "OpenAI": OpenAIProvider(),
-        # Future providers:
-        # "OpenAI": OpenAIProvider(),
+        "Gemini": GeminiProvider(),
     }
 
     provider = providers.get(provider_name)

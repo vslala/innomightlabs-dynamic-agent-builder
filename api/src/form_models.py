@@ -8,6 +8,7 @@ class FormInputType(Enum):
     TEXT_AREA = "text_area"
     PASSWORD = "password"
     SELECT = "select"
+    SEARCH = "search"
     CHOICE = "choice"
     FILE_UPLOAD = "file_upload"
     KEY_VALUE = "key_value"
