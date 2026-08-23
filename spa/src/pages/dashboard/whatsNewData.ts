@@ -15,6 +15,50 @@ export interface ChangeLogEntry {
 
 export const changeLogEntries: ChangeLogEntry[] = [
   {
+    date: "2026-08-23",
+    title: "Gemini models and Agent2Agent upgrades",
+    summary:
+      "Agents can now use Google Gemini models, model selection is easier to search, and Agent2Agent workflows have richer discovery, trust controls, and debugging views.",
+    items: [
+      {
+        title: "Google Gemini provider",
+        description:
+          "Users can configure a Gemini API key, select Gemini models loaded from Google's model list, and run agents through the shared LLM provider interface.",
+        category: "new",
+      },
+      {
+        title: "Searchable model selection",
+        description:
+          "Agent and smart-suggestion model fields now use a searchable select so long provider model lists are easier to scan and choose from.",
+        category: "improved",
+      },
+      {
+        title: "Agent2Agent protocol support",
+        description:
+          "Agents can be exposed through Agent2Agent endpoints, invoked with authenticated API keys, and discovered through public agent cards and registry listings.",
+        category: "new",
+      },
+      {
+        title: "Agent2Agent trust controls",
+        description:
+          "Workspace settings now let users allowlist trusted Agent2Agent origins before installing or invoking remote agents through the Agent2Agent client skill.",
+        category: "new",
+      },
+      {
+        title: "Agent2Agent analytics and debugging",
+        description:
+          "Agent detail pages now include Agent2Agent task history and debugging views so owners can inspect inbound A2A activity per agent.",
+        category: "new",
+      },
+      {
+        title: "Dashboard and agent overview polish",
+        description:
+          "The dashboard overview and agent overview pages were redesigned with clearer information hierarchy, updated theme tokens, and more consistent controls.",
+        category: "improved",
+      },
+    ],
+  },
+  {
     date: "2026-07-02",
     title: "Design system hardening",
     summary:
