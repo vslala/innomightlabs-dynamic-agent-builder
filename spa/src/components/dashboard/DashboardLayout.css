@@ -1,7 +1,9 @@
 .dashboard-layout {
   background-color: var(--bg-dark);
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+  width: 100%;
 }
 
 .dashboard-layout__body {
@@ -22,6 +24,14 @@
 
 .dashboard-layout__main--full-bleed {
   padding: 0;
+}
+
+.dashboard-layout__main--settings {
+  overscroll-behavior-y: contain;
+}
+
+.dashboard-layout__main--settings .dashboard-layout__content {
+  height: auto;
 }
 
 .dashboard-layout__content {

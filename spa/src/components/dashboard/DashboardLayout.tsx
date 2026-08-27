@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
@@ -20,6 +21,24 @@ const pageTitles: Record<string, string> = {
 export function DashboardLayout() {
   const location = useLocation();
   const isFullBleedPage = location.pathname === "/dashboard/conversations";
+  const isSettingsPage = location.pathname === "/dashboard/settings";
+
+  useEffect(() => {
+    if (!isSettingsPage) {
+      return;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverscrollBehavior = document.documentElement.style.overscrollBehaviorY;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehaviorY = "none";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overscrollBehaviorY = previousHtmlOverscrollBehavior;
+    };
+  }, [isSettingsPage]);
 
   // Get user from token - ProtectedRoute ensures we have a valid token
   const user: UserInfo | null = authService.getUserFromToken();
@@ -76,7 +95,8 @@ export function DashboardLayout() {
         <main
           className={cn(
             "dashboard-layout__main",
-            isFullBleedPage && "dashboard-layout__main--full-bleed"
+            isFullBleedPage && "dashboard-layout__main--full-bleed",
+            isSettingsPage && "dashboard-layout__main--settings"
           )}
         >
           <div className="dashboard-layout__content">

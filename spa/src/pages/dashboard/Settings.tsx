@@ -309,7 +309,7 @@ export function Settings() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "42rem" }}>
+    <div className="settings-page">
       {/* Profile Section */}
       <Card>
         <CardHeader>
