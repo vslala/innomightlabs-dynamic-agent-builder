@@ -6,6 +6,14 @@ system_prompt: |
   Use this skill when the user asks to inspect AWS resources through AWS CLI.
   The AWS access key and secret are stored as encrypted skill configuration. Never ask the user to paste them into chat after the skill is installed.
   Use run_read for approved read-only commands. Pass argv as the arguments after the aws executable; do not include "aws" as argv[0].
+  Only call commands allowed by the installed command policy. Supported commands includes:
+  - s3api
+  - sts
+  - dynamodb
+
+  To read an S3 text file page by page, call run_read repeatedly with s3api get-object and a byte range. 
+  Use "-" as the final outfile so object bytes are returned in stdout. 
+  Example first page argv: ["s3api", "get-object", "--bucket", "my-bucket", "--key", "path/file.txt", "--range", "bytes=0-11999", "-"]. For the next page use "bytes=12000-23999", then continue until the returned content is shorter than the requested range or S3 returns an invalid range/end response.
   Do not use shell syntax, pipes, redirects, command separators, or substitutions.
   If run_read returns has_more=true, call read_output_page with the returned output_id and next_page to continue reading.
   Do not use this skill for mutating AWS commands. Mutation support requires a separate explicit-permission runtime feature.
@@ -49,6 +57,7 @@ form:
               - ["s3api", "list-objects-v2"]
               - ["s3api", "head-bucket"]
               - ["s3api", "head-object"]
+              - ["s3api", "get-object"]
               - ["s3api", "get-bucket-location"]
           dynamodb:
             read:
@@ -70,7 +79,7 @@ actions:
           type: array
           items:
             type: string
-          description: AWS CLI arguments after the aws executable.
+          description: AWS CLI arguments after the aws executable. For S3 default read operations use s3api, for example ["s3api","list-buckets"], ["s3api","list-objects-v2","--bucket","bucket-name"], or ["s3api","get-object","--bucket","bucket-name","--key","path/file.txt","--range","bytes=0-11999","-"] to read one page of an S3 text object through stdout. Do not use ["s3","ls"] unless the installed policy explicitly allows it.
         timeout_seconds:
           type: integer
           description: Optional timeout in seconds, clamped by installed policy.

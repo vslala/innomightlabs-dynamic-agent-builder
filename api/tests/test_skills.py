@@ -675,15 +675,15 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
             )
         )
     )
-    assert loaded_payload["installed_skill_id"] == installed_skill_id
-    assert loaded_payload["execute_contract"]["required_shape"]["skill_id"] == installed_skill_id
-    assert loaded_payload["usage_context"] == [
-        {
-            "name": "usage_description",
-            "label": "Use when",
-            "value": "Use for lead summaries that need a specialist agent.",
-        }
-    ]
+    assert loaded_payload["skill_id"] == installed_skill_id
+    assert "execute_contract" not in loaded_payload
+    assert "usage_context" not in loaded_payload
+    assert "action_form" not in json.dumps(loaded_payload)
+    assert "Use for lead summaries that need a specialist agent." in loaded_payload["prompt"]
+    assert len(loaded_payload["actions"]) == 1
+    assert loaded_payload["actions"][0]["name"] == "invoke"
+    assert loaded_payload["actions"][0]["description"]
+    assert loaded_payload["actions"][0]["schema"]["required"] == ["prompt_template"]
     prompt_addendum = SkillRuntimeService().build_system_prompt_addendum(
         SkillRuntimeService().list_enabled(source_agent.agent_id)
     )

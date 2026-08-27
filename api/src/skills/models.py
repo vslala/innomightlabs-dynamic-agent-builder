@@ -113,6 +113,18 @@ class InstalledSkillResponse(BaseModel):
     oauth_provider_name: Optional[str] = None
 
 
+class LoadedSkillRuntimeAction(BaseModel):
+    name: str
+    description: str
+    input_schema: dict[str, Any] = Field(default_factory=dict, serialization_alias="schema")
+
+
+class LoadedSkillRuntimeResponse(BaseModel):
+    skill_id: str
+    prompt: str
+    actions: list[LoadedSkillRuntimeAction] = Field(default_factory=list)
+
+
 class AgentSkill(BaseModel):
     agent_id: str
     installed_skill_id: str = ""

@@ -14,8 +14,11 @@ from src.settings.repository import ProviderSettingsRepository, get_provider_set
 from src.skills.models import (
     AgentSkill,
     InstalledSkillResponse,
+    LoadedSkillRuntimeAction,
+    LoadedSkillRuntimeResponse,
     SkillCatalogItemResponse,
     SkillConnectorDependency,
+    SkillManifest,
 )
 from src.skills.oauth_providers import get_skill_oauth_provider
 from src.skills.registry import SkillRegistry, get_skill_registry
@@ -388,37 +391,8 @@ class SkillRuntimeService:
             if not loaded:
                 raise ValueError(f"Skill '{installed.skill_id}' is not available")
 
-            payload = {
-                "installed_skill_id": installed.installed_skill_id or installed.skill_id,
-                "skill_id": loaded.manifest.id,
-                "name": loaded.manifest.name,
-                "description": loaded.manifest.description,
-                "system_prompt": loaded.manifest.system_prompt,
-                "usage_context": self._build_usage_context(installed),
-                "execute_contract": {
-                    "required_shape": {
-                        "skill_id": installed.installed_skill_id or installed.skill_id,
-                        "action": "<action_name>",
-                        "arguments": "<object_matching_action_input_schema>",
-                    },
-                    "note": "Do not place action fields at top-level. Always nest inside arguments.",
-                },
-                "actions": [
-                    {
-                        "name": action.name,
-                        "aliases": action.aliases,
-                        "description": action.description,
-                        "input_schema": action.input_schema,
-                        "action_form": (
-                            action.action_form.model_dump(mode="json", exclude_none=True)
-                            if action.action_form
-                            else None
-                        ),
-                    }
-                    for action in loaded.manifest.actions
-                ],
-            }
-            return json.dumps(payload, ensure_ascii=True)
+            payload = self._build_loaded_skill_runtime_payload(installed, loaded.manifest)
+            return json.dumps(payload.model_dump(mode="json", by_alias=True), ensure_ascii=True)
 
         if tool_name == "check_tool_job":
             job_id = str(tool_input.get("job_id", "")).strip()
@@ -533,6 +507,35 @@ class SkillRuntimeService:
                 }
             )
         return summary
+
+    def _build_loaded_skill_runtime_payload(
+        self,
+        installed: AgentSkill,
+        manifest: SkillManifest,
+    ) -> LoadedSkillRuntimeResponse:
+        installed_skill_id = installed.installed_skill_id or installed.skill_id
+        return LoadedSkillRuntimeResponse(
+            skill_id=installed_skill_id,
+            prompt=self._build_loaded_skill_prompt(installed, manifest),
+            actions=[
+                LoadedSkillRuntimeAction(
+                    name=action.name,
+                    description=action.description,
+                    input_schema=action.input_schema,
+                )
+                for action in manifest.actions
+            ],
+        )
+
+    def _build_loaded_skill_prompt(self, installed: AgentSkill, manifest: SkillManifest) -> str:
+        parts = [manifest.system_prompt.strip()]
+        usage_context = self._build_usage_context(installed)
+        if usage_context:
+            parts.append(
+                "Installed configuration:\n"
+                + "\n".join(f"- {item['label']}: {item['value']}" for item in usage_context)
+            )
+        return "\n\n".join(part for part in parts if part)
 
     def _render_usage_context_value(self, value: Any, attr: dict[str, str]) -> str:
         if value is None or value == "":

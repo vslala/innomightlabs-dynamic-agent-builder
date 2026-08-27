@@ -146,7 +146,8 @@ api_base_url="$(get_var 'API_BASE_URL')"
 cognito_domain="$(get_var 'COGNITO_DOMAIN')"
 cli_runner_shared_token="$(get_prod_var 'CLI_RUNNER_SHARED_TOKEN')"
 cli_runner_max_timeout_seconds="$(get_prod_var_default 'CLI_RUNNER_MAX_TIMEOUT_SECONDS' '120')"
-default_cli_runner_base_url="http://$(railway_ref "$RAILWAY_CLI_RUNNER_SERVICE" 'RAILWAY_PRIVATE_DOMAIN'):$(railway_ref "$RAILWAY_CLI_RUNNER_SERVICE" 'PORT')"
+cli_runner_internal_port="$(get_prod_var_default 'CLI_RUNNER_PORT' '8080')"
+default_cli_runner_base_url="http://$(railway_ref "$RAILWAY_CLI_RUNNER_SERVICE" 'RAILWAY_PRIVATE_DOMAIN'):$cli_runner_internal_port"
 cli_runner_base_url="$(get_prod_var_default 'CLI_RUNNER_BASE_URL' "$default_cli_runner_base_url")"
 
 if [[ -z "$api_base_url" && -n "$api_domain" ]]; then
@@ -285,6 +286,7 @@ if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
 
   set_runner_railway_var "RAILWAY_DOCKERFILE_PATH" "Dockerfile.railway"
   set_runner_railway_var "RAILWAY_HEALTHCHECK_TIMEOUT_SEC" "300"
+  set_runner_railway_var "PORT" "$cli_runner_internal_port"
   set_runner_railway_var "CLI_RUNNER_SHARED_TOKEN" "$cli_runner_shared_token"
   set_runner_railway_var "CLI_RUNNER_MAX_TIMEOUT_SECONDS" "$cli_runner_max_timeout_seconds"
 

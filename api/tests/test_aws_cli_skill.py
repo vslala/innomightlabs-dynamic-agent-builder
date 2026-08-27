@@ -133,6 +133,24 @@ def test_policy_accepts_allowed_read_prefix_and_rejects_unknown_command() -> Non
         policy.validate_read_argv(["s3api", "delete-object", "--bucket", "demo", "--key", "x"])
 
 
+def test_default_policy_allows_ranged_s3_get_object() -> None:
+    policy = parse_policy(Path("src/skills/aws_cli/default_policy.yml").read_text())
+
+    policy.validate_read_argv(
+        [
+            "s3api",
+            "get-object",
+            "--bucket",
+            "demo",
+            "--key",
+            "logs/app.log",
+            "--range",
+            "bytes=0-11999",
+            "-",
+        ]
+    )
+
+
 def test_request_rejects_shell_syntax() -> None:
     with pytest.raises(ValueError, match="shell"):
         AwsCliReadRequest.model_validate({"argv": ["s3api", "list-buckets", "|", "cat"]})
