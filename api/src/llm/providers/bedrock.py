@@ -10,6 +10,15 @@ from typing import Any, AsyncIterator, Optional
 
 import boto3
 
+from src.llm.messages import (
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    content_text,
+    normalize_messages,
+    split_system_messages,
+)
+from src.llm.tools import normalize_tool_definitions
 from .base import LLMProvider, LLMEvent
 
 log = logging.getLogger(__name__)
@@ -94,33 +103,7 @@ class BedrockProvider(LLMProvider):
             aws_secret_access_key=secret_key,
         )
 
-        # Separate system prompt from conversation messages
-        system_prompt = None
-        bedrock_messages = []
-
-        for msg in messages:
-            if msg["role"] == "system":
-                system_prompt = msg["content"]
-            else:
-                # Handle both string content and structured content
-                content = msg["content"]
-                if isinstance(content, str):
-                    bedrock_messages.append({
-                        "role": msg["role"],
-                        "content": [{"text": content}],
-                    })
-                elif isinstance(content, list):
-                    # Already structured (tool results etc.)
-                    bedrock_messages.append({
-                        "role": msg["role"],
-                        "content": content,
-                    })
-                else:
-                    # Assume it's a single content block
-                    bedrock_messages.append({
-                        "role": msg["role"],
-                        "content": [content],
-                    })
+        system_prompt, bedrock_messages = self._convert_messages(messages)
 
         # Build request parameters
         request_params: dict[str, Any] = {
@@ -134,17 +117,7 @@ class BedrockProvider(LLMProvider):
 
         # Add tools if provided
         if tools:
-            bedrock_tools = [
-                {
-                    "toolSpec": {
-                        "name": tool["name"],
-                        "description": tool["description"],
-                        "inputSchema": {"json": tool["parameters"]},
-                    }
-                }
-                for tool in tools
-            ]
-            request_params["toolConfig"] = {"tools": bedrock_tools}
+            request_params["toolConfig"] = {"tools": self._normalize_tools(tools)}
 
         log.info(
             f"Calling Bedrock converse_stream with model {model_id}, "
@@ -229,3 +202,36 @@ class BedrockProvider(LLMProvider):
 
     def __repr__(self) -> str:
         return f"BedrockProvider(default_model={DEFAULT_MODEL_NAME}, region={self.REGION})"
+
+    def _convert_messages(self, messages: list[dict]) -> tuple[Optional[str], list[dict[str, Any]]]:
+        system_prompt, conversation_messages = split_system_messages(normalize_messages(messages))
+        bedrock_messages = [
+            {
+                "role": message.role,
+                "content": [self._convert_content_block(block) for block in message.content],
+            }
+            for message in conversation_messages
+        ]
+        return system_prompt, bedrock_messages
+
+    def _normalize_tools(self, tools: list[dict]) -> list[dict[str, Any]]:
+        return [tool.to_bedrock() for tool in normalize_tool_definitions(tools)]
+
+    def _convert_content_block(self, block: TextBlock | ToolUseBlock | ToolResultBlock) -> dict[str, Any]:
+        if isinstance(block, TextBlock):
+            return {"text": block.text}
+        if isinstance(block, ToolUseBlock):
+            tool_use: dict[str, Any] = {
+                "toolUseId": block.id,
+                "name": block.name,
+                "input": block.input,
+            }
+            if block.thought_signature:
+                tool_use["thoughtSignature"] = block.thought_signature
+            return {"toolUse": tool_use}
+        return {
+            "toolResult": {
+                "toolUseId": block.tool_use_id,
+                "content": [{"text": content_text(block.content)}],
+            }
+        }

@@ -13,6 +13,15 @@ import httpx
 
 from src.auth.openai_oauth import OpenAICredentials, extract_account_id_from_access_token
 from src.config.settings import settings
+from src.llm.messages import (
+    ChatMessage,
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    normalize_messages,
+    split_system_messages,
+)
+from src.llm.tools import normalize_tool_definitions
 from .base import LLMEvent, LLMProvider
 
 log = logging.getLogger(__name__)
@@ -25,29 +34,8 @@ class OpenAIProvider(LLMProvider):
     """OpenAI provider using Responses API streaming."""
 
     def _extract_instructions_and_messages(self, messages: list[dict]) -> tuple[str, list[dict]]:
-        instructions_chunks: list[str] = []
-        filtered_messages: list[dict] = []
-
-        for msg in messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-
-            if role != "system":
-                filtered_messages.append(msg)
-                continue
-
-            if isinstance(content, str) and content.strip():
-                instructions_chunks.append(content.strip())
-                continue
-
-            if isinstance(content, list):
-                for block in content:
-                    text = block.get("text")
-                    if isinstance(text, str) and text.strip():
-                        instructions_chunks.append(text.strip())
-
-        instructions = "\n\n".join(instructions_chunks).strip() or "You are a helpful assistant."
-        return instructions, filtered_messages
+        system_prompt, conversation = split_system_messages(normalize_messages(messages))
+        return system_prompt or "You are a helpful assistant.", conversation
 
     def _text_block_type_for_role(self, role: str) -> str:
         # Codex backend expects assistant history as output blocks.
@@ -56,49 +44,7 @@ class OpenAIProvider(LLMProvider):
         return "input_text"
 
     def _normalize_tools(self, tools: list[dict]) -> list[dict]:
-        normalized = []
-        for tool in tools:
-            if tool.get("type") == "function":
-                normalized.append(self._normalize_function_tool(tool))
-                continue
-
-            custom = tool.get("custom") or {}
-            name = custom.get("name") or tool.get("name")
-            if not name:
-                continue
-
-            parameters = (
-                custom.get("input_schema")
-                or custom.get("inputSchema")
-                or custom.get("parameters")
-                or tool.get("input_schema")
-                or tool.get("inputSchema")
-                or tool.get("parameters")
-                or {"type": "object", "properties": {}}
-            )
-
-            normalized.append(
-                self._normalize_function_tool(
-                    {
-                        "type": "function",
-                        "name": name,
-                        "description": custom.get("description") or tool.get("description", ""),
-                        "parameters": parameters,
-                    }
-                )
-            )
-        return normalized
-
-    def _normalize_function_tool(self, tool: dict[str, Any]) -> dict[str, Any]:
-        normalized = {
-            "type": "function",
-            "name": tool.get("name", ""),
-            "description": tool.get("description", ""),
-            "parameters": tool.get("parameters") or {"type": "object", "properties": {}},
-        }
-        if "strict" in tool:
-            normalized["strict"] = tool["strict"]
-        return normalized
+        return [tool.to_openai() for tool in normalize_tool_definitions(tools)]
 
     def _request_headers(self, credentials: OpenAICredentials) -> dict[str, str]:
         headers = {
@@ -120,7 +66,7 @@ class OpenAIProvider(LLMProvider):
         self,
         model_id: str,
         instructions: str,
-        request_messages: list[dict],
+        request_messages: list[ChatMessage] | list[dict],
         tools: list[dict] | None,
     ) -> dict[str, Any]:
         normalized_tools = self._normalize_tools(tools or [])
@@ -141,63 +87,32 @@ class OpenAIProvider(LLMProvider):
             "text": {"verbosity": "medium"},
         }
 
-    def _convert_messages(self, messages: list[dict]) -> list[dict[str, Any]]:
+    def _convert_messages(self, messages: list[ChatMessage] | list[dict]) -> list[dict[str, Any]]:
+        normalized_messages = (
+            messages
+            if all(isinstance(message, ChatMessage) for message in messages)
+            else normalize_messages(messages)
+        )
         converted: list[dict[str, Any]] = []
 
-        for msg in messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
+        for message in normalized_messages:
+            role = message.role
             text_block_type = self._text_block_type_for_role(role)
-
-            if isinstance(content, str):
-                converted.append(
-                    {
-                        "role": role,
-                        "content": [{"type": text_block_type, "text": content}],
-                    }
-                )
-                continue
-
-            if isinstance(content, list):
-                blocks: list[dict[str, Any]] = []
-                for block in content:
-                    if "text" in block:
-                        blocks.append({"type": text_block_type, "text": block["text"]})
-                        continue
-
-                    tool_use = block.get("toolUse")
-                    if tool_use:
-                        tool_name = tool_use.get("name", "")
-                        tool_input = tool_use.get("input", {})
-                        blocks.append(
-                            {
-                                "type": text_block_type,
-                                "text": (
-                                    f"[tool_call name={tool_name}] "
-                                    f"{json.dumps(tool_input, ensure_ascii=True)}"
-                                ),
-                            }
-                        )
-                        continue
-
-                    tool_result = block.get("toolResult")
-                    if tool_result:
-                        result_chunks = tool_result.get("content", [])
-                        output_text = ""
-                        for chunk in result_chunks:
-                            if isinstance(chunk, dict) and "text" in chunk:
-                                output_text += str(chunk["text"])
-                        blocks.append(
-                            {
-                                "type": text_block_type,
-                                "text": f"[tool_result] {output_text}",
-                            }
-                        )
-
-                if blocks:
-                    converted.append({"role": role, "content": blocks})
+            blocks = [
+                {"type": text_block_type, "text": self._content_block_text(block)}
+                for block in message.content
+            ]
+            if blocks:
+                converted.append({"role": role, "content": blocks})
 
         return converted
+
+    def _content_block_text(self, block: TextBlock | ToolUseBlock | ToolResultBlock) -> str:
+        if isinstance(block, TextBlock):
+            return block.text
+        if isinstance(block, ToolUseBlock):
+            return f"[tool_call name={block.name}] {json.dumps(block.input, ensure_ascii=True)}"
+        return f"[tool_result] {block.content}"
 
     async def stream_response(
         self,

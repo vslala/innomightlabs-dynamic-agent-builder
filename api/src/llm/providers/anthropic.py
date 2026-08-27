@@ -1,45 +1,52 @@
 from anthropic import AsyncAnthropic
 from typing import Any, AsyncIterator, Optional, cast
-import json
 
+from src.llm.messages import (
+    ChatMessage,
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    normalize_messages,
+    split_system_messages,
+)
 from src.llm.providers.base import LLMEvent, LLMProvider
+from src.llm.tools import normalize_anthropic_tools
 import logging
 
 log = logging.getLogger(__name__)
 
 class AnthropicProvider(LLMProvider):
+    def _extract_system_and_messages(self, messages: list[dict]) -> tuple[str | None, list[dict[str, Any]]]:
+        system_prompt, conversation = split_system_messages(normalize_messages(messages))
+        return system_prompt, self._convert_messages(conversation)
+
+    def _convert_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
+        return [
+            {
+                "role": message.role,
+                "content": [self._convert_content_block(block) for block in message.content],
+            }
+            for message in messages
+        ]
+
+    def _convert_content_block(self, block: TextBlock | ToolUseBlock | ToolResultBlock) -> dict[str, Any]:
+        if isinstance(block, TextBlock):
+            return {"type": "text", "text": block.text}
+        if isinstance(block, ToolUseBlock):
+            return {
+                "type": "tool_use",
+                "id": block.id,
+                "name": block.name,
+                "input": block.input,
+            }
+        return {
+            "type": "tool_result",
+            "tool_use_id": block.tool_use_id,
+            "content": block.content,
+        }
 
     def _normalize_tools(self, tools: list[dict]) -> list[dict]:
-        normalized = []
-        for tool in tools:
-            if tool.get("type") and tool.get("type") != "custom":
-                normalized.append(tool)
-                continue
-
-            custom = tool.get("custom") or {}
-            name = custom.get("name") or tool.get("name")
-            if not name:
-                log.warning("Skipping tool without name: %s", tool)
-                continue
-
-            input_schema = (
-                custom.get("input_schema")
-                or custom.get("inputSchema")
-                or custom.get("parameters")
-                or tool.get("input_schema")
-                or tool.get("inputSchema")
-                or tool.get("parameters")
-            )
-            if not input_schema:
-                input_schema = {"type": "object", "properties": {}}
-
-            normalized.append({
-                "name": name,
-                "description": custom.get("description") or tool.get("description", ""),
-                "input_schema": input_schema,
-            })
-
-        return normalized
+        return normalize_anthropic_tools(tools)
     
     async def stream_response(
         self,
@@ -69,27 +76,7 @@ class AnthropicProvider(LLMProvider):
 
         client = AsyncAnthropic(api_key=api_key)
 
-        # Separate system prompt from conversation messages
-        system_prompt = None
-        anthropic_messages = []
-
-        for msg in messages:
-            if msg["role"] == "system":
-                system_prompt = msg["content"]
-            else:
-                # Handle both string content and structured content
-                content = msg["content"]
-                if isinstance(content, str):
-                    anthropic_messages.append({
-                        "role": msg["role"],
-                        "content": content,
-                    })
-                else:
-                    # Already structured (list of content blocks)
-                    anthropic_messages.append({
-                        "role": msg["role"],
-                        "content": content,
-                    })
+        system_prompt, anthropic_messages = self._extract_system_and_messages(messages)
 
         # Build request parameters
         request_params: dict[str, Any] = {

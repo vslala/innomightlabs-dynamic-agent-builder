@@ -37,3 +37,4 @@ tmp/
 
 # Artifacts
 *.zip
+.codex

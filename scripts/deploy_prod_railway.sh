@@ -22,12 +22,17 @@ command -v railway >/dev/null 2>&1 || {
   exit 1
 }
 
-require_railway_service() {
+railway_service_exists() {
   local service_name="$1"
-  if railway service list \
+  railway service list \
     --project "$RAILWAY_PROJECT_ID" \
     --environment "$RAILWAY_ENVIRONMENT" \
-    --json | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"$service_name\""; then
+    --json | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"$service_name\""
+}
+
+require_railway_service() {
+  local service_name="$1"
+  if railway_service_exists "$service_name"; then
     return
   fi
 
@@ -39,10 +44,35 @@ require_railway_service() {
   exit 1
 }
 
+ensure_railway_service() {
+  local service_name="$1"
+  if railway_service_exists "$service_name"; then
+    return
+  fi
+
+  echo "Railway service '$service_name' not found. Creating it in project '$RAILWAY_PROJECT_ID' environment '$RAILWAY_ENVIRONMENT'..."
+  railway link \
+    --project "$RAILWAY_PROJECT_ID" \
+    --environment "$RAILWAY_ENVIRONMENT" \
+    --json >/dev/null
+  railway add \
+    --service "$service_name" \
+    --json >/dev/null
+  echo "Created Railway service '$service_name'."
+}
+
 railway_ref() {
   local service_name="$1"
   local variable_name="$2"
   printf '${{%s.%s}}' "$service_name" "$variable_name"
+}
+
+generate_cli_runner_shared_token() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+    return
+  fi
+  python3 -c 'import secrets; print(secrets.token_hex(32))'
 }
 
 echo ""
@@ -79,6 +109,23 @@ get_var_default() {
   printf '%s' "$value"
 }
 
+get_prod_var() {
+  local var_name="$1"
+  local env_var="PROD_${var_name}"
+  printf '%s' "${!env_var:-}"
+}
+
+get_prod_var_default() {
+  local var_name="$1"
+  local default_value="$2"
+  local value
+  value="$(get_prod_var "$var_name")"
+  if [[ -z "$value" ]]; then
+    value="$default_value"
+  fi
+  printf '%s' "$value"
+}
+
 set_railway_var() {
   local key="$1"
   local value="$2"
@@ -93,14 +140,14 @@ set_railway_var() {
 project_name="$(get_var_default 'PROJECT_NAME' 'dynamic-agent-builder')"
 aws_region="$(get_var_default 'AWS_REGION_NAME' "$(get_var_default 'AWS_REGION' 'us-east-1')")"
 environment_name="$(get_var_default 'ENVIRONMENT' 'prod')"
-RAILWAY_CLI_RUNNER_SERVICE="$(get_var_default 'RAILWAY_CLI_RUNNER_SERVICE' "$RAILWAY_CLI_RUNNER_SERVICE")"
+RAILWAY_CLI_RUNNER_SERVICE="$(get_prod_var_default 'RAILWAY_CLI_RUNNER_SERVICE' "$RAILWAY_CLI_RUNNER_SERVICE")"
 api_domain="$(get_var 'API_DOMAIN')"
 api_base_url="$(get_var 'API_BASE_URL')"
 cognito_domain="$(get_var 'COGNITO_DOMAIN')"
-cli_runner_shared_token="$(get_var 'CLI_RUNNER_SHARED_TOKEN')"
-cli_runner_max_timeout_seconds="$(get_var_default 'CLI_RUNNER_MAX_TIMEOUT_SECONDS' '120')"
+cli_runner_shared_token="$(get_prod_var 'CLI_RUNNER_SHARED_TOKEN')"
+cli_runner_max_timeout_seconds="$(get_prod_var_default 'CLI_RUNNER_MAX_TIMEOUT_SECONDS' '120')"
 default_cli_runner_base_url="http://$(railway_ref "$RAILWAY_CLI_RUNNER_SERVICE" 'RAILWAY_PRIVATE_DOMAIN'):$(railway_ref "$RAILWAY_CLI_RUNNER_SERVICE" 'PORT')"
-cli_runner_base_url="$(get_var_default 'CLI_RUNNER_BASE_URL' "$default_cli_runner_base_url")"
+cli_runner_base_url="$(get_prod_var_default 'CLI_RUNNER_BASE_URL' "$default_cli_runner_base_url")"
 
 if [[ -z "$api_base_url" && -n "$api_domain" ]]; then
   api_base_url="https://$api_domain"
@@ -117,12 +164,12 @@ fi
 echo "Checking Railway project/services..."
 require_railway_service "$RAILWAY_SERVICE"
 if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
-  require_railway_service "$RAILWAY_CLI_RUNNER_SERVICE"
+  ensure_railway_service "$RAILWAY_CLI_RUNNER_SERVICE"
 fi
 
 if [[ "$DEPLOY_CLI_RUNNER" == "true" && -z "$cli_runner_shared_token" ]]; then
-  echo "Error: CLI_RUNNER_SHARED_TOKEN must be set before deploying the private infra CLI runner." >&2
-  exit 1
+  cli_runner_shared_token="$(generate_cli_runner_shared_token)"
+  echo "CLI_RUNNER_SHARED_TOKEN was not set. Generated a new production sidecar token for this deployment."
 fi
 
 url_for() {
@@ -206,7 +253,7 @@ set_railway_var "ASYNC_JOB_LAMBDA_NAME" "$(get_var 'ASYNC_JOB_LAMBDA_NAME')"
 set_railway_var "ACCOUNT_DELETION_LAMBDA_NAME" "$(get_var 'ACCOUNT_DELETION_LAMBDA_NAME')"
 set_railway_var "CLI_RUNNER_BASE_URL" "$cli_runner_base_url"
 set_railway_var "CLI_RUNNER_SHARED_TOKEN" "$cli_runner_shared_token"
-set_railway_var "CLI_RUNNER_TIMEOUT_SECONDS" "$(get_var_default 'CLI_RUNNER_TIMEOUT_SECONDS' '30')"
+set_railway_var "CLI_RUNNER_TIMEOUT_SECONDS" "$(get_prod_var_default 'CLI_RUNNER_TIMEOUT_SECONDS' '30')"
 
 if [[ ${#RAILWAY_VAR_ARGS[@]} -gt 0 ]]; then
   railway variable set \
@@ -275,6 +322,7 @@ if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
   echo ""
   echo "Deploying private infra CLI runner to Railway..."
   railway up "$CLI_RUNNER_DIR" \
+    --detach \
     --path-as-root \
     --project "$RAILWAY_PROJECT_ID" \
     --service "$RAILWAY_CLI_RUNNER_SERVICE" \
@@ -285,6 +333,7 @@ fi
 echo ""
 echo "Deploying API to Railway..."
 railway up "$API_DIR" \
+  --detach \
   --path-as-root \
   --project "$RAILWAY_PROJECT_ID" \
   --service "$RAILWAY_SERVICE" \

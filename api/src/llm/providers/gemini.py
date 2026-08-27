@@ -10,6 +10,16 @@ from typing import Any, AsyncIterator, Optional, cast
 from google import genai
 from google.genai import types
 
+from src.llm.messages import (
+    ChatMessage,
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    content_text,
+    normalize_messages,
+    split_system_messages,
+)
+from src.llm.tools import normalize_tool_definitions
 from .base import LLMEvent, LLMProvider
 
 log = logging.getLogger(__name__)
@@ -26,71 +36,34 @@ class GeminiProvider(LLMProvider):
             raise ValueError("Missing required credential: 'api_key'")
         return genai.Client(api_key=str(api_key))
 
-    def _extract_system_and_messages(self, messages: list[dict]) -> tuple[str | None, list[dict]]:
-        system_chunks: list[str] = []
-        conversation_messages: list[dict] = []
-
-        for message in messages:
-            role = message.get("role", "user")
-            content = message.get("content", "")
-            if role != "system":
-                conversation_messages.append(message)
-                continue
-
-            if isinstance(content, str) and content.strip():
-                system_chunks.append(content.strip())
-                continue
-
-            if isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict):
-                        text = block.get("text")
-                        if isinstance(text, str) and text.strip():
-                            system_chunks.append(text.strip())
-
-        return "\n\n".join(system_chunks) or None, conversation_messages
-
-    def _tool_result_text(self, content: Any) -> str:
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            chunks: list[str] = []
-            for item in content:
-                if isinstance(item, dict) and "text" in item:
-                    chunks.append(str(item["text"]))
-                else:
-                    chunks.append(json.dumps(item, ensure_ascii=True))
-            return "\n".join(chunks)
-        return json.dumps(content, ensure_ascii=True)
-
-    def _tool_result_response(self, tool_result: dict[str, Any]) -> dict[str, Any]:
-        text = self._tool_result_text(tool_result.get("content", []))
+    def _tool_result_response(self, content: str) -> dict[str, Any]:
         try:
-            parsed = json.loads(text)
+            parsed = json.loads(content)
         except json.JSONDecodeError:
-            return {"result": text}
+            return {"result": content}
         if isinstance(parsed, dict):
             return parsed
         return {"result": parsed}
 
     def _convert_messages(self, messages: list[dict]) -> tuple[str | None, list[types.Content]]:
-        system_instruction, conversation_messages = self._extract_system_and_messages(messages)
+        system_instruction, conversation_messages = split_system_messages(normalize_messages(messages))
+        return self._convert_normalized_messages(system_instruction, conversation_messages)
+
+    def _convert_normalized_messages(
+        self,
+        system_instruction: str | None,
+        conversation_messages: list[ChatMessage],
+    ) -> tuple[str | None, list[types.Content]]:
         tool_names_by_id: dict[str, str] = {}
         contents: list[types.Content] = []
 
         for message in conversation_messages:
-            role = message.get("role", "user")
+            role = message.role
             gemini_role = "model" if role == "assistant" else "user"
-            raw_content = message.get("content", "")
             parts: list[types.Part] = []
 
-            if isinstance(raw_content, str):
-                parts.append(types.Part.from_text(text=raw_content))
-            elif isinstance(raw_content, list):
-                for block in raw_content:
-                    parts.extend(self._convert_content_block(block, tool_names_by_id))
-            else:
-                parts.append(types.Part.from_text(text=json.dumps(raw_content, ensure_ascii=True)))
+            for block in message.content:
+                parts.extend(self._convert_content_block(block, tool_names_by_id))
 
             if parts:
                 contents.append(types.Content(role=gemini_role, parts=parts))
@@ -99,82 +72,38 @@ class GeminiProvider(LLMProvider):
 
     def _convert_content_block(
         self,
-        block: Any,
+        block: TextBlock | ToolUseBlock | ToolResultBlock,
         tool_names_by_id: dict[str, str],
     ) -> list[types.Part]:
-        if not isinstance(block, dict):
-            return [types.Part.from_text(text=str(block))]
+        if isinstance(block, TextBlock):
+            return [types.Part.from_text(text=block.text)]
 
-        if "text" in block:
-            return [types.Part.from_text(text=str(block["text"]))]
-
-        tool_use = block.get("toolUse")
-        if isinstance(tool_use, dict):
-            name = str(tool_use.get("name") or "")
-            tool_input = tool_use.get("input") if isinstance(tool_use.get("input"), dict) else {}
-            tool_use_id = str(tool_use.get("toolUseId") or tool_use.get("id") or name)
-            if tool_use_id and name:
-                tool_names_by_id[tool_use_id] = name
-            part = types.Part.from_function_call(name=name, args=tool_input)
-            thought_signature = tool_use.get("thoughtSignature") or tool_use.get("thought_signature")
-            if isinstance(thought_signature, bytes):
-                part.thought_signature = thought_signature
+        if isinstance(block, ToolUseBlock):
+            if block.id and block.name:
+                tool_names_by_id[block.id] = block.name
+            part = types.Part.from_function_call(name=block.name, args=block.input)
+            if block.thought_signature:
+                part.thought_signature = block.thought_signature
             return [part]
 
-        tool_result = block.get("toolResult")
-        if isinstance(tool_result, dict):
-            tool_use_id = str(tool_result.get("toolUseId") or tool_result.get("id") or "")
-            name = tool_names_by_id.get(tool_use_id) or str(tool_result.get("name") or "")
-            if not name:
-                raise ValueError(f"Cannot convert Gemini tool result without a tool name: {tool_result}")
-            return [
-                types.Part.from_function_response(
-                    name=name,
-                    response=self._tool_result_response(tool_result),
-                )
-            ]
-
-        return [types.Part.from_text(text=json.dumps(block, ensure_ascii=True))]
-
-    def _normalize_function_tool(self, tool: dict[str, Any]) -> dict[str, Any] | None:
-        if tool.get("type") == "function":
-            name = tool.get("name")
-            description = tool.get("description", "")
-            parameters = tool.get("parameters") or {"type": "object", "properties": {}}
-        else:
-            custom = tool.get("custom") or {}
-            name = custom.get("name") or tool.get("name")
-            description = custom.get("description") or tool.get("description", "")
-            parameters = (
-                custom.get("input_schema")
-                or custom.get("inputSchema")
-                or custom.get("parameters")
-                or tool.get("input_schema")
-                or tool.get("inputSchema")
-                or tool.get("parameters")
-                or {"type": "object", "properties": {}}
-            )
-
+        name = tool_names_by_id.get(block.tool_use_id)
         if not name:
-            log.warning("Skipping Gemini tool without name: %s", tool)
-            return None
-        return {
-            "name": name,
-            "description": description,
-            "parameters": parameters,
-        }
+            raise ValueError(f"Cannot convert Gemini tool result without a tool name: {block}")
+        return [
+            types.Part.from_function_response(
+                name=name,
+                response=self._tool_result_response(content_text(block.content)),
+            )
+        ]
 
     def _normalize_tools(self, tools: list[dict] | None) -> list[types.Tool] | None:
         declarations: list[types.FunctionDeclaration] = []
-        for tool in tools or []:
-            normalized = self._normalize_function_tool(tool)
-            if not normalized:
-                continue
+        for normalized in normalize_tool_definitions(tools):
             declarations.append(
                 types.FunctionDeclaration(
-                    name=normalized["name"],
-                    description=normalized["description"],
-                    parameters_json_schema=normalized["parameters"],
+                    name=normalized.name,
+                    description=normalized.description,
+                    parameters_json_schema=normalized.input_schema,
                 )
             )
 
