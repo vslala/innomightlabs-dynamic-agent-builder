@@ -1,0 +1,23 @@
+aws:
+  default_timeout_seconds: 30
+  max_timeout_seconds: 120
+  max_stdout_bytes: 65536
+  max_stderr_bytes: 16384
+  sts_duration_seconds: 900
+  services:
+    sts:
+      read:
+        - ["sts", "get-caller-identity"]
+    s3:
+      read:
+        - ["s3api", "list-buckets"]
+        - ["s3api", "list-objects-v2"]
+        - ["s3api", "head-bucket"]
+        - ["s3api", "head-object"]
+        - ["s3api", "get-bucket-location"]
+    dynamodb:
+      read:
+        - ["dynamodb", "list-tables"]
+        - ["dynamodb", "describe-table"]
+        - ["dynamodb", "query"]
+        - ["dynamodb", "get-item"]

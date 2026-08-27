@@ -278,6 +278,13 @@ class SkillService:
         user_email: str,
         normalized_config: dict[str, Any],
     ) -> None:
+        if skill_id == "aws_cli":
+            from src.skills.aws_cli.models import AwsCliConfig, parse_policy
+
+            skill_config = AwsCliConfig.model_validate(normalized_config)
+            parse_policy(skill_config.command_policy_yaml)
+            return
+
         if skill_id != "agent2agent_client":
             return
         urls = _agent2agent_discovery_urls(normalized_config)

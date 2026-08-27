@@ -1,0 +1,120 @@
+id: aws_cli
+namespace: infrastructure.aws
+name: AWS CLI
+description: Run approved read-only AWS CLI commands through the private infrastructure CLI runner.
+system_prompt: |
+  Use this skill when the user asks to inspect AWS resources through AWS CLI.
+  The AWS access key and secret are stored as encrypted skill configuration. Never ask the user to paste them into chat after the skill is installed.
+  Use run_read for approved read-only commands. Pass argv as the arguments after the aws executable; do not include "aws" as argv[0].
+  Do not use shell syntax, pipes, redirects, command separators, or substitutions.
+  If run_read returns has_more=true, call read_output_page with the returned output_id and next_page to continue reading.
+  Do not use this skill for mutating AWS commands. Mutation support requires a separate explicit-permission runtime feature.
+automation:
+  enabled: false
+form:
+  - input_type: password
+    name: aws_access_key_id
+    label: AWS access key id
+    attr:
+      secret: "true"
+      placeholder: AKIA...
+  - input_type: password
+    name: aws_secret_access_key
+    label: AWS secret access key
+    attr:
+      secret: "true"
+  - input_type: text
+    name: aws_region
+    label: AWS region
+    value: us-east-1
+    attr:
+      placeholder: us-east-1
+  - input_type: text_area
+    name: command_policy_yaml
+    label: Command policy
+    value: |
+      aws:
+        default_timeout_seconds: 30
+        max_timeout_seconds: 120
+        max_stdout_bytes: 65536
+        max_stderr_bytes: 16384
+        sts_duration_seconds: 900
+        services:
+          sts:
+            read:
+              - ["sts", "get-caller-identity"]
+          s3:
+            read:
+              - ["s3api", "list-buckets"]
+              - ["s3api", "list-objects-v2"]
+              - ["s3api", "head-bucket"]
+              - ["s3api", "head-object"]
+              - ["s3api", "get-bucket-location"]
+          dynamodb:
+            read:
+              - ["dynamodb", "list-tables"]
+              - ["dynamodb", "describe-table"]
+              - ["dynamodb", "query"]
+              - ["dynamodb", "get-item"]
+    attr:
+      rows: "22"
+actions:
+  - name: run_read
+    aliases: [aws_read, run_aws_read]
+    description: Run an approved read-only AWS CLI command using short-lived STS credentials.
+    input_schema:
+      type: object
+      required: [argv]
+      properties:
+        argv:
+          type: array
+          items:
+            type: string
+          description: AWS CLI arguments after the aws executable.
+        timeout_seconds:
+          type: integer
+          description: Optional timeout in seconds, clamped by installed policy.
+        max_output_chars:
+          type: integer
+          description: Optional output page size returned to the agent.
+        page_size_chars:
+          type: integer
+          description: Optional first-page size for large stdout.
+    action_form:
+      form_name: AWS CLI Read
+      submit_path: ""
+      form_inputs:
+        - input_type: text_area
+          name: argv
+          label: AWS CLI argv JSON
+          attr:
+            rows: "4"
+            placeholder: "[\"s3api\", \"list-buckets\"]"
+            smart_values: "true"
+        - input_type: text
+          name: timeout_seconds
+          label: Timeout seconds
+          value: "30"
+          attr:
+            optional: "true"
+        - input_type: text
+          name: page_size_chars
+          label: Page size chars
+          value: "12000"
+          attr:
+            optional: "true"
+    handler: actions:run_read
+  - name: read_output_page
+    aliases: [aws_read_output_page]
+    description: Read another page from a large AWS CLI output returned by run_read.
+    input_schema:
+      type: object
+      required: [output_id, page]
+      properties:
+        output_id:
+          type: string
+        page:
+          type: integer
+        page_size_chars:
+          type: integer
+    handler: actions:read_output_page
