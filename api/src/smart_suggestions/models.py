@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class SmartSuggestionType:
     CRON_EXPRESSION = "cron_expression"
+    AGENT_INSTRUCTIONS = "agent_instructions"
 
 
 class SmartSuggestionSettings(BaseModel):
@@ -94,7 +95,7 @@ class SmartSuggestionSettingsResponse(BaseModel):
 
 
 class SmartSuggestionRequest(BaseModel):
-    suggestion_type: Literal["cron_expression"]
+    suggestion_type: Literal["cron_expression", "agent_instructions"]
     query: str = Field(min_length=1)
     current_value: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
@@ -110,4 +111,3 @@ class SmartSuggestionResponse(BaseModel):
     value: str
     display_text: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-

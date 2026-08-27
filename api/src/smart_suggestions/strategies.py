@@ -34,6 +34,11 @@ class CronExpressionPayload(BaseModel):
     explanation: str = Field(min_length=1)
 
 
+class AgentInstructionsPayload(BaseModel):
+    instructions: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+
+
 class CronExpressionSuggestionStrategy:
     suggestion_type = SmartSuggestionType.CRON_EXPRESSION
 
@@ -83,11 +88,63 @@ class CronExpressionSuggestionStrategy:
         )
 
 
+class AgentInstructionsSuggestionStrategy:
+    suggestion_type = SmartSuggestionType.AGENT_INSTRUCTIONS
+
+    def build_messages(self, request: SmartSuggestionRequest) -> list[dict[str, str]]:
+        current_value = request.current_value or ""
+        user_payload = {
+            "request": request.query,
+            "current_instructions": current_value,
+            "agent_name": _context_string(request, "agent_name", default=""),
+            "agent_architecture": _context_string(request, "agent_architecture", default=""),
+            "agent_description": _context_string(request, "agent_description", default=""),
+        }
+        system_prompt = (
+            "You write clear, durable instructions for an AI agent configuration form.\n"
+            "Return only valid JSON matching this exact shape:\n"
+            '{"instructions":"string","summary":"string"}\n'
+            "Rules:\n"
+            "- Write in direct instruction style, not as a biography.\n"
+            "- Include purpose, scope, behavior, tone, and any constraints implied by the request.\n"
+            "- Preserve useful existing instructions when current_instructions are provided.\n"
+            "- Use concise markdown bullets only when they improve scanability.\n"
+            "- Do not include secrets, placeholders for secrets, markdown code fences, or extra keys."
+        )
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=True)},
+        ]
+
+    def parse_response(self, raw_response: str, request: SmartSuggestionRequest) -> SmartSuggestionResponse:
+        try:
+            payload = AgentInstructionsPayload.model_validate_json(_extract_json_object(raw_response))
+        except ValidationError as exc:
+            raise SmartSuggestionError("Model returned invalid agent instructions") from exc
+
+        instructions = payload.instructions.strip()
+        if not instructions:
+            raise SmartSuggestionError("Model returned empty agent instructions")
+
+        return SmartSuggestionResponse(
+            suggestion_type=self.suggestion_type,
+            value=instructions,
+            display_text=payload.summary.strip(),
+            metadata={},
+        )
+
+
 class SmartSuggestionStrategyRegistry:
     def __init__(self, strategies: list[SmartSuggestionStrategy] | None = None):
         self._strategies = {
             strategy.suggestion_type: strategy
-            for strategy in (strategies or [CronExpressionSuggestionStrategy()])
+            for strategy in (
+                strategies
+                or [
+                    CronExpressionSuggestionStrategy(),
+                    AgentInstructionsSuggestionStrategy(),
+                ]
+            )
         }
 
     def get(self, suggestion_type: str) -> SmartSuggestionStrategy:
@@ -114,4 +171,3 @@ def _extract_json_object(raw_response: str) -> str:
     if start >= 0 and end > start:
         return stripped[start : end + 1]
     raise SmartSuggestionError("Model did not return a JSON object")
-

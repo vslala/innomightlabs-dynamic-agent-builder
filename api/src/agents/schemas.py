@@ -2,8 +2,16 @@
 Agent form schemas - single source of truth for agent-related forms.
 """
 
-from src.form_models import Form, FormInput, FormInputType, FormOptionsSource, SelectOption
+from src.form_models import (
+    Form,
+    FormInput,
+    FormInputType,
+    FormOptionsSource,
+    SelectOption,
+    SmartSuggestionConfig,
+)
 from src.form_options import FormOptionSourceType
+from src.smart_suggestions.models import SmartSuggestionType
 
 
 # Fallback model options if dynamic fetch fails
@@ -22,6 +30,20 @@ SESSION_TIMEOUT_OPTIONS = [
     SelectOption(value="240", label="4 hours"),
     SelectOption(value="0", label="No timeout (load all)"),
 ]
+
+
+def _agent_instructions_field() -> FormInput:
+    return FormInput(
+        label="Instructions",
+        name="agent_persona",
+        input_type=FormInputType.TEXT_AREA,
+        smart_suggestion=SmartSuggestionConfig(
+            suggestion_type=SmartSuggestionType.AGENT_INSTRUCTIONS,
+            button_label="Suggest instructions",
+            prompt_placeholder="Describe what this agent should do",
+        ),
+        attr={"rows": "8"},
+    )
 
 
 def get_create_agent_form() -> Form:
@@ -46,11 +68,7 @@ def get_create_agent_form() -> Form:
                 values=["krishna-mini", "krishna-memgpt"],
                 input_type=FormInputType.SELECT,
             ),
-            FormInput(
-                label="Persona",
-                name="agent_persona",
-                input_type=FormInputType.TEXT_AREA,
-            ),
+            _agent_instructions_field(),
             FormInput(
                 label="Description (optional)",
                 name="agent_description",
@@ -100,11 +118,7 @@ def get_update_agent_form(
                 values=["krishna-mini", "krishna-memgpt"],
                 input_type=FormInputType.SELECT,
             ),
-            FormInput(
-                label="Persona",
-                name="agent_persona",
-                input_type=FormInputType.TEXT_AREA,
-            ),
+            _agent_instructions_field(),
             FormInput(
                 label="Description (optional)",
                 name="agent_description",
@@ -145,11 +159,7 @@ UPDATE_AGENT_FORM = Form(
             values=["krishna-mini", "krishna-memgpt"],
             input_type=FormInputType.SELECT,
         ),
-        FormInput(
-            label="Persona",
-            name="agent_persona",
-            input_type=FormInputType.TEXT_AREA,
-        ),
+        _agent_instructions_field(),
         FormInput(
             label="Description (optional)",
             name="agent_description",

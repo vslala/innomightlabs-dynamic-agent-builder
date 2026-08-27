@@ -3,12 +3,17 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from src.agents.schemas import get_create_agent_form, get_update_agent_form
 from src.automations.triggers.schemas import build_schedule_trigger_form
 from src.smart_suggestions.models import SmartSuggestionRequest, SmartSuggestionResponse
 from src.smart_suggestions.repository import SmartSuggestionSettingsRepository
 from src.smart_suggestions.router import get_smart_suggestion_service
 from src.smart_suggestions.service import SmartSuggestionService
-from src.smart_suggestions.strategies import CronExpressionSuggestionStrategy, SmartSuggestionError
+from src.smart_suggestions.strategies import (
+    AgentInstructionsSuggestionStrategy,
+    CronExpressionSuggestionStrategy,
+    SmartSuggestionError,
+)
 from tests.mock_data import TEST_USER_EMAIL
 
 
@@ -20,6 +25,17 @@ def test_schedule_trigger_cron_field_declares_smart_suggestion():
     assert cron_field.smart_suggestion is not None
     assert cron_field.smart_suggestion.suggestion_type == "cron_expression"
     assert cron_field.smart_suggestion.prompt_placeholder == "Every weekday at 9 AM"
+
+
+@pytest.mark.parametrize("form", [get_create_agent_form(), get_update_agent_form("agent-1")])
+def test_agent_instructions_field_declares_smart_suggestion(form):
+    instructions_field = next(field for field in form.form_inputs if field.name == "agent_persona")
+
+    assert instructions_field.label == "Instructions"
+    assert instructions_field.attr == {"rows": "8"}
+    assert instructions_field.smart_suggestion is not None
+    assert instructions_field.smart_suggestion.suggestion_type == "agent_instructions"
+    assert instructions_field.smart_suggestion.button_label == "Suggest instructions"
 
 
 def test_cron_strategy_parses_and_validates_model_json():
@@ -52,6 +68,23 @@ def test_cron_strategy_rejects_invalid_cron():
             '{"cron_expression":"0 9 * *","explanation":"Invalid shape."}',
             request,
         )
+
+
+def test_agent_instructions_strategy_parses_model_json():
+    strategy = AgentInstructionsSuggestionStrategy()
+    request = SmartSuggestionRequest(
+        suggestion_type="agent_instructions",
+        query="Make a support triage agent",
+        context={"agent_name": "Support Triage"},
+    )
+
+    response = strategy.parse_response(
+        '{"instructions":"Triage inbound support requests clearly.","summary":"Drafted support triage instructions."}',
+        request,
+    )
+
+    assert response.value == "Triage inbound support requests clearly."
+    assert response.display_text == "Drafted support triage instructions."
 
 
 def test_smart_suggestion_settings_round_trip(
@@ -130,4 +163,3 @@ def test_smart_suggestion_endpoint_delegates_to_service(
 
     assert response.status_code == 200
     assert response.json()["value"] == "0 9 * * 1-5"
-
