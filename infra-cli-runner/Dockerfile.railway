@@ -1,0 +1,33 @@
+FROM python:3.13-slim
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl unzip groff less \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+  arch="$(dpkg --print-architecture)"; \
+  case "$arch" in \
+    amd64) aws_arch="x86_64" ;; \
+    arm64) aws_arch="aarch64" ;; \
+    *) echo "Unsupported architecture for AWS CLI: $arch" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}.zip" -o "/tmp/awscliv2.zip" \
+  && unzip /tmp/awscliv2.zip -d /tmp \
+  && /tmp/aws/install \
+  && rm -rf /tmp/aws /tmp/awscliv2.zip
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY main.py ./
+COPY src ./src
+
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app"
+ENV PYTHONUNBUFFERED=1
+
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]

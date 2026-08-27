@@ -67,6 +67,9 @@ class Settings:
     scheduler_backend: str = "in_app"
     scheduler_runtime_enabled: bool = True
     mcp_oauth_redirect_uri: str = ""
+    cli_runner_base_url: str = ""
+    cli_runner_shared_token: str = ""
+    cli_runner_timeout_seconds: int = 30
 
     # DynamoDB endpoint (optional, for local development)
     dynamodb_endpoint: Optional[str] = None
@@ -339,6 +342,9 @@ class Settings:
                 "MCP_OAUTH_REDIRECT_URI",
                 f"{api_base_url}/connectors/mcp/oauth/callback",
             ),
+            cli_runner_base_url=os.getenv("CLI_RUNNER_BASE_URL", ""),
+            cli_runner_shared_token=os.getenv("CLI_RUNNER_SHARED_TOKEN", ""),
+            cli_runner_timeout_seconds=int(os.getenv("CLI_RUNNER_TIMEOUT_SECONDS", "30")),
             google_client_id=google_client_id,
             google_client_secret=google_client_secret,
             google_redirect_uri=f"{api_base_url}/auth/callback",

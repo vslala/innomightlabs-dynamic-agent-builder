@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   dynamodb-local:
     image: amazon/dynamodb-local:latest
@@ -10,6 +8,20 @@ services:
     volumes:
       - ./dynamodb-data:/home/dynamodblocal/data
     working_dir: /home/dynamodblocal
+    networks:
+      - local-dev
+
+  infra-cli-runner:
+    build:
+      context: ./infra-cli-runner
+      dockerfile: Dockerfile.railway
+    container_name: infra-cli-runner
+    ports:
+      - "${LOCAL_CLI_RUNNER_PORT:-8002}:8080"
+    environment:
+      CLI_RUNNER_SHARED_TOKEN: "${LOCAL_CLI_RUNNER_SHARED_TOKEN:-local-cli-runner-token}"
+      CLI_RUNNER_MAX_TIMEOUT_SECONDS: "${LOCAL_CLI_RUNNER_MAX_TIMEOUT_SECONDS:-120}"
+      PORT: "8080"
     networks:
       - local-dev
 

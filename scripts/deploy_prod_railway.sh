@@ -4,10 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 API_DIR="$PROJECT_ROOT/api"
+CLI_RUNNER_DIR="$PROJECT_ROOT/infra-cli-runner"
 
 RAILWAY_PROJECT_ID="${RAILWAY_PROJECT_ID:-f71e184d-415c-40ce-886e-b8e293a568ca}"
 RAILWAY_SERVICE="${RAILWAY_SERVICE:-InnomightLabs API}"
+RAILWAY_CLI_RUNNER_SERVICE="${RAILWAY_CLI_RUNNER_SERVICE:-infra-cli-runner}"
 RAILWAY_ENVIRONMENT="${RAILWAY_ENVIRONMENT:-production}"
+DEPLOY_CLI_RUNNER="${DEPLOY_CLI_RUNNER:-true}"
 
 echo "=========================================="
 echo "DEPLOYING API TO RAILWAY PRODUCTION"
@@ -19,18 +22,28 @@ command -v railway >/dev/null 2>&1 || {
   exit 1
 }
 
-echo "Checking Railway project/service..."
-if ! railway service list \
-  --project "$RAILWAY_PROJECT_ID" \
-  --environment "$RAILWAY_ENVIRONMENT" \
-  --json | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"$RAILWAY_SERVICE\""; then
-  echo "Error: service '$RAILWAY_SERVICE' not found in Railway project '$RAILWAY_PROJECT_ID' environment '$RAILWAY_ENVIRONMENT'." >&2
+require_railway_service() {
+  local service_name="$1"
+  if railway service list \
+    --project "$RAILWAY_PROJECT_ID" \
+    --environment "$RAILWAY_ENVIRONMENT" \
+    --json | grep -q "\"name\"[[:space:]]*:[[:space:]]*\"$service_name\""; then
+    return
+  fi
+
+  echo "Error: service '$service_name' not found in Railway project '$RAILWAY_PROJECT_ID' environment '$RAILWAY_ENVIRONMENT'." >&2
   echo "Available services:" >&2
   railway service list \
     --project "$RAILWAY_PROJECT_ID" \
     --environment "$RAILWAY_ENVIRONMENT"
   exit 1
-fi
+}
+
+railway_ref() {
+  local service_name="$1"
+  local variable_name="$2"
+  printf '${{%s.%s}}' "$service_name" "$variable_name"
+}
 
 echo ""
 echo "Generating terraform.tfvars for PROD..."
@@ -80,9 +93,14 @@ set_railway_var() {
 project_name="$(get_var_default 'PROJECT_NAME' 'dynamic-agent-builder')"
 aws_region="$(get_var_default 'AWS_REGION_NAME' "$(get_var_default 'AWS_REGION' 'us-east-1')")"
 environment_name="$(get_var_default 'ENVIRONMENT' 'prod')"
+RAILWAY_CLI_RUNNER_SERVICE="$(get_var_default 'RAILWAY_CLI_RUNNER_SERVICE' "$RAILWAY_CLI_RUNNER_SERVICE")"
 api_domain="$(get_var 'API_DOMAIN')"
 api_base_url="$(get_var 'API_BASE_URL')"
 cognito_domain="$(get_var 'COGNITO_DOMAIN')"
+cli_runner_shared_token="$(get_var 'CLI_RUNNER_SHARED_TOKEN')"
+cli_runner_max_timeout_seconds="$(get_var_default 'CLI_RUNNER_MAX_TIMEOUT_SECONDS' '120')"
+default_cli_runner_base_url="http://$(railway_ref "$RAILWAY_CLI_RUNNER_SERVICE" 'RAILWAY_PRIVATE_DOMAIN'):$(railway_ref "$RAILWAY_CLI_RUNNER_SERVICE" 'PORT')"
+cli_runner_base_url="$(get_var_default 'CLI_RUNNER_BASE_URL' "$default_cli_runner_base_url")"
 
 if [[ -z "$api_base_url" && -n "$api_domain" ]]; then
   api_base_url="https://$api_domain"
@@ -94,6 +112,17 @@ fi
 
 if [[ -z "$api_base_url" ]]; then
   echo "Warning: API_BASE_URL/API_DOMAIN is not set. OAuth callback URLs may default incorrectly." >&2
+fi
+
+echo "Checking Railway project/services..."
+require_railway_service "$RAILWAY_SERVICE"
+if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
+  require_railway_service "$RAILWAY_CLI_RUNNER_SERVICE"
+fi
+
+if [[ "$DEPLOY_CLI_RUNNER" == "true" && -z "$cli_runner_shared_token" ]]; then
+  echo "Error: CLI_RUNNER_SHARED_TOKEN must be set before deploying the private infra CLI runner." >&2
+  exit 1
 fi
 
 url_for() {
@@ -175,6 +204,9 @@ set_railway_var "CONVERSATION_MEDIA_PRESIGN_TTL_SECONDS" "$(get_var_default 'CON
 set_railway_var "ASYNC_JOB_BACKEND" "$(get_var_default 'ASYNC_JOB_BACKEND' 'local')"
 set_railway_var "ASYNC_JOB_LAMBDA_NAME" "$(get_var 'ASYNC_JOB_LAMBDA_NAME')"
 set_railway_var "ACCOUNT_DELETION_LAMBDA_NAME" "$(get_var 'ACCOUNT_DELETION_LAMBDA_NAME')"
+set_railway_var "CLI_RUNNER_BASE_URL" "$cli_runner_base_url"
+set_railway_var "CLI_RUNNER_SHARED_TOKEN" "$cli_runner_shared_token"
+set_railway_var "CLI_RUNNER_TIMEOUT_SECONDS" "$(get_var_default 'CLI_RUNNER_TIMEOUT_SECONDS' '30')"
 
 if [[ ${#RAILWAY_VAR_ARGS[@]} -gt 0 ]]; then
   railway variable set \
@@ -186,13 +218,49 @@ if [[ ${#RAILWAY_VAR_ARGS[@]} -gt 0 ]]; then
 fi
 
 echo "Railway variables synced."
+
+if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
+  echo ""
+  echo "Syncing Railway variables for private sidecar '$RAILWAY_CLI_RUNNER_SERVICE'..."
+
+  RAILWAY_RUNNER_VAR_ARGS=()
+
+  set_runner_railway_var() {
+    local key="$1"
+    local value="$2"
+
+    if [[ -z "$value" ]]; then
+      return
+    fi
+
+    RAILWAY_RUNNER_VAR_ARGS+=("$key=$value")
+  }
+
+  set_runner_railway_var "RAILWAY_DOCKERFILE_PATH" "Dockerfile.railway"
+  set_runner_railway_var "RAILWAY_HEALTHCHECK_TIMEOUT_SEC" "300"
+  set_runner_railway_var "CLI_RUNNER_SHARED_TOKEN" "$cli_runner_shared_token"
+  set_runner_railway_var "CLI_RUNNER_MAX_TIMEOUT_SECONDS" "$cli_runner_max_timeout_seconds"
+
+  if [[ ${#RAILWAY_RUNNER_VAR_ARGS[@]} -gt 0 ]]; then
+    railway variable set \
+      --project "$RAILWAY_PROJECT_ID" \
+      --service "$RAILWAY_CLI_RUNNER_SERVICE" \
+      --environment "$RAILWAY_ENVIRONMENT" \
+      --skip-deploys \
+      "${RAILWAY_RUNNER_VAR_ARGS[@]}" >/dev/null
+  fi
+
+  echo "Private sidecar variables synced."
+fi
 echo ""
 echo "=========================================="
-echo "WARNING: You are about to deploy the API to Railway PRODUCTION."
+echo "WARNING: You are about to deploy to Railway PRODUCTION."
 echo "Project ID: $RAILWAY_PROJECT_ID"
-echo "Service: $RAILWAY_SERVICE"
+echo "API service: $RAILWAY_SERVICE"
+echo "CLI runner sidecar: ${RAILWAY_CLI_RUNNER_SERVICE:-not set} (deploy: $DEPLOY_CLI_RUNNER)"
 echo "Railway environment: $RAILWAY_ENVIRONMENT"
 echo "API_BASE_URL: ${api_base_url:-not set}"
+echo "CLI_RUNNER_BASE_URL: ${cli_runner_base_url:-not set}"
 echo "=========================================="
 read -r -p "Type 'yes' to deploy to Railway production: "
 echo "=========================================="
@@ -201,6 +269,17 @@ if [[ "$REPLY" != "yes" ]]; then
   echo ""
   echo "Deployment cancelled."
   exit 1
+fi
+
+if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
+  echo ""
+  echo "Deploying private infra CLI runner to Railway..."
+  railway up "$CLI_RUNNER_DIR" \
+    --path-as-root \
+    --project "$RAILWAY_PROJECT_ID" \
+    --service "$RAILWAY_CLI_RUNNER_SERVICE" \
+    --environment "$RAILWAY_ENVIRONMENT" \
+    --message "prod infra cli runner deploy from scripts/deploy_prod_railway.sh"
 fi
 
 echo ""
