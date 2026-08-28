@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -38,6 +39,12 @@ class ChatMessage(BaseModel):
     content: list[ContentBlock]
 
 
+@dataclass(frozen=True)
+class MessageSplit:
+    system_prompt: str | None
+    conversation: list[ChatMessage]
+
+
 def normalize_messages(messages: list[dict[Any, Any]]) -> list[ChatMessage]:
     normalized: list[ChatMessage] = []
     for message in messages:
@@ -49,7 +56,7 @@ def normalize_messages(messages: list[dict[Any, Any]]) -> list[ChatMessage]:
     return normalized
 
 
-def split_system_messages(messages: list[ChatMessage]) -> tuple[str | None, list[ChatMessage]]:
+def split_system_messages(messages: list[ChatMessage]) -> MessageSplit:
     system_chunks: list[str] = []
     conversation: list[ChatMessage] = []
     for message in messages:
@@ -59,7 +66,10 @@ def split_system_messages(messages: list[ChatMessage]) -> tuple[str | None, list
                 system_chunks.append(text)
         else:
             conversation.append(message)
-    return "\n\n".join(system_chunks) or None, conversation
+    return MessageSplit(
+        system_prompt="\n\n".join(system_chunks) or None,
+        conversation=conversation,
+    )
 
 
 def normalize_content_blocks(content: Any) -> list[ContentBlock]:

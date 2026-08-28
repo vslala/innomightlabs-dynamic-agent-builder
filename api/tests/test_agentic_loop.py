@@ -104,6 +104,17 @@ class FakeStreamingToolRouter:
         return ToolExecutionOutcome(result="image generated", success=True)
 
 
+class AlwaysToolProvider:
+    async def stream_response(self, context, credentials, tools, model):
+        yield FakeProviderEvent(
+            type="tool_use",
+            tool_name="lookup_customer",
+            tool_input={"customer_id": "cus_123"},
+            tool_use_id=f"tooluse_{len(context)}",
+        )
+        yield FakeProviderEvent(type="stop")
+
+
 async def test_agentic_loop_emits_tool_call_id_on_start_and_result():
     events = [
         event
@@ -199,3 +210,24 @@ async def test_agentic_loop_filters_internal_tool_markers_but_streams_status_tex
     assert "Here are the tickets." in streamed_text
     assert "[tool_call name=call_mcp_tool]" not in streamed_text
     assert "[tool_call name=call_mcp_tool]" not in complete.payload["full_text"]
+
+
+async def test_agentic_loop_reports_max_iterations_as_failure(monkeypatch):
+    monkeypatch.setattr("src.agents.agentic_loop.MAX_TOOL_ITERATIONS", 1)
+
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=AlwaysToolProvider(),
+            context=[],
+            credentials={},
+            tools=[],
+            model="test-model",
+            tool_router=FakeToolRouter(),
+            state=object(),
+        )
+    ]
+
+    assert events[-1].kind == "failed"
+    assert events[-1].payload["reason"] == "max_tool_iterations"
+    assert not any(event.kind == "complete" for event in events)

@@ -8,6 +8,12 @@ from src.agents.tool_runtime.commands import (
     ToolIdempotency,
     ToolSpec,
 )
+from src.agents.tool_runtime.contexts import SkillToolContext
+from src.agents.tool_runtime.skill_contracts import (
+    CheckToolJobInput,
+    ExecuteSkillActionInput,
+    LoadSkillInput,
+)
 
 
 LOAD_SKILL_TOOL = {
@@ -72,6 +78,8 @@ SKILL_TOOL_SPECS = [
             idempotency=ToolIdempotency.READ_ONLY,
             allow_parallel=True,
         ),
+        LoadSkillInput,
+        SkillToolContext,
     ),
     ToolSpec(
         EXECUTE_SKILL_ACTION_TOOL,
@@ -79,6 +87,8 @@ SKILL_TOOL_SPECS = [
             category=ToolCommandCategory.SKILL,
             idempotency=ToolIdempotency.NON_IDEMPOTENT_WRITE,
         ),
+        ExecuteSkillActionInput,
+        SkillToolContext,
     ),
     ToolSpec(
         CHECK_TOOL_JOB_TOOL,
@@ -86,5 +96,7 @@ SKILL_TOOL_SPECS = [
             category=ToolCommandCategory.SKILL,
             idempotency=ToolIdempotency.READ_ONLY,
         ),
+        CheckToolJobInput,
+        SkillToolContext,
     ),
 ]

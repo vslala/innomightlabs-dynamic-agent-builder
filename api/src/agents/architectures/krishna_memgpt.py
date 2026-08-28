@@ -89,7 +89,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
     def name(self) -> str:
         return "krishna-memgpt"
 
-    async def handle_message( # pyright: ignore[reportIncompatibleMethodOverride]
+    async def handle_message(
         self,
         agent: "Agent",
         conversation: "Conversation",
@@ -248,6 +248,8 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
             full_response = ""
             fallback_assistant_response: str | None = None
+            had_tool_call = False
+            emitted_terminal_runtime_response = False
             tool_call_sequence = 0
             tool_call_starts: dict[str, ToolCallStart] = {}
             async for loop_event in run_agentic_tool_loop(
@@ -266,6 +268,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                     )
 
                 elif loop_event.kind == "tool_call_start":
+                    had_tool_call = True
                     tool_call_sequence += 1
                     tool_call_id = loop_event.payload["tool_call_id"]
                     tool_call_starts[tool_call_id] = ToolCallStart(
@@ -369,10 +372,20 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                         context[0]["content"] = refreshed_prompt
 
                 elif loop_event.kind == "runtime_event":
-                    yield loop_event.payload["event"]
+                    runtime_event = loop_event.payload["event"]
+                    if runtime_event.event_type == SSEEventType.IMAGE_GENERATION_COMPLETE:
+                        emitted_terminal_runtime_response = True
+                    yield runtime_event
 
                 elif loop_event.kind == "complete":
                     full_response = loop_event.payload["full_text"]
+
+                elif loop_event.kind == "failed":
+                    yield SSEEvent(
+                        event_type=SSEEventType.ERROR,
+                        content=loop_event.payload.get("message", "Agent run failed"),
+                    )
+                    return
 
             # 8. Save assistant message (text response only)
             if not full_response.strip() and fallback_assistant_response:
@@ -380,6 +393,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 yield SSEEvent(
                     event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
                     content=fallback_assistant_response,
+                )
+            elif not full_response.strip() and had_tool_call and not emitted_terminal_runtime_response:
+                full_response = _tool_turn_fallback_message()
+                yield SSEEvent(
+                    event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
+                    content=full_response,
                 )
 
             if full_response.strip():

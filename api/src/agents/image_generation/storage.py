@@ -1,6 +1,7 @@
 """S3 storage helpers for generated conversation media."""
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -9,6 +10,12 @@ import boto3
 from src.config import settings
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class StoredImage:
+    body: bytes
+    content_type: str
 
 
 class ConversationMediaStorage:
@@ -57,11 +64,11 @@ class ConversationMediaStorage:
             )
         )
 
-    def get_image(self, key: str) -> tuple[bytes, str]:
+    def get_image(self, key: str) -> StoredImage:
         response = self.client.get_object(Bucket=self.bucket, Key=key)
         content_type = response.get("ContentType") or "application/octet-stream"
         body = response["Body"].read()
-        return body, str(content_type)
+        return StoredImage(body=body, content_type=str(content_type))
 
     def delete_agent_prefix(self, agent_id: str) -> int:
         return self.delete_prefix(f"agents/{agent_id}/")

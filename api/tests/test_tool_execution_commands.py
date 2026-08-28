@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
 from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_execution import ToolExecutionRouter
+from src.agents.tool_runtime import (
+    ToolCommandMetadata,
+    ToolCommandRegistry,
+    ToolCommandRequest,
+    ToolExecutionOutcome,
+    ToolCommandCategory,
+    ToolIdempotency,
+)
+from src.agents.tool_runtime.contexts import NativeToolContext
 
 
 class FakeSkillRuntime:
@@ -42,12 +52,20 @@ class FakeNativeTools:
     def __init__(self):
         self.calls: list[dict[str, Any]] = []
 
-    async def execute(self, tool_name: str, tool_input: dict[str, Any], agent_id: str) -> str:
+    async def execute(
+        self,
+        tool_name: str,
+        tool_input: dict[str, Any],
+        context: NativeToolContext,
+    ) -> str:
         self.calls.append(
             {
                 "tool_name": tool_name,
                 "tool_input": tool_input,
-                "agent_id": agent_id,
+                "agent_id": context.agent_id,
+                "user_id": context.user_id,
+                "conversation_id": context.conversation_id,
+                "linked_kb_ids": context.linked_kb_ids,
             }
         )
         return "native result"
@@ -95,6 +113,33 @@ class FakeMCPRuntime:
         return {"content": [{"text": "mcp result"}]}
 
 
+class SlowCommand:
+    name = "slow_tool"
+    definition = {"name": "slow_tool", "parameters": {"type": "object"}}
+    metadata = ToolCommandMetadata(
+        category=ToolCommandCategory.NATIVE,
+        idempotency=ToolIdempotency.READ_ONLY,
+        timeout_seconds=0.01,
+    )
+
+    async def execute(self, request: ToolCommandRequest) -> ToolExecutionOutcome:
+        await asyncio.sleep(1)
+        return ToolExecutionOutcome(result="late", success=True)
+
+
+class FailedMemoryWriteCommand:
+    name = "failed_memory_write"
+    definition = {"name": "failed_memory_write", "parameters": {"type": "object"}}
+    metadata = ToolCommandMetadata(
+        category=ToolCommandCategory.NATIVE,
+        idempotency=ToolIdempotency.IDEMPOTENT_WRITE,
+        mutates_prompt_context=True,
+    )
+
+    async def execute(self, request: ToolCommandRequest) -> ToolExecutionOutcome:
+        return ToolExecutionOutcome(result="Error: write failed", success=False)
+
+
 def _state() -> AgentTurnState:
     return AgentTurnState(
         owner_email="owner@example.com",
@@ -140,6 +185,20 @@ async def test_router_delegates_skill_tools_through_command_adapter():
     ]
 
 
+def test_default_tool_specs_declare_input_and_context_contracts():
+    router = ToolExecutionRouter(
+        skill_runtime=FakeSkillRuntime(),
+        native_tools=FakeNativeTools(),
+        mcp_runtime=FakeMCPRuntime(),
+    )
+    commands = router._registry.commands()
+
+    assert commands
+    assert all(command.input_model is not None for command in commands)
+    assert all(command.context_type is not None for command in commands)
+    assert all(command.output_model is not None for command in commands)
+
+
 async def test_router_marks_prompt_dirty_from_command_metadata_for_memory_writes():
     native_tools = FakeNativeTools()
     state = _state()
@@ -163,6 +222,9 @@ async def test_router_marks_prompt_dirty_from_command_metadata_for_memory_writes
             "tool_name": "core_memory_append",
             "tool_input": {"block": "human", "content": "Likes concise answers."},
             "agent_id": "agent-1",
+            "user_id": "actor-1",
+            "conversation_id": "conversation-1",
+            "linked_kb_ids": [],
         }
     ]
 
@@ -184,6 +246,26 @@ async def test_router_does_not_mark_prompt_dirty_for_native_reads():
 
     assert outcome.success is True
     assert state.prompt_dirty is False
+
+
+async def test_router_validates_tool_input_before_calling_executor():
+    native_tools = FakeNativeTools()
+    router = ToolExecutionRouter(
+        skill_runtime=FakeSkillRuntime(),
+        native_tools=native_tools,
+        mcp_runtime=FakeMCPRuntime(),
+    )
+
+    outcome = await router.execute(
+        tool_name="core_memory_append",
+        tool_input={"block": "human"},
+        tool_use_id="tool-1",
+        state=_state(),
+    )
+
+    assert outcome.success is False
+    assert "content" in outcome.result
+    assert native_tools.calls == []
 
 
 async def test_router_delegates_mcp_tools_through_command_adapter():
@@ -234,3 +316,42 @@ async def test_router_preserves_recoverable_error_outcome_for_unknown_tools():
 
     assert outcome.success is False
     assert outcome.result == "Error: Unknown tool: missing_tool"
+
+
+async def test_router_returns_failed_outcome_on_tool_timeout():
+    router = ToolExecutionRouter(
+        skill_runtime=FakeSkillRuntime(),
+        native_tools=FakeNativeTools(),
+        mcp_runtime=FakeMCPRuntime(),
+        registry=ToolCommandRegistry([SlowCommand()]),
+    )
+
+    outcome = await router.execute(
+        tool_name="slow_tool",
+        tool_input={},
+        tool_use_id="tool-1",
+        state=_state(),
+    )
+
+    assert outcome.success is False
+    assert "timed out" in outcome.result
+
+
+async def test_router_does_not_mark_prompt_dirty_when_mutating_command_fails():
+    state = _state()
+    router = ToolExecutionRouter(
+        skill_runtime=FakeSkillRuntime(),
+        native_tools=FakeNativeTools(),
+        mcp_runtime=FakeMCPRuntime(),
+        registry=ToolCommandRegistry([FailedMemoryWriteCommand()]),
+    )
+
+    outcome = await router.execute(
+        tool_name="failed_memory_write",
+        tool_input={},
+        tool_use_id="tool-1",
+        state=state,
+    )
+
+    assert outcome.success is False
+    assert state.prompt_dirty is False

@@ -3,7 +3,10 @@ from types import SimpleNamespace
 import pytest
 
 from src.agents.image_generation.models import GeneratedImageBytes, GenerateImageRequest
-from src.agents.image_generation.service import AgentImageGenerationService
+from src.agents.image_generation.service import (
+    AgentConversationContext,
+    AgentImageGenerationService,
+)
 from src.agents.models import Agent
 from src.conversations.models import Conversation
 from src.llm.events import SSEEventType
@@ -52,8 +55,8 @@ class FakeProviderFactory:
 
 class FakeAgentImageGenerationService(AgentImageGenerationService):
     def _load_agent_turn_context(self, *, agent_id, conversation_id, owner_email, actor_email):
-        return (
-            Agent(
+        return AgentConversationContext(
+            agent=Agent(
                 agent_id=agent_id,
                 agent_name="Image Agent",
                 agent_architecture="krishna-memgpt",
@@ -62,7 +65,7 @@ class FakeAgentImageGenerationService(AgentImageGenerationService):
                 agent_persona="Generate images.",
                 created_by=owner_email,
             ),
-            Conversation(
+            conversation=Conversation(
                 conversation_id=conversation_id,
                 title="Image conversation",
                 agent_id=agent_id,

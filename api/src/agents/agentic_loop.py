@@ -14,16 +14,26 @@ We can evolve this to emit richer structured errors and metrics later.
 from __future__ import annotations
 
 import asyncio
-import json
-import time
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Optional, Protocol
 
+from src.agents.async_jobs import AsyncJobStatus, AsyncJobSupervisor
+from src.agents.loop_context import (
+    append_assistant_tool_uses,
+    append_user_tool_results,
+    tool_result_block,
+    tool_use_block,
+)
 from src.common import MAX_TOOL_ITERATIONS
 from src.agents.turn_runtime import AgentTurnRuntime, use_turn_runtime
 
 INTERNAL_TOOL_MARKER_PREFIXES = ("[tool_call ", "[tool_result]")
 ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS = 10 * 60
+MAX_ITERATIONS_REASON = "max_tool_iterations"
+FINAL_RESPONSE_AFTER_TOOLS_PROMPT = (
+    "The tool work is complete. Respond to the user now with a concise final answer "
+    "based on the tool result. Do not call another tool unless it is required to answer."
+)
 
 
 class AsyncToolJobStillRunningError(RuntimeError):
@@ -66,13 +76,6 @@ class AgenticLoopResult:
     full_text: str
 
 
-@dataclass(frozen=True)
-class _SyntheticToolEvent:
-    tool_name: str
-    tool_input: dict[str, Any]
-    tool_use_id: str
-
-
 async def run_agentic_tool_loop(
     *,
     provider: LLMProvider,
@@ -99,25 +102,34 @@ async def run_agentic_tool_loop(
     full_response = ""
     text_filter = UserVisibleTextFilter()
     runtime = AgentTurnRuntime()
-    active_async_jobs: dict[str, dict[str, Any]] = {}
-    async_wait_cycles = 0
-    async_deadline_at: float | None = None
+    async_jobs = AsyncJobSupervisor(max_wait_seconds=ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS)
     needs_async_final_response = False
+    needs_tool_final_response = False
     model_iterations = 0
 
     with use_turn_runtime(runtime):
         while True:
-            if active_async_jobs and _async_deadline_expired(async_deadline_at):
+            if async_jobs.has_active_jobs and async_jobs.deadline_expired():
                 raise AsyncToolJobStillRunningError(
                     "Async tool job is still running after the maximum in-turn wait time. "
                     "The response was not completed because the agent has not received the final tool result."
                 )
-            if (
-                not active_async_jobs
-                and not needs_async_final_response
-                and model_iterations >= MAX_TOOL_ITERATIONS
+            if _max_iterations_exceeded(
+                model_iterations=model_iterations,
+                has_active_async_jobs=async_jobs.has_active_jobs,
+                needs_async_final_response=needs_async_final_response,
             ):
-                break
+                yield AgenticLoopEvent(
+                    kind="failed",
+                    payload={
+                        "reason": MAX_ITERATIONS_REASON,
+                        "message": (
+                            "Agent stopped because it reached the maximum tool iterations "
+                            f"({MAX_TOOL_ITERATIONS}) before producing a final answer."
+                        ),
+                    },
+                )
+                return
 
             model_iterations += 1
             has_tool_calls = False
@@ -155,15 +167,8 @@ async def run_agentic_tool_loop(
                 iteration_text += visible_tail
                 yield AgenticLoopEvent(kind="text", payload={"content": visible_tail})
 
-            if not pending_tool_calls and active_async_jobs:
-                wait_event = _SyntheticToolEvent(
-                    tool_name="wait",
-                    tool_input={
-                        "seconds": 20,
-                        "reason": "waiting for async tool job completion",
-                    },
-                    tool_use_id=f"auto_wait_{async_wait_cycles + 1}",
-                )
+            if not pending_tool_calls and async_jobs.has_active_jobs:
+                wait_event = async_jobs.next_wait_event()
                 pending_tool_calls.append(wait_event)
                 has_tool_calls = True
                 yield AgenticLoopEvent(
@@ -177,31 +182,15 @@ async def run_agentic_tool_loop(
 
             if pending_tool_calls:
                 # Add assistant response to context (text + tool use)
-                assistant_content: list[dict[str, Any]] = []
-
-                if iteration_text.strip():
-                    assistant_content.append({"text": iteration_text})
-
-                for tool_event in pending_tool_calls:
-                    tool_use = {
-                        "toolUseId": tool_event.tool_use_id,
-                        "name": tool_event.tool_name,
-                        "input": tool_event.tool_input,
-                    }
-                    thought_signature = getattr(tool_event, "thought_signature", None)
-                    if thought_signature:
-                        tool_use["thoughtSignature"] = thought_signature
-                    assistant_content.append(
-                        {
-                            "toolUse": tool_use
-                        }
-                    )
-
-                context.append({"role": "assistant", "content": assistant_content})
+                append_assistant_tool_uses(
+                    context,
+                    iteration_text=iteration_text,
+                    tool_events=pending_tool_calls,
+                )
 
                 # Execute tools and collect results
                 tool_results: list[dict[str, Any]] = []
-                async_job_starts: list[dict[str, Any]] = []
+                async_job_starts: list[AsyncJobStatus] = []
                 completed_wait = False
                 for tool_event in pending_tool_calls:
                     outcome = None
@@ -228,23 +217,14 @@ async def run_agentic_tool_loop(
                         },
                     )
 
-                    tool_results.append(
-                        {
-                            "toolResult": {
-                                "toolUseId": tool_event.tool_use_id,
-                                "content": [{"text": outcome.result}],
-                            }
-                        }
-                    )
-                    async_job = _extract_async_job_start(outcome.result)
+                    tool_results.append(tool_result_block(tool_event.tool_use_id, outcome.result))
+                    async_job = async_jobs.track_tool_result(outcome.result)
                     if async_job:
                         async_job_starts.append(async_job)
-                        active_async_jobs[str(async_job["job_id"])] = async_job
-                        async_deadline_at = _ensure_async_deadline(async_deadline_at)
                     if tool_event.tool_name == "wait":
                         completed_wait = True
 
-                context.append({"role": "user", "content": tool_results})
+                append_user_tool_results(context, tool_results)
                 if async_job_starts:
                     context.append(
                         {
@@ -259,16 +239,11 @@ async def run_agentic_tool_loop(
                             ],
                         }
                     )
-                if completed_wait and active_async_jobs:
-                    async_wait_cycles += 1
+                if completed_wait and async_jobs.has_active_jobs:
                     checked_results: list[dict[str, Any]] = []
                     checked_tool_uses: list[dict[str, Any]] = []
-                    for job_id in list(active_async_jobs):
-                        check_event = _SyntheticToolEvent(
-                            tool_name="check_tool_job",
-                            tool_input={"job_id": job_id},
-                            tool_use_id=f"auto_check_{job_id}_{async_wait_cycles}",
-                        )
+                    for check_event in async_jobs.check_events_after_wait():
+                        job_id = str(check_event.tool_input["job_id"])
                         yield AgenticLoopEvent(
                             kind="tool_call_start",
                             payload={
@@ -300,26 +275,9 @@ async def run_agentic_tool_loop(
                                 "success": check_outcome.success,
                             },
                         )
-                        checked_results.append(
-                            {
-                                "toolResult": {
-                                    "toolUseId": check_event.tool_use_id,
-                                    "content": [{"text": check_outcome.result}],
-                                }
-                            }
-                        )
-                        checked_tool_uses.append(
-                            {
-                                "toolUse": {
-                                    "toolUseId": check_event.tool_use_id,
-                                    "name": check_event.tool_name,
-                                    "input": check_event.tool_input,
-                                }
-                            }
-                        )
-                        status = _extract_async_job_status(check_outcome.result)
-                        if status and status.get("status") in {"succeeded", "failed"}:
-                            active_async_jobs.pop(job_id, None)
+                        checked_results.append(tool_result_block(check_event.tool_use_id, check_outcome.result))
+                        checked_tool_uses.append(tool_use_block(check_event))
+                        if async_jobs.mark_checked(job_id, check_outcome.result):
                             needs_async_final_response = True
 
                     if checked_results:
@@ -329,15 +287,15 @@ async def run_agentic_tool_loop(
                                 "content": checked_tool_uses,
                             }
                         )
-                        context.append({"role": "user", "content": checked_results})
-                        if active_async_jobs:
+                        append_user_tool_results(context, checked_results)
+                        if async_jobs.has_active_jobs:
                             context.append(
                                 {
                                     "role": "user",
                                     "content": [
                                         {
                                             "text": _build_async_job_followup_instruction(
-                                                list(active_async_jobs.values()),
+                                                list(async_jobs.active_jobs.values()),
                                                 max_wait_seconds=ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS,
                                             )
                                         }
@@ -351,10 +309,22 @@ async def run_agentic_tool_loop(
                     # Clear here so we refresh at most once per tool batch.
                     state.prompt_dirty = False
 
+                if not async_jobs.has_active_jobs:
+                    needs_tool_final_response = True
+
             if not has_tool_calls:
+                if needs_tool_final_response and not iteration_text.strip():
+                    context.append(
+                        {
+                            "role": "user",
+                            "content": [{"text": FINAL_RESPONSE_AFTER_TOOLS_PROMPT}],
+                        }
+                    )
+                    needs_tool_final_response = False
+                    continue
                 break
 
-    if active_async_jobs:
+    if async_jobs.has_active_jobs:
         raise AsyncToolJobStillRunningError(
             "Async tool job is still running after the maximum in-turn wait time. "
             "The response was not completed because the agent has not received the final tool result."
@@ -363,29 +333,8 @@ async def run_agentic_tool_loop(
     yield AgenticLoopEvent(kind="complete", payload={"full_text": full_response})
 
 
-def _extract_async_job_start(result: str) -> dict[str, Any] | None:
-    payload = _extract_async_job_status(result)
-    if not payload:
-        return None
-    if payload.get("status") in {"queued", "running"}:
-        return payload
-    return None
-
-
-def _extract_async_job_status(result: str) -> dict[str, Any] | None:
-    try:
-        payload = json.loads(result)
-    except Exception:
-        return None
-    if not isinstance(payload, dict):
-        return None
-    if payload.get("async") is True and payload.get("status") and payload.get("job_id"):
-        return payload
-    return None
-
-
 def _build_async_job_followup_instruction(
-    jobs: list[dict[str, Any]],
+    jobs: list[AsyncJobStatus],
     *,
     max_wait_seconds: int,
 ) -> str:
@@ -399,18 +348,21 @@ def _build_async_job_followup_instruction(
         "Jobs:",
     ]
     for job in jobs:
-        lines.append(f"- job_id={job['job_id']} status={job.get('status', 'queued')}")
+        lines.append(f"- job_id={job.job_id} status={job.status}")
     return "\n".join(lines)
 
 
-def _ensure_async_deadline(current_deadline: float | None) -> float:
-    if current_deadline is not None:
-        return current_deadline
-    return time.monotonic() + ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS
-
-
-def _async_deadline_expired(deadline_at: float | None) -> bool:
-    return deadline_at is not None and time.monotonic() >= deadline_at
+def _max_iterations_exceeded(
+    *,
+    model_iterations: int,
+    has_active_async_jobs: bool,
+    needs_async_final_response: bool,
+) -> bool:
+    return (
+        not has_active_async_jobs
+        and not needs_async_final_response
+        and model_iterations >= MAX_TOOL_ITERATIONS
+    )
 
 
 async def _execute_tool_with_runtime_events(

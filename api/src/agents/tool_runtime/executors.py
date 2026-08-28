@@ -6,6 +6,11 @@ import json
 from typing import Any, Protocol
 
 from src.agents.runtime_state import AgentTurnState
+from src.agents.tool_runtime.contexts import (
+    MCPToolContext,
+    NativeToolContext,
+    SkillToolContext,
+)
 
 
 class SkillRuntime(Protocol):
@@ -25,7 +30,12 @@ class SkillRuntime(Protocol):
 
 
 class NativeToolExecutor(Protocol):
-    async def execute(self, tool_name: str, tool_input: dict[str, Any], agent_id: str) -> str:
+    async def execute(
+        self,
+        tool_name: str,
+        tool_input: dict[str, Any],
+        context: NativeToolContext,
+    ) -> str:
         ...
 
 
@@ -60,8 +70,12 @@ class NativeToolExecutorAdapter:
         tool_name: str,
         tool_input: dict[str, Any],
         state: AgentTurnState,
+        context: Any | None = None,
     ) -> str:
-        return await self._native_tools.execute(tool_name, tool_input, state.agent_id)
+        del state
+        if not isinstance(context, NativeToolContext):
+            raise ValueError("Native tool context is required")
+        return await self._native_tools.execute(tool_name, tool_input, context)
 
 
 class SkillToolExecutor:
@@ -73,16 +87,19 @@ class SkillToolExecutor:
         tool_name: str,
         tool_input: dict[str, Any],
         state: AgentTurnState,
+        context: Any | None = None,
     ) -> str:
+        if not isinstance(context, SkillToolContext):
+            raise ValueError("Skill tool context is required")
         return await self._skill_runtime.handle_tool_call(
             tool_name=tool_name,
             tool_input=tool_input,
-            agent_id=state.agent_id,
-            owner_email=state.owner_email,
-            actor_email=state.actor_email,
-            actor_id=state.actor_id,
-            conversation_id=state.conversation_id,
-            user_message_id=state.user_message_id,
+            agent_id=context.agent_id,
+            owner_email=context.owner_email,
+            actor_email=context.actor_email,
+            actor_id=context.actor_id,
+            conversation_id=context.conversation_id,
+            user_message_id=context.user_message_id,
         )
 
 
@@ -95,7 +112,11 @@ class MCPToolExecutor:
         tool_name: str,
         tool_input: dict[str, Any],
         state: AgentTurnState,
+        context: Any | None = None,
     ) -> str:
+        del state
+        if not isinstance(context, MCPToolContext):
+            raise ValueError("MCP tool context is required")
         if not self._mcp_runtime:
             raise ValueError("MCP runtime is not configured")
 
@@ -103,8 +124,8 @@ class MCPToolExecutor:
             raw_mcp_id = tool_input.get("mcp_id")
             mcp_id = str(raw_mcp_id).strip() if raw_mcp_id is not None else None
             result = await self._mcp_runtime.list_runtime_tools(
-                owner_email=state.owner_email,
-                agent_id=state.agent_id,
+                owner_email=context.owner_email,
+                agent_id=context.agent_id,
                 mcp_id=mcp_id or None,
             )
             return _json_result(result)
@@ -119,8 +140,8 @@ class MCPToolExecutor:
                 raise ValueError("'arguments' must be an object")
 
             result = await self._mcp_runtime.call_runtime_tool(
-                owner_email=state.owner_email,
-                agent_id=state.agent_id,
+                owner_email=context.owner_email,
+                agent_id=context.agent_id,
                 mcp_id=mcp_id,
                 tool_name=mcp_tool_name,
                 arguments=arguments,

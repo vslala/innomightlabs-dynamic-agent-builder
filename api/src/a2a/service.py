@@ -86,13 +86,13 @@ class A2ADiscoveryService:
         )
 
     def list_agents(self, *, limit: int, cursor: str | None) -> A2AAgentListResponse:
-        agents, next_key = self.agent_repository.list_agent2agent_enabled(
+        page = self.agent_repository.list_agent2agent_enabled(
             limit=limit,
             cursor=_decode_cursor(cursor),
         )
         return A2AAgentListResponse(
-            items=[self._summary(agent) for agent in agents],
-            next_cursor=_encode_cursor(next_key),
+            items=[self._summary(agent) for agent in page.items],
+            next_cursor=_encode_cursor(page.cursor),
         )
 
     def _summary(self, agent: Agent) -> A2AAgentSummary:

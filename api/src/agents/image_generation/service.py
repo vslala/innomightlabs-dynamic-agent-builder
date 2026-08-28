@@ -1,6 +1,7 @@
 """Agent image generation orchestration service."""
 
 import logging
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, cast
 
 from src.agents.image_generation.capabilities import (
@@ -28,6 +29,12 @@ from src.settings.repository import ProviderSettingsRepository, get_provider_set
 from src.llm.events import SSEEvent, SSEEventType
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AgentConversationContext:
+    agent: Agent
+    conversation: Conversation
 
 
 class AgentImageGenerationError(Exception):
@@ -74,10 +81,10 @@ class AgentImageGenerationService:
         user_email: str,
         request: GenerateImageRequest,
     ) -> GenerateImageResponse:
-        agent, conversation = self._load_dashboard_context(agent_id, conversation_id, user_email)
+        context = self._load_dashboard_context(agent_id, conversation_id, user_email)
         result = await self._generate(
-            agent=agent,
-            conversation=conversation,
+            agent=context.agent,
+            conversation=context.conversation,
             owner_email=user_email,
             actor_email=user_email,
             request=request,
@@ -85,7 +92,7 @@ class AgentImageGenerationService:
         for image in result.images:
             image.url = (
                 f"{settings.api_base_url.rstrip('/')}/conversations/"
-                f"{conversation.conversation_id}/messages/{result.assistant_message_id}/images/{image.image_id}"
+                f"{context.conversation.conversation_id}/messages/{result.assistant_message_id}/images/{image.image_id}"
             )
         return result
 
@@ -97,10 +104,10 @@ class AgentImageGenerationService:
         user_email: str,
         request: GenerateImageRequest,
     ) -> AsyncIterator[SSEEvent]:
-        agent, conversation = self._load_dashboard_context(agent_id, conversation_id, user_email)
+        context = self._load_dashboard_context(agent_id, conversation_id, user_email)
         async for event in self._stream_generate(
-            agent=agent,
-            conversation=conversation,
+            agent=context.agent,
+            conversation=context.conversation,
             owner_email=user_email,
             actor_email=user_email,
             request=request,
@@ -135,19 +142,19 @@ class AgentImageGenerationService:
         request: GenerateImageRequest,
         user_message_id: str | None = None,
     ) -> GenerateImageResponse:
-        agent, conversation = self._load_agent_turn_context(
+        context = self._load_agent_turn_context(
             agent_id=agent_id,
             conversation_id=conversation_id,
             owner_email=owner_email,
             actor_email=actor_email,
         )
-        provider_settings = self._validate_and_load_provider_settings(agent, owner_email)
-        credentials = await self._load_credentials(agent.agent_provider, provider_settings)
-        provider = self.provider_factory.get(agent.agent_provider)
+        provider_settings = self._validate_and_load_provider_settings(context.agent, owner_email)
+        credentials = await self._load_credentials(context.agent.agent_provider, provider_settings)
+        provider = self.provider_factory.get(context.agent.agent_provider)
         generated_images = await provider.generate(
             prompt=request.prompt,
             credentials=credentials,
-            model=agent.agent_model or "",
+            model=context.agent.agent_model or "",
             options=ImageGenerationOptions(
                 size=request.size,
                 quality=request.quality,
@@ -156,8 +163,8 @@ class AgentImageGenerationService:
         )
 
         return self._persist_generated_images(
-            agent=agent,
-            conversation=conversation,
+            agent=context.agent,
+            conversation=context.conversation,
             actor_email=actor_email,
             prompt=request.prompt,
             user_message_id=user_message_id or "",
@@ -175,15 +182,15 @@ class AgentImageGenerationService:
         request: GenerateImageRequest,
         user_message_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
-        agent, conversation = self._load_agent_turn_context(
+        context = self._load_agent_turn_context(
             agent_id=agent_id,
             conversation_id=conversation_id,
             owner_email=owner_email,
             actor_email=actor_email,
         )
         async for event in self._stream_generate_existing_turn(
-            agent=agent,
-            conversation=conversation,
+            agent=context.agent,
+            conversation=context.conversation,
             owner_email=owner_email,
             actor_email=actor_email,
             request=request,
@@ -508,7 +515,7 @@ class AgentImageGenerationService:
         agent_id: str,
         conversation_id: str,
         user_email: str,
-    ) -> tuple[Agent, Conversation]:
+    ) -> AgentConversationContext:
         agent = self.agent_repo.find_agent_by_id(agent_id, user_email)
         if not agent:
             raise ImageGenerationNotFoundError("Agent not found")
@@ -520,7 +527,7 @@ class AgentImageGenerationService:
         if conversation.agent_id != agent_id:
             raise ImageGenerationConflictError("Conversation does not belong to this agent")
 
-        return agent, conversation
+        return AgentConversationContext(agent=agent, conversation=conversation)
 
     def _load_agent_turn_context(
         self,
@@ -529,7 +536,7 @@ class AgentImageGenerationService:
         conversation_id: str,
         owner_email: str,
         actor_email: str,
-    ) -> tuple[Agent, Conversation]:
+    ) -> AgentConversationContext:
         agent = self.agent_repo.find_agent_by_id(agent_id, owner_email)
         if not agent:
             raise ImageGenerationNotFoundError("Agent not found")
@@ -543,7 +550,7 @@ class AgentImageGenerationService:
         if conversation.agent_id != agent_id:
             raise ImageGenerationConflictError("Conversation does not belong to this agent")
 
-        return agent, conversation
+        return AgentConversationContext(agent=agent, conversation=conversation)
 
     def _validate_and_load_provider_settings(self, agent: Agent, owner_email: str):
         if not image_capability_registry.supports(

@@ -6,7 +6,7 @@ from src.llm.providers.bedrock import BedrockProvider
 def test_bedrock_provider_converts_canonical_messages() -> None:
     provider = BedrockProvider()
 
-    system, messages = provider._convert_messages(
+    converted = provider._convert_messages(
         [
             {"role": "system", "content": "Use tools carefully."},
             {"role": "user", "content": "List buckets"},
@@ -35,8 +35,8 @@ def test_bedrock_provider_converts_canonical_messages() -> None:
         ]
     )
 
-    assert system == "Use tools carefully."
-    assert messages == [
+    assert converted.system_prompt == "Use tools carefully."
+    assert converted.messages == [
         {"role": "user", "content": [{"text": "List buckets"}]},
         {
             "role": "assistant",

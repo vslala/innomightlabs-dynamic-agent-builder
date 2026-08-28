@@ -8,9 +8,11 @@ import asyncio
 import json
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
+from src.agents.tool_runtime.contexts import NativeToolContext
 from src.common import CAPACITY_WARNING_THRESHOLD
 from src.memory import (
     MemoryRepository,
@@ -21,6 +23,13 @@ from src.messages.repositories import MessageRepository, get_message_repository
 from src.vectorstore.search import get_search_service
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class MemoryBlockLookup:
+    block_name: str
+    block_def: MemoryBlockDefinition | None = None
+    error: str | None = None
 
 
 def normalize_block_name(block_name: str) -> str:
@@ -93,7 +102,10 @@ class NativeToolHandler:
         self._user_id = user_id
 
     async def execute(
-        self, tool_name: str, arguments: dict, agent_id: str
+        self,
+        tool_name: str,
+        arguments: dict,
+        context: NativeToolContext | str,
     ) -> str:
         """
         Execute a native tool and return the result string.
@@ -110,10 +122,37 @@ class NativeToolHandler:
         if not handler:
             raise ValueError(f"Unknown tool: {tool_name}")
 
+        if isinstance(context, NativeToolContext):
+            agent_id = context.agent_id
+            user_id = context.user_id
+            conversation_id = context.conversation_id
+            linked_kb_ids = context.linked_kb_ids
+        else:
+            agent_id = context
+            user_id = self._user_id
+            conversation_id = self._conversation_id
+            linked_kb_ids = self._linked_kb_ids
+
         if tool_name.startswith(self.MEMORY_TOOL_PREFIXES):
-            if self._user_id is None:
+            if user_id is None:
                 raise ValueError("Missing user context")
-            result: str = await handler(arguments, agent_id, self._user_id)
+            result: str = await handler(arguments, agent_id, user_id)
+            return result
+
+        if tool_name == "recall_conversation":
+            result = await self._handle_recall_conversation(
+                arguments,
+                agent_id,
+                conversation_id=conversation_id,
+            )
+            return result
+
+        if tool_name == "knowledge_base_search":
+            result = await self._handle_knowledge_base_search(
+                arguments,
+                agent_id,
+                linked_kb_ids=linked_kb_ids,
+            )
             return result
 
         result = await handler(arguments, agent_id)
@@ -139,20 +178,22 @@ class NativeToolHandler:
 
     def _get_block_or_error(
         self, args: dict, agent_id: str, user_id: str
-    ) -> tuple[str, Optional[MemoryBlockDefinition], Optional[str]]:
+    ) -> MemoryBlockLookup:
         """
         Get block definition or return error message.
 
         Returns:
-            Tuple of (normalized_block_name, block_def, error_msg).
-            If block exists, error_msg is None.
-            If block doesn't exist, block_def is None and error_msg contains the error.
+            MemoryBlockLookup with the normalized block name and either the
+            block definition or a model-visible error message.
         """
         block_name = normalize_block_name(args["block"])
         block_def = self.memory_repo.get_block_definition(agent_id, user_id, block_name)
         if not block_def:
-            return block_name, None, f"Error: Block [{block_name}] does not exist."
-        return block_name, block_def, None
+            return MemoryBlockLookup(
+                block_name=block_name,
+                error=f"Error: Block [{block_name}] does not exist.",
+            )
+        return MemoryBlockLookup(block_name=block_name, block_def=block_def)
 
     def _format_capacity(
         self, memory: CoreMemory, block_def: MemoryBlockDefinition
@@ -170,46 +211,46 @@ class NativeToolHandler:
 
     async def _handle_core_memory_read(self, args: dict, agent_id: str, user_id: str) -> str:
         """Read a core memory block."""
-        block_name, block_def, error = self._get_block_or_error(args, agent_id, user_id)
-        if error:
-            return error
-        assert block_def is not None  # Type narrowing: error is None means block_def exists
+        lookup = self._get_block_or_error(args, agent_id, user_id)
+        if lookup.error:
+            return lookup.error
+        assert lookup.block_def is not None  # Type narrowing: error is None means block_def exists
 
-        memory = self.memory_repo.get_core_memory(agent_id, user_id, block_name)
+        memory = self.memory_repo.get_core_memory(agent_id, user_id, lookup.block_name)
 
         if not memory or not memory.lines:
-            return f"[{block_name}] Core Memory is empty."
+            return f"[{lookup.block_name}] Core Memory is empty."
 
-        capacity = self._format_capacity(memory, block_def)
+        capacity = self._format_capacity(memory, lookup.block_def)
         lines_str = "\n".join(
             f"{i+1}: {line}" for i, line in enumerate(memory.lines)
         )
         return (
-            f"[{block_name}] Core Memory ({len(memory.lines)} lines, {capacity}):\n"
+            f"[{lookup.block_name}] Core Memory ({len(memory.lines)} lines, {capacity}):\n"
             f"{lines_str}"
         )
 
     async def _handle_core_memory_append(self, args: dict, agent_id: str, user_id: str) -> str:
         """Append a new line to a memory block (idempotent)."""
-        block_name, block_def, error = self._get_block_or_error(args, agent_id, user_id)
-        if error:
-            return error
-        assert block_def is not None  # Type narrowing: error is None means block_def exists
+        lookup = self._get_block_or_error(args, agent_id, user_id)
+        if lookup.error:
+            return lookup.error
+        assert lookup.block_def is not None  # Type narrowing: error is None means block_def exists
 
         content = args["content"].strip()
 
         # Idempotency check
-        existing_line = self.memory_repo.line_exists(agent_id, user_id, block_name, content)
+        existing_line = self.memory_repo.line_exists(agent_id, user_id, lookup.block_name, content)
         if existing_line is not None:
             return (
-                f"Line already exists in [{block_name}] at line {existing_line}: "
+                f"Line already exists in [{lookup.block_name}] at line {existing_line}: "
                 f'"{content}" (no change)'
             )
 
         # Get or create memory
-        memory = self.memory_repo.get_core_memory(agent_id, user_id, block_name)
+        memory = self.memory_repo.get_core_memory(agent_id, user_id, lookup.block_name)
         if not memory:
-            memory = CoreMemory(agent_id=agent_id, user_id=user_id, block_name=block_name)
+            memory = CoreMemory(agent_id=agent_id, user_id=user_id, block_name=lookup.block_name)
 
         memory.lines.append(content)
         memory.word_count = memory.compute_word_count()
@@ -217,30 +258,30 @@ class NativeToolHandler:
         self.memory_repo.save_core_memory(memory)
 
         return (
-            f'Appended to [{block_name}] at line {len(memory.lines)}: "{content}" '
-            f"({memory.word_count}/{block_def.word_limit} words)"
+            f'Appended to [{lookup.block_name}] at line {len(memory.lines)}: "{content}" '
+            f"({memory.word_count}/{lookup.block_def.word_limit} words)"
         )
 
     async def _handle_core_memory_replace(self, args: dict, agent_id: str, user_id: str) -> str:
         """Replace a specific line in a memory block (idempotent)."""
-        block_name, block_def, error = self._get_block_or_error(args, agent_id, user_id)
-        if error:
-            return error
-        assert block_def is not None  # Type narrowing: error is None means block_def exists
+        lookup = self._get_block_or_error(args, agent_id, user_id)
+        if lookup.error:
+            return lookup.error
+        assert lookup.block_def is not None  # Type narrowing: error is None means block_def exists
 
         line_num = args["line_number"]
         new_content = args["new_content"].strip()
 
-        memory = self.memory_repo.get_core_memory(agent_id, user_id, block_name)
+        memory = self.memory_repo.get_core_memory(agent_id, user_id, lookup.block_name)
         if not memory or line_num < 1 or line_num > len(memory.lines):
-            return f"Error: Line {line_num} does not exist in [{block_name}]"
+            return f"Error: Line {line_num} does not exist in [{lookup.block_name}]"
 
         old_content = memory.lines[line_num - 1]
 
         # Idempotency: same content = no change
         if old_content.strip() == new_content:
             return (
-                f"Line {line_num} in [{block_name}] already contains: "
+                f"Line {line_num} in [{lookup.block_name}] already contains: "
                 f'"{new_content}" (no change)'
             )
 
@@ -250,23 +291,23 @@ class NativeToolHandler:
         self.memory_repo.save_core_memory(memory)
 
         return (
-            f"Replaced line {line_num} in [{block_name}]:\n"
+            f"Replaced line {line_num} in [{lookup.block_name}]:\n"
             f'  Old: "{old_content}"\n'
             f'  New: "{new_content}"'
         )
 
     async def _handle_core_memory_delete(self, args: dict, agent_id: str, user_id: str) -> str:
         """Delete a specific line from a memory block (idempotent)."""
-        block_name, block_def, error = self._get_block_or_error(args, agent_id, user_id)
-        if error:
-            return error
-        assert block_def is not None  # Type narrowing: error is None means block_def exists
+        lookup = self._get_block_or_error(args, agent_id, user_id)
+        if lookup.error:
+            return lookup.error
+        assert lookup.block_def is not None  # Type narrowing: error is None means block_def exists
 
         line_num = args["line_number"]
-        memory = self.memory_repo.get_core_memory(agent_id, user_id, block_name)
+        memory = self.memory_repo.get_core_memory(agent_id, user_id, lookup.block_name)
         if not memory or line_num < 1 or line_num > len(memory.lines):
             # Idempotent: deleting non-existent line is success
-            return f"Line {line_num} does not exist in [{block_name}] (no change)"
+            return f"Line {line_num} does not exist in [{lookup.block_name}] (no change)"
 
         deleted = memory.lines.pop(line_num - 1)
         memory.word_count = memory.compute_word_count()
@@ -274,9 +315,9 @@ class NativeToolHandler:
         self.memory_repo.save_core_memory(memory)
 
         return (
-            f'Deleted line {line_num} from [{block_name}]: "{deleted}"\n'
-            f"[{block_name}] now has {len(memory.lines)} lines "
-            f"({memory.word_count}/{block_def.word_limit} words)"
+            f'Deleted line {line_num} from [{lookup.block_name}]: "{deleted}"\n'
+            f"[{lookup.block_name}] now has {len(memory.lines)} lines "
+            f"({memory.word_count}/{lookup.block_def.word_limit} words)"
         )
 
     async def _handle_core_memory_list_blocks(
@@ -355,7 +396,11 @@ class NativeToolHandler:
         return "\n".join(lines)
 
     async def _handle_recall_conversation(
-        self, args: dict, agent_id: str
+        self,
+        args: dict,
+        agent_id: str,
+        *,
+        conversation_id: str | None = None,
     ) -> str:
         """
         Retrieve earlier messages from the current conversation.
@@ -363,7 +408,9 @@ class NativeToolHandler:
         This tool allows the LLM to access messages that are not in its
         current context due to session timeout boundaries.
         """
-        if not self._conversation_id:
+        del agent_id
+        conversation_id = conversation_id or self._conversation_id
+        if not conversation_id:
             return "Error: No conversation context available"
 
         page = args.get("page", 1)
@@ -371,7 +418,7 @@ class NativeToolHandler:
             page = 1
 
         # Get all messages for this conversation (oldest first)
-        all_messages = self.message_repo.find_by_conversation(self._conversation_id)
+        all_messages = self.message_repo.find_by_conversation(conversation_id)
 
         if not all_messages:
             return "No earlier messages found in this conversation."
@@ -408,10 +455,17 @@ class NativeToolHandler:
         return "\n".join(lines)
 
     async def _handle_knowledge_base_search(
-        self, args: dict, agent_id: str
+        self,
+        args: dict,
+        agent_id: str,
+        *,
+        linked_kb_ids: list[str] | None = None,
     ) -> str:
         """Search linked knowledge bases for relevant content."""
-        if not self._linked_kb_ids:
+        del agent_id
+        if linked_kb_ids is None:
+            linked_kb_ids = self._linked_kb_ids
+        if not linked_kb_ids:
             return "No knowledge bases are linked to this agent."
 
         query = args.get("query", "").strip()
@@ -424,7 +478,7 @@ class NativeToolHandler:
             search_service = get_search_service()
             results = await search_service.search_multiple_kbs(
                 query=query,
-                kb_ids=self._linked_kb_ids,
+                kb_ids=linked_kb_ids,
                 top_k=top_k,
                 min_score=0.3,
             )

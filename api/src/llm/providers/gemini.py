@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Optional, cast
 
 from google import genai
@@ -27,6 +28,12 @@ log = logging.getLogger(__name__)
 DEFAULT_MODEL_NAME = "gemini-2.5-flash"
 
 
+@dataclass(frozen=True)
+class GeminiMessageConversion:
+    system_instruction: str | None
+    messages: list[types.Content]
+
+
 class GeminiProvider(LLMProvider):
     """Google Gemini provider using google-genai generate_content streaming."""
 
@@ -45,15 +52,18 @@ class GeminiProvider(LLMProvider):
             return parsed
         return {"result": parsed}
 
-    def _convert_messages(self, messages: list[dict]) -> tuple[str | None, list[types.Content]]:
-        system_instruction, conversation_messages = split_system_messages(normalize_messages(messages))
-        return self._convert_normalized_messages(system_instruction, conversation_messages)
+    def _convert_messages(self, messages: list[dict]) -> GeminiMessageConversion:
+        split = split_system_messages(normalize_messages(messages))
+        return self._convert_normalized_messages(
+            split.system_prompt,
+            split.conversation,
+        )
 
     def _convert_normalized_messages(
         self,
         system_instruction: str | None,
         conversation_messages: list[ChatMessage],
-    ) -> tuple[str | None, list[types.Content]]:
+    ) -> GeminiMessageConversion:
         tool_names_by_id: dict[str, str] = {}
         contents: list[types.Content] = []
 
@@ -68,7 +78,10 @@ class GeminiProvider(LLMProvider):
             if parts:
                 contents.append(types.Content(role=gemini_role, parts=parts))
 
-        return system_instruction, contents
+        return GeminiMessageConversion(
+            system_instruction=system_instruction,
+            messages=contents,
+        )
 
     def _convert_content_block(
         self,
@@ -167,10 +180,10 @@ class GeminiProvider(LLMProvider):
     ) -> AsyncIterator[LLMEvent]:
         model_id = model or DEFAULT_MODEL_NAME
         client = self._build_client(credentials)
-        system_instruction, gemini_messages = self._convert_messages(messages)
+        converted_messages = self._convert_messages(messages)
         gemini_tools = self._normalize_tools(tools)
         config = types.GenerateContentConfig(
-            system_instruction=system_instruction,
+            system_instruction=converted_messages.system_instruction,
             tools=gemini_tools,
             max_output_tokens=4096,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
@@ -179,14 +192,14 @@ class GeminiProvider(LLMProvider):
         log.info(
             "Calling Gemini API with model %s, %d messages, %d tools",
             model_id,
-            len(gemini_messages),
+            len(converted_messages.messages),
             len(tools) if tools else 0,
         )
 
         try:
             stream_result = client.aio.models.generate_content_stream(
                 model=model_id,
-                contents=gemini_messages,
+                contents=converted_messages.messages,
                 config=config,
             )
             stream = await stream_result if inspect.isawaitable(stream_result) else stream_result

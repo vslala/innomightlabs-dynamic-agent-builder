@@ -61,7 +61,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
     def name(self) -> str:
         return "krishna-mini"
 
-    async def handle_message( # pyright: ignore[reportIncompatibleMethodOverride]
+    async def handle_message(
         self,
         agent: "Agent",
         conversation: "Conversation",

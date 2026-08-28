@@ -6,7 +6,7 @@ from src.llm.providers.anthropic import AnthropicProvider
 def test_anthropic_provider_adds_type_to_bedrock_style_text_blocks() -> None:
     provider = AnthropicProvider()
 
-    system, messages = provider._extract_system_and_messages(
+    request_input = provider._extract_system_and_messages(
         [
             {"role": "system", "content": [{"text": "System prompt"}]},
             {
@@ -16,8 +16,8 @@ def test_anthropic_provider_adds_type_to_bedrock_style_text_blocks() -> None:
         ]
     )
 
-    assert system == "System prompt"
-    assert messages == [
+    assert request_input.system_prompt == "System prompt"
+    assert request_input.messages == [
         {
             "role": "assistant",
             "content": [{"type": "text", "text": "I will inspect that."}],
@@ -28,7 +28,7 @@ def test_anthropic_provider_adds_type_to_bedrock_style_text_blocks() -> None:
 def test_anthropic_provider_converts_bedrock_tool_blocks() -> None:
     provider = AnthropicProvider()
 
-    _system, messages = provider._extract_system_and_messages(
+    request_input = provider._extract_system_and_messages(
         [
             {
                 "role": "assistant",
@@ -56,7 +56,7 @@ def test_anthropic_provider_converts_bedrock_tool_blocks() -> None:
         ]
     )
 
-    assert messages == [
+    assert request_input.messages == [
         {
             "role": "assistant",
             "content": [
@@ -79,4 +79,3 @@ def test_anthropic_provider_converts_bedrock_tool_blocks() -> None:
             ],
         },
     ]
-

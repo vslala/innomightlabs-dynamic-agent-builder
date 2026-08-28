@@ -24,6 +24,9 @@ class ToolCommandRegistry:
             raise ValueError(f"Unknown tool: {tool_name}")
         return command
 
+    def commands(self) -> list[ToolCommand]:
+        return list(self._commands.values())
+
     def definitions(self) -> list[dict[str, Any]]:
         return [command.definition for command in self._commands.values()]
 

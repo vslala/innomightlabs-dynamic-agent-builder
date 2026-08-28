@@ -219,13 +219,13 @@ async def get_message_image(
         raise HTTPException(status_code=404, detail="Image not found")
 
     try:
-        body, content_type = ConversationMediaStorage().get_image(image.s3_key)
+        stored_image = ConversationMediaStorage().get_image(image.s3_key)
     except Exception as e:
         raise HTTPException(status_code=404, detail="Image object not found") from e
 
     return Response(
-        content=body,
-        media_type=content_type,
+        content=stored_image.body,
+        media_type=stored_image.content_type,
         headers={
             "Cache-Control": "private, max-age=300",
             "Content-Disposition": f'inline; filename="{image.filename}"',

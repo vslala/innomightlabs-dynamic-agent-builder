@@ -6,6 +6,7 @@ Uses OAuth-backed Codex/ChatGPT responses endpoint.
 
 import json
 import logging
+from dataclasses import dataclass
 from uuid import uuid4
 from typing import Any, AsyncIterator, Optional
 
@@ -30,12 +31,21 @@ DEFAULT_MODEL_NAME = "gpt-5.5"
 CODEX_INCLUDE_FIELDS = ["reasoning.encrypted_content"]
 
 
+@dataclass(frozen=True)
+class OpenAIRequestInput:
+    instructions: str
+    messages: list[ChatMessage]
+
+
 class OpenAIProvider(LLMProvider):
     """OpenAI provider using Responses API streaming."""
 
-    def _extract_instructions_and_messages(self, messages: list[dict]) -> tuple[str, list[dict]]:
-        system_prompt, conversation = split_system_messages(normalize_messages(messages))
-        return system_prompt or "You are a helpful assistant.", conversation
+    def _extract_instructions_and_messages(self, messages: list[dict]) -> OpenAIRequestInput:
+        split = split_system_messages(normalize_messages(messages))
+        return OpenAIRequestInput(
+            instructions=split.system_prompt or "You are a helpful assistant.",
+            messages=split.conversation,
+        )
 
     def _text_block_type_for_role(self, role: str) -> str:
         # Codex backend expects assistant history as output blocks.
@@ -123,8 +133,13 @@ class OpenAIProvider(LLMProvider):
     ) -> AsyncIterator[LLMEvent]:
         model_id = model or DEFAULT_MODEL_NAME
         typed_credentials = OpenAICredentials.model_validate(credentials)
-        instructions, request_messages = self._extract_instructions_and_messages(messages)
-        body = self._request_body(model_id, instructions, request_messages, tools)
+        request_input = self._extract_instructions_and_messages(messages)
+        body = self._request_body(
+            model_id,
+            request_input.instructions,
+            request_input.messages,
+            tools,
+        )
 
         call_state: dict[str, dict[str, Any]] = {}
         diagnostic_context = {

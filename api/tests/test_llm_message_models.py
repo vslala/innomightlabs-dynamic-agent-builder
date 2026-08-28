@@ -36,11 +36,11 @@ def test_normalize_messages_accepts_internal_bedrock_style_blocks() -> None:
         ]
     )
 
-    system, conversation = split_system_messages(messages)
+    split = split_system_messages(messages)
 
-    assert system == "Be concise."
-    assert conversation[0].content == [TextBlock(text="Checking.")]
-    assert conversation[1].content == [
+    assert split.system_prompt == "Be concise."
+    assert split.conversation[0].content == [TextBlock(text="Checking.")]
+    assert split.conversation[1].content == [
         ToolUseBlock(
             id="call_1",
             name="lookup",
@@ -48,7 +48,7 @@ def test_normalize_messages_accepts_internal_bedrock_style_blocks() -> None:
             thought_signature=b"signature",
         )
     ]
-    assert conversation[2].content == [
+    assert split.conversation[2].content == [
         ToolResultBlock(tool_use_id="call_1", content='{"ok": true}')
     ]
 
@@ -125,4 +125,3 @@ def test_normalize_anthropic_tools_preserves_provider_native_tools() -> None:
         {"type": "web_search_20250305", "name": "web_search"},
         {"name": "lookup", "description": "", "input_schema": {"type": "object"}},
     ]
-

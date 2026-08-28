@@ -6,6 +6,7 @@ Uses the Bedrock Converse API with AWS access key authentication.
 
 import json
 import logging
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Optional
 
 import boto3
@@ -27,6 +28,12 @@ log = logging.getLogger(__name__)
 # Default model name when none specified
 # Must be a model available in eu-west-2
 DEFAULT_MODEL_NAME = "claude-3-7-sonnet"
+
+
+@dataclass(frozen=True)
+class BedrockMessageConversion:
+    system_prompt: str | None
+    messages: list[dict[str, Any]]
 
 
 class BedrockProvider(LLMProvider):
@@ -103,17 +110,17 @@ class BedrockProvider(LLMProvider):
             aws_secret_access_key=secret_key,
         )
 
-        system_prompt, bedrock_messages = self._convert_messages(messages)
+        converted_messages = self._convert_messages(messages)
 
         # Build request parameters
         request_params: dict[str, Any] = {
             "modelId": model_id,
-            "messages": bedrock_messages,
+            "messages": converted_messages.messages,
         }
 
         # Add system prompt if provided
-        if system_prompt:
-            request_params["system"] = [{"text": system_prompt}]
+        if converted_messages.system_prompt:
+            request_params["system"] = [{"text": converted_messages.system_prompt}]
 
         # Add tools if provided
         if tools:
@@ -121,7 +128,7 @@ class BedrockProvider(LLMProvider):
 
         log.info(
             f"Calling Bedrock converse_stream with model {model_id}, "
-            f"{len(bedrock_messages)} messages, {len(tools) if tools else 0} tools"
+            f"{len(converted_messages.messages)} messages, {len(tools) if tools else 0} tools"
         )
 
         try:
@@ -203,16 +210,19 @@ class BedrockProvider(LLMProvider):
     def __repr__(self) -> str:
         return f"BedrockProvider(default_model={DEFAULT_MODEL_NAME}, region={self.REGION})"
 
-    def _convert_messages(self, messages: list[dict]) -> tuple[Optional[str], list[dict[str, Any]]]:
-        system_prompt, conversation_messages = split_system_messages(normalize_messages(messages))
+    def _convert_messages(self, messages: list[dict]) -> BedrockMessageConversion:
+        split = split_system_messages(normalize_messages(messages))
         bedrock_messages = [
             {
                 "role": message.role,
                 "content": [self._convert_content_block(block) for block in message.content],
             }
-            for message in conversation_messages
+            for message in split.conversation
         ]
-        return system_prompt, bedrock_messages
+        return BedrockMessageConversion(
+            system_prompt=split.system_prompt,
+            messages=bedrock_messages,
+        )
 
     def _normalize_tools(self, tools: list[dict]) -> list[dict[str, Any]]:
         return [tool.to_bedrock() for tool in normalize_tool_definitions(tools)]

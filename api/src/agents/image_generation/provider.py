@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import struct
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Protocol
 
 import httpx
@@ -16,6 +17,12 @@ from src.agents.image_generation.models import (
 from src.config import settings
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ImageDimensions:
+    width: int | None
+    height: int | None
 
 
 class ImageGenerationProvider(Protocol):
@@ -164,15 +171,15 @@ class CodexOpenAIImageGenerationProvider:
 
                         output_format = str(item.get("output_format") or options.output_format or "png")
                         image_bytes = base64.b64decode(image_b64)
-                        width, height = _dimensions_for_image(image_bytes, output_format)
+                        dimensions = _dimensions_for_image(image_bytes, output_format)
                         generated = GeneratedImageBytes(
                             data=image_bytes,
                             output_format=output_format,
                             mime_type=_mime_type_for_format(output_format),
                             prompt=prompt,
                             revised_prompt=item.get("revised_prompt"),
-                            width=width,
-                            height=height,
+                            width=dimensions.width,
+                            height=dimensions.height,
                             quality=item.get("quality"),
                             background=item.get("background"),
                             provider_metadata={
@@ -187,8 +194,8 @@ class CodexOpenAIImageGenerationProvider:
                             image=generated,
                             output_format=output_format,
                             mime_type=generated.mime_type,
-                            width=width,
-                            height=height,
+                            width=dimensions.width,
+                            height=dimensions.height,
                         )
 
                     elif event_type == "response.completed":
@@ -220,9 +227,9 @@ def _mime_type_for_format(output_format: str) -> str:
     return "image/png"
 
 
-def _dimensions_for_image(data: bytes, output_format: str) -> tuple[int | None, int | None]:
+def _dimensions_for_image(data: bytes, output_format: str) -> ImageDimensions:
     normalized = output_format.lower().lstrip(".")
     if normalized == "png" and data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24:
         width, height = struct.unpack(">II", data[16:24])
-        return int(width), int(height)
-    return None, None
+        return ImageDimensions(width=int(width), height=int(height))
+    return ImageDimensions(width=None, height=None)

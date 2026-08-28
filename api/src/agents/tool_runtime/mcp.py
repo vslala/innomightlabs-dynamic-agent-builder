@@ -8,6 +8,8 @@ from src.agents.tool_runtime.commands import (
     ToolIdempotency,
     ToolSpec,
 )
+from src.agents.tool_runtime.contexts import MCPToolContext
+from src.agents.tool_runtime.mcp_contracts import CallMCPToolInput, ListMCPToolsInput
 from src.connectors.mcp.runtime_tools import MCP_CALL_TOOL, MCP_LIST_TOOLS
 
 
@@ -19,6 +21,8 @@ MCP_TOOL_SPECS = [
             idempotency=ToolIdempotency.READ_ONLY,
             allow_parallel=True,
         ),
+        ListMCPToolsInput,
+        MCPToolContext,
     ),
     ToolSpec(
         MCP_CALL_TOOL,
@@ -26,5 +30,7 @@ MCP_TOOL_SPECS = [
             category=ToolCommandCategory.MCP,
             idempotency=ToolIdempotency.NON_IDEMPOTENT_WRITE,
         ),
+        CallMCPToolInput,
+        MCPToolContext,
     ),
 ]

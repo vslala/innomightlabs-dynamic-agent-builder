@@ -18,7 +18,7 @@ class FakeGeminiModel:
 def test_gemini_provider_converts_messages_and_tool_results():
     provider = GeminiProvider()
 
-    system_instruction, contents = provider._convert_messages(
+    converted = provider._convert_messages(
         [
             {"role": "system", "content": "Be concise."},
             {"role": "user", "content": "Check alex@example.com"},
@@ -49,14 +49,14 @@ def test_gemini_provider_converts_messages_and_tool_results():
         ]
     )
 
-    assert system_instruction == "Be concise."
-    assert [content.role for content in contents] == ["user", "model", "user"]
-    assert contents[0].parts[0].text == "Check alex@example.com"
-    assert contents[1].parts[0].function_call.name == "get_account_status"
-    assert contents[1].parts[0].function_call.args == {"email": "alex@example.com"}
-    assert contents[1].parts[0].thought_signature == b"gemini-signature"
-    assert contents[2].parts[0].function_response.name == "get_account_status"
-    assert contents[2].parts[0].function_response.response == {"status": "active"}
+    assert converted.system_instruction == "Be concise."
+    assert [content.role for content in converted.messages] == ["user", "model", "user"]
+    assert converted.messages[0].parts[0].text == "Check alex@example.com"
+    assert converted.messages[1].parts[0].function_call.name == "get_account_status"
+    assert converted.messages[1].parts[0].function_call.args == {"email": "alex@example.com"}
+    assert converted.messages[1].parts[0].thought_signature == b"gemini-signature"
+    assert converted.messages[2].parts[0].function_response.name == "get_account_status"
+    assert converted.messages[2].parts[0].function_response.response == {"status": "active"}
 
 
 def test_gemini_provider_normalizes_function_and_custom_tools():

@@ -177,10 +177,10 @@ class TestAgentRepository:
         agent_repository.save(enabled_agent)
         agent_repository.save(disabled_agent)
 
-        agents, next_cursor = agent_repository.list_agent2agent_enabled()
+        page = agent_repository.list_agent2agent_enabled()
 
-        assert next_cursor is None
-        assert [agent.agent_id for agent in agents] == [enabled_agent.agent_id]
+        assert page.cursor is None
+        assert [agent.agent_id for agent in page.items] == [enabled_agent.agent_id]
 
         found = agent_repository.find_agent2agent_enabled_by_id(enabled_agent.agent_id)
         assert found is not None

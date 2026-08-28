@@ -8,6 +8,19 @@ from src.agents.tool_runtime.commands import (
     ToolIdempotency,
     ToolSpec,
 )
+from src.agents.tool_runtime.contexts import NativeToolContext
+from src.tools.native.contracts import (
+    ArchivalMemoryInsertInput,
+    ArchivalMemorySearchInput,
+    CoreMemoryAppendInput,
+    CoreMemoryDeleteInput,
+    CoreMemoryListBlocksInput,
+    CoreMemoryReadInput,
+    CoreMemoryReplaceInput,
+    KnowledgeBaseSearchInput,
+    RecallConversationInput,
+    WaitInput,
+)
 from src.tools.native.definitions import (
     ARCHIVAL_MEMORY_INSERT,
     ARCHIVAL_MEMORY_SEARCH,
@@ -44,14 +57,14 @@ IDEMPOTENT_NATIVE_WRITE = ToolCommandMetadata(
 
 
 NATIVE_TOOL_SPECS = [
-    ToolSpec(CORE_MEMORY_READ, READ_ONLY_NATIVE),
-    ToolSpec(CORE_MEMORY_APPEND, IDEMPOTENT_MEMORY_WRITE),
-    ToolSpec(CORE_MEMORY_REPLACE, IDEMPOTENT_MEMORY_WRITE),
-    ToolSpec(CORE_MEMORY_DELETE, IDEMPOTENT_MEMORY_WRITE),
-    ToolSpec(CORE_MEMORY_LIST_BLOCKS, READ_ONLY_NATIVE),
-    ToolSpec(ARCHIVAL_MEMORY_INSERT, IDEMPOTENT_NATIVE_WRITE),
-    ToolSpec(ARCHIVAL_MEMORY_SEARCH, READ_ONLY_NATIVE),
-    ToolSpec(RECALL_CONVERSATION, READ_ONLY_NATIVE),
-    ToolSpec(WAIT, READ_ONLY_NATIVE),
-    ToolSpec(KNOWLEDGE_BASE_SEARCH, READ_ONLY_KNOWLEDGE),
+    ToolSpec(CORE_MEMORY_READ, READ_ONLY_NATIVE, CoreMemoryReadInput, NativeToolContext),
+    ToolSpec(CORE_MEMORY_APPEND, IDEMPOTENT_MEMORY_WRITE, CoreMemoryAppendInput, NativeToolContext),
+    ToolSpec(CORE_MEMORY_REPLACE, IDEMPOTENT_MEMORY_WRITE, CoreMemoryReplaceInput, NativeToolContext),
+    ToolSpec(CORE_MEMORY_DELETE, IDEMPOTENT_MEMORY_WRITE, CoreMemoryDeleteInput, NativeToolContext),
+    ToolSpec(CORE_MEMORY_LIST_BLOCKS, READ_ONLY_NATIVE, CoreMemoryListBlocksInput, NativeToolContext),
+    ToolSpec(ARCHIVAL_MEMORY_INSERT, IDEMPOTENT_NATIVE_WRITE, ArchivalMemoryInsertInput, NativeToolContext),
+    ToolSpec(ARCHIVAL_MEMORY_SEARCH, READ_ONLY_NATIVE, ArchivalMemorySearchInput, NativeToolContext),
+    ToolSpec(RECALL_CONVERSATION, READ_ONLY_NATIVE, RecallConversationInput, NativeToolContext),
+    ToolSpec(WAIT, READ_ONLY_NATIVE, WaitInput, NativeToolContext),
+    ToolSpec(KNOWLEDGE_BASE_SEARCH, READ_ONLY_KNOWLEDGE, KnowledgeBaseSearchInput, NativeToolContext),
 ]

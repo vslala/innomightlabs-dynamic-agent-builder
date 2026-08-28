@@ -1,4 +1,5 @@
 from anthropic import AsyncAnthropic
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Optional, cast
 
 from src.llm.messages import (
@@ -15,10 +16,20 @@ import logging
 
 log = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True)
+class AnthropicRequestInput:
+    system_prompt: str | None
+    messages: list[dict[str, Any]]
+
+
 class AnthropicProvider(LLMProvider):
-    def _extract_system_and_messages(self, messages: list[dict]) -> tuple[str | None, list[dict[str, Any]]]:
-        system_prompt, conversation = split_system_messages(normalize_messages(messages))
-        return system_prompt, self._convert_messages(conversation)
+    def _extract_system_and_messages(self, messages: list[dict]) -> AnthropicRequestInput:
+        split = split_system_messages(normalize_messages(messages))
+        return AnthropicRequestInput(
+            system_prompt=split.system_prompt,
+            messages=self._convert_messages(split.conversation),
+        )
 
     def _convert_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
         return [
@@ -76,18 +87,18 @@ class AnthropicProvider(LLMProvider):
 
         client = AsyncAnthropic(api_key=api_key)
 
-        system_prompt, anthropic_messages = self._extract_system_and_messages(messages)
+        request_input = self._extract_system_and_messages(messages)
 
         # Build request parameters
         request_params: dict[str, Any] = {
             "model": model_id,
-            "messages": anthropic_messages,
+            "messages": request_input.messages,
             "max_tokens": 4096,  # Required parameter for Anthropic API
         }
 
         # Add system prompt if provided
-        if system_prompt:
-            request_params["system"] = system_prompt
+        if request_input.system_prompt:
+            request_params["system"] = request_input.system_prompt
 
         # Add tools if provided
         if tools:
@@ -95,7 +106,7 @@ class AnthropicProvider(LLMProvider):
 
         log.info(
             f"Calling Anthropic API with model {model_id}, "
-            f"{len(anthropic_messages)} messages, {len(tools) if tools else 0} tools"
+            f"{len(request_input.messages)} messages, {len(tools) if tools else 0} tools"
         )
 
         try:

@@ -1,13 +1,20 @@
 from ..db import get_dynamodb_resource
 from boto3.dynamodb.conditions import Key, Attr
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 import logging
+
+from pydantic import BaseModel, Field
 
 from src.agents.models import Agent
 from src.config import settings
 
 log = logging.getLogger(__name__)
+
+
+class AgentPage(BaseModel):
+    items: list[Agent] = Field(default_factory=list)
+    cursor: dict[str, Any] | None = None
 
 
 class AgentRepository:
@@ -94,7 +101,7 @@ class AgentRepository:
         *,
         limit: int = 50,
         cursor: Optional[dict] = None,
-    ) -> tuple[list[Agent], Optional[dict]]:
+    ) -> AgentPage:
         """
         List agents enabled for public Agent2Agent discovery.
 
@@ -124,7 +131,7 @@ class AgentRepository:
             if not exclusive_start_key:
                 break
 
-        return agents[:bounded_limit], exclusive_start_key
+        return AgentPage(items=agents[:bounded_limit], cursor=exclusive_start_key)
 
     def find_agent2agent_enabled_by_id(self, agent_id: str) -> Optional[Agent]:
         """Find a single A2A-enabled agent by id using the v1 scan-based discovery path."""

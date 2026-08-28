@@ -4,10 +4,14 @@ Agent Architecture factory.
 Returns the appropriate architecture based on the agent's configuration.
 """
 
+from collections.abc import Callable
+
 from .base import AgentArchitecture
 from .krishna_mini import KrishnaMiniArchitecture
 from .krishna_memgpt import KrishnaMemGPTArchitecture
 from src.messages.repositories import MessageRepository
+
+ArchitectureFactory = Callable[..., AgentArchitecture]
 
 
 def get_agent_architecture(
@@ -28,16 +32,16 @@ def get_agent_architecture(
     Raises:
         ValueError: If the architecture name is not supported
     """
-    architectures: dict[str, AgentArchitecture] = {
-        "krishna-mini": KrishnaMiniArchitecture(message_repository=message_repository),
-        "krishna-memgpt": KrishnaMemGPTArchitecture(message_repository=message_repository),
+    factories: dict[str, ArchitectureFactory] = {
+        "krishna-mini": KrishnaMiniArchitecture,
+        "krishna-memgpt": KrishnaMemGPTArchitecture,
     }
 
-    architecture = architectures.get(architecture_name)
-    if not architecture:
-        supported = ", ".join(architectures.keys())
+    factory = factories.get(architecture_name)
+    if not factory:
+        supported = ", ".join(factories.keys())
         raise ValueError(
             f"Unknown architecture: '{architecture_name}'. Supported: {supported}"
         )
 
-    return architecture
+    return factory(message_repository=message_repository)
