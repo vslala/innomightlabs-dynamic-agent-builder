@@ -8,6 +8,7 @@ from typing import Protocol
 from pydantic import BaseModel, Field, ValidationError
 
 from src.scheduler.cron import ScheduleExpression, ScheduleExpressionError, validate_schedule_expression
+from src.skills.aws_cli.models import parse_policy
 from src.smart_suggestions.models import (
     SmartSuggestionRequest,
     SmartSuggestionResponse,
@@ -36,6 +37,11 @@ class CronExpressionPayload(BaseModel):
 
 class AgentInstructionsPayload(BaseModel):
     instructions: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+
+
+class AwsCliCommandPolicyPayload(BaseModel):
+    command_policy_yaml: str = Field(min_length=1)
     summary: str = Field(min_length=1)
 
 
@@ -134,6 +140,59 @@ class AgentInstructionsSuggestionStrategy:
         )
 
 
+class AwsCliCommandPolicySuggestionStrategy:
+    suggestion_type = SmartSuggestionType.AWS_CLI_COMMAND_POLICY
+
+    def build_messages(self, request: SmartSuggestionRequest) -> list[dict[str, str]]:
+        current_value = request.current_value or ""
+        user_payload = {
+            "request": request.query,
+            "current_command_policy_yaml": current_value,
+        }
+        system_prompt = (
+            "You modify an AWS CLI command policy YAML for an installable skill.\n"
+            "Return only valid JSON matching this exact shape:\n"
+            '{"command_policy_yaml":"string","summary":"string"}\n'
+            "Policy rules:\n"
+            "- Return YAML with one top-level aws object.\n"
+            "- Preserve these scalar keys when present: default_timeout_seconds, max_timeout_seconds, "
+            "max_stdout_bytes, max_stderr_bytes, sts_duration_seconds.\n"
+            "- Under aws.services, define service names with read command prefix lists only.\n"
+            "- v1 supports only read entries. Do not add write, mutate, delete, put, update, create, or remove policies.\n"
+            "- Command prefixes are arrays of argv tokens after the aws executable, for example "
+            '["s3api","list-buckets"].\n'
+            "- Do not include shell syntax, pipes, redirects, command separators, substitutions, or the aws executable token.\n"
+            "- Keep the policy least-privilege and include only commands implied by the request.\n"
+            "- Do not return markdown, code fences, or extra JSON keys."
+        )
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=True)},
+        ]
+
+    def parse_response(self, raw_response: str, request: SmartSuggestionRequest) -> SmartSuggestionResponse:
+        try:
+            payload = AwsCliCommandPolicyPayload.model_validate_json(_extract_json_object(raw_response))
+        except ValidationError as exc:
+            raise SmartSuggestionError("Model returned an invalid AWS CLI policy suggestion") from exc
+
+        command_policy_yaml = payload.command_policy_yaml.strip()
+        if not command_policy_yaml:
+            raise SmartSuggestionError("Model returned an empty AWS CLI policy")
+        try:
+            policy = parse_policy(command_policy_yaml)
+        except ValueError as exc:
+            raise SmartSuggestionError(str(exc)) from exc
+
+        services = sorted(policy.services)
+        return SmartSuggestionResponse(
+            suggestion_type=self.suggestion_type,
+            value=command_policy_yaml,
+            display_text=payload.summary.strip(),
+            metadata={"services": services},
+        )
+
+
 class SmartSuggestionStrategyRegistry:
     def __init__(self, strategies: list[SmartSuggestionStrategy] | None = None):
         self._strategies = {
@@ -143,6 +202,7 @@ class SmartSuggestionStrategyRegistry:
                 or [
                     CronExpressionSuggestionStrategy(),
                     AgentInstructionsSuggestionStrategy(),
+                    AwsCliCommandPolicySuggestionStrategy(),
                 ]
             )
         }

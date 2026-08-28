@@ -61,6 +61,11 @@ def test_manifest_loads_and_declares_secret_install_fields() -> None:
     }
     assert secret_fields == {"aws_access_key_id", "aws_secret_access_key"}
 
+    policy_field = next(field for field in loaded.manifest.form if field.name == "command_policy_yaml")
+    assert policy_field.smart_suggestion is not None
+    assert policy_field.smart_suggestion.suggestion_type == "aws_cli_command_policy"
+    assert policy_field.smart_suggestion.button_label == "Suggest policy"
+
 
 def test_install_asks_for_aws_credentials_and_stores_them_as_secrets(
     test_client,
@@ -88,6 +93,7 @@ def test_install_asks_for_aws_credentials_and_stores_them_as_secrets(
     assert fields["aws_secret_access_key"]["input_type"] == "password"
     assert fields["aws_secret_access_key"]["attr"]["secret"] == "true"
     assert "command_policy_yaml" in fields
+    assert fields["command_policy_yaml"]["smart_suggestion"]["suggestion_type"] == "aws_cli_command_policy"
 
     install_resp = test_client.post(
         f"/agents/{agent.agent_id}/skills?skill_id=aws_cli",

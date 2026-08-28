@@ -67,6 +67,10 @@ form:
               - ["dynamodb", "get-item"]
     attr:
       rows: "22"
+    smart_suggestion:
+      suggestion_type: aws_cli_command_policy
+      button_label: Suggest policy
+      prompt_placeholder: Allow read-only access to CloudWatch logs and S3 object metadata
 actions:
   - name: run_read
     aliases: [aws_read, run_aws_read]

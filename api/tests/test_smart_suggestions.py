@@ -11,6 +11,7 @@ from src.smart_suggestions.router import get_smart_suggestion_service
 from src.smart_suggestions.service import SmartSuggestionService
 from src.smart_suggestions.strategies import (
     AgentInstructionsSuggestionStrategy,
+    AwsCliCommandPolicySuggestionStrategy,
     CronExpressionSuggestionStrategy,
     SmartSuggestionError,
 )
@@ -85,6 +86,47 @@ def test_agent_instructions_strategy_parses_model_json():
 
     assert response.value == "Triage inbound support requests clearly."
     assert response.display_text == "Drafted support triage instructions."
+
+
+def test_aws_cli_command_policy_strategy_parses_and_validates_yaml():
+    strategy = AwsCliCommandPolicySuggestionStrategy()
+    request = SmartSuggestionRequest(
+        suggestion_type="aws_cli_command_policy",
+        query="Allow listing CloudWatch log groups",
+    )
+
+    response = strategy.parse_response(
+        """
+        {
+          "command_policy_yaml": "aws:\\n  services:\\n    logs:\\n      read:\\n        - [\\"logs\\", \\"describe-log-groups\\"]\\n",
+          "summary": "Allows read-only CloudWatch log group discovery."
+        }
+        """,
+        request,
+    )
+
+    assert response.suggestion_type == "aws_cli_command_policy"
+    assert "describe-log-groups" in response.value
+    assert response.metadata == {"services": ["logs"]}
+
+
+def test_aws_cli_command_policy_strategy_rejects_invalid_policy():
+    strategy = AwsCliCommandPolicySuggestionStrategy()
+    request = SmartSuggestionRequest(
+        suggestion_type="aws_cli_command_policy",
+        query="Allow deleting S3 objects",
+    )
+
+    with pytest.raises(SmartSuggestionError):
+        strategy.parse_response(
+            """
+            {
+              "command_policy_yaml": "aws:\\n  services:\\n    s3:\\n      write:\\n        - [\\"s3api\\", \\"delete-object\\"]\\n",
+              "summary": "Invalid write policy."
+            }
+            """,
+            request,
+        )
 
 
 def test_smart_suggestion_settings_round_trip(

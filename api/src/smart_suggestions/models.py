@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 class SmartSuggestionType:
     CRON_EXPRESSION = "cron_expression"
     AGENT_INSTRUCTIONS = "agent_instructions"
+    AWS_CLI_COMMAND_POLICY = "aws_cli_command_policy"
 
 
 class SmartSuggestionSettings(BaseModel):
@@ -95,7 +96,7 @@ class SmartSuggestionSettingsResponse(BaseModel):
 
 
 class SmartSuggestionRequest(BaseModel):
-    suggestion_type: Literal["cron_expression", "agent_instructions"]
+    suggestion_type: Literal["cron_expression", "agent_instructions", "aws_cli_command_policy"]
     query: str = Field(min_length=1)
     current_value: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
