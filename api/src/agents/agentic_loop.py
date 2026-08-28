@@ -30,9 +30,11 @@ from src.agents.turn_runtime import AgentTurnRuntime, use_turn_runtime
 INTERNAL_TOOL_MARKER_PREFIXES = ("[tool_call ", "[tool_result]")
 ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS = 10 * 60
 MAX_ITERATIONS_REASON = "max_tool_iterations"
-FINAL_RESPONSE_AFTER_TOOLS_PROMPT = (
-    "The tool work is complete. Respond to the user now with a concise final answer "
-    "based on the tool result. Do not call another tool unless it is required to answer."
+POST_TOOL_CONTINUATION_PROMPT = (
+    "Review the original user request and the latest tool result. "
+    "If any requested work remains, call the next required tool now. "
+    "Only provide a final answer when all requested work is complete. "
+    "Do not say you will do something next unless you call the tool for it in this response."
 )
 
 
@@ -104,7 +106,6 @@ async def run_agentic_tool_loop(
     runtime = AgentTurnRuntime()
     async_jobs = AsyncJobSupervisor(max_wait_seconds=ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS)
     needs_async_final_response = False
-    needs_tool_final_response = False
     model_iterations = 0
 
     with use_turn_runtime(runtime):
@@ -310,18 +311,14 @@ async def run_agentic_tool_loop(
                     state.prompt_dirty = False
 
                 if not async_jobs.has_active_jobs:
-                    needs_tool_final_response = True
-
-            if not has_tool_calls:
-                if needs_tool_final_response and not iteration_text.strip():
                     context.append(
                         {
                             "role": "user",
-                            "content": [{"text": FINAL_RESPONSE_AFTER_TOOLS_PROMPT}],
+                            "content": [{"text": POST_TOOL_CONTINUATION_PROMPT}],
                         }
                     )
-                    needs_tool_final_response = False
-                    continue
+
+            if not has_tool_calls:
                 break
 
     if async_jobs.has_active_jobs:

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from src.agents.agentic_loop import run_agentic_tool_loop
+from src.agents.agentic_loop import POST_TOOL_CONTINUATION_PROMPT, run_agentic_tool_loop
 from src.agents.turn_runtime import emit_turn_event
 from src.agents.tool_execution import ToolExecutionOutcome
 from src.llm.events import SSEEvent, SSEEventType
@@ -86,7 +86,17 @@ class FakeThoughtSignatureProvider:
 
 
 class FakeToolRouter:
+    def __init__(self):
+        self.calls: list[dict[str, Any]] = []
+
     async def execute(self, *, tool_name, tool_input, tool_use_id, state):
+        self.calls.append(
+            {
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "tool_use_id": tool_use_id,
+            }
+        )
         return ToolExecutionOutcome(result="customer found", success=True)
 
 
@@ -115,6 +125,37 @@ class AlwaysToolProvider:
         yield FakeProviderEvent(type="stop")
 
 
+class MultiStepProvider:
+    def __init__(self):
+        self.calls = 0
+
+    async def stream_response(self, context, credentials, tools, model):
+        self.calls += 1
+        if self.calls == 1:
+            yield FakeProviderEvent(
+                type="tool_use",
+                tool_name="create_epic",
+                tool_input={"summary": "Agent Systems"},
+                tool_use_id="tooluse_epic",
+            )
+            yield FakeProviderEvent(type="stop")
+            return
+
+        if self.calls == 2:
+            assert _context_contains_text(context, POST_TOOL_CONTINUATION_PROMPT)
+            yield FakeProviderEvent(
+                type="tool_use",
+                tool_name="create_task",
+                tool_input={"summary": "Build Agent System", "parent": "KAN-6"},
+                tool_use_id="tooluse_task",
+            )
+            yield FakeProviderEvent(type="stop")
+            return
+
+        yield FakeProviderEvent(type="text", content="Created the epic and task.")
+        yield FakeProviderEvent(type="stop")
+
+
 async def test_agentic_loop_emits_tool_call_id_on_start_and_result():
     events = [
         event
@@ -136,6 +177,28 @@ async def test_agentic_loop_emits_tool_call_id_on_start_and_result():
     assert start.payload["tool_name"] == "lookup_customer"
     assert result.payload["tool_call_id"] == "tooluse_1"
     assert result.payload["result"] == "customer found"
+
+
+async def test_agentic_loop_prompts_model_to_continue_or_finish_after_tool_results():
+    provider = MultiStepProvider()
+    router = FakeToolRouter()
+
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=provider,
+            context=[],
+            credentials={},
+            tools=[],
+            model="test-model",
+            tool_router=router,
+            state=object(),
+        )
+    ]
+
+    assert [call["tool_name"] for call in router.calls] == ["create_epic", "create_task"]
+    assert events[-1].kind == "complete"
+    assert events[-1].payload["full_text"] == "Created the epic and task."
 
 
 async def test_agentic_loop_preserves_provider_thought_signature_in_tool_context():
@@ -231,3 +294,12 @@ async def test_agentic_loop_reports_max_iterations_as_failure(monkeypatch):
     assert events[-1].kind == "failed"
     assert events[-1].payload["reason"] == "max_tool_iterations"
     assert not any(event.kind == "complete" for event in events)
+
+
+def _context_contains_text(context: list[dict[Any, Any]], expected_text: str) -> bool:
+    return any(
+        content.get("text") == expected_text
+        for message in context
+        for content in message.get("content", [])
+        if isinstance(content, dict)
+    )
