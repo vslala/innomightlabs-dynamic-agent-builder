@@ -4,6 +4,7 @@ name: Agent2Agent Client
 description: Discover and message A2A-compatible agents from configured registries.
 repeatable: true
 repeatable_identity_fields: [registry_set_name]
+api_router: router:router
 system_prompt: |
   Use this skill when the user asks you to find another agent or delegate work to another A2A-compatible agent.
   Always call discover_agents before send_message unless a previous tool result already provided a valid agent_ref.
@@ -14,6 +15,7 @@ system_prompt: |
   When sending context, summarize only the task state the remote agent needs.
   For send_message, use execute_skill_action with async: true by default because remote agents can take longer than a normal chat turn.
   If send_message returns auth_required with credential_setup_url, give that exact link to the user so they can add the credential, then ask them to retry.
+  OAuth2 client configuration and tokens are stored by the backend; never ask the user to paste client secrets, authorization codes, refresh tokens, or access tokens into chat.
   send_message requires agent_ref from discover_agents or get_agent_card. Do not invent service URLs.
 form:
   - input_type: text
@@ -50,7 +52,7 @@ form:
       optional: "true"
       secret: "true"
       key_placeholder: "https://api.example.com"
-      value_placeholder: "Bearer token or API key"
+      value_placeholder: "Bearer token, API key, or client_id:client_secret"
       empty_text: "No registry credentials configured."
       add_label: "Add credential"
 actions:

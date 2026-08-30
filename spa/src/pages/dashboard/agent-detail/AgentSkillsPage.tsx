@@ -90,6 +90,7 @@ export function AgentSkillsPage() {
   const [configSkillSchema, setConfigSkillSchema] = useState<FormSchema | null>(null);
   const [configInitialValues, setConfigInitialValues] = useState<Record<string, FormValue>>({});
   const [configSkillError, setConfigSkillError] = useState<string | null>(null);
+  const [configCredentialOrigin, setConfigCredentialOrigin] = useState<string | null>(null);
   const [connectingSkillId, setConnectingSkillId] = useState<string | null>(null);
   const [updatingSkillId, setUpdatingSkillId] = useState<string | null>(null);
   const [uninstallingSkillId, setUninstallingSkillId] = useState<string | null>(null);
@@ -116,10 +117,13 @@ export function AgentSkillsPage() {
     return allSkills;
   };
 
-  const installedSkillIds = useMemo(
-    () => new Set(installedSkills.map((skill) => skill.skill_id)),
-    [installedSkills]
-  );
+  const installedSkillCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    installedSkills.forEach((skill) => {
+      counts.set(skill.skill_id, (counts.get(skill.skill_id) ?? 0) + 1);
+    });
+    return counts;
+  }, [installedSkills]);
 
   const skillCategories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -195,8 +199,9 @@ export function AgentSkillsPage() {
           return;
         }
 
+        const callbackSkillRepeatable = callbackSkill?.repeatable === true;
         const alreadyInstalled = currentInstalled.some((skill) => skill.skill_id === callbackSkillId);
-        if (!alreadyInstalled) {
+        if (!alreadyInstalled || callbackSkillRepeatable) {
           await skillApiService.installSkill(agent.agent_id, callbackSkillId, { config: {} });
           await loadInstalledSkills();
           await refreshAvailableSkills();
@@ -243,7 +248,7 @@ export function AgentSkillsPage() {
   };
 
   const selectSkillForInstall = async (skill: SkillCatalogItem) => {
-    if (installedSkillIds.has(skill.skill_id)) return;
+    if ((installedSkillCounts.get(skill.skill_id) ?? 0) > 0 && !skill.repeatable) return;
     setInstallSkillError(null);
     setSelectedSkill(skill);
     setSelectedSkillSchema(null);
@@ -346,6 +351,7 @@ export function AgentSkillsPage() {
     setConfiguringSkill(skill);
     setConfigSkillSchema(null);
     setConfigSkillError(null);
+    setConfigCredentialOrigin(options?.credentialOrigin ?? null);
     setIsConfigDialogOpen(true);
     setUpdatingSkillId(installedSkillId);
     try {
@@ -384,6 +390,7 @@ export function AgentSkillsPage() {
       setConfiguringSkill(null);
       setConfigSkillSchema(null);
       setConfigInitialValues({});
+      setConfigCredentialOrigin(null);
     } catch (err: unknown) {
       console.error("Error updating skill config:", err);
       setConfigSkillError(err instanceof Error ? err.message : "Failed to update skill configuration");
@@ -392,11 +399,31 @@ export function AgentSkillsPage() {
     }
   };
 
+  const handleConnectA2ARemoteOAuth = async () => {
+    if (!configuringSkill) return;
+    const installedSkillId = configuringSkill.installed_skill_id ?? configuringSkill.skill_id;
+    setConnectingSkillId(installedSkillId);
+    setConfigSkillError(null);
+    try {
+      const returnTo = `${window.location.origin}/dashboard/agents/${agent.agent_id}/skills`;
+      const response = await skillApiService.startA2ARemoteOAuth({
+        agent_id: agent.agent_id,
+        installed_skill_id: installedSkillId,
+        target_origin: configCredentialOrigin,
+        return_to: returnTo,
+      });
+      window.location.href = response.authorize_url;
+    } catch (err: unknown) {
+      setConfigSkillError(err instanceof Error ? err.message : "Failed to start Agent2Agent OAuth");
+      setConnectingSkillId(null);
+    }
+  };
+
   useEffect(() => {
     if (handledConfigDeepLinkRef.current || installedSkills.length === 0) return;
 
     const params = new URLSearchParams(window.location.search);
-    const targetSkillId = params.get("configure_skill");
+    const targetSkillId = params.get("configure_skill") || params.get("installed_skill_id");
     if (!targetSkillId) return;
 
     const targetSkill = installedSkills.find((skill) => (skill.installed_skill_id ?? skill.skill_id) === targetSkillId);
@@ -407,6 +434,12 @@ export function AgentSkillsPage() {
       focus: params.get("focus"),
       credentialOrigin: params.get("credential_origin"),
     });
+    const a2aOAuthStatus = params.get("a2a_oauth");
+    if (a2aOAuthStatus === "success") {
+      setConfigSkillError(null);
+    } else if (a2aOAuthStatus === "error") {
+      setConfigSkillError(params.get("reason") || "Agent2Agent OAuth connection failed");
+    }
   }, [installedSkills]);
 
   const handleUninstallSkill = async (skill: InstalledSkill) => {
@@ -603,14 +636,16 @@ export function AgentSkillsPage() {
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(13rem, 1fr))", gap: "0.75rem" }}>
                     {visibleSkills.map((skill) => {
-                      const installed = installedSkillIds.has(skill.skill_id);
+                      const installedCount = installedSkillCounts.get(skill.skill_id) ?? 0;
+                      const installed = installedCount > 0;
+                      const installBlocked = installed && !skill.repeatable;
                       const selected = selectedSkill?.skill_id === skill.skill_id;
                       return (
                         <Button
                           key={skill.skill_id}
                           type="button"
                           variant="ghost"
-                          disabled={installed}
+                          disabled={installBlocked}
                           onClick={() => void selectSkillForInstall(skill)}
                           style={{
                             position: "relative",
@@ -624,8 +659,8 @@ export function AgentSkillsPage() {
                             color: "inherit",
                             textAlign: "left",
                             whiteSpace: "normal",
-                            cursor: installed ? "not-allowed" : "pointer",
-                            opacity: installed ? 0.72 : 1,
+                            cursor: installBlocked ? "not-allowed" : "pointer",
+                            opacity: installBlocked ? 0.72 : 1,
                           }}
                         >
                           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.75rem" }}>
@@ -660,7 +695,7 @@ export function AgentSkillsPage() {
                                 }}
                               >
                                 <CheckCircle2 className="h-3 w-3" />
-                                Installed
+                                {skill.repeatable ? `${installedCount} installed` : "Installed"}
                               </span>
                             )}
                           </div>
@@ -766,21 +801,43 @@ export function AgentSkillsPage() {
                 </div>
               )}
               {configuringSkill && configSkillSchema ? (
-                <SchemaForm
-                  key={`${configuringSkill.installed_skill_id ?? configuringSkill.skill_id}-${JSON.stringify(configInitialValues)}`}
-                  schema={configSkillSchema}
-                  initialValues={configInitialValues}
-                  onSubmit={(data) => handleUpdateSkillConfig(configuringSkill, data)}
-                  onCancel={() => {
-                    setIsConfigDialogOpen(false);
-                    setConfiguringSkill(null);
-                    setConfigSkillSchema(null);
-                    setConfigInitialValues({});
-                    setConfigSkillError(null);
-                  }}
-                  submitLabel={updatingSkillId ? "Saving..." : "Save Configuration"}
-                  isLoading={Boolean(updatingSkillId)}
-                />
+                <>
+                  {configuringSkill.skill_id === "agent2agent_client" && configCredentialOrigin && (
+                    <DialogSection>
+                      <Stack gap="sm">
+                        <div>
+                          <p style={{ fontWeight: 600, color: "var(--text-primary)" }}>Agent2Agent OAuth</p>
+                          <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>{configCredentialOrigin}</p>
+                        </div>
+                        <Button
+                          type="button"
+                          onClick={() => void handleConnectA2ARemoteOAuth()}
+                          disabled={connectingSkillId === (configuringSkill.installed_skill_id ?? configuringSkill.skill_id)}
+                        >
+                          {connectingSkillId === (configuringSkill.installed_skill_id ?? configuringSkill.skill_id)
+                            ? "Connecting..."
+                            : "Connect Agent2Agent OAuth"}
+                        </Button>
+                      </Stack>
+                    </DialogSection>
+                  )}
+                  <SchemaForm
+                    key={`${configuringSkill.installed_skill_id ?? configuringSkill.skill_id}-${JSON.stringify(configInitialValues)}`}
+                    schema={configSkillSchema}
+                    initialValues={configInitialValues}
+                    onSubmit={(data) => handleUpdateSkillConfig(configuringSkill, data)}
+                    onCancel={() => {
+                      setIsConfigDialogOpen(false);
+                      setConfiguringSkill(null);
+                      setConfigSkillSchema(null);
+                      setConfigInitialValues({});
+                      setConfigCredentialOrigin(null);
+                      setConfigSkillError(null);
+                    }}
+                    submitLabel={updatingSkillId ? "Saving..." : "Save Configuration"}
+                    isLoading={Boolean(updatingSkillId)}
+                  />
+                </>
               ) : (
                 <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
                   <div style={{ height: "2rem", width: "2rem", animation: "spin 1s linear infinite", borderRadius: "50%", border: "2px solid var(--gradient-start)", borderTopColor: "transparent" }} />

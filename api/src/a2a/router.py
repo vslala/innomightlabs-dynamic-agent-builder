@@ -1,9 +1,9 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from src.a2a.auth import get_a2a_client
+from src.a2a.auth import get_agent_repository, get_api_key_repository, require_a2a_client
 from src.a2a.models import (
     A2AAgentCard,
     A2AAgentListResponse,
@@ -13,6 +13,15 @@ from src.a2a.models import (
     A2ATaskListResponse,
     A2ATaskResponse,
 )
+from src.a2a.oauth import (
+    A2A_SCOPE_MESSAGE,
+    A2A_SCOPE_TASKS,
+    bearer_challenge,
+    issue_a2a_access_token,
+    oauth_metadata,
+    parse_client_credentials_request,
+    validate_client_credentials,
+)
 from src.a2a.service import (
     A2ADiscoveryService,
     A2AInvocationService,
@@ -20,10 +29,44 @@ from src.a2a.service import (
     get_a2a_invocation_service,
 )
 from src.apikeys.models import AgentApiKey
+from src.apikeys.repository import ApiKeyRepository
+from src.agents.repository import AgentRepository
 
 router = APIRouter(tags=["a2a"])
 A2A_JSON_MEDIA_TYPE = "application/a2a+json"
 JSON_RPC_VERSION = "2.0"
+A2A_MESSAGE_CLIENT = require_a2a_client({A2A_SCOPE_MESSAGE})
+A2A_TASK_CLIENT = require_a2a_client({A2A_SCOPE_TASKS})
+A2A_JSONRPC_CLIENT = require_a2a_client({A2A_SCOPE_MESSAGE, A2A_SCOPE_TASKS})
+
+
+@router.get("/a2a/oauth/.well-known/oauth-authorization-server")
+async def get_a2a_oauth_metadata() -> dict[str, Any]:
+    """Return OAuth 2.0 authorization server metadata for A2A clients."""
+    return oauth_metadata()
+
+
+@router.post("/a2a/oauth/token")
+async def issue_a2a_oauth_token(
+    request: Request,
+    api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+) -> JSONResponse:
+    """Issue a scoped A2A access token using OAuth 2.0 client credentials."""
+    credentials = await parse_client_credentials_request(request)
+    api_key = validate_client_credentials(credentials=credentials, api_key_repo=api_key_repo)
+    agent = agent_repo.find_agent_by_id(api_key.agent_id, api_key.created_by)
+    if not agent or not agent.is_agent2agent_enabled:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "invalid_client", "error_description": "A2A agent is not enabled"},
+            headers=bearer_challenge(error="invalid_client"),
+        )
+    token = issue_a2a_access_token(api_key=api_key, requested_scope=credentials.scope)
+    return JSONResponse(
+        content=token,
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
 
 
 @router.get(
@@ -60,7 +103,7 @@ async def get_agent_card(
 async def handle_a2a_jsonrpc(
     agent_id: str,
     body: dict[str, Any],
-    api_key: Annotated[AgentApiKey, Depends(get_a2a_client)],
+    api_key: Annotated[AgentApiKey, Depends(A2A_JSONRPC_CLIENT)],
     service: Annotated[A2AInvocationService, Depends(get_a2a_invocation_service)],
 ):
     """Primary A2A JSON-RPC endpoint for one agent."""
@@ -99,7 +142,7 @@ async def handle_a2a_jsonrpc(
 async def send_a2a_message(
     agent_id: str,
     body: A2AMessageSendRequest,
-    api_key: Annotated[AgentApiKey, Depends(get_a2a_client)],
+    api_key: Annotated[AgentApiKey, Depends(A2A_MESSAGE_CLIENT)],
     service: Annotated[A2AInvocationService, Depends(get_a2a_invocation_service)],
 ):
     """Send a text-only A2A message to an enabled agent and return the completed task."""
@@ -117,7 +160,7 @@ async def send_a2a_message(
 async def stream_a2a_message(
     agent_id: str,
     body: A2AMessageSendRequest,
-    api_key: Annotated[AgentApiKey, Depends(get_a2a_client)],
+    api_key: Annotated[AgentApiKey, Depends(A2A_MESSAGE_CLIENT)],
     service: Annotated[A2AInvocationService, Depends(get_a2a_invocation_service)],
 ):
     """Send a text-only A2A message to an enabled agent and stream task status events."""
@@ -135,7 +178,7 @@ async def stream_a2a_message(
 @router.get("/a2a/agents/{agent_id}/tasks", response_model=A2ATaskListResponse)
 async def list_a2a_tasks(
     agent_id: str,
-    api_key: Annotated[AgentApiKey, Depends(get_a2a_client)],
+    api_key: Annotated[AgentApiKey, Depends(A2A_TASK_CLIENT)],
     service: Annotated[A2AInvocationService, Depends(get_a2a_invocation_service)],
 ) -> A2ATaskListResponse:
     """List A2A tasks for this agent and API key."""
@@ -146,7 +189,7 @@ async def list_a2a_tasks(
 async def cancel_a2a_task(
     agent_id: str,
     task_id: str,
-    api_key: Annotated[AgentApiKey, Depends(get_a2a_client)],
+    api_key: Annotated[AgentApiKey, Depends(A2A_TASK_CLIENT)],
 ):
     """Cancellation is part of the A2A surface but is not implemented in v1."""
     return _a2a_error(
@@ -160,7 +203,7 @@ async def cancel_a2a_task(
 async def subscribe_a2a_task(
     agent_id: str,
     task_id: str,
-    api_key: Annotated[AgentApiKey, Depends(get_a2a_client)],
+    api_key: Annotated[AgentApiKey, Depends(A2A_TASK_CLIENT)],
 ):
     """Durable task subscription is part of the A2A surface but is not implemented in v1."""
     return _a2a_error(
@@ -174,7 +217,7 @@ async def subscribe_a2a_task(
 async def get_a2a_task(
     agent_id: str,
     task_id: str,
-    api_key: Annotated[AgentApiKey, Depends(get_a2a_client)],
+    api_key: Annotated[AgentApiKey, Depends(A2A_TASK_CLIENT)],
     service: Annotated[A2AInvocationService, Depends(get_a2a_invocation_service)],
 ) -> A2ATaskResponse:
     """Get a persisted A2A task if it belongs to this API key."""

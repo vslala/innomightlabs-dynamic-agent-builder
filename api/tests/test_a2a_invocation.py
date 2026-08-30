@@ -1,3 +1,4 @@
+import base64
 from collections.abc import AsyncIterator
 
 from fastapi.testclient import TestClient
@@ -61,6 +62,13 @@ def _create_enabled_agent_with_key(test_client: TestClient, auth_headers: dict) 
     return agent_id, api_key
 
 
+def _key_id_for_public_key(test_client: TestClient, auth_headers: dict, agent_id: str, public_key: str) -> str:
+    response = test_client.get(f"/agents/{agent_id}/api-keys", headers=auth_headers)
+    assert response.status_code == 200
+    key = next(item for item in response.json() if item["public_key"] == public_key)
+    return str(key["key_id"])
+
+
 def _message_payload(*, text: str = "Hello", context_id: str | None = None) -> dict:
     message = {
         "messageId": "msg-test",
@@ -84,7 +92,7 @@ def test_message_send_requires_agent_api_key(test_client: TestClient, auth_heade
     )
 
     assert response.status_code == 401
-    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.headers["www-authenticate"].startswith("Bearer")
 
 
 def test_message_send_invokes_existing_architecture_and_persists_task(
@@ -118,6 +126,93 @@ def test_message_send_invokes_existing_architecture_and_persists_task(
     )
     assert lookup_response.status_code == 200
     assert lookup_response.json()["task"]["id"] == task["id"]
+
+
+def test_oauth_client_credentials_token_can_call_a2a_message_send(
+    test_client: TestClient,
+    auth_headers: dict,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "src.a2a.service.get_agent_architecture",
+        lambda _architecture: FakeA2AArchitecture(),
+    )
+    agent_id, api_key = _create_enabled_agent_with_key(test_client, auth_headers)
+    key_id = _key_id_for_public_key(test_client, auth_headers, agent_id, api_key)
+    basic = base64.b64encode(f"{key_id}:{api_key}".encode("utf-8")).decode("ascii")
+
+    token_response = test_client.post(
+        "/a2a/oauth/token",
+        data={"grant_type": "client_credentials", "scope": "a2a:message"},
+        headers={"Authorization": f"Basic {basic}"},
+    )
+    assert token_response.status_code == 200
+    token_payload = token_response.json()
+    assert token_payload["token_type"] == "Bearer"
+    assert token_payload["scope"] == "a2a:message"
+    assert token_response.headers["cache-control"] == "no-store"
+
+    response = test_client.post(
+        f"/a2a/agents/{agent_id}/message:send",
+        json=_message_payload(text="Use OAuth"),
+        headers={"Authorization": f"Bearer {token_payload['access_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["task"]["status"]["message"]["parts"][0]["text"] == "Echo: Use OAuth"
+
+
+def test_oauth_token_scope_is_enforced_for_task_routes(
+    test_client: TestClient,
+    auth_headers: dict,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "src.a2a.service.get_agent_architecture",
+        lambda _architecture: FakeA2AArchitecture(),
+    )
+    agent_id, api_key = _create_enabled_agent_with_key(test_client, auth_headers)
+    key_id = _key_id_for_public_key(test_client, auth_headers, agent_id, api_key)
+
+    token_response = test_client.post(
+        "/a2a/oauth/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": key_id,
+            "client_secret": api_key,
+            "scope": "a2a:message",
+        },
+    )
+    assert token_response.status_code == 200
+
+    response = test_client.get(
+        f"/a2a/agents/{agent_id}/tasks",
+        headers={"Authorization": f"Bearer {token_response.json()['access_token']}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error"] == "insufficient_scope"
+
+
+def test_oauth_token_endpoint_rejects_invalid_scope(
+    test_client: TestClient,
+    auth_headers: dict,
+):
+    agent_id, api_key = _create_enabled_agent_with_key(test_client, auth_headers)
+    key_id = _key_id_for_public_key(test_client, auth_headers, agent_id, api_key)
+
+    response = test_client.post(
+        "/a2a/oauth/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": key_id,
+            "client_secret": api_key,
+            "scope": "admin",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["error"] == "invalid_scope"
 
 
 def test_jsonrpc_message_send_invokes_existing_architecture(

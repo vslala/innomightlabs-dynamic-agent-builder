@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from src.config import settings
+from src.skills.agent2agent_client.credentials import A2ACredentialResolver
 from src.skills.agent2agent_client.client import A2AHttpClient
 from src.skills.agent2agent_client.models import (
     A2AAgentCardView,
@@ -23,6 +24,7 @@ from src.skills.agent2agent_client.references import encode_agent_ref
 class A2ADiscoveryClient:
     def __init__(self, http_client: A2AHttpClient | None = None) -> None:
         self.http_client = http_client or A2AHttpClient()
+        self.credential_resolver = A2ACredentialResolver()
 
     async def search(self, *, request: DiscoverAgentsRequest, config: A2ARegistryConfig) -> DiscoverAgentsResponse:
         candidates = await self._load_candidates(config)
@@ -51,13 +53,16 @@ class A2ADiscoveryClient:
     async def _load_candidates(self, config: A2ARegistryConfig) -> list[RegistryAgentCandidate]:
         candidates: list[RegistryAgentCandidate] = []
         for registry_url in config.registry_urls:
-            candidates.extend(await self._load_registry(registry_url))
+            candidates.extend(await self._load_registry(registry_url, config=config))
         return candidates
 
-    async def _load_registry(self, registry_url: str) -> list[RegistryAgentCandidate]:
-        payload = await self.http_client.get_json(_list_url(registry_url))
+    async def _load_registry(self, registry_url: str, *, config: A2ARegistryConfig) -> list[RegistryAgentCandidate]:
+        payload = await self.http_client.get_json(
+            _list_url(registry_url),
+            headers=self.credential_resolver.headers_for_url(target_url=registry_url, config=config),
+        )
         if _looks_like_agent_list(payload):
-            return await self._from_agent_list(registry_url, payload)
+            return await self._from_agent_list(registry_url, payload, config=config)
         return await self._from_agent_card(registry_url, payload)
 
     async def _from_agent_card(self, registry_url: str, payload: dict[str, Any]) -> list[RegistryAgentCandidate]:
@@ -77,14 +82,22 @@ class A2ADiscoveryClient:
             )
         ]
 
-    async def _from_agent_list(self, registry_url: str, payload: dict[str, Any]) -> list[RegistryAgentCandidate]:
+    async def _from_agent_list(
+        self,
+        registry_url: str,
+        payload: dict[str, Any],
+        *,
+        config: A2ARegistryConfig,
+    ) -> list[RegistryAgentCandidate]:
         items = payload.get("items")
-        return await self._from_agent_summaries(registry_url, items if isinstance(items, list) else [])
+        return await self._from_agent_summaries(registry_url, items if isinstance(items, list) else [], config=config)
 
     async def _from_agent_summaries(
         self,
         registry_url: str,
         summaries: list[Any],
+        *,
+        config: A2ARegistryConfig,
     ) -> list[RegistryAgentCandidate]:
         candidates: list[RegistryAgentCandidate] = []
         for summary in summaries:
@@ -97,11 +110,16 @@ class A2ADiscoveryClient:
             )
             if not candidate.service_url and not candidate.card and not candidate.card_url:
                 continue
-            enriched = await self._enrich_candidate(candidate)
+            enriched = await self._enrich_candidate(candidate, config=config)
             candidates.append(enriched)
         return candidates
 
-    async def _enrich_candidate(self, candidate: RegistryAgentCandidate) -> RegistryAgentCandidate:
+    async def _enrich_candidate(
+        self,
+        candidate: RegistryAgentCandidate,
+        *,
+        config: A2ARegistryConfig,
+    ) -> RegistryAgentCandidate:
         if candidate.card:
             card = candidate.card
             return candidate.model_copy(
@@ -116,7 +134,15 @@ class A2ADiscoveryClient:
         if not candidate.card_url:
             return candidate
         try:
-            card = A2AAgentCardView.model_validate(await self.http_client.get_agent_card(candidate.card_url))
+            card = A2AAgentCardView.model_validate(
+                await self.http_client.get_agent_card(
+                    candidate.card_url,
+                    headers=self.credential_resolver.headers_for_url(
+                        target_url=candidate.card_url,
+                        config=config,
+                    ),
+                )
+            )
         except Exception:
             return candidate
         return candidate.model_copy(

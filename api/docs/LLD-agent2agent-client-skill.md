@@ -552,11 +552,70 @@ Do not log credentials. Do not include credentials in action results, `agent_ref
 
 ### OAuth Handling
 
-OAuth is useful, but it should be implemented as a platform credential flow, not as arbitrary URL construction inside the LLM-facing skill.
+A2A OAuth support has two implemented paths:
 
-Current phase behavior: when `send_message` sees an OAuth security requirement, return `auth_required=true` and `unsupported_auth=true`. Do not create OAuth URLs or ask the LLM to collect credentials.
+- Inbound InnomightLabs A2A server authentication with the OAuth 2.0 client credentials grant.
+- Outbound remote-agent authorization with OAuth 2.0 authorization code plus PKCE, callback storage, and refresh-token reuse.
 
-OAuth/credential phase behavior: create a pending call and return:
+Inbound InnomightLabs A2A servers publish two alternative security requirements in each Agent Card:
+
+- `oauth2ClientCredentials`: A2A `oauth2SecurityScheme` with `clientCredentials`, token URL `/a2a/oauth/token`, metadata URL `/a2a/oauth/.well-known/oauth-authorization-server`, and scopes `a2a:message` and `a2a:tasks`.
+- `agentApiKey`: legacy Bearer API-key compatibility.
+
+Token request:
+
+```http
+POST /a2a/oauth/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic base64(<agent_api_key_id>:<agent_public_key>)
+
+grant_type=client_credentials&scope=a2a:message%20a2a:tasks
+```
+
+`client_secret_post` is also accepted with `client_id` and `client_secret` form fields. The server validates the secret against the existing active `AgentApiKey` record, then issues a short-lived JWT access token with:
+
+- `iss`: `${API_BASE_URL}/a2a/oauth`
+- `aud`: `innomightlabs:a2a`
+- `token_use`: `a2a_access_token`
+- `agent_id`, `client_key_id`, `owner_email`
+- space-delimited `scope`
+- `exp`, `iat`, and random `jti`
+
+Protected A2A routes accept either the legacy opaque key or the OAuth Bearer token. OAuth tokens are validated for signature, issuer, audience, expiry, route `agent_id`, and required scope. The backing API key is reloaded on each request so disabled or deleted keys stop authorizing new calls even before existing JWTs expire.
+
+Route scopes:
+
+- `POST /a2a/agents/{agent_id}/message:send`: `a2a:message`
+- `POST /a2a/agents/{agent_id}/message:stream`: `a2a:message`
+- task list/get/cancel/subscribe routes: `a2a:tasks`
+- JSON-RPC endpoint: both `a2a:message` and `a2a:tasks` because the method is selected inside the request body.
+
+Configuration:
+
+- `A2A_OAUTH_ACCESS_TOKEN_TTL_SECONDS`: access-token lifetime in seconds, clamped from 60 seconds to 24 hours. Default: `3600`.
+- `API_BASE_URL`: used for the OAuth issuer, token endpoint, metadata endpoint, and Agent Card URLs. It must match the public origin clients use, otherwise issuer validation will fail.
+
+Outbound `agent2agent_client` behavior:
+
+- For `apiKeySecurityScheme` or Bearer `httpAuthSecurityScheme`, configured `default_credentials` are sent as `Authorization: Bearer <value>` unless the value already starts with `Bearer ` or `Basic `.
+- For A2A `oauth2SecurityScheme.clientCredentials`, configured credentials can be `client_id:client_secret` or JSON with `client_id`/`client_secret`. The skill exchanges them at the card's token URL, sends only `Authorization: Bearer <access_token>` to the remote A2A endpoint, and never includes tokens in action results.
+- For A2A `oauth2SecurityScheme.authorizationCode`, configured credentials must include the OAuth client id and optional client secret, either as `client_id:client_secret` or JSON with `client_id`/`client_secret`.
+- When no valid target-scoped token is stored, `send_message` returns `auth_required=true` with `credential_setup_url` set to the remote provider's authorization URL. The URL is built by the backend from the Agent Card flow and encrypted state; the LLM never constructs OAuth URLs or asks for authorization codes.
+- The authorization URL uses `redirect_uri=${API_BASE_URL}/skills/agent2agent_client/oauth/callback`. The callback exchanges the code, stores access and refresh tokens encrypted in `A2ARemoteOAuthCredential` records scoped by `owner_email + installed_skill_id + target_origin`, and redirects back with `a2a_oauth=success|error`.
+- Future calls load the saved target credential. If the token is expiring soon and a refresh token exists, the skill refreshes it, persists rotated tokens, and sends only `Authorization: Bearer <access_token>` to the remote A2A endpoint.
+- OAuth authorization and token URLs must share an origin with the target service URL or one of the configured registry URLs. This prevents a remote Agent Card from redirecting client secrets or authorization flows to an unrelated service.
+- Discovery and Agent Card fetches use configured direct Bearer/API-key credentials for matching registry/card origins. OAuth client credentials are not sent directly to discovery endpoints.
+
+Edge cases:
+
+- Missing OAuth client configuration returns `auth_required=true` and a skill configuration link when the runtime context contains `agent_id` and `installed_skill_id`.
+- Missing delegated authorization returns `auth_required=true` and the backend-generated remote authorization URL.
+- Unsupported OAuth flows such as device code, password, mTLS, and OpenID Connect currently return `unsupported_auth=true` unless a direct Bearer token is configured.
+- Token exchange failures return `auth_required=true` with a bounded error preview and do not expose the client secret.
+- OAuth tokens with insufficient scope return `403` with `WWW-Authenticate: Bearer` challenge metadata.
+- Revoked backing API keys invalidate OAuth tokens on the next protected A2A call.
+
+Deferred pending-call replay phase: create a pending call and return:
 
 ```json
 {
@@ -570,17 +629,14 @@ OAuth/credential phase behavior: create a pending call and return:
 }
 ```
 
-The reasoning agent can then tell the user to open the returned `connect_url`. After completion, encrypted provider tokens should be stored in the database against:
+The reasoning agent can then tell the user to open the returned `connect_url`. The current implementation asks the user to retry after OAuth completion instead of replaying the original request automatically.
 
 ```text
 owner_email + installed_skill_id + remote_agent_origin/service_url + security_scheme
 ```
 
-OAuth provider support is not included in the current phase because no allowlisted providers have been chosen. OAuth-secured remote agents should return `auth_required` with `unsupported_auth=true` and include a clear message that this remote agent requires an unsupported OAuth provider.
-
 Future hardening:
 
-- Support separate `client_id` plus `client_secret` when A2A credentials evolve beyond the current API key.
 - Add credential aliases so users do not need to key secrets by raw URL.
 - Add per-agent credential mapping when one registry lists agents that require different API keys.
 - Add dynamic OAuth client registration for remote providers that are not explicitly allowlisted.

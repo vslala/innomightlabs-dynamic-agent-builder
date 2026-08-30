@@ -14,4 +14,4 @@ DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 100
 
 # Agent processing limits
-MAX_TOOL_ITERATIONS = 10  # Maximum tool calls per message processing
+MAX_TOOL_ITERATIONS = 37  # Maximum tool calls per message processing

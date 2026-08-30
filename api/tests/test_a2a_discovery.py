@@ -99,6 +99,13 @@ def test_list_a2a_agents_is_public_and_sanitized(
     assert "documentationUrl" not in item["agentCard"]
     assert "tenant" not in item["agentCard"].get("provider", {})
     assert "apiKeySecurityScheme" not in item["agentCard"]["securitySchemes"]["agentApiKey"]
+    oauth_scheme = item["agentCard"]["securitySchemes"]["oauth2ClientCredentials"]["oauth2SecurityScheme"]
+    assert oauth_scheme["flows"]["clientCredentials"]["tokenUrl"].endswith("/a2a/oauth/token")
+    assert "a2a:message" in oauth_scheme["flows"]["clientCredentials"]["scopes"]
+    assert item["agentCard"]["securityRequirements"][0]["schemes"]["oauth2ClientCredentials"]["list"] == [
+        "a2a:message",
+        "a2a:tasks",
+    ]
     validate_agent_card_payload(item["agentCard"])
     assert "SECRET PERSONA" not in response.text
 

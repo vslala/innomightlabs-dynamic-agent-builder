@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from enum import Enum
 from typing import Annotated, Any
 from urllib.parse import urlparse
@@ -201,7 +202,7 @@ def _parse_credentials(raw: Any) -> dict[str, str]:
         return {}
     credentials: dict[str, str] = {}
     for key, value in raw.items():
-        secret = str(value).strip()
+        secret = json.dumps(value, separators=(",", ":")) if isinstance(value, dict) else str(value).strip()
         if not str(key).strip() or not secret:
             continue
         credentials[_normalize_url(str(key))] = secret

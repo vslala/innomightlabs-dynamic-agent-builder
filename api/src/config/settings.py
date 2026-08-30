@@ -142,6 +142,7 @@ class Settings:
     conversation_media_presign_ttl_seconds: int = 900
     a2a_supported_protocols: list[str] = field(default_factory=lambda: ["JSONRPC", "HTTP+JSON"])
     a2a_primary_protocol: str = "JSONRPC"
+    a2a_oauth_access_token_ttl_seconds: int = 3600
 
     def validate_core(self) -> None:
         """
@@ -419,6 +420,9 @@ class Settings:
             ),
             a2a_primary_protocol=_normalize_a2a_protocol(
                 os.getenv("A2A_PRIMARY_PROTOCOL", "JSONRPC")
+            ),
+            a2a_oauth_access_token_ttl_seconds=int(
+                os.getenv("A2A_OAUTH_ACCESS_TOKEN_TTL_SECONDS", "3600")
             ),
         )
 

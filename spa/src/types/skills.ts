@@ -65,3 +65,13 @@ export interface SkillOAuthStartResponse {
 
 export type GoogleDriveOAuthStartRequest = SkillOAuthStartRequest;
 export type GoogleDriveOAuthStartResponse = SkillOAuthStartResponse;
+
+export interface A2ARemoteOAuthStartRequest {
+  agent_id: string;
+  installed_skill_id: string;
+  service_url?: string | null;
+  target_origin?: string | null;
+  return_to: string;
+}
+
+export type A2ARemoteOAuthStartResponse = SkillOAuthStartResponse;

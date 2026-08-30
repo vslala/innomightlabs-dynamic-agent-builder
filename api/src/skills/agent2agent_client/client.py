@@ -46,6 +46,34 @@ class A2AHttpClient:
         payload = await self.get_json(url, headers=headers)
         return self.normalize_agent_card(payload)
 
+    async def request_oauth_client_credentials_token(
+        self,
+        *,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        scopes: list[str],
+        timeout_seconds: int = 20,
+    ) -> dict[str, Any]:
+        data = {"grant_type": "client_credentials"}
+        if scopes:
+            data["scope"] = " ".join(scopes)
+        async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
+            response = await client.post(
+                token_url,
+                data=data,
+                auth=(client_id, client_secret),
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "InnomightLabs-Agent2AgentClientSkill/1.0",
+                },
+            )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError(f"A2A OAuth token endpoint returned a non-object payload: {token_url}")
+        return payload
+
     def normalize_agent_card(self, payload: dict[str, Any]) -> dict[str, Any]:
         return _agent_card_to_dict(parse_agent_card(payload))
 

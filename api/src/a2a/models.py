@@ -211,9 +211,26 @@ class A2AHttpAuthSecurityScheme(BaseModel):
     description: str | None = None
 
 
+class A2AClientCredentialsOAuthFlow(BaseModel):
+    tokenUrl: str
+    refreshUrl: str | None = None
+    scopes: dict[str, str] = Field(default_factory=dict)
+
+
+class A2AOAuthFlows(BaseModel):
+    clientCredentials: A2AClientCredentialsOAuthFlow | None = None
+
+
+class A2AOAuth2SecurityScheme(BaseModel):
+    description: str | None = None
+    flows: A2AOAuthFlows
+    oauth2MetadataUrl: str | None = None
+
+
 class A2ASecurityScheme(BaseModel):
     apiKeySecurityScheme: A2AApiKeySecurityScheme | None = None
     httpAuthSecurityScheme: A2AHttpAuthSecurityScheme | None = None
+    oauth2SecurityScheme: A2AOAuth2SecurityScheme | None = None
 
 
 class A2AStringList(BaseModel):

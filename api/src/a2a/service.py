@@ -14,10 +14,13 @@ from src.a2a.models import (
     A2AAgentListResponse,
     A2AAgentProvider,
     A2AAgentSummary,
+    A2AClientCredentialsOAuthFlow,
     A2AHttpAuthSecurityScheme,
     A2AMessage,
     A2AMessageRole,
     A2AMessageSendRequest,
+    A2AOAuth2SecurityScheme,
+    A2AOAuthFlows,
     A2ASecurityScheme,
     A2ASecurityRequirement,
     A2ASkill,
@@ -28,6 +31,13 @@ from src.a2a.models import (
     A2ATaskStatus,
     A2ATaskStatusUpdateEvent,
     A2ATextPart,
+)
+from src.a2a.oauth import (
+    A2A_SCOPE_MESSAGE,
+    A2A_SCOPE_TASKS,
+    A2A_SCOPES,
+    a2a_oauth_metadata_url,
+    a2a_oauth_token_url,
 )
 from src.a2a.repository import A2ATaskRepository
 from src.agents.architectures import get_agent_architecture
@@ -107,6 +117,18 @@ class A2ADiscoveryService:
 
     def _security_schemes(self) -> dict[str, A2ASecurityScheme]:
         return {
+            "oauth2ClientCredentials": A2ASecurityScheme(
+                oauth2SecurityScheme=A2AOAuth2SecurityScheme(
+                    description="OAuth 2.0 client credentials flow for agent-to-agent calls.",
+                    flows=A2AOAuthFlows(
+                        clientCredentials=A2AClientCredentialsOAuthFlow(
+                            tokenUrl=a2a_oauth_token_url(),
+                            scopes=A2A_SCOPES,
+                        )
+                    ),
+                    oauth2MetadataUrl=a2a_oauth_metadata_url(),
+                )
+            ),
             "agentApiKey": A2ASecurityScheme(
                 httpAuthSecurityScheme=A2AHttpAuthSecurityScheme(
                     scheme="Bearer",
@@ -118,6 +140,13 @@ class A2ADiscoveryService:
 
     def _security_requirements(self) -> list[A2ASecurityRequirement]:
         return [
+            A2ASecurityRequirement(
+                schemes={
+                    "oauth2ClientCredentials": A2AStringList(
+                        list=[A2A_SCOPE_MESSAGE, A2A_SCOPE_TASKS]
+                    )
+                }
+            ),
             A2ASecurityRequirement(
                 schemes={"agentApiKey": A2AStringList(list=[])}
             )

@@ -4,6 +4,8 @@ import type {
   InstalledSkill,
   SkillCatalogItem,
   SkillInstallRequest,
+  A2ARemoteOAuthStartRequest,
+  A2ARemoteOAuthStartResponse,
   SkillOAuthStartRequest,
   SkillOAuthStartResponse,
   SkillUpdateRequest,
@@ -37,6 +39,10 @@ class SkillApiService {
 
   async startSkillOAuth(path: string, payload: SkillOAuthStartRequest): Promise<SkillOAuthStartResponse> {
     return httpClient.post<SkillOAuthStartResponse>(path, payload);
+  }
+
+  async startA2ARemoteOAuth(payload: A2ARemoteOAuthStartRequest): Promise<A2ARemoteOAuthStartResponse> {
+    return httpClient.post<A2ARemoteOAuthStartResponse>("/skills/agent2agent_client/oauth/start", payload);
   }
 }
 
