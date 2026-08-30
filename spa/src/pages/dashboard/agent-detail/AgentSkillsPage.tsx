@@ -748,14 +748,17 @@ export function AgentSkillsPage() {
       </Dialog>
 
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
-        <DialogContent style={{ width: "min(92vw, 44rem)", maxWidth: "44rem" }}>
+        <DialogContent
+          className="agent-skill-config-dialog"
+          style={{ width: "min(92vw, 44rem)", maxWidth: "44rem" }}
+        >
           <DialogHeader>
             <DialogTitle>{configuringSkill ? `Configure ${configuringSkill.name}` : "Configure Skill"}</DialogTitle>
             <DialogDescription>
               Update this installed skill's runtime configuration and credentials.
             </DialogDescription>
           </DialogHeader>
-          <DialogBody>
+          <DialogBody className="agent-skill-config-dialog__body">
             <Stack gap="md">
               {configSkillError && (
                 <div style={{ padding: "0.75rem", borderRadius: "0.5rem", backgroundColor: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#f87171", fontSize: "0.875rem" }}>

@@ -925,7 +925,7 @@ export function ConversationDetail() {
             )}
           </Button>
         </div>
-        <CardContent style={{ flex: 1, display: "flex", flexDirection: "column", padding: 0, overflow: "hidden" }}>
+        <CardContent style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: 0, overflow: "hidden" }}>
           {/* Messages Area */}
           <div
             ref={messagesContainerRef}
@@ -933,8 +933,10 @@ export function ConversationDetail() {
             className={styles.messagesPane}
             style={{
               flex: 1,
+              minHeight: 0,
               overflowY: "auto",
-              padding: "2rem 1rem 1.5rem",
+              padding: "2rem 1rem calc(9rem + env(safe-area-inset-bottom))",
+              scrollPaddingBottom: "calc(9rem + env(safe-area-inset-bottom))",
               display: "flex",
               flexDirection: "column",
               gap: "1.55rem",
@@ -1211,6 +1213,7 @@ export function ConversationDetail() {
             padding: "0.75rem 1rem 1rem",
             alignItems: "flex-end",
             backgroundColor: "transparent",
+            flexShrink: 0,
           }}>
             {/* Hidden file input */}
             <FileInput

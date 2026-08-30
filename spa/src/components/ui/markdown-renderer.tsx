@@ -29,6 +29,8 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
               borderRadius: "0.25rem",
               fontSize: "0.875em",
               fontFamily: "monospace",
+              whiteSpace: "break-spaces",
+              overflowWrap: "anywhere",
             }}
             {...props}
           >
@@ -46,7 +48,10 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
             margin: "0.75rem 0",
             borderRadius: "0.5rem",
             fontSize: "0.875rem",
+            maxWidth: "100%",
+            overflowX: "auto",
           }}
+          wrapLongLines
         >
           {String(children).replace(/\n$/, "")}
         </SyntaxHighlighter>
@@ -56,7 +61,7 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
     // Styled paragraphs
     p({ children }) {
       return (
-        <p style={{ margin: "0.5rem 0", lineHeight: "1.6" }}>
+        <p style={{ margin: "0.5rem 0", lineHeight: "1.6", overflowWrap: "anywhere" }}>
           {children}
         </p>
       );
@@ -119,6 +124,7 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
             color: "var(--gradient-start)",
             textDecoration: "underline",
             textUnderlineOffset: "2px",
+            overflowWrap: "anywhere",
           }}
         >
           {children}
@@ -216,7 +222,7 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
   };
 
   return (
-    <div className={className}>
+    <div className={className} style={{ minWidth: 0, overflowWrap: "anywhere" }}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>
