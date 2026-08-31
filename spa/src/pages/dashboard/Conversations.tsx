@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
+import { featureFlags } from "../../config/featureFlags";
 import type { ConversationResponse } from "../../types/conversation";
 import { userVisibleConversations } from "../../utils/conversations";
 import { ConversationSidebar } from "./conversations/ConversationSidebar";
@@ -18,6 +19,7 @@ export function Conversations() {
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<ConversationStartMode>("chat");
+  const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -72,7 +74,13 @@ export function Conversations() {
       });
       setPrompt("");
       navigate(`/dashboard/conversations/${conversation.conversation_id}`, {
-        state: mode === "image" ? { initialImagePrompt: message } : { initialMessage: message },
+        state:
+          mode === "image"
+            ? { initialImagePrompt: message }
+            : {
+                initialMessage: message,
+                deepResearch: featureFlags.enableDeepResearch && deepResearchEnabled,
+              },
       });
     } catch (err) {
       setError("Failed to start conversation. Please try again.");
@@ -100,6 +108,7 @@ export function Conversations() {
   const handleNewConversation = () => {
     setPrompt("");
     setMode("chat");
+    setDeepResearchEnabled(false);
   };
 
   if (loading) {
@@ -128,6 +137,8 @@ export function Conversations() {
           selectedAgentId={selectedAgentId}
           prompt={prompt}
           mode={mode}
+          deepResearchEnabled={deepResearchEnabled}
+          showDeepResearch={featureFlags.enableDeepResearch}
           creating={creating}
           error={error}
           onAgentChange={(agentId) => {
@@ -138,7 +149,13 @@ export function Conversations() {
             }
           }}
           onPromptChange={setPrompt}
-          onModeChange={setMode}
+          onModeChange={(nextMode) => {
+            setMode(nextMode);
+            if (nextMode === "image") {
+              setDeepResearchEnabled(false);
+            }
+          }}
+          onDeepResearchChange={setDeepResearchEnabled}
           onSubmit={handleStartConversation}
           onCreateAgent={() => navigate("/dashboard/agents/new")}
         />

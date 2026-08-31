@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Send, Loader2, Maximize2, Minimize2, Paperclip, Image as ImageIcon } from "lucide-react";
+import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Loader2, Maximize2, Minimize2, Image as ImageIcon } from "lucide-react";
 import { ChatFormRenderer, type FormAnswer } from "../../components/chat/ChatFormRenderer";
 import { AttachmentChip } from "../../components/chat/AttachmentChip";
+import { ChatComposer } from "../../components/chat/ChatComposer";
 import { ChatStreamRenderer } from "../../components/chat/ChatStreamRenderer";
+import { featureFlags } from "../../config/featureFlags";
 import { useFileAttachments } from "../../hooks/useFileAttachments";
 import { ALLOWED_EXTENSIONS } from "../../types/message";
 import {
@@ -75,6 +77,7 @@ export function ConversationDetail() {
   const [incompleteResponse, setIncompleteResponse] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
+  const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [imagePrompt, setImagePrompt] = useState("");
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [streamingImagePreview, setStreamingImagePreview] = useState<{
@@ -83,7 +86,6 @@ export function ConversationDetail() {
     status: string;
   } | null>(null);
   const [imagePasteWarningOpen, setImagePasteWarningOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const streamingContentRef = useRef("");
   const latestImagePreviewDataUrlRef = useRef<string | null>(null);
@@ -193,7 +195,11 @@ export function ConversationDetail() {
   }, [conversationId]);
 
   useEffect(() => {
-    const state = location.state as { initialImagePrompt?: string; initialMessage?: string } | null;
+    const state = location.state as {
+      initialImagePrompt?: string;
+      initialMessage?: string;
+      deepResearch?: boolean;
+    } | null;
     const initialImagePrompt = state?.initialImagePrompt?.trim();
     const initialMessage = state?.initialMessage?.trim();
     if (
@@ -215,7 +221,11 @@ export function ConversationDetail() {
     if (initialImagePrompt) {
       void handleGenerateImage(initialImagePrompt);
     } else if (initialMessage) {
-      void handleSendMessage(initialMessage);
+      void handleSendMessage(
+        initialMessage,
+        undefined,
+        featureFlags.enableDeepResearch && Boolean(state?.deepResearch)
+      );
     }
   }, [conversation, initialMessagesLoaded, isGeneratingImage, isSending, location.state, navigate]);
 
@@ -290,7 +300,12 @@ export function ConversationDetail() {
 
   // Scroll to bottom when new messages are added (not when loading older)
   const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior,
+    });
   };
 
   // Scroll to bottom on initial load
@@ -325,7 +340,11 @@ export function ConversationDetail() {
   }, [isExpanded]);
 
   // Handle sending a message
-  const handleSendMessage = async (messageOverride?: string, optimisticUserContent?: string) => {
+  const handleSendMessage = async (
+    messageOverride?: string,
+    optimisticUserContent?: string,
+    deepResearchOverride?: boolean,
+  ) => {
     const messageToSend = messageOverride || inputValue.trim();
     // Allow sending if there's a message OR attachments
     if ((!messageToSend && attachments.length === 0) || !conversation || isSending) return;
@@ -552,6 +571,7 @@ export function ConversationDetail() {
         conversation.conversation_id,
         messageToSend || "",
         attachmentsToSend,
+        featureFlags.enableDeepResearch && (deepResearchOverride ?? deepResearchEnabled),
         {
           onEvent: handleEvent,
           onError: (err) => {
@@ -747,14 +767,6 @@ export function ConversationDetail() {
     }
   };
 
-  // Handle Enter key press
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
-
   if (loading) {
     return (
       <div className={styles.loadingPanel}>
@@ -931,18 +943,6 @@ export function ConversationDetail() {
             ref={messagesContainerRef}
             onScroll={handleScroll}
             className={styles.messagesPane}
-            style={{
-              flex: 1,
-              minHeight: 0,
-              overflowY: "auto",
-              padding: "2rem 1rem calc(9rem + env(safe-area-inset-bottom))",
-              scrollPaddingBottom: "calc(9rem + env(safe-area-inset-bottom))",
-              display: "flex",
-              flexDirection: "column",
-              gap: "1.55rem",
-              width: "min(100%, 56rem)",
-              margin: "0 auto",
-            }}
           >
             {/* Loading indicator for older messages */}
             {isLoadingMessages && (
@@ -1127,7 +1127,6 @@ export function ConversationDetail() {
                 />
               </>
             )}
-            <div ref={messagesEndRef} />
           </div>
 
           {/* Error message */}
@@ -1175,13 +1174,7 @@ export function ConversationDetail() {
 
           {/* Attachment chips display */}
           {attachments.length > 0 && (
-            <div style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: "0.5rem",
-              padding: "0.5rem 1rem",
-              borderTop: "1px solid var(--border-subtle)",
-            }}>
+            <div className={styles.attachments}>
               {attachments.map((att, idx) => (
                 <AttachmentChip
                   key={idx}
@@ -1195,26 +1188,13 @@ export function ConversationDetail() {
 
           {/* Attachment error */}
           {attachmentError && (
-            <div style={{
-              padding: "0.5rem 1rem",
-              color: "#f87171",
-              fontSize: "0.75rem",
-            }}>
+            <div className={styles.attachmentError}>
               {attachmentError}
             </div>
           )}
 
           {/* Input Area */}
-          <div style={{
-            display: "flex",
-            gap: "0.75rem",
-            width: "min(100%, 56rem)",
-            margin: "0 auto",
-            padding: "0.75rem 1rem 1rem",
-            alignItems: "flex-end",
-            backgroundColor: "transparent",
-            flexShrink: 0,
-          }}>
+          <div>
             {/* Hidden file input */}
             <FileInput
               ref={fileInputRef}
@@ -1223,70 +1203,33 @@ export function ConversationDetail() {
               onChange={(e) => e.target.files && addFiles(e.target.files)}
             />
 
-            {/* Attachment button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isSending}
-              title="Attach files"
-              style={{ flexShrink: 0, height: "2.75rem", width: "2.75rem", borderRadius: "999px" }}
-            >
-              <Paperclip style={{ height: "1rem", width: "1rem" }} />
-            </Button>
-
-            {supportsImageGeneration && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setIsImageDialogOpen(true)}
-                disabled={isSending || isGeneratingImage}
-                title="Generate image"
-                style={{ flexShrink: 0, height: "2.75rem", width: "2.75rem", borderRadius: "999px" }}
-              >
-                <ImageIcon style={{ height: "1rem", width: "1rem" }} />
-              </Button>
-            )}
-
-            <Textarea
-              placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+            <ChatComposer
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyPress}
+              onChange={setInputValue}
+              onSubmit={() => handleSendMessage()}
               onPaste={handleChatPaste}
-              aria-busy={isSending}
-              rows={1}
-              style={{
-                flex: 1,
-                minHeight: "2.75rem",
-                maxHeight: "10rem",
-                resize: "none",
-                overflow: "auto",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: "1.375rem",
-                backgroundColor: "var(--bg-secondary)",
-                color: "var(--text-primary)",
-                caretColor: "var(--text-primary)",
-                padding: "0.75rem 1rem",
-                boxShadow: "none",
-              }}
-              onInput={(e) => {
-                const target = e.target as HTMLTextAreaElement;
-                target.style.height = "auto";
-                target.style.height = Math.min(target.scrollHeight, 160) + "px";
-              }}
+              isSubmitting={isSending}
+              submitDisabled={(!inputValue.trim() && attachments.length === 0) || isSending}
+              onAttachFiles={() => fileInputRef.current?.click()}
+              imageAction={
+                supportsImageGeneration
+                  ? {
+                      disabled: isGeneratingImage,
+                      onClick: () => setIsImageDialogOpen(true),
+                      title: "Generate image",
+                    }
+                  : undefined
+              }
+              deepResearchAction={
+                featureFlags.enableDeepResearch
+                  ? {
+                      enabled: deepResearchEnabled,
+                      disabled: isGeneratingImage,
+                      onChange: setDeepResearchEnabled,
+                    }
+                  : undefined
+              }
             />
-            <Button
-              onClick={() => handleSendMessage()}
-              disabled={(!inputValue.trim() && attachments.length === 0) || isSending}
-              style={{ flexShrink: 0, height: "2.75rem", width: "2.75rem", borderRadius: "999px", padding: 0 }}
-            >
-              {isSending ? (
-                <Loader2 style={{ height: "1rem", width: "1rem", animation: "spin 1s linear infinite" }} />
-              ) : (
-                <Send style={{ height: "1rem", width: "1rem" }} />
-              )}
-            </Button>
           </div>
         </CardContent>
       </Card>

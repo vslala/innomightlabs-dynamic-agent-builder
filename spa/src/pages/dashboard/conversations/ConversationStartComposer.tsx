@@ -1,6 +1,6 @@
-import { Bot, Image as ImageIcon, Plus } from "lucide-react";
+import { Bot, Plus } from "lucide-react";
+import { ChatComposer } from "../../../components/chat/ChatComposer";
 import { Button } from "../../../components/ui/button";
-import { ExpandableChatBox } from "../../../components/ui/expandable-chat-box";
 import { PillSelect } from "../../../components/ui/pill-select";
 import type { AgentResponse } from "../../../services/agents/AgentApiService";
 
@@ -11,11 +11,14 @@ interface ConversationStartComposerProps {
   selectedAgentId: string;
   prompt: string;
   mode: ConversationStartMode;
+  deepResearchEnabled: boolean;
+  showDeepResearch: boolean;
   creating: boolean;
   error: string | null;
   onAgentChange: (agentId: string) => void;
   onPromptChange: (value: string) => void;
   onModeChange: (mode: ConversationStartMode) => void;
+  onDeepResearchChange: (enabled: boolean) => void;
   onSubmit: () => void;
   onCreateAgent: () => void;
 }
@@ -25,11 +28,14 @@ export function ConversationStartComposer({
   selectedAgentId,
   prompt,
   mode,
+  deepResearchEnabled,
+  showDeepResearch,
   creating,
   error,
   onAgentChange,
   onPromptChange,
   onModeChange,
+  onDeepResearchChange,
   onSubmit,
   onCreateAgent,
 }: ConversationStartComposerProps) {
@@ -84,24 +90,29 @@ export function ConversationStartComposer({
         </p>
       )}
 
-      <ExpandableChatBox
+      <ChatComposer
         value={prompt}
-        onChange={onPromptChange}
-        onSubmit={onSubmit}
+        disabled={creating}
         isSubmitting={creating}
         placeholder={mode === "image" ? "Describe the image you want" : "Ask anything"}
-        leftActions={
-          <Button
-            type="button"
-            variant={mode === "image" ? "default" : "ghost"}
-            size="icon"
-            disabled={!supportsImage}
-            onClick={() => onModeChange(mode === "image" ? "chat" : "image")}
-            title={supportsImage ? "Create an image" : "Selected agent does not support image generation"}
-            className="h-10 w-10 rounded-full"
-          >
-            <ImageIcon className="h-4 w-4" />
-          </Button>
+        onChange={onPromptChange}
+        onSubmit={onSubmit}
+        imageAction={{
+          active: mode === "image",
+          disabled: !supportsImage,
+          onClick: () => onModeChange(mode === "image" ? "chat" : "image"),
+          title: supportsImage
+            ? "Create an image"
+            : "Selected agent does not support image generation",
+        }}
+        deepResearchAction={
+          showDeepResearch
+            ? {
+                enabled: deepResearchEnabled,
+                disabled: mode === "image",
+                onChange: onDeepResearchChange,
+              }
+            : undefined
         }
         rightActions={
           <PillSelect

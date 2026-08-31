@@ -108,6 +108,7 @@ class ChatService {
    * @param conversationId - The conversation context
    * @param content - The message text content
    * @param attachments - Optional file attachments to include
+   * @param deepResearch - Whether to enable gated research workspace tools
    * @param options - Stream event handlers
    */
   async sendMessage(
@@ -115,6 +116,7 @@ class ChatService {
     conversationId: string,
     content: string,
     attachments: Attachment[] | undefined,
+    deepResearch: boolean,
     options: ChatStreamOptions
   ): Promise<void> {
     const { onEvent, onError, onComplete } = options;
@@ -128,9 +130,14 @@ class ChatService {
     const url = `${this.baseUrl}/agents/${agentId}/${conversationId}/send-message`;
 
     // Build request body with optional attachments
-    const body: { content: string; attachments?: Attachment[] } = { content };
+    const body: { content: string; attachments?: Attachment[]; deep_research?: boolean } = {
+      content,
+    };
     if (attachments && attachments.length > 0) {
       body.attachments = attachments;
+    }
+    if (deepResearch) {
+      body.deep_research = true;
     }
 
     try {
