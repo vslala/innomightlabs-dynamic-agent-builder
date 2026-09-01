@@ -89,8 +89,6 @@ def _audit(event: str, args: tuple[Any, ...]) -> None:
         return
     if event in BLOCKED_PROCESS_EVENTS:
         raise PermissionError("Child process execution is not allowed in Python scripts")
-    if event in {"ctypes.dlopen", "ctypes.dlsym", "ctypes.dlsym/handle"}:
-        raise PermissionError("Native library loading is not allowed in Python scripts")
 
 
 sys.addaudithook(_audit)

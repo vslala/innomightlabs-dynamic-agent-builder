@@ -27,14 +27,23 @@ class PythonExecutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_success_uses_internal_tmp_working_directory(self) -> None:
         response = await self.service.run_python(
             self.request(
-                script="from pathlib import Path\nPath('result.txt').write_text('ok')\nprint(Path.cwd())"
+                script=(
+                    "from pathlib import Path\n"
+                    "import sys\n"
+                    "Path('result.txt').write_text('ok')\n"
+                    "print(Path.cwd())\n"
+                    "print(Path(sys.prefix).name)"
+                )
             )
         )
 
         self.assertTrue(response.ok)
         self.assertEqual(response.exit_code, 0)
         self.assertEqual(response.commands[0].status, "succeeded")
-        self.assertTrue(response.stdout.strip().startswith(str(self.work_root.resolve())))
+        self.assertEqual(response.commands[0].operation, "create_environment")
+        self.assertEqual(response.commands[1].status, "succeeded")
+        self.assertTrue(response.stdout.splitlines()[0].startswith(str(self.work_root.resolve())))
+        self.assertEqual(response.stdout.splitlines()[1], ".venv")
         self.assertEqual(list(self.work_root.iterdir()), [])
 
     async def test_requirements_install_then_script(self) -> None:
@@ -52,9 +61,9 @@ class PythonExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(response.ok, response.stderr)
         self.assertEqual(
             [result.status for result in response.commands],
-            ["succeeded", "succeeded"],
+            ["succeeded", "succeeded", "succeeded"],
         )
-        self.assertIn("installed then ran", response.commands[1].stdout)
+        self.assertIn("installed then ran", response.commands[2].stdout)
 
     async def test_commands_execute_sequentially_in_one_run(self) -> None:
         script = """
@@ -77,7 +86,7 @@ else:
         )
 
         self.assertTrue(response.ok)
-        self.assertEqual(response.commands[1].stdout, "first-second\n")
+        self.assertEqual(response.commands[2].stdout, "first-second\n")
 
     async def test_failure_is_reported_and_later_commands_are_skipped(self) -> None:
         script = """
@@ -99,12 +108,13 @@ if sys.argv[1] == "fail":
 
         self.assertFalse(response.ok)
         self.assertEqual(response.exit_code, 7)
-        self.assertEqual(response.failed_command_index, 0)
-        self.assertEqual(response.commands[0].status, "failed")
-        self.assertEqual(response.commands[0].stdout, "fail\n")
-        self.assertEqual(response.commands[0].stderr, "failure details\n")
-        self.assertEqual(response.commands[1].status, "skipped")
-        self.assertIsNone(response.commands[1].exit_code)
+        self.assertEqual(response.failed_command_index, 1)
+        self.assertEqual(response.commands[0].status, "succeeded")
+        self.assertEqual(response.commands[1].status, "failed")
+        self.assertEqual(response.commands[1].stdout, "fail\n")
+        self.assertEqual(response.commands[1].stderr, "failure details\n")
+        self.assertEqual(response.commands[2].status, "skipped")
+        self.assertIsNone(response.commands[2].exit_code)
 
     async def test_timeout_terminates_process_and_skips_later_commands(self) -> None:
         response = await self.service.run_python(
@@ -120,10 +130,11 @@ if sys.argv[1] == "fail":
 
         self.assertFalse(response.ok)
         self.assertTrue(response.timed_out)
-        self.assertEqual(response.failed_command_index, 0)
-        self.assertEqual(response.commands[0].status, "timed_out")
-        self.assertTrue(response.commands[0].timed_out)
-        self.assertEqual(response.commands[1].status, "skipped")
+        self.assertEqual(response.failed_command_index, 1)
+        self.assertEqual(response.commands[0].status, "succeeded")
+        self.assertEqual(response.commands[1].status, "timed_out")
+        self.assertTrue(response.commands[1].timed_out)
+        self.assertEqual(response.commands[2].status, "skipped")
         self.assertLess(response.duration_ms, 4000)
 
     async def test_python_policy_rejects_write_outside_managed_tmp_directory(self) -> None:
@@ -132,7 +143,7 @@ if sys.argv[1] == "fail":
         )
 
         self.assertFalse(response.ok)
-        self.assertEqual(response.commands[0].status, "failed")
+        self.assertEqual(response.commands[1].status, "failed")
         self.assertIn("Writes are restricted", response.stderr)
 
     async def test_python_policy_rejects_directory_fd_write_escape(self) -> None:
@@ -154,14 +165,44 @@ os.open("not-allowed.txt", os.O_WRONLY | os.O_CREAT, dir_fd=directory)
         self.assertFalse(response.ok)
         self.assertIn("process execution is not allowed", response.stderr)
 
+    async def test_python_policy_allows_native_library_loading(self) -> None:
+        response = await self.service.run_python(
+            self.request(
+                script=(
+                    "import ctypes\n"
+                    "library = ctypes.CDLL(None)\n"
+                    "print(type(library).__name__)"
+                )
+            )
+        )
+
+        self.assertTrue(response.ok, response.stderr)
+        self.assertEqual(response.commands[1].status, "succeeded")
+        self.assertEqual(response.stdout, "CDLL\n")
+
     async def test_work_root_outside_tmp_is_rejected(self) -> None:
         service = CliRunnerService(python_work_root=Path("/var/tmp/not-managed"))
 
         with self.assertRaisesRegex(CommandExecutionError, "must resolve under /tmp"):
             await service.run_python(self.request(script="print('no')"))
 
-    def test_request_defaults_to_thirty_seconds(self) -> None:
-        self.assertEqual(self.request(script="print('ok')").timeout_seconds, 30)
+    async def test_environment_failure_skips_requested_commands(self) -> None:
+        service = CliRunnerService(
+            python_work_root=self.work_root,
+            python_executable=sys.executable,
+            uv_executable="/usr/bin/false",
+        )
+
+        response = await service.run_python(self.request(script="print('no')"))
+
+        self.assertFalse(response.ok)
+        self.assertEqual(response.failed_command_index, 0)
+        self.assertEqual(response.commands[0].operation, "create_environment")
+        self.assertEqual(response.commands[0].status, "failed")
+        self.assertEqual(response.commands[1].status, "skipped")
+
+    def test_request_defaults_to_sixty_seconds(self) -> None:
+        self.assertEqual(self.request(script="print('ok')").timeout_seconds, 60)
 
     def test_python_execution_endpoint_is_in_openapi_contract(self) -> None:
         operation = app.openapi()["paths"]["/v1/python/executions"]["post"]

@@ -23,13 +23,15 @@ Python executions accept script and `requirements.txt` content directly. Callers
     {"operation": "install_requirements"},
     {"operation": "run_script", "args": []}
   ],
-  "timeout_seconds": 30
+  "timeout_seconds": 60
 }
 ```
 
-The runner creates a private UUID directory beneath `/tmp/infra-cli-runner`, writes fixed `script.py` and `requirements.txt` paths there, and cleans the run directory afterward. The ordered command list is fail-fast: after a failed or timed-out command, remaining entries are returned with `status: "skipped"`. The 30-second default is a single deadline shared by the whole sequence.
+The runner creates a private UUID directory beneath `/tmp/infra-cli-runner`, writes fixed `script.py` and `requirements.txt` paths there, and uses `uv` to create a fresh `.venv` before every execution. Requirements are installed into that environment and the script always runs with its Python interpreter. The run directory and environment are cleaned afterward.
 
-Requirements are limited to package-index requirement specifiers. Options, nested requirement files, local paths, direct URLs, and source distributions are rejected. Python receives a sanitized environment and a startup audit policy that rejects normal filesystem writes outside its run directory and prevents child-process and native-library escape routes. The production container also runs the service as an unprivileged user. This is controlled script execution, not unrestricted shell or host isolation.
+Environment creation is returned as the non-agent-controllable first command result with `operation: "create_environment"`. The remaining ordered command list is fail-fast: after setup or a requested command fails or times out, later entries are returned with `status: "skipped"`. The 60-second default is a single deadline shared by environment creation, dependency installation, and script execution.
+
+Requirements are limited to package-index requirement specifiers and binary wheels. Options, nested requirement files, local paths, direct URLs, and source distributions are rejected. Binary-extension packages such as NumPy are supported when a compatible wheel is available. Python receives a sanitized environment and a startup audit policy that rejects normal filesystem writes outside its run directory and prevents child-process execution. The production container also runs the service as an unprivileged user. This is controlled script execution, not unrestricted shell or host isolation.
 
 The operation-to-argv mapping in `CliRunnerService._python_command_argv` is the policy extension point for future project-scoped `uv` support. Any future operations must remain typed and allowlisted; do not expose arbitrary `uv` argv or general shell execution.
 

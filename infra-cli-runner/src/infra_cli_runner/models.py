@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 
 DEFAULT_TIMEOUT_SECONDS = 30
+DEFAULT_PYTHON_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_STDOUT_BYTES = 64 * 1024
 DEFAULT_MAX_STDERR_BYTES = 16 * 1024
 MAX_ARGV_ITEMS = 128
@@ -118,7 +119,7 @@ class PythonExecutionRequest(BaseModel):
     script: str
     requirements: str = ""
     commands: list[PythonCommand] = Field(min_length=1, max_length=MAX_PYTHON_COMMANDS)
-    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
+    timeout_seconds: int = DEFAULT_PYTHON_TIMEOUT_SECONDS
     max_stdout_bytes: int = DEFAULT_MAX_STDOUT_BYTES
     max_stderr_bytes: int = DEFAULT_MAX_STDERR_BYTES
 

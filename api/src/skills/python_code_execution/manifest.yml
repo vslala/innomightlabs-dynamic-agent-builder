@@ -1,0 +1,43 @@
+id: python_code_execution
+namespace: development.python
+name: Python Code Execution
+description: Execute a Python script with optional requirements in a temporary uv environment.
+system_prompt: |
+  Use this skill only when the user asks you to execute, test, or verify Python code.
+  Use run_script with the complete Python source in script and optional requirements.txt content in requirements_txt.
+  Binary-wheel packages, including native-extension libraries such as NumPy, are supported when a compatible wheel is available. Source distributions are not supported.
+  The runner creates a fresh random workspace and a new .venv with uv for every execution. Files and the environment are deleted after the run.
+  Do not invent or supply working directories, executable paths, shell commands, environment variables, or uv commands; the runner owns them.
+  Never place credentials, access tokens, or unrelated private data in the script, requirements, or arguments.
+  Use execute_skill_action with async: true by default, especially when requirements_txt is non-empty.
+  After an async job starts, wait and call check_tool_job until it succeeds or fails.
+  An outer async job can succeed while the returned execution_status is failed or timed_out, so always inspect execution_status, exit_code, stdout, stderr, and commands.
+  The default execution timeout is 60 seconds. Generated files are ephemeral and available only during that execution.
+automation:
+  enabled: false
+actions:
+  - name: run_script
+    aliases: [execute_python, run_python]
+    description: Execute one Python script in a fresh uv virtual environment with optional requirements.txt content.
+    input_schema:
+      type: object
+      required: [script]
+      additionalProperties: false
+      properties:
+        script:
+          type: string
+          description: Complete Python source code to execute.
+        requirements_txt:
+          type: string
+          description: Optional requirements.txt content using package-index requirement specifiers. Compatible binary wheels, including native-extension packages such as NumPy, are supported; source distributions are rejected.
+        args:
+          type: array
+          items:
+            type: string
+          description: Optional arguments passed to the Python script after its internally managed path.
+        timeout_seconds:
+          type: integer
+          description: Total timeout for environment creation, dependency installation, and script execution. Defaults to 60 and is capped at 120 seconds.
+    automation:
+      enabled: false
+    handler: actions:run_script

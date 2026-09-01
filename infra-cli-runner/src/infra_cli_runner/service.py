@@ -39,7 +39,8 @@ TMP_ROOT = Path("/tmp").resolve()
 DEFAULT_PYTHON_WORK_ROOT = Path("/tmp/infra-cli-runner")
 SCRIPT_FILENAME = "script.py"
 REQUIREMENTS_FILENAME = "requirements.txt"
-DEPENDENCIES_DIRECTORY = "dependencies"
+VIRTUAL_ENV_DIRECTORY = ".venv"
+VIRTUAL_ENV_PYTHON = "bin/python"
 PYTHON_POLICY_DIRECTORY = Path(__file__).with_name("python_policy")
 
 
@@ -108,17 +109,38 @@ class CliRunnerService:
         try:
             script_path = self._managed_path(work_dir, SCRIPT_FILENAME)
             requirements_path = self._managed_path(work_dir, REQUIREMENTS_FILENAME)
-            dependencies_path = self._managed_path(work_dir, DEPENDENCIES_DIRECTORY)
-            dependencies_path.mkdir(mode=0o700)
+            virtual_env_path = self._managed_path(work_dir, VIRTUAL_ENV_DIRECTORY)
+            virtual_env_python = self._managed_path(virtual_env_path, VIRTUAL_ENV_PYTHON)
             script_path.write_text(request.script, encoding="utf-8")
             requirements_path.write_text(request.requirements, encoding="utf-8")
 
-            env = self._build_python_env(work_dir, dependencies_path)
+            env = self._build_python_env(work_dir)
             deadline = started + request.timeout_seconds
             results: list[PythonCommandResult] = []
             failed_index: int | None = None
 
-            for index, command in enumerate(request.commands):
+            setup_outcome = await self._execute_with_deadline(
+                self._python_environment_argv(virtual_env_path),
+                deadline=deadline,
+                cwd=work_dir,
+                env=env,
+                max_stdout_bytes=request.max_stdout_bytes,
+                max_stderr_bytes=request.max_stderr_bytes,
+            )
+            setup_status = self._outcome_status(setup_outcome)
+            results.append(
+                self._command_result(
+                    index=0,
+                    operation="create_environment",
+                    status=setup_status,
+                    outcome=setup_outcome,
+                )
+            )
+            if setup_status != "succeeded":
+                failed_index = 0
+
+            for request_index, command in enumerate(request.commands):
+                index = request_index + 1
                 if failed_index is not None:
                     results.append(
                         PythonCommandResult(
@@ -129,48 +151,28 @@ class CliRunnerService:
                     )
                     continue
 
-                remaining_seconds = deadline - time.monotonic()
-                if remaining_seconds <= 0:
-                    outcome = ProcessOutcome(
-                        exit_code=-1,
-                        stdout="",
-                        stderr="Execution timed out before this command started.",
-                        duration_ms=0,
-                        stdout_truncated=False,
-                        stderr_truncated=False,
-                        timed_out=True,
-                    )
-                else:
-                    argv = self._python_command_argv(
-                        command,
-                        script_path=script_path,
-                        requirements_path=requirements_path,
-                        dependencies_path=dependencies_path,
-                    )
-                    outcome = await self._execute_process(
-                        argv,
-                        cwd=work_dir,
-                        env=env,
-                        timeout_seconds=remaining_seconds,
-                        max_stdout_bytes=request.max_stdout_bytes,
-                        max_stderr_bytes=request.max_stderr_bytes,
-                    )
-
-                status = "timed_out" if outcome.timed_out else (
-                    "succeeded" if outcome.exit_code == 0 else "failed"
+                argv = self._python_command_argv(
+                    command,
+                    script_path=script_path,
+                    requirements_path=requirements_path,
+                    virtual_env_python=virtual_env_python,
                 )
+                outcome = await self._execute_with_deadline(
+                    argv,
+                    deadline=deadline,
+                    cwd=work_dir,
+                    env=env,
+                    max_stdout_bytes=request.max_stdout_bytes,
+                    max_stderr_bytes=request.max_stderr_bytes,
+                )
+
+                status = self._outcome_status(outcome)
                 results.append(
-                    PythonCommandResult(
+                    self._command_result(
                         index=index,
                         operation=command.operation,
                         status=status,
-                        exit_code=outcome.exit_code,
-                        stdout=outcome.stdout,
-                        stderr=outcome.stderr,
-                        duration_ms=outcome.duration_ms,
-                        stdout_truncated=outcome.stdout_truncated,
-                        stderr_truncated=outcome.stderr_truncated,
-                        timed_out=outcome.timed_out,
+                        outcome=outcome,
                     )
                 )
                 if status != "succeeded":
@@ -231,24 +233,38 @@ class CliRunnerService:
         *,
         script_path: Path,
         requirements_path: Path,
-        dependencies_path: Path,
+        virtual_env_python: Path,
     ) -> list[str]:
         if isinstance(command, InstallRequirementsCommand):
             return [
                 self._uv_executable,
                 "pip",
                 "install",
-                "--target",
-                str(dependencies_path),
+                "--python",
+                str(virtual_env_python),
                 "--requirements",
                 str(requirements_path),
                 "--only-binary",
                 ":all:",
                 "--no-config",
+                "--quiet",
             ]
         if isinstance(command, RunScriptCommand):
-            return [self._python_executable, str(script_path), *command.args]
+            return [str(virtual_env_python), str(script_path), *command.args]
         raise ValueError(f"Unsupported Python command: {command.operation}")
+
+    def _python_environment_argv(self, virtual_env_path: Path) -> list[str]:
+        return [
+            self._uv_executable,
+            "venv",
+            str(virtual_env_path),
+            "--python",
+            self._python_executable,
+            "--no-project",
+            "--no-python-downloads",
+            "--no-config",
+            "--quiet",
+        ]
 
     def _build_process_env(self, supplied: Mapping[str, str]) -> dict[str, str]:
         env = dict(BASE_ENV)
@@ -258,7 +274,7 @@ class CliRunnerService:
                 env[key] = value
         return env
 
-    def _build_python_env(self, work_dir: Path, dependencies_path: Path) -> dict[str, str]:
+    def _build_python_env(self, work_dir: Path) -> dict[str, str]:
         env = dict(BASE_ENV)
         env.update(
             {
@@ -266,15 +282,69 @@ class CliRunnerService:
                 "TMPDIR": str(work_dir),
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "PYTHONNOUSERSITE": "1",
-                "PYTHONPATH": os.pathsep.join(
-                    [str(PYTHON_POLICY_DIRECTORY), str(dependencies_path)]
-                ),
+                "PYTHONPATH": str(PYTHON_POLICY_DIRECTORY),
                 "INFRA_CLI_RUNNER_WRITE_ROOT": str(work_dir),
                 "UV_CACHE_DIR": str(self._managed_path(work_dir, "uv-cache")),
                 "UV_NO_PROGRESS": "1",
             }
         )
         return env
+
+    async def _execute_with_deadline(
+        self,
+        argv: Sequence[str],
+        *,
+        deadline: float,
+        cwd: Path,
+        env: Mapping[str, str],
+        max_stdout_bytes: int,
+        max_stderr_bytes: int,
+    ) -> ProcessOutcome:
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            return ProcessOutcome(
+                exit_code=-1,
+                stdout="",
+                stderr="Execution timed out before this operation started.",
+                duration_ms=0,
+                stdout_truncated=False,
+                stderr_truncated=False,
+                timed_out=True,
+            )
+        return await self._execute_process(
+            argv,
+            cwd=cwd,
+            env=env,
+            timeout_seconds=remaining_seconds,
+            max_stdout_bytes=max_stdout_bytes,
+            max_stderr_bytes=max_stderr_bytes,
+        )
+
+    def _outcome_status(self, outcome: ProcessOutcome) -> str:
+        if outcome.timed_out:
+            return "timed_out"
+        return "succeeded" if outcome.exit_code == 0 else "failed"
+
+    def _command_result(
+        self,
+        *,
+        index: int,
+        operation: str,
+        status: str,
+        outcome: ProcessOutcome,
+    ) -> PythonCommandResult:
+        return PythonCommandResult(
+            index=index,
+            operation=operation,
+            status=status,
+            exit_code=outcome.exit_code,
+            stdout=outcome.stdout,
+            stderr=outcome.stderr,
+            duration_ms=outcome.duration_ms,
+            stdout_truncated=outcome.stdout_truncated,
+            stderr_truncated=outcome.stderr_truncated,
+            timed_out=outcome.timed_out,
+        )
 
     async def _execute_process(
         self,
