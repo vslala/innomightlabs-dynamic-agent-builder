@@ -589,3 +589,10 @@ def _auth_required_credential_message(payload: dict[str, Any]) -> str | None:
         f"Add the credential here: {setup_url.strip()} "
         "Then retry the request."
     )
+
+
+def _tool_turn_fallback_message() -> str:
+    return (
+        "The tools finished running, but I could not produce a final response from their results. "
+        "Please ask me to continue or retry the request."
+    )

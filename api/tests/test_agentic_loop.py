@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from typing import Any
 
-from src.agents.agentic_loop import POST_TOOL_CONTINUATION_PROMPT, run_agentic_tool_loop
+from src.agents.agentic_loop import (
+    EMPTY_POST_TOOL_RETRY_PROMPT,
+    POST_TOOL_CONTINUATION_PROMPT,
+    run_agentic_tool_loop,
+)
 from src.agents.turn_runtime import emit_turn_event
 from src.agents.tool_execution import ToolExecutionOutcome
 from src.llm.events import SSEEvent, SSEEventType
@@ -156,6 +160,32 @@ class MultiStepProvider:
         yield FakeProviderEvent(type="stop")
 
 
+class EmptyPostToolThenFinalProvider:
+    def __init__(self):
+        self.calls = 0
+        self.contexts = []
+
+    async def stream_response(self, context, credentials, tools, model):
+        self.calls += 1
+        self.contexts.append(list(context))
+        if self.calls == 1:
+            yield FakeProviderEvent(
+                type="tool_use",
+                tool_name="lookup_customer",
+                tool_input={"customer_id": "cus_123"},
+                tool_use_id="tooluse_1",
+            )
+            yield FakeProviderEvent(type="stop")
+            return
+
+        if self.calls == 2:
+            yield FakeProviderEvent(type="stop")
+            return
+
+        yield FakeProviderEvent(type="text", content="customer found")
+        yield FakeProviderEvent(type="stop")
+
+
 async def test_agentic_loop_emits_tool_call_id_on_start_and_result():
     events = [
         event
@@ -199,6 +229,28 @@ async def test_agentic_loop_prompts_model_to_continue_or_finish_after_tool_resul
     assert [call["tool_name"] for call in router.calls] == ["create_epic", "create_task"]
     assert events[-1].kind == "complete"
     assert events[-1].payload["full_text"] == "Created the epic and task."
+
+
+async def test_agentic_loop_retries_once_when_post_tool_response_is_empty():
+    provider = EmptyPostToolThenFinalProvider()
+
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=provider,
+            context=[],
+            credentials={},
+            tools=[],
+            model="test-model",
+            tool_router=FakeToolRouter(),
+            state=object(),
+        )
+    ]
+
+    assert provider.calls == 3
+    assert _context_contains_text(provider.contexts[2], EMPTY_POST_TOOL_RETRY_PROMPT)
+    assert events[-1].kind == "complete"
+    assert events[-1].payload["full_text"] == "customer found"
 
 
 async def test_agentic_loop_preserves_provider_thought_signature_in_tool_context():

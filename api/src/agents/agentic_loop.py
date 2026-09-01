@@ -36,6 +36,11 @@ POST_TOOL_CONTINUATION_PROMPT = (
     "Only provide a final answer when all requested work is complete. "
     "Do not say you will do something next unless you call the tool for it in this response."
 )
+EMPTY_POST_TOOL_RETRY_PROMPT = (
+    "The previous response after receiving tool results was empty. "
+    "Continue from the latest tool result now. "
+    "Call another tool if required; otherwise provide the final answer."
+)
 
 
 class AsyncToolJobStillRunningError(RuntimeError):
@@ -106,6 +111,8 @@ async def run_agentic_tool_loop(
     runtime = AgentTurnRuntime()
     async_jobs = AsyncJobSupervisor(max_wait_seconds=ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS)
     needs_async_final_response = False
+    awaiting_post_tool_response = False
+    empty_post_tool_retry_used = False
     model_iterations = 0
 
     with use_turn_runtime(runtime):
@@ -137,6 +144,8 @@ async def run_agentic_tool_loop(
             pending_tool_calls: list[Any] = []
             iteration_text = ""
             needs_async_final_response = False
+            is_post_tool_response = awaiting_post_tool_response
+            awaiting_post_tool_response = False
 
             async for event in provider.stream_response(context, credentials, tools, model):
                 if event.type == "text":
@@ -317,6 +326,23 @@ async def run_agentic_tool_loop(
                             "content": [{"text": POST_TOOL_CONTINUATION_PROMPT}],
                         }
                     )
+                    awaiting_post_tool_response = True
+
+            if (
+                is_post_tool_response
+                and not pending_tool_calls
+                and not iteration_text.strip()
+                and not empty_post_tool_retry_used
+            ):
+                empty_post_tool_retry_used = True
+                awaiting_post_tool_response = True
+                context.append(
+                    {
+                        "role": "user",
+                        "content": [{"text": EMPTY_POST_TOOL_RETRY_PROMPT}],
+                    }
+                )
+                continue
 
             if not has_tool_calls:
                 break
