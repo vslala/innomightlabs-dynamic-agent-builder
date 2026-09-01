@@ -4,7 +4,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
-from src.infra_cli_runner.models import CommandRequest, CommandResponse
+from src.infra_cli_runner.models import (
+    CommandRequest,
+    CommandResponse,
+    PythonExecutionRequest,
+    PythonExecutionResponse,
+)
 from src.infra_cli_runner.service import (
     CliRunnerService,
     CommandExecutionError,
@@ -30,6 +35,24 @@ async def run_command(
     try:
         service.validate_token(token)
         return await service.run(request)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except CommandExecutionError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/v1/python/executions", response_model=PythonExecutionResponse)
+async def run_python(
+    request: PythonExecutionRequest,
+    service: Annotated[CliRunnerService, Depends(get_cli_runner_service)],
+    authorization: str | None = Header(default=None),
+) -> PythonExecutionResponse:
+    token = _bearer_token(authorization)
+    try:
+        service.validate_token(token)
+        return await service.run_python(request)
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     except CommandExecutionError as exc:

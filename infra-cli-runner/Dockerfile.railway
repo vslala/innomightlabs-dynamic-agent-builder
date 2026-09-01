@@ -26,8 +26,16 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY main.py ./
 COPY src ./src
 
+RUN useradd --system --home-dir /tmp/infra-cli-runner --shell /usr/sbin/nologin runner \
+  && mkdir -p /tmp/infra-cli-runner \
+  && chown runner:runner /tmp/infra-cli-runner \
+  && chmod 700 /tmp/infra-cli-runner \
+  && chmod 755 /var/tmp
+
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app"
 ENV PYTHONUNBUFFERED=1
+
+USER runner
 
 CMD ["sh", "-c", "hypercorn main:app --bind [::]:${PORT:-8080}"]
