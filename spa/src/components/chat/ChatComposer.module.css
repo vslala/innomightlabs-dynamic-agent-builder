@@ -69,7 +69,8 @@
   box-shadow: none;
 }
 
-.researchToggle {
+.researchToggle,
+.debugToggle {
   min-height: 2.25rem;
   padding: 0 0.75rem;
   font-size: 0.8125rem;
@@ -119,7 +120,8 @@
     flex: 1;
   }
 
-  .researchToggle span {
+  .researchToggle span,
+  .debugToggle span {
     display: none;
   }
 }

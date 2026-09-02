@@ -41,6 +41,13 @@ import type { FormSchema } from "../../types/form";
 import { SSEEventType, type Message, type SSEEvent, type ToolActivity } from "../../types/message";
 import styles from "./Conversation.module.css";
 
+interface ConversationNavigationState {
+  initialImagePrompt?: string;
+  initialMessage?: string;
+  deepResearch?: boolean;
+  debug?: boolean;
+}
+
 export function ConversationDetail() {
   const { conversationId } = useParams<{ conversationId: string }>();
   const navigate = useNavigate();
@@ -78,6 +85,9 @@ export function ConversationDetail() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
+  const [debugEnabled, setDebugEnabled] = useState(
+    () => Boolean((location.state as ConversationNavigationState | null)?.debug)
+  );
   const [imagePrompt, setImagePrompt] = useState("");
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [streamingImagePreview, setStreamingImagePreview] = useState<{
@@ -195,11 +205,7 @@ export function ConversationDetail() {
   }, [conversationId]);
 
   useEffect(() => {
-    const state = location.state as {
-      initialImagePrompt?: string;
-      initialMessage?: string;
-      deepResearch?: boolean;
-    } | null;
+    const state = location.state as ConversationNavigationState | null;
     const initialImagePrompt = state?.initialImagePrompt?.trim();
     const initialMessage = state?.initialMessage?.trim();
     if (
@@ -992,6 +998,7 @@ export function ConversationDetail() {
                   messages={messages}
                   streamingContent={streamingContent}
                   toolActivities={toolActivities}
+                  debugToolActivity={debugEnabled}
                   statusMessage={statusMessage}
                   userPicture={userInfo?.picture}
                   userName={userInfo?.name}
@@ -1229,6 +1236,11 @@ export function ConversationDetail() {
                     }
                   : undefined
               }
+              debugAction={{
+                enabled: debugEnabled,
+                disabled: isGeneratingImage,
+                onChange: setDebugEnabled,
+              }}
             />
           </div>
         </CardContent>

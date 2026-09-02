@@ -65,8 +65,7 @@ export function Pricing() {
         // Store checkout intent so we can complete it after login
         sessionStorage.setItem('pendingCheckout', JSON.stringify({
           planKey,
-          billingCycle,
-          timestamp: Date.now()
+          billingCycle
         }));
 
         // Redirect to login page where user can choose between Google or Email
@@ -109,7 +108,7 @@ export function Pricing() {
             return;
           }
         }
-      } catch (error) {
+      } catch {
         // No subscription or error fetching - proceed with checkout
         console.log('No active subscription found, proceeding with checkout');
       }
@@ -121,7 +120,7 @@ export function Pricing() {
         user.email
       );
 
-      window.location.href = response.url;
+      window.location.assign(response.url);
     } catch (error: unknown) {
       setCheckoutStatus('error');
       setActiveCheckout(null);
@@ -257,6 +256,56 @@ export function Pricing() {
               Unable to start checkout. Please try again in a moment.
             </div>
           )}
+        </section>
+
+        <section className={styles.policySummary} aria-labelledby="pricing-details-title">
+          <div className={styles.policySummaryHeader}>
+            <span className={styles.tag}>Billing details</span>
+            <h2 id="pricing-details-title" className={styles.sectionTitle}>
+              Clear terms before you subscribe
+            </h2>
+            <p className={styles.sectionSubtitle}>
+              The plan, billing cycle, price, and any discount are shown again at checkout before
+              you confirm your subscription.
+            </p>
+          </div>
+
+          <div className={styles.policySummaryGrid}>
+            <article className={styles.policySummaryItem}>
+              <h3>Monthly or annual</h3>
+              <p>
+                Monthly plans renew monthly. Annual prices are charged for the full year and
+                renew annually unless cancelled.
+              </p>
+            </article>
+            <article className={styles.policySummaryItem}>
+              <h3>No automatic overages</h3>
+              <p>
+                Usage is capped at the limits included with your plan. We prompt you to upgrade
+                instead of automatically charging usage overages.
+              </p>
+            </article>
+            <article className={styles.policySummaryItem}>
+              <h3>Cancel from settings</h3>
+              <p>
+                Cancel before renewal to prevent the next charge. Paid access continues through
+                the end of your current billing period.
+              </p>
+            </article>
+            <article className={styles.policySummaryItem}>
+              <h3>Secure payment processing</h3>
+              <p>
+                Stripe processes card payments. The Free plan requires a valid card for account
+                verification and abuse prevention but has no subscription fee.
+              </p>
+            </article>
+          </div>
+
+          <p className={styles.policySummaryLink}>
+            Read the full{' '}
+            <a href="/legal/pricing">Pricing Policy</a>
+            {' '}for plan changes, taxes, promotions, refunds, and billing errors.
+          </p>
         </section>
 
         <section className={styles.faqSection}>

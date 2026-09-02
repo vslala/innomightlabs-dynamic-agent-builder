@@ -20,6 +20,7 @@ export function Conversations() {
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<ConversationStartMode>("chat");
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
+  const [debugEnabled, setDebugEnabled] = useState(false);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -80,6 +81,7 @@ export function Conversations() {
             : {
                 initialMessage: message,
                 deepResearch: featureFlags.enableDeepResearch && deepResearchEnabled,
+                debug: debugEnabled,
               },
       });
     } catch (err) {
@@ -109,6 +111,7 @@ export function Conversations() {
     setPrompt("");
     setMode("chat");
     setDeepResearchEnabled(false);
+    setDebugEnabled(false);
   };
 
   if (loading) {
@@ -138,6 +141,7 @@ export function Conversations() {
           prompt={prompt}
           mode={mode}
           deepResearchEnabled={deepResearchEnabled}
+          debugEnabled={debugEnabled}
           showDeepResearch={featureFlags.enableDeepResearch}
           creating={creating}
           error={error}
@@ -153,9 +157,11 @@ export function Conversations() {
             setMode(nextMode);
             if (nextMode === "image") {
               setDeepResearchEnabled(false);
+              setDebugEnabled(false);
             }
           }}
           onDeepResearchChange={setDeepResearchEnabled}
+          onDebugChange={setDebugEnabled}
           onSubmit={handleStartConversation}
           onCreateAgent={() => navigate("/dashboard/agents/new")}
         />

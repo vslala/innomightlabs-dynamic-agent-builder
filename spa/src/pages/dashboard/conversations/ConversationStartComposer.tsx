@@ -12,6 +12,7 @@ interface ConversationStartComposerProps {
   prompt: string;
   mode: ConversationStartMode;
   deepResearchEnabled: boolean;
+  debugEnabled: boolean;
   showDeepResearch: boolean;
   creating: boolean;
   error: string | null;
@@ -19,6 +20,7 @@ interface ConversationStartComposerProps {
   onPromptChange: (value: string) => void;
   onModeChange: (mode: ConversationStartMode) => void;
   onDeepResearchChange: (enabled: boolean) => void;
+  onDebugChange: (enabled: boolean) => void;
   onSubmit: () => void;
   onCreateAgent: () => void;
 }
@@ -29,6 +31,7 @@ export function ConversationStartComposer({
   prompt,
   mode,
   deepResearchEnabled,
+  debugEnabled,
   showDeepResearch,
   creating,
   error,
@@ -36,6 +39,7 @@ export function ConversationStartComposer({
   onPromptChange,
   onModeChange,
   onDeepResearchChange,
+  onDebugChange,
   onSubmit,
   onCreateAgent,
 }: ConversationStartComposerProps) {
@@ -114,6 +118,11 @@ export function ConversationStartComposer({
               }
             : undefined
         }
+        debugAction={{
+          enabled: debugEnabled,
+          disabled: mode === "image",
+          onChange: onDebugChange,
+        }}
         rightActions={
           <PillSelect
             value={selectedAgentId}

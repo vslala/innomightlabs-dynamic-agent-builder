@@ -3,6 +3,7 @@ import { ExternalLink, Image as ImageIcon, Loader2, User, Wrench } from "lucide-
 import { buildChatStreamRenderPlan } from '../../../packages/chat-stream-renderer/src';
 import { AttachmentChip } from "./AttachmentChip";
 import { ToolActivityCard } from "./ToolActivityCard";
+import { ToolActivitySummary } from "./ToolActivitySummary";
 import { AccordionPanel, MarkdownRenderer } from "../ui";
 import { SubmittedFormMessage } from "./SubmittedFormMessage";
 import { isSubmittedFormMessage } from "./submittedFormParser";
@@ -16,6 +17,7 @@ interface ChatStreamRendererProps {
   userPicture?: string;
   userName?: string;
   extraNode?: React.ReactNode;
+  debugToolActivity?: boolean;
 }
 
 function renderAttachments(role: Message["role"], attachments?: AttachmentInfo[]) {
@@ -251,6 +253,7 @@ export function ChatStreamRenderer({
   userPicture,
   userName,
   extraNode: customExtraNode,
+  debugToolActivity = false,
 }: ChatStreamRendererProps) {
   const renderAvatar = (role: Message["role"]) => {
     if (role === "assistant") {
@@ -295,47 +298,52 @@ export function ChatStreamRenderer({
   const extraNode = (
     <>
       {toolActivities.length > 0 && (
-        <AccordionPanel
-          defaultOpen={false}
-          title={
-            <span
+        debugToolActivity ? (
+          <AccordionPanel
+            defaultOpen={false}
+            title={
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  color: "var(--text-muted)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                <Wrench style={{ height: "0.875rem", width: "0.875rem" }} />
+                Agent Activity
+              </span>
+            }
+            trailing={
+              <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>
+                {toolActivities.length} {toolActivities.length === 1 ? "step" : "steps"}
+              </span>
+            }
+            style={{
+              margin: "0.5rem 0",
+              borderRadius: "0.75rem",
+              borderColor: "var(--border-default)",
+              backgroundColor: "var(--surface-subtle)",
+            }}
+            bodyStyle={{ padding: "0 0.75rem 0.75rem" }}
+          >
+            <div
               style={{
                 display: "flex",
-                alignItems: "center",
+                flexDirection: "column",
                 gap: "0.5rem",
-                fontSize: "0.75rem",
-                fontWeight: 600,
-                color: "var(--text-muted)",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
               }}
             >
-              <Wrench style={{ height: "0.875rem", width: "0.875rem" }} />
-              Agent Activity
-            </span>
-          }
-          trailing={
-            <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>
-              {toolActivities.length} {toolActivities.length === 1 ? "step" : "steps"}
-            </span>
-          }
-          style={{
-            margin: "0.5rem 0",
-            borderRadius: "0.75rem",
-            backgroundColor: "rgba(255, 255, 255, 0.045)",
-          }}
-          bodyStyle={{ padding: "0 0.75rem 0.75rem" }}
-        >
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.5rem",
-            }}
-          >
-            {toolActivities.map((activity) => <ToolActivityCard key={activity.id} activity={activity} />)}
-          </div>
-        </AccordionPanel>
+              {toolActivities.map((activity) => <ToolActivityCard key={activity.id} activity={activity} />)}
+            </div>
+          </AccordionPanel>
+        ) : (
+          <ToolActivitySummary activities={toolActivities} />
+        )
       )}
 
       {statusMessage && (

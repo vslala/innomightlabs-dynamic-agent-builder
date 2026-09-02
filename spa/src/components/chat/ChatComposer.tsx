@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, ReactNode, ClipboardEvent } from "react";
-import { Image as ImageIcon, Loader2, Paperclip, SearchCheck, Send } from "lucide-react";
+import { Bug, Image as ImageIcon, Loader2, Paperclip, SearchCheck, Send } from "lucide-react";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { Toggle } from "../ui/toggle";
@@ -21,6 +21,13 @@ interface ComposerDeepResearchAction {
   onChange: (enabled: boolean) => void;
 }
 
+interface ComposerDebugAction {
+  enabled: boolean;
+  disabled?: boolean;
+  visible?: boolean;
+  onChange: (enabled: boolean) => void;
+}
+
 interface ChatComposerProps {
   value: string;
   placeholder?: string;
@@ -35,6 +42,7 @@ interface ChatComposerProps {
   attachDisabled?: boolean;
   imageAction?: ComposerImageAction;
   deepResearchAction?: ComposerDeepResearchAction;
+  debugAction?: ComposerDebugAction;
 }
 
 export function ChatComposer({
@@ -51,10 +59,12 @@ export function ChatComposer({
   attachDisabled = false,
   imageAction,
   deepResearchAction,
+  debugAction,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const showImageAction = imageAction?.visible ?? Boolean(imageAction);
   const showDeepResearch = deepResearchAction?.visible ?? Boolean(deepResearchAction);
+  const showDebug = debugAction?.visible ?? Boolean(debugAction);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -128,6 +138,20 @@ export function ChatComposer({
               >
                 <SearchCheck className={styles.buttonIcon} />
                 <span>Deep research</span>
+              </Toggle>
+            )}
+
+            {showDebug && debugAction && (
+              <Toggle
+                pressed={debugAction.enabled}
+                onPressedChange={debugAction.onChange}
+                disabled={disabled || debugAction.disabled}
+                aria-label="Debug tool activity"
+                title="Show tool arguments and results"
+                className={styles.debugToggle}
+              >
+                <Bug className={styles.buttonIcon} />
+                <span>Debug</span>
               </Toggle>
             )}
           </div>

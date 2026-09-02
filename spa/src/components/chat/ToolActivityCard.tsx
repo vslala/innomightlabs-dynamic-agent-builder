@@ -7,11 +7,11 @@ import type { JsonValue } from "../ui";
 export function ToolActivityCard({ activity }: { activity: ToolActivity }) {
   const resultPayload = parseMaybeJson(activity.content);
   const statusColor =
-    activity.status === "running" ? "var(--gradient-start)" : activity.status === "success" ? "#22c55e" : "#ef4444";
+    activity.status === "running" ? "var(--gradient-start)" : activity.status === "success" ? "var(--success)" : "var(--danger)";
   const StatusIcon = activity.status === "running" ? Loader2 : activity.status === "success" ? CheckCircle2 : XCircle;
 
   return (
-    <Card style={{ overflow: "hidden", backgroundColor: "rgba(255,255,255,0.035)" }}>
+    <Card style={{ overflow: "hidden", backgroundColor: "var(--surface-panel)" }}>
       <AccordionPanel
         defaultOpen={activity.status === "running"}
         style={{ border: 0, borderRadius: 0, backgroundColor: "transparent" }}
