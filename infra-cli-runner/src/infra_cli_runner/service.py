@@ -21,6 +21,7 @@ from src.infra_cli_runner.models import (
     PythonExecutionResponse,
     RunScriptCommand,
 )
+from src.infra_cli_runner.filesystem import DEFAULT_WORKSPACE_ROOT, FileSystemService
 
 
 TOOL_EXECUTABLES = {"aws": "aws"}
@@ -64,10 +65,12 @@ class CliRunnerService:
         self,
         *,
         python_work_root: Path = DEFAULT_PYTHON_WORK_ROOT,
+        workspace_root: Path = DEFAULT_WORKSPACE_ROOT,
         python_executable: str = sys.executable,
         uv_executable: str | None = None,
     ) -> None:
         self._python_work_root = python_work_root
+        self._file_system = FileSystemService(workspace_root=workspace_root)
         self._python_executable = python_executable
         self._uv_executable = uv_executable or shutil.which("uv") or "uv"
 
@@ -105,7 +108,8 @@ class CliRunnerService:
 
     async def run_python(self, request: PythonExecutionRequest) -> PythonExecutionResponse:
         started = time.monotonic()
-        work_dir = self._create_python_work_dir()
+        workspace = self._file_system.workspace(request.workspace_id) if request.workspace_id else None
+        work_dir = self._create_python_work_dir(workspace)
         try:
             script_path = self._managed_path(work_dir, SCRIPT_FILENAME)
             requirements_path = self._managed_path(work_dir, REQUIREMENTS_FILENAME)
@@ -114,7 +118,8 @@ class CliRunnerService:
             script_path.write_text(request.script, encoding="utf-8")
             requirements_path.write_text(request.requirements, encoding="utf-8")
 
-            env = self._build_python_env(work_dir)
+            execution_directory = workspace or work_dir
+            env = self._build_python_env(work_dir, write_root=execution_directory)
             deadline = started + request.timeout_seconds
             results: list[PythonCommandResult] = []
             failed_index: int | None = None
@@ -122,7 +127,7 @@ class CliRunnerService:
             setup_outcome = await self._execute_with_deadline(
                 self._python_environment_argv(virtual_env_path),
                 deadline=deadline,
-                cwd=work_dir,
+                cwd=execution_directory,
                 env=env,
                 max_stdout_bytes=request.max_stdout_bytes,
                 max_stderr_bytes=request.max_stderr_bytes,
@@ -160,7 +165,7 @@ class CliRunnerService:
                 outcome = await self._execute_with_deadline(
                     argv,
                     deadline=deadline,
-                    cwd=work_dir,
+                    cwd=execution_directory,
                     env=env,
                     max_stdout_bytes=request.max_stdout_bytes,
                     max_stderr_bytes=request.max_stderr_bytes,
@@ -201,8 +206,20 @@ class CliRunnerService:
             )
         finally:
             shutil.rmtree(work_dir, ignore_errors=True)
+            if workspace is not None:
+                try:
+                    (workspace / ".runs").rmdir()
+                except OSError:
+                    pass
 
-    def _create_python_work_dir(self) -> Path:
+    def _create_python_work_dir(self, workspace: Path | None = None) -> Path:
+        if workspace is not None:
+            root = (workspace / ".runs").resolve()
+            self._require_under(root, workspace.resolve())
+            root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            work_dir = Path(tempfile.mkdtemp(prefix="run-", dir=root)).resolve()
+            self._require_under(work_dir, root)
+            return work_dir
         root = self._python_work_root.resolve()
         try:
             root.relative_to(TMP_ROOT)
@@ -223,9 +240,8 @@ class CliRunnerService:
     def _require_under(self, path: Path, parent: Path) -> None:
         try:
             path.relative_to(parent)
-            path.relative_to(TMP_ROOT)
         except ValueError as exc:
-            raise CommandExecutionError("Managed path escaped the /tmp work directory") from exc
+            raise CommandExecutionError("Managed path escaped its work directory") from exc
 
     def _python_command_argv(
         self,
@@ -274,7 +290,7 @@ class CliRunnerService:
                 env[key] = value
         return env
 
-    def _build_python_env(self, work_dir: Path) -> dict[str, str]:
+    def _build_python_env(self, work_dir: Path, *, write_root: Path) -> dict[str, str]:
         env = dict(BASE_ENV)
         env.update(
             {
@@ -283,7 +299,7 @@ class CliRunnerService:
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "PYTHONNOUSERSITE": "1",
                 "PYTHONPATH": str(PYTHON_POLICY_DIRECTORY),
-                "INFRA_CLI_RUNNER_WRITE_ROOT": str(work_dir),
+                "INFRA_CLI_RUNNER_WRITE_ROOT": str(write_root),
                 "UV_CACHE_DIR": str(self._managed_path(work_dir, "uv-cache")),
                 "UV_NO_PROGRESS": "1",
             }

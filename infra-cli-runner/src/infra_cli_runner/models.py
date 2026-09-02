@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import BaseModel, Field, StringConstraints, field_validator
@@ -122,6 +122,7 @@ class PythonExecutionRequest(BaseModel):
     timeout_seconds: int = DEFAULT_PYTHON_TIMEOUT_SECONDS
     max_stdout_bytes: int = DEFAULT_MAX_STDOUT_BYTES
     max_stderr_bytes: int = DEFAULT_MAX_STDERR_BYTES
+    workspace_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{48}$")
 
     @field_validator("script")
     @classmethod
@@ -188,3 +189,34 @@ class PythonExecutionResponse(BaseModel):
     timed_out: bool
     failed_command_index: int | None = None
     commands: list[PythonCommandResult]
+
+
+FileSystemActionName = Literal[
+    "list_dir",
+    "stat",
+    "search",
+    "read_chunk",
+    "write_file",
+    "patch_file",
+    "preview_diff",
+    "mkdir",
+    "copy",
+    "move",
+    "delete",
+    "batch",
+]
+
+
+class FileSystemActionRequest(BaseModel):
+    request_id: str = Field(min_length=1, max_length=128)
+    workspace_id: str = Field(pattern=r"^[a-f0-9]{48}$")
+    action: FileSystemActionName
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class FileSystemActionResponse(BaseModel):
+    status: Literal["success", "error"]
+    payload: dict[str, Any] = Field(default_factory=dict)
+    error_code: str | None = None
+    message: str | None = None
+    next_cursor: str | None = None

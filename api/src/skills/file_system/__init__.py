@@ -1,0 +1,1 @@
+"""Sandboxed sidecar filesystem skill."""

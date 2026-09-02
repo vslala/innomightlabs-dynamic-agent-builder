@@ -7,9 +7,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from src.infra_cli_runner.models import (
     CommandRequest,
     CommandResponse,
+    FileSystemActionRequest,
+    FileSystemActionResponse,
     PythonExecutionRequest,
     PythonExecutionResponse,
 )
+from src.infra_cli_runner.filesystem import FileSystemService, get_file_system_service
 from src.infra_cli_runner.service import (
     CliRunnerService,
     CommandExecutionError,
@@ -59,6 +62,23 @@ async def run_python(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/v1/filesystem/actions", response_model=FileSystemActionResponse)
+async def run_filesystem_action(
+    request: FileSystemActionRequest,
+    service: Annotated[FileSystemService, Depends(get_file_system_service)],
+    runner_service: Annotated[CliRunnerService, Depends(get_cli_runner_service)],
+    authorization: str | None = Header(default=None),
+) -> FileSystemActionResponse:
+    token = _bearer_token(authorization)
+    try:
+        runner_service.validate_token(token)
+        return service.execute(request)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except CommandExecutionError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
 
 def _bearer_token(authorization: str | None) -> str:

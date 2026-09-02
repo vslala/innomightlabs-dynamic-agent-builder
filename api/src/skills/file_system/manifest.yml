@@ -1,0 +1,156 @@
+id: file_system
+namespace: development.filesystem
+name: File System
+description: Safely inspect and manage files in the agent's private sidecar workspace.
+system_prompt: |
+  Use this skill to inspect, create, edit, and manage files in the workspace shared with Python Code Execution.
+  All paths are workspace-relative. Never send absolute host paths or traversal segments.
+  Prefer list_dir, search, and bounded read_chunk calls for discovery. Continue large reads with next_cursor.
+  Prefer preview_diff followed by patch_file for edits to existing text files.
+  Binary content is not returned. Outputs and search results are bounded.
+  Delete, overwrite, recursive copy, and recursive move are destructive operations. Use them only when the user's request authorizes the change.
+  Use batch only for closely related operations. It is ordered and stops on the first failure by default.
+automation:
+  enabled: false
+actions:
+  - name: list_dir
+    description: List compact metadata for a directory, optionally as a bounded recursive tree.
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        path: {type: string, description: Workspace-relative directory path; defaults to the workspace root.}
+        recursive: {type: boolean, description: Include a bounded recursive tree.}
+        max_depth: {type: integer, description: Recursive depth capped by the runner.}
+        limit: {type: integer, description: Maximum entries returned.}
+    handler: actions:list_dir
+  - name: stat
+    description: Return compact metadata, permissions, and readability for a file or directory.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path: {type: string, description: Workspace-relative path.}
+    handler: actions:stat
+  - name: search
+    description: Search by glob and optionally bounded text content with compact snippets.
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        path: {type: string, description: Workspace-relative directory; defaults to root.}
+        glob: {type: string, description: Glob pattern relative to path; defaults to all descendants.}
+        query: {type: string, description: Optional literal text query.}
+        max_results: {type: integer, description: Maximum matches returned.}
+        snippet_chars: {type: integer, description: Maximum characters around a content match.}
+    handler: actions:search
+  - name: read_chunk
+    description: Read a bounded UTF-8 text chunk by cursor, byte offset, or line range.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path: {type: string, description: Workspace-relative file path.}
+        cursor: {type: string, description: Opaque continuation cursor returned by an earlier read.}
+        byte_offset: {type: integer, description: Zero-based byte offset.}
+        max_bytes: {type: integer, description: Requested bytes capped by the runner.}
+        start_line: {type: integer, description: One-based first line; cannot be combined with byte_offset or cursor.}
+        max_lines: {type: integer, description: Maximum lines capped by the runner.}
+    handler: actions:read_chunk
+  - name: write_file
+    description: Atomically create, overwrite, or append UTF-8 text; overwrite replaces an existing file.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [path, content]
+      properties:
+        path: {type: string, description: Workspace-relative file path.}
+        content: {type: string, description: UTF-8 text content.}
+        mode: {type: string, enum: [create, overwrite, append], description: Defaults to create.}
+    handler: actions:write_file
+  - name: patch_file
+    description: Apply a unified diff atomically to an existing UTF-8 text file with conflict context on mismatch.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [path, patch]
+      properties:
+        path: {type: string, description: Workspace-relative file path.}
+        patch: {type: string, description: Unified diff for this file.}
+    handler: actions:patch_file
+  - name: preview_diff
+    description: Preview a unified diff from proposed full content or a patch without modifying the file.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path: {type: string, description: Workspace-relative file path.}
+        proposed_content: {type: string, description: Proposed complete UTF-8 content.}
+        patch: {type: string, description: Proposed unified diff.}
+    handler: actions:preview_diff
+  - name: mkdir
+    description: Create a workspace directory with optional parent creation.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path: {type: string, description: Workspace-relative directory path.}
+        parents: {type: boolean, description: Create missing parents.}
+    handler: actions:mkdir
+  - name: copy
+    description: Copy a file or directory; overwrite replaces an existing destination.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [source, destination]
+      properties:
+        source: {type: string, description: Workspace-relative source.}
+        destination: {type: string, description: Workspace-relative destination.}
+        overwrite: {type: boolean, description: Replace an existing destination; defaults false.}
+    handler: actions:copy
+  - name: move
+    description: Move or rename a file or directory; overwrite replaces an existing destination.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [source, destination]
+      properties:
+        source: {type: string, description: Workspace-relative source.}
+        destination: {type: string, description: Workspace-relative destination.}
+        overwrite: {type: boolean, description: Replace an existing destination; defaults false.}
+    handler: actions:move
+  - name: delete
+    description: Destructively delete a file or directory; directories require recursive true.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path: {type: string, description: Workspace-relative target.}
+        recursive: {type: boolean, description: Required for directories.}
+    handler: actions:delete
+  - name: batch
+    description: Execute ordered filesystem actions and stop on failure by default.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [operations]
+      properties:
+        operations:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            required: [action, arguments]
+            additionalProperties: false
+            properties:
+              action:
+                type: string
+                enum: [list_dir, stat, search, read_chunk, write_file, patch_file, preview_diff, mkdir, copy, move, delete]
+              arguments: {type: object}
+        continue_on_error: {type: boolean, description: Continue after errors; defaults false.}
+    handler: actions:batch

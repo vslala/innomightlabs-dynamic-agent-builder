@@ -12,6 +12,7 @@ from src.agents.repository import AgentRepository
 from src.skills.python_code_execution import actions, client
 from src.skills.python_code_execution.models import RunScriptRequest
 from src.skills.registry import SkillRegistry
+from src.skills.workspaces import workspace_id_from_context
 
 
 RUNTIME_CONTEXT = {
@@ -179,6 +180,7 @@ async def test_run_script_calls_runner_with_uv_environment_flow(monkeypatch) -> 
         "timeout_seconds": 60,
         "max_stdout_bytes": 16 * 1024,
         "max_stderr_bytes": 8 * 1024,
+        "workspace_id": workspace_id_from_context(RUNTIME_CONTEXT),
     }
     assert captured["httpx_init"]["timeout"].read == 65
 

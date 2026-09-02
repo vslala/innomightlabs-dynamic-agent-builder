@@ -7,6 +7,7 @@ The service intentionally exposes only:
 - `GET /health`
 - `POST /v1/commands`
 - `POST /v1/python/executions`
+- `POST /v1/filesystem/actions`
 
 Requests must use bearer auth with `CLI_RUNNER_SHARED_TOKEN`. The runner never accepts shell command strings.
 
@@ -27,7 +28,7 @@ Python executions accept script and `requirements.txt` content directly. Callers
 }
 ```
 
-The runner creates a private UUID directory beneath `/tmp/infra-cli-runner`, writes fixed `script.py` and `requirements.txt` paths there, and uses `uv` to create a fresh `.venv` before every execution. Requirements are installed into that environment and the script always runs with its Python interpreter. The run directory and environment are cleaned afterward.
+The runner creates a private UUID run directory, writes fixed `script.py` and `requirements.txt` paths there, and uses `uv` to create a fresh `.venv` before every execution. Requirements are installed into that environment and the script always runs with its Python interpreter. When the API supplies an opaque `workspace_id`, the script runs in that conversation workspace so generated reports remain available through the File System skill. The private run directory and environment are cleaned afterward.
 
 Environment creation is returned as the non-agent-controllable first command result with `operation: "create_environment"`. The remaining ordered command list is fail-fast: after setup or a requested command fails or times out, later entries are returned with `status: "skipped"`. The 60-second default is a single deadline shared by environment creation, dependency installation, and script execution.
 
@@ -36,6 +37,12 @@ Requirements are limited to package-index requirement specifiers and binary whee
 The operation-to-argv mapping in `CliRunnerService._python_command_argv` is the policy extension point for future project-scoped `uv` support. Any future operations must remain typed and allowlisted; do not expose arbitrary `uv` argv or general shell execution.
 
 The API remains responsible for user identity, skill installation, command policy validation, STS credential generation, large-output paging, and future analytics.
+
+## Filesystem workspaces
+
+`POST /v1/filesystem/actions` accepts typed action names and structured arguments. It never accepts host paths or shell commands. The sidecar canonicalizes every workspace-relative path, blocks traversal and symlink escapes, bounds reads/search/diffs, detects binary files, applies text writes atomically, enforces per-write and workspace quotas, and returns a compact structured result.
+
+Workspaces default to `/tmp/infra-cli-runner/workspaces`. The root and limits can be configured with `FILE_SYSTEM_WORKSPACE_ROOT`, `FILE_SYSTEM_MAX_READ_BYTES`, `FILE_SYSTEM_MAX_WRITE_BYTES`, and `FILE_SYSTEM_WORKSPACE_QUOTA_BYTES`. The runner executes validated filesystem requests as received; authorization and approval policy belong to the API skill platform.
 
 Run locally:
 

@@ -7,24 +7,18 @@ import httpx
 from pydantic import ValidationError
 
 from src.config import settings
-from src.skills.python_code_execution.models import (
-    RUNNER_MAX_STDERR_BYTES,
-    RUNNER_MAX_STDOUT_BYTES,
-    RunScriptRequest,
-    RunnerExecutionResponse,
-)
+from src.skills.file_system.models import FileSystemActionName, FileSystemResult
 from src.skills.workspaces import workspace_id_from_context
 
 
-HTTP_TIMEOUT_GRACE_SECONDS = 5
-
-
-class PythonRunnerClient:
-    async def run_script(
+class FileSystemRunnerClient:
+    async def execute(
         self,
-        request: RunScriptRequest,
+        *,
+        action: FileSystemActionName,
+        arguments: dict[str, Any],
         context: dict[str, Any],
-    ) -> RunnerExecutionResponse:
+    ) -> FileSystemResult:
         if not settings.cli_runner_base_url:
             raise RuntimeError("CLI runner is not configured. Set CLI_RUNNER_BASE_URL.")
         if not settings.cli_runner_shared_token:
@@ -38,43 +32,33 @@ class PythonRunnerClient:
         )
         payload = {
             "request_id": request_id,
-            "script": request.script,
-            "requirements": request.requirements_txt,
-            "commands": request.runner_commands(),
-            "timeout_seconds": request.timeout_seconds,
-            "max_stdout_bytes": RUNNER_MAX_STDOUT_BYTES,
-            "max_stderr_bytes": RUNNER_MAX_STDERR_BYTES,
             "workspace_id": workspace_id_from_context(context),
+            "action": action,
+            "arguments": arguments,
         }
         headers = {"Authorization": f"Bearer {settings.cli_runner_shared_token}"}
-        total_timeout = max(
-            settings.cli_runner_timeout_seconds,
-            request.timeout_seconds + HTTP_TIMEOUT_GRACE_SECONDS,
-        )
-        timeout = httpx.Timeout(total_timeout, connect=min(5, total_timeout))
-
         try:
-            async with httpx.AsyncClient(timeout=timeout) as http_client:
+            async with httpx.AsyncClient(timeout=settings.cli_runner_timeout_seconds) as http_client:
                 response = await http_client.post(
-                    f"{settings.cli_runner_base_url.rstrip('/')}/v1/python/executions",
+                    f"{settings.cli_runner_base_url.rstrip('/')}/v1/filesystem/actions",
                     json=payload,
                     headers=headers,
                 )
         except httpx.HTTPError as exc:
-            raise RuntimeError(f"Python runner request failed: {exc}") from exc
+            raise RuntimeError(f"Filesystem runner request failed: {exc}") from exc
 
         if response.status_code >= 400:
             raise RuntimeError(
-                f"Python runner rejected request: HTTP {response.status_code} {_bounded(response.text)}"
+                f"Filesystem runner rejected request: HTTP {response.status_code} {_bounded(response.text)}"
             )
         try:
-            return RunnerExecutionResponse.model_validate(response.json())
+            return FileSystemResult.model_validate(response.json())
         except (ValueError, ValidationError) as exc:
-            raise RuntimeError("Python runner returned an invalid response") from exc
+            raise RuntimeError("Filesystem runner returned an invalid response") from exc
 
 
-def get_python_runner_client() -> PythonRunnerClient:
-    return PythonRunnerClient()
+def get_file_system_runner_client() -> FileSystemRunnerClient:
+    return FileSystemRunnerClient()
 
 
 def _bounded(value: str, max_chars: int = 1000) -> str:
