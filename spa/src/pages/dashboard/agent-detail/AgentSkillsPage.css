@@ -1,97 +1,272 @@
-.agent-skill-install-dialog {
-  height: min(54rem, calc(100vh - 2rem));
-  max-height: calc(100vh - 2rem);
-  overflow: hidden;
+.agent-skills-page {
+  min-width: 0;
+  width: 100%;
 }
 
-.agent-skill-install-dialog__body {
+.agent-skills-page__header {
+  margin-bottom: var(--space-5);
+}
+
+.agent-skills-page__title {
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.agent-skills-page__description {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin-top: var(--space-1);
+}
+
+.agent-skills-page__search {
+  min-height: 2.75rem;
+}
+
+.agent-skills-page__tabs {
+  background: transparent;
+  gap: var(--space-2);
+  height: auto;
+  justify-content: flex-start;
+  margin-top: var(--space-5);
+  padding: 0;
+}
+
+.agent-skills-page__tab {
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  gap: var(--space-2);
+  min-height: var(--control-height-sm);
+  padding: var(--space-2) var(--space-4);
+}
+
+.agent-skills-page__tab[data-state="active"] {
+  background: var(--surface-selected);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+.agent-skills-page__tab-count {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-skills-page__content {
+  margin-top: var(--space-6);
+}
+
+.agent-skills-page__groups {
   display: grid;
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
+  gap: var(--space-8);
 }
 
-.agent-skill-install-dialog__categories {
-  min-height: 0;
-  overflow-y: auto;
-  border-right: 1px solid var(--border-default);
-  padding-right: var(--space-3);
-}
-
-.agent-skill-install-dialog__catalog {
+.agent-skills-group {
   min-width: 0;
-  min-height: 0;
-  overflow: hidden;
 }
 
-.agent-skill-install-dialog__catalog-scroll {
-  min-height: 0;
-  height: 100%;
-  overflow-y: auto;
-  padding-right: 0.25rem;
+.agent-skills-group__heading {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
-.agent-skill-install-dialog__config {
+.agent-skills-group__heading svg {
+  height: 0.875rem;
+  width: 0.875rem;
+}
+
+.agent-skills-group__heading h3 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.agent-skills-group__heading span {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+
+.agent-skills-group__grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+}
+
+.agent-skill-card {
+  align-items: start;
+  background: var(--surface-panel);
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 2.25rem minmax(0, 1fr) var(--control-height-sm);
+  min-height: 8.5rem;
+  padding: var(--space-4);
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.agent-skill-card:hover {
+  background: var(--surface-panel-hover);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.agent-skill-card__icon {
+  align-items: center;
+  background: var(--surface-selected);
+  border: 1px solid var(--border-default);
+  border-radius: 0.5rem;
+  color: var(--gradient-start);
+  display: flex;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  height: 2.25rem;
+  justify-content: center;
+  width: 2.25rem;
+}
+
+.agent-skill-card__body {
   min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border-left: 1px solid var(--border-default);
-  padding-left: var(--space-4);
-  padding-right: 0.25rem;
-  padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom));
 }
 
+.agent-skill-card__title-row {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+.agent-skill-card__title-row h4 {
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-skill-card__body > p {
+  color: var(--text-muted);
+  display: -webkit-box;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  margin-top: var(--space-1);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.agent-skill-card__namespace,
+.agent-skill-card__configured {
+  color: var(--text-muted);
+  display: block;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  margin-top: var(--space-2);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+}
+
+.agent-skill-card__configured {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.agent-skill-card__primary-action {
+  align-self: center;
+}
+
+.agent-skill-card--installed {
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  min-height: 10.5rem;
+}
+
+.agent-skill-card__actions {
+  border-top: 1px solid var(--border-default);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  grid-column: 1 / -1;
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+
+.agent-skill-card__actions button {
+  flex: 1 1 auto;
+}
+
+.agent-skill-install-dialog,
 .agent-skill-config-dialog {
   max-height: calc(100vh - 2rem);
   overflow: hidden;
 }
 
+.agent-skill-install-dialog__body,
 .agent-skill-config-dialog__body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 0.25rem;
   padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom));
+  padding-right: 0.25rem;
 }
 
-@media (max-width: 1100px) {
-  .agent-skill-install-dialog {
-    height: auto;
-    overflow-y: auto;
+.agent-skill-install-dialog__config {
+  min-width: 0;
+}
+
+.agent-skill-dialog__error {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  border-radius: 0.5rem;
+  color: var(--danger);
+  font-size: 0.875rem;
+  padding: var(--space-3);
+}
+
+.agent-skill-dialog__loading {
+  height: 8rem;
+}
+
+@media (max-width: 720px) {
+  .agent-skills-group__grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .agent-skill-install-dialog__body {
-    grid-template-columns: 1fr !important;
-    max-height: none;
-    overflow: visible;
+  .agent-skill-card {
+    min-height: auto;
   }
 
-  .agent-skill-install-dialog__categories,
-  .agent-skill-install-dialog__config {
-    max-height: none;
-    overflow: visible;
-    border-left: 0;
-    border-right: 0;
-    padding-left: 0;
-    padding-right: 0;
+  .agent-skill-card:hover {
+    transform: none;
+  }
+}
+
+@media (max-width: 440px) {
+  .agent-skills-page__tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
   }
 
-  .agent-skill-install-dialog__catalog {
-    overflow: visible;
+  .agent-skills-page__tab {
+    width: 100%;
   }
 
-  .agent-skill-install-dialog__catalog-scroll {
-    max-height: 22rem;
+  .agent-skill-card {
+    grid-template-columns: 2.25rem minmax(0, 1fr);
   }
 
-  .agent-skill-config-dialog {
-    overflow-y: auto;
-  }
-
-  .agent-skill-config-dialog__body {
-    overflow: visible;
+  .agent-skill-card__primary-action {
+    grid-column: 1 / -1;
+    justify-self: end;
   }
 }

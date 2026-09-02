@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, Plus, Power, PowerOff, Search, Wrench } from "lucide-react";
+import { Boxes, Check, Plus, Power, PowerOff, Settings2, Trash2, Wrench } from "lucide-react";
 
 import { SchemaForm } from "../../../components/forms";
-import { Inline, Stack } from "../../../components/layout";
+import { Stack } from "../../../components/layout";
 import {
   Button,
+  Card,
   Dialog,
   DialogBody,
   DialogContent,
@@ -12,11 +13,14 @@ import {
   DialogHeader,
   DialogSection,
   DialogTitle,
-  Input,
-  Panel,
-  PanelBody,
-  PanelHeader,
-  PanelTitle,
+  InlineEmptyState,
+  LoadingState,
+  SearchInput,
+  StatusBadge,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
 } from "../../../components/ui";
 import { connectorApiService } from "../../../services/connectors";
 import { skillApiService } from "../../../services/skills";
@@ -52,16 +56,7 @@ function skillConfigPayload(data: Record<string, FormValue>): Record<string, str
   return payload;
 }
 
-function formatSkillConfigValue(value: string | Record<string, string>): string {
-  if (typeof value === "string") return value;
-  const entries = Object.entries(value);
-  if (entries.length === 0) return "{}";
-  return entries.map(([key]) => `${key}: configured`).join(", ");
-}
-
-const ALL_SKILLS_CATEGORY = "__all__";
-
-function getSkillCategory(skill: SkillCatalogItem): string {
+function getSkillCategory(skill: { namespace: string }): string {
   return skill.namespace.split(".")[0]?.trim() || "other";
 }
 
@@ -73,6 +68,30 @@ function prettifyCategory(category: string): string {
     .join(" ");
 }
 
+interface NamedSkill {
+  name: string;
+  namespace: string;
+}
+
+function groupSkillsByNamespace<T extends NamedSkill>(skills: T[]): Array<{ namespace: string; label: string; skills: T[] }> {
+  const groups = new Map<string, T[]>();
+
+  skills.forEach((skill) => {
+    const namespace = getSkillCategory(skill);
+    groups.set(namespace, [...(groups.get(namespace) ?? []), skill]);
+  });
+
+  return Array.from(groups.entries())
+    .sort(([left], [right]) => prettifyCategory(left).localeCompare(prettifyCategory(right)))
+    .map(([namespace, namespaceSkills]) => ({
+      namespace,
+      label: prettifyCategory(namespace),
+      skills: namespaceSkills.sort((left, right) => left.name.localeCompare(right.name)),
+    }));
+}
+
+type SkillsTab = "discover" | "installed";
+
 export function AgentSkillsPage() {
   const { agent } = useAgentDetailContext();
   const [installedSkills, setInstalledSkills] = useState<InstalledSkill[]>([]);
@@ -81,7 +100,7 @@ export function AgentSkillsPage() {
   const [isSkillDialogOpen, setIsSkillDialogOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<SkillCatalogItem | null>(null);
   const [selectedSkillSchema, setSelectedSkillSchema] = useState<FormSchema | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState(ALL_SKILLS_CATEGORY);
+  const [activeTab, setActiveTab] = useState<SkillsTab>("discover");
   const [skillSearch, setSkillSearch] = useState("");
   const [installSkillError, setInstallSkillError] = useState<string | null>(null);
   const [installingSkill, setInstallingSkill] = useState(false);
@@ -125,42 +144,33 @@ export function AgentSkillsPage() {
     return counts;
   }, [installedSkills]);
 
-  const skillCategories = useMemo(() => {
-    const counts = new Map<string, number>();
-    availableSkills.forEach((skill) => {
-      const category = getSkillCategory(skill);
-      counts.set(category, (counts.get(category) ?? 0) + 1);
-    });
-
-    const categories = Array.from(counts.entries())
-      .sort(([left], [right]) => prettifyCategory(left).localeCompare(prettifyCategory(right)))
-      .map(([category, count]) => ({
-        id: category,
-        label: prettifyCategory(category),
-        count,
-      }));
-
-    return [
-      {
-        id: ALL_SKILLS_CATEGORY,
-        label: "All Skills",
-        count: availableSkills.length,
-      },
-      ...categories,
-    ];
-  }, [availableSkills]);
-
-  const visibleSkills = useMemo(() => {
+  const filteredAvailableSkills = useMemo(() => {
     const normalizedSearch = skillSearch.trim().toLowerCase();
     return availableSkills
-      .filter((skill) => selectedCategory === ALL_SKILLS_CATEGORY || getSkillCategory(skill) === selectedCategory)
       .filter((skill) => {
         if (!normalizedSearch) return true;
         return [skill.name, skill.description, skill.namespace]
           .some((value) => value.toLowerCase().includes(normalizedSearch));
-      })
-      .sort((left, right) => left.name.localeCompare(right.name));
-  }, [availableSkills, selectedCategory, skillSearch]);
+      });
+  }, [availableSkills, skillSearch]);
+
+  const filteredInstalledSkills = useMemo(() => {
+    const normalizedSearch = skillSearch.trim().toLowerCase();
+    return installedSkills.filter((skill) => {
+      if (!normalizedSearch) return true;
+      return [skill.name, skill.description, skill.namespace]
+        .some((value) => value.toLowerCase().includes(normalizedSearch));
+    });
+  }, [installedSkills, skillSearch]);
+
+  const discoverGroups = useMemo(
+    () => groupSkillsByNamespace(filteredAvailableSkills),
+    [filteredAvailableSkills]
+  );
+  const installedGroups = useMemo(
+    () => groupSkillsByNamespace(filteredInstalledSkills),
+    [filteredInstalledSkills]
+  );
 
   useEffect(() => {
     loadInstalledSkills().then(() => {
@@ -232,26 +242,12 @@ export function AgentSkillsPage() {
     void handleSkillOAuthCallback();
   }, [agent.agent_id]);
 
-  const openSkillDialog = async () => {
-    setInstallSkillError(null);
-    setSelectedSkill(null);
-    setSelectedSkillSchema(null);
-    setSelectedCategory(ALL_SKILLS_CATEGORY);
-    setSkillSearch("");
-    try {
-      await refreshAvailableSkills();
-      setIsSkillDialogOpen(true);
-    } catch (err) {
-      console.error("Error loading skill catalog:", err);
-      setInstallSkillError("Failed to load skill catalog");
-    }
-  };
-
   const selectSkillForInstall = async (skill: SkillCatalogItem) => {
     if ((installedSkillCounts.get(skill.skill_id) ?? 0) > 0 && !skill.repeatable) return;
     setInstallSkillError(null);
     setSelectedSkill(skill);
     setSelectedSkillSchema(null);
+    setIsSkillDialogOpen(true);
     try {
       if (!canInstallSkill(skill) || !skill.has_form) {
         setSelectedSkillSchema(null);
@@ -462,269 +458,224 @@ export function AgentSkillsPage() {
 
   return (
     <>
-      <Panel>
-        <PanelHeader>
-          <Inline justify="space-between" style={{ width: "100%" }}>
-            <Inline gap="sm">
-              <Wrench style={{ height: "1.25rem", width: "1.25rem", color: "var(--gradient-start)" }} />
-              <PanelTitle className="text-lg">Skills</PanelTitle>
-            </Inline>
-            <Button size="action" onClick={openSkillDialog}>
-              <Plus style={{ height: "1rem", width: "1rem" }} />
-              Add Skill
-            </Button>
-          </Inline>
-        </PanelHeader>
-        <PanelBody>
-          <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
-            Install reusable skills to give this agent task-specific capabilities with secure configuration.
+      <div className="agent-skills-page">
+        <header className="agent-skills-page__header">
+          <h2 className="agent-skills-page__title">Skills</h2>
+          <p className="agent-skills-page__description">
+            Extend what this agent can do with reusable capabilities.
           </p>
-          {loadingSkills ? (
-            <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
-              <div style={{ height: "2rem", width: "2rem", animation: "spin 1s linear infinite", borderRadius: "50%", border: "2px solid var(--gradient-start)", borderTopColor: "transparent" }} />
-            </div>
-          ) : installedSkills.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
-              <Wrench style={{ height: "3rem", width: "3rem", margin: "0 auto 1rem", opacity: 0.5 }} />
-              <p>No skills installed</p>
-              <p style={{ fontSize: "0.875rem" }}>Install a skill to enable specialized actions.</p>
-            </div>
-          ) : (
-            <Stack gap="md">
-              {installedSkills.map((skill) => {
-                const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
-                return (
-                <DialogSection key={installedSkillId}>
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--space-5)", flexWrap: "wrap" }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                        <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{skill.name}</span>
-                        <span style={{ fontSize: "0.75rem", color: skill.enabled ? "#10b981" : "var(--text-muted)", backgroundColor: skill.enabled ? "rgba(16, 185, 129, 0.1)" : "var(--bg-tertiary)", padding: "0.125rem 0.5rem", borderRadius: "0.25rem" }}>
-                          {skill.enabled ? "Enabled" : "Disabled"}
-                        </span>
-                      </div>
-                      <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>{skill.description}</p>
-                      {Object.keys(skill.config).length > 0 && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                          {Object.entries(skill.config).map(([key, value]) => (
-                            <div key={key}>
-                              <span style={{ color: "var(--text-primary)" }}>{key}:</span> {formatSkillConfigValue(value)}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+        </header>
+
+        <SearchInput
+          aria-label={`Search ${activeTab} skills`}
+          value={skillSearch}
+          onChange={(event) => setSkillSearch(event.target.value)}
+          placeholder={activeTab === "discover" ? "Search available skills" : "Search installed skills"}
+          className="agent-skills-page__search"
+        />
+
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as SkillsTab)}>
+          <TabsList className="agent-skills-page__tabs">
+            <TabsTrigger value="discover" className="agent-skills-page__tab">
+              Discover
+              <span className="agent-skills-page__tab-count">{availableSkills.length}</span>
+            </TabsTrigger>
+            <TabsTrigger value="installed" className="agent-skills-page__tab">
+              Installed
+              <span className="agent-skills-page__tab-count">{installedSkills.length}</span>
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="discover" className="agent-skills-page__content">
+            {loadingSkills && availableSkills.length === 0 ? (
+              <LoadingState />
+            ) : availableSkills.length === 0 ? (
+              <InlineEmptyState
+                icon={Boxes}
+                title="No skills available"
+                description="There are no skills in the catalog yet."
+              />
+            ) : discoverGroups.length === 0 ? (
+              <InlineEmptyState
+                icon={Wrench}
+                title="No matching skills"
+                description="Try a different name, description, or namespace."
+              />
+            ) : (
+              <div className="agent-skills-page__groups">
+                {discoverGroups.map((group) => (
+                  <section key={group.namespace} className="agent-skills-group">
+                    <div className="agent-skills-group__heading">
+                      <Boxes aria-hidden="true" />
+                      <h3>{group.label}</h3>
+                      <span>{group.skills.length}</span>
                     </div>
-                    <Stack gap="sm" style={{ width: "max-content", minWidth: "9.5rem", flexShrink: 0 }}>
-                      <Button variant="outline" size="action" onClick={() => handleToggleSkill(skill)} disabled={updatingSkillId === installedSkillId}>
-                        {skill.enabled ? (
-                          <>
-                            <PowerOff className="h-4 w-4" />
-                            Disable
-                          </>
-                        ) : (
-                          <>
-                            <Power className="h-4 w-4" />
-                            Enable
-                          </>
-                        )}
-                      </Button>
-                      <Button variant="destructive" size="action" onClick={() => handleUninstallSkill(skill)} disabled={uninstallingSkillId === installedSkillId}>
-                        {uninstallingSkillId === installedSkillId ? "Removing..." : "Uninstall"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="action"
-                        onClick={() => void openConfigureSkill(skill)}
-                        disabled={updatingSkillId === installedSkillId}
-                      >
-                        {updatingSkillId === installedSkillId ? "Loading..." : "Configure"}
-                      </Button>
-                    </Stack>
-                  </div>
-                </DialogSection>
-              );
-              })}
-            </Stack>
-          )}
-        </PanelBody>
-      </Panel>
+                    <div className="agent-skills-group__grid">
+                      {group.skills.map((skill) => {
+                        const installedCount = installedSkillCounts.get(skill.skill_id) ?? 0;
+                        const installed = installedCount > 0;
+                        const installBlocked = installed && !skill.repeatable;
 
-      <Dialog open={isSkillDialogOpen} onOpenChange={setIsSkillDialogOpen}>
-        <DialogContent
-          className="agent-skill-install-dialog"
-          style={{ width: "min(92vw, 88rem)", maxWidth: "88rem" }}
-        >
-          <DialogHeader>
-            <DialogTitle>Add Skill</DialogTitle>
-            <DialogDescription>
-              Install a skill and configure it for this agent.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody
-            className="agent-skill-install-dialog__body"
-            style={{ gridTemplateColumns: "13rem minmax(0, 1fr) 24rem", gap: "var(--space-5)" }}
-          >
-            <aside className="agent-skill-install-dialog__categories">
-              <Stack gap="xs">
-                {skillCategories.map((category) => {
-                  const selected = selectedCategory === category.id;
-                  return (
-                    <Button
-                      key={category.id}
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedCategory(category.id);
-                        setSelectedSkill(null);
-                        setSelectedSkillSchema(null);
-                        setInstallSkillError(null);
-                      }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "0.5rem",
-                        width: "100%",
-                        minWidth: 0,
-                        border: "none",
-                        borderRadius: "0.5rem",
-                        background: selected ? "rgba(99, 102, 241, 0.12)" : "transparent",
-                        color: selected ? "var(--text-primary)" : "var(--text-muted)",
-                        textAlign: "left",
-                        whiteSpace: "normal",
-                        fontSize: "0.875rem",
-                        fontWeight: selected ? 600 : 500,
-                      }}
-                    >
-                      <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{category.label}</span>
-                      <span style={{ fontSize: "0.75rem", color: selected ? "var(--gradient-start)" : "var(--text-muted)" }}>
-                        {category.count}
-                      </span>
-                    </Button>
-                  );
-                })}
-              </Stack>
-            </aside>
-
-            <section className="agent-skill-install-dialog__catalog">
-              <Stack gap="sm">
-              <div style={{ position: "relative" }}>
-                <Search
-                  className="h-4 w-4"
-                  style={{
-                    color: "var(--text-muted)",
-                    left: "var(--space-4)",
-                    position: "absolute",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                  }}
-                />
-                <Input
-                  value={skillSearch}
-                  onChange={(event) => setSkillSearch(event.target.value)}
-                  placeholder="Search for a skill you want to use"
-                  style={{ paddingLeft: "2.75rem" }}
-                />
-              </div>
-
-              <div className="agent-skill-install-dialog__catalog-scroll">
-                {availableSkills.length === 0 ? (
-                  <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>No skills available.</p>
-                ) : visibleSkills.length === 0 ? (
-                  <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>No skills match this category or search.</p>
-                ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(13rem, 1fr))", gap: "0.75rem" }}>
-                    {visibleSkills.map((skill) => {
-                      const installedCount = installedSkillCounts.get(skill.skill_id) ?? 0;
-                      const installed = installedCount > 0;
-                      const installBlocked = installed && !skill.repeatable;
-                      const selected = selectedSkill?.skill_id === skill.skill_id;
-                      return (
-                        <Button
-                          key={skill.skill_id}
-                          type="button"
-                          variant="ghost"
-                          disabled={installBlocked}
-                          onClick={() => void selectSkillForInstall(skill)}
-                          style={{
-                            position: "relative",
-                            display: "block",
-                            minHeight: "8.25rem",
-                            minWidth: 0,
-                            height: "auto",
-                            border: selected ? "2px solid var(--gradient-start)" : "1px solid var(--border-subtle)",
-                            borderRadius: "0.5rem",
-                            background: installed ? "rgba(255, 255, 255, 0.03)" : "var(--bg-secondary)",
-                            color: "inherit",
-                            textAlign: "left",
-                            whiteSpace: "normal",
-                            cursor: installBlocked ? "not-allowed" : "pointer",
-                            opacity: installBlocked ? 0.72 : 1,
-                          }}
-                        >
-                          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.75rem" }}>
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                width: "2rem",
-                                height: "2rem",
-                                borderRadius: "0.5rem",
-                                background: "rgba(99, 102, 241, 0.14)",
-                                color: "var(--gradient-start)",
-                                fontSize: "0.8125rem",
-                                fontWeight: 700,
-                              }}
-                            >
+                        return (
+                          <Card key={skill.skill_id} className="agent-skill-card">
+                            <div className="agent-skill-card__icon" aria-hidden="true">
                               {skill.name.charAt(0).toUpperCase()}
                             </div>
-                            {installed && (
-                              <span
-                                style={{
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "0.25rem",
-                                  borderRadius: "999px",
-                                  background: "rgba(16, 185, 129, 0.12)",
-                                  color: "#34d399",
-                                  padding: "0.2rem 0.45rem",
-                                  fontSize: "0.6875rem",
-                                  fontWeight: 700,
-                                }}
-                              >
-                                <CheckCircle2 className="h-3 w-3" />
-                                {skill.repeatable ? `${installedCount} installed` : "Installed"}
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.35rem", lineHeight: 1.3, overflowWrap: "anywhere" }}>
-                            {skill.name}
-                          </div>
-                          <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", lineHeight: 1.4, overflowWrap: "anywhere" }}>
-                            {skill.description}
-                          </div>
-                          <div style={{ marginTop: "0.75rem", fontSize: "0.6875rem", color: "var(--text-muted)", overflowWrap: "anywhere" }}>
-                            {skill.namespace}
-                          </div>
-                        </Button>
-                      );
-                    })}
-                  </div>
-                )}
+                            <div className="agent-skill-card__body">
+                              <div className="agent-skill-card__title-row">
+                                <h4>{skill.name}</h4>
+                                {installed && (
+                                  <StatusBadge
+                                    status="success"
+                                    size="sm"
+                                    label={skill.repeatable ? `${installedCount} installed` : "Installed"}
+                                  />
+                                )}
+                              </div>
+                              <p>{skill.description}</p>
+                              <span className="agent-skill-card__namespace">{skill.namespace}</span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="agent-skill-card__primary-action"
+                              disabled={installBlocked}
+                              onClick={() => void selectSkillForInstall(skill)}
+                              aria-label={installBlocked ? `${skill.name} is installed` : `Install ${skill.name}`}
+                              title={installBlocked ? "Installed" : "Install skill"}
+                            >
+                              {installBlocked ? <Check /> : <Plus />}
+                            </Button>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
-              </Stack>
-            </section>
+            )}
+          </TabsContent>
 
+          <TabsContent value="installed" className="agent-skills-page__content">
+            {loadingSkills ? (
+              <LoadingState />
+            ) : installedSkills.length === 0 ? (
+              <InlineEmptyState
+                icon={Wrench}
+                title="No skills installed"
+                description="Choose a skill from Discover to add capabilities to this agent."
+              />
+            ) : installedGroups.length === 0 ? (
+              <InlineEmptyState
+                icon={Wrench}
+                title="No matching installed skills"
+                description="Try a different name, description, or namespace."
+              />
+            ) : (
+              <div className="agent-skills-page__groups">
+                {installedGroups.map((group) => (
+                  <section key={group.namespace} className="agent-skills-group">
+                    <div className="agent-skills-group__heading">
+                      <Boxes aria-hidden="true" />
+                      <h3>{group.label}</h3>
+                      <span>{group.skills.length}</span>
+                    </div>
+                    <div className="agent-skills-group__grid">
+                      {group.skills.map((skill) => {
+                        const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+                        const configuredFields = Object.keys(skill.config);
+
+                        return (
+                          <Card key={installedSkillId} className="agent-skill-card agent-skill-card--installed">
+                            <div className="agent-skill-card__icon" aria-hidden="true">
+                              {skill.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="agent-skill-card__body">
+                              <div className="agent-skill-card__title-row">
+                                <h4>{skill.name}</h4>
+                                <StatusBadge
+                                  status={skill.enabled ? "active" : "inactive"}
+                                  size="sm"
+                                  label={skill.enabled ? "Enabled" : "Disabled"}
+                                />
+                              </div>
+                              <p>{skill.description}</p>
+                              {configuredFields.length > 0 && (
+                                <span className="agent-skill-card__configured">
+                                  Configured: {configuredFields.join(", ")}
+                                </span>
+                              )}
+                              <span className="agent-skill-card__namespace">{skill.namespace}</span>
+                            </div>
+                            <div className="agent-skill-card__actions">
+                              <Button
+                                variant="ghost"
+                                size="action"
+                                onClick={() => handleToggleSkill(skill)}
+                                disabled={updatingSkillId === installedSkillId}
+                              >
+                                {skill.enabled ? <PowerOff /> : <Power />}
+                                {skill.enabled ? "Disable" : "Enable"}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="action"
+                                onClick={() => void openConfigureSkill(skill)}
+                                disabled={updatingSkillId === installedSkillId}
+                              >
+                                <Settings2 />
+                                Configure
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="action"
+                                onClick={() => handleUninstallSkill(skill)}
+                                disabled={uninstallingSkillId === installedSkillId}
+                              >
+                                <Trash2 />
+                                {uninstallingSkillId === installedSkillId ? "Removing..." : "Uninstall"}
+                              </Button>
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      <Dialog
+        open={isSkillDialogOpen}
+        onOpenChange={(open) => {
+          setIsSkillDialogOpen(open);
+          if (!open) {
+            setSelectedSkill(null);
+            setSelectedSkillSchema(null);
+            setInstallSkillError(null);
+          }
+        }}
+      >
+        <DialogContent
+          className="agent-skill-install-dialog"
+          style={{ width: "min(92vw, 44rem)", maxWidth: "44rem" }}
+        >
+          <DialogHeader>
+            <DialogTitle>{selectedSkill ? `Install ${selectedSkill.name}` : "Install Skill"}</DialogTitle>
+            <DialogDescription>
+              Configure this reusable capability for the agent.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="agent-skill-install-dialog__body">
             <section className="agent-skill-install-dialog__config">
               {!selectedSkill ? (
                 <DialogSection style={{ borderStyle: "dashed", color: "var(--text-muted)" }}>
-                  <p style={{ fontSize: "0.875rem", marginBottom: "0.25rem", color: "var(--text-primary)", fontWeight: 600 }}>
-                    Select a skill
-                  </p>
                   <p style={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>
-                    Choose a skill from the catalog to configure and install it for this agent.
+                    The selected skill could not be loaded. Close this dialog and choose it again.
                   </p>
                 </DialogSection>
               ) : (
@@ -751,7 +702,7 @@ export function AgentSkillsPage() {
                     )}
                   </div>
                   {installSkillError && (
-                    <div style={{ padding: "0.75rem", borderRadius: "0.5rem", backgroundColor: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#f87171", fontSize: "0.875rem" }}>
+                    <div className="agent-skill-dialog__error">
                       {installSkillError}
                     </div>
                   )}
@@ -796,7 +747,7 @@ export function AgentSkillsPage() {
           <DialogBody className="agent-skill-config-dialog__body">
             <Stack gap="md">
               {configSkillError && (
-                <div style={{ padding: "0.75rem", borderRadius: "0.5rem", backgroundColor: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#f87171", fontSize: "0.875rem" }}>
+                <div className="agent-skill-dialog__error">
                   {configSkillError}
                 </div>
               )}
@@ -839,9 +790,7 @@ export function AgentSkillsPage() {
                   />
                 </>
               ) : (
-                <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
-                  <div style={{ height: "2rem", width: "2rem", animation: "spin 1s linear infinite", borderRadius: "50%", border: "2px solid var(--gradient-start)", borderTopColor: "transparent" }} />
-                </div>
+                <LoadingState className="agent-skill-dialog__loading" />
               )}
             </Stack>
           </DialogBody>
