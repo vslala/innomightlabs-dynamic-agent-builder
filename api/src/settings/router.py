@@ -26,10 +26,11 @@ from src.settings.repository import (
     get_provider_settings_repository,
 )
 from src.settings.schemas import (
-    PROVIDER_SCHEMAS,
-    SUPPORTED_PROVIDERS,
+    ANTHROPIC_OAUTH_PROVIDER,
     get_agent2agent_settings_schema,
     get_provider_schema,
+    get_supported_provider_schemas,
+    get_supported_providers,
 )
 from src.crypto import encrypt, decrypt
 
@@ -112,8 +113,7 @@ async def list_providers(
 
     # Build response with all providers
     result = []
-    for provider_name in SUPPORTED_PROVIDERS:
-        schema = PROVIDER_SCHEMAS[provider_name]
+    for provider_name, schema in get_supported_provider_schemas().items():
         result.append(ProviderWithStatus(
             provider_name=provider_name,
             form=schema,
@@ -137,10 +137,11 @@ async def get_provider_settings(
     user_email: str = request.state.user_email
 
     # Validate provider name
-    if provider_name not in SUPPORTED_PROVIDERS:
+    supported_providers = get_supported_providers()
+    if provider_name not in supported_providers:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown provider: {provider_name}. Supported: {SUPPORTED_PROVIDERS}"
+            detail=f"Unknown provider: {provider_name}. Supported: {supported_providers}"
         )
 
     settings = repo.find_by_provider(user_email, provider_name)
@@ -178,7 +179,7 @@ async def save_provider_settings(
     if not schema:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown provider: {provider_name}. Supported: {SUPPORTED_PROVIDERS}"
+            detail=f"Unknown provider: {provider_name}. Supported: {get_supported_providers()}"
         )
 
     if provider_name == "OpenAI":
@@ -210,6 +211,7 @@ async def save_provider_settings(
         user_email=user_email,
         provider_name=provider_name,
         encrypted_credentials=encrypted_credentials,
+        auth_type="oauth" if provider_name == ANTHROPIC_OAUTH_PROVIDER else "api_key",
     )
     saved = repo.save(settings)
 
@@ -235,10 +237,11 @@ async def delete_provider_settings(
     user_email: str = request.state.user_email
 
     # Validate provider name
-    if provider_name not in SUPPORTED_PROVIDERS:
+    supported_providers = get_supported_providers()
+    if provider_name not in supported_providers:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown provider: {provider_name}. Supported: {SUPPORTED_PROVIDERS}"
+            detail=f"Unknown provider: {provider_name}. Supported: {supported_providers}"
         )
 
     success = repo.delete(user_email, provider_name)
