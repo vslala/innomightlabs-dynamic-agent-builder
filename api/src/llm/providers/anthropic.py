@@ -11,6 +11,7 @@ from src.llm.messages import (
     split_system_messages,
 )
 from src.llm.providers.base import LLMEvent, LLMProvider
+from src.llm.credentials import ANTHROPIC_OAUTH_BETA
 from src.llm.tools import normalize_anthropic_tools
 import logging
 
@@ -24,6 +25,20 @@ class AnthropicRequestInput:
 
 
 class AnthropicProvider(LLMProvider):
+    def _create_client(self, credentials: dict[str, Any]) -> AsyncAnthropic:
+        """Create an Anthropic client for API-key or OAuth access-token credentials."""
+        access_token = credentials.get("access_token")
+        if access_token:
+            return AsyncAnthropic(
+                auth_token=access_token,
+                default_headers={"anthropic-beta": ANTHROPIC_OAUTH_BETA},
+            )
+
+        api_key = credentials.get("api_key")
+        if not api_key:
+            raise ValueError("Missing required credential: 'api_key'")
+        return AsyncAnthropic(api_key=api_key)
+
     def _extract_system_and_messages(self, messages: list[dict]) -> AnthropicRequestInput:
         split = split_system_messages(normalize_messages(messages))
         return AnthropicRequestInput(
@@ -71,7 +86,7 @@ class AnthropicProvider(LLMProvider):
 
         Args:
             messages: List of message dicts with 'role' and 'content' keys
-            credentials: Dict with 'api_key' key
+            credentials: Dict with an 'api_key' or OAuth 'access_token'
             tools: Optional list of tool definitions for function calling
             model: Optional model name (e.g., 'claude-sonnet-4-5', 'claude-haiku-4-5')
 
@@ -80,12 +95,7 @@ class AnthropicProvider(LLMProvider):
         """
         model_id = model or "claude-sonnet-4-5-20250929"
         
-        # Extract API key
-        api_key = credentials.get("api_key")
-        if not api_key:
-            raise ValueError("Missing required credential: 'api_key'")
-
-        client = AsyncAnthropic(api_key=api_key)
+        client = self._create_client(credentials)
 
         request_input = self._extract_system_and_messages(messages)
 

@@ -5,6 +5,10 @@ Each supported LLM provider has a form schema defining the required credentials.
 """
 
 from src.form_models import Form, FormInput, FormInputType
+from src.config import settings
+
+
+ANTHROPIC_OAUTH_PROVIDER = "AnthropicOAuth"
 
 
 # Bedrock provider configuration form
@@ -35,6 +39,23 @@ ANTHROPIC_PROVIDER_FORM = Form(
             label="Anthropic API Key"
         )
     ]
+)
+
+ANTHROPIC_OAUTH_PROVIDER_FORM = Form(
+    form_name="Anthropic OAuth Configuration",
+    submit_path=f"/settings/providers/{ANTHROPIC_OAUTH_PROVIDER}",
+    form_inputs=[
+        FormInput(
+            input_type=FormInputType.PASSWORD,
+            name="refresh_token",
+            label="Anthropic OAuth Refresh Token",
+        ),
+        FormInput(
+            input_type=FormInputType.TEXT,
+            name="client_id",
+            label="Anthropic OAuth Client ID",
+        ),
+    ],
 )
 
 GEMINI_PROVIDER_FORM = Form(
@@ -73,8 +94,17 @@ PROVIDER_SCHEMAS: dict[str, Form] = {
     "Gemini": GEMINI_PROVIDER_FORM,
 }
 
-# List of all supported provider names
-SUPPORTED_PROVIDERS = list(PROVIDER_SCHEMAS.keys())
+def get_supported_provider_schemas() -> dict[str, Form]:
+    """Return provider schemas available in the current feature-flag configuration."""
+    schemas = PROVIDER_SCHEMAS.copy()
+    if settings.anthropic_oauth_shortcircuit_enabled:
+        schemas[ANTHROPIC_OAUTH_PROVIDER] = ANTHROPIC_OAUTH_PROVIDER_FORM
+    return schemas
+
+
+def get_supported_providers() -> list[str]:
+    """Return provider names available in the current feature-flag configuration."""
+    return list(get_supported_provider_schemas().keys())
 
 
 def get_provider_schema(provider_name: str) -> Form | None:
@@ -87,7 +117,7 @@ def get_provider_schema(provider_name: str) -> Form | None:
     Returns:
         Form schema if provider is supported, None otherwise
     """
-    return PROVIDER_SCHEMAS.get(provider_name)
+    return get_supported_provider_schemas().get(provider_name)
 
 
 def get_agent2agent_settings_schema() -> Form:

@@ -105,6 +105,7 @@ class Settings:
     # Feature flags
     _validated_features: set = field(default_factory=set)
     superuser_emails: list[str] = field(default_factory=list)
+    anthropic_oauth_shortcircuit_enabled: bool = False
 
     # Stripe (optional; only required for billing features)
     stripe_secret_key: str = ""
@@ -377,6 +378,9 @@ class Settings:
             openai_image_generation_models=parse_env_list(
                 "OPENAI_IMAGE_GENERATION_MODELS",
                 ["gpt-5.4", "gpt-5.5"],
+            ),
+            anthropic_oauth_shortcircuit_enabled=env_bool(
+                "ANTHROPIC_OAUTH_SHORTCIRCUIT_ENABLED"
             ),
             superuser_emails=parse_env_email_list("SUPERUSER_EMAILS", []),
             # Pinecone - no defaults, must be explicitly configured
