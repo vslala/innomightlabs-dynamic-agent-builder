@@ -159,7 +159,15 @@ class CrawlContext:
         )
 
     def heartbeat(self, *, force: bool = False) -> None:
-        """Persist liveness and progress without writing on every discovered URL."""
+        """Persist liveness and progress.
+
+        Unforced calls (e.g. the discovery loop, or the top of each processing
+        iteration) are throttled to `crawl_job_heartbeat_interval_seconds` so a
+        fast crawl doesn't write on every single URL. `force=True` bypasses the
+        throttle entirely and always writes - used at job start and after each
+        page finishes processing, where callers want progress to be durable and
+        current immediately rather than rate-limited.
+        """
         now = time.monotonic()
         heartbeat_interval = settings.crawl_job_heartbeat_interval_seconds
         if not force and now - self.last_heartbeat_monotonic < heartbeat_interval:
@@ -326,6 +334,7 @@ class CrawlerWorker:
         try:
             expected_status = job.status.value
             job.status = CrawlJobStatus.IN_PROGRESS
+            job.error_message = None
             if not job.timing.started_at:
                 job.timing.started_at = datetime.now(timezone.utc)
             if not job_repo.save_if_status(job, expected_status=expected_status):
@@ -795,6 +804,12 @@ class CrawlerWorker:
         job.status = CrawlJobStatus.FAILED
         job.error_message = error
         job.progress = ctx.get_progress()
+        # Snapshot whatever progress was made this run so a retry resumes from
+        # here instead of the last periodic checkpoint (or from scratch).
+        job.checkpoint = CrawlCheckpoint(
+            current_url_index=ctx.current_url_index,
+            pending_urls=ctx.discovered_urls,
+        )
 
         if not ctx.job_repo.save_if_in_progress(job):
             log.info("Did not overwrite terminal state for crawl job %s", job.job_id)

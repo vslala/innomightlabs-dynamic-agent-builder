@@ -158,6 +158,11 @@ export interface CrawlTiming {
   avg_page_duration_ms: number | null;
 }
 
+export interface CrawlCheckpoint {
+  current_url_index: number;
+  pending_urls: string[];
+}
+
 export interface CrawlJob {
   job_id: string;
   kb_id: string;
@@ -165,6 +170,7 @@ export interface CrawlJob {
   config: CrawlConfig;
   progress: CrawlProgress;
   timing: CrawlTiming;
+  checkpoint: CrawlCheckpoint | null;
   error_message: string | null;
   created_by: string;
   created_at: string;

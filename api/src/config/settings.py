@@ -66,6 +66,7 @@ class Settings:
     # Scheduler
     scheduler_backend: str = "in_app"
     scheduler_runtime_enabled: bool = True
+    # Throttles unforced liveness pings only; forced per-page progress writes always go through.
     crawl_job_heartbeat_interval_seconds: int = 60
     crawl_job_stale_timeout_seconds: int = 15 * 60
     crawl_job_reaper_interval_seconds: int = 5 * 60

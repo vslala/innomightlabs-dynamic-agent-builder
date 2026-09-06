@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -12,8 +12,9 @@ from src.knowledge.models import (
     CrawlJobStatus,
     CrawlProgress,
     CrawlSourceType,
+    KnowledgeBase,
 )
-from src.knowledge.repository import CrawlJobRepository
+from src.knowledge.repository import CrawlJobRepository, KnowledgeBaseRepository
 from src.knowledge.run_state import CrawlJobStateService, CrawlJobStoppedError
 from src.crawler.worker import CrawlerWorker
 from tests.mock_data import TEST_USER_EMAIL
@@ -183,3 +184,44 @@ def test_page_progress_forces_heartbeat():
     CrawlerWorker()._update_progress(context)
 
     context.heartbeat.assert_called_once_with(force=True)
+
+
+@pytest.mark.asyncio
+async def test_fail_job_snapshots_resume_checkpoint():
+    job = _crawl_job()
+    context = Mock()
+    context.job = job
+    context.kb.kb_id = job.kb_id
+    context.get_progress = Mock(return_value=CrawlProgress())
+    context.job_repo.save_if_in_progress = Mock(return_value=True)
+    context.current_url_index = 3
+    context.discovered_urls = ["https://example.com/a", "https://example.com/b"]
+
+    await CrawlerWorker()._fail_job(context, "boom")
+
+    assert job.status == CrawlJobStatus.FAILED
+    assert job.checkpoint is not None
+    assert job.checkpoint.current_url_index == 3
+    assert job.checkpoint.pending_urls == ["https://example.com/a", "https://example.com/b"]
+
+
+@pytest.mark.asyncio
+async def test_retrying_failed_job_clears_stale_error_message(dynamodb_table, monkeypatch):
+    kb_repo = KnowledgeBaseRepository()
+    kb = KnowledgeBase(name="Test KB", created_by=TEST_USER_EMAIL)
+    kb_repo.save(kb)
+
+    job_repo = CrawlJobRepository()
+    job = _crawl_job(status=CrawlJobStatus.FAILED)
+    job.kb_id = kb.kb_id
+    job.error_message = "Crawl job heartbeat expired. The worker may have been interrupted; please retry the crawl."
+    job_repo.save(job)
+
+    monkeypatch.setattr(CrawlerWorker, "_discover_urls", AsyncMock(return_value=None))
+    monkeypatch.setattr(CrawlerWorker, "_process_urls", AsyncMock(return_value=None))
+
+    await CrawlerWorker().run(job.job_id, kb.kb_id, TEST_USER_EMAIL)
+
+    saved = job_repo.find_by_id(job.job_id, kb.kb_id)
+    assert saved is not None
+    assert saved.error_message is None

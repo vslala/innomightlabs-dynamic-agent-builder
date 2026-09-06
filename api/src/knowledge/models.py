@@ -205,6 +205,7 @@ class CrawlJobResponse(BaseModel):
     config: CrawlConfig
     progress: CrawlProgress
     timing: CrawlTiming
+    checkpoint: Optional[CrawlCheckpoint] = None
     error_message: Optional[str] = None
     last_heartbeat_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -481,6 +482,7 @@ class CrawlJob(BaseModel):
             config=self.config,
             progress=self.progress,
             timing=self.timing,
+            checkpoint=self.checkpoint,
             error_message=self.error_message,
             last_heartbeat_at=self.last_heartbeat_at,
             updated_at=self.updated_at,

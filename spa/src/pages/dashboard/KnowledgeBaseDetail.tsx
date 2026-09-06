@@ -6,6 +6,7 @@ import {
   Pencil,
   Plus,
   Play,
+  RotateCcw,
   XCircle,
   Globe,
   ChevronDown,
@@ -298,7 +299,7 @@ export function KnowledgeBaseDetail() {
     }
   };
 
-  const handleRunPendingJob = async (jobId: string) => {
+  const handleRunOrRetryJob = async (jobId: string) => {
     if (!kbId) return;
     try {
       await knowledgeApiService.runCrawlJob(kbId, jobId);
@@ -666,10 +667,28 @@ export function KnowledgeBaseDetail() {
                           className="text-green-400 hover:text-green-300"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleRunPendingJob(job.job_id);
+                            handleRunOrRetryJob(job.job_id);
                           }}
                         >
                           <Play className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {job.status === "failed" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-green-400 hover:text-green-300"
+                          title={
+                            job.checkpoint && job.checkpoint.pending_urls.length > 0
+                              ? `Retry (resumes from page ${job.checkpoint.current_url_index} of ${job.checkpoint.pending_urls.length})`
+                              : "Retry"
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRunOrRetryJob(job.job_id);
+                          }}
+                        >
+                          <RotateCcw className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
@@ -714,6 +733,16 @@ export function KnowledgeBaseDetail() {
                       {job.error_message && (
                         <AlertBanner message={job.error_message} variant="error" className="mt-4" />
                       )}
+
+                      {/* Resume hint for failed jobs with a saved checkpoint */}
+                      {job.status === "failed" &&
+                        job.checkpoint &&
+                        job.checkpoint.pending_urls.length > 0 && (
+                          <p className="text-xs text-[var(--text-muted)] mt-2">
+                            Retrying will resume from page {job.checkpoint.current_url_index} of{" "}
+                            {job.checkpoint.pending_urls.length} instead of starting over.
+                          </p>
+                        )}
 
                       {/* Configuration */}
                       <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">

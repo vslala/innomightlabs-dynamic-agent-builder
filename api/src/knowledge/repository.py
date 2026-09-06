@@ -239,15 +239,17 @@ class CrawlJobRepository:
             ":failed_at": failed_at.isoformat(),
             ":error": error_message,
         }
-        condition = (
-            "#status = :in_progress AND "
-            "(attribute_not_exists(last_heartbeat_at) OR last_heartbeat_at = :empty_heartbeat)"
-        )
-        expression_values[":empty_heartbeat"] = None
         if job.last_heartbeat_at is not None:
             condition = "#status = :in_progress AND last_heartbeat_at = :observed_heartbeat"
             expression_values[":observed_heartbeat"] = job.last_heartbeat_at.isoformat()
-            del expression_values[":empty_heartbeat"]
+        else:
+            # `last_heartbeat_at` is stored as an explicit NULL (not omitted) for jobs
+            # that have never heartbeated, so both checks are needed.
+            condition = (
+                "#status = :in_progress AND "
+                "(attribute_not_exists(last_heartbeat_at) OR last_heartbeat_at = :empty_heartbeat)"
+            )
+            expression_values[":empty_heartbeat"] = None
 
         try:
             self.table.update_item(
@@ -324,22 +326,6 @@ class CrawlJobRepository:
             if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
                 return False
             raise
-
-    def update_progress(self, job_id: str, kb_id: str, progress: dict) -> bool:
-        """Update crawl job progress."""
-        try:
-            self.table.update_item(
-                Key={
-                    "pk": f"KnowledgeBase#{kb_id}",
-                    "sk": f"CrawlJob#{job_id}",
-                },
-                UpdateExpression="SET progress = :progress",
-                ExpressionAttributeValues={":progress": progress},
-            )
-            return True
-        except Exception as e:
-            log.error(f"Failed to update job progress: {e}", exc_info=True)
-            return False
 
     def update_checkpoint(self, job_id: str, kb_id: str, checkpoint: dict) -> bool:
         """Update crawl job checkpoint for Lambda continuation."""
