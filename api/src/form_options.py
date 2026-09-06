@@ -5,8 +5,10 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from src.agents.repository import AgentRepository
+from src.config import settings
 from src.form_models import Form, FormInput, SelectOption
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
+from src.settings.schemas import ANTHROPIC_OAUTH_PROVIDER
 
 log = logging.getLogger(__name__)
 
@@ -140,6 +142,13 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
             )
         except Exception as e:
             log.warning("Failed to load Anthropic models for user %s: %s", context.user_email, e)
+
+    anthropic_oauth_settings = repo.find_by_provider(
+        user_email=context.user_email,
+        provider_name=ANTHROPIC_OAUTH_PROVIDER,
+    )
+    if settings.anthropic_oauth_shortcircuit_enabled and anthropic_oauth_settings:
+        providers.append(ANTHROPIC_OAUTH_PROVIDER)
 
     openai_settings = repo.find_by_provider(
         user_email=context.user_email,
