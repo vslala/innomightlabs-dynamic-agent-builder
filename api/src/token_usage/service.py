@@ -5,7 +5,13 @@ from typing import Optional
 from fastapi import HTTPException
 
 from ..agents.repository import AgentRepository
-from .models import TokenUsagePeriod, TokenUsagePoint, TokenUsageTimeseriesResponse, format_period_key
+from .models import (
+    TokenUsagePeriod,
+    TokenUsagePoint,
+    TokenUsageRecord,
+    TokenUsageTimeseriesResponse,
+    format_period_key,
+)
 from .repository import TokenUsageRepository
 
 log = logging.getLogger(__name__)
@@ -35,14 +41,17 @@ class TokenUsageService:
         llm_model: str,
         prompt_tokens: int,
         completion_tokens: int,
-    ) -> None:
+    ) -> TokenUsageRecord:
         """Record usage for one LLM call.
 
         No ownership check here -- this is called from the already-authorized
         conversation path (agentic_loop.py), unlike get_usage below which is
         reached directly from an API request.
+
+        Returns the updated "today" (day-bucket) record so the caller can
+        push a live update back to the client without an extra read.
         """
-        self.token_usage_repository.increment_usage(
+        return self.token_usage_repository.increment_usage(
             agent_id=agent_id,
             llm_model=llm_model,
             prompt_tokens=prompt_tokens,

@@ -4,7 +4,7 @@ import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Loader2, Maximize2, Mi
 import { ChatFormRenderer, type FormAnswer } from "../../components/chat/ChatFormRenderer";
 import { AttachmentChip } from "../../components/chat/AttachmentChip";
 import { ChatComposer } from "../../components/chat/ChatComposer";
-import { TokenUsageIndicator } from "../../components/chat/TokenUsageIndicator";
+import { TokenUsageIndicator, type LiveTokenUsageUpdate } from "../../components/chat/TokenUsageIndicator";
 import { ChatStreamRenderer } from "../../components/chat/ChatStreamRenderer";
 import { featureFlags } from "../../config/featureFlags";
 import { useFileAttachments } from "../../hooks/useFileAttachments";
@@ -82,6 +82,7 @@ export function ConversationDetail() {
   const [pendingFormLabel, setPendingFormLabel] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
+  const [liveTokenUsage, setLiveTokenUsage] = useState<LiveTokenUsageUpdate | null>(null);
   const [incompleteResponse, setIncompleteResponse] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
@@ -560,6 +561,18 @@ export function ConversationDetail() {
           }
           break;
 
+        case SSEEventType.TOKEN_USAGE_UPDATE:
+          if (event.llm_model) {
+            setLiveTokenUsage({
+              llm_model: event.llm_model,
+              prompt_tokens: event.prompt_tokens ?? 0,
+              completion_tokens: event.completion_tokens ?? 0,
+              total_tokens: event.total_tokens ?? 0,
+              call_count: event.call_count ?? 0,
+            });
+          }
+          break;
+
         case SSEEventType.ERROR:
           setChatError(event.content);
           latestImagePreviewDataUrlRef.current = null;
@@ -723,6 +736,18 @@ export function ConversationDetail() {
                 }
                 latestImagePreviewDataUrlRef.current = null;
                 setStreamingImagePreview(null);
+                break;
+
+              case SSEEventType.TOKEN_USAGE_UPDATE:
+                if (event.llm_model) {
+                  setLiveTokenUsage({
+                    llm_model: event.llm_model,
+                    prompt_tokens: event.prompt_tokens ?? 0,
+                    completion_tokens: event.completion_tokens ?? 0,
+                    total_tokens: event.total_tokens ?? 0,
+                    call_count: event.call_count ?? 0,
+                  });
+                }
                 break;
 
               case SSEEventType.ERROR:
@@ -1217,7 +1242,9 @@ export function ConversationDetail() {
               onSubmit={() => handleSendMessage()}
               onPaste={handleChatPaste}
               isSubmitting={isSending}
-              statusIndicator={<TokenUsageIndicator agentId={conversation.agent_id} />}
+              statusIndicator={
+                <TokenUsageIndicator agentId={conversation.agent_id} liveUsage={liveTokenUsage} />
+              }
               submitDisabled={(!inputValue.trim() && attachments.length === 0) || isSending}
               onAttachFiles={() => fileInputRef.current?.click()}
               imageAction={

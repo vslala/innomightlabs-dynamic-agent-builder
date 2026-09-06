@@ -46,9 +46,19 @@ class FakeProvider:
         yield FakeProviderEvent(type="stop")
 
 
+@dataclass
+class FakeDayRecord:
+    llm_model: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    call_count: int
+
+
 class FakeTokenUsageService:
     def __init__(self):
         self.calls: list[dict[str, Any]] = []
+        self._totals: dict[str, dict[str, int]] = {}
 
     def record_usage(self, *, owner_email, agent_id, llm_model, prompt_tokens, completion_tokens):
         self.calls.append(
@@ -59,6 +69,19 @@ class FakeTokenUsageService:
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
             }
+        )
+        totals = self._totals.setdefault(
+            llm_model, {"prompt_tokens": 0, "completion_tokens": 0, "call_count": 0}
+        )
+        totals["prompt_tokens"] += prompt_tokens
+        totals["completion_tokens"] += completion_tokens
+        totals["call_count"] += 1
+        return FakeDayRecord(
+            llm_model=llm_model,
+            prompt_tokens=totals["prompt_tokens"],
+            completion_tokens=totals["completion_tokens"],
+            total_tokens=totals["prompt_tokens"] + totals["completion_tokens"],
+            call_count=totals["call_count"],
         )
 
 
@@ -419,6 +442,25 @@ async def test_agentic_loop_records_token_usage_once_per_llm_iteration():
         "llm_model": "claude-sonnet-4-5",
         "prompt_tokens": 7,
         "completion_tokens": 3,
+    }
+
+    # A "token_usage" loop event is yielded once per recorded call too, so the
+    # caller (architecture layer) can push a live update to the client.
+    usage_events = [event for event in events if event.kind == "token_usage"]
+    assert len(usage_events) == 2
+    assert usage_events[0].payload == {
+        "llm_model": "claude-sonnet-4-5",
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15,
+        "call_count": 1,
+    }
+    assert usage_events[1].payload == {
+        "llm_model": "claude-sonnet-4-5",
+        "prompt_tokens": 17,
+        "completion_tokens": 8,
+        "total_tokens": 25,
+        "call_count": 2,
     }
 
 

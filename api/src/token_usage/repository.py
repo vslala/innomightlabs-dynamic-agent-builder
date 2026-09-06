@@ -19,17 +19,21 @@ class TokenUsageRepository:
         prompt_tokens: int,
         completion_tokens: int,
         occurred_at: Optional[datetime] = None,
-    ) -> None:
+    ) -> TokenUsageRecord:
         """Increment the day/month/year buckets for one LLM call.
 
         Three plain update_item calls (not TransactWriteItems): the three
         buckets are independent counters where a missed increment self-heals
         on the next call -- this is telemetry, not a billing ledger, so
         transactional cost isn't justified.
+
+        Returns the updated DAY bucket record -- the "today" totals callers
+        use to push a live update back to the client.
         """
         moment = occurred_at or datetime.now(timezone.utc)
+        day_record: Optional[TokenUsageRecord] = None
         for period in (TokenUsagePeriod.DAY, TokenUsagePeriod.MONTH, TokenUsagePeriod.YEAR):
-            self._increment_bucket(
+            record = self._increment_bucket(
                 agent_id=agent_id,
                 period=period,
                 period_key=format_period_key(period, moment),
@@ -37,6 +41,10 @@ class TokenUsageRepository:
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
             )
+            if period == TokenUsagePeriod.DAY:
+                day_record = record
+        assert day_record is not None
+        return day_record
 
     def _increment_bucket(
         self,

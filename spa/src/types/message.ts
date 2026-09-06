@@ -106,6 +106,8 @@ export const SSEEventType = {
   // Tool call events for memGPT timeline
   TOOL_CALL_START: "TOOL_CALL_START",
   TOOL_CALL_RESULT: "TOOL_CALL_RESULT",
+  // Token usage events (live "today" totals, pushed after each LLM call)
+  TOKEN_USAGE_UPDATE: "TOKEN_USAGE_UPDATE",
 } as const;
 
 export type SSEEventType = (typeof SSEEventType)[keyof typeof SSEEventType];
@@ -133,6 +135,12 @@ export interface SSEEvent {
   image_width?: number;
   image_height?: number;
   images?: GeneratedImageResponse[];
+  // Token usage events -- today's cumulative totals for one llm_model
+  llm_model?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  call_count?: number;
 }
 
 /**

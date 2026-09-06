@@ -377,6 +377,17 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                         emitted_terminal_runtime_response = True
                     yield runtime_event
 
+                elif loop_event.kind == "token_usage":
+                    yield SSEEvent(
+                        event_type=SSEEventType.TOKEN_USAGE_UPDATE,
+                        content="",
+                        llm_model=loop_event.payload["llm_model"],
+                        prompt_tokens=loop_event.payload["prompt_tokens"],
+                        completion_tokens=loop_event.payload["completion_tokens"],
+                        total_tokens=loop_event.payload["total_tokens"],
+                        call_count=loop_event.payload["call_count"],
+                    )
+
                 elif loop_event.kind == "complete":
                     full_response = loop_event.payload["full_text"]
 

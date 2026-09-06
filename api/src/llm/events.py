@@ -35,6 +35,9 @@ class SSEEventType(str, Enum):
     # Status events
     STREAM_COMPLETE = "STREAM_COMPLETE"
 
+    # Token usage events (live "today" totals, pushed after each LLM call)
+    TOKEN_USAGE_UPDATE = "TOKEN_USAGE_UPDATE"
+
     # Error event
     ERROR = "ERROR"
 
@@ -66,6 +69,13 @@ class SSEEvent(BaseModel):
     image_width: Optional[int] = None
     image_height: Optional[int] = None
     images: Optional[list[dict]] = None
+
+    # Token usage events -- today's cumulative totals for one llm_model
+    llm_model: Optional[str] = None
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    call_count: Optional[int] = None
 
     def to_sse(self) -> str:
         """

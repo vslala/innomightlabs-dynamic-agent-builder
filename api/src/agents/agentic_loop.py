@@ -27,6 +27,7 @@ from src.agents.loop_context import (
 )
 from src.common import MAX_TOOL_ITERATIONS
 from src.agents.turn_runtime import AgentTurnRuntime, use_turn_runtime
+from src.token_usage.models import TokenUsageRecord
 from src.token_usage.service import TokenUsageService
 
 log = logging.getLogger(__name__)
@@ -83,7 +84,7 @@ class TokenUsageRecorder(Protocol):
         llm_model: str,
         prompt_tokens: int,
         completion_tokens: int,
-    ) -> None:
+    ) -> "TokenUsageRecord":
         ...
 
 
@@ -201,7 +202,7 @@ async def run_agentic_tool_loop(
                 try:
                     # Offloaded to a thread so a slow DynamoDB round trip never
                     # blocks the shared event loop's other concurrent requests.
-                    await asyncio.to_thread(
+                    day_record: Optional[TokenUsageRecord] = await asyncio.to_thread(
                         usage_service.record_usage,
                         owner_email=state.owner_email,
                         agent_id=state.agent_id,
@@ -209,6 +210,17 @@ async def run_agentic_tool_loop(
                         prompt_tokens=usage_event.prompt_tokens,
                         completion_tokens=usage_event.completion_tokens,
                     )
+                    if day_record is not None:
+                        yield AgenticLoopEvent(
+                            kind="token_usage",
+                            payload={
+                                "llm_model": day_record.llm_model,
+                                "prompt_tokens": day_record.prompt_tokens,
+                                "completion_tokens": day_record.completion_tokens,
+                                "total_tokens": day_record.total_tokens,
+                                "call_count": day_record.call_count,
+                            },
+                        )
                 except Exception:
                     log.exception("Failed to record token usage for agent turn")
 
