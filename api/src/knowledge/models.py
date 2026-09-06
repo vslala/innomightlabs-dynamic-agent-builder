@@ -206,6 +206,8 @@ class CrawlJobResponse(BaseModel):
     progress: CrawlProgress
     timing: CrawlTiming
     error_message: Optional[str] = None
+    last_heartbeat_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     created_by: str
     created_at: datetime
 
@@ -399,6 +401,8 @@ class CrawlJob(BaseModel):
     embedding_model: str = "amazon.titan-embed-text-v2:0"
     checkpoint: Optional[CrawlCheckpoint] = None
     error_message: Optional[str] = None
+    last_heartbeat_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -428,6 +432,10 @@ class CrawlJob(BaseModel):
             "embedding_model": self.embedding_model,
             "checkpoint": self.checkpoint.model_dump() if self.checkpoint else None,
             "error_message": self.error_message,
+            "last_heartbeat_at": (
+                self.last_heartbeat_at.isoformat() if self.last_heartbeat_at else None
+            ),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
             "entity_type": "CrawlJob",
@@ -451,6 +459,16 @@ class CrawlJob(BaseModel):
             embedding_model=item.get("embedding_model", "amazon.titan-embed-text-v2:0"),
             checkpoint=CrawlCheckpoint(**item["checkpoint"]) if item.get("checkpoint") else None,
             error_message=item.get("error_message"),
+            last_heartbeat_at=(
+                datetime.fromisoformat(item["last_heartbeat_at"])
+                if item.get("last_heartbeat_at")
+                else None
+            ),
+            updated_at=(
+                datetime.fromisoformat(item["updated_at"])
+                if item.get("updated_at")
+                else None
+            ),
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),
         )
@@ -464,6 +482,8 @@ class CrawlJob(BaseModel):
             progress=self.progress,
             timing=self.timing,
             error_message=self.error_message,
+            last_heartbeat_at=self.last_heartbeat_at,
+            updated_at=self.updated_at,
             created_by=self.created_by,
             created_at=self.created_at,
         )

@@ -48,6 +48,7 @@ from src.knowledge.repository import (
     CrawledPageRepository,
     ContentChunkRepository,
 )
+from src.knowledge.run_state import CrawlJobStateService, CrawlJobStoppedError
 from src.crawler.discovery import UrlDiscovery, DiscoveryConfig, DiscoveredUrl
 from src.crawler.extractor import ContentExtractor, ExtractedContent
 from src.crawler.chunking import get_chunking_strategy, ContentChunkData
@@ -113,6 +114,7 @@ class CrawlContext:
     page_repo: CrawledPageRepository = field(default_factory=CrawledPageRepository)
     chunk_repo: ContentChunkRepository = field(default_factory=ContentChunkRepository)
     kb_repo: KnowledgeBaseRepository = field(default_factory=KnowledgeBaseRepository)
+    state_service: CrawlJobStateService = field(default_factory=CrawlJobStateService)
 
     # Runtime state
     start_time_ms: int = 0
@@ -126,6 +128,7 @@ class CrawlContext:
     failed_count: int = 0
     total_chunks: int = 0
     total_embeddings: int = 0
+    last_heartbeat_monotonic: float = 0.0
 
     # Event callback (for SSE streaming)
     event_callback: Optional[Callable[[CrawlEvent], None]] = None
@@ -154,6 +157,17 @@ class CrawlContext:
             total_chunks=self.total_chunks,
             total_embeddings=self.total_embeddings,
         )
+
+    def heartbeat(self, *, force: bool = False) -> None:
+        """Persist liveness and progress without writing on every discovered URL."""
+        now = time.monotonic()
+        heartbeat_interval = settings.crawl_job_heartbeat_interval_seconds
+        if not force and now - self.last_heartbeat_monotonic < heartbeat_interval:
+            return
+
+        self.job.progress = self.get_progress()
+        self.state_service.heartbeat(self.job)
+        self.last_heartbeat_monotonic = now
 
 
 class CrawlerWorker:
@@ -278,6 +292,11 @@ class CrawlerWorker:
         if not job:
             raise ValueError(f"Crawl job {job_id} not found")
 
+        is_continuation = job.status == CrawlJobStatus.IN_PROGRESS and job.checkpoint is not None
+        if job.status not in {CrawlJobStatus.PENDING, CrawlJobStatus.FAILED} and not is_continuation:
+            log.info("Did not start crawl job %s because its status is %s", job_id, job.status.value)
+            return job
+
         kb = kb_repo.find_by_id(kb_id, user_email)
         if not kb:
             raise ValueError(f"Knowledge base {kb_id} not found")
@@ -305,10 +324,16 @@ class CrawlerWorker:
             log.info(f"Resuming from checkpoint at index {ctx.current_url_index}, previously processed {ctx.processed_count} URLs")
 
         try:
+            expected_status = job.status.value
             job.status = CrawlJobStatus.IN_PROGRESS
             if not job.timing.started_at:
                 job.timing.started_at = datetime.now(timezone.utc)
-            job_repo.save(job)
+            if not job_repo.save_if_status(job, expected_status=expected_status):
+                latest_job = job_repo.find_by_id(job_id, kb_id)
+                if latest_job is not None:
+                    log.info("Did not start crawl job %s because its status changed", job_id)
+                    return latest_job
+                raise ValueError(f"Crawl job {job_id} disappeared before execution")
 
             ctx.emit_event(job_started_event(
                 job_id=job_id,
@@ -322,6 +347,7 @@ class CrawlerWorker:
                 "source_type": job.config.source_type.value,
                 "max_pages": job.config.max_pages,
             })
+            ctx.heartbeat(force=True)
 
             if not ctx.discovered_urls:
                 await self._discover_urls(ctx)
@@ -335,6 +361,12 @@ class CrawlerWorker:
 
             return ctx.job
 
+        except CrawlJobStoppedError:
+            latest_job = job_repo.find_by_id(job_id, kb_id)
+            if latest_job is not None:
+                log.info("Stopped crawl job %s because it is no longer active", job_id)
+                return latest_job
+            raise
         except Exception as e:
             log.error(f"Crawl job {job_id} failed: {e}", exc_info=True)
             await self._fail_job(ctx, str(e))
@@ -371,6 +403,7 @@ class CrawlerWorker:
 
             # Log discovery
             self._log_step(ctx, CrawlStepType.URL_DISCOVERED, url=discovered.url)
+            ctx.heartbeat()
 
             if len(ctx.discovered_urls) >= config.max_pages:
                 break
@@ -383,6 +416,8 @@ class CrawlerWorker:
         rate_limit_s = config.rate_limit_ms / 1000.0
 
         while ctx.current_url_index < len(ctx.discovered_urls):
+            ctx.heartbeat()
+
             # Check for checkpoint
             if ctx.should_checkpoint():
                 log.info("Approaching timeout, saving checkpoint")
@@ -630,12 +665,7 @@ class CrawlerWorker:
 
     def _update_progress(self, ctx: CrawlContext) -> None:
         """Update job progress in database."""
-        progress = ctx.get_progress()
-        ctx.job_repo.update_progress(
-            ctx.job.job_id,
-            ctx.kb.kb_id,
-            progress.model_dump(),
-        )
+        ctx.heartbeat(force=True)
 
     def _log_step(
         self,
@@ -671,7 +701,8 @@ class CrawlerWorker:
         job.progress = ctx.get_progress()
         job.checkpoint = None  # Clear checkpoint
 
-        ctx.job_repo.save(job)
+        if not ctx.job_repo.save_if_in_progress(job):
+            raise CrawlJobStoppedError(f"Crawl job {job.job_id} is no longer active")
 
         # Update KB stats
         ctx.kb_repo.update_stats(
@@ -709,7 +740,8 @@ class CrawlerWorker:
         )
         job.progress = ctx.get_progress()
 
-        ctx.job_repo.save(job)
+        if not ctx.job_repo.save_if_in_progress(job):
+            raise CrawlJobStoppedError(f"Crawl job {job.job_id} is no longer active")
 
         # Log checkpoint
         self._log_step(ctx, CrawlStepType.JOB_CHECKPOINT, details={
@@ -764,7 +796,9 @@ class CrawlerWorker:
         job.error_message = error
         job.progress = ctx.get_progress()
 
-        ctx.job_repo.save(job)
+        if not ctx.job_repo.save_if_in_progress(job):
+            log.info("Did not overwrite terminal state for crawl job %s", job.job_id)
+            return
 
         # Log failure
         self._log_step(ctx, CrawlStepType.JOB_FAILED, details={"error": error})

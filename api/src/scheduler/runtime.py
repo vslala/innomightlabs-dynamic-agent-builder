@@ -12,19 +12,28 @@ from threading import Lock
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from src.config import settings
+from src.knowledge.run_state import CrawlJobStateService
 from src.scheduler.models import Schedule, ScheduleStatus
 from src.scheduler.repository import SchedulerRepository
 
 log = logging.getLogger(__name__)
 
+CRAWL_JOB_REAPER_ID = "internal:stale-crawl-job-reaper"
+
 
 class SchedulerRuntime:
     """Keeps active DynamoDB schedules registered in the current app process."""
 
-    def __init__(self, repository: SchedulerRepository | None = None):
+    def __init__(
+        self,
+        repository: SchedulerRepository | None = None,
+        crawl_job_state_service: CrawlJobStateService | None = None,
+    ):
         self.repository = repository or SchedulerRepository()
+        self.crawl_job_state_service = crawl_job_state_service or CrawlJobStateService()
         self.scheduler = AsyncIOScheduler(timezone=timezone.utc)
         self._started = False
 
@@ -33,6 +42,17 @@ class SchedulerRuntime:
             return
         for schedule in self.repository.list_active_schedules():
             self.upsert(schedule)
+        self.scheduler.add_job(
+            self._reap_stale_crawl_jobs,
+            trigger=IntervalTrigger(
+                seconds=settings.crawl_job_reaper_interval_seconds,
+                timezone=timezone.utc,
+            ),
+            id=CRAWL_JOB_REAPER_ID,
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
         self.scheduler.start()
         self._started = True
         log.info("Scheduler runtime started")
@@ -79,6 +99,14 @@ class SchedulerRuntime:
             owner_email=owner_email,
             scheduled_for=scheduled_for,
         )
+
+    async def _reap_stale_crawl_jobs(self) -> None:
+        try:
+            failed_count = self.crawl_job_state_service.fail_stale_jobs()
+            if failed_count:
+                log.warning("Marked %s stale crawl job(s) as failed", failed_count)
+        except Exception:
+            log.exception("Failed to reap stale crawl jobs")
 
 
 _runtime: SchedulerRuntime | None = None

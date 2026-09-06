@@ -35,9 +35,10 @@ AgentKnowledgeBase:
 from ..db import get_dynamodb_resource
 import base64
 import json
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
+from botocore.exceptions import ClientError
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 import logging
 
 from src.config import settings
@@ -159,6 +160,112 @@ class CrawlJobRepository:
         log.info(f"Saved crawl job {job.job_id} for KB {job.kb_id}")
         return job
 
+    def save_if_in_progress(self, job: CrawlJob) -> bool:
+        """Save worker-owned state without overwriting a terminal status."""
+        return self.save_if_status(job, expected_status="in_progress")
+
+    def save_if_status(self, job: CrawlJob, *, expected_status: str) -> bool:
+        """Save a job only when its persisted status matches the worker's view."""
+        job.updated_at = datetime.now(timezone.utc)
+        try:
+            self.table.put_item(
+                Item=job.to_dynamo_item(),
+                ConditionExpression="#status = :expected_status",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={":expected_status": expected_status},
+            )
+            return True
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            raise
+
+    def update_heartbeat(self, job_id: str, kb_id: str, heartbeat_at: datetime, progress: dict) -> bool:
+        """Record worker liveness and progress while the job is active."""
+        timestamp = heartbeat_at.isoformat()
+        try:
+            self.table.update_item(
+                Key={
+                    "pk": f"KnowledgeBase#{kb_id}",
+                    "sk": f"CrawlJob#{job_id}",
+                },
+                UpdateExpression=(
+                    "SET last_heartbeat_at = :heartbeat, updated_at = :heartbeat, progress = :progress"
+                ),
+                ConditionExpression="#status = :in_progress",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":heartbeat": timestamp,
+                    ":progress": progress,
+                    ":in_progress": "in_progress",
+                },
+            )
+            return True
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            raise
+
+    def find_in_progress(self) -> list[CrawlJob]:
+        """Return all running crawl jobs for the global stale-job reaper."""
+        scan_args: dict[str, Any] = {
+            "FilterExpression": (
+                Attr("entity_type").eq("CrawlJob") & Attr("status").eq("in_progress")
+            )
+        }
+        items: list[dict] = []
+
+        while True:
+            response = self.table.scan(**scan_args)
+            items.extend(response.get("Items", []))
+            last_evaluated_key = response.get("LastEvaluatedKey")
+            if not last_evaluated_key:
+                break
+            scan_args["ExclusiveStartKey"] = last_evaluated_key
+
+        return [CrawlJob.from_dynamo_item(item) for item in items]
+
+    def mark_failed_if_heartbeat_unchanged(
+        self,
+        job: CrawlJob,
+        *,
+        failed_at: datetime,
+        error_message: str,
+    ) -> bool:
+        """Fail a stale job only if no newer heartbeat won the race."""
+        expression_values = {
+            ":in_progress": "in_progress",
+            ":failed": "failed",
+            ":failed_at": failed_at.isoformat(),
+            ":error": error_message,
+        }
+        condition = (
+            "#status = :in_progress AND "
+            "(attribute_not_exists(last_heartbeat_at) OR last_heartbeat_at = :empty_heartbeat)"
+        )
+        expression_values[":empty_heartbeat"] = None
+        if job.last_heartbeat_at is not None:
+            condition = "#status = :in_progress AND last_heartbeat_at = :observed_heartbeat"
+            expression_values[":observed_heartbeat"] = job.last_heartbeat_at.isoformat()
+            del expression_values[":empty_heartbeat"]
+
+        try:
+            self.table.update_item(
+                Key={"pk": job.pk, "sk": job.sk},
+                UpdateExpression=(
+                    "SET #status = :failed, error_message = :error, "
+                    "updated_at = :failed_at, timing.completed_at = :failed_at"
+                ),
+                ConditionExpression=condition,
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues=expression_values,
+            )
+            return True
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            raise
+
     def find_by_id(self, job_id: str, kb_id: str) -> Optional[CrawlJob]:
         """Find a crawl job by ID."""
         response = self.table.get_item(
@@ -190,30 +297,33 @@ class CrawlJobRepository:
         log.info(f"Found {len(jobs)} crawl jobs for KB {kb_id}")
         return jobs[:limit]
 
-    def update_status(self, job_id: str, kb_id: str, status: str, error_message: Optional[str] = None) -> bool:
-        """Update crawl job status."""
+    def cancel_if_active(self, job_id: str, kb_id: str) -> bool:
+        """Cancel a pending or running job without overwriting a terminal state."""
+        cancelled_at = datetime.now(timezone.utc).isoformat()
         try:
-            update_expr = "SET #status = :status"
-            expr_attr_values = {":status": status}
-            expr_attr_names = {"#status": "status"}
-
-            if error_message:
-                update_expr += ", error_message = :error"
-                expr_attr_values[":error"] = error_message
-
             self.table.update_item(
                 Key={
                     "pk": f"KnowledgeBase#{kb_id}",
                     "sk": f"CrawlJob#{job_id}",
                 },
-                UpdateExpression=update_expr,
-                ExpressionAttributeNames=expr_attr_names,
-                ExpressionAttributeValues=expr_attr_values,
+                UpdateExpression=(
+                    "SET #status = :cancelled, updated_at = :cancelled_at, "
+                    "timing.completed_at = :cancelled_at"
+                ),
+                ConditionExpression="#status IN (:pending, :in_progress)",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":cancelled": "cancelled",
+                    ":cancelled_at": cancelled_at,
+                    ":pending": "pending",
+                    ":in_progress": "in_progress",
+                },
             )
             return True
-        except Exception as e:
-            log.error(f"Failed to update job status: {e}", exc_info=True)
-            return False
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            raise
 
     def update_progress(self, job_id: str, kb_id: str, progress: dict) -> bool:
         """Update crawl job progress."""

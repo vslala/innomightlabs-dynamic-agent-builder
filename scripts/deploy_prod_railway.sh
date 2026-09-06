@@ -224,8 +224,13 @@ set_railway_var "SUPERUSER_EMAILS" "$(get_var 'SUPERUSER_EMAILS')"
 set_railway_var "PINECONE_API_KEY" "$(get_var 'PINECONE_API_KEY')"
 set_railway_var "PINECONE_HOST" "$(get_var 'PINECONE_HOST')"
 set_railway_var "PINECONE_INDEX" "$(get_var 'PINECONE_INDEX')"
+set_railway_var "EMBEDDING_BACKEND" "$(get_var_default 'EMBEDDING_BACKEND' 'bedrock')"
+set_railway_var "EMBEDDING_DIMENSION" "$(get_var_default 'EMBEDDING_DIMENSION' '1024')"
 set_railway_var "BEDROCK_EMBEDDING_MODEL" "$(get_var_default 'BEDROCK_EMBEDDING_MODEL' 'amazon.titan-embed-text-v2:0')"
 set_railway_var "BEDROCK_EMBEDDING_DIMENSION" "$(get_var_default 'BEDROCK_EMBEDDING_DIMENSION' '1024')"
+set_railway_var "OLLAMA_BASE_URL" "$(get_var_default 'OLLAMA_BASE_URL' 'http://localhost:11434')"
+set_railway_var "OLLAMA_EMBEDDING_MODEL" "$(get_var_default 'OLLAMA_EMBEDDING_MODEL' 'qwen3-embedding:0.6b')"
+set_railway_var "OLLAMA_TIMEOUT_SECONDS" "$(get_var_default 'OLLAMA_TIMEOUT_SECONDS' '120')"
 
 set_railway_var "STRIPE_SECRET_KEY" "$(get_var 'STRIPE_SECRET_KEY')"
 set_railway_var "STRIPE_PUBLISHABLE_KEY" "$(get_var 'STRIPE_PUBLISHABLE_KEY')"
@@ -251,6 +256,15 @@ set_railway_var "CONVERSATION_MEDIA_PRESIGN_TTL_SECONDS" "$(get_var_default 'CON
 
 set_railway_var "ASYNC_JOB_BACKEND" "$(get_var_default 'ASYNC_JOB_BACKEND' 'local')"
 set_railway_var "ASYNC_JOB_LAMBDA_NAME" "$(get_var 'ASYNC_JOB_LAMBDA_NAME')"
+set_railway_var \
+  "CRAWL_JOB_HEARTBEAT_INTERVAL_SECONDS" \
+  "$(get_prod_var_default 'CRAWL_JOB_HEARTBEAT_INTERVAL_SECONDS' '60')"
+set_railway_var \
+  "CRAWL_JOB_STALE_TIMEOUT_SECONDS" \
+  "$(get_prod_var_default 'CRAWL_JOB_STALE_TIMEOUT_SECONDS' '900')"
+set_railway_var \
+  "CRAWL_JOB_REAPER_INTERVAL_SECONDS" \
+  "$(get_prod_var_default 'CRAWL_JOB_REAPER_INTERVAL_SECONDS' '300')"
 set_railway_var "ACCOUNT_DELETION_LAMBDA_NAME" "$(get_var 'ACCOUNT_DELETION_LAMBDA_NAME')"
 set_railway_var "CLI_RUNNER_BASE_URL" "$cli_runner_base_url"
 set_railway_var "CLI_RUNNER_SHARED_TOKEN" "$cli_runner_shared_token"

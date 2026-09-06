@@ -66,6 +66,9 @@ class Settings:
     # Scheduler
     scheduler_backend: str = "in_app"
     scheduler_runtime_enabled: bool = True
+    crawl_job_heartbeat_interval_seconds: int = 60
+    crawl_job_stale_timeout_seconds: int = 15 * 60
+    crawl_job_reaper_interval_seconds: int = 5 * 60
     mcp_oauth_redirect_uri: str = ""
     cli_runner_base_url: str = ""
     cli_runner_shared_token: str = ""
@@ -98,9 +101,14 @@ class Settings:
     pinecone_host: str = ""
     pinecone_index: str = ""
 
-    # Bedrock Embeddings (has sensible defaults)
+    # Embeddings
+    embedding_backend: str = "bedrock"
+    embedding_dimension: int = 1024
     bedrock_embedding_model: str = "amazon.titan-embed-text-v2:0"
     bedrock_embedding_dimension: int = 1024
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_embedding_model: str = "qwen3-embedding:0.6b"
+    ollama_timeout_seconds: float = 120.0
 
     # Feature flags
     _validated_features: set = field(default_factory=set)
@@ -319,6 +327,13 @@ class Settings:
             # Preserve order while removing duplicates
             return list(dict.fromkeys(normalized))
 
+        embedding_dimension = int(
+            os.getenv(
+                "EMBEDDING_DIMENSION",
+                os.getenv("BEDROCK_EMBEDDING_DIMENSION", "1024"),
+            )
+        )
+
         return cls(
             environment=environment,
             dynamodb_table=os.getenv("DYNAMODB_TABLE", "dynamic-agent-builder-main" if environment == "dev" else ""),
@@ -339,6 +354,15 @@ class Settings:
             scheduler_backend=os.getenv("SCHEDULER_BACKEND", "in_app").strip().lower(),
             scheduler_runtime_enabled=os.getenv("SCHEDULER_RUNTIME_ENABLED", "true").strip().lower()
             not in {"0", "false", "no"},
+            crawl_job_heartbeat_interval_seconds=int(
+                os.getenv("CRAWL_JOB_HEARTBEAT_INTERVAL_SECONDS", "60")
+            ),
+            crawl_job_stale_timeout_seconds=int(
+                os.getenv("CRAWL_JOB_STALE_TIMEOUT_SECONDS", "900")
+            ),
+            crawl_job_reaper_interval_seconds=int(
+                os.getenv("CRAWL_JOB_REAPER_INTERVAL_SECONDS", "300")
+            ),
             mcp_oauth_redirect_uri=os.getenv(
                 "MCP_OAUTH_REDIRECT_URI",
                 f"{api_base_url}/connectors/mcp/oauth/callback",
@@ -383,9 +407,17 @@ class Settings:
             pinecone_api_key=os.getenv("PINECONE_API_KEY", ""),
             pinecone_host=os.getenv("PINECONE_HOST", ""),
             pinecone_index=os.getenv("PINECONE_INDEX", ""),
-            # Bedrock - has sensible defaults
+            # Embeddings
+            embedding_backend=os.getenv("EMBEDDING_BACKEND", "bedrock").strip().lower(),
+            embedding_dimension=embedding_dimension,
             bedrock_embedding_model=os.getenv("BEDROCK_EMBEDDING_MODEL", "amazon.titan-embed-text-v2:0"),
-            bedrock_embedding_dimension=int(os.getenv("BEDROCK_EMBEDDING_DIMENSION", "1024")),
+            bedrock_embedding_dimension=embedding_dimension,
+            ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            ollama_embedding_model=os.getenv(
+                "OLLAMA_EMBEDDING_MODEL",
+                "qwen3-embedding:0.6b",
+            ),
+            ollama_timeout_seconds=float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120")),
             # Stripe - optional, used for billing
             stripe_secret_key=os.getenv("STRIPE_SECRET_KEY", ""),
             stripe_publishable_key=os.getenv("STRIPE_PUBLISHABLE_KEY", ""),

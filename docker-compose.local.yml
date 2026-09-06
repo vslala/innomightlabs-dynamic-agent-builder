@@ -25,6 +25,55 @@ services:
     networks:
       - local-dev
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-local
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - local-dev
+
+  ollama-model-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama pull qwen3-embedding:0.6b &&
+        ollama run qwen3-embedding:0.6b "local readiness check" >/dev/null
+    restart: "no"
+    networks:
+      - local-dev
+
+  pinecone-index:
+    image: ghcr.io/pinecone-io/pinecone-index:latest
+    platform: linux/amd64
+    container_name: pinecone-index-local
+    environment:
+      PORT: "5081"
+      INDEX_TYPE: serverless
+      VECTOR_TYPE: dense
+      DIMENSION: "1024"
+      METRIC: cosine
+    ports:
+      - "5081:5081"
+    networks:
+      - local-dev
+
+volumes:
+  ollama-data:
+
 networks:
   local-dev:
     driver: bridge

@@ -1,15 +1,13 @@
-"""
-Bedrock Titan embeddings service.
+"""Embedding providers used by knowledge indexing and semantic search."""
 
-Uses Amazon Bedrock's Titan Text Embeddings V2 model to generate
-vector embeddings for text content.
-"""
-
-import boto3
+import asyncio
 import json
 import logging
-from typing import Optional
 from dataclasses import dataclass
+from typing import Protocol
+
+import boto3
+import httpx
 
 from src.config import settings
 
@@ -23,6 +21,29 @@ class EmbeddingResult:
     input_text_token_count: int
 
 
+class EmbeddingProvider(Protocol):
+    """Contract shared by remote and local embedding providers."""
+
+    dimension: int
+
+    async def embed_text_async(
+        self,
+        text: str,
+        normalize: bool = True,
+    ) -> EmbeddingResult:
+        """Generate one embedding."""
+        ...
+
+    async def embed_texts_async(
+        self,
+        texts: list[str],
+        normalize: bool = True,
+        max_concurrent: int = 5,
+    ) -> list[EmbeddingResult]:
+        """Generate embeddings in input order."""
+        ...
+
+
 class BedrockEmbeddings:
     """
     Service for generating text embeddings using Amazon Bedrock Titan.
@@ -33,9 +54,9 @@ class BedrockEmbeddings:
 
     def __init__(
         self,
-        model_id: Optional[str] = None,
-        region: Optional[str] = None,
-        dimension: Optional[int] = None,
+        model_id: str | None = None,
+        region: str | None = None,
+        dimension: int | None = None,
     ):
         """
         Initialize the Bedrock embeddings service.
@@ -136,7 +157,6 @@ class BedrockEmbeddings:
         Note: boto3 doesn't have native async support, so this runs
         the sync version. For true async, consider using aioboto3.
         """
-        import asyncio
         return await asyncio.to_thread(self.embed_text, text, normalize)
 
     async def embed_texts_async(
@@ -156,8 +176,6 @@ class BedrockEmbeddings:
         Returns:
             List of EmbeddingResult objects
         """
-        import asyncio
-
         semaphore = asyncio.Semaphore(max_concurrent)
 
         async def embed_with_semaphore(text: str) -> EmbeddingResult:
@@ -177,13 +195,105 @@ class BedrockEmbeddings:
         return list(results)
 
 
+class OllamaEmbeddings:
+    """Generate embeddings through Ollama's local HTTP API."""
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        model: str | None = None,
+        dimension: int | None = None,
+        timeout_seconds: float | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
+        self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
+        self.model = model or settings.ollama_embedding_model
+        self.dimension = dimension or settings.embedding_dimension
+        self.timeout_seconds = timeout_seconds or settings.ollama_timeout_seconds
+        self.transport = transport
+
+    async def embed_text_async(
+        self,
+        text: str,
+        normalize: bool = True,
+    ) -> EmbeddingResult:
+        results = await self.embed_texts_async([text], normalize=normalize)
+        return results[0]
+
+    async def embed_texts_async(
+        self,
+        texts: list[str],
+        normalize: bool = True,
+        max_concurrent: int = 5,
+    ) -> list[EmbeddingResult]:
+        del max_concurrent  # Ollama performs batching inside a single request.
+        if not texts:
+            return []
+        if not normalize:
+            raise ValueError("Ollama embeddings are always normalized")
+
+        request_body = {
+            "model": self.model,
+            "input": texts,
+            "dimensions": self.dimension,
+            "truncate": True,
+        }
+        async with httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post("/api/embed", json=request_body)
+            response.raise_for_status()
+
+        response_body = response.json()
+        embeddings = response_body.get("embeddings")
+        if not isinstance(embeddings, list) or len(embeddings) != len(texts):
+            raise ValueError(
+                "Ollama returned an unexpected number of embedding vectors"
+            )
+
+        results: list[EmbeddingResult] = []
+        for embedding in embeddings:
+            if not isinstance(embedding, list) or len(embedding) != self.dimension:
+                actual_dimension = len(embedding) if isinstance(embedding, list) else 0
+                raise ValueError(
+                    "Ollama embedding dimension mismatch: "
+                    f"expected {self.dimension}, received {actual_dimension}"
+                )
+            results.append(
+                EmbeddingResult(
+                    embedding=embedding,
+                    input_text_token_count=0,
+                )
+            )
+
+        if len(results) == 1:
+            results[0].input_text_token_count = int(
+                response_body.get("prompt_eval_count", 0)
+            )
+        return results
+
+
 # Singleton instance
-_embeddings_service: Optional[BedrockEmbeddings] = None
+_embeddings_service: EmbeddingProvider | None = None
 
 
-def get_embeddings_service() -> BedrockEmbeddings:
+def create_embeddings_service(backend: str | None = None) -> EmbeddingProvider:
+    """Create the configured provider without using the process singleton."""
+    selected_backend = (backend or settings.embedding_backend).strip().lower()
+    if selected_backend == "bedrock":
+        return BedrockEmbeddings(dimension=settings.embedding_dimension)
+    if selected_backend == "ollama":
+        return OllamaEmbeddings()
+    raise ValueError(
+        f"Unsupported embedding backend {selected_backend!r}; expected 'bedrock' or 'ollama'"
+    )
+
+
+def get_embeddings_service() -> EmbeddingProvider:
     """Get or create the embeddings service singleton."""
     global _embeddings_service
     if _embeddings_service is None:
-        _embeddings_service = BedrockEmbeddings()
+        _embeddings_service = create_embeddings_service()
     return _embeddings_service

@@ -2,7 +2,10 @@
 
 from src.vectorstore.embeddings import (
     BedrockEmbeddings,
+    EmbeddingProvider,
     EmbeddingResult,
+    OllamaEmbeddings,
+    create_embeddings_service,
     get_embeddings_service,
 )
 
@@ -25,7 +28,10 @@ from src.vectorstore.search import (
 __all__ = [
     # Embeddings
     "BedrockEmbeddings",
+    "EmbeddingProvider",
     "EmbeddingResult",
+    "OllamaEmbeddings",
+    "create_embeddings_service",
     "get_embeddings_service",
     # Pinecone
     "PineconeClient",

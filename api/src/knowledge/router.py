@@ -748,8 +748,8 @@ async def cancel_crawl_job(
 
     # Only cancel if job is in progress or pending
     if job.status in [CrawlJobStatus.PENDING, CrawlJobStatus.IN_PROGRESS]:
-        job_repo.update_status(job_id, kb_id, CrawlJobStatus.CANCELLED.value)
-        log.info(f"Cancelled crawl job {job_id}")
+        if job_repo.cancel_if_active(job_id, kb_id):
+            log.info(f"Cancelled crawl job {job_id}")
 
 
 @router.get("/{kb_id}/crawl-jobs/{job_id}/steps", response_model=list[CrawlStepResponse])

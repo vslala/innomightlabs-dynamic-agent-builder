@@ -52,6 +52,46 @@ uv sync
 uv run uvicorn main:app --reload
 ```
 
+For cost-free local knowledge crawling, start DynamoDB Local, Pinecone Local,
+and Ollama:
+
+Ollama must have enough memory to load the embedding model. When using Colima,
+allocate at least 4 GiB to its VM before starting the local services:
+
+```bash
+colima stop
+colima start --cpu 4 --memory 4
+```
+
+Changing the Colima VM resources restarts the containers but preserves their
+named volumes, including downloaded Ollama models.
+
+```bash
+docker compose -f docker-compose.local.yml up -d \
+  dynamodb-local pinecone-index ollama
+docker compose -f docker-compose.local.yml run --rm ollama-model-init
+source scripts/deploy_local.sh
+```
+
+The Ollama image contains the model server but does not include model weights.
+The second command runs a one-shot `ollama-model-init` service. It waits for
+Ollama to become healthy, pulls `qwen3-embedding:0.6b`, performs a test
+embedding to ensure the model can load, and exits only when the model is ready.
+The model is stored by Ollama in the persistent
+`ollama-data` volume, so subsequent starts reuse the downloaded model. It is
+downloaded again only if the volume is deleted, the model is removed, or the
+configured model tag changes.
+
+Verify the installed models with:
+
+```bash
+docker compose -f docker-compose.local.yml exec ollama ollama list
+```
+
+The local environment script deliberately selects the local Pinecone and Ollama
+services instead of inheriting shared production credentials. Production keeps
+Amazon Bedrock as the default embedding provider.
+
 ### 3) Frontend (SPA)
 ```bash
 cd spa

@@ -1,7 +1,7 @@
 """
 Semantic search service for knowledge bases.
 
-Combines Bedrock embeddings and Pinecone for full semantic search
+Combines the configured embedding provider and Pinecone for semantic search
 with content retrieval from DynamoDB.
 """
 
@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 from dataclasses import dataclass
 
-from src.vectorstore.embeddings import BedrockEmbeddings, get_embeddings_service
+from src.vectorstore.embeddings import EmbeddingProvider, get_embeddings_service
 from src.vectorstore.pinecone_client import PineconeClient, get_pinecone_client, QueryResult
 from src.knowledge.repository import ContentChunkRepository
 
@@ -41,7 +41,7 @@ class SemanticSearch:
     Semantic search service for knowledge bases.
 
     Workflow:
-    1. Embed the query using Bedrock
+    1. Embed the query using the configured provider
     2. Search Pinecone for similar vectors
     3. Retrieve full content from DynamoDB
     4. Return enriched results
@@ -49,7 +49,7 @@ class SemanticSearch:
 
     def __init__(
         self,
-        embeddings: Optional[BedrockEmbeddings] = None,
+        embeddings: EmbeddingProvider | None = None,
         pinecone: Optional[PineconeClient] = None,
         chunk_repo: Optional[ContentChunkRepository] = None,
     ):
