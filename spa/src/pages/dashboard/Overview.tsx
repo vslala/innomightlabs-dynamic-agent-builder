@@ -33,6 +33,7 @@ import type { ConnectorStatus, MCPConnection } from "../../types/connectors";
 import type { ConversationResponse } from "../../types/conversation";
 import type { KnowledgeBase } from "../../types/knowledge";
 import { userVisibleConversations } from "../../utils/conversations";
+import { formatCompactNumber } from "../../lib/utils";
 import { changeLogEntries } from "./whatsNewData";
 import "./Overview.css";
 
@@ -451,10 +452,6 @@ function formatDate(value: string): string {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function formatCompactNumber(value: number): string {
-  return Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 interface MetricCardProps {

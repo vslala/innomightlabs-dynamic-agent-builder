@@ -171,6 +171,11 @@ class AnthropicProvider(LLMProvider):
                             f"Anthropic usage - input tokens: {usage.input_tokens}, "
                             f"output tokens: {usage.output_tokens}"
                         )
+                        yield LLMEvent(
+                            type="usage",
+                            prompt_tokens=usage.input_tokens,
+                            completion_tokens=usage.output_tokens,
+                        )
 
         except Exception as e:
             log.error(f"Anthropic API error: {e}", exc_info=True)

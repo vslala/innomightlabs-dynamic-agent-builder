@@ -43,6 +43,7 @@ interface ChatComposerProps {
   imageAction?: ComposerImageAction;
   deepResearchAction?: ComposerDeepResearchAction;
   debugAction?: ComposerDebugAction;
+  statusIndicator?: ReactNode;
 }
 
 export function ChatComposer({
@@ -60,6 +61,7 @@ export function ChatComposer({
   imageAction,
   deepResearchAction,
   debugAction,
+  statusIndicator,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const showImageAction = imageAction?.visible ?? Boolean(imageAction);
@@ -154,6 +156,8 @@ export function ChatComposer({
                 <span>Debug</span>
               </Toggle>
             )}
+
+            {statusIndicator}
           </div>
 
           <div className={styles.composerActions}>

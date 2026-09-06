@@ -198,9 +198,16 @@ class BedrockProvider(LLMProvider):
                     # Handle metadata event (usage info)
                     if "metadata" in event:
                         usage = event["metadata"].get("usage", {})
+                        prompt_tokens = usage.get("inputTokens", 0)
+                        completion_tokens = usage.get("outputTokens", 0)
                         log.info(
-                            f"Bedrock usage - input tokens: {usage.get('inputTokens', 0)}, "
-                            f"output tokens: {usage.get('outputTokens', 0)}"
+                            f"Bedrock usage - input tokens: {prompt_tokens}, "
+                            f"output tokens: {completion_tokens}"
+                        )
+                        yield LLMEvent(
+                            type="usage",
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
                         )
 
         except Exception as e:

@@ -1,5 +1,6 @@
 import { Bot, Plus } from "lucide-react";
 import { ChatComposer } from "../../../components/chat/ChatComposer";
+import { TokenUsageIndicator } from "../../../components/chat/TokenUsageIndicator";
 import { Button } from "../../../components/ui/button";
 import { PillSelect } from "../../../components/ui/pill-select";
 import type { AgentResponse } from "../../../services/agents/AgentApiService";
@@ -101,6 +102,7 @@ export function ConversationStartComposer({
         placeholder={mode === "image" ? "Describe the image you want" : "Ask anything"}
         onChange={onPromptChange}
         onSubmit={onSubmit}
+        statusIndicator={<TokenUsageIndicator agentId={selectedAgentId || undefined} />}
         imageAction={{
           active: mode === "image",
           disabled: !supportsImage,

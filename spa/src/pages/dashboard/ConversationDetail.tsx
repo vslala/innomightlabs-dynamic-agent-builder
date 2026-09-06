@@ -4,6 +4,7 @@ import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Loader2, Maximize2, Mi
 import { ChatFormRenderer, type FormAnswer } from "../../components/chat/ChatFormRenderer";
 import { AttachmentChip } from "../../components/chat/AttachmentChip";
 import { ChatComposer } from "../../components/chat/ChatComposer";
+import { TokenUsageIndicator } from "../../components/chat/TokenUsageIndicator";
 import { ChatStreamRenderer } from "../../components/chat/ChatStreamRenderer";
 import { featureFlags } from "../../config/featureFlags";
 import { useFileAttachments } from "../../hooks/useFileAttachments";
@@ -1216,6 +1217,7 @@ export function ConversationDetail() {
               onSubmit={() => handleSendMessage()}
               onPaste={handleChatPaste}
               isSubmitting={isSending}
+              statusIndicator={<TokenUsageIndicator agentId={conversation.agent_id} />}
               submitDisabled={(!inputValue.trim() && attachments.length === 0) || isSending}
               onAttachFiles={() => fileInputRef.current?.click()}
               imageAction={

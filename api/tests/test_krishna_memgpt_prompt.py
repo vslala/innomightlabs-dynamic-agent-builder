@@ -55,7 +55,7 @@ def test_krishna_memgpt_prompt_renders_required_sections():
     assert "BLOCK=persona | DESCRIPTION=Agent traits" in prompt
     assert "(empty)" in prompt
     assert "<memory_tools>" in prompt
-    assert "ANCHOR_NO_REPEAT_READ:" in prompt
+    assert "ANCHOR_NO_REPEAT:" in prompt
 
 
 def test_krishna_memgpt_prompt_omits_optional_sections_when_data_absent():

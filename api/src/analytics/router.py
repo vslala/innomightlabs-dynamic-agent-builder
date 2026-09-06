@@ -13,12 +13,18 @@ from src.analytics.models import (
     TimeseriesMetric,
 )
 from src.analytics.service import AnalyticsService
+from src.token_usage.models import TokenUsagePeriod, TokenUsageTimeseriesResponse
+from src.token_usage.service import TokenUsageService
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 def get_analytics_service() -> AnalyticsService:
     return AnalyticsService()
+
+
+def get_token_usage_service() -> TokenUsageService:
+    return TokenUsageService()
 
 
 def parse_sources(sources: Optional[str]) -> Optional[list[AnalyticsSource]]:
@@ -84,4 +90,24 @@ async def get_agent_timeseries(
         to_at=to_at,
         tz_name=tz,
         sources=parse_sources(sources),
+    )
+
+
+@router.get("/agents/{agent_id}/token-usage", response_model=TokenUsageTimeseriesResponse)
+async def get_agent_token_usage(
+    request: Request,
+    agent_id: str,
+    period: TokenUsagePeriod,
+    service: Annotated[TokenUsageService, Depends(get_token_usage_service)],
+    llm_model: Optional[str] = Query(default=None),
+    from_at: Annotated[Optional[datetime], Query(alias="from")] = None,
+    to_at: Annotated[Optional[datetime], Query(alias="to")] = None,
+) -> TokenUsageTimeseriesResponse:
+    return service.get_usage(
+        owner_email=request.state.user_email,
+        agent_id=agent_id,
+        period=period,
+        from_at=from_at,
+        to_at=to_at,
+        llm_model=llm_model,
     )

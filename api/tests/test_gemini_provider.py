@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from google.genai import types
 
 from src.crypto import encrypt
@@ -160,6 +162,67 @@ def test_gemini_models_are_loaded_from_google_genai(monkeypatch):
         "[Gemini] Gemini 2.5 Flash",
         "[Gemini] Gemini 2.5 Pro",
     ]
+
+
+async def test_gemini_provider_yields_usage_event_from_last_non_null_chunk(monkeypatch):
+    # Verified against installed google-genai==2.19.0:
+    # GenerateContentResponseUsageMetadata has prompt_token_count,
+    # candidates_token_count, and total_token_count fields.
+    usage_metadata = types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=10,
+        candidates_token_count=5,
+        total_token_count=15,
+    )
+    chunk_without_usage = types.GenerateContentResponse(
+        candidates=[
+            types.Candidate(
+                content=types.Content(role="model", parts=[types.Part.from_text(text="Hel")]),
+            )
+        ],
+    )
+    chunk_with_usage = types.GenerateContentResponse(
+        candidates=[
+            types.Candidate(
+                content=types.Content(role="model", parts=[types.Part.from_text(text="lo")]),
+                finish_reason="STOP",
+            )
+        ],
+        usage_metadata=usage_metadata,
+    )
+
+    class FakeAioModels:
+        def generate_content_stream(self, *, model, contents, config):
+            async def _gen():
+                yield chunk_without_usage
+                yield chunk_with_usage
+
+            return _gen()
+
+    class FakeClient:
+        def __init__(self, api_key):
+            self.aio = SimpleNamespace(models=FakeAioModels())
+
+    monkeypatch.setattr("google.genai.Client", FakeClient)
+
+    provider = GeminiProvider()
+    events = [
+        event
+        async for event in provider.stream_response(
+            messages=[{"role": "user", "content": "hi"}],
+            credentials={"api_key": "test-key"},
+            tools=None,
+            model="gemini-2.5-flash",
+        )
+    ]
+
+    usage_events = [event for event in events if event.type == "usage"]
+    assert len(usage_events) == 1
+    assert usage_events[0].prompt_tokens == 10
+    assert usage_events[0].completion_tokens == 5
+    # The usage event is yielded once, after the stream ends, using the last
+    # non-null usage_metadata seen (not the first, which had none).
+    assert events[-2] is usage_events[0]
+    assert events[-1].type == "stop"
 
 
 def test_gemini_models_fallback_when_live_list_fails(monkeypatch):

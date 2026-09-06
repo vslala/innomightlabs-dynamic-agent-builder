@@ -19,14 +19,20 @@ class LLMEvent:
     - "text": Text content chunk
     - "tool_use": Tool call request from the model
     - "stop": Stream completed
+    - "usage": Token usage for the call. A dedicated event type (rather than
+      piggybacking on "stop") because providers don't all have usage available
+      at the same point relative to their stop signal -- e.g. Bedrock's
+      metadata/usage event arrives *after* messageStop in the wire protocol.
     """
 
-    type: Literal["text", "tool_use", "stop"]
+    type: Literal["text", "tool_use", "stop", "usage"]
     content: str = ""
     tool_use_id: str = ""
     tool_name: str = ""
     tool_input: dict = field(default_factory=dict)
     thought_signature: bytes | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class LLMProvider(ABC):

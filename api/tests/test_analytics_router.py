@@ -303,6 +303,81 @@ def test_overview_validates_inputs(
     assert response.status_code == 400
 
 
+def test_token_usage_returns_200_with_expected_shape(
+    test_client: TestClient,
+    auth_headers: dict,
+):
+    from src.token_usage.service import TokenUsageService
+
+    create_agent("agent-token-usage")
+    TokenUsageService().record_usage(
+        owner_email=TEST_USER_EMAIL,
+        agent_id="agent-token-usage",
+        llm_model="claude-sonnet-4-5",
+        prompt_tokens=10,
+        completion_tokens=5,
+    )
+
+    response = test_client.get(
+        "/analytics/agents/agent-token-usage/token-usage?period=day",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["agent_id"] == "agent-token-usage"
+    assert data["period"] == "day"
+    assert len(data["series"]) == 1
+    point = data["series"][0]
+    assert point["llm_model"] == "claude-sonnet-4-5"
+    assert point["prompt_tokens"] == 10
+    assert point["completion_tokens"] == 5
+    assert point["total_tokens"] == 15
+    assert point["call_count"] == 1
+
+
+def test_token_usage_returns_not_found_for_unowned_agent(
+    test_client: TestClient,
+    auth_headers: dict,
+):
+    create_agent("agent-token-usage-other-owner", owner_email=TEST_USER_EMAIL_2)
+
+    response = test_client.get(
+        "/analytics/agents/agent-token-usage-other-owner/token-usage?period=day",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 404
+
+
+def test_token_usage_returns_422_for_missing_period(
+    test_client: TestClient,
+    auth_headers: dict,
+):
+    create_agent("agent-token-usage-missing-period")
+
+    response = test_client.get(
+        "/analytics/agents/agent-token-usage-missing-period/token-usage",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_token_usage_returns_422_for_invalid_period(
+    test_client: TestClient,
+    auth_headers: dict,
+):
+    create_agent("agent-token-usage-invalid-period")
+
+    response = test_client.get(
+        "/analytics/agents/agent-token-usage-invalid-period/token-usage?period=hour",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+
+
 def test_overview_sets_truncation_metadata(
     test_client: TestClient,
     auth_headers: dict,

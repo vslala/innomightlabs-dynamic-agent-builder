@@ -6,6 +6,7 @@ from src.agents.agentic_loop import (
     POST_TOOL_CONTINUATION_PROMPT,
     run_agentic_tool_loop,
 )
+from src.agents.runtime_state import AgentTurnState
 from src.agents.turn_runtime import emit_turn_event
 from src.agents.tool_execution import ToolExecutionOutcome
 from src.llm.events import SSEEvent, SSEEventType
@@ -19,6 +20,8 @@ class FakeProviderEvent:
     tool_input: dict[str, Any] | None = None
     tool_use_id: str = ""
     thought_signature: bytes | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class FakeProvider:
@@ -34,11 +37,42 @@ class FakeProvider:
                 tool_input={"customer_id": "cus_123"},
                 tool_use_id="tooluse_1",
             )
+            yield FakeProviderEvent(type="usage", prompt_tokens=10, completion_tokens=5)
             yield FakeProviderEvent(type="stop")
             return
 
         yield FakeProviderEvent(type="text", content="done")
+        yield FakeProviderEvent(type="usage", prompt_tokens=7, completion_tokens=3)
         yield FakeProviderEvent(type="stop")
+
+
+class FakeTokenUsageService:
+    def __init__(self):
+        self.calls: list[dict[str, Any]] = []
+
+    def record_usage(self, *, owner_email, agent_id, llm_model, prompt_tokens, completion_tokens):
+        self.calls.append(
+            {
+                "owner_email": owner_email,
+                "agent_id": agent_id,
+                "llm_model": llm_model,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            }
+        )
+
+
+def _turn_state() -> AgentTurnState:
+    return AgentTurnState(
+        owner_email="owner@example.com",
+        actor_email="actor@example.com",
+        actor_id="actor-1",
+        conversation_id="conversation-1",
+        agent_id="agent-1",
+        provider_name="Anthropic",
+        model_name="claude-sonnet-4-5",
+        user_message="hello",
+    )
 
 
 class FakeMarkerProvider:
@@ -346,6 +380,72 @@ async def test_agentic_loop_reports_max_iterations_as_failure(monkeypatch):
     assert events[-1].kind == "failed"
     assert events[-1].payload["reason"] == "max_tool_iterations"
     assert not any(event.kind == "complete" for event in events)
+
+
+async def test_agentic_loop_records_token_usage_once_per_llm_iteration():
+    provider = FakeProvider()
+    token_usage_service = FakeTokenUsageService()
+    state = _turn_state()
+
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=provider,
+            context=[],
+            credentials={},
+            tools=[],
+            model="claude-sonnet-4-5",
+            tool_router=FakeToolRouter(),
+            state=state,
+            token_usage_service=token_usage_service,
+        )
+    ]
+
+    assert events[-1].kind == "complete"
+    assert provider.calls == 2
+    # record_usage must fire once per LLM iteration (twice here: one tool-call
+    # round trip plus the final text response), not once per turn.
+    assert len(token_usage_service.calls) == 2
+    assert token_usage_service.calls[0] == {
+        "owner_email": "owner@example.com",
+        "agent_id": "agent-1",
+        "llm_model": "claude-sonnet-4-5",
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+    }
+    assert token_usage_service.calls[1] == {
+        "owner_email": "owner@example.com",
+        "agent_id": "agent-1",
+        "llm_model": "claude-sonnet-4-5",
+        "prompt_tokens": 7,
+        "completion_tokens": 3,
+    }
+
+
+async def test_agentic_loop_swallows_token_usage_recording_errors():
+    """Best-effort telemetry: a broken/misconfigured token usage recorder
+    must never break the user-facing turn."""
+
+    class ExplodingTokenUsageService:
+        def record_usage(self, **kwargs):
+            raise RuntimeError("boom")
+
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=FakeProvider(),
+            context=[],
+            credentials={},
+            tools=[],
+            model="claude-sonnet-4-5",
+            tool_router=FakeToolRouter(),
+            state=_turn_state(),
+            token_usage_service=ExplodingTokenUsageService(),
+        )
+    ]
+
+    assert events[-1].kind == "complete"
+    assert events[-1].payload["full_text"] == "done"
 
 
 def _context_contains_text(context: list[dict[Any, Any]], expected_text: str) -> bool:

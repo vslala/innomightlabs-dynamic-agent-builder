@@ -90,3 +90,45 @@ def test_bedrock_provider_normalizes_function_tools() -> None:
             }
         }
     ]
+
+
+async def test_bedrock_provider_yields_usage_event_from_metadata(monkeypatch) -> None:
+    provider = BedrockProvider()
+    monkeypatch.setattr(provider, "get_model_id", lambda model=None: "test-model-id")
+
+    class FakeBedrockRuntimeClient:
+        def converse_stream(self, **kwargs):
+            return {
+                "stream": [
+                    {"messageStop": {"stopReason": "end_turn"}},
+                    {
+                        "metadata": {
+                            "usage": {
+                                "inputTokens": 7,
+                                "outputTokens": 3,
+                                "totalTokens": 10,
+                            }
+                        }
+                    },
+                ]
+            }
+
+    monkeypatch.setattr(
+        "src.llm.providers.bedrock.boto3.client",
+        lambda **kwargs: FakeBedrockRuntimeClient(),
+    )
+
+    events = [
+        event
+        async for event in provider.stream_response(
+            messages=[{"role": "user", "content": "hi"}],
+            credentials={"access_key": "a", "secret_key": "b"},
+            tools=None,
+            model="claude-3-7-sonnet",
+        )
+    ]
+
+    usage_events = [event for event in events if event.type == "usage"]
+    assert len(usage_events) == 1
+    assert usage_events[0].prompt_tokens == 7
+    assert usage_events[0].completion_tokens == 3

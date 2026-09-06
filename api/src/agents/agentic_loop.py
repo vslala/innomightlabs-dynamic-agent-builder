@@ -14,6 +14,7 @@ We can evolve this to emit richer structured errors and metrics later.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Optional, Protocol
 
@@ -26,6 +27,9 @@ from src.agents.loop_context import (
 )
 from src.common import MAX_TOOL_ITERATIONS
 from src.agents.turn_runtime import AgentTurnRuntime, use_turn_runtime
+from src.token_usage.service import TokenUsageService
+
+log = logging.getLogger(__name__)
 
 INTERNAL_TOOL_MARKER_PREFIXES = ("[tool_call ", "[tool_result]")
 ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS = 10 * 60
@@ -70,6 +74,19 @@ class ToolRouter(Protocol):
         ...
 
 
+class TokenUsageRecorder(Protocol):
+    def record_usage(
+        self,
+        *,
+        owner_email: str,
+        agent_id: str,
+        llm_model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+    ) -> None:
+        ...
+
+
 @dataclass(frozen=True)
 class AgenticLoopEvent:
     """Normalized events emitted by the loop."""
@@ -92,6 +109,7 @@ async def run_agentic_tool_loop(
     model: str,
     tool_router: ToolRouter,
     state: Any,
+    token_usage_service: Optional[TokenUsageRecorder] = None,
 ) -> AsyncIterator[AgenticLoopEvent]:
     """Run the agentic loop.
 
@@ -108,6 +126,7 @@ async def run_agentic_tool_loop(
 
     full_response = ""
     text_filter = UserVisibleTextFilter()
+    usage_service: TokenUsageRecorder = token_usage_service or TokenUsageService()
     runtime = AgentTurnRuntime()
     async_jobs = AsyncJobSupervisor(max_wait_seconds=ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS)
     needs_async_final_response = False
@@ -146,6 +165,7 @@ async def run_agentic_tool_loop(
             needs_async_final_response = False
             is_post_tool_response = awaiting_post_tool_response
             awaiting_post_tool_response = False
+            usage_event: Any = None
 
             async for event in provider.stream_response(context, credentials, tools, model):
                 if event.type == "text":
@@ -167,9 +187,30 @@ async def run_agentic_tool_loop(
                         },
                     )
 
+                elif event.type == "usage":
+                    usage_event = event
+
                 elif event.type == "stop":
                     # Provider stop token
                     pass
+
+            # Record token usage once per LLM call (not once per turn), so a
+            # turn with multiple tool-calling round trips records each call.
+            # Best-effort telemetry: never let this break the user-facing turn.
+            if usage_event is not None:
+                try:
+                    # Offloaded to a thread so a slow DynamoDB round trip never
+                    # blocks the shared event loop's other concurrent requests.
+                    await asyncio.to_thread(
+                        usage_service.record_usage,
+                        owner_email=state.owner_email,
+                        agent_id=state.agent_id,
+                        llm_model=state.model_name,
+                        prompt_tokens=usage_event.prompt_tokens,
+                        completion_tokens=usage_event.completion_tokens,
+                    )
+                except Exception:
+                    log.exception("Failed to record token usage for agent turn")
 
             visible_tail = text_filter.flush()
             if visible_tail:

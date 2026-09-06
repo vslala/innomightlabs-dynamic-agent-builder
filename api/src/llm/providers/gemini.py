@@ -205,13 +205,26 @@ class GeminiProvider(LLMProvider):
             stream = await stream_result if inspect.isawaitable(stream_result) else stream_result
             seen_tool_calls: set[str] = set()
             stop_reason = "completed"
+            # google-genai (2.19.0) only populates usage_metadata on some chunks
+            # (typically the final one), so track the last non-null value seen
+            # across the stream and yield it once after the stream ends.
+            usage_metadata: types.GenerateContentResponseUsageMetadata | None = None
 
             async for chunk in cast(AsyncIterator[types.GenerateContentResponse], stream):
                 finish_reason = self._chunk_finish_reason(chunk)
                 if finish_reason:
                     stop_reason = finish_reason
+                if chunk.usage_metadata is not None:
+                    usage_metadata = chunk.usage_metadata
                 for event in self._events_from_chunk(chunk, seen_tool_calls):
                     yield event
+
+            if usage_metadata is not None:
+                yield LLMEvent(
+                    type="usage",
+                    prompt_tokens=usage_metadata.prompt_token_count or 0,
+                    completion_tokens=usage_metadata.candidates_token_count or 0,
+                )
 
             yield LLMEvent(type="stop", content=stop_reason)
         except Exception as e:

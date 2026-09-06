@@ -1,0 +1,29 @@
+@reference "tailwindcss";
+
+.indicator {
+  @apply inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--surface-subtle)] px-3 py-1 text-xs text-[var(--text-muted)] cursor-default select-none;
+}
+
+.icon {
+  @apply h-3.5 w-3.5;
+}
+
+.tooltipTitle {
+  @apply mb-1.5 font-semibold text-[var(--text-primary)];
+}
+
+.tooltipRow {
+  @apply flex items-center justify-between gap-4 py-0.5 text-[var(--text-secondary)];
+}
+
+.tooltipModel {
+  @apply truncate;
+}
+
+.tooltipValue {
+  @apply shrink-0 font-medium text-[var(--text-primary)];
+}
+
+.tooltipDivider {
+  @apply my-1 h-px bg-[var(--border-subtle)];
+}

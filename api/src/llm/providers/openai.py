@@ -117,6 +117,32 @@ class OpenAIProvider(LLMProvider):
 
         return converted
 
+    @staticmethod
+    def _extract_usage(event: dict[str, Any]) -> tuple[int, int]:
+        """Best-effort token usage extraction from a `response.completed` event.
+
+        NOTE: This backend is a custom OAuth/Codex Responses endpoint
+        (settings.openai_oauth_responses_url), not the public OpenAI API. The
+        field names below (response.usage.{input_tokens,output_tokens})
+        match the public Responses API shape, which is the best available
+        reference, but have NOT been confirmed against real traffic captured
+        from this backend. Every level is guarded with `.get(...)` and
+        defaults to 0 so a shape mismatch never breaks the stream -- confirm
+        against real captured payloads before relying on this data for
+        anything beyond best-effort telemetry.
+        """
+        try:
+            response_obj = event.get("response") or {}
+            usage = response_obj.get("usage") or {}
+            if not isinstance(usage, dict):
+                return 0, 0
+            prompt_tokens = int(usage.get("input_tokens", 0) or 0)
+            completion_tokens = int(usage.get("output_tokens", 0) or 0)
+            return prompt_tokens, completion_tokens
+        except Exception:
+            log.warning("Failed to parse OpenAI usage payload from response.completed event", exc_info=True)
+            return 0, 0
+
     def _content_block_text(self, block: TextBlock | ToolUseBlock | ToolResultBlock) -> str:
         if isinstance(block, TextBlock):
             return block.text
@@ -234,6 +260,12 @@ class OpenAIProvider(LLMProvider):
                         )
 
                     elif event_type == "response.completed":
+                        prompt_tokens, completion_tokens = self._extract_usage(event)
+                        yield LLMEvent(
+                            type="usage",
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                        )
                         yield LLMEvent(type="stop", content="completed")
 
                     elif event_type == "error":
