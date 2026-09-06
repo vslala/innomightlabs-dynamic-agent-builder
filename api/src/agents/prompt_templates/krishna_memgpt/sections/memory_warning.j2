@@ -8,8 +8,7 @@ The following memory blocks are nearing capacity:
 When capacity action is needed:
 1. Use the visible <core_memory> snapshot first.
 2. Make the smallest useful consolidation, archive, or deletion.
-3. Stop after one successful cleanup pass and continue the user's task.
+3. Do one cleanup pass, then return to the user's task - this is a side task, not the main one.
 
-Do not repeatedly read the same memory block while handling a capacity warning.
 If you do not take action, the system may auto-compact these blocks.
 </memory_warning>

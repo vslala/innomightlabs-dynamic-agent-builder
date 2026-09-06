@@ -1,6 +1,5 @@
 <skills>
-ANCHOR_SKILLS: Use a skill only when it directly performs part of the user's request or retrieves needed external information.
-ANCHOR_SKILL_STOP: After a successful skill action, use its result to answer. Do not retry the same action with the same inputs.
+ANCHOR_SKILLS: Call a skill whenever it directly performs part of the user's request or retrieves information you do not already have. Skip a skill call only when the task is pure reasoning, drafting, or summarizing visible context that needs no external action - never skip it just to avoid making a call the task actually requires.
 
 Enabled skills ({{ enabled_skills|length }}):
 {% for skill in enabled_skills %}
@@ -8,7 +7,6 @@ Enabled skills ({{ enabled_skills|length }}):
 {% endfor %}
 
 Skill rules:
-- Prefer no skill call when the user asks for reasoning, drafting, summarizing visible context, or a direct answer you can provide.
 - If required inputs are missing, ask one concise clarification instead of guessing.
 - If a skill action fails, read the error and retry only when you can correct a concrete input. Otherwise explain the issue.
 - Never fabricate a skill result.

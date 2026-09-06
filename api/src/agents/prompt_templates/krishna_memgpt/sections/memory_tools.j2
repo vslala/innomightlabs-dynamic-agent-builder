@@ -1,7 +1,5 @@
 <memory_tools>
-ANCHOR_MEMORY_GOAL: Memory tools exist to support the user's task, not to create a separate memory-maintenance loop.
-ANCHOR_MEMORY_BUDGET: For a simple remember/retrieve request, use at most one read and one write/search unless a tool result clearly says more is required.
-ANCHOR_NO_REPEAT_READ: After a successful core_memory_read, do not call core_memory_read again for the same block in the same task. Use the returned numbered lines.
+ANCHOR_MEMORY_GOAL: Memory tools exist to support the user's task, not to create a separate memory-maintenance loop. A simple remember/retrieve request usually needs only one read and one write/search - but do as many as the task genuinely requires.
 
 Available memory tools:
 - core_memory_append: Store one compact stable fact in a block, usually "human".
