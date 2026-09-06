@@ -1,0 +1,85 @@
+@reference "tailwindcss";
+
+.agentIcon {
+  @apply flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--button-primary-bg)];
+}
+
+.agentIconSvg {
+  @apply h-6 w-6 text-white;
+}
+
+.title {
+  @apply text-2xl font-semibold text-[var(--text-primary)];
+}
+
+.subtitle {
+  @apply text-sm text-[var(--text-muted)];
+}
+
+.errorBanner {
+  @apply rounded-lg border border-red-500/20 bg-red-500/10 text-sm text-red-400;
+}
+
+.body {
+  @apply grid xl:grid-cols-[minmax(0,1fr)_22rem];
+}
+
+.description {
+  @apply text-sm leading-7 text-[var(--text-secondary)];
+}
+
+.tagsWrap {
+  @apply flex flex-wrap gap-2;
+}
+
+.tag {
+  @apply rounded-md bg-[var(--bg-secondary)] px-2.5 py-1 text-xs text-[var(--text-muted)];
+}
+
+.importButton {
+  @apply w-full;
+}
+
+.mutedText {
+  @apply text-sm text-[var(--text-muted)];
+}
+
+.skillRow {
+  @apply rounded-lg border border-[var(--border-default)];
+}
+
+.skillRowHeader {
+  @apply flex items-center gap-2;
+}
+
+.skillName {
+  @apply text-sm font-medium text-[var(--text-primary)];
+}
+
+.skillDescription {
+  @apply mt-1 text-xs leading-5 text-[var(--text-muted)];
+}
+
+.dialogContent {
+  @apply max-h-[88vh] max-w-3xl overflow-y-auto;
+}
+
+.dialogGrid {
+  @apply grid md:grid-cols-3;
+}
+
+.nameField {
+  @apply md:col-span-3;
+}
+
+.modelField {
+  @apply md:col-span-2;
+}
+
+.metaRow {
+  @apply flex items-center justify-between gap-4 border-b border-[var(--border-default)] last:border-b-0;
+}
+
+.metaValue {
+  @apply text-right text-sm font-medium text-[var(--text-primary)];
+}

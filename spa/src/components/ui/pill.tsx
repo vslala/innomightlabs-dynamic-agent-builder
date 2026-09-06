@@ -2,37 +2,31 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/utils";
 import { X } from "lucide-react";
+import styles from "./pill.module.css";
 
-const pillVariants = cva(
-  "inline-flex min-h-6 items-center justify-center whitespace-nowrap rounded-full font-semibold leading-[1.15] tracking-normal transition-colors",
-  {
-    variants: {
-      variant: {
-        default:
-          "bg-[var(--surface-subtle)] text-[var(--text-muted)]",
-        primary:
-          "bg-[var(--accent-blue-bg)] text-[var(--link-color)]",
-        secondary:
-          "bg-[var(--surface-subtle)] text-[var(--text-secondary)]",
-        outline:
-          "border border-[var(--border-default)] bg-transparent text-[var(--text-secondary)]",
-        success: "bg-[var(--success-bg)] text-[var(--success)]",
-        warning: "bg-[var(--warning-bg)] text-[var(--warning)]",
-        error: "bg-[var(--danger-bg)] text-[var(--danger)]",
-        info: "bg-[var(--accent-blue-bg)] text-[var(--link-color)]",
-      },
-      size: {
-        sm: "min-h-5 px-2.5 py-0.5 text-xs",
-        default: "min-h-6 px-2.5 py-1 text-xs",
-        lg: "min-h-7 px-3.5 py-1.5 text-base",
-      },
+const pillVariants = cva(styles.pill, {
+  variants: {
+    variant: {
+      default: styles.variantDefault,
+      primary: styles.variantPrimary,
+      secondary: styles.variantSecondary,
+      outline: styles.variantOutline,
+      success: styles.variantSuccess,
+      warning: styles.variantWarning,
+      error: styles.variantError,
+      info: styles.variantInfo,
     },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
+    size: {
+      sm: styles.sizeSm,
+      default: styles.sizeDefault,
+      lg: styles.sizeLg,
     },
-  }
-);
+  },
+  defaultVariants: {
+    variant: "default",
+    size: "default",
+  },
+});
 
 export interface PillProps
   extends React.HTMLAttributes<HTMLSpanElement>,
@@ -55,7 +49,7 @@ const Pill = React.forwardRef<HTMLSpanElement, PillProps>(
             e.stopPropagation();
             onRemove();
           }}
-          className="ml-1 hover:opacity-70 transition-opacity"
+          className={styles.removeButton}
         >
           <X className="h-3 w-3" />
         </button>
@@ -72,7 +66,7 @@ interface PillGroupProps {
 
 function PillGroup({ children, className }: PillGroupProps) {
   return (
-    <div className={cn("flex gap-2 flex-wrap", className)}>{children}</div>
+    <div className={cn(styles.group, className)}>{children}</div>
   );
 }
 

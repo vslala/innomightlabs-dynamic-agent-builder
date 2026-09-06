@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
+import styles from "./file-input.module.css";
 
 export interface FileInputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
 
@@ -8,7 +9,7 @@ const FileInput = React.forwardRef<HTMLInputElement, FileInputProps>(
     <input
       ref={ref}
       type="file"
-      className={cn("sr-only", className)}
+      className={cn(styles.fileInput, className)}
       {...props}
     />
   )

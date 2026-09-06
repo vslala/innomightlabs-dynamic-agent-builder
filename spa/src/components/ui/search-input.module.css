@@ -1,0 +1,9 @@
+@reference "tailwindcss";
+
+.searchInput {
+  @apply relative w-full;
+}
+
+.searchInputIcon {
+  @apply pointer-events-none absolute left-4 top-1/2 z-[1] h-4 w-4 -translate-y-1/2 text-[var(--text-muted)];
+}

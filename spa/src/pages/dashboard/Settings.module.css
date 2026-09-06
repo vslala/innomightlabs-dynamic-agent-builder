@@ -1,0 +1,143 @@
+@reference "tailwindcss";
+
+.stackGap4 {
+  @apply gap-4;
+}
+
+.disabledFieldBg {
+  @apply bg-[var(--bg-tertiary)];
+}
+
+.profileNote {
+  @apply text-sm text-[var(--text-muted)];
+}
+
+.appearanceGrid {
+  @apply grid-cols-2;
+}
+
+.themeOptionButton {
+  @apply flex h-auto flex-col items-stretch justify-start gap-3 rounded-xl bg-[var(--bg-secondary)] p-4 text-left text-[var(--text-primary)];
+}
+
+.themeOptionSelected {
+  @apply border-2 border-[var(--gradient-start)];
+}
+
+.themeOptionUnselected {
+  @apply border border-[var(--border-subtle)];
+}
+
+.themeOptionTopRow {
+  @apply flex items-center justify-between gap-3;
+}
+
+.themeOptionLabelRow {
+  @apply flex items-center gap-2;
+}
+
+.themeOptionIcon {
+  @apply h-4 w-4 text-[var(--gradient-start)];
+}
+
+.themeOptionLabel {
+  @apply font-bold;
+}
+
+.themeSwatchRow {
+  @apply flex gap-1.5;
+}
+
+.themeSwatch {
+  @apply h-6 w-6 rounded-full border border-[var(--border-subtle)];
+}
+
+.themeOptionDescription {
+  @apply text-[var(--text-muted)];
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.subscriptionSpinner {
+  @apply h-4 w-4 animate-spin text-[var(--gradient-start)];
+}
+
+.subscriptionLoadingText {
+  @apply text-[var(--text-muted)];
+}
+
+.subscriptionLabel {
+  @apply text-[var(--text-muted)];
+}
+
+.subscriptionTierValue {
+  @apply font-semibold text-[var(--text-primary)];
+}
+
+.subscriptionValue {
+  @apply text-[var(--text-primary)];
+}
+
+.upgradeLink {
+  @apply text-[var(--text-primary)] underline;
+}
+
+.cancelSubscriptionButton {
+  @apply text-red-400 border-red-400;
+}
+
+.downgradeHint {
+  @apply text-xs text-[var(--text-muted)];
+}
+
+.providersLoadingState {
+  @apply h-32;
+}
+
+.providerConfigPanel {
+  @apply rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-4;
+}
+
+.providerConfiguredIcon {
+  @apply h-5 w-5 text-green-400;
+}
+
+.providerUnconfiguredIcon {
+  @apply h-5 w-5 text-[var(--text-muted)];
+}
+
+.sectionLoadingSpinner {
+  @apply h-6 w-6 animate-spin text-[var(--gradient-start)];
+}
+
+.statusIcon {
+  @apply h-5 w-5 flex-none text-[var(--text-muted)];
+}
+
+.statusIconSuccess {
+  @apply text-green-400;
+}
+
+.oauthGuide {
+  @apply mb-4 flex flex-col gap-3 rounded-lg border border-[rgba(59,130,246,0.2)] bg-[rgba(59,130,246,0.08)] p-3;
+}
+
+.oauthGuideText {
+  @apply m-0 text-sm text-[var(--text-primary)];
+}
+
+.loadingRow {
+  @apply flex items-center justify-center p-8;
+}
+
+.formSection {
+  @apply flex flex-col gap-4;
+}
+
+.statusRow {
+  @apply flex items-center gap-3;
+}
+
+.mutedText {
+  @apply m-0 text-sm leading-normal text-[var(--text-muted)];
+}

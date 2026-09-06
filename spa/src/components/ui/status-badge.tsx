@@ -8,30 +8,29 @@ import {
   Loader2,
   Clock,
 } from "lucide-react";
+import styles from "./status-badge.module.css";
 
-const statusBadgeVariants = cva(
-  "inline-flex min-h-[1.625rem] items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-transparent px-3 py-1 text-sm font-semibold leading-[1.15] tracking-normal",
-  {
+const statusBadgeVariants = cva(styles.badge, {
   variants: {
     status: {
-      pending: "bg-[var(--warning-bg)] text-[var(--warning)]",
-      draft: "bg-[var(--warning-bg)] text-[var(--warning)]",
-      in_progress: "bg-[var(--accent-blue-bg)] text-[var(--link-color)]",
-      completed: "bg-[var(--success-bg)] text-[var(--success)]",
-      failed: "bg-[var(--danger-bg)] text-[var(--danger)]",
-      cancelled: "bg-[var(--surface-subtle)] text-[var(--text-muted)]",
-      active: "bg-[var(--success-bg)] text-[var(--success)]",
-      inactive: "bg-[var(--surface-subtle)] text-[var(--text-muted)]",
-      success: "bg-[var(--success-bg)] text-[var(--success)]",
-      error: "bg-[var(--danger-bg)] text-[var(--danger)]",
-      warning: "bg-[var(--warning-bg)] text-[var(--warning)]",
-      info: "bg-[var(--accent-blue-bg)] text-[var(--link-color)]",
-      no_status: "bg-[var(--surface-subtle)] text-[var(--text-muted)]",
+      pending: styles.statusPending,
+      draft: styles.statusDraft,
+      in_progress: styles.statusInProgress,
+      completed: styles.statusCompleted,
+      failed: styles.statusFailed,
+      cancelled: styles.statusCancelled,
+      active: styles.statusActive,
+      inactive: styles.statusInactive,
+      success: styles.statusSuccess,
+      error: styles.statusError,
+      warning: styles.statusWarning,
+      info: styles.statusInfo,
+      no_status: styles.statusNoStatus,
     },
     size: {
-      sm: "min-h-5 px-2.5 py-0.5 text-xs",
-      default: "min-h-[1.625rem] px-3 py-1 text-sm",
-      lg: "min-h-7 px-3.5 py-1.5 text-base",
+      sm: styles.sizeSm,
+      default: styles.sizeDefault,
+      lg: styles.sizeLg,
     },
   },
   defaultVariants: {
@@ -64,19 +63,19 @@ export interface StatusBadgeProps
 }
 
 const statusIcons: Record<StatusType, React.ReactNode> = {
-  pending: <Clock className="h-3 w-3" />,
-  draft: <Clock className="h-3 w-3" />,
-  in_progress: <Loader2 className="h-3 w-3 animate-spin" />,
-  completed: <CheckCircle className="h-3 w-3" />,
-  failed: <AlertCircle className="h-3 w-3" />,
-  cancelled: <XCircle className="h-3 w-3" />,
-  active: <CheckCircle className="h-3 w-3" />,
-  inactive: <XCircle className="h-3 w-3" />,
-  success: <CheckCircle className="h-3 w-3" />,
-  error: <AlertCircle className="h-3 w-3" />,
-  warning: <AlertCircle className="h-3 w-3" />,
-  info: <AlertCircle className="h-3 w-3" />,
-  no_status: <XCircle className="h-3 w-3" />,
+  pending: <Clock className={styles.statusIconSmall} />,
+  draft: <Clock className={styles.statusIconSmall} />,
+  in_progress: <Loader2 className={cn(styles.statusIconSmall, styles.iconSpin)} />,
+  completed: <CheckCircle className={styles.statusIconSmall} />,
+  failed: <AlertCircle className={styles.statusIconSmall} />,
+  cancelled: <XCircle className={styles.statusIconSmall} />,
+  active: <CheckCircle className={styles.statusIconSmall} />,
+  inactive: <XCircle className={styles.statusIconSmall} />,
+  success: <CheckCircle className={styles.statusIconSmall} />,
+  error: <AlertCircle className={styles.statusIconSmall} />,
+  warning: <AlertCircle className={styles.statusIconSmall} />,
+  info: <AlertCircle className={styles.statusIconSmall} />,
+  no_status: <XCircle className={styles.statusIconSmall} />,
 };
 
 const statusLabels: Record<StatusType, string> = {
@@ -118,13 +117,13 @@ interface StatusIconProps {
 
 function StatusIcon({ status, className }: StatusIconProps) {
   const iconClass = cn(
-    "h-4 w-4",
+    styles.icon,
     {
-      "text-[var(--warning)]": status === "pending" || status === "draft" || status === "warning",
-      "text-[var(--link-color)]": status === "in_progress" || status === "info",
-      "text-[var(--success)]": status === "completed" || status === "active" || status === "success",
-      "text-[var(--danger)]": status === "failed" || status === "error",
-      "text-[var(--text-muted)]": status === "cancelled" || status === "inactive" || status === "no_status",
+      [styles.iconWarning]: status === "pending" || status === "draft" || status === "warning",
+      [styles.iconInfo]: status === "in_progress" || status === "info",
+      [styles.iconSuccess]: status === "completed" || status === "active" || status === "success",
+      [styles.iconDanger]: status === "failed" || status === "error",
+      [styles.iconMuted]: status === "cancelled" || status === "inactive" || status === "no_status",
     },
     className
   );
@@ -136,7 +135,7 @@ function StatusIcon({ status, className }: StatusIconProps) {
       return <Clock className={iconClass} />;
     case "in_progress":
     case "info":
-      return <Loader2 className={cn(iconClass, "animate-spin")} />;
+      return <Loader2 className={cn(iconClass, styles.iconSpin)} />;
     case "completed":
     case "active":
     case "success":

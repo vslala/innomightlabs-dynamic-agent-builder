@@ -1,0 +1,82 @@
+@reference "tailwindcss";
+
+.badge {
+  @apply inline-flex min-h-[1.625rem] items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-transparent px-3 py-1 text-sm font-semibold leading-[1.15] tracking-normal;
+}
+
+.statusPending {
+  @apply bg-[var(--warning-bg)] text-[var(--warning)];
+}
+.statusDraft {
+  @apply bg-[var(--warning-bg)] text-[var(--warning)];
+}
+.statusInProgress {
+  @apply bg-[var(--accent-blue-bg)] text-[var(--link-color)];
+}
+.statusCompleted {
+  @apply bg-[var(--success-bg)] text-[var(--success)];
+}
+.statusFailed {
+  @apply bg-[var(--danger-bg)] text-[var(--danger)];
+}
+.statusCancelled {
+  @apply bg-[var(--surface-subtle)] text-[var(--text-muted)];
+}
+.statusActive {
+  @apply bg-[var(--success-bg)] text-[var(--success)];
+}
+.statusInactive {
+  @apply bg-[var(--surface-subtle)] text-[var(--text-muted)];
+}
+.statusSuccess {
+  @apply bg-[var(--success-bg)] text-[var(--success)];
+}
+.statusError {
+  @apply bg-[var(--danger-bg)] text-[var(--danger)];
+}
+.statusWarning {
+  @apply bg-[var(--warning-bg)] text-[var(--warning)];
+}
+.statusInfo {
+  @apply bg-[var(--accent-blue-bg)] text-[var(--link-color)];
+}
+.statusNoStatus {
+  @apply bg-[var(--surface-subtle)] text-[var(--text-muted)];
+}
+
+.sizeSm {
+  @apply min-h-5 px-2.5 py-0.5 text-xs;
+}
+.sizeDefault {
+  @apply min-h-[1.625rem] px-3 py-1 text-sm;
+}
+.sizeLg {
+  @apply min-h-7 px-3.5 py-1.5 text-base;
+}
+
+.icon {
+  @apply h-4 w-4;
+}
+
+.statusIconSmall {
+  @apply h-3 w-3;
+}
+
+.iconWarning {
+  @apply text-[var(--warning)];
+}
+.iconInfo {
+  @apply text-[var(--link-color)];
+}
+.iconSuccess {
+  @apply text-[var(--success)];
+}
+.iconDanger {
+  @apply text-[var(--danger)];
+}
+.iconMuted {
+  @apply text-[var(--text-muted)];
+}
+.iconSpin {
+  @apply animate-spin;
+}

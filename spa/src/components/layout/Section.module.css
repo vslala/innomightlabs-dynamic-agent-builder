@@ -1,0 +1,17 @@
+@reference "tailwindcss";
+
+.section {
+  @apply min-w-0;
+}
+
+.sectionHeader {
+  @apply min-w-0;
+}
+
+.sectionTitle {
+  @apply text-lg font-semibold leading-tight text-[var(--text-primary)];
+}
+
+.sectionDescription {
+  @apply text-sm leading-6 text-[var(--text-muted)];
+}

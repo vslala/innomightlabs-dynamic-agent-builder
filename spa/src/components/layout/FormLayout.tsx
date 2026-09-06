@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
+import styles from "./FormLayout.module.css";
 
 export function FormStack({
   className,
@@ -8,7 +9,7 @@ export function FormStack({
 }: React.FormHTMLAttributes<HTMLFormElement>) {
   return (
     <form
-      className={cn("min-w-0", className)}
+      className={cn(styles.formStack, className)}
       style={{ display: "flex", flexDirection: "column", gap: "var(--form-gap)", ...style }}
       {...props}
     />
@@ -22,7 +23,7 @@ export function FieldGroup({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("min-w-0", className)}
+      className={cn(styles.fieldGroup, className)}
       style={{ display: "flex", flexDirection: "column", gap: "var(--field-gap)", ...style }}
       {...props}
     />
@@ -38,7 +39,7 @@ export function FormActions({
   const justify = align === "start" ? "flex-start" : "flex-end";
   return (
     <div
-      className={cn("flex flex-wrap items-center", className)}
+      className={cn(styles.formActions, className)}
       style={{
         gap: "var(--space-3)",
         justifyContent: justify,

@@ -1,0 +1,25 @@
+@reference "tailwindcss";
+
+.page {
+  @apply min-w-0;
+}
+
+.pageHeader {
+  @apply min-w-0;
+}
+
+.pageTitle {
+  @apply text-2xl font-semibold leading-tight text-[var(--text-primary)];
+}
+
+.pageDescription {
+  @apply text-sm leading-6 text-[var(--text-muted)];
+}
+
+.pageActions {
+  @apply flex shrink-0 flex-wrap items-center justify-end;
+}
+
+.pageBody {
+  @apply min-w-0;
+}

@@ -36,6 +36,7 @@ export * from "./empty-state";
 // Data display components
 export * from "./stats";
 export * from "./pill";
+export * from "./list-row";
 
 // Card variants
 export * from "./expandable-card";

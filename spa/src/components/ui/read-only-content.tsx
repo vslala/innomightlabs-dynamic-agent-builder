@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
+import styles from "./read-only-content.module.css";
 
 interface ReadOnlyContentProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: "plain" | "code" | "instructions";
@@ -8,9 +9,9 @@ interface ReadOnlyContentProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const variantClassName = {
-  plain: "font-sans text-sm leading-7",
-  code: "font-mono text-sm leading-7",
-  instructions: "font-mono text-sm leading-7",
+  plain: styles.variantPlain,
+  code: styles.variantCode,
+  instructions: styles.variantInstructions,
 };
 
 export function ReadOnlyContent({
@@ -24,7 +25,7 @@ export function ReadOnlyContent({
   return (
     <div
       className={cn(
-        "min-w-0 rounded-lg border border-[var(--border-default)] bg-[var(--surface-control)] text-[var(--text-secondary)]",
+        styles.content,
         variantClassName[variant],
         className
       )}

@@ -1,18 +1,20 @@
-.agent-detail-layout {
+@reference "tailwindcss";
+
+.layout {
   display: flex;
   flex-direction: column;
   gap: 32px;
   width: 100%;
 }
 
-.agent-detail-layout__loading {
+.loading {
   align-items: center;
   display: flex;
   height: 16rem;
   justify-content: center;
 }
 
-.agent-detail-layout__spinner {
+.spinner {
   animation: spin 1s linear infinite;
   border: 2px solid var(--gradient-start);
   border-radius: 999px;
@@ -21,33 +23,33 @@
   width: 32px;
 }
 
-.agent-detail-layout__error {
+.error {
   display: grid;
   gap: 24px;
 }
 
-.agent-detail-layout__error-header,
-.agent-detail-layout__header,
-.agent-detail-layout__title-group {
+.errorHeader,
+.header,
+.titleGroup {
   align-items: center;
   display: flex;
 }
 
-.agent-detail-layout__error-header {
+.errorHeader {
   gap: 16px;
 }
 
-.agent-detail-layout__header {
+.header {
   gap: 24px;
   justify-content: space-between;
 }
 
-.agent-detail-layout__title-group {
+.titleGroup {
   gap: 16px;
   min-width: 0;
 }
 
-.agent-detail-layout__title-icon {
+.titleIcon {
   align-items: center;
   background: var(--button-primary-bg);
   border-radius: 12px;
@@ -59,45 +61,45 @@
   width: 48px;
 }
 
-.agent-detail-layout__title-icon-svg {
+.titleIconSvg {
   height: 24px;
   width: 24px;
 }
 
-.agent-detail-layout__title {
+.title {
   color: var(--text-primary);
   font-size: 20px;
   font-weight: 600;
   line-height: 28px;
 }
 
-.agent-detail-layout__subtitle {
+.subtitle {
   color: var(--text-muted);
   font-size: 14px;
   margin-top: 4px;
 }
 
-.agent-detail-layout__error-card {
+.errorCard {
   padding: 48px;
 }
 
-.agent-detail-layout__error-content {
+.errorContent {
   text-align: center;
 }
 
-.agent-detail-layout__error-icon {
+.errorIcon {
   color: var(--text-muted);
   height: 64px;
   margin: 0 auto 16px;
   width: 64px;
 }
 
-.agent-detail-layout__error-message {
+.errorMessage {
   color: var(--text-muted);
   margin-bottom: 24px;
 }
 
-.agent-detail-layout__workspace {
+.workspace {
   align-items: start;
   display: grid;
   gap: 32px;
@@ -105,18 +107,18 @@
   width: 100%;
 }
 
-.agent-detail-layout__content {
+.content {
   min-width: 0;
 }
 
 @media (min-width: 1600px) {
-  .agent-detail-layout__workspace {
+  .workspace {
     grid-template-columns: 17rem minmax(0, 1fr);
   }
 }
 
 @media (max-width: 980px) {
-  .agent-detail-layout__workspace {
+  .workspace {
     grid-template-columns: minmax(0, 1fr);
   }
 }

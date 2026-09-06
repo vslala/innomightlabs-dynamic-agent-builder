@@ -1,6 +1,7 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import styles from "./expandable-card.module.css";
 
 interface ExpandableCardProps {
   expanded: boolean;
@@ -23,34 +24,27 @@ function ExpandableCard({
 }: ExpandableCardProps) {
   return (
     <div
-      className={cn(
-        "border border-[var(--border-subtle)] rounded-lg overflow-hidden",
-        className
-      )}
+      className={cn(styles.card, className)}
     >
       <div
-        className={cn(
-          "flex items-center p-4 cursor-pointer hover:bg-white/5 transition-colors",
-          headerClassName
-        )}
+        className={cn(styles.header, headerClassName)}
+        style={{ padding: "var(--space-5)" }}
         onClick={onToggle}
       >
-        <span className="mr-2 text-[var(--text-muted)]">
+        <span className={styles.chevron}>
           {expanded ? (
-            <ChevronDown className="h-4 w-4" />
+            <ChevronDown className={styles.chevronIcon} />
           ) : (
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className={styles.chevronIcon} />
           )}
         </span>
-        <div className="flex-1">{header}</div>
+        <div className={styles.headerContent}>{header}</div>
       </div>
 
       {expanded && (
         <div
-          className={cn(
-            "border-t border-[var(--border-subtle)] p-4 bg-[var(--bg-secondary)]",
-            contentClassName
-          )}
+          className={cn(styles.content, contentClassName)}
+          style={{ padding: "var(--space-5)" }}
         >
           {children}
         </div>
@@ -79,19 +73,16 @@ function CollapsibleSection({
   const [expanded, setExpanded] = React.useState(defaultExpanded);
 
   return (
-    <div className={cn("border-t border-[var(--border-subtle)] pt-4", className)}>
+    <div className={cn(styles.section, className)}>
       <button
         type="button"
-        className={cn(
-          "flex items-center gap-2 text-xs text-[var(--text-muted)] mb-2 hover:text-[var(--text-secondary)] transition-colors",
-          headerClassName
-        )}
+        className={cn(styles.sectionHeader, headerClassName)}
         onClick={() => setExpanded(!expanded)}
       >
         {expanded ? (
-          <ChevronDown className="h-3 w-3" />
+          <ChevronDown className={styles.sectionChevronIcon} />
         ) : (
-          <ChevronRight className="h-3 w-3" />
+          <ChevronRight className={styles.sectionChevronIcon} />
         )}
         {icon}
         {title}

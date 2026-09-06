@@ -1,0 +1,17 @@
+@reference "tailwindcss";
+
+.loadingContainer {
+  @apply flex h-[32rem] items-center justify-center;
+}
+
+.loadingSpinner {
+  @apply h-8 w-8 animate-spin text-[var(--gradient-start)];
+}
+
+.layout {
+  @apply grid h-full grid-cols-1 bg-[var(--bg-dark)] lg:grid-cols-[28rem_minmax(0,1fr)];
+}
+
+.main {
+  @apply flex min-w-0 items-center justify-center px-8 py-16 lg:px-16 xl:px-24;
+}

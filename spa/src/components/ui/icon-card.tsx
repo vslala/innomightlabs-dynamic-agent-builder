@@ -2,6 +2,7 @@ import * as React from "react";
 import { cn } from "../../lib/utils";
 import { Card, CardContent } from "./card";
 import type { LucideIcon } from "lucide-react";
+import styles from "./icon-card.module.css";
 
 interface IconCardProps {
   icon: LucideIcon;
@@ -25,29 +26,30 @@ function IconCard({
   return (
     <Card
       className={cn(
-        "group hover:border-[var(--gradient-start)]/50 transition-all duration-200",
-        onClick && "cursor-pointer",
+        "group",
+        styles.card,
+        onClick && styles.cardCursor,
         className
       )}
       onClick={onClick}
     >
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between mb-5">
-          <div className="h-14 w-14 rounded-xl bg-[var(--button-primary-bg)] flex items-center justify-center">
-            <Icon className="h-7 w-7 text-[var(--text-inverse)]" />
+      <CardContent className={styles.cardContent}>
+        <div className={styles.cardTop}>
+          <div className={styles.iconBox}>
+            <Icon className={styles.icon} />
           </div>
           {actions && (
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className={styles.actions}>
               {actions}
             </div>
           )}
         </div>
 
-        <h3 className="font-semibold text-lg text-[var(--text-primary)] mb-2 group-hover:text-[var(--gradient-start)] transition-colors">
+        <h3 className={styles.title}>
           {title}
         </h3>
         {description && (
-          <p className="text-sm text-[var(--text-muted)] line-clamp-2 mb-4 leading-relaxed">
+          <p className={styles.description}>
             {description}
           </p>
         )}
@@ -75,30 +77,30 @@ function IconHeader({
   className,
 }: IconHeaderProps) {
   const sizes = {
-    sm: { container: "h-10 w-10 rounded-lg", icon: "h-5 w-5", title: "text-base", subtitle: "text-xs" },
-    default: { container: "h-12 w-12 rounded-xl", icon: "h-6 w-6", title: "text-xl", subtitle: "text-sm" },
-    lg: { container: "h-14 w-14 rounded-xl", icon: "h-7 w-7", title: "text-2xl", subtitle: "text-base" },
+    sm: { container: styles.iconContainerSm, icon: styles.iconSm, title: styles.titleSm, subtitle: styles.subtitleSm },
+    default: { container: styles.iconContainerDefault, icon: styles.iconDefault, title: styles.titleDefault, subtitle: styles.subtitleDefault },
+    lg: { container: styles.iconContainerLg, icon: styles.iconLg, title: styles.titleLg, subtitle: styles.subtitleLg },
   };
 
   const s = sizes[size];
 
   return (
-    <div className={cn("flex items-center justify-between", className)}>
-      <div className="flex items-center gap-4">
+    <div className={cn(styles.header, className)}>
+      <div className={styles.headerLeft}>
         <div
           className={cn(
-            "bg-[var(--button-primary-bg)] flex items-center justify-center",
+            styles.headerIconBox,
             s.container
           )}
         >
-          <Icon className={cn("text-[var(--text-inverse)]", s.icon)} />
+          <Icon className={cn(styles.headerIcon, s.icon)} />
         </div>
         <div>
-          <h1 className={cn("font-semibold text-[var(--text-primary)]", s.title)}>
+          <h1 className={cn(styles.headerTitle, s.title)}>
             {title}
           </h1>
           {subtitle && (
-            <p className={cn("text-[var(--text-muted)]", s.subtitle)}>
+            <p className={cn(styles.headerSubtitle, s.subtitle)}>
               {subtitle}
             </p>
           )}

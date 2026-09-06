@@ -2,6 +2,7 @@ import * as React from "react";
 import { Link, type LinkProps } from "react-router-dom";
 import { cn } from "../../lib/utils";
 import { buttonVariants, type ButtonProps } from "./button";
+import styles from "./link-button.module.css";
 
 type LinkButtonBaseProps = Omit<ButtonProps, "asChild" | "type"> & {
   children: React.ReactNode;
@@ -24,7 +25,7 @@ export type LinkButtonProps = InternalLinkButtonProps | ExternalLinkButtonProps;
 
 export const LinkButton = React.forwardRef<HTMLAnchorElement, LinkButtonProps>(
   ({ className, variant, size, children, external, style, ...props }, ref) => {
-    const classes = cn(buttonVariants({ variant, size, className }), "no-underline");
+    const classes = cn(buttonVariants({ variant, size, className }), styles.noUnderline);
 
     if (external) {
       const { href, target = "_blank", rel, ...anchorProps } = props as ExternalLinkButtonProps;

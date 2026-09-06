@@ -1,0 +1,45 @@
+@reference "tailwindcss";
+
+.emptySection {
+  @apply mx-auto flex w-full max-w-md flex-col items-center gap-5 text-center;
+}
+
+.emptyTitle {
+  @apply text-2xl font-semibold leading-8 text-[var(--text-primary)];
+}
+
+.emptyDescription {
+  @apply max-w-xl text-sm leading-6 text-[var(--text-muted)];
+}
+
+.createAgentButton {
+  @apply self-center;
+}
+
+.section {
+  @apply mx-auto flex w-full max-w-[58rem] flex-col items-center gap-8;
+}
+
+.header {
+  @apply flex flex-col items-center gap-2 text-center;
+}
+
+.headerIcon {
+  @apply mb-2 flex h-11 w-11 items-center justify-center rounded-xl bg-white/5 text-[var(--text-secondary)];
+}
+
+.title {
+  @apply text-3xl font-semibold leading-9 text-[var(--text-primary)];
+}
+
+.description {
+  @apply mx-auto max-w-xl text-sm leading-6 text-[var(--text-muted)];
+}
+
+.agentDescription {
+  @apply mx-auto max-w-2xl text-xs leading-5 text-[var(--text-muted)];
+}
+
+.errorBanner {
+  @apply w-full rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300;
+}

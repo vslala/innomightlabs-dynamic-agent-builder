@@ -1,0 +1,15 @@
+@reference "tailwindcss";
+
+.content {
+  @apply min-w-0 rounded-lg border border-[var(--border-default)] bg-[var(--surface-control)] text-[var(--text-secondary)];
+}
+
+.variantPlain {
+  @apply font-sans text-sm leading-7;
+}
+.variantCode {
+  @apply font-mono text-sm leading-7;
+}
+.variantInstructions {
+  @apply font-mono text-sm leading-7;
+}

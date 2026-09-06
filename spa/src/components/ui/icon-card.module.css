@@ -1,0 +1,88 @@
+@reference "tailwindcss";
+
+.card {
+  @apply hover:border-[var(--gradient-start)]/50 transition-all duration-200;
+}
+.cardCursor {
+  @apply cursor-pointer;
+}
+.cardContent {
+  @apply p-6;
+}
+.cardTop {
+  @apply flex items-start justify-between mb-5;
+}
+.iconBox {
+  @apply h-14 w-14 rounded-xl bg-[var(--button-primary-bg)] flex items-center justify-center;
+}
+.icon {
+  @apply h-7 w-7 text-[var(--text-inverse)];
+}
+.actions {
+  @apply flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity;
+}
+.title {
+  @apply font-semibold text-lg text-[var(--text-primary)] mb-2 group-hover:text-[var(--gradient-start)] transition-colors;
+}
+.description {
+  @apply text-sm text-[var(--text-muted)] line-clamp-2 mb-4 leading-relaxed;
+}
+
+.header {
+  @apply flex items-center justify-between;
+}
+.headerLeft {
+  @apply flex items-center gap-4;
+}
+.headerIconBox {
+  @apply bg-[var(--button-primary-bg)] flex items-center justify-center;
+}
+.headerIcon {
+  @apply text-[var(--text-inverse)];
+}
+.headerTitle {
+  @apply font-semibold text-[var(--text-primary)];
+}
+.headerSubtitle {
+  @apply text-[var(--text-muted)];
+}
+
+.iconContainerSm {
+  @apply h-10 w-10 rounded-lg;
+}
+.iconContainerDefault {
+  @apply h-12 w-12 rounded-xl;
+}
+.iconContainerLg {
+  @apply h-14 w-14 rounded-xl;
+}
+
+.iconSm {
+  @apply h-5 w-5;
+}
+.iconDefault {
+  @apply h-6 w-6;
+}
+.iconLg {
+  @apply h-7 w-7;
+}
+
+.titleSm {
+  @apply text-base;
+}
+.titleDefault {
+  @apply text-xl;
+}
+.titleLg {
+  @apply text-2xl;
+}
+
+.subtitleSm {
+  @apply text-xs;
+}
+.subtitleDefault {
+  @apply text-sm;
+}
+.subtitleLg {
+  @apply text-base;
+}

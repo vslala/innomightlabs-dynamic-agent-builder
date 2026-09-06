@@ -1,0 +1,26 @@
+@reference "tailwindcss";
+
+.row {
+  @apply flex items-start justify-between rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)];
+}
+.rowLeft {
+  @apply flex min-w-0 items-start;
+}
+.icon {
+  @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-white/[0.04];
+}
+.body {
+  @apply min-w-0;
+}
+.title {
+  @apply font-semibold leading-tight text-[var(--text-primary)];
+}
+.subtitle {
+  @apply text-xs text-[var(--text-muted)];
+}
+.meta {
+  @apply max-w-[40rem] text-xs text-[var(--text-muted)];
+}
+.trailing {
+  @apply shrink-0 text-right text-xs text-[var(--text-muted)];
+}

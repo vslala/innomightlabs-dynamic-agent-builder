@@ -5,6 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./select";
+import styles from "./pill-select.module.css";
 
 export interface PillSelectOption {
   value: string;
@@ -22,16 +23,16 @@ interface PillSelectProps {
 export function PillSelect({ value, options, placeholder = "Select", onChange }: PillSelectProps) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-10 w-auto max-w-[13rem] shrink-0 rounded-full border-transparent bg-white/8 px-3 text-sm hover:bg-white/12">
+      <SelectTrigger className={styles.trigger}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value}>
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate">{option.label}</span>
+            <span className={styles.optionLabelWrap}>
+              <span className={styles.optionLabel}>{option.label}</span>
               {option.description && (
-                <span className="truncate text-xs text-[var(--text-muted)]">{option.description}</span>
+                <span className={styles.optionDescription}>{option.description}</span>
               )}
             </span>
           </SelectItem>

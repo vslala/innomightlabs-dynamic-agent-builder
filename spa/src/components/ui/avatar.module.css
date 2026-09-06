@@ -1,0 +1,13 @@
+@reference "tailwindcss";
+
+.avatar {
+  @apply relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full;
+}
+
+.avatarImage {
+  @apply aspect-square h-full w-full;
+}
+
+.avatarFallback {
+  @apply flex h-full w-full items-center justify-center rounded-full bg-[var(--button-primary-bg)] text-[var(--text-inverse)] font-medium;
+}

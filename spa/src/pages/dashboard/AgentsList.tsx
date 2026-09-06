@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Bot, Plus, ShoppingBag, Trash2, Settings } from "lucide-react";
+import { getAgentIcon } from "../../lib/agentIcons";
 import {
   Card,
   CardContent,
@@ -20,6 +21,7 @@ import {
   type AgentResponse,
 } from "../../services/agents/AgentApiService";
 import { Grid, Inline, Page, PageActions, PageBody, PageDescription, PageHeader, Stack } from "../../components/layout";
+import styles from "./AgentsList.module.css";
 
 export function AgentsList() {
   const navigate = useNavigate();
@@ -98,19 +100,21 @@ export function AgentsList() {
             onAction={() => navigate("/dashboard/agents/new")}
           />
         ) : (
-          <Grid className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3" gap="lg">
-            {agents.map((agent) => (
+          <Grid className={styles.agentsGrid} gap="lg">
+            {agents.map((agent) => {
+              const AgentIcon = getAgentIcon(agent.agent_name);
+              return (
               <Card
                 key={agent.agent_id}
-                className="group hover:border-[var(--gradient-start)]/50 transition-all duration-200"
+                className={`group ${styles.agentCard}`}
               >
                 <CardContent>
                   <Stack gap="md">
                     <Inline justify="space-between" align="flex-start" wrap={false}>
-                  <div className="h-14 w-14 rounded-xl bg-[var(--button-primary-bg)] flex items-center justify-center">
-                    <Bot className="h-7 w-7 text-white" />
+                  <div className={styles.agentIcon}>
+                    <AgentIcon className={styles.agentIconSvg} />
                   </div>
-                  <Inline gap="xs" className="opacity-0 transition-opacity group-hover:opacity-100">
+                  <Inline gap="xs" className={styles.hoverActions}>
                     <Link to={`/dashboard/agents/${agent.agent_id}`}>
                       <Button variant="ghost" size="icon">
                         <Settings className="h-4 w-4" />
@@ -119,7 +123,7 @@ export function AgentsList() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="text-red-400 hover:text-red-300"
+                      className={styles.deleteButton}
                       onClick={() => {
                         setSelectedAgent(agent);
                         setIsDeleteDialogOpen(true);
@@ -132,24 +136,25 @@ export function AgentsList() {
 
                     <Stack gap="xs">
                       <Link to={`/dashboard/agents/${agent.agent_id}`}>
-                        <h3 className="text-lg font-semibold text-[var(--text-primary)] transition-colors hover:text-[var(--gradient-start)]">
+                        <h3 className={styles.agentName}>
                           {agent.agent_name}
                         </h3>
                       </Link>
-                      <p className="line-clamp-2 text-sm leading-relaxed text-[var(--text-muted)]">
+                      <p className={styles.agentPersona}>
                         {agent.agent_persona}
                       </p>
                     </Stack>
 
                     <Inline gap="xs">
-                  <span className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--gradient-start)]/10 text-[var(--gradient-start)]">
+                  <span className={styles.providerBadge}>
                     {agent.agent_provider}
                   </span>
                     </Inline>
                   </Stack>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </Grid>
         )}
       </PageBody>

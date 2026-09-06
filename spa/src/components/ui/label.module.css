@@ -1,0 +1,5 @@
+@reference "tailwindcss";
+
+.label {
+  @apply text-sm font-medium text-[var(--text-secondary)] leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70;
+}

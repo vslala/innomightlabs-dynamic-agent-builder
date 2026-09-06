@@ -9,8 +9,6 @@ import {
   RotateCcw,
   XCircle,
   Globe,
-  ChevronDown,
-  ChevronRight,
   Loader2,
   FileText,
 } from "lucide-react";
@@ -19,6 +17,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  SectionCardHeader,
   Button,
   Input,
   Label,
@@ -45,8 +44,12 @@ import {
   Pill,
   PillGroup,
   AlertBanner,
+  ExpandableCard,
+  ListRow,
 } from "../../components/ui";
+import { Page, PageHeader, PageActions, PageBody, Stack, Inline, FieldGroup } from "../../components/layout";
 import { SchemaForm } from "../../components/forms";
+import styles from "./KnowledgeBaseDetail.module.css";
 import { knowledgeApiService } from "../../services/knowledge";
 import { KB_UPLOAD_ALLOWED_EXTENSIONS, KB_UPLOAD_MAX_FILE_SIZE } from "../../types/knowledge";
 import type {
@@ -58,7 +61,6 @@ import type {
   ContentUploadItem,
 } from "../../types/knowledge";
 import type { FormSchema, FormValue } from "../../types/form";
-import styles from "./KnowledgeBaseDetail.module.css";
 
 const POLL_INTERVAL_MS = 5000; // 5 seconds
 
@@ -432,19 +434,21 @@ export function KnowledgeBaseDetail() {
 
   if (error && !kb) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/dashboard/knowledge-bases")}
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">
-            Knowledge Base Not Found
-          </h1>
-        </div>
+      <Page>
+        <PageHeader>
+          <Inline gap="sm">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/dashboard/knowledge-bases")}
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <h1 className={styles.pageTitle}>
+              Knowledge Base Not Found
+            </h1>
+          </Inline>
+        </PageHeader>
         <EmptyState
           icon={Database}
           title="Not Found"
@@ -452,23 +456,16 @@ export function KnowledgeBaseDetail() {
           actionLabel="Back to Knowledge Bases"
           onAction={() => navigate("/dashboard/knowledge-bases")}
         />
-      </div>
+      </Page>
     );
   }
 
   if (!kb) return null;
 
   return (
-    <div
-      style={{
-        maxWidth: "48rem",
-        display: "flex",
-        flexDirection: "column",
-        gap: "2rem",
-      }}
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+    <Page style={{ maxWidth: "48rem" }}>
+      <PageHeader>
+        <Inline gap="sm">
           <Button
             variant="ghost"
             size="icon"
@@ -476,135 +473,123 @@ export function KnowledgeBaseDetail() {
           >
             <ChevronLeft className="h-5 w-5" />
           </Button>
-          <div className="h-12 w-12 rounded-xl bg-[var(--button-primary-bg)] flex items-center justify-center">
-            <Database className="h-6 w-6 text-white" />
+          <div className={styles.pageIconBox}>
+            <Database className={styles.pageIcon} />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-[var(--text-primary)]">
+            <h1 className={styles.pageTitle}>
               {kb.name}
             </h1>
-            <p className="text-sm text-[var(--text-muted)]">
+            <p className={styles.pageSubtitle}>
               {kb.total_pages} pages • {kb.total_chunks} chunks
             </p>
           </div>
-        </div>
+        </Inline>
         {!isEditing && (
-          <Button variant="outline" onClick={() => setIsEditing(true)}>
-            <Pencil className="h-4 w-4" />
-            Edit
-          </Button>
+          <PageActions>
+            <Button variant="outline" onClick={() => setIsEditing(true)}>
+              <Pencil className="h-4 w-4" />
+              Edit
+            </Button>
+          </PageActions>
         )}
-      </div>
+      </PageHeader>
 
+      <PageBody>
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">
+          <CardTitle className={styles.detailsCardTitle}>
             {isEditing ? "Edit Knowledge Base" : "Details"}
           </CardTitle>
         </CardHeader>
-        <CardContent className={styles.uploadsContent}>
-          {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-              {error}
-            </div>
-          )}
+        <CardContent>
+          <Stack gap="md">
+            {error && <AlertBanner message={error} variant="error" />}
 
-          {isEditing ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  rows={3}
-                />
-              </div>
-              <div className="flex gap-2 justify-end">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setIsEditing(false);
-                    setEditName(kb.name);
-                    setEditDescription(kb.description || "");
-                  }}
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleUpdate}
-                  disabled={isSubmitting || !editName.trim()}
-                >
-                  {isSubmitting ? "Saving..." : "Save Changes"}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <Label className="text-[var(--text-muted)]">Description</Label>
-                <p className="text-[var(--text-primary)] mt-1">
-                  {kb.description || "No description"}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 pt-4 border-t border-[var(--border-subtle)]">
+            {isEditing ? (
+              <Stack gap="md">
+                <FieldGroup>
+                  <Label htmlFor="name">Name</Label>
+                  <Input
+                    id="name"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                  />
+                </FieldGroup>
+                <FieldGroup>
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    rows={3}
+                  />
+                </FieldGroup>
+                <Inline gap="xs" justify="flex-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsEditing(false);
+                      setEditName(kb.name);
+                      setEditDescription(kb.description || "");
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleUpdate}
+                    disabled={isSubmitting || !editName.trim()}
+                  >
+                    {isSubmitting ? "Saving..." : "Save Changes"}
+                  </Button>
+                </Inline>
+              </Stack>
+            ) : (
+              <Stack gap="md">
                 <div>
-                  <Label className="text-[var(--text-muted)]">Pages</Label>
-                  <p className="text-lg font-semibold text-[var(--text-primary)]">
-                    {kb.total_pages.toLocaleString()}
+                  <Label className={styles.detailsLabel}>Description</Label>
+                  <p className={styles.detailsDescription}>
+                    {kb.description || "No description"}
                   </p>
                 </div>
-                <div>
-                  <Label className="text-[var(--text-muted)]">Chunks</Label>
-                  <p className="text-lg font-semibold text-[var(--text-primary)]">
-                    {kb.total_chunks.toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-[var(--text-muted)]">Vectors</Label>
-                  <p className="text-lg font-semibold text-[var(--text-primary)]">
-                    {kb.total_vectors.toLocaleString()}
-                  </p>
-                </div>
-              </div>
 
-              <div className="pt-4 border-t border-[var(--border-subtle)] text-sm text-[var(--text-muted)]">
-                Created {formatDate(kb.created_at)}
-              </div>
-            </div>
-          )}
+                <div className={styles.statsSection}>
+                  <StatsGrid columns={3}>
+                    <StatItem label="Pages" value={kb.total_pages.toLocaleString()} />
+                    <StatItem label="Chunks" value={kb.total_chunks.toLocaleString()} />
+                    <StatItem label="Vectors" value={kb.total_vectors.toLocaleString()} />
+                  </StatsGrid>
+                </div>
+
+                <div className={styles.createdRow}>
+                  Created {formatDate(kb.created_at)}
+                </div>
+              </Stack>
+            )}
+          </Stack>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Globe className="h-5 w-5 text-[var(--gradient-start)]" />
-              <CardTitle className="text-lg">Web Crawl Jobs</CardTitle>
-              {isPolling && (
-                <Loader2 className="h-4 w-4 animate-spin text-[var(--text-muted)]" />
-              )}
-            </div>
-            <Button size="sm" onClick={() => setIsStartCrawlDialogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Start Crawl
-            </Button>
-          </div>
+          <SectionCardHeader
+            icon={Globe}
+            title="Web Crawl Jobs"
+            status={isPolling && (
+              <Loader2 className={styles.pollingSpinner} />
+            )}
+            action={
+              <Button size="sm" onClick={() => setIsStartCrawlDialogOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Start Crawl
+              </Button>
+            }
+          />
         </CardHeader>
         <CardContent>
           {loadingJobs ? (
-            <LoadingState className="h-32" size="default" />
+            <LoadingState className={styles.jobsLoadingState} size="default" />
           ) : crawlJobs.length === 0 ? (
             <InlineEmptyState
               icon={Globe}
@@ -612,182 +597,174 @@ export function KnowledgeBaseDetail() {
               description="Start a crawl to import content from a website"
             />
           ) : (
-            <div className="space-y-3">
+            <Stack gap="md">
               {crawlJobs.map((job) => (
-                <div
+                <ExpandableCard
                   key={job.job_id}
-                  className="border border-[var(--border-subtle)] rounded-lg overflow-hidden"
-                >
-                  <div
-                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-white/5"
-                    onClick={() =>
-                      setExpandedJobId(expandedJobId === job.job_id ? null : job.job_id)
-                    }
-                  >
-                    <div className="flex items-center gap-3">
-                      {expandedJobId === job.job_id ? (
-                        <ChevronDown className="h-4 w-4 text-[var(--text-muted)]" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-[var(--text-muted)]" />
-                      )}
-                      <StatusIcon status={mapStatus(job.status)} />
-                      <div>
-                        <p className="font-medium text-[var(--text-primary)]">
-                          {job.config.source_url}
-                        </p>
-                        <p className="text-xs text-[var(--text-muted)]">
-                          {job.config.source_type} • {formatDate(job.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {job.status === "in_progress" && (
-                        <span className="text-xs text-[var(--text-muted)]">
-                          {getProgressPercentage(job)}%
-                        </span>
-                      )}
-                      <StatusBadge status={mapStatus(job.status)} />
-                      {job.status === "in_progress" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-400 hover:text-red-300"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCancelCrawl(job.job_id);
-                          }}
-                        >
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {job.status === "pending" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-green-400 hover:text-green-300"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRunOrRetryJob(job.job_id);
-                          }}
-                        >
-                          <Play className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {job.status === "failed" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-green-400 hover:text-green-300"
-                          title={
-                            job.checkpoint && job.checkpoint.pending_urls.length > 0
-                              ? `Retry (resumes from page ${job.checkpoint.current_url_index} of ${job.checkpoint.pending_urls.length})`
-                              : "Retry"
-                          }
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRunOrRetryJob(job.job_id);
-                          }}
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  {expandedJobId === job.job_id && (
-                    <div className="border-t border-[var(--border-subtle)] p-4 bg-[var(--bg-secondary)]">
-                      {/* Progress bar for in-progress and completed jobs */}
-                      {(job.status === "in_progress" || job.status === "completed") && (
-                        <div className="mb-4">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm text-[var(--text-muted)]">
-                              {job.status === "in_progress" ? "Crawling..." : "Completed"}
-                            </span>
-                            <span className="text-sm font-medium text-[var(--text-primary)]">
-                              {job.progress.processed_urls} / {job.progress.discovered_urls} pages
-                            </span>
-                          </div>
-                          <ProgressBar
-                            value={job.progress.processed_urls}
-                            max={job.progress.discovered_urls || 1}
-                          />
+                  expanded={expandedJobId === job.job_id}
+                  onToggle={() =>
+                    setExpandedJobId(expandedJobId === job.job_id ? null : job.job_id)
+                  }
+                  header={
+                    <Inline justify="space-between" wrap={false}>
+                      <Inline gap="sm" wrap={false}>
+                        <StatusIcon status={mapStatus(job.status)} />
+                        <div className={styles.jobTitleWrap}>
+                          <p className={styles.jobUrl}>
+                            {job.config.source_url}
+                          </p>
+                          <p className={styles.jobMeta}>
+                            {job.config.source_type} • {formatDate(job.created_at)}
+                          </p>
                         </div>
-                      )}
+                      </Inline>
+                      <Inline gap="sm" wrap={false}>
+                        {job.status === "in_progress" && (
+                          <span className={styles.progressPercent}>
+                            {getProgressPercentage(job)}%
+                          </span>
+                        )}
+                        <StatusBadge status={mapStatus(job.status)} />
+                        {job.status === "in_progress" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={styles.cancelButton}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCancelCrawl(job.job_id);
+                            }}
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {job.status === "pending" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={styles.runRetryButton}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRunOrRetryJob(job.job_id);
+                            }}
+                          >
+                            <Play className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {job.status === "failed" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={styles.runRetryButton}
+                            title={
+                              job.checkpoint && job.checkpoint.pending_urls.length > 0
+                                ? `Retry (resumes from page ${job.checkpoint.current_url_index} of ${job.checkpoint.pending_urls.length})`
+                                : "Retry"
+                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRunOrRetryJob(job.job_id);
+                            }}
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </Inline>
+                    </Inline>
+                  }
+                >
+                  <Stack gap="md">
+                    {/* Progress bar for in-progress and completed jobs */}
+                    {(job.status === "in_progress" || job.status === "completed") && (
+                      <div>
+                        <div className={styles.progressHeader}>
+                          <span className={styles.progressLabel}>
+                            {job.status === "in_progress" ? "Crawling..." : "Completed"}
+                          </span>
+                          <span className={styles.progressCount}>
+                            {job.progress.processed_urls} / {job.progress.discovered_urls} pages
+                          </span>
+                        </div>
+                        <ProgressBar
+                          value={job.progress.processed_urls}
+                          max={job.progress.discovered_urls || 1}
+                        />
+                      </div>
+                    )}
 
-                      {/* Stats grid */}
+                    <Stack gap="sm">
                       <StatsGrid columns={4}>
                         <StatItem label="Discovered" value={job.progress.discovered_urls} />
                         <StatItem label="Processed" value={job.progress.processed_urls} />
-                        <StatItem label="Success" value={job.progress.successful_urls} valueClassName="text-green-400" />
-                        <StatItem label="Failed" value={job.progress.failed_urls} valueClassName="text-red-400" />
+                        <StatItem label="Success" value={job.progress.successful_urls} valueClassName={styles.successStatValue} />
+                        <StatItem label="Failed" value={job.progress.failed_urls} valueClassName={styles.failedStatValue} />
                       </StatsGrid>
 
-                      <StatsGrid columns={4} className="mt-4">
+                      <StatsGrid columns={4}>
                         <StatItem label="Chunks" value={job.progress.total_chunks} />
                         <StatItem label="Embeddings" value={job.progress.total_embeddings} />
                         <StatItem label="Duration" value={formatDuration(job.timing.total_duration_ms)} />
                         <StatItem label="Avg/Page" value={formatDuration(job.timing.avg_page_duration_ms)} />
                       </StatsGrid>
+                    </Stack>
 
-                      {/* Error message */}
-                      {job.error_message && (
-                        <AlertBanner message={job.error_message} variant="error" className="mt-4" />
+                    {/* Error message */}
+                    {job.error_message && (
+                      <AlertBanner message={job.error_message} variant="error" />
+                    )}
+
+                    {/* Resume hint for failed jobs with a saved checkpoint */}
+                    {job.status === "failed" &&
+                      job.checkpoint &&
+                      job.checkpoint.pending_urls.length > 0 && (
+                        <p className={styles.resumeHint}>
+                          Retrying will resume from page {job.checkpoint.current_url_index} of{" "}
+                          {job.checkpoint.pending_urls.length} instead of starting over.
+                        </p>
                       )}
 
-                      {/* Resume hint for failed jobs with a saved checkpoint */}
-                      {job.status === "failed" &&
-                        job.checkpoint &&
-                        job.checkpoint.pending_urls.length > 0 && (
-                          <p className="text-xs text-[var(--text-muted)] mt-2">
-                            Retrying will resume from page {job.checkpoint.current_url_index} of{" "}
-                            {job.checkpoint.pending_urls.length} instead of starting over.
-                          </p>
-                        )}
-
-                      {/* Configuration */}
-                      <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
-                        <p className="text-xs text-[var(--text-muted)] mb-2">Configuration</p>
-                        <PillGroup>
-                          <Pill>Max Pages: {job.config.max_pages}</Pill>
-                          <Pill>Max Depth: {job.config.max_depth}</Pill>
-                          <Pill>Rate Limit: {job.config.rate_limit_ms}ms</Pill>
-                        </PillGroup>
-                      </div>
+                    {/* Configuration */}
+                    <div className={styles.configSection}>
+                      <p className={styles.configLabel}>
+                        Configuration
+                      </p>
+                      <PillGroup>
+                        <Pill variant="outline">Max Pages: {job.config.max_pages}</Pill>
+                        <Pill variant="outline">Max Depth: {job.config.max_depth}</Pill>
+                        <Pill variant="outline">Rate Limit: {job.config.rate_limit_ms}ms</Pill>
+                      </PillGroup>
                     </div>
-                  )}
-                </div>
+                  </Stack>
+                </ExpandableCard>
               ))}
-            </div>
+            </Stack>
           )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Database className="h-5 w-5 text-[var(--gradient-start)]" />
-            <CardTitle className="text-lg">Upload Content</CardTitle>
-          </div>
+          <SectionCardHeader icon={Database} title="Upload Content" />
         </CardHeader>
-        <CardContent className={styles.uploadContent}>
-          <p className={styles.uploadLead}>
-            Upload text-based files (max 5MB per file). Multiple files will upload one by one.
-          </p>
-          <p className={styles.uploadSupport}>
-            Supported: {KB_UPLOAD_ALLOWED_EXTENSIONS.join(" ")}
-          </p>
+        <CardContent>
+          <Stack gap="md">
+            <p className={styles.uploadHint}>
+              Upload text-based files (max 5MB per file). Multiple files will upload one by one.
+            </p>
+            <p className={styles.uploadSupportedTypes}>
+              Supported: {KB_UPLOAD_ALLOWED_EXTENSIONS.join(" ")}
+            </p>
 
-          {contentUploadError && (
-            <AlertBanner message={contentUploadError} variant="error" className={styles.uploadAlert} />
-          )}
-          {contentUploadNotice && (
-            <AlertBanner message={contentUploadNotice} variant="success" className={styles.uploadAlert} />
-          )}
+            {contentUploadError && (
+              <AlertBanner message={contentUploadError} variant="error" />
+            )}
+            {contentUploadNotice && (
+              <AlertBanner message={contentUploadNotice} variant="success" />
+            )}
 
-          {loadingContentSchema ? (
-            <LoadingState className="h-24" size="default" />
-          ) : contentUploadSchema ? (
-            <div className={styles.uploadForm}>
+            {loadingContentSchema ? (
+              <LoadingState className={styles.uploadFormLoadingState} size="default" />
+            ) : contentUploadSchema ? (
               <SchemaForm
                 key={contentFormKey}
                 schema={contentUploadSchema}
@@ -795,85 +772,68 @@ export function KnowledgeBaseDetail() {
                 submitLabel="Upload Files"
                 isLoading={isUploadingContent}
               />
-            </div>
-          ) : (
-            <InlineEmptyState
-              icon={Database}
-              title="Upload form unavailable"
-              description="We couldn't load the upload form. Please refresh the page."
-            />
-          )}
+            ) : (
+              <InlineEmptyState
+                icon={Database}
+                title="Upload form unavailable"
+                description="We couldn't load the upload form. Please refresh the page."
+              />
+            )}
+          </Stack>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-[var(--gradient-start)]" />
-              <CardTitle className="text-lg">Recent Uploads</CardTitle>
-            </div>
-            {hasMoreUploads && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => loadUploads({ cursor: uploadsCursor })}
-                disabled={loadingUploads}
-              >
-                {loadingUploads ? "Loading..." : "Load More"}
-              </Button>
-            )}
-          </div>
+          <SectionCardHeader
+            icon={FileText}
+            title="Recent Uploads"
+            action={
+              hasMoreUploads && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => loadUploads({ cursor: uploadsCursor })}
+                  disabled={loadingUploads}
+                >
+                  {loadingUploads ? "Loading..." : "Load More"}
+                </Button>
+              )
+            }
+          />
         </CardHeader>
         <CardContent>
-          {uploadsError && (
-            <AlertBanner message={uploadsError} variant="error" className="mb-4" />
-          )}
-          {loadingUploads && uploads.length === 0 ? (
-            <LoadingState className="h-24" size="default" />
-          ) : uploads.length === 0 ? (
-            <InlineEmptyState
-              icon={FileText}
-              title="No uploads yet"
-              description="Upload a file to start building your knowledge base"
-            />
-          ) : (
-            <div className={styles.uploadsList}>
-              {uploads.map((upload) => (
-                <div
+          <Stack gap="md">
+            {uploadsError && <AlertBanner message={uploadsError} variant="error" />}
+            {loadingUploads && uploads.length === 0 ? (
+              <LoadingState className={styles.uploadsLoadingState} size="default" />
+            ) : uploads.length === 0 ? (
+              <InlineEmptyState
+                icon={FileText}
+                title="No uploads yet"
+                description="Upload a file to start building your knowledge base"
+              />
+            ) : (
+              uploads.map((upload) => (
+                <ListRow
                   key={upload.upload_id}
-                  className={styles.uploadItem}
-                >
-                  <div className={styles.uploadRow}>
-                    <div className={styles.uploadInfo}>
-                      <div className={styles.uploadIcon}>
-                        <FileText className="h-4 w-4 text-[var(--text-muted)]" />
-                      </div>
-                      <div>
-                        <p className={styles.uploadTitle}>
-                          {upload.filename}
-                        </p>
-                        <p className={styles.uploadMeta}>
-                          {formatFileSize(upload.size_bytes)} • {formatDate(upload.created_at)}
-                        </p>
-                        {upload.metadata && (
-                          <p className={styles.uploadMetadata}>
-                            {upload.metadata}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className={styles.uploadStats}>
+                  icon={<FileText className={styles.uploadRowIcon} />}
+                  title={upload.filename}
+                  subtitle={`${formatFileSize(upload.size_bytes)} • ${formatDate(upload.created_at)}`}
+                  meta={upload.metadata || undefined}
+                  trailing={
+                    <>
                       <div>{upload.chunk_count} chunks</div>
                       <div>{upload.vector_count} vectors</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                    </>
+                  }
+                />
+              ))
+            )}
+          </Stack>
         </CardContent>
       </Card>
+      </PageBody>
 
       <Dialog
         open={isStartCrawlDialogOpen}
@@ -892,12 +852,10 @@ export function KnowledgeBaseDetail() {
             </DialogDescription>
           </DialogHeader>
 
-          {crawlError && (
-            <AlertBanner message={crawlError} variant="error" className="mx-1 my-2" />
-          )}
+          {crawlError && <AlertBanner message={crawlError} variant="error" />}
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
+          <Stack gap="md" className={styles.crawlFormFields}>
+            <FieldGroup>
               <Label htmlFor="source-type">Source Type</Label>
               <Select
                 value={crawlSourceType}
@@ -911,14 +869,14 @@ export function KnowledgeBaseDetail() {
                   <SelectItem value="url">Starting URL</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-[var(--text-muted)]">
+              <p className={styles.sourceTypeHint}>
                 {crawlSourceType === "sitemap"
                   ? "Provide a sitemap.xml URL to crawl all listed pages"
                   : "Provide a starting URL to crawl and follow links"}
               </p>
-            </div>
+            </FieldGroup>
 
-            <div className="space-y-2">
+            <FieldGroup>
               <Label htmlFor="source-url">
                 {crawlSourceType === "sitemap" ? "Sitemap URL" : "Starting URL"}
               </Label>
@@ -932,10 +890,10 @@ export function KnowledgeBaseDetail() {
                     : "https://example.com/docs"
                 }
               />
-            </div>
+            </FieldGroup>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
+            <div className={styles.crawlNumbersGrid}>
+              <FieldGroup>
                 <Label htmlFor="max-pages">Max Pages</Label>
                 <Input
                   id="max-pages"
@@ -947,8 +905,8 @@ export function KnowledgeBaseDetail() {
                     setCrawlMaxPages(parseInt(e.target.value) || 100)
                   }
                 />
-              </div>
-              <div className="space-y-2">
+              </FieldGroup>
+              <FieldGroup>
                 <Label htmlFor="max-depth">Max Depth</Label>
                 <Input
                   id="max-depth"
@@ -960,10 +918,10 @@ export function KnowledgeBaseDetail() {
                     setCrawlMaxDepth(parseInt(e.target.value) || 3)
                   }
                 />
-                <p className="text-xs text-[var(--text-muted)]">Only for URL crawling</p>
-              </div>
+                <p className={styles.maxDepthHint}>Only for URL crawling</p>
+              </FieldGroup>
             </div>
-          </div>
+          </Stack>
           <DialogFooter>
             <Button
               variant="outline"
@@ -991,6 +949,6 @@ export function KnowledgeBaseDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </Page>
   );
 }

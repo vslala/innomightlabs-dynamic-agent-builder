@@ -5,8 +5,9 @@ import { Link, Outlet, useNavigate, useParams } from "react-router-dom";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent } from "../../../components/ui/card";
 import { agentApiService, type AgentResponse } from "../../../services/agents/AgentApiService";
+import { getAgentIcon } from "../../../lib/agentIcons";
 import { AgentSideNav } from "./AgentSideNav";
-import "./AgentDetailLayout.css";
+import styles from "./AgentDetailLayout.module.css";
 
 export function AgentDetailLayout() {
   const { agentId } = useParams<{ agentId: string }>();
@@ -49,26 +50,26 @@ export function AgentDetailLayout() {
 
   if (loading) {
     return (
-      <div className="agent-detail-layout__loading">
-        <div className="agent-detail-layout__spinner" />
+      <div className={styles.loading}>
+        <div className={styles.spinner} />
       </div>
     );
   }
 
   if (error || !agent) {
     return (
-      <div className="agent-detail-layout__error">
-        <div className="agent-detail-layout__error-header">
+      <div className={styles.error}>
+        <div className={styles.errorHeader}>
           <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard/agents")}>
-            <ChevronLeft className="agent-detail-layout__title-icon-svg" />
+            <ChevronLeft className={styles.titleIconSvg} />
           </Button>
-          <h1 className="agent-detail-layout__title">Agent Not Found</h1>
+          <h1 className={styles.title}>Agent Not Found</h1>
         </div>
         <Card>
-          <CardContent className="agent-detail-layout__error-card">
-            <div className="agent-detail-layout__error-content">
-              <Bot className="agent-detail-layout__error-icon" />
-              <p className="agent-detail-layout__error-message">
+          <CardContent className={styles.errorCard}>
+            <div className={styles.errorContent}>
+              <Bot className={styles.errorIcon} />
+              <p className={styles.errorMessage}>
                 {error ?? "Failed to load agent."}
               </p>
               <Button onClick={() => navigate("/dashboard/agents")}>Back to Agents</Button>
@@ -79,30 +80,32 @@ export function AgentDetailLayout() {
     );
   }
 
+  const AgentIcon = getAgentIcon(agent.agent_name);
+
   return (
-    <div className="agent-detail-layout">
-      <div className="agent-detail-layout__header">
-        <div className="agent-detail-layout__title-group">
+    <div className={styles.layout}>
+      <div className={styles.header}>
+        <div className={styles.titleGroup}>
           <Button variant="ghost" size="icon" asChild>
             <Link to="/dashboard/agents">
-              <ChevronLeft className="agent-detail-layout__title-icon-svg" />
+              <ChevronLeft className={styles.titleIconSvg} />
             </Link>
           </Button>
-          <div className="agent-detail-layout__title-icon">
-            <Bot className="agent-detail-layout__title-icon-svg" />
+          <div className={styles.titleIcon}>
+            <AgentIcon className={styles.titleIconSvg} />
           </div>
           <div>
-            <h1 className="agent-detail-layout__title">
+            <h1 className={styles.title}>
               {agent.agent_name}
             </h1>
-            <p className="agent-detail-layout__subtitle">{agent.agent_provider}</p>
+            <p className={styles.subtitle}>{agent.agent_provider}</p>
           </div>
         </div>
       </div>
 
-      <div className="agent-detail-layout__workspace">
+      <div className={styles.workspace}>
         <AgentSideNav />
-        <div className="agent-detail-layout__content">
+        <div className={styles.content}>
           <Outlet context={{ agent }} />
         </div>
       </div>

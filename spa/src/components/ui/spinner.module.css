@@ -1,0 +1,22 @@
+@reference "tailwindcss";
+
+.spinner {
+  @apply animate-spin rounded-full border-2 border-[var(--gradient-start)] border-t-transparent;
+}
+
+.sizeSm {
+  @apply h-4 w-4;
+}
+.sizeDefault {
+  @apply h-6 w-6;
+}
+.sizeLg {
+  @apply h-8 w-8;
+}
+.sizeXl {
+  @apply h-12 w-12;
+}
+
+.loadingState {
+  @apply flex items-center justify-center h-64;
+}

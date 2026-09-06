@@ -1,0 +1,34 @@
+@reference "tailwindcss";
+
+.button {
+  @apply inline-flex box-border shrink-0 items-center justify-center whitespace-nowrap rounded-lg text-center text-sm font-medium leading-none transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gradient-start)]/50 disabled:pointer-events-none disabled:opacity-50 [&>span]:min-w-0 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0;
+}
+
+.variantDefault {
+  @apply bg-[var(--button-primary-bg)] text-[var(--text-inverse)] hover:bg-[var(--button-primary-bg-hover)] hover:shadow-sm;
+}
+.variantDestructive {
+  @apply bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20;
+}
+.variantOutline {
+  @apply border border-[var(--border-default)] bg-[var(--surface-control)] hover:bg-[var(--surface-control-hover)] text-[var(--text-primary)] hover:text-[var(--text-primary)];
+}
+.variantSecondary {
+  @apply bg-[var(--surface-subtle)] text-[var(--text-primary)] hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)];
+}
+.variantGhost {
+  @apply hover:bg-[var(--surface-control-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)];
+}
+.variantLink {
+  @apply text-[var(--link-color)] underline-offset-4 hover:underline;
+}
+
+.sizeSm {
+  @apply rounded-md text-sm;
+}
+.sizeAction {
+  @apply rounded-md text-sm;
+}
+.sizeLg {
+  @apply rounded-xl text-base;
+}

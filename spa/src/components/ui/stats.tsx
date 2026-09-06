@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
+import styles from "./stats.module.css";
 
 interface StatItemProps {
   label: string;
@@ -11,8 +12,8 @@ interface StatItemProps {
 function StatItem({ label, value, valueClassName, className }: StatItemProps) {
   return (
     <div className={className}>
-      <p className="text-xs text-[var(--text-muted)]">{label}</p>
-      <p className={cn("text-lg font-semibold text-[var(--text-primary)]", valueClassName)}>
+      <p className={styles.statLabel}>{label}</p>
+      <p className={cn(styles.statValue, valueClassName)}>
         {value}
       </p>
     </div>
@@ -27,13 +28,13 @@ interface StatsGridProps {
 
 function StatsGrid({ children, columns = 4, className }: StatsGridProps) {
   const gridCols = {
-    2: "grid-cols-2",
-    3: "grid-cols-2 md:grid-cols-3",
-    4: "grid-cols-2 md:grid-cols-4",
+    2: styles.gridCols2,
+    3: styles.gridCols3,
+    4: styles.gridCols4,
   };
 
   return (
-    <div className={cn("grid gap-4", gridCols[columns], className)}>
+    <div className={cn(styles.statsGrid, gridCols[columns], className)}>
       {children}
     </div>
   );
@@ -53,24 +54,21 @@ interface StatCardProps {
 function StatCard({ label, value, icon, trend, className }: StatCardProps) {
   return (
     <div
-      className={cn(
-        "p-4 rounded-lg border border-[var(--border-subtle)] bg-white/[0.02]",
-        className
-      )}
+      className={cn(styles.statCard, className)}
     >
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-[var(--text-muted)]">{label}</span>
-        {icon && <span className="text-[var(--text-muted)]">{icon}</span>}
+      <div className={styles.statCardHeader}>
+        <span className={styles.statCardLabel}>{label}</span>
+        {icon && <span className={styles.statCardIcon}>{icon}</span>}
       </div>
-      <div className="flex items-baseline gap-2">
-        <span className="text-2xl font-semibold text-[var(--text-primary)]">
+      <div className={styles.statCardValueRow}>
+        <span className={styles.statCardValue}>
           {value}
         </span>
         {trend && (
           <span
             className={cn(
-              "text-xs font-medium",
-              trend.isPositive ? "text-green-400" : "text-red-400"
+              styles.statCardTrend,
+              trend.isPositive ? styles.trendPositive : styles.trendNegative
             )}
           >
             {trend.isPositive ? "+" : "-"}

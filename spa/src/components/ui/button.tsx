@@ -2,38 +2,31 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/utils";
+import styles from "./button.module.css";
 
-const buttonVariants = cva(
-  "inline-flex box-border shrink-0 items-center justify-center whitespace-nowrap rounded-lg text-center text-sm font-medium leading-none transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gradient-start)]/50 disabled:pointer-events-none disabled:opacity-50 [&>span]:min-w-0 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
-  {
-    variants: {
-      variant: {
-        default:
-          "bg-[var(--button-primary-bg)] text-[var(--text-inverse)] hover:bg-[var(--button-primary-bg-hover)] hover:shadow-sm",
-        destructive:
-          "bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20",
-        outline:
-          "border border-[var(--border-default)] bg-[var(--surface-control)] hover:bg-[var(--surface-control-hover)] text-[var(--text-primary)] hover:text-[var(--text-primary)]",
-        secondary:
-          "bg-[var(--surface-subtle)] text-[var(--text-primary)] hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]",
-        ghost:
-          "hover:bg-[var(--surface-control-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
-        link: "text-[var(--link-color)] underline-offset-4 hover:underline",
-      },
-      size: {
-        default: "",
-        sm: "rounded-md text-sm",
-        action: "rounded-md text-sm",
-        lg: "rounded-xl text-base",
-        icon: "",
-      },
+const buttonVariants = cva(styles.button, {
+  variants: {
+    variant: {
+      default: styles.variantDefault,
+      destructive: styles.variantDestructive,
+      outline: styles.variantOutline,
+      secondary: styles.variantSecondary,
+      ghost: styles.variantGhost,
+      link: styles.variantLink,
     },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
+    size: {
+      default: "",
+      sm: styles.sizeSm,
+      action: styles.sizeAction,
+      lg: styles.sizeLg,
+      icon: "",
     },
-  }
-);
+  },
+  defaultVariants: {
+    variant: "default",
+    size: "default",
+  },
+});
 
 const buttonSizeStyles: Record<string, React.CSSProperties> = {
   default: {

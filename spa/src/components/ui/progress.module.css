@@ -1,0 +1,33 @@
+@reference "tailwindcss";
+
+.labelRow {
+  @apply flex justify-between text-xs text-[var(--text-muted)] mb-1;
+}
+.track {
+  @apply bg-[var(--bg-tertiary)] rounded-full overflow-hidden;
+}
+.trackSm {
+  @apply h-1;
+}
+.trackDefault {
+  @apply h-2;
+}
+.trackLg {
+  @apply h-3;
+}
+.fill {
+  @apply h-full bg-[var(--button-primary-bg)] transition-all duration-300;
+}
+
+.circularWrap {
+  @apply relative inline-flex;
+}
+.circularSvg {
+  @apply transform -rotate-90;
+}
+.circularRing {
+  @apply transition-all duration-300;
+}
+.circularLabel {
+  @apply absolute inset-0 flex items-center justify-center text-xs font-medium text-[var(--text-primary)];
+}

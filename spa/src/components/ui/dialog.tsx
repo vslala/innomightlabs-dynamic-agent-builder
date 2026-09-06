@@ -2,6 +2,7 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { cn } from "../../lib/utils";
+import styles from "./dialog.module.css";
 
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
@@ -14,10 +15,7 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn(
-      "fixed inset-0 z-50 bg-black/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-      className
-    )}
+    className={cn(styles.overlay, className)}
     {...props}
   />
 ));
@@ -31,10 +29,7 @@ const DialogContent = React.forwardRef<
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
-      className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] border border-[var(--border-default)] bg-[var(--surface-page)] shadow-xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] rounded-xl",
-        className
-      )}
+      className={cn(styles.content, className)}
       style={{
         padding: "var(--dialog-padding)",
         display: "flex",
@@ -58,7 +53,7 @@ const DialogContent = React.forwardRef<
         }}
       >
         <X style={{ height: "1rem", width: "1rem", color: "var(--text-muted)" }} />
-        <span className="sr-only">Close</span>
+        <span className={styles.srOnly}>Close</span>
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
@@ -71,10 +66,7 @@ const DialogHeader = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn(
-      "flex flex-col space-y-1.5 text-center sm:text-left",
-      className
-    )}
+    className={cn(styles.header, className)}
     style={{
       display: "flex",
       flexDirection: "column",
@@ -93,10 +85,7 @@ const DialogFooter = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn(
-      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
-      className
-    )}
+    className={cn(styles.footer, className)}
     style={{
       display: "flex",
       flexDirection: "row",
@@ -116,10 +105,7 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn(
-      "text-lg font-semibold leading-none tracking-tight text-[var(--text-primary)]",
-      className
-    )}
+    className={cn(styles.title, className)}
     style={{
       fontSize: "1.125rem",
       fontWeight: 600,
@@ -137,7 +123,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn("text-sm text-[var(--text-muted)]", className)}
+    className={cn(styles.description, className)}
     style={{
       fontSize: "0.875rem",
       color: "var(--text-muted)",
@@ -154,7 +140,7 @@ const DialogBody = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn("min-w-0", className)}
+    className={cn(styles.body, className)}
     style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)", ...style }}
     {...props}
   />
@@ -167,7 +153,7 @@ const DialogSection = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn("min-w-0 rounded-lg border border-[var(--border-default)] bg-[var(--surface-panel)]", className)}
+    className={cn(styles.section, className)}
     style={{ padding: "var(--space-5)", ...style }}
     {...props}
   />

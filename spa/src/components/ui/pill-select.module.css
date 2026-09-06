@@ -1,0 +1,14 @@
+@reference "tailwindcss";
+
+.trigger {
+  @apply h-10 w-auto max-w-[13rem] shrink-0 rounded-full border-transparent bg-white/8 px-3 text-sm hover:bg-white/12;
+}
+.optionLabelWrap {
+  @apply flex min-w-0 flex-col;
+}
+.optionLabel {
+  @apply truncate;
+}
+.optionDescription {
+  @apply truncate text-xs text-[var(--text-muted)];
+}

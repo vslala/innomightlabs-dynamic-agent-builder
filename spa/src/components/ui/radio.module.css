@@ -1,0 +1,5 @@
+@reference "tailwindcss";
+
+.radio {
+  @apply shrink-0 border border-[var(--border-default)] bg-[var(--surface-control)] accent-[var(--gradient-start)] disabled:cursor-not-allowed disabled:opacity-50;
+}

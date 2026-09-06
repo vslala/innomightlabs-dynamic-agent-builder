@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Bot, CheckCircle2, ChevronLeft, Download, ShieldCheck } from "lucide-react";
+import { CheckCircle2, ChevronLeft, Download, ShieldCheck } from "lucide-react";
 
+import { getAgentIcon } from "../../../lib/agentIcons";
 import { SchemaForm } from "../../../components/forms";
 import { Inline, Page, PageBody, Stack } from "../../../components/layout";
 import {
@@ -38,6 +39,7 @@ import type {
   SkillFormState,
 } from "../../../types/agentMarketplace";
 import type { FormSchema, FormValue, SelectOption } from "../../../types/form";
+import styles from "./MarketplaceAgentDetail.module.css";
 
 export function MarketplaceAgentDetail() {
   const { templateId } = useParams<{ templateId: string }>();
@@ -119,31 +121,33 @@ export function MarketplaceAgentDetail() {
   if (error && !agent) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
   if (!agent || !plan) return <ErrorState message="Marketplace agent not found." />;
 
+  const AgentIcon = getAgentIcon(agent.title);
+
   return (
     <Page>
       <Inline gap="md" wrap={false}>
         <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard/agents/marketplace")}>
           <ChevronLeft className="h-5 w-5" />
         </Button>
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--button-primary-bg)]">
-          <Bot className="h-6 w-6 text-white" />
+        <div className={styles.agentIcon}>
+          <AgentIcon className={styles.agentIconSvg} />
         </div>
         <div>
-          <h1 className="text-2xl font-semibold text-[var(--text-primary)]">{agent.title}</h1>
-          <p className="text-sm text-[var(--text-muted)]">by {agent.publisher_display_name} · v{agent.template_version}</p>
+          <h1 className={styles.title}>{agent.title}</h1>
+          <p className={styles.subtitle}>by {agent.publisher_display_name} · v{agent.template_version}</p>
         </div>
       </Inline>
 
       {error && (
         <div
-          className="rounded-lg border border-red-500/20 bg-red-500/10 text-sm text-red-400"
+          className={styles.errorBanner}
           style={{ padding: "0.875rem 1rem" }}
         >
           {error}
         </div>
       )}
 
-      <PageBody className="grid xl:grid-cols-[minmax(0,1fr)_22rem]" style={{ gap: "var(--space-8)" }}>
+      <PageBody className={styles.body} style={{ gap: "var(--space-8)" }}>
         <Stack gap="xl">
           <Panel>
             <PanelHeader>
@@ -151,10 +155,10 @@ export function MarketplaceAgentDetail() {
             </PanelHeader>
             <PanelBody>
               <Stack gap="md">
-              <p className="text-sm leading-7 text-[var(--text-secondary)]">{agent.full_description}</p>
-              <div className="flex flex-wrap gap-2">
+              <p className={styles.description}>{agent.full_description}</p>
+              <div className={styles.tagsWrap}>
                 {agent.tags.map((tag) => (
-                  <span key={tag} className="rounded-md bg-[var(--bg-secondary)] px-2.5 py-1 text-xs text-[var(--text-muted)]">
+                  <span key={tag} className={styles.tag}>
                     {tag}
                   </span>
                 ))}
@@ -186,7 +190,7 @@ export function MarketplaceAgentDetail() {
               <MetaRow label="Provider" value={agent.agent_provider} />
               <MetaRow label="Model" value={agent.agent_model || "Default"} />
               <MetaRow label="Imports" value={String(agent.import_count)} />
-              <Button className="w-full" onClick={() => setImportOpen(true)}>
+              <Button className={styles.importButton} onClick={() => setImportOpen(true)}>
                 <Download className="h-4 w-4" />
                 Import Agent
               </Button>
@@ -201,23 +205,23 @@ export function MarketplaceAgentDetail() {
             <PanelBody>
               <Stack gap="sm">
               {agent.skills.length === 0 ? (
-                <p className="text-sm text-[var(--text-muted)]">No skills attached.</p>
+                <p className={styles.mutedText}>No skills attached.</p>
               ) : (
                 agent.skills.map((skill) => (
                   <div
                     key={skill.template_skill_key}
-                    className="rounded-lg border border-[var(--border-default)]"
+                    className={styles.skillRow}
                     style={{ padding: "0.875rem 1rem" }}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className={styles.skillRowHeader}>
                       {skill.enabled_on_import ? (
                         <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                       ) : (
                         <ShieldCheck className="h-4 w-4 text-amber-400" />
                       )}
-                      <p className="text-sm font-medium text-[var(--text-primary)]">{skill.display_name || skill.skill_id}</p>
+                      <p className={styles.skillName}>{skill.display_name || skill.skill_id}</p>
                     </div>
-                    <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
+                    <p className={styles.skillDescription}>
                       {skill.description || "Configured during import."}
                     </p>
                   </div>
@@ -231,7 +235,7 @@ export function MarketplaceAgentDetail() {
 
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent
-          className="max-h-[88vh] max-w-3xl overflow-y-auto"
+          className={styles.dialogContent}
         >
           <DialogHeader>
             <DialogTitle>Import {agent.title}</DialogTitle>
@@ -241,15 +245,15 @@ export function MarketplaceAgentDetail() {
           </DialogHeader>
 
           <DialogBody>
-            <DialogSection className="grid md:grid-cols-3" style={{ gap: "var(--space-5)" }}>
-              <Stack gap="xs" className="md:col-span-3">
+            <DialogSection className={styles.dialogGrid} style={{ gap: "var(--space-5)" }}>
+              <Stack gap="xs" className={styles.nameField}>
                 <Label>Agent name</Label>
                 <Input value={agentName} onChange={(event) => setAgentName(event.target.value)} />
               </Stack>
               {plan.agent.allow_model_override && (
                 <>
                   <SelectBlock label="Provider" value={provider} options={providerOptions} onChange={setProvider} />
-                  <SelectBlock label="Model" value={model} options={modelOptions} onChange={setModel} className="md:col-span-2" />
+                  <SelectBlock label="Model" value={model} options={modelOptions} onChange={setModel} className={styles.modelField} />
                 </>
               )}
             </DialogSection>
@@ -296,11 +300,11 @@ export function MarketplaceAgentDetail() {
 function MetaRow({ label, value }: { label: string; value: string }) {
   return (
     <div
-      className="flex items-center justify-between gap-4 border-b border-[var(--border-default)] last:border-b-0"
+      className={styles.metaRow}
       style={{ paddingBottom: "0.875rem" }}
     >
-      <span className="text-sm text-[var(--text-muted)]">{label}</span>
-      <span className="text-right text-sm font-medium text-[var(--text-primary)]">{value}</span>
+      <span className={styles.mutedText}>{label}</span>
+      <span className={styles.metaValue}>{value}</span>
     </div>
   );
 }

@@ -1,0 +1,15 @@
+@reference "tailwindcss";
+
+.toggle {
+  @apply inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium leading-none transition-all duration-200;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gradient-start)]/50;
+  @apply disabled:pointer-events-none disabled:opacity-50;
+}
+
+.pressedOn {
+  @apply border-[var(--gradient-start)] bg-[rgba(var(--gradient-start-rgb),0.16)] text-[var(--text-primary)];
+}
+
+.pressedOff {
+  @apply border-[var(--border-subtle)] bg-[var(--surface-control)] text-[var(--text-secondary)] hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)];
+}

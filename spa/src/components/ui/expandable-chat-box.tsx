@@ -3,6 +3,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { Loader2, Send } from "lucide-react";
 import { Button } from "./button";
 import { cn } from "../../lib/utils";
+import styles from "./expandable-chat-box.module.css";
 
 interface ExpandableChatBoxProps {
   value: string;
@@ -45,12 +46,9 @@ export function ExpandableChatBox({
 
   return (
     <div
-      className={cn(
-        "flex w-full items-end gap-3 rounded-[1.75rem] border border-[var(--border-subtle)] bg-white/[0.07] px-4 py-3 shadow-2xl shadow-black/20",
-        className
-      )}
+      className={cn(styles.container, className)}
     >
-      {leftActions && <div className="flex shrink-0 items-end gap-2 pb-1">{leftActions}</div>}
+      {leftActions && <div className={styles.actionsRow}>{leftActions}</div>}
       <textarea
         ref={textareaRef}
         value={value}
@@ -59,14 +57,14 @@ export function ExpandableChatBox({
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={handleKeyDown}
-        className="min-h-10 flex-1 resize-none overflow-y-auto bg-transparent px-0 py-2 text-base leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+        className={styles.textarea}
       />
-      <div className="flex shrink-0 items-end gap-2 pb-1">
+      <div className={styles.actionsRow}>
         {rightActions}
         <Button
           type="button"
           size="icon"
-          className="rounded-full"
+          className={styles.sendButton}
           disabled={!value.trim() || disabled || isSubmitting}
           onClick={onSubmit}
         >

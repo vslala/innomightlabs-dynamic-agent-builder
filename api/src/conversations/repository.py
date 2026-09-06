@@ -95,7 +95,7 @@ class ConversationRepository:
             created_by: The email of the user
 
         Returns:
-            List of conversations for the user, sorted by created_at desc
+            List of conversations for the user, sorted by last activity desc
         """
         response = self.table.query(
             KeyConditionExpression=(
@@ -106,8 +106,8 @@ class ConversationRepository:
         items = response.get("Items", [])
         conversations = [self._from_dynamo_item(item) for item in items]
 
-        # Sort by created_at descending (most recent first)
-        conversations.sort(key=lambda c: c.created_at, reverse=True)
+        # Sort by last activity descending (most recently updated/created first)
+        conversations.sort(key=lambda c: c.updated_at or c.created_at, reverse=True)
 
         log.info(f"Found {len(conversations)} conversations for user {created_by}")
         return conversations
@@ -118,7 +118,8 @@ class ConversationRepository:
         """
         Find conversations for a user with pagination.
 
-        Returns conversations in reverse chronological order (most recent first).
+        Returns conversations ordered by last activity (most recently updated or
+        created first).
 
         Args:
             created_by: The email of the user
@@ -138,8 +139,8 @@ class ConversationRepository:
         items = response.get("Items", [])
         conversations = [self._from_dynamo_item(item) for item in items]
 
-        # Sort by created_at descending (most recent first)
-        conversations.sort(key=lambda c: c.created_at, reverse=True)
+        # Sort by last activity descending (most recently updated/created first)
+        conversations.sort(key=lambda c: c.updated_at or c.created_at, reverse=True)
 
         # Apply cursor-based pagination (cursor is the offset index)
         offset = 0

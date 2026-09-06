@@ -1,94 +1,137 @@
-.uploadsContent {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+@reference "tailwindcss";
+
+.pageIconBox {
+  @apply h-12 w-12 rounded-xl bg-[var(--button-primary-bg)] flex items-center justify-center;
 }
 
-.uploadsList {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.pageIcon {
+  @apply h-6 w-6 text-white;
 }
 
-.uploadItem {
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.75rem;
-  padding: 1.1rem 1.25rem;
-  background: var(--bg-secondary);
+.pageTitle {
+  @apply text-xl font-semibold text-[var(--text-primary)];
 }
 
-.uploadRow {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.5rem;
+.pageSubtitle {
+  @apply text-sm text-[var(--text-muted)];
 }
 
-.uploadInfo {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  min-width: 0;
+.detailsCardTitle {
+  @apply text-lg;
 }
 
-.uploadIcon {
-  height: 2.5rem;
-  width: 2.5rem;
-  border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-subtle);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+.detailsLabel {
+  @apply text-[var(--text-muted)];
 }
 
-.uploadTitle {
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1.2;
+.detailsDescription {
+  @apply text-[var(--text-primary)] mt-1;
 }
 
-.uploadMeta {
-  margin-top: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--text-muted);
+.statsSection {
+  @apply border-t border-[var(--border-subtle)] pt-4;
 }
 
-.uploadMetadata {
-  margin-top: 0.5rem;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  max-width: 40rem;
+.createdRow {
+  @apply border-t border-[var(--border-subtle)] text-sm text-[var(--text-muted)] pt-4;
 }
 
-.uploadStats {
-  text-align: right;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  min-width: 6rem;
+.pollingSpinner {
+  @apply h-4 w-4 animate-spin text-[var(--text-muted)];
 }
 
-.uploadContent {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
+.jobsLoadingState {
+  @apply h-32;
 }
 
-.uploadLead {
-  font-size: 0.875rem;
-  color: var(--text-muted);
+.jobTitleWrap {
+  @apply min-w-0;
 }
 
-.uploadSupport {
-  font-size: 0.75rem;
-  color: var(--text-muted);
+.jobUrl {
+  @apply font-medium text-[var(--text-primary)];
 }
 
-.uploadAlert {
-  margin-top: 0.25rem;
+.jobMeta {
+  @apply text-xs text-[var(--text-muted)];
 }
 
-.uploadForm {
-  margin-top: 0.5rem;
+.progressPercent {
+  @apply text-xs text-[var(--text-muted)];
+}
+
+.cancelButton {
+  @apply text-red-400 hover:text-red-300;
+}
+
+.runRetryButton {
+  @apply text-green-400 hover:text-green-300;
+}
+
+.progressHeader {
+  @apply flex items-center justify-between mb-1;
+}
+
+.progressLabel {
+  @apply text-sm text-[var(--text-muted)];
+}
+
+.progressCount {
+  @apply text-sm font-medium text-[var(--text-primary)];
+}
+
+.successStatValue {
+  @apply text-green-400;
+}
+
+.failedStatValue {
+  @apply text-red-400;
+}
+
+.resumeHint {
+  @apply text-xs text-[var(--text-muted)];
+}
+
+.configSection {
+  @apply border-t border-[var(--border-subtle)] pt-4;
+}
+
+.configLabel {
+  @apply text-xs text-[var(--text-muted)] mb-2;
+}
+
+.uploadHint {
+  @apply text-sm text-[var(--text-muted)];
+}
+
+.uploadSupportedTypes {
+  @apply text-xs text-[var(--text-muted)];
+}
+
+.uploadFormLoadingState {
+  @apply h-24;
+}
+
+.uploadsLoadingState {
+  @apply h-24;
+}
+
+.uploadRowIcon {
+  @apply h-4 w-4 text-[var(--text-muted)];
+}
+
+.crawlFormFields {
+  @apply py-4;
+}
+
+.sourceTypeHint {
+  @apply text-xs text-[var(--text-muted)];
+}
+
+.crawlNumbersGrid {
+  @apply grid grid-cols-2 gap-4;
+}
+
+.maxDepthHint {
+  @apply text-xs text-[var(--text-muted)];
 }

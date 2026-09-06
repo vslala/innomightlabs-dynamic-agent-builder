@@ -4,6 +4,7 @@ import { cn } from "../../lib/utils";
 import { Button } from "./button";
 import { JsonTreeViewer, jsonValueSummary, normalizeJsonValue } from "./json-viewer";
 import { Label } from "./label";
+import styles from "./step-inspector.module.css";
 
 export interface StepInspectorItem {
   id: string;
@@ -55,23 +56,23 @@ export function StepInspector({
 
   if (steps.length === 0) {
     return (
-      <section className={cn("rounded-lg border border-[var(--border-subtle)] p-4", className)}>
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{title}</h3>
-        <p className="mt-2 text-sm text-[var(--text-muted)]">{emptyMessage}</p>
+      <section className={cn(styles.emptySection, className)}>
+        <h3 className={styles.emptyTitle}>{title}</h3>
+        <p className={styles.emptyMessage}>{emptyMessage}</p>
       </section>
     );
   }
 
   return (
-    <section className={cn("grid min-w-0 gap-4", className)}>
-      <div className="grid gap-1">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{title}</h3>
-        {description && <p className="text-sm text-[var(--text-muted)]">{description}</p>}
+    <section className={cn(styles.section, className)}>
+      <div className={styles.sectionHeader}>
+        <h3 className={styles.sectionTitle}>{title}</h3>
+        {description && <p className={styles.sectionDescription}>{description}</p>}
       </div>
 
-      <div className="grid min-w-0 gap-4">
+      <div className={styles.content}>
         <div
-          className="grid content-start gap-3"
+          className={styles.stepsGrid}
           style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(13rem, 100%), 1fr))" }}
         >
           {steps.map((step, index) => {
@@ -82,30 +83,30 @@ export function StepInspector({
                 type="button"
                 variant={isSelected ? "secondary" : "outline"}
                 className={cn(
-                  "h-auto w-full min-w-0 justify-start whitespace-normal rounded-lg text-left",
-                  isSelected && "border-[var(--gradient-start)] bg-[var(--bg-tertiary)]"
+                  styles.stepButton,
+                  isSelected && styles.stepButtonSelected
                 )}
                 style={{ padding: "var(--space-3)" }}
                 onClick={() => selectStep(step.id)}
               >
-                <div className="grid min-w-0 flex-1 gap-2">
-                  <div className="flex min-w-0 items-start justify-between gap-3">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--bg-tertiary)] text-xs font-semibold text-[var(--text-primary)]">
+                <div className={styles.stepButtonInner}>
+                  <div className={styles.stepRow}>
+                    <span className={styles.stepLabelGroup}>
+                      <span className={styles.stepIndex}>
                         {index + 1}
                       </span>
-                      <span className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)]">
+                      <span className={styles.stepTitle}>
                         {step.title || `Step ${index + 1}`}
                       </span>
                     </span>
                     {step.status}
                   </div>
                   {step.subtitle && (
-                    <span className="min-w-0 break-all text-xs text-[var(--text-muted)]">
+                    <span className={styles.stepSubtitle}>
                       {step.subtitle}
                     </span>
                   )}
-                  <span className="text-xs text-[var(--text-muted)]">
+                  <span className={styles.stepSummary}>
                     Input {summarize(step.input)} · Output {summarize(step.output)}
                   </span>
                 </div>
@@ -122,26 +123,26 @@ export function StepInspector({
 
 export function StepInspectorDetail({ step, className }: { step: StepInspectorItem; className?: string }) {
   return (
-    <div className={cn("grid min-w-0 gap-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-panel)] p-4", className)}>
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+    <div className={cn(styles.detail, className)}>
+      <div className={styles.detailHeader}>
+        <div className={styles.detailTitleGroup}>
           <Label>{step.title}</Label>
-          {step.subtitle && <p className="mt-1 break-all text-xs text-[var(--text-muted)]">{step.subtitle}</p>}
+          {step.subtitle && <p className={styles.detailSubtitle}>{step.subtitle}</p>}
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className={styles.detailMetaGroup}>
           {step.meta}
           {step.status}
         </div>
       </div>
 
       {step.error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+        <div className={styles.detailError}>
           {step.error}
         </div>
       )}
 
       <div
-        className="grid min-w-0 gap-5"
+        className={styles.detailPanels}
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(28rem, 100%), 1fr))" }}
       >
         <JsonTreeViewer label="Input" value={step.input ?? {}} maxHeight="36rem" />

@@ -1,19 +1,18 @@
 import * as React from "react";
 import { Search } from "lucide-react";
 
-import { cn } from "../../lib/utils";
 import { Input } from "./input";
-import "./search-input.css";
+import styles from "./search-input.module.css";
 
 const SearchInput = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, style, type = "search", ...props }, ref) => {
     return (
-      <div className="search-input">
-        <Search className="search-input__icon" aria-hidden="true" />
+      <div className={styles.searchInput}>
+        <Search className={styles.searchInputIcon} aria-hidden="true" />
         <Input
           ref={ref}
           type={type}
-          className={cn("search-input__control", className)}
+          className={className}
           style={{ ...style, paddingInlineStart: "44px" }}
           {...props}
         />

@@ -1,0 +1,5 @@
+@reference "tailwindcss";
+
+.checkbox {
+  @apply shrink-0 rounded border border-[var(--border-default)] bg-[var(--surface-control)] accent-[var(--gradient-start)] disabled:cursor-not-allowed disabled:opacity-50;
+}

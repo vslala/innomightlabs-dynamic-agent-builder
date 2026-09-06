@@ -1,0 +1,58 @@
+@reference "tailwindcss";
+
+.statLabel {
+  @apply text-xs text-[var(--text-muted)];
+}
+
+.statValue {
+  @apply text-lg font-semibold text-[var(--text-primary)];
+}
+
+.statsGrid {
+  @apply grid gap-4;
+}
+
+.gridCols2 {
+  @apply grid-cols-2;
+}
+.gridCols3 {
+  @apply grid-cols-2 md:grid-cols-3;
+}
+.gridCols4 {
+  @apply grid-cols-2 md:grid-cols-4;
+}
+
+.statCard {
+  @apply p-4 rounded-lg border border-[var(--border-subtle)] bg-white/[0.02];
+}
+
+.statCardHeader {
+  @apply flex items-center justify-between mb-2;
+}
+
+.statCardLabel {
+  @apply text-xs text-[var(--text-muted)];
+}
+
+.statCardIcon {
+  @apply text-[var(--text-muted)];
+}
+
+.statCardValueRow {
+  @apply flex items-baseline gap-2;
+}
+
+.statCardValue {
+  @apply text-2xl font-semibold text-[var(--text-primary)];
+}
+
+.statCardTrend {
+  @apply text-xs font-medium;
+}
+
+.trendPositive {
+  @apply text-green-400;
+}
+.trendNegative {
+  @apply text-red-400;
+}

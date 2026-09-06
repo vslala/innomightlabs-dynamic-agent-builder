@@ -2,6 +2,7 @@ import { cn } from "../../lib/utils";
 import { Card, CardContent } from "./card";
 import { Button } from "./button";
 import type { LucideIcon } from "lucide-react";
+import styles from "./empty-state.module.css";
 
 interface EmptyStateProps {
   icon: LucideIcon;
@@ -22,13 +23,13 @@ function EmptyState({
 }: EmptyStateProps) {
   return (
     <Card className={className}>
-      <CardContent className="p-12">
-        <div className="text-center">
-          <Icon className="h-16 w-16 mx-auto text-[var(--text-muted)] mb-4" />
-          <h3 className="text-lg font-medium text-[var(--text-primary)] mb-2">
+      <CardContent className={styles.content}>
+        <div className={styles.centered}>
+          <Icon className={styles.icon} />
+          <h3 className={styles.title}>
             {title}
           </h3>
-          <p className="text-[var(--text-muted)] mb-6 max-w-sm mx-auto">
+          <p className={styles.description}>
             {description}
           </p>
           {actionLabel && onAction && (
@@ -54,11 +55,11 @@ function InlineEmptyState({
   className,
 }: InlineEmptyStateProps) {
   return (
-    <div className={cn("text-center py-8", className)}>
-      <Icon className="h-12 w-12 mx-auto text-[var(--text-muted)] mb-4 opacity-50" />
-      <p className="text-[var(--text-muted)]">{title}</p>
+    <div className={cn(styles.inlineContainer, className)}>
+      <Icon className={styles.inlineIcon} />
+      <p className={styles.inlineTitle}>{title}</p>
       {description && (
-        <p className="text-sm text-[var(--text-muted)] mt-1">{description}</p>
+        <p className={styles.inlineDescription}>{description}</p>
       )}
     </div>
   );

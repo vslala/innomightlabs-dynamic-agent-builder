@@ -1,4 +1,5 @@
 import { cn } from "../../lib/utils";
+import styles from "./progress.module.css";
 
 interface ProgressBarProps {
   value: number;
@@ -20,15 +21,15 @@ function ProgressBar({
   const percentage = max > 0 ? Math.min((value / max) * 100, 100) : 0;
 
   const heights = {
-    sm: "h-1",
-    default: "h-2",
-    lg: "h-3",
+    sm: styles.trackSm,
+    default: styles.trackDefault,
+    lg: styles.trackLg,
   };
 
   return (
     <div className={className}>
       {showLabel && (
-        <div className="flex justify-between text-xs text-[var(--text-muted)] mb-1">
+        <div className={styles.labelRow}>
           <span>{label ?? "Progress"}</span>
           <span>
             {value} / {max}
@@ -37,12 +38,12 @@ function ProgressBar({
       )}
       <div
         className={cn(
-          "bg-[var(--bg-tertiary)] rounded-full overflow-hidden",
+          styles.track,
           heights[size]
         )}
       >
         <div
-          className="h-full bg-[var(--button-primary-bg)] transition-all duration-300"
+          className={styles.fill}
           style={{ width: `${percentage}%` }}
         />
       </div>
@@ -71,8 +72,8 @@ function CircularProgress({
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
 
   return (
-    <div className={cn("relative inline-flex", className)}>
-      <svg width={size} height={size} className="transform -rotate-90">
+    <div className={cn(styles.circularWrap, className)}>
+      <svg width={size} height={size} className={styles.circularSvg}>
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -91,10 +92,10 @@ function CircularProgress({
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
-          className="transition-all duration-300"
+          className={styles.circularRing}
         />
       </svg>
-      <span className="absolute inset-0 flex items-center justify-center text-xs font-medium text-[var(--text-primary)]">
+      <span className={styles.circularLabel}>
         {Math.round(percentage)}%
       </span>
     </div>

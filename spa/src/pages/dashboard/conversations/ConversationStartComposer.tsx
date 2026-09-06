@@ -3,6 +3,7 @@ import { ChatComposer } from "../../../components/chat/ChatComposer";
 import { Button } from "../../../components/ui/button";
 import { PillSelect } from "../../../components/ui/pill-select";
 import type { AgentResponse } from "../../../services/agents/AgentApiService";
+import styles from "./ConversationStartComposer.module.css";
 
 export type ConversationStartMode = "chat" | "image";
 
@@ -53,14 +54,14 @@ export function ConversationStartComposer({
 
   if (agents.length === 0) {
     return (
-      <section className="flex w-full max-w-3xl flex-col gap-5">
+      <section className={styles.emptySection}>
         <div>
-          <h1 className="text-2xl font-semibold leading-8 text-[var(--text-primary)]">Start a conversation</h1>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--text-muted)]">
+          <h1 className={styles.emptyTitle}>Start a conversation</h1>
+          <p className={styles.emptyDescription}>
             Create an agent before starting a conversation.
           </p>
         </div>
-        <Button className="self-start" onClick={onCreateAgent}>
+        <Button className={styles.createAgentButton} onClick={onCreateAgent}>
           <Plus className="h-4 w-4" />
           Create Agent
         </Button>
@@ -69,29 +70,28 @@ export function ConversationStartComposer({
   }
 
   return (
-    <section className="flex w-full max-w-5xl flex-col gap-8">
-      <div>
-        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-white/5 text-[var(--text-secondary)]">
+    <section className={styles.section}>
+      <div className={styles.header}>
+        <div className={styles.headerIcon}>
           <Bot className="h-5 w-5" />
         </div>
-        <h1 className="text-3xl font-semibold leading-9 text-[var(--text-primary)]">
+        <h1 className={styles.title}>
           Start a conversation
         </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+        <p className={styles.description}>
           Ask your first question, create an image, or continue an older chat from the conversation list.
         </p>
+        {selectedAgent?.agent_description && (
+          <p className={styles.agentDescription}>
+            {selectedAgent.agent_description}
+          </p>
+        )}
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <div className={styles.errorBanner}>
           {error}
         </div>
-      )}
-
-      {selectedAgent?.agent_description && (
-        <p className="-mt-4 max-w-3xl text-xs leading-5 text-[var(--text-muted)]">
-          {selectedAgent.agent_description}
-        </p>
       )}
 
       <ChatComposer

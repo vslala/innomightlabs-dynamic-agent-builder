@@ -121,8 +121,8 @@ async def list_conversations(
     """
     List all conversations for the current user.
 
-    Returns conversations in reverse chronological order (most recent first).
-    Supports cursor-based pagination.
+    Returns conversations ordered by last activity (most recently updated or
+    created first). Supports cursor-based pagination.
     """
     user_email = get_user_email(request)
 

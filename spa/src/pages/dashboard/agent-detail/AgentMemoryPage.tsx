@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Database, Lock, Pencil, Plus, Trash2 } from "lucide-react";
+import { Database, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { FieldGroup, Inline, Stack } from "../../../components/layout";
 import {
+  AlertBanner,
   Button,
   Dialog,
   DialogBody,
@@ -12,12 +13,17 @@ import {
   DialogHeader,
   DialogSection,
   DialogTitle,
+  ExpandableCard,
+  InlineEmptyState,
   Input,
   Label,
+  LoadingState,
   Panel,
   PanelBody,
   PanelHeader,
   PanelTitle,
+  Pill,
+  ProgressBar,
   Textarea,
 } from "../../../components/ui";
 import {
@@ -26,6 +32,7 @@ import {
   type MemoryBlockResponse,
 } from "../../../services/memory";
 import { useAgentDetailContext } from "./types";
+import styles from "./AgentMemoryPage.module.css";
 
 export function AgentMemoryPage() {
   const { agent } = useAgentDetailContext();
@@ -189,113 +196,112 @@ export function AgentMemoryPage() {
     <>
       <Panel>
         <PanelHeader>
-          <Inline justify="space-between" style={{ width: "100%" }}>
+          <Inline justify="space-between" className={styles.panelHeaderRow}>
             <Inline gap="sm">
-              <Database style={{ height: "1.25rem", width: "1.25rem", color: "var(--gradient-start)" }} />
-              <PanelTitle className="text-lg">Memory Blocks</PanelTitle>
+              <Database className={styles.panelIcon} />
+              <PanelTitle className={styles.panelTitle}>Memory Blocks</PanelTitle>
             </Inline>
             <Button size="sm" onClick={() => setIsCreateBlockDialogOpen(true)}>
-              <Plus style={{ height: "1rem", width: "1rem" }} />
+              <Plus className={styles.newBlockIcon} />
               New Block
             </Button>
           </Inline>
         </PanelHeader>
         <PanelBody>
           {loadingBlocks ? (
-            <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
-              <div style={{ height: "2rem", width: "2rem", animation: "spin 1s linear infinite", borderRadius: "50%", border: "2px solid var(--gradient-start)", borderTopColor: "transparent" }} />
-            </div>
+            <LoadingState className={styles.blocksLoadingState} size="default" />
           ) : memoryBlocks.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
-              <Database style={{ height: "3rem", width: "3rem", margin: "0 auto 1rem", opacity: 0.5 }} />
-              <p>No memory blocks yet</p>
-              <p style={{ fontSize: "0.875rem" }}>Memory blocks will be created when you start chatting with this agent</p>
-            </div>
+            <InlineEmptyState
+              icon={Database}
+              title="No memory blocks yet"
+              description="Memory blocks will be created when you start chatting with this agent"
+            />
           ) : (
-            <Stack gap="sm">
+            <Stack gap="md">
               {memoryBlocks.map((block) => (
-                <div key={block.block_name} style={{ border: "1px solid var(--border-default)", borderRadius: "0.75rem", overflow: "hidden" }}>
-                  <div
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-4)", padding: "var(--space-4) var(--space-5)", backgroundColor: "var(--surface-control)", cursor: "pointer", flexWrap: "wrap" }}
-                    onClick={() => toggleBlockExpansion(block.block_name)}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                      {expandedBlocks.has(block.block_name) ? (
-                        <ChevronDown style={{ height: "1rem", width: "1rem", color: "var(--text-muted)" }} />
+                <ExpandableCard
+                  key={block.block_name}
+                  expanded={expandedBlocks.has(block.block_name)}
+                  onToggle={() => toggleBlockExpansion(block.block_name)}
+                  header={
+                    <Inline justify="space-between" wrap={false}>
+                      <Inline gap="sm" wrap={false}>
+                        <div className={styles.blockTitleWrap}>
+                          <Inline gap="xs">
+                            <span className={styles.blockName}>{block.block_name}</span>
+                            {block.is_default && (
+                              <Pill size="sm">
+                                <Lock className={styles.defaultPillIcon} />
+                                default
+                              </Pill>
+                            )}
+                          </Inline>
+                          <p className={styles.blockDescription}>
+                            {block.description}
+                          </p>
+                        </div>
+                      </Inline>
+                      <Inline gap="sm" wrap={false}>
+                        <div className={styles.blockStatsCol}>
+                          <div
+                            className={styles.wordCountLabel}
+                            style={{ color: block.capacity_percent > 80 ? "var(--warning)" : "var(--text-muted)" }}
+                          >
+                            {block.word_count} / {block.word_limit} words
+                          </div>
+                          <div className={styles.progressBarWrap}>
+                            <ProgressBar
+                              value={block.word_count}
+                              max={block.word_limit}
+                              showLabel={false}
+                              size="sm"
+                            />
+                          </div>
+                        </div>
+                        {!block.is_default && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={styles.deleteBlockButton}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDeletingBlock(block.block_name);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </Inline>
+                    </Inline>
+                  }
+                >
+                  {blockContents[block.block_name] ? (
+                    <Stack gap="sm">
+                      {blockContents[block.block_name].lines.length === 0 ? (
+                        <p className={styles.emptyContentText}>No content yet</p>
                       ) : (
-                        <ChevronRight style={{ height: "1rem", width: "1rem", color: "var(--text-muted)" }} />
+                        <div className={styles.contentLines}>
+                          {blockContents[block.block_name].lines.map((line, idx) => (
+                            <div key={idx} className={styles.contentLineRow}>
+                              <span className={styles.contentLineNumber}>{idx + 1}:</span>
+                              <span className={styles.contentLineText}>{line}</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                          <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{block.block_name}</span>
-                          {block.is_default && (
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.75rem", color: "var(--text-muted)", backgroundColor: "var(--bg-tertiary)", padding: "0.125rem 0.5rem", borderRadius: "0.25rem" }}>
-                              <Lock style={{ height: "0.625rem", width: "0.625rem" }} />
-                              default
-                            </span>
-                          )}
-                        </div>
-                        <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.125rem" }}>{block.description}</p>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: "0.75rem", color: block.capacity_percent > 80 ? "#f59e0b" : "var(--text-muted)" }}>
-                          {block.word_count} / {block.word_limit} words
-                        </div>
-                        <div style={{ width: "4rem", height: "0.25rem", backgroundColor: "var(--bg-tertiary)", borderRadius: "0.125rem", overflow: "hidden", marginTop: "0.25rem" }}>
-                          <div style={{ width: `${Math.min(block.capacity_percent, 100)}%`, height: "100%", backgroundColor: block.capacity_percent > 80 ? "#f59e0b" : "var(--gradient-start)", transition: "width 0.3s ease" }} />
-                        </div>
-                      </div>
                       {!block.is_default && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          style={{ color: "#f87171", height: "2rem", width: "2rem" }}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setDeletingBlock(block.block_name);
-                          }}
-                        >
-                          <Trash2 style={{ height: "0.875rem", width: "0.875rem" }} />
-                        </Button>
+                        <Inline justify="flex-end">
+                          <Button size="sm" variant="outline" onClick={() => handleStartEditContent(block.block_name)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit Content
+                          </Button>
+                        </Inline>
                       )}
-                    </div>
-                  </div>
-
-                  {expandedBlocks.has(block.block_name) && (
-                    <div style={{ padding: "var(--space-5)", borderTop: "1px solid var(--border-default)" }}>
-                      {blockContents[block.block_name] ? (
-                        <>
-                          {blockContents[block.block_name].lines.length === 0 ? (
-                            <p style={{ color: "var(--text-muted)", fontStyle: "italic", fontSize: "0.875rem" }}>No content yet</p>
-                          ) : (
-                            <div style={{ fontFamily: "monospace", fontSize: "0.8125rem", backgroundColor: "var(--bg-tertiary)", padding: "var(--space-4)", borderRadius: "0.5rem", maxHeight: "12rem", overflowY: "auto" }}>
-                              {blockContents[block.block_name].lines.map((line, idx) => (
-                                <div key={idx} style={{ display: "flex", gap: "0.75rem", lineHeight: "1.5" }}>
-                                  <span style={{ color: "var(--text-muted)", minWidth: "1.5rem", textAlign: "right" }}>{idx + 1}:</span>
-                                  <span style={{ color: "var(--text-primary)" }}>{line}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {!block.is_default && (
-                            <div style={{ marginTop: "0.75rem", display: "flex", justifyContent: "flex-end" }}>
-                              <Button size="sm" variant="outline" onClick={() => handleStartEditContent(block.block_name)}>
-                                <Pencil style={{ height: "0.875rem", width: "0.875rem" }} />
-                                Edit Content
-                              </Button>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div style={{ display: "flex", justifyContent: "center", padding: "1rem" }}>
-                          <div style={{ height: "1.5rem", width: "1.5rem", animation: "spin 1s linear infinite", borderRadius: "50%", border: "2px solid var(--gradient-start)", borderTopColor: "transparent" }} />
-                        </div>
-                      )}
-                    </div>
+                    </Stack>
+                  ) : (
+                    <LoadingState className={styles.contentLoadingState} size="sm" />
                   )}
-                </div>
+                </ExpandableCard>
               ))}
             </Stack>
           )}
@@ -311,11 +317,7 @@ export function AgentMemoryPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
-            {createBlockError && (
-              <div style={{ padding: "0.75rem", borderRadius: "0.5rem", backgroundColor: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#f87171", fontSize: "0.875rem" }}>
-                {createBlockError}
-              </div>
-            )}
+            {createBlockError && <AlertBanner message={createBlockError} variant="error" />}
             <FieldGroup>
               <Label htmlFor="block-name">Block Name *</Label>
               <Input id="block-name" placeholder="e.g., projects, goals, preferences" value={newBlockName} onChange={(e) => setNewBlockName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} />
@@ -366,7 +368,7 @@ export function AgentMemoryPage() {
           <DialogSection>
           <FieldGroup>
             <Label htmlFor="edit-content">Content (one item per line)</Label>
-            <Textarea id="edit-content" rows={10} value={editContent} onChange={(e) => setEditContent(e.target.value)} style={{ fontFamily: "monospace", fontSize: "0.875rem" }} />
+            <Textarea id="edit-content" rows={10} value={editContent} onChange={(e) => setEditContent(e.target.value)} className={styles.editContentTextarea} />
           </FieldGroup>
           </DialogSection>
           <DialogFooter>

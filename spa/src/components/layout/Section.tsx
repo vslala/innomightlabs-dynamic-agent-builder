@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
+import styles from "./Section.module.css";
 
 export function Section({
   className,
@@ -8,7 +9,7 @@ export function Section({
 }: React.HTMLAttributes<HTMLElement>) {
   return (
     <section
-      className={cn("min-w-0", className)}
+      className={cn(styles.section, className)}
       style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)", ...style }}
       {...props}
     />
@@ -22,7 +23,7 @@ export function SectionHeader({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("min-w-0", className)}
+      className={cn(styles.sectionHeader, className)}
       style={{
         display: "flex",
         alignItems: "flex-start",
@@ -41,7 +42,7 @@ export function SectionTitle({
 }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
     <h2
-      className={cn("text-lg font-semibold leading-tight text-[var(--text-primary)]", className)}
+      className={cn(styles.sectionTitle, className)}
       {...props}
     />
   );
@@ -52,6 +53,6 @@ export function SectionDescription({
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>) {
   return (
-    <p className={cn("text-sm leading-6 text-[var(--text-muted)]", className)} {...props} />
+    <p className={cn(styles.sectionDescription, className)} {...props} />
   );
 }

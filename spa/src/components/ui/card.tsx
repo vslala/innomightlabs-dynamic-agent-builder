@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
+import styles from "./card.module.css";
 
 const Card = React.forwardRef<
   HTMLDivElement,
@@ -7,10 +8,7 @@ const Card = React.forwardRef<
 >(({ className, style, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn(
-      "rounded-lg border border-[var(--border-default)] bg-[var(--surface-panel)]",
-      className
-    )}
+    className={cn(styles.card, className)}
     style={{ boxShadow: "0 1px 2px var(--shadow-soft)", ...style }}
     {...props}
   />
@@ -23,7 +21,7 @@ const CardHeader = React.forwardRef<
 >(({ className, style, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex flex-col", className)}
+    className={cn(styles.cardHeader, className)}
     style={{ gap: "var(--space-2)", padding: "var(--card-padding)", paddingBottom: "var(--space-3)", ...style }}
     {...props}
   />
@@ -36,10 +34,7 @@ const CardTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn(
-      "text-base font-semibold leading-none tracking-tight text-[var(--text-primary)]",
-      className
-    )}
+    className={cn(styles.cardTitle, className)}
     {...props}
   />
 ));
@@ -51,7 +46,7 @@ const CardDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("text-sm text-[var(--text-muted)]", className)}
+    className={cn(styles.cardDescription, className)}
     {...props}
   />
 ));
@@ -76,7 +71,7 @@ const CardFooter = React.forwardRef<
 >(({ className, style, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex items-center", className)}
+    className={cn(styles.cardFooter, className)}
     style={{ gap: "var(--space-3)", padding: "var(--card-padding)", paddingTop: "var(--space-3)", ...style }}
     {...props}
   />
@@ -97,7 +92,7 @@ const Panel = React.forwardRef<HTMLDivElement, PanelProps>(
   ({ className, density = "default", style, ...props }, ref) => (
     <Card
       ref={ref}
-      className={cn("min-w-0", className)}
+      className={cn(styles.panel, className)}
       style={{ "--panel-padding": panelPadding[density], ...style } as React.CSSProperties}
       {...props}
     />
@@ -109,7 +104,7 @@ const PanelHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
   ({ className, style, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("flex min-w-0 items-start justify-between", className)}
+      className={cn(styles.panelHeader, className)}
       style={{
         gap: "var(--space-4)",
         padding: "var(--panel-padding, var(--card-padding))",
@@ -126,7 +121,7 @@ const PanelBody = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivE
   ({ className, style, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("min-w-0", className)}
+      className={cn(styles.panelBody, className)}
       style={{
         padding: "var(--panel-padding, var(--card-padding))",
         paddingTop: "var(--space-3)",
@@ -142,7 +137,7 @@ const PanelFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
   ({ className, style, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn("flex flex-wrap items-center justify-end", className)}
+      className={cn(styles.panelFooter, className)}
       style={{
         gap: "var(--space-3)",
         padding: "var(--panel-padding, var(--card-padding))",
@@ -158,6 +153,31 @@ PanelFooter.displayName = "PanelFooter";
 const PanelTitle = CardTitle;
 const PanelDescription = CardDescription;
 
+interface SectionCardHeaderProps {
+  icon: React.ComponentType<{ className?: string }>;
+  title: React.ReactNode;
+  status?: React.ReactNode;
+  action?: React.ReactNode;
+  className?: string;
+}
+
+function SectionCardHeader({ icon: Icon, title, status, action, className }: SectionCardHeaderProps) {
+  return (
+    <div className={cn(styles.sectionHeader, className)} style={{ gap: "var(--space-4)" }}>
+      <div className={styles.sectionHeaderLeft} style={{ gap: "var(--space-2)" }}>
+        <Icon className={styles.sectionHeaderIcon} />
+        <CardTitle className={styles.sectionHeaderTitle}>{title}</CardTitle>
+        {status}
+      </div>
+      {action && (
+        <div className={styles.sectionHeaderActions} style={{ gap: "var(--space-2)" }}>
+          {action}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export {
   Card,
   CardHeader,
@@ -171,4 +191,5 @@ export {
   PanelFooter,
   PanelTitle,
   PanelDescription,
+  SectionCardHeader,
 };

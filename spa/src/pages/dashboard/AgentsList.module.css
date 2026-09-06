@@ -1,0 +1,37 @@
+@reference "tailwindcss";
+
+.agentsGrid {
+  @apply grid-cols-1 md:grid-cols-2 lg:grid-cols-3;
+}
+
+.agentCard {
+  @apply hover:border-[var(--gradient-start)]/50 transition-all duration-200;
+}
+
+.agentIcon {
+  @apply h-14 w-14 rounded-xl bg-[var(--button-primary-bg)] flex items-center justify-center;
+}
+
+.agentIconSvg {
+  @apply h-7 w-7 text-white;
+}
+
+.hoverActions {
+  @apply opacity-0 transition-opacity group-hover:opacity-100;
+}
+
+.deleteButton {
+  @apply text-red-400 hover:text-red-300;
+}
+
+.agentName {
+  @apply text-lg font-semibold text-[var(--text-primary)] transition-colors hover:text-[var(--gradient-start)];
+}
+
+.agentPersona {
+  @apply line-clamp-2 text-sm leading-relaxed text-[var(--text-muted)];
+}
+
+.providerBadge {
+  @apply inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--gradient-start)]/10 text-[var(--gradient-start)];
+}

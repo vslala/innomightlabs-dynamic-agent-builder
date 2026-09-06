@@ -1,0 +1,81 @@
+@reference "tailwindcss";
+
+.panelHeaderRow {
+  @apply w-full;
+}
+
+.panelIcon {
+  @apply h-5 w-5 text-[var(--gradient-start)];
+}
+
+.panelTitle {
+  @apply text-lg;
+}
+
+.newBlockIcon {
+  @apply h-4 w-4;
+}
+
+.blocksLoadingState {
+  @apply h-32;
+}
+
+.blockTitleWrap {
+  @apply min-w-0;
+}
+
+.blockName {
+  @apply font-medium text-[var(--text-primary)];
+}
+
+.defaultPillIcon {
+  @apply mr-1 h-2.5 w-2.5;
+}
+
+.blockDescription {
+  @apply text-xs text-[var(--text-muted)] mt-1;
+}
+
+.blockStatsCol {
+  @apply text-right;
+}
+
+.wordCountLabel {
+  @apply text-xs;
+}
+
+.progressBarWrap {
+  @apply mt-1 w-16;
+}
+
+.deleteBlockButton {
+  @apply h-8 w-8 text-red-400;
+}
+
+.emptyContentText {
+  @apply text-sm italic text-[var(--text-muted)];
+}
+
+.contentLines {
+  @apply overflow-y-auto rounded-md p-4 max-h-48 bg-[var(--bg-tertiary)] font-mono text-[0.8125rem];
+}
+
+.contentLineRow {
+  @apply flex gap-3 leading-relaxed;
+}
+
+.contentLineNumber {
+  @apply min-w-[1.5rem] text-right text-[var(--text-muted)];
+}
+
+.contentLineText {
+  @apply text-[var(--text-primary)];
+}
+
+.contentLoadingState {
+  @apply h-16;
+}
+
+.editContentTextarea {
+  @apply text-sm font-mono;
+}

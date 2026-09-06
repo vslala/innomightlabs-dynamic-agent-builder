@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Bot, Search, Sparkles } from "lucide-react";
+import { Search, Sparkles } from "lucide-react";
 
+import { getAgentIcon } from "../../../lib/agentIcons";
 import {
   Button,
   Card,
@@ -14,6 +15,7 @@ import {
 import { Grid, Inline, Page, PageActions, PageBody, PageDescription, PageHeader, PageTitle, Stack } from "../../../components/layout";
 import { agentMarketplaceApiService } from "../../../services/agentMarketplace";
 import type { MarketplaceAgentSummary } from "../../../types/agentMarketplace";
+import styles from "./AgentMarketplacePage.module.css";
 
 export function AgentMarketplacePage() {
   const navigate = useNavigate();
@@ -64,8 +66,8 @@ export function AgentMarketplacePage() {
       <PageBody>
         <form onSubmit={handleSearch}>
           <Inline gap="sm" wrap={false} align="stretch">
-            <div className="relative min-w-0 flex-1">
-              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+            <div className={styles.searchWrap}>
+              <Search className={styles.searchIcon} />
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -88,35 +90,37 @@ export function AgentMarketplacePage() {
             description="Try a different search, or publish one of your own agents."
           />
         ) : (
-          <Grid className="grid-cols-1 md:grid-cols-2 xl:grid-cols-3" gap="md">
-            {agents.map((agent) => (
-              <Card key={agent.template_id} className="transition-colors hover:border-[var(--gradient-start)]/60">
+          <Grid className={styles.agentsGrid} gap="md">
+            {agents.map((agent) => {
+              const AgentIcon = getAgentIcon(agent.title);
+              return (
+              <Card key={agent.template_id} className={styles.agentCard}>
                 <CardContent>
                   <Stack gap="md">
                     <Inline gap="md" align="flex-start" wrap={false}>
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--button-primary-bg)]">
-                        <Bot className="h-6 w-6 text-white" />
+                      <div className={styles.agentIcon}>
+                        <AgentIcon className={styles.agentIconSvg} />
                       </div>
                       <Stack gap="xs">
                         <Link to={`/dashboard/agents/marketplace/${agent.template_id}`}>
-                          <h2 className="line-clamp-2 text-base font-semibold text-[var(--text-primary)] hover:text-[var(--gradient-start)]">
+                          <h2 className={styles.agentTitle}>
                             {agent.title}
                           </h2>
                         </Link>
-                        <p className="text-xs text-[var(--text-muted)]">
+                        <p className={styles.agentMeta}>
                           by {agent.publisher_display_name} · {agent.import_count} imports
                         </p>
                       </Stack>
                     </Inline>
 
-                    <p className="line-clamp-3 text-sm leading-6 text-[var(--text-secondary)]">
+                    <p className={styles.agentDescription}>
                       {agent.short_description}
                     </p>
 
                     {agent.tags.length > 0 ? (
                       <Inline gap="xs">
                         {agent.tags.slice(0, 4).map((tag) => (
-                          <span key={tag} className="rounded-md bg-[var(--bg-secondary)] px-2.5 py-1 text-xs text-[var(--text-muted)]">
+                          <span key={tag} className={styles.tag}>
                             {tag}
                           </span>
                         ))}
@@ -125,10 +129,10 @@ export function AgentMarketplacePage() {
 
                     <Inline
                       justify="space-between"
-                      className="border-t border-[var(--border-subtle)]"
+                      className={styles.cardFooter}
                       style={{ paddingTop: "var(--space-4)" }}
                     >
-                      <span className="text-xs text-[var(--text-muted)]">
+                      <span className={styles.agentMeta}>
                         {agent.skill_count} skills · v{agent.template_version}
                       </span>
                       <Button size="sm" onClick={() => navigate(`/dashboard/agents/marketplace/${agent.template_id}`)}>
@@ -138,7 +142,8 @@ export function AgentMarketplacePage() {
                   </Stack>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </Grid>
         )}
       </PageBody>

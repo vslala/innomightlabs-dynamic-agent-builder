@@ -1,0 +1,51 @@
+@reference "tailwindcss";
+
+.pill {
+  @apply inline-flex min-h-6 items-center justify-center whitespace-nowrap rounded-full font-semibold leading-[1.15] tracking-normal transition-colors;
+}
+
+.variantDefault {
+  @apply bg-[var(--surface-subtle)] text-[var(--text-muted)];
+}
+.variantPrimary {
+  @apply bg-[var(--accent-blue-bg)] text-[var(--link-color)];
+}
+.variantSecondary {
+  @apply bg-[var(--surface-subtle)] text-[var(--text-secondary)];
+}
+.variantOutline {
+  @apply border border-[var(--border-default)] bg-transparent text-[var(--text-secondary)];
+}
+.variantSuccess {
+  @apply bg-[var(--success-bg)] text-[var(--success)];
+}
+.variantWarning {
+  @apply bg-[var(--warning-bg)] text-[var(--warning)];
+}
+.variantError {
+  @apply bg-[var(--danger-bg)] text-[var(--danger)];
+}
+.variantInfo {
+  @apply bg-[var(--accent-blue-bg)] text-[var(--link-color)];
+}
+
+.sizeSm {
+  @apply min-h-5 px-2.5 py-0.5 text-xs;
+}
+.sizeDefault {
+  @apply min-h-6 px-2.5 py-1 text-xs;
+}
+.sizeLg {
+  @apply min-h-7 px-3.5 py-1.5 text-base;
+}
+
+.removeButton {
+  @apply ml-1 transition-opacity;
+}
+.removeButton:hover {
+  @apply opacity-70;
+}
+
+.group {
+  @apply flex flex-wrap gap-2;
+}

@@ -1,0 +1,37 @@
+@reference "tailwindcss";
+
+.card {
+  @apply border border-[var(--border-subtle)] rounded-lg overflow-hidden;
+}
+
+.header {
+  @apply flex items-center cursor-pointer hover:bg-white/5 transition-colors;
+}
+
+.chevron {
+  @apply mr-3 text-[var(--text-muted)];
+}
+
+.chevronIcon {
+  @apply h-4 w-4;
+}
+
+.headerContent {
+  @apply flex-1;
+}
+
+.content {
+  @apply border-t border-[var(--border-subtle)] bg-[var(--bg-secondary)];
+}
+
+.section {
+  @apply border-t border-[var(--border-subtle)] pt-4;
+}
+
+.sectionHeader {
+  @apply flex items-center gap-2 text-xs text-[var(--text-muted)] mb-2 hover:text-[var(--text-secondary)] transition-colors;
+}
+
+.sectionChevronIcon {
+  @apply h-3 w-3;
+}

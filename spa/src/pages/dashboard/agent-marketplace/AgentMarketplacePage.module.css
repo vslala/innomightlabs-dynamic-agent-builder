@@ -1,0 +1,45 @@
+@reference "tailwindcss";
+
+.searchWrap {
+  @apply relative min-w-0 flex-1;
+}
+
+.searchIcon {
+  @apply absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)];
+}
+
+.agentsGrid {
+  @apply grid-cols-1 md:grid-cols-2 xl:grid-cols-3;
+}
+
+.agentCard {
+  @apply transition-colors hover:border-[var(--gradient-start)]/60;
+}
+
+.agentIcon {
+  @apply flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--button-primary-bg)];
+}
+
+.agentIconSvg {
+  @apply h-6 w-6 text-white;
+}
+
+.agentTitle {
+  @apply line-clamp-2 text-base font-semibold text-[var(--text-primary)] hover:text-[var(--gradient-start)];
+}
+
+.agentMeta {
+  @apply text-xs text-[var(--text-muted)];
+}
+
+.agentDescription {
+  @apply line-clamp-3 text-sm leading-6 text-[var(--text-secondary)];
+}
+
+.tag {
+  @apply rounded-md bg-[var(--bg-secondary)] px-2.5 py-1 text-xs text-[var(--text-muted)];
+}
+
+.cardFooter {
+  @apply border-t border-[var(--border-subtle)];
+}

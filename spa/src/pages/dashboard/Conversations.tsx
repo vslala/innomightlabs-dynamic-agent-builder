@@ -11,6 +11,7 @@ import {
   ConversationStartComposer,
   type ConversationStartMode,
 } from "./conversations/ConversationStartComposer";
+import styles from "./Conversations.module.css";
 
 export function Conversations() {
   const navigate = useNavigate();
@@ -116,14 +117,14 @@ export function Conversations() {
 
   if (loading) {
     return (
-      <div className="flex h-[32rem] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-[var(--gradient-start)]" />
+      <div className={styles.loadingContainer}>
+        <Loader2 className={styles.loadingSpinner} />
       </div>
     );
   }
 
   return (
-    <div className="grid h-full min-h-[calc(100vh-4rem)] grid-cols-1 bg-[var(--bg-dark)] lg:grid-cols-[24rem_minmax(0,1fr)]">
+    <div className={styles.layout}>
       <ConversationSidebar
         conversations={filteredConversations}
         agents={agents}
@@ -134,7 +135,7 @@ export function Conversations() {
         onDeleteConversation={handleDelete}
       />
 
-      <main className="flex min-w-0 items-center justify-center px-8 py-16 lg:px-16 xl:px-24">
+      <main className={styles.main}>
         <ConversationStartComposer
           agents={agents}
           selectedAgentId={selectedAgentId}

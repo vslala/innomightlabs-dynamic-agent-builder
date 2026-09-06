@@ -1,0 +1,57 @@
+@reference "tailwindcss";
+
+.card {
+  @apply rounded-lg border border-[var(--border-default)] bg-[var(--surface-panel)];
+}
+
+.cardHeader {
+  @apply flex flex-col;
+}
+
+.cardTitle {
+  @apply text-base font-semibold leading-none tracking-tight text-[var(--text-primary)];
+}
+
+.cardDescription {
+  @apply text-sm text-[var(--text-muted)];
+}
+
+.cardFooter {
+  @apply flex items-center;
+}
+
+.panel {
+  @apply min-w-0;
+}
+
+.panelHeader {
+  @apply flex min-w-0 items-start justify-between;
+}
+
+.panelBody {
+  @apply min-w-0;
+}
+
+.panelFooter {
+  @apply flex flex-wrap items-center justify-end;
+}
+
+.sectionHeader {
+  @apply flex items-center justify-between;
+}
+
+.sectionHeaderLeft {
+  @apply flex min-w-0 items-center;
+}
+
+.sectionHeaderIcon {
+  @apply h-5 w-5 text-[var(--gradient-start)];
+}
+
+.sectionHeaderTitle {
+  @apply text-lg;
+}
+
+.sectionHeaderActions {
+  @apply flex shrink-0 items-center;
+}

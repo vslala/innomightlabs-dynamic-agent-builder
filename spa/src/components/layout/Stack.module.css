@@ -1,0 +1,13 @@
+@reference "tailwindcss";
+
+.stack {
+  @apply flex min-w-0 flex-col;
+}
+
+.inline {
+  @apply flex min-w-0;
+}
+
+.grid {
+  @apply grid min-w-0;
+}

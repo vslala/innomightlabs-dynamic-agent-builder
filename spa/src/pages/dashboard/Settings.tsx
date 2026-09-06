@@ -1,15 +1,22 @@
 import { useEffect, useState } from "react";
 import { Settings as SettingsIcon, CheckCircle, AlertCircle, Loader2, Palette } from "lucide-react";
+import { cn } from "../../lib/utils";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
-} from "../../components/ui/card";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
+  SectionCardHeader,
+  Button,
+  Input,
+  Label,
+  AlertBanner,
+  LoadingState,
+  InlineEmptyState,
+  ListRow,
+} from "../../components/ui";
+import { FieldGroup, Grid, Inline, PageBody, Stack } from "../../components/layout";
 import { SchemaForm } from "../../components/forms";
 import type { FormSchema, FormValue } from "../../types/form";
 import { ConfirmationDialog } from "../../components/ui/confirmation-dialog";
@@ -28,7 +35,7 @@ import {
   type SmartSuggestionSettings,
 } from "../../services/smartSuggestions";
 import { getStoredTheme, setStoredTheme, type AppTheme } from "../../lib/theme";
-import "./Settings.css";
+import styles from "./Settings.module.css";
 
 type SubscriptionStatus = {
   tier: string;
@@ -309,7 +316,7 @@ export function Settings() {
   };
 
   return (
-    <div className="settings-page">
+    <PageBody style={{ maxWidth: "42rem" }}>
       {/* Profile Section */}
       <Card>
         <CardHeader>
@@ -319,30 +326,30 @@ export function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <Stack className={styles.stackGap4}>
+            <FieldGroup>
               <Label htmlFor="displayName">Display Name</Label>
               <Input
                 id="displayName"
                 value={userInfo?.name || ""}
                 disabled
-                style={{ backgroundColor: "var(--bg-tertiary)" }}
+                className={styles.disabledFieldBg}
               />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            </FieldGroup>
+            <FieldGroup>
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
                 value={userInfo?.email || ""}
                 disabled
-                style={{ backgroundColor: "var(--bg-tertiary)" }}
+                className={styles.disabledFieldBg}
               />
-            </div>
-            <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+            </FieldGroup>
+            <p className={styles.profileNote}>
               Profile settings are managed through your Google account
             </p>
-          </div>
+          </Stack>
         </CardContent>
       </Card>
 
@@ -354,7 +361,7 @@ export function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.75rem" }}>
+          <Grid className={styles.appearanceGrid} gap="sm">
             {[
               {
                 id: "dark" as const,
@@ -376,49 +383,34 @@ export function Settings() {
                   type="button"
                   variant="ghost"
                   onClick={() => handleThemeChange(option.id)}
-                  style={{
-                    border: selected ? "2px solid var(--gradient-start)" : "1px solid var(--border-subtle)",
-                    borderRadius: "0.75rem",
-                    background: "var(--bg-secondary)",
-                    color: "var(--text-primary)",
-                    height: "auto",
-                    padding: "1rem",
-                    textAlign: "left",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "stretch",
-                    justifyContent: "flex-start",
-                    gap: "0.75rem",
-                  }}
+                  className={cn(
+                    styles.themeOptionButton,
+                    selected ? styles.themeOptionSelected : styles.themeOptionUnselected
+                  )}
                 >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <Palette className="h-4 w-4" style={{ color: "var(--gradient-start)" }} />
-                      <span style={{ fontWeight: 700 }}>{option.label}</span>
+                  <div className={styles.themeOptionTopRow}>
+                    <div className={styles.themeOptionLabelRow}>
+                      <Palette className={styles.themeOptionIcon} />
+                      <span className={styles.themeOptionLabel}>{option.label}</span>
                     </div>
-                    {selected && <CheckCircle className="h-4 w-4" style={{ color: "var(--gradient-start)" }} />}
+                    {selected && <CheckCircle className={styles.themeOptionIcon} />}
                   </div>
-                  <div style={{ display: "flex", gap: "0.375rem" }}>
+                  <div className={styles.themeSwatchRow}>
                     {option.swatches.map((color) => (
                       <span
                         key={color}
-                        style={{
-                          width: "1.5rem",
-                          height: "1.5rem",
-                          borderRadius: "999px",
-                          background: color,
-                          border: "1px solid var(--border-subtle)",
-                        }}
+                        className={styles.themeSwatch}
+                        style={{ background: color }}
                       />
                     ))}
                   </div>
-                  <p style={{ fontSize: "0.8125rem", color: "var(--text-muted)", lineHeight: 1.45 }}>
+                  <p className={styles.themeOptionDescription}>
                     {option.description}
                   </p>
                 </Button>
               );
             })}
-          </div>
+          </Grid>
         </CardContent>
       </Card>
 
@@ -431,60 +423,45 @@ export function Settings() {
         </CardHeader>
         <CardContent>
           {subscriptionLoading ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--gradient-start)" }} />
-              <span style={{ color: "var(--text-muted)" }}>Loading subscription...</span>
-            </div>
+            <Inline gap="sm">
+              <Loader2 className={styles.subscriptionSpinner} />
+              <span className={styles.subscriptionLoadingText}>Loading subscription...</span>
+            </Inline>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--text-muted)" }}>Plan</span>
-                <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+            <Stack gap="sm">
+              <Inline justify="space-between">
+                <span className={styles.subscriptionLabel}>Plan</span>
+                <span className={styles.subscriptionTierValue}>
                   {subscription?.tier ?? "free"}
                 </span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--text-muted)" }}>Status</span>
-                <span style={{ color: "var(--text-primary)" }}>
+              </Inline>
+              <Inline justify="space-between">
+                <span className={styles.subscriptionLabel}>Status</span>
+                <span className={styles.subscriptionValue}>
                   {subscription?.status ?? "free"}
                 </span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--text-muted)" }}>Billing period</span>
-                <span style={{ color: "var(--text-primary)" }}>
+              </Inline>
+              <Inline justify="space-between">
+                <span className={styles.subscriptionLabel}>Billing period</span>
+                <span className={styles.subscriptionValue}>
                   {formatBillingPeriod(subscription?.current_period_start, subscription?.current_period_end)}
                 </span>
-              </div>
+              </Inline>
               {subscription?.cancel_at_period_end ? (
-                <div style={{
-                  padding: "0.75rem",
-                  backgroundColor: "rgba(251, 191, 36, 0.1)",
-                  border: "1px solid rgba(251, 191, 36, 0.3)",
-                  borderRadius: "0.5rem",
-                  marginTop: "0.5rem"
-                }}>
-                  <p style={{ fontSize: "0.875rem", color: "#fbbf24", fontWeight: 500 }}>
-                    {subscription?.current_period_end
-                      ? `Subscription will be cancelled on ${formatPeriodEnd(subscription.current_period_end)}`
-                      : "Subscription is scheduled for cancellation"
-                    }
-                  </p>
-                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
-                    {subscription?.current_period_end
-                      ? "You'll continue to have access until the end of your billing period."
-                      : "You'll continue to have access until the end of your current billing period."
-                    }
-                  </p>
-                </div>
+                <AlertBanner
+                  variant="warning"
+                  message={
+                    subscription?.current_period_end
+                      ? `Subscription will be cancelled on ${formatPeriodEnd(subscription.current_period_end)}. You'll continue to have access until then.`
+                      : "Subscription is scheduled for cancellation. You'll continue to have access until the end of your current billing period."
+                  }
+                />
               ) : (
                 <>
-                  <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}>
+                  <Inline gap="sm">
                     <a
                       href="/pricing"
-                      style={{
-                        color: "var(--text-primary)",
-                        textDecoration: "underline"
-                      }}
+                      className={styles.upgradeLink}
                     >
                       {subscription?.is_active
                         ? `Upgrade plan (current: ${subscription.tier})`
@@ -497,27 +474,20 @@ export function Settings() {
                         size="sm"
                         onClick={() => setShowCancelConfirm(true)}
                         disabled={cancellingSubscription}
-                        style={{
-                          color: "#ef4444",
-                          borderColor: "#ef4444"
-                        }}
+                        className={styles.cancelSubscriptionButton}
                       >
                         Cancel Subscription
                       </Button>
                     )}
-                  </div>
+                  </Inline>
                   {subscription?.is_active && (
-                    <p style={{
-                      fontSize: "0.75rem",
-                      color: "var(--text-muted)",
-                      marginTop: "0.25rem"
-                    }}>
+                    <p className={styles.downgradeHint}>
                       To downgrade, contact support
                     </p>
                   )}
                 </>
               )}
-            </div>
+            </Stack>
           )}
         </CardContent>
       </Card>
@@ -531,122 +501,95 @@ export function Settings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {error && (
-            <div
-              style={{
-                marginBottom: "1rem",
-                padding: "0.75rem",
-                borderRadius: "0.5rem",
-                backgroundColor: "rgba(248, 113, 113, 0.1)",
-                border: "1px solid rgba(248, 113, 113, 0.2)",
-                color: "#f87171",
-                fontSize: "0.875rem",
-              }}
-            >
-              {error}
-            </div>
-          )}
+          <Stack gap="sm">
+            {error && <AlertBanner message={error} variant="error" />}
 
-          {loading ? (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
-              <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--gradient-start)" }} />
-            </div>
-          ) : providers.length === 0 ? (
-            <p style={{ color: "var(--text-muted)", textAlign: "center", padding: "2rem" }}>
-              No providers available
-            </p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {providers.map((provider) => (
-                <div
-                  key={provider.provider_name}
-                  style={{
-                    padding: "1rem",
-                    borderRadius: "0.5rem",
-                    border: "1px solid var(--border-subtle)",
-                    backgroundColor: "var(--bg-secondary)",
-                  }}
-                >
-                  {configuringProvider === provider.provider_name ? (
+            {loading ? (
+              <LoadingState className={styles.providersLoadingState} size="default" />
+            ) : providers.length === 0 ? (
+              <InlineEmptyState icon={AlertCircle} title="No providers available" />
+            ) : (
+              <Stack className={styles.stackGap4}>
+                {providers.map((provider) =>
+                  configuringProvider === provider.provider_name ? (
                     // Show configuration form
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
-                        <SettingsIcon className="h-5 w-5" style={{ color: "var(--gradient-start)" }} />
-                        <h3 style={{ fontWeight: 600, color: "var(--text-primary)" }}>
-                          Configure {provider.provider_name}
-                        </h3>
-                      </div>
-                      {provider.provider_name === "OpenAI" && (
-                        <div className="openai-oauth-guide">
-                          <p className="openai-oauth-guide-text">
-                            1. Click Open OpenAI Login. 2. Sign in and approve access. 3. Copy the full localhost callback URL from your browser (the page may fail to load). 4. Paste that URL below and submit.
-                          </p>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleOpenAIConnect}
-                            disabled={openaiConnecting}
-                          >
-                            {openaiConnecting ? "Opening..." : "Open OpenAI Login"}
-                          </Button>
-                        </div>
-                      )}
-                      <SchemaForm
-                        schema={provider.form}
-                        onSubmit={(data) => handleSaveProvider(provider.provider_name, data)}
-                        onCancel={handleCancelConfigure}
-                        submitLabel={provider.provider_name === "OpenAI" ? "Complete Connection" : "Save Configuration"}
-                        isLoading={savingProvider}
-                      />
+                    <div
+                      key={provider.provider_name}
+                      className={styles.providerConfigPanel}
+                    >
+                      <Stack className={styles.stackGap4}>
+                        <SectionCardHeader icon={SettingsIcon} title={`Configure ${provider.provider_name}`} />
+                        {provider.provider_name === "OpenAI" && (
+                          <div className={styles.oauthGuide}>
+                            <p className={styles.oauthGuideText}>
+                              1. Click Open OpenAI Login. 2. Sign in and approve access. 3. Copy the full localhost callback URL from your browser (the page may fail to load). 4. Paste that URL below and submit.
+                            </p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handleOpenAIConnect}
+                              disabled={openaiConnecting}
+                            >
+                              {openaiConnecting ? "Opening..." : "Open OpenAI Login"}
+                            </Button>
+                          </div>
+                        )}
+                        <SchemaForm
+                          schema={provider.form}
+                          onSubmit={(data) => handleSaveProvider(provider.provider_name, data)}
+                          onCancel={handleCancelConfigure}
+                          submitLabel={provider.provider_name === "OpenAI" ? "Complete Connection" : "Save Configuration"}
+                          isLoading={savingProvider}
+                        />
+                      </Stack>
                     </div>
                   ) : (
-                    // Show provider card
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                        {provider.is_configured ? (
-                          <CheckCircle className="h-5 w-5" style={{ color: "#4ade80" }} />
+                    // Show provider row
+                    <ListRow
+                      key={provider.provider_name}
+                      icon={
+                        provider.is_configured ? (
+                          <CheckCircle className={styles.providerConfiguredIcon} />
                         ) : (
-                          <AlertCircle className="h-5 w-5" style={{ color: "var(--text-muted)" }} />
-                        )}
-                        <div>
-                          <p style={{ fontWeight: 500, color: "var(--text-primary)" }}>
-                            {provider.provider_name === "OpenAI" ? "OpenAI (OAuth)" : provider.provider_name}
-                          </p>
-                          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                            {provider.provider_name === "OpenAI"
-                              ? (provider.is_configured ? "Connected via OAuth" : "Not connected")
-                              : (provider.is_configured ? "Configured" : "Not configured")}
-                          </p>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: "0.5rem" }}>
-                        {provider.provider_name === "OpenAI" && provider.is_configured && (
+                          <AlertCircle className={styles.providerUnconfiguredIcon} />
+                        )
+                      }
+                      title={provider.provider_name === "OpenAI" ? "OpenAI (OAuth)" : provider.provider_name}
+                      subtitle={
+                        provider.provider_name === "OpenAI"
+                          ? (provider.is_configured ? "Connected via OAuth" : "Not connected")
+                          : (provider.is_configured ? "Configured" : "Not configured")
+                      }
+                      trailing={
+                        <Inline gap="xs" wrap={false}>
+                          {provider.provider_name === "OpenAI" && provider.is_configured && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleOpenAIDisconnect}
+                              disabled={openaiDisconnecting}
+                            >
+                              {openaiDisconnecting ? "Disconnecting..." : "Disconnect"}
+                            </Button>
+                          )}
                           <Button
-                            variant="outline"
+                            variant={provider.is_configured ? "outline" : "default"}
                             size="sm"
-                            onClick={handleOpenAIDisconnect}
-                            disabled={openaiDisconnecting}
+                            onClick={() => handleConfigureClick(provider.provider_name)}
                           >
-                            {openaiDisconnecting ? "Disconnecting..." : "Disconnect"}
+                            {provider.provider_name === "OpenAI"
+                              ? (provider.is_configured ? "Reconnect" : "Connect")
+                              : (provider.is_configured ? "Update" : "Configure")}
                           </Button>
-                        )}
-                        <Button
-                          variant={provider.is_configured ? "outline" : "default"}
-                          size="sm"
-                          onClick={() => handleConfigureClick(provider.provider_name)}
-                        >
-                          {provider.provider_name === "OpenAI"
-                            ? (provider.is_configured ? "Reconnect" : "Connect")
-                            : (provider.is_configured ? "Update" : "Configure")}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                        </Inline>
+                      }
+                    />
+                  )
+                )}
+              </Stack>
+            )}
+          </Stack>
         </CardContent>
       </Card>
 
@@ -659,18 +602,18 @@ export function Settings() {
         </CardHeader>
         <CardContent>
           {agent2AgentLoading ? (
-            <div className="settings-loading-row">
-              <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--gradient-start)" }} />
+            <div className={styles.loadingRow}>
+              <Loader2 className={styles.sectionLoadingSpinner} />
             </div>
           ) : agent2AgentSchema ? (
-            <div className="settings-form-section">
-              <div className="settings-status-row">
+            <div className={styles.formSection}>
+              <div className={styles.statusRow}>
                 {agent2AgentSettings?.allowed_origins.length ? (
-                  <CheckCircle className="h-5 w-5 settings-status-icon settings-status-icon--success" />
+                  <CheckCircle className={cn(styles.statusIcon, styles.statusIconSuccess)} />
                 ) : (
-                  <AlertCircle className="h-5 w-5 settings-status-icon" />
+                  <AlertCircle className={styles.statusIcon} />
                 )}
-                <p className="settings-muted-text">
+                <p className={styles.mutedText}>
                   {agent2AgentSettings?.allowed_origins.length
                     ? `${agent2AgentSettings.allowed_origins.length} origin${agent2AgentSettings.allowed_origins.length === 1 ? "" : "s"} allowlisted.`
                     : "No Agent2Agent origins are allowlisted. A2A client skill installs and calls will be blocked."}
@@ -686,7 +629,7 @@ export function Settings() {
               />
             </div>
           ) : (
-            <p className="settings-muted-text">Agent2Agent settings are unavailable.</p>
+            <p className={styles.mutedText}>Agent2Agent settings are unavailable.</p>
           )}
         </CardContent>
       </Card>
@@ -700,18 +643,18 @@ export function Settings() {
         </CardHeader>
         <CardContent>
           {smartSuggestionLoading ? (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
-              <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--gradient-start)" }} />
+            <div className={styles.loadingRow}>
+              <Loader2 className={styles.sectionLoadingSpinner} />
             </div>
           ) : smartSuggestionSchema ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <div className={styles.formSection}>
+              <div className={styles.statusRow}>
                 {smartSuggestionSettings?.is_configured ? (
-                  <CheckCircle className="h-5 w-5" style={{ color: "#4ade80" }} />
+                  <CheckCircle className={cn(styles.statusIcon, styles.statusIconSuccess)} />
                 ) : (
-                  <AlertCircle className="h-5 w-5" style={{ color: "var(--text-muted)" }} />
+                  <AlertCircle className={styles.statusIcon} />
                 )}
-                <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+                <p className={styles.mutedText}>
                   {smartSuggestionSettings?.is_configured
                     ? `Enabled with ${smartSuggestionSettings.provider_name} / ${smartSuggestionSettings.model_name}`
                     : "Configure a provider and model before using smart suggestions in forms."}
@@ -726,7 +669,7 @@ export function Settings() {
               />
             </div>
           ) : (
-            <p style={{ color: "var(--text-muted)" }}>Smart suggestion settings are unavailable.</p>
+            <p className={styles.mutedText}>Smart suggestion settings are unavailable.</p>
           )}
         </CardContent>
       </Card>
@@ -744,6 +687,6 @@ export function Settings() {
         loading={cancellingSubscription}
         loadingText="Cancelling..."
       />
-    </div>
+    </PageBody>
   );
 }

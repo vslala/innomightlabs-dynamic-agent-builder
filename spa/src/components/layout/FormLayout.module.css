@@ -1,0 +1,13 @@
+@reference "tailwindcss";
+
+.formStack {
+  @apply min-w-0;
+}
+
+.fieldGroup {
+  @apply min-w-0;
+}
+
+.formActions {
+  @apply flex flex-wrap items-center;
+}

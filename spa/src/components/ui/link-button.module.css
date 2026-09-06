@@ -1,0 +1,5 @@
+@reference "tailwindcss";
+
+.noUnderline {
+  @apply no-underline;
+}

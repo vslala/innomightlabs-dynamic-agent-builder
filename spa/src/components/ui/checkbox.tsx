@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
+import styles from "./checkbox.module.css";
 
 export interface CheckboxProps extends React.InputHTMLAttributes<HTMLInputElement> {}
 
@@ -8,10 +9,7 @@ const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
     <input
       ref={ref}
       type="checkbox"
-      className={cn(
-        "shrink-0 rounded border border-[var(--border-default)] bg-[var(--surface-control)] accent-[var(--gradient-start)] disabled:cursor-not-allowed disabled:opacity-50",
-        className
-      )}
+      className={cn(styles.checkbox, className)}
       style={{ height: "1rem", width: "1rem", ...style }}
       {...props}
     />

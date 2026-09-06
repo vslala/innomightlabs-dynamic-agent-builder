@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
+import styles from "./Stack.module.css";
 
 type Gap = "none" | "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -19,7 +20,7 @@ export interface StackProps extends React.HTMLAttributes<HTMLDivElement> {
 export function Stack({ className, gap = "md", style, ...props }: StackProps) {
   return (
     <div
-      className={cn("flex min-w-0 flex-col", className)}
+      className={cn(styles.stack, className)}
       style={{ ...gapStyles[gap], ...style }}
       {...props}
     />
@@ -44,7 +45,7 @@ export function Inline({
 }: InlineProps) {
   return (
     <div
-      className={cn("flex min-w-0", className)}
+      className={cn(styles.inline, className)}
       style={{
         ...gapStyles[gap],
         alignItems: align,
@@ -64,7 +65,7 @@ export interface GridProps extends React.HTMLAttributes<HTMLDivElement> {
 export function Grid({ className, gap = "lg", style, ...props }: GridProps) {
   return (
     <div
-      className={cn("grid min-w-0", className)}
+      className={cn(styles.grid, className)}
       style={{
         ...gapStyles[gap],
         ...style,
