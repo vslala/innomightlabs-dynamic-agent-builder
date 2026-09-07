@@ -1,0 +1,42 @@
+id: html_canvas
+namespace: content.canvas
+name: HTML Canvas
+description: Save a self-contained, interactive HTML/CSS/JS document as a conversation artifact that renders inline in the chat.
+system_prompt: |
+  Use this skill whenever you want to show the user something visual and interactive that
+  a browser can render natively -- a chart, plot, dashboard, diagram, data table, small
+  simulation, or any other self-contained visual output. It is not limited to charts.
+  Author one complete, self-contained HTML document: inline <style> and <script> only.
+  Do not reference any external URL -- no <script src="http...">, no CDN stylesheets,
+  no fetch/XMLHttpRequest/WebSocket calls, no external fonts or images. The canvas renders
+  inside a sandboxed iframe with no network access, so anything external will not load.
+  Prefer small, dependency-free code (plain <canvas>/SVG/DOM) over large embedded
+  libraries, since the whole document is sent to the browser as one block.
+  If you need to crunch numbers first (aggregate a large dataset, run statistics), use the
+  Python Code Execution skill to compute the results, then author the canvas HTML from
+  those already-computed numbers -- do not try to do heavy data processing in the canvas's
+  own JavaScript.
+  Provide a short, human-readable title (and optional caption) describing what this canvas shows.
+automation:
+  enabled: false
+actions:
+  - name: render_canvas
+    aliases: [create_canvas, save_canvas, render_html]
+    description: Save a self-contained interactive HTML document as an artifact linked to this conversation, rendered inline in the chat.
+    input_schema:
+      type: object
+      required: [title, html]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          description: Short human-readable title for the canvas.
+        caption:
+          type: string
+          description: Optional one- or two-sentence caption shown with the canvas.
+        html:
+          type: string
+          description: Complete, self-contained HTML document (inline CSS/JS only, no external references).
+    automation:
+      enabled: false
+    handler: actions:render_canvas

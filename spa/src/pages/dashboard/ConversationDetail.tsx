@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Loader2, Maximize2, Minimize2, Image as ImageIcon } from "lucide-react";
 import { ChatFormRenderer, type FormAnswer } from "../../components/chat/ChatFormRenderer";
 import { AttachmentChip } from "../../components/chat/AttachmentChip";
+import { CanvasSidePanel } from "../../components/chat/CanvasSidePanel";
 import { ChatComposer } from "../../components/chat/ChatComposer";
 import { TokenUsageIndicator, type LiveTokenUsageUpdate } from "../../components/chat/TokenUsageIndicator";
 import { ChatStreamRenderer } from "../../components/chat/ChatStreamRenderer";
@@ -39,7 +40,7 @@ import { chatService } from "../../services/chat";
 import { authService } from "../../services/auth";
 import type { ConversationResponse } from "../../types/conversation";
 import type { FormSchema } from "../../types/form";
-import { SSEEventType, type Message, type SSEEvent, type ToolActivity } from "../../types/message";
+import { SSEEventType, type Message, type MessageCanvasArtifact, type SSEEvent, type ToolActivity } from "../../types/message";
 import styles from "./Conversation.module.css";
 
 interface ConversationNavigationState {
@@ -86,6 +87,7 @@ export function ConversationDetail() {
   const [incompleteResponse, setIncompleteResponse] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
+  const [expandedCanvas, setExpandedCanvas] = useState<MessageCanvasArtifact | null>(null);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [debugEnabled, setDebugEnabled] = useState(
     () => Boolean((location.state as ConversationNavigationState | null)?.debug)
@@ -104,6 +106,7 @@ export function ConversationDetail() {
   const hadToolCallsRef = useRef(false);
   const renderedFormRef = useRef(false);
   const assistantMessageSavedRef = useRef(false);
+  const pendingCanvasArtifactsRef = useRef<MessageCanvasArtifact[]>([]);
   const initialMessageSentRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
@@ -375,6 +378,7 @@ export function ConversationDetail() {
     hadToolCallsRef.current = false;
     renderedFormRef.current = false;
     assistantMessageSavedRef.current = false;
+    pendingCanvasArtifactsRef.current = [];
 
     // Add user message to the list immediately (unless it's a retry/continue message)
     const isRetryMessage = messageOverride?.startsWith("Please continue");
@@ -421,6 +425,18 @@ export function ConversationDetail() {
             setActiveForm({
               form: event.form,
               submitLabel: event.submit_label || undefined,
+            });
+          }
+          break;
+
+        case SSEEventType.CANVAS_ARTIFACT_READY:
+          if (event.canvas_artifact_id) {
+            pendingCanvasArtifactsRef.current.push({
+              artifact_id: event.canvas_artifact_id,
+              title: event.canvas_title || "Canvas",
+              mime_type: event.canvas_mime_type || "text/html",
+              caption: event.canvas_caption,
+              content_url: event.canvas_content_url,
             });
           }
           break;
@@ -508,10 +524,12 @@ export function ConversationDetail() {
               conversation_id: conversation.conversation_id,
               role: "assistant",
               content: streamingContentRef.current,
+              canvases: pendingCanvasArtifactsRef.current.length ? pendingCanvasArtifactsRef.current : undefined,
               created_at: new Date().toISOString(),
             };
             setMessages((msgs) => [...msgs, assistantMsg]);
           }
+          pendingCanvasArtifactsRef.current = [];
           break;
 
         case SSEEventType.STREAM_COMPLETE:
@@ -840,6 +858,7 @@ export function ConversationDetail() {
   if (!conversation) return null;
 
   return (
+    <div className={styles.pageRow}>
     <div className={styles.shell}>
       <div className={styles.header}>
         <div className={styles.headerMain}>
@@ -1028,6 +1047,7 @@ export function ConversationDetail() {
                   statusMessage={statusMessage}
                   userPicture={userInfo?.picture}
                   userName={userInfo?.name}
+                  onExpandCanvas={setExpandedCanvas}
                   extraNode={
                     <>
                       {activeForm && (
@@ -1408,6 +1428,10 @@ export function ConversationDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+    {expandedCanvas && (
+      <CanvasSidePanel canvas={expandedCanvas} onClose={() => setExpandedCanvas(null)} />
+    )}
     </div>
   );
 }

@@ -102,6 +102,37 @@ async def fake_empty_tool_turn_loop(**kwargs):
     yield AgenticLoopEvent(kind="complete", payload={"full_text": ""})
 
 
+async def fake_canvas_tool_loop(**kwargs):
+    yield AgenticLoopEvent(
+        kind="tool_call_start",
+        payload={
+            "tool_call_id": "tooluse_canvas",
+            "tool_name": "render_canvas",
+            "tool_args": {"title": "Revenue"},
+        },
+    )
+    yield AgenticLoopEvent(
+        kind="tool_call_result",
+        payload={
+            "tool_call_id": "tooluse_canvas",
+            "tool_name": "render_canvas",
+            "result": json.dumps(
+                {
+                    "ok": True,
+                    "type": "canvas_artifact",
+                    "artifact_id": "artifact-1",
+                    "title": "Revenue",
+                    "caption": "Q1 revenue",
+                    "mime_type": "text/html",
+                }
+            ),
+            "success": True,
+        },
+    )
+    yield AgenticLoopEvent(kind="text", payload={"content": "Here is your chart"})
+    yield AgenticLoopEvent(kind="complete", payload={"full_text": "Here is your chart"})
+
+
 async def fake_load_provider_credentials(**kwargs):
     return {}
 
@@ -325,6 +356,76 @@ async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_fallback(monkey
         "assistant",
     ]
     assert message_repo.messages[-1].content == response_events[0].content
+
+
+async def test_krishna_memgpt_attaches_canvas_artifact_to_assistant_message(monkeypatch):
+    monkeypatch.setattr(
+        "src.agents.agentic_loop.run_agentic_tool_loop",
+        fake_canvas_tool_loop,
+    )
+    monkeypatch.setattr(
+        "src.agents.architectures.krishna_memgpt.get_llm_provider",
+        lambda provider_name: object(),
+    )
+    monkeypatch.setattr(
+        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        fake_load_provider_credentials,
+    )
+    monkeypatch.setattr(
+        "src.agents.architectures.krishna_memgpt.settings.api_base_url",
+        "https://api.example.com",
+    )
+
+    architecture = KrishnaMemGPTArchitecture()
+    message_repo = FakeMessageRepository()
+    architecture.message_repo = message_repo
+    architecture.provider_settings_repo = FakeProviderSettingsRepository()
+    architecture.tool_handler = FakeToolHandler()
+    architecture.skill_runtime = FakeSkillRuntime()
+    architecture._get_linked_kb_ids = lambda agent_id: []
+    architecture._ensure_memory_initialized = lambda agent_id, user_id: None
+    architecture._load_core_memory_snapshot = lambda agent_id, user_id: object()
+    architecture._check_capacity_warnings_from_snapshot = lambda snapshot: []
+    architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
+
+    agent = Agent(
+        agent_name="Canvas Agent",
+        agent_architecture="krishna-memgpt",
+        agent_provider="Bedrock",
+        agent_persona="Helpful",
+        created_by="owner@example.com",
+    )
+    conversation = Conversation(
+        title="Canvas",
+        agent_id=agent.agent_id,
+        created_by="owner@example.com",
+    )
+
+    events = [
+        event
+        async for event in architecture.handle_message(
+            agent=agent,
+            conversation=conversation,
+            user_message="Chart Q1 revenue",
+            owner_email="owner@example.com",
+            actor_email="owner@example.com",
+            actor_id="owner@example.com",
+            attachments=[],
+        )
+    ]
+
+    canvas_events = [event for event in events if event.event_type == SSEEventType.CANVAS_ARTIFACT_READY]
+    assert len(canvas_events) == 1
+    assert canvas_events[0].canvas_artifact_id == "artifact-1"
+    assert canvas_events[0].canvas_title == "Revenue"
+    assert canvas_events[0].canvas_caption == "Q1 revenue"
+    assert canvas_events[0].canvas_content_url == "https://api.example.com/artifacts/artifact-1/content"
+
+    assistant_messages = [message for message in message_repo.messages if message.role == "assistant"]
+    assert len(assistant_messages) == 1
+    assert len(assistant_messages[0].canvases) == 1
+    assert assistant_messages[0].canvases[0].artifact_id == "artifact-1"
+    assert assistant_messages[0].canvases[0].title == "Revenue"
 
 
 def test_krishna_memgpt_builds_tool_definitions_from_command_registry():

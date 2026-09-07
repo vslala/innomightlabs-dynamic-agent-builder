@@ -5,7 +5,8 @@ from src.artifacts.repository import ArtifactRepository
 from src.artifacts.storage import ArtifactStorage, sanitize_filename
 from src.config import settings
 
-VIEWABLE_ARTIFACT_TYPES = {"html_report", "csv", "markdown", "json", "text", "code"}
+VIEWABLE_ARTIFACT_TYPES = {"html_report", "csv", "markdown", "json", "text", "code", "canvas"}
+CONTENT_PROXY_ARTIFACT_TYPES = {"canvas", "html_report", "text", "markdown", "code", "json"}
 
 
 class ArtifactNotFoundError(Exception):
@@ -75,6 +76,12 @@ class ArtifactService:
         if not is_browser_viewable_artifact(artifact):
             raise ArtifactNotViewableError(artifact_id)
         return self._view_url(artifact)
+
+    def get_content(self, owner_email: str, artifact_id: str) -> tuple[bytes, str]:
+        artifact = self._require_artifact(owner_email, artifact_id)
+        if artifact.artifact_type not in CONTENT_PROXY_ARTIFACT_TYPES:
+            raise ArtifactNotViewableError(artifact_id)
+        return self.storage.get_object_body(artifact.s3_key), artifact.mime_type
 
     def to_response(self, artifact: Artifact) -> ArtifactResponse:
         return ArtifactResponse(

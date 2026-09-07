@@ -1,0 +1,88 @@
+.panel {
+  background: var(--surface-panel);
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 min(46rem, 44vw);
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.panelHeader {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-4);
+}
+
+.panelTitle {
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.panelCaption {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  margin: var(--space-1) 0 0;
+}
+
+.panelActions {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-2);
+}
+
+.openLink {
+  align-items: center;
+  color: var(--text-muted);
+  display: inline-flex;
+  font-size: 0.8125rem;
+  gap: var(--space-1);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.openLink:hover {
+  color: var(--text-primary);
+}
+
+.closeButton {
+  align-items: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  height: 2rem;
+  justify-content: center;
+  width: 2rem;
+}
+
+.closeButton:hover {
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+}
+
+.panelBody {
+  background: var(--bg-primary);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.panelIframe {
+  border: none;
+  display: block;
+  height: 100%;
+  width: 100%;
+}

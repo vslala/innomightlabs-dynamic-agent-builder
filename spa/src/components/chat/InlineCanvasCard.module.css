@@ -1,0 +1,65 @@
+.card {
+  background: var(--surface-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  margin-top: var(--space-3);
+  overflow: hidden;
+}
+
+.cardHeader {
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+}
+
+.cardTitle {
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expandButton {
+  align-items: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  height: 1.75rem;
+  justify-content: center;
+  width: 1.75rem;
+}
+
+.expandButton:hover {
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+}
+
+.previewFrame {
+  background: var(--bg-primary);
+  max-height: 20rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.previewIframe {
+  border: none;
+  display: block;
+  height: 20rem;
+  width: 100%;
+}
+
+.caption {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+}

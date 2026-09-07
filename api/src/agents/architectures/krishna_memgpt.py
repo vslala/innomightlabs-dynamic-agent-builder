@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from src.common import CAPACITY_WARNING_THRESHOLD
 from src.agents.models import MemoryCapacityWarning
+from src.config import settings
 from src.connectors.mcp.service import MCPConnectorService
 from src.agents.tool_audit import ToolCallStart, build_tool_call_audit_message
 from src.agents.tool_execution import ToolExecutionRouter
@@ -28,7 +29,7 @@ from src.llm.credentials import load_provider_credentials
 from src.llm.events import SSEEvent, SSEEventType
 from src.llm.providers import get_llm_provider
 from src.memory import MemoryRepository
-from src.messages.models import Message, Attachment
+from src.messages.models import Message, MessageCanvasArtifact, Attachment
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.memory.snapshot import CoreMemorySnapshot
 from src.settings.repository import get_provider_settings_repository
@@ -252,6 +253,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             emitted_terminal_runtime_response = False
             tool_call_sequence = 0
             tool_call_starts: dict[str, ToolCallStart] = {}
+            canvas_artifacts: list[MessageCanvasArtifact] = []
             async for loop_event in run_agentic_tool_loop(
                 provider=provider,
                 context=context,
@@ -337,6 +339,26 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                             form_label=form_label,
                         )
 
+                    if isinstance(parsed, dict) and parsed.get("type") == "canvas_artifact" and parsed.get("ok"):
+                        canvas = MessageCanvasArtifact(
+                            artifact_id=parsed["artifact_id"],
+                            title=parsed.get("title", "Canvas"),
+                            mime_type=parsed.get("mime_type", "text/html"),
+                            caption=parsed.get("caption"),
+                        )
+                        canvas_artifacts.append(canvas)
+                        yield SSEEvent(
+                            event_type=SSEEventType.CANVAS_ARTIFACT_READY,
+                            content=canvas.title,
+                            canvas_artifact_id=canvas.artifact_id,
+                            canvas_title=canvas.title,
+                            canvas_caption=canvas.caption,
+                            canvas_mime_type=canvas.mime_type,
+                            canvas_content_url=(
+                                f"{settings.api_base_url.rstrip('/')}/artifacts/{canvas.artifact_id}/content"
+                            ),
+                        )
+
                     if isinstance(parsed, dict):
                         fallback_assistant_response = (
                             fallback_assistant_response
@@ -418,6 +440,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                     created_by=actor_email,
                     role="assistant",
                     content=full_response,
+                    canvases=canvas_artifacts,
                 )
                 self.message_repo.save(assistant_msg)
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.security import HTTPBearer
 
 from src.artifacts.models import ArtifactListResponse, ArtifactResponse
@@ -66,3 +66,18 @@ async def get_artifact_view_url(
         raise HTTPException(status_code=404, detail="Artifact not found") from exc
     except ArtifactNotViewableError as exc:
         raise HTTPException(status_code=400, detail="Artifact is not browser-viewable") from exc
+
+
+@router.get("/{artifact_id}/content")
+async def get_artifact_content(
+    request: Request,
+    artifact_id: str,
+    service: Annotated[ArtifactService, Depends(get_artifact_service)],
+) -> Response:
+    try:
+        body, mime_type = service.get_content(request.state.user_email, artifact_id)
+    except ArtifactNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Artifact not found") from exc
+    except ArtifactNotViewableError as exc:
+        raise HTTPException(status_code=400, detail="Artifact content is not inline-fetchable") from exc
+    return Response(content=body, media_type=mime_type)

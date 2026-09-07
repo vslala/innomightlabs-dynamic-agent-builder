@@ -24,6 +24,9 @@ class SSEEventType(str, Enum):
     # UI events
     UI_FORM_RENDER = "UI_FORM_RENDER"
 
+    # Canvas artifact events (agent-authored interactive HTML rendered inline in chat)
+    CANVAS_ARTIFACT_READY = "CANVAS_ARTIFACT_READY"
+
     # Tool call events (for memGPT timeline)
     TOOL_CALL_START = "TOOL_CALL_START"
     TOOL_CALL_RESULT = "TOOL_CALL_RESULT"
@@ -69,6 +72,13 @@ class SSEEvent(BaseModel):
     image_width: Optional[int] = None
     image_height: Optional[int] = None
     images: Optional[list[dict]] = None
+
+    # Canvas artifact events
+    canvas_artifact_id: Optional[str] = None
+    canvas_title: Optional[str] = None
+    canvas_caption: Optional[str] = None
+    canvas_mime_type: Optional[str] = None
+    canvas_content_url: Optional[str] = None
 
     # Token usage events -- today's cumulative totals for one llm_model
     llm_model: Optional[str] = None

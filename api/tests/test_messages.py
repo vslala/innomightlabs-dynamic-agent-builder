@@ -5,7 +5,7 @@ Tests for Messages module.
 import pytest
 from datetime import datetime, timezone
 
-from src.messages.models import Message, MessageResponse
+from src.messages.models import Message, MessageCanvasArtifact, MessageResponse
 from src.messages.repositories import get_message_repository
 from tests.mock_data import TEST_USER_EMAIL
 
@@ -108,6 +108,41 @@ class TestMessageModel:
         assert response.conversation_id == "conv-123"
         assert response.role == "user"
         assert response.content == "Hello"
+
+    def test_message_canvases_round_trip_through_dynamo_and_response(self):
+        """Canvas artifact refs survive to_dynamo_item/from_dynamo_item and appear in to_response."""
+        message = Message(
+            conversation_id="conv-123",
+            role="assistant",
+            content="Here is your chart",
+            canvases=[
+                MessageCanvasArtifact(
+                    artifact_id="artifact-1",
+                    title="Revenue",
+                    mime_type="text/html",
+                    caption="Q1 revenue by region",
+                )
+            ],
+        )
+
+        item = message.to_dynamo_item()
+        assert item["canvases"][0]["artifact_id"] == "artifact-1"
+
+        restored = Message.from_dynamo_item(item)
+        assert restored.canvases == message.canvases
+
+        response = restored.to_response()
+        assert len(response.canvases) == 1
+        assert response.canvases[0].artifact_id == "artifact-1"
+        assert response.canvases[0].caption == "Q1 revenue by region"
+        # URL enrichment is MessageResponseFactory's job, not the bare model conversion.
+        assert response.canvases[0].content_url is None
+
+    def test_message_without_canvases_serializes_without_canvases_key(self):
+        """Matches the existing `images` convention: omit the key entirely when there's nothing to store."""
+        message = Message(conversation_id="conv-123", role="user", content="Hello")
+
+        assert "canvases" not in message.to_dynamo_item()
 
 
 class TestMessageRepository:

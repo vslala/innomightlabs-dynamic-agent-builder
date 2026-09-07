@@ -84,6 +84,27 @@ class MessageImageResponse(BaseModel):
     revised_prompt: str | None = None
 
 
+class MessageCanvasArtifact(BaseModel):
+    """Reference to a generated interactive canvas artifact, embedded on a message."""
+
+    artifact_id: str
+    title: str
+    mime_type: str
+    caption: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class MessageCanvasArtifactResponse(BaseModel):
+    """Canvas artifact reference returned to frontend, enriched with fetch/open URLs."""
+
+    artifact_id: str
+    title: str
+    mime_type: str
+    caption: str | None = None
+    content_url: str | None = None
+    open_url: str | None = None
+
+
 class MessageResponse(BaseModel):
     """Response model for message."""
 
@@ -93,6 +114,7 @@ class MessageResponse(BaseModel):
     content: str
     attachments: list[AttachmentResponse] = Field(default_factory=list)
     images: list[MessageImageResponse] = Field(default_factory=list)
+    canvases: list[MessageCanvasArtifactResponse] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -106,6 +128,7 @@ class Message(BaseModel):
     content: str
     attachments: list[Attachment] = Field(default_factory=list)
     images: list[MessageImage] = Field(default_factory=list)
+    canvases: list[MessageCanvasArtifact] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -138,6 +161,11 @@ class Message(BaseModel):
                 img.model_dump(mode="json")
                 for img in self.images
             ]
+        if self.canvases:
+            item["canvases"] = [
+                canvas.model_dump(mode="json")
+                for canvas in self.canvases
+            ]
         return item
 
     @classmethod
@@ -149,6 +177,9 @@ class Message(BaseModel):
         images = [
             MessageImage(**img) for img in item.get("images", [])
         ]
+        canvases = [
+            MessageCanvasArtifact(**canvas) for canvas in item.get("canvases", [])
+        ]
         return cls(
             message_id=item["message_id"],
             conversation_id=item["conversation_id"],
@@ -157,6 +188,7 @@ class Message(BaseModel):
             content=item["content"],
             attachments=attachments,
             images=images,
+            canvases=canvases,
             created_at=datetime.fromisoformat(item["created_at"]),
         )
 
@@ -183,6 +215,15 @@ class Message(BaseModel):
                     revised_prompt=img.revised_prompt,
                 )
                 for img in self.images
+            ],
+            canvases=[
+                MessageCanvasArtifactResponse(
+                    artifact_id=canvas.artifact_id,
+                    title=canvas.title,
+                    mime_type=canvas.mime_type,
+                    caption=canvas.caption,
+                )
+                for canvas in self.canvases
             ],
             created_at=self.created_at,
         )

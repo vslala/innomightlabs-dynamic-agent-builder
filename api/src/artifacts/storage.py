@@ -37,6 +37,9 @@ class ArtifactStorage:
             ContentType=content_type,
         )
 
+    def get_object_body(self, key: str) -> bytes:
+        return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+
     def presign_get_url(
         self,
         key: str,

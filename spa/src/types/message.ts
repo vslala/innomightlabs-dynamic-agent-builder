@@ -78,6 +78,15 @@ export interface MessageImage {
   revised_prompt?: string | null;
 }
 
+export interface MessageCanvasArtifact {
+  artifact_id: string;
+  title: string;
+  mime_type: string;
+  caption?: string | null;
+  content_url?: string | null;
+  open_url?: string | null;
+}
+
 export interface Message {
   message_id: string;
   conversation_id: string;
@@ -85,6 +94,7 @@ export interface Message {
   content: string;
   attachments?: AttachmentInfo[];
   images?: MessageImage[];
+  canvases?: MessageCanvasArtifact[];
   created_at: string;
 }
 
@@ -108,6 +118,8 @@ export const SSEEventType = {
   TOOL_CALL_RESULT: "TOOL_CALL_RESULT",
   // Token usage events (live "today" totals, pushed after each LLM call)
   TOKEN_USAGE_UPDATE: "TOKEN_USAGE_UPDATE",
+  // Canvas artifact events (agent-authored interactive HTML rendered inline in chat)
+  CANVAS_ARTIFACT_READY: "CANVAS_ARTIFACT_READY",
 } as const;
 
 export type SSEEventType = (typeof SSEEventType)[keyof typeof SSEEventType];
@@ -141,6 +153,12 @@ export interface SSEEvent {
   completion_tokens?: number;
   total_tokens?: number;
   call_count?: number;
+  // Canvas artifact events
+  canvas_artifact_id?: string;
+  canvas_title?: string;
+  canvas_caption?: string;
+  canvas_mime_type?: string;
+  canvas_content_url?: string;
 }
 
 /**

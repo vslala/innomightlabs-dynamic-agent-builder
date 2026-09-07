@@ -173,3 +173,113 @@ def test_artifacts_router_returns_404_for_missing_artifact(test_client: TestClie
 def test_sanitize_filename_removes_paths_and_unsafe_characters():
     assert sanitize_filename("../folder/My Report!.html") == "My-Report-.html"
     assert sanitize_filename("///") == "artifact"
+
+
+def test_canvas_artifact_is_viewable_and_content_proxyable(dynamodb_table, monkeypatch):
+    _create_media_bucket()
+    monkeypatch.setattr("src.artifacts.storage.settings.conversation_media_bucket", "innomightlabs-conversations-meta")
+
+    service = ArtifactService()
+    artifact = service.create_artifact(
+        owner_email=TEST_USER_EMAIL,
+        artifact_type="canvas",
+        title="Chart",
+        filename="canvas.html",
+        mime_type="text/html",
+        body=b"<html><body>chart</body></html>",
+    )
+
+    assert artifact.view_url.endswith(f"/dashboard/artifacts/{artifact.artifact_id}")
+
+    body, mime_type = service.get_content(TEST_USER_EMAIL, artifact.artifact_id)
+    assert body == b"<html><body>chart</body></html>"
+    assert mime_type == "text/html"
+
+
+def test_get_content_rejects_non_proxyable_artifact_type(dynamodb_table, monkeypatch):
+    _create_media_bucket()
+    monkeypatch.setattr("src.artifacts.storage.settings.conversation_media_bucket", "innomightlabs-conversations-meta")
+
+    service = ArtifactService()
+    artifact = service.create_artifact(
+        owner_email=TEST_USER_EMAIL,
+        artifact_type="file",
+        title="Export",
+        filename="export.bin",
+        mime_type="application/octet-stream",
+        body=b"\x00\x01",
+    )
+
+    from src.artifacts.service import ArtifactNotViewableError
+
+    with pytest.raises(ArtifactNotViewableError):
+        service.get_content(TEST_USER_EMAIL, artifact.artifact_id)
+
+
+def test_get_content_raises_not_found_for_missing_artifact(dynamodb_table, monkeypatch):
+    _create_media_bucket()
+    monkeypatch.setattr("src.artifacts.storage.settings.conversation_media_bucket", "innomightlabs-conversations-meta")
+
+    from src.artifacts.service import ArtifactNotFoundError
+
+    with pytest.raises(ArtifactNotFoundError):
+        ArtifactService().get_content(TEST_USER_EMAIL, "missing")
+
+
+def test_artifacts_router_content_endpoint_serves_canvas_body(test_client: TestClient, auth_headers: dict, dynamodb_table):
+    from main import app
+    from src.artifacts.router import get_artifact_service
+
+    _create_media_bucket()
+    service = ArtifactService()
+    artifact = service.create_artifact(
+        owner_email=TEST_USER_EMAIL,
+        artifact_type="canvas",
+        title="Chart",
+        filename="canvas.html",
+        mime_type="text/html",
+        body=b"<html><body>chart</body></html>",
+    )
+
+    app.dependency_overrides[get_artifact_service] = lambda: service
+    try:
+        response = test_client.get(f"/artifacts/{artifact.artifact_id}/content", headers=auth_headers)
+    finally:
+        app.dependency_overrides.pop(get_artifact_service, None)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert response.content == b"<html><body>chart</body></html>"
+
+
+def test_artifacts_router_content_endpoint_rejects_non_proxyable_type(
+    test_client: TestClient, auth_headers: dict, dynamodb_table
+):
+    from main import app
+    from src.artifacts.router import get_artifact_service
+
+    _create_media_bucket()
+    service = ArtifactService()
+    artifact = service.create_artifact(
+        owner_email=TEST_USER_EMAIL,
+        artifact_type="file",
+        title="Export",
+        filename="export.bin",
+        mime_type="application/octet-stream",
+        body=b"\x00\x01",
+    )
+
+    app.dependency_overrides[get_artifact_service] = lambda: service
+    try:
+        response = test_client.get(f"/artifacts/{artifact.artifact_id}/content", headers=auth_headers)
+    finally:
+        app.dependency_overrides.pop(get_artifact_service, None)
+
+    assert response.status_code == 400
+
+
+def test_artifacts_router_content_endpoint_returns_404_for_missing_artifact(
+    test_client: TestClient, auth_headers: dict
+):
+    response = test_client.get("/artifacts/missing/content", headers=auth_headers)
+    assert response.status_code == 404

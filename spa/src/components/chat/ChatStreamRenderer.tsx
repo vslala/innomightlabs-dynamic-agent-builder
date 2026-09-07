@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { ExternalLink, Image as ImageIcon, Loader2, User, Wrench } from "lucide-react";
 import { buildChatStreamRenderPlan } from '../../../packages/chat-stream-renderer/src';
 import { AttachmentChip } from "./AttachmentChip";
+import { InlineCanvasCard } from "./InlineCanvasCard";
 import { ToolActivityCard } from "./ToolActivityCard";
 import { ToolActivitySummary } from "./ToolActivitySummary";
 import { AccordionPanel, MarkdownRenderer } from "../ui";
 import { SubmittedFormMessage } from "./SubmittedFormMessage";
 import { isSubmittedFormMessage } from "./submittedFormParser";
-import type { AttachmentInfo, Message, MessageImage, ToolActivity } from "../../types/message";
+import type { AttachmentInfo, Message, MessageCanvasArtifact, MessageImage, ToolActivity } from "../../types/message";
 
 interface ChatStreamRendererProps {
   messages: Message[];
@@ -18,6 +19,7 @@ interface ChatStreamRendererProps {
   userName?: string;
   extraNode?: React.ReactNode;
   debugToolActivity?: boolean;
+  onExpandCanvas?: (canvas: MessageCanvasArtifact) => void;
 }
 
 function renderAttachments(role: Message["role"], attachments?: AttachmentInfo[]) {
@@ -245,6 +247,20 @@ function renderImages(images?: MessageImage[]) {
   );
 }
 
+function renderCanvases(canvases?: MessageCanvasArtifact[], onExpandCanvas?: (canvas: MessageCanvasArtifact) => void) {
+  if (!canvases?.length) {
+    return null;
+  }
+
+  return canvases.map((canvas) => (
+    <InlineCanvasCard
+      key={canvas.artifact_id}
+      canvas={canvas}
+      onExpand={onExpandCanvas ?? (() => {})}
+    />
+  ));
+}
+
 export function ChatStreamRenderer({
   messages,
   streamingContent,
@@ -254,6 +270,7 @@ export function ChatStreamRenderer({
   userName,
   extraNode: customExtraNode,
   debugToolActivity = false,
+  onExpandCanvas,
 }: ChatStreamRendererProps) {
   const renderAvatar = (role: Message["role"]) => {
     if (role === "assistant") {
@@ -420,6 +437,7 @@ export function ChatStreamRenderer({
                   </div>
                 )}
                 {renderImages(msg.images)}
+                {renderCanvases(msg.canvases, onExpandCanvas)}
                 {renderAttachments(msg.role, msg.attachments)}
               </div>
             </div>
