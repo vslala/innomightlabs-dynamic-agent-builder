@@ -29,7 +29,7 @@ final class ShareablePickerViewModel: ObservableObject {
 
     private func restoreSelectionIfNeeded() {
         guard selectedTarget == nil, let savedName = RecordingPreferences.lastCaptureTargetName else { return }
-        selectedTarget = allTargets().first { $0.displayName == savedName }
+        selectedTarget = CaptureTarget.bestMatch(for: savedName, among: allTargets())
     }
 
     private func allTargets() -> [CaptureTarget] {

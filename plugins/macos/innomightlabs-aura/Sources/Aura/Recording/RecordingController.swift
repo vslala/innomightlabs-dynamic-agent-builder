@@ -1,6 +1,8 @@
 import AVFoundation
+import CoreImage
 import CoreMedia
 import Foundation
+import ImageIO
 
 @MainActor
 final class RecordingController: ObservableObject {
@@ -20,6 +22,16 @@ final class RecordingController: ObservableObject {
     private var microphoneWriter: TrackWriter?
     private var systemAudioWriter: TrackWriter?
     private var systemAudioSink: SystemAudioSink?
+
+    /// Written only on the main actor, read from the mic capture queue in `wireCallbacks`.
+    /// A stale read for one buffer is harmless (worst case one extra/missing sample at the
+    /// mute boundary) — unlike `PauseClock`, exact correctness isn't required here.
+    private var isMicMuted = false
+
+    /// Last-write-wins cache of the most recent complete screen frame, for `screenshot()`.
+    /// Written from the video capture queue, read on the main actor — `CVPixelBuffer`
+    /// retain/release is thread-safe, so no lock is needed.
+    private var latestVideoPixelBuffer: CVPixelBuffer?
 
     private var allTrackWriters: [TrackWriter] {
         [screenWriter, cameraWriter, microphoneWriter, systemAudioWriter].compactMap { $0 }
@@ -137,8 +149,68 @@ final class RecordingController: ObservableObject {
         applyTransition(.didStop)
     }
 
+    func mute() {
+        guard state == .recording || state == .paused else { return }
+        isMicMuted = true
+    }
+
+    func unmute() {
+        guard state == .recording || state == .paused else { return }
+        isMicMuted = false
+    }
+
+    func mark(label: String) {
+        guard state == .recording || state == .paused else { return }
+        let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
+        sessionManager?.logEvent(RecordingEvent(ts: elapsed(hostTime), type: .userMarker, label: label))
+    }
+
+    func screenshot() async {
+        guard state == .recording || state == .paused else { return }
+        guard let pixelBuffer = latestVideoPixelBuffer, let sessionManager else { return }
+
+        let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
+        let ts = elapsed(hostTime)
+        let filename = String(format: "%.1f.png", ts)
+        let fileURL = sessionManager.folder.screenshotsURL.appendingPathComponent(filename)
+
+        guard Self.writePNG(pixelBuffer: pixelBuffer, to: fileURL) else { return }
+        sessionManager.logEvent(RecordingEvent(ts: ts, type: .screenSnapshot, path: "screenshots/\(filename)"))
+    }
+
+    func cancel() async {
+        guard applyTransition(.cancel) else { return }
+
+        cameraRecorder.stop()
+        microphoneRecorder.stop()
+        try? await screenCaptureSession.stop()
+
+        allTrackWriters.forEach { $0.cancel() }
+
+        let rootURL = sessionManager?.folder.rootURL
+        tearDownSessionState()
+        if let rootURL {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        applyTransition(.didStop)
+    }
+
+    private static func writePNG(pixelBuffer: CVPixelBuffer, to url: URL) -> Bool {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        guard let cgImage = CIContext().createCGImage(ciImage, from: ciImage.extent) else { return false }
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+            return false
+        }
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        return CGImageDestinationFinalize(destination)
+    }
+
     private func wireCallbacks(screenWriter: TrackWriter, cameraWriter: TrackWriter, microphoneWriter: TrackWriter) {
-        screenCaptureSession.onVideoSampleBuffer = { [weak screenWriter] buffer in
+        screenCaptureSession.onVideoSampleBuffer = { [weak self, weak screenWriter] buffer in
+            if let imageBuffer = CMSampleBufferGetImageBuffer(buffer) {
+                self?.latestVideoPixelBuffer = imageBuffer
+            }
             screenWriter?.append(buffer)
         }
         screenCaptureSession.onAudioSampleBuffer = { [weak self] buffer in
@@ -152,7 +224,8 @@ final class RecordingController: ObservableObject {
         cameraRecorder.onSampleBuffer = { [weak cameraWriter] buffer in
             cameraWriter?.append(buffer)
         }
-        microphoneRecorder.onSampleBuffer = { [weak microphoneWriter] buffer in
+        microphoneRecorder.onSampleBuffer = { [weak self, weak microphoneWriter] buffer in
+            guard self?.isMicMuted != true else { return }
             microphoneWriter?.append(buffer)
         }
     }
@@ -180,6 +253,8 @@ final class RecordingController: ObservableObject {
         systemAudioWriter = nil
         systemAudioSink = nil
         currentTargetName = nil
+        isMicMuted = false
+        latestVideoPixelBuffer = nil
     }
 
     private func finishWriters() async {

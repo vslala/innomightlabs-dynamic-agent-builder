@@ -5,6 +5,7 @@ enum RecordingEventTrigger: Equatable {
     case pause
     case resume
     case stop
+    case cancel
     case didStop
 }
 
@@ -29,6 +30,8 @@ enum RecordingStateMachine {
         case (.paused, .resume):
             return .success(.recording)
         case (.recording, .stop), (.paused, .stop):
+            return .success(.stopping)
+        case (.starting, .cancel), (.recording, .cancel), (.paused, .cancel):
             return .success(.stopping)
         case (.stopping, .didStop):
             return .success(.idle)

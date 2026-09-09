@@ -7,6 +7,7 @@ struct SessionFolder {
     let cameraURL: URL
     let microphoneURL: URL
     let systemAudioURL: URL
+    let screenshotsURL: URL
     let eventsURL: URL
 
     private static let idFormatter: DateFormatter = {
@@ -34,6 +35,7 @@ struct SessionFolder {
             cameraURL: root.appendingPathComponent("camera.mov"),
             microphoneURL: root.appendingPathComponent("microphone.m4a"),
             systemAudioURL: root.appendingPathComponent("system-audio.m4a"),
+            screenshotsURL: root.appendingPathComponent("screenshots", isDirectory: true),
             eventsURL: root.appendingPathComponent("events.jsonl")
         )
     }

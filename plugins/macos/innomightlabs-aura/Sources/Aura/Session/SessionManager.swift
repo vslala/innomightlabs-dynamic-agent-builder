@@ -17,6 +17,10 @@ final class SessionManager {
             at: folder.rootURL,
             withIntermediateDirectories: true
         )
+        try FileManager.default.createDirectory(
+            at: folder.screenshotsURL,
+            withIntermediateDirectories: true
+        )
         eventLogWriter = try EventLogWriter(fileURL: folder.eventsURL)
     }
 

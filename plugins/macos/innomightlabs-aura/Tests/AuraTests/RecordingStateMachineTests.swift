@@ -42,4 +42,18 @@ final class RecordingStateMachineTests: XCTestCase {
         let result = RecordingStateMachine.transition(current: .paused, trigger: .stop)
         XCTAssertEqual(try? result.get(), .stopping)
     }
+
+    func testCancelFromStartingRecordingOrPausedSucceeds() {
+        for state in [RecordingState.starting, .recording, .paused] {
+            let result = RecordingStateMachine.transition(current: state, trigger: .cancel)
+            XCTAssertEqual(try? result.get(), .stopping, "cancel from \(state) should succeed")
+        }
+    }
+
+    func testCancelFromIdleOrStoppingIsIllegal() {
+        for state in [RecordingState.idle, .stopping] {
+            let result = RecordingStateMachine.transition(current: state, trigger: .cancel)
+            XCTAssertEqual(result, .failure(.illegalTransition(from: state, trigger: .cancel)))
+        }
+    }
 }

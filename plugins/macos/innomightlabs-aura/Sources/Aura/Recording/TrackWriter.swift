@@ -75,6 +75,12 @@ final class TrackWriter: @unchecked Sendable {
         writer.finishWriting(completionHandler: completion)
     }
 
+    /// Aborts writing without finalizing the output file. Unlike `finish`, `cancelWriting()`
+    /// handles its own finalization — do not call `markAsFinished()` first.
+    func cancel() {
+        writer.cancelWriting()
+    }
+
     private static func retimed(_ sampleBuffer: CMSampleBuffer, newPresentationTime: CMTime) -> CMSampleBuffer? {
         var count: CMItemCount = 0
         CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, entryCount: 0, arrayToFill: nil, entriesNeededOut: &count)

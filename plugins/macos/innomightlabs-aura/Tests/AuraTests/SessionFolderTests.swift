@@ -25,6 +25,7 @@ final class SessionFolderTests: XCTestCase {
         XCTAssertEqual(folder.cameraURL, folder.rootURL.appendingPathComponent("camera.mov"))
         XCTAssertEqual(folder.microphoneURL, folder.rootURL.appendingPathComponent("microphone.m4a"))
         XCTAssertEqual(folder.systemAudioURL, folder.rootURL.appendingPathComponent("system-audio.m4a"))
+        XCTAssertEqual(folder.screenshotsURL, folder.rootURL.appendingPathComponent("screenshots", isDirectory: true))
         XCTAssertEqual(folder.eventsURL, folder.rootURL.appendingPathComponent("events.jsonl"))
     }
 

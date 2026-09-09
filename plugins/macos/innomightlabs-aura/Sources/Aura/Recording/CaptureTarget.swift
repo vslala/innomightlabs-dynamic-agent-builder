@@ -37,4 +37,32 @@ enum CaptureTarget: Hashable, @unchecked Sendable {
             return SCContentFilter(display: display, including: [app], exceptingWindows: [])
         }
     }
+
+    /// Best-name-match for `name` among `targets`, or `nil` if none is close enough.
+    /// Delegates to `NameMatcher` so the matching algorithm itself stays unit-testable
+    /// without needing real `SCDisplay`/`SCWindow`/`SCRunningApplication` fixtures.
+    static func bestMatch(for name: String, among targets: [CaptureTarget]) -> CaptureTarget? {
+        NameMatcher.bestMatch(for: name, among: targets.map { ($0.displayName, $0) })
+    }
+}
+
+/// Pure "closest name" matching, shared by picker-preference restoration and voice-driven
+/// target resolution. Exact case-insensitive match wins; otherwise a substring match
+/// (either direction) closest in length to the query; otherwise `nil`.
+enum NameMatcher {
+    static func bestMatch<T>(for name: String, among candidates: [(name: String, value: T)]) -> T? {
+        let query = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, !candidates.isEmpty else { return nil }
+        let lowerQuery = query.lowercased()
+
+        if let exact = candidates.first(where: { $0.name.lowercased() == lowerQuery }) {
+            return exact.value
+        }
+
+        let substringMatches = candidates.filter {
+            let lowerName = $0.name.lowercased()
+            return lowerName.contains(lowerQuery) || lowerQuery.contains(lowerName)
+        }
+        return substringMatches.min { abs($0.name.count - query.count) < abs($1.name.count - query.count) }?.value
+    }
 }
