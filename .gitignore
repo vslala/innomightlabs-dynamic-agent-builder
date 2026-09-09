@@ -38,3 +38,10 @@ tmp/
 # Artifacts
 *.zip
 .codex
+
+# Xcode (project files are XcodeGen-generated from project.yml — never hand-edited)
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+*.xcscmblueprint
+*.xccheckout

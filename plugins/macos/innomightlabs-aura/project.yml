@@ -1,0 +1,55 @@
+name: InnomightLabsAura
+
+options:
+  bundleIdPrefix: com.innomightlabs
+  deploymentTarget:
+    macOS: "15.0"
+
+targets:
+  Aura:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources/Aura
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.innomightlabs.aura
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_HARDENED_RUNTIME: NO
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: N88DX83XHU
+        CODE_SIGN_IDENTITY: "Apple Development"
+        INFOPLIST_KEY_NSCameraUsageDescription: "Aura uses your camera to record webcam video alongside your screen recording."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Aura uses your microphone to record narration audio alongside your screen recording."
+
+  AuraTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Tests/AuraTests
+    dependencies:
+      - target: Aura
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: N88DX83XHU
+        CODE_SIGN_IDENTITY: "Apple Development"
+
+schemes:
+  Aura:
+    build:
+      targets:
+        Aura: all
+        AuraTests: [test]
+    test:
+      targets:
+        - AuraTests
+    run:
+      config: Debug
