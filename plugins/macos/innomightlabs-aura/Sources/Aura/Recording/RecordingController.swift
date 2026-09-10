@@ -10,12 +10,23 @@ final class RecordingController: ObservableObject {
     @Published var lastError: RecordingError?
     @Published private(set) var currentTargetName: String?
 
+    /// Called once a session's files are finalized, so a review window can open over it.    /// A callback rather than a published property because `stop()` completes asynchronously
+    /// after the menu that started it has already been dismissed — there is no view alive at
+    /// that moment to observe a change.
+    var onSessionCompleted: ((SessionFolder) -> Void)?
+
     private let screenCaptureSession = ScreenCaptureSession()
     private let cameraRecorder = CameraRecorder()
     private let microphoneRecorder = MicrophoneRecorder()
 
     private var sessionManager: SessionManager?
     private var sessionStartTime: CMTime = .zero
+
+    /// Mirrors the paused duration every `TrackWriter`'s `PauseClock` accumulates —
+    /// `pause`/`resume` fan one host time out to all of them, so this stays in lockstep.
+    /// Without it, logged events would sit on a different clock than the recorded media.
+    private var accumulatedPausedDuration: CMTime = .zero
+    private var pauseStartedAt: CMTime?
 
     private var screenWriter: TrackWriter?
     private var cameraWriter: TrackWriter?
@@ -102,7 +113,7 @@ final class RecordingController: ObservableObject {
             try microphoneRecorder.start()
 
             currentTargetName = target.displayName
-            manager.logEvent(RecordingEvent(ts: 0, type: .recordStart, app: target.displayName))
+            logEvent(.recordStart, at: startTime, app: target.displayName)
             applyTransition(.didStart)
         } catch let error as RecordingError {
             await rollbackFailedStart()
@@ -117,21 +128,28 @@ final class RecordingController: ObservableObject {
         guard applyTransition(.pause) else { return }
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         allTrackWriters.forEach { $0.pause(at: hostTime) }
-        sessionManager?.logEvent(RecordingEvent(ts: elapsed(hostTime), type: .pause, app: nil))
+        if pauseStartedAt == nil {
+            pauseStartedAt = hostTime
+        }
+        logEvent(.pause, at: hostTime)
     }
 
     func resume() {
         guard applyTransition(.resume) else { return }
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         allTrackWriters.forEach { $0.resume(at: hostTime) }
-        sessionManager?.logEvent(RecordingEvent(ts: elapsed(hostTime), type: .resume, app: nil))
+        if let pauseStartedAt {
+            accumulatedPausedDuration = accumulatedPausedDuration + (hostTime - pauseStartedAt)
+            self.pauseStartedAt = nil
+        }
+        logEvent(.resume, at: hostTime)
     }
 
     func stop() async {
         guard applyTransition(.stop) else { return }
 
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
-        sessionManager?.logEvent(RecordingEvent(ts: elapsed(hostTime), type: .recordStop, app: nil))
+        logEvent(.recordStop, at: hostTime)
 
         cameraRecorder.stop()
         microphoneRecorder.stop()
@@ -140,13 +158,22 @@ final class RecordingController: ObservableObject {
         let writers = allTrackWriters
         await finishWriters()
         let failures = writers.compactMap(\.failureReason)
+        // Recorded into the log so the review window knows a track is expected-missing
+        // rather than having to guess why an asset won't load.
+        failures.forEach { logEvent(.trackFailed, at: hostTime, label: $0) }
         if !failures.isEmpty {
             lastError = .writerSetupFailed(failures.joined(separator: "; "))
         }
 
+        let completedSession = sessionManager?.folder
         tearDownSessionState()
 
         applyTransition(.didStop)
+
+        // After the transition, so the recorder is idle by the time the review window appears.
+        if let completedSession {
+            onSessionCompleted?(completedSession)
+        }
     }
 
     func mute() {
@@ -162,7 +189,7 @@ final class RecordingController: ObservableObject {
     func mark(label: String) {
         guard state == .recording || state == .paused else { return }
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
-        sessionManager?.logEvent(RecordingEvent(ts: elapsed(hostTime), type: .userMarker, label: label))
+        logEvent(.userMarker, at: hostTime, label: label)
     }
 
     func screenshot() async {
@@ -175,7 +202,7 @@ final class RecordingController: ObservableObject {
         let fileURL = sessionManager.folder.screenshotsURL.appendingPathComponent(filename)
 
         guard Self.writePNG(pixelBuffer: pixelBuffer, to: fileURL) else { return }
-        sessionManager.logEvent(RecordingEvent(ts: ts, type: .screenSnapshot, path: "screenshots/\(filename)"))
+        logEvent(.screenSnapshot, at: hostTime, path: "screenshots/\(filename)")
     }
 
     func cancel() async {
@@ -255,6 +282,8 @@ final class RecordingController: ObservableObject {
         currentTargetName = nil
         isMicMuted = false
         latestVideoPixelBuffer = nil
+        accumulatedPausedDuration = .zero
+        pauseStartedAt = nil
     }
 
     private func finishWriters() async {
@@ -304,8 +333,33 @@ final class RecordingController: ObservableObject {
         }
     }
 
+    private func logEvent(
+        _ type: RecordingEventKind,
+        at hostTime: CMTime,
+        app: String? = nil,
+        label: String? = nil,
+        path: String? = nil
+    ) {
+        sessionManager?.logEvent(RecordingEvent(
+            ts: elapsed(hostTime),
+            type: type,
+            mediaTs: mediaElapsed(hostTime),
+            app: app,
+            label: label,
+            path: path
+        ))
+    }
+
     private func elapsed(_ hostTime: CMTime) -> TimeInterval {
         CMTimeGetSeconds(hostTime - sessionStartTime)
+    }
+
+    /// Elapsed time on the pause-compacted timeline the media files are written on:
+    /// wall-clock elapsed minus every completed pause, and frozen at the pause point for
+    /// anything logged while paused (that span doesn't exist in the files).
+    private func mediaElapsed(_ hostTime: CMTime) -> TimeInterval {
+        let effective = pauseStartedAt ?? hostTime
+        return max(0, CMTimeGetSeconds(effective - sessionStartTime - accumulatedPausedDuration))
     }
 
     private static func videoOutputSettings(pixelSize: CGSize) -> [String: Any] {

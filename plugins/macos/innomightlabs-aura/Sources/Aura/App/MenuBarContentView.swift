@@ -4,6 +4,11 @@ struct MenuBarContentView: View {
     @ObservedObject var controller: RecordingController
     @StateObject private var pickerViewModel = ShareablePickerViewModel()
     @StateObject private var cameraPickerViewModel = CameraPickerViewModel()
+    let reviewWindows: ReviewWindowPresenter
+
+    /// Enumerated once when the menu opens rather than on every body pass — reading it
+    /// twice per pass meant a directory scan per redraw on the main thread.
+    @State private var recentSessions: [SessionFolder] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -76,11 +81,22 @@ struct MenuBarContentView: View {
 
             Divider()
 
+            if !recentSessions.isEmpty {
+                Menu("Open Recording") {
+                    ForEach(recentSessions, id: \.id) { session in
+                        Button(session.id) { reviewWindows.open(session) }
+                    }
+                }
+            }
+
             Button("Quit") {
                 NSApplication.shared.terminate(nil)
             }
         }
         .padding(12)
         .frame(width: 260)
+        .task {
+            recentSessions = Array(SessionFolder.existingSessions().prefix(10))
+        }
     }
 }

@@ -8,6 +8,12 @@ final class RecordingEventTests: XCTestCase {
         let app: String?
         let label: String?
         let path: String?
+        let mediaTs: Double?
+
+        private enum CodingKeys: String, CodingKey {
+            case ts, type, app, label, path
+            case mediaTs = "media_ts"
+        }
     }
 
     private func encodeAndDecode(_ event: RecordingEvent) throws -> DecodedEvent {
@@ -47,5 +53,33 @@ final class RecordingEventTests: XCTestCase {
         XCTAssertEqual(decoded.app, "Chrome")
         XCTAssertNil(decoded.label)
         XCTAssertNil(decoded.path)
+    }
+
+    func testMediaTimestampIsEncodedUnderSnakeCaseKey() throws {
+        let decoded = try encodeAndDecode(RecordingEvent(ts: 20.5, type: .userMarker, mediaTs: 16.5, label: "here"))
+        XCTAssertEqual(decoded.ts, 20.5)
+        XCTAssertEqual(decoded.mediaTs, 16.5)
+    }
+
+    func testMediaTimestampOmittedWhenAbsent() throws {
+        let data = try JSONEncoder().encode(RecordingEvent(ts: 1, type: .pause))
+        let json = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(json.contains("media_ts"))
+    }
+
+    func testTrackFailureRoundTripsWithReason() throws {
+        let decoded = try encodeAndDecode(RecordingEvent(ts: 9, type: .trackFailed, label: "camera.mov died"))
+        XCTAssertEqual(decoded.type, "track_failed")
+        XCTAssertEqual(decoded.label, "camera.mov died")
+    }
+
+    func testDecodesALogLineWrittenWithoutMediaTimestamp() throws {
+        let line = #"{"ts":52.4,"type":"user_marker","label":"mistake"}"#
+        let event = try JSONDecoder().decode(RecordingEvent.self, from: Data(line.utf8))
+
+        XCTAssertEqual(event.ts, 52.4)
+        XCTAssertEqual(event.type, .userMarker)
+        XCTAssertEqual(event.label, "mistake")
+        XCTAssertNil(event.mediaTs)
     }
 }

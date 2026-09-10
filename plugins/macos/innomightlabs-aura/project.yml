@@ -5,6 +5,11 @@ options:
   deploymentTarget:
     macOS: "15.0"
 
+packages:
+  WhisperKit:
+    url: https://github.com/argmaxinc/argmax-oss-swift
+    from: "1.1.0"
+
 targets:
   Aura:
     type: application
@@ -12,6 +17,8 @@ targets:
     deploymentTarget: "15.0"
     sources:
       - path: Sources/Aura
+    dependencies:
+      - package: WhisperKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.innomightlabs.aura

@@ -9,6 +9,13 @@ struct SessionFolder {
     let systemAudioURL: URL
     let screenshotsURL: URL
     let eventsURL: URL
+    let transcriptURL: URL
+    let editURL: URL
+
+    /// Waveform peak caches sit beside the audio file they describe, so the review
+    /// layer never has to rebuild a path to find one.
+    var microphonePeaksURL: URL { Self.peaksURL(for: microphoneURL) }
+    var systemAudioPeaksURL: URL { Self.peaksURL(for: systemAudioURL) }
 
     private static let idFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -27,22 +34,51 @@ struct SessionFolder {
 
     static func make(date: Date, suffix: String, baseDirectory: URL) -> SessionFolder {
         let id = makeID(date: date, suffix: suffix)
-        let root = baseDirectory.appendingPathComponent(id, isDirectory: true)
-        return SessionFolder(
-            id: id,
-            rootURL: root,
-            screenURL: root.appendingPathComponent("screen.mov"),
-            cameraURL: root.appendingPathComponent("camera.mov"),
-            microphoneURL: root.appendingPathComponent("microphone.m4a"),
-            systemAudioURL: root.appendingPathComponent("system-audio.m4a"),
-            screenshotsURL: root.appendingPathComponent("screenshots", isDirectory: true),
-            eventsURL: root.appendingPathComponent("events.jsonl")
-        )
+        return SessionFolder(rootURL: baseDirectory.appendingPathComponent(id, isDirectory: true), id: id)
+    }
+
+    /// Reopens an existing session directory, deriving exactly the same filenames `make`
+    /// produced. The session id is the folder name, so a folder is self-describing and
+    /// nothing about a past session needs to be recorded elsewhere.
+    static func load(rootURL: URL) -> SessionFolder {
+        SessionFolder(rootURL: rootURL, id: rootURL.lastPathComponent)
+    }
+
+    private init(rootURL: URL, id: String) {
+        self.id = id
+        self.rootURL = rootURL
+        screenURL = rootURL.appendingPathComponent("screen.mov")
+        cameraURL = rootURL.appendingPathComponent("camera.mov")
+        microphoneURL = rootURL.appendingPathComponent("microphone.m4a")
+        systemAudioURL = rootURL.appendingPathComponent("system-audio.m4a")
+        screenshotsURL = rootURL.appendingPathComponent("screenshots", isDirectory: true)
+        eventsURL = rootURL.appendingPathComponent("events.jsonl")
+        transcriptURL = rootURL.appendingPathComponent("transcript.json")
+        editURL = rootURL.appendingPathComponent("edit.json")
+    }
+
+    private static func peaksURL(for audioURL: URL) -> URL {
+        audioURL.deletingPathExtension().appendingPathExtension("peaks")
     }
 
     static var defaultBaseDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Movies", isDirectory: true)
             .appendingPathComponent("Aura", isDirectory: true)
+    }
+
+    /// Existing session directories, newest first. Session ids are timestamp-prefixed, so a
+    /// reverse lexicographic sort is a chronological sort.
+    ///
+    /// A directory counts as a session only if it has an `events.jsonl`, which every session
+    /// gets at creation — otherwise any unrelated folder under `~/Movies/Aura` would be
+    /// offered for opening and then fail with "no readable media".
+    static func existingSessions(in baseDirectory: URL = defaultBaseDirectory) -> [SessionFolder] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: baseDirectory.path)) ?? []
+
+        return names
+            .sorted(by: >)
+            .map { load(rootURL: baseDirectory.appendingPathComponent($0, isDirectory: true)) }
+            .filter { FileManager.default.fileExists(atPath: $0.eventsURL.path) }
     }
 }

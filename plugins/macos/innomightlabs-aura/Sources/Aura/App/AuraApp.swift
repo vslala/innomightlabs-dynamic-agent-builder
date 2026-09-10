@@ -3,7 +3,10 @@ import SwiftUI
 
 @main
 struct AuraApp: App {
-    @StateObject private var recordingController = RecordingController()
+    @StateObject private var recordingController: RecordingController
+    /// Held by the app, not by a view: review windows outlive the menu that opened them, and
+    /// the menu's content view does not exist most of the time.
+    private let reviewWindows = ReviewWindowPresenter()
 
     // TEMPORARY (Phase 2, Stage 2 manual verification only): wires WakeWordListener
     // straight to debug logging so wake-word detection can be tested against real
@@ -42,6 +45,11 @@ struct AuraApp: App {
     }
 
     init() {
+        let controller = RecordingController()
+        let presenter = reviewWindows
+        controller.onSessionCompleted = { folder in presenter.open(folder) }
+        _recordingController = StateObject(wrappedValue: controller)
+
         Task {
             guard await AVCaptureDevice.requestAccess(for: .audio) else { return }
             try? Self.wakeWordListener?.start()
@@ -50,7 +58,7 @@ struct AuraApp: App {
 
     var body: some Scene {
         MenuBarExtra("Aura", systemImage: "waveform") {
-            MenuBarContentView(controller: recordingController)
+            MenuBarContentView(controller: recordingController, reviewWindows: reviewWindows)
         }
     }
 }
