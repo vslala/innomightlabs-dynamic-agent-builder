@@ -22,6 +22,13 @@ final class ReviewViewModel: ObservableObject {
         case failed(String)
     }
 
+    enum AgentState: Equatable {
+        case idle
+        case thinking
+        case replied(String)
+        case failed(String)
+    }
+
     enum ExportState: Equatable {
         case idle
         case running(fraction: Double)
@@ -44,6 +51,13 @@ final class ReviewViewModel: ObservableObject {
     /// Published only when it changes, so the transcript list is not invalidated 30x a second.
     @Published private(set) var activeCueID: Transcript.Segment.ID?
     @Published private(set) var exportState: ExportState = .idle
+    /// How much of the timeline the waveform lanes show. `nil` fits the whole recording;
+    /// anything else is a window that follows the playhead, which is what makes frame-level
+    /// edits possible without a separate pan control.
+    @Published private(set) var visibleDuration: TimeInterval?
+    @Published private(set) var agentState: AgentState = .idle
+    /// Proposed edits, never applied until accepted.
+    @Published private(set) var suggestions: [EditSuggestion] = []
 
     let folder: SessionFolder
     /// One long-lived player for the window's whole life. Never replaced: a periodic time
@@ -54,6 +68,8 @@ final class ReviewViewModel: ObservableObject {
     @Published private(set) var store: EditDocumentStore?
     private let builder: any CompositionBuilding
     private let exporter: any ExportEngine
+    private let suggester: any EditSuggesting
+    private var suggestTask: Task<Void, Never>?
     private let extractor = WaveformExtractor()
     private var probes: [SourceTrackProbe] = []
     private var timeObserver: Any?
@@ -84,11 +100,13 @@ final class ReviewViewModel: ObservableObject {
     init(
         folder: SessionFolder,
         builder: any CompositionBuilding = LayerInstructionCompositionBuilder(),
-        exporter: any ExportEngine = AVAssetExportEngine()
+        exporter: any ExportEngine = AVAssetExportEngine(),
+        suggester: any EditSuggesting = InnomightLabsEditSuggester()
     ) {
         self.folder = folder
         self.builder = builder
         self.exporter = exporter
+        self.suggester = suggester
     }
 
     // MARK: - Loading
@@ -268,6 +286,7 @@ final class ReviewViewModel: ObservableObject {
         transcriptTask?.cancel()
         exportTask?.cancel()
         rebuildTask?.cancel()
+        suggestTask?.cancel()
         cancellables.removeAll()
         store?.flush()
     }
@@ -308,15 +327,69 @@ final class ReviewViewModel: ObservableObject {
         Task { await seek(to: Timeline.time(seconds: seconds), exact: true) }
     }
 
+    // MARK: - Zoom
+
+    /// Below this the peak buckets (1/100s) start showing as steps rather than a waveform.
+    private static let minimumVisibleDuration: TimeInterval = 0.25
+    private static let zoomFactor: TimeInterval = 1.8
+
+    /// The window the lanes draw, in composition time.
+    var visibleSpan: TimeSpan {
+        WaveformWindow.span(
+            total: Timeline.seconds(duration),
+            visibleDuration: visibleDuration,
+            playhead: Timeline.seconds(playhead)
+        )
+    }
+
+    var canZoomIn: Bool {
+        (visibleDuration ?? Timeline.seconds(duration)) > Self.minimumVisibleDuration
+    }
+
+    var canZoomOut: Bool { visibleDuration != nil }
+
+    func zoomIn() {
+        let total = Timeline.seconds(duration)
+        guard total > 0 else { return }
+        let current = visibleDuration ?? total
+        let proposed = max(Self.minimumVisibleDuration, current / Self.zoomFactor)
+        visibleDuration = proposed < total ? proposed : nil
+    }
+
+    func zoomOut() {
+        let total = Timeline.seconds(duration)
+        guard let current = visibleDuration, total > 0 else { return }
+        let proposed = current * Self.zoomFactor
+        visibleDuration = proposed >= total ? nil : proposed
+    }
+
+    /// Used by pinch, where the scale arrives as a continuous multiplier.
+    func setZoom(scale: Double) {
+        let total = Timeline.seconds(duration)
+        guard total > 0, scale > 0 else { return }
+        let current = visibleDuration ?? total
+        let proposed = current / scale
+        visibleDuration = proposed >= total
+            ? nil
+            : max(Self.minimumVisibleDuration, proposed)
+    }
+
+    func zoomToFit() {
+        visibleDuration = nil
+    }
+
     // MARK: - Editing
 
     /// The single entry point for edits, so a drag, an agent suggestion, and a voice command
     /// all take the same path.
-    func apply(_ operation: EditOperation) {
-        guard let store else { return }
-        if !store.apply(operation) {
+    @discardableResult
+    func apply(_ operation: EditOperation) -> Bool {
+        guard let store else { return false }
+        guard store.apply(operation) else {
             lastError = store.lastError?.localizedDescription
+            return false
         }
+        return true
     }
 
     /// Converts the playhead into the session time that `EditOperation`s are expressed in.
@@ -350,6 +423,29 @@ final class ReviewViewModel: ObservableObject {
 
     func setLaneGain(_ lane: AudioLane, _ gain: Double) {
         apply(.setLaneGain(lane: lane, keyframe: GainKeyframe(t: playheadSourceTime, gain: gain)))
+    }
+
+    // MARK: - A/V slip
+
+    /// The correction already applied automatically from the recorded track start offsets,
+    /// shown so the user can tell "already handled" from "needs a nudge".
+    func automaticCorrection(for lane: AudioLane) -> TimeInterval {
+        guard let probe = timeline?.audio.first(where: { $0.lane == lane })?.probe else { return 0 }
+        return Timeline.seconds(probe.alignmentCorrection)
+    }
+
+    func laneOffset(_ lane: AudioLane) -> TimeInterval {
+        store?.document.offset(for: lane) ?? 0
+    }
+
+    func nudgeLaneOffset(_ lane: AudioLane, by delta: TimeInterval) {
+        let proposed = ((laneOffset(lane) + delta) * 1000).rounded() / 1000
+        guard abs(proposed) <= SessionEdit.maximumLaneOffset else { return }
+        apply(.setLaneOffset(lane: lane, seconds: proposed))
+    }
+
+    func resetLaneOffset(_ lane: AudioLane) {
+        apply(.setLaneOffset(lane: lane, seconds: 0))
     }
 
     // MARK: - Transcript
@@ -413,13 +509,80 @@ final class ReviewViewModel: ObservableObject {
         transcriptTask = Task { [weak self] in await self?.loadTranscript() }
     }
 
+    // MARK: - Agent
+
+    var isAgentConfigured: Bool { AgentSettings.isConfigured }
+
+    /// Asks the agent what to change. Nothing is applied here — suggestions are staged for
+    /// the user to accept, and accepting routes through the same `apply` a drag does.
+    func requestSuggestions(instruction: String) {
+        guard let document = store?.document, suggestTask == nil else { return }
+
+        let context = EditSuggestionContext(
+            sessionID: folder.id,
+            duration: Timeline.seconds(duration),
+            transcript: transcript,
+            document: document,
+            markers: markers.map { (time: $0.mediaTs, label: $0.event.label ?? "Marker") }
+        )
+
+        agentState = .thinking
+        suggestTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.suggestTask = nil }
+
+            do {
+                let result = try await self.suggester.suggest(instruction: instruction, context: context)
+                guard !Task.isCancelled else { return }
+                self.suggestions = result.suggestions
+                self.agentState = .replied(result.reply)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.agentState = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    var isAwaitingAgent: Bool { agentState == .thinking }
+
+    func accept(_ suggestion: EditSuggestion) {
+        guard apply(suggestion.operation) else { return }
+        suggestions.removeAll { $0.id == suggestion.id }
+    }
+
+    func acceptAllSuggestions() {
+        guard let store else { return }
+        let operations = suggestions.map(\.operation)
+        guard !operations.isEmpty else { return }
+
+        // All-or-nothing, and one undo step: a half-applied set of suggestions is worse
+        // than none.
+        if store.apply(operations) {
+            suggestions = []
+        } else {
+            lastError = store.lastError?.localizedDescription
+        }
+    }
+
+    func reject(_ suggestion: EditSuggestion) {
+        suggestions.removeAll { $0.id == suggestion.id }
+    }
+
+    func clearAgentReply() {
+        agentState = .idle
+        suggestions = []
+    }
+
     // MARK: - Export
 
-    var exportURL: URL { folder.rootURL.appendingPathComponent("export.mp4") }
+    /// Where an export defaults to: beside the recording, named after the session.
+    var suggestedExportURL: URL {
+        folder.rootURL.appendingPathComponent("\(folder.id).mp4")
+    }
 
     /// Exports at full render size from the same timeline the preview uses, so the file
     /// matches what was previewed rather than coming from a second code path.
-    func export() {
+    func export(to destination: URL) {
         guard let timeline, exportTask == nil else { return }
 
         exportGeneration += 1
@@ -431,7 +594,7 @@ final class ReviewViewModel: ObservableObject {
 
             do {
                 let built = try await self.builder.build(timeline, maxRenderDimension: nil)
-                try await self.exporter.export(built, to: self.exportURL) { progress in
+                try await self.exporter.export(built, to: destination) { progress in
                     switch progress {
                     case .preparing:
                         self.report(.running(fraction: 0), generation: generation)
@@ -439,7 +602,7 @@ final class ReviewViewModel: ObservableObject {
                         self.report(.running(fraction: fraction), generation: generation)
                     }
                 }
-                self.report(.finished(self.exportURL), generation: generation)
+                self.report(.finished(destination), generation: generation)
             } catch {
                 // AVFoundation reports cancellation as `AVError.operationCancelled`, not
                 // `CancellationError`, so matching only the latter would flip the button to

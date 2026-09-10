@@ -8,6 +8,7 @@ enum RecordingEventKind: String, Codable {
     case userMarker = "user_marker"
     case screenSnapshot = "screen_snapshot"
     case trackFailed = "track_failed"
+    case trackStart = "track_start"
 }
 
 struct RecordingEvent: Codable, Equatable {

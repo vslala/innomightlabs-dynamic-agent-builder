@@ -48,6 +48,13 @@ final class RecordingController: ObservableObject {
         [screenWriter, cameraWriter, microphoneWriter, systemAudioWriter].compactMap { $0 }
     }
 
+    private var writersByKind: [(TrackKind, TrackWriter)] {
+        [
+            (.screen, screenWriter), (.camera, cameraWriter),
+            (.microphone, microphoneWriter), (.systemAudio, systemAudioWriter)
+        ].compactMap { kind, writer in writer.map { (kind, $0) } }
+    }
+
     func start(target: CaptureTarget, cameraDeviceID: String? = nil) async {
         guard applyTransition(.start) else { return }
 
@@ -154,6 +161,10 @@ final class RecordingController: ObservableObject {
         cameraRecorder.stop()
         microphoneRecorder.stop()
         try? await screenCaptureSession.stop()
+
+        // Recorded before teardown: this is what lets the review layer realign a track whose
+        // warm-up offset `AVAssetWriter` discarded (which it does for every audio track).
+        logTrackStartOffsets()
 
         let writers = allTrackWriters
         await finishWriters()
@@ -330,6 +341,21 @@ final class RecordingController: ObservableObject {
             return true
         case .failure:
             return false
+        }
+    }
+
+    /// One `track_start` per track, carrying how far behind the shared session start that
+    /// track's first sample actually was.
+    private func logTrackStartOffsets() {
+        for (kind, writer) in writersByKind {
+            guard let firstSample = writer.firstAppendedHostTime else { continue }
+            let offset = max(0, CMTimeGetSeconds(firstSample - sessionStartTime))
+            sessionManager?.logEvent(RecordingEvent(
+                ts: offset,
+                type: .trackStart,
+                mediaTs: offset,
+                label: kind.rawValue
+            ))
         }
     }
 

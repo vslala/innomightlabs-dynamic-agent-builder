@@ -35,19 +35,32 @@ enum TimelineResolver {
             frameDuration: Timeline.frameDuration,
             base: baseProbe.map {
                 // The base layer fills the frame; it has no keyframes of its own.
-                ResolvedVideoLayer(probe: $0, keyframes: [ResolvedOverlayKeyframe(
-                    at: .zero,
-                    rect: NormalizedRect(x: 0, y: 0, width: 1, height: 1),
-                    visible: true
-                )])
+                ResolvedVideoLayer(
+                    probe: $0,
+                    keyframes: [ResolvedOverlayKeyframe(
+                        at: .zero,
+                        rect: NormalizedRect(x: 0, y: 0, width: 1, height: 1),
+                        visible: true
+                    )],
+                    timeOffset: $0.alignmentCorrection
+                )
             },
-            overlay: overlayProbe.map { ResolvedVideoLayer(probe: $0, keyframes: overlayKeyframes) },
+            overlay: overlayProbe.map {
+                ResolvedVideoLayer(
+                    probe: $0,
+                    keyframes: overlayKeyframes,
+                    timeOffset: $0.alignmentCorrection
+                )
+            },
             audio: AudioLane.allCases.compactMap { lane in
                 guard let probe = probes.first(where: { $0.kind.lane == lane }) else { return nil }
                 return ResolvedAudioLane(
                     lane: lane,
                     probe: probe,
-                    keyframes: resolveGain(document: document, lane: lane, timeMap: timeMap)
+                    keyframes: resolveGain(document: document, lane: lane, timeMap: timeMap),
+                    // Automatic correction plus the user's manual slip.
+                    timeOffset: probe.alignmentCorrection
+                        + Timeline.time(seconds: document.offset(for: lane))
                 )
             },
             style: style

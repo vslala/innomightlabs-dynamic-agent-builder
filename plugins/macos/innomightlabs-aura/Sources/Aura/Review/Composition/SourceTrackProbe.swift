@@ -52,6 +52,21 @@ struct SourceTrackProbe: Sendable, Equatable {
     /// that reads the raw track instead (which is the usual shape for an ML audio pipeline)
     /// starts counting at the first real sample and is early by exactly this much.
     var leadingEmptyEdit: CMTime = .zero
+    /// How far behind the session start this track's first sample actually was, as recorded
+    /// at capture time. Zero for sessions recorded before that was logged.
+    var recordedStartOffset: CMTime = .zero
+
+    /// How much later this file's content must play than its own timeline implies.
+    ///
+    /// `AVAssetWriter` preserves a track's warm-up offset for video by inserting a leading
+    /// empty edit, but for audio it slides the first sample to zero and drops the offset —
+    /// so audio plays early by its entire startup delay, which is the A/V desync. Video
+    /// therefore corrects by ~nothing (recorded and edit offsets agree) while audio corrects
+    /// by the whole recorded offset.
+    var alignmentCorrection: CMTime {
+        let correction = recordedStartOffset - leadingEmptyEdit
+        return correction > .zero ? Timeline.normalized(correction) : .zero
+    }
 
     /// Pure. Uses `CGRect.applying` rather than `CGSize.applying`, which yields negative
     /// components for flip and rotate transforms.
@@ -115,12 +130,15 @@ struct SourceTrackProbe: Sendable, Equatable {
             (folder.microphoneURL, .microphone),
             (folder.systemAudioURL, .systemAudio)
         ]
+        let recordedOffsets = EventTimeline.load(eventsURL: folder.eventsURL).trackStartOffsets
 
         var probes: [SourceTrackProbe] = []
         for (url, kind) in sources {
-            if let probe = await probe(url: url, kind: kind) {
-                probes.append(probe)
+            guard var probe = await probe(url: url, kind: kind) else { continue }
+            if let offset = recordedOffsets[kind.rawValue] {
+                probe.recordedStartOffset = Timeline.time(seconds: offset)
             }
+            probes.append(probe)
         }
         return probes
     }

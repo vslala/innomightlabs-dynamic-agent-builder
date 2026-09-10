@@ -99,7 +99,12 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         // here would be a second, silent source of truth.
         track.preferredTransform = .identity
 
-        guard let covered = await insertClips(of: layer.probe, into: track, timeline: timeline) else {
+        guard let covered = await insertClips(
+            of: layer.probe,
+            offset: layer.timeOffset,
+            into: track,
+            timeline: timeline
+        ) else {
             // Never leave an unpopulated track behind: it still gets a track ID and a zero
             // naturalSize, and a layer instruction naming it invalidates the composition.
             composition.removeTrack(track)
@@ -119,7 +124,12 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
             preferredTrackID: kCMPersistentTrackID_Invalid
         ) else { return nil }
 
-        guard await insertClips(of: lane.probe, into: track, timeline: timeline) != nil else {
+        guard await insertClips(
+            of: lane.probe,
+            offset: lane.timeOffset,
+            into: track,
+            timeline: timeline
+        ) != nil else {
             composition.removeTrack(track)
             return nil
         }
@@ -136,6 +146,7 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
     /// used directly rather than being re-aligned here.
     private func insertClips(
         of probe: SourceTrackProbe,
+        offset: CMTime,
         into track: AVMutableCompositionTrack,
         timeline: ResolvedTimeline
     ) async -> [CMTimeRange]? {
@@ -151,10 +162,18 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         var covered: [CMTimeRange] = []
 
         for segment in timeline.timeMap.segments {
-            let usable = segment.source.intersection(available)
+            // `offset` says this file's content plays that much later than its own timeline
+            // implies, so the file range for a session range is the range shifted back by it.
+            // Clipping against what the file actually holds then naturally leaves silence (or
+            // no frames) at the head, which is the truth: the track wasn't running yet.
+            let shifted = CMTimeRange(
+                start: segment.source.start - offset,
+                end: segment.source.end - offset
+            )
+            let usable = shifted.intersection(available)
             guard usable.duration > .zero else { continue }
 
-            let at = segment.composition.start + (usable.start - segment.source.start)
+            let at = segment.composition.start + (usable.start - shifted.start)
             do {
                 try track.insertTimeRange(usable, of: source, at: at)
                 covered.append(CMTimeRange(start: at, duration: usable.duration))

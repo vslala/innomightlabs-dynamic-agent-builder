@@ -20,6 +20,7 @@ enum EditOperation: Codable, Equatable, Sendable {
     case removeOverlayKeyframe(at: TimeInterval)
     case setLaneGain(lane: AudioLane, keyframe: GainKeyframe)
     case setLaneMuted(lane: AudioLane, muted: Bool)
+    case setLaneOffset(lane: AudioLane, seconds: TimeInterval)
 
     private enum Op: String, Codable {
         case removeRange = "remove_range"
@@ -28,10 +29,11 @@ enum EditOperation: Codable, Equatable, Sendable {
         case removeOverlayKeyframe = "remove_overlay_keyframe"
         case setLaneGain = "set_lane_gain"
         case setLaneMuted = "set_lane_muted"
+        case setLaneOffset = "set_lane_offset"
     }
 
     private enum CodingKeys: String, CodingKey {
-        case op, start, end, t, rect, visible, lane, gain, muted
+        case op, start, end, t, rect, visible, lane, gain, muted, seconds
     }
 
     init(from decoder: Decoder) throws {
@@ -65,6 +67,11 @@ enum EditOperation: Codable, Equatable, Sendable {
                 lane: try container.decode(AudioLane.self, forKey: .lane),
                 muted: try container.decode(Bool.self, forKey: .muted)
             )
+        case .setLaneOffset:
+            self = .setLaneOffset(
+                lane: try container.decode(AudioLane.self, forKey: .lane),
+                seconds: try container.decode(TimeInterval.self, forKey: .seconds)
+            )
         }
     }
 
@@ -95,6 +102,10 @@ enum EditOperation: Codable, Equatable, Sendable {
             try container.encode(Op.setLaneMuted, forKey: .op)
             try container.encode(lane, forKey: .lane)
             try container.encode(muted, forKey: .muted)
+        case .setLaneOffset(let lane, let seconds):
+            try container.encode(Op.setLaneOffset, forKey: .op)
+            try container.encode(lane, forKey: .lane)
+            try container.encode(seconds, forKey: .seconds)
         }
     }
 }
@@ -111,6 +122,7 @@ enum EditOperationError: Error, Equatable, LocalizedError {
     case noOverlayKeyframe(at: TimeInterval)
     case wouldRemoveLastOverlayKeyframe
     case gainOutOfRange(Double)
+    case offsetOutOfRange(TimeInterval)
 
     var errorDescription: String? {
         switch self {
@@ -132,6 +144,8 @@ enum EditOperationError: Error, Equatable, LocalizedError {
             return "The camera needs at least one keyframe."
         case .gainOutOfRange(let gain):
             return String(format: "Gain %.2f is outside 0-1.", gain)
+        case .offsetOutOfRange(let seconds):
+            return String(format: "An audio slip of %.2fs is outside the +/-5s limit.", seconds)
         }
     }
 }
@@ -169,9 +183,17 @@ extension SessionEdit {
             }
         case .setLaneMuted(let lane, let muted):
             edit.audioLanes = try Self.updatingLane(lane, in: audioLanes) { $0.muted = muted }
+        case .setLaneOffset(let lane, let seconds):
+            guard seconds.isFinite, abs(seconds) <= Self.maximumLaneOffset else {
+                throw EditOperationError.offsetOutOfRange(seconds)
+            }
+            edit.audioLanes = try Self.updatingLane(lane, in: audioLanes) { $0.offset = seconds }
         }
         return edit
     }
+
+    /// A slip beyond this is a sign something is wrong rather than a sync nudge.
+    static let maximumLaneOffset: TimeInterval = 5
 
     /// Snaps to `Timeline.timescale` so that a time authored by the UI, by an agent, or read
     /// back from `edit.json` all land on the same tick and compare equal.

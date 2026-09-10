@@ -85,11 +85,30 @@ struct AudioLaneSettings: Codable, Hashable, Sendable {
     var lane: AudioLane
     var muted: Bool
     var gain: [GainKeyframe]
+    /// Manual A/V slip in seconds; positive plays this lane later. Applied on top of the
+    /// automatic correction derived from the recorded track start offsets, and exists for the
+    /// cases automation can't cover: recordings made before those offsets were logged, and
+    /// residual device latency the user can hear but nothing can measure.
+    var offset: TimeInterval
 
-    init(lane: AudioLane, muted: Bool = false, gain: [GainKeyframe] = []) {
+    init(lane: AudioLane, muted: Bool = false, gain: [GainKeyframe] = [], offset: TimeInterval = 0) {
         self.lane = lane
         self.muted = muted
         self.gain = gain
+        self.offset = offset
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case lane, muted, gain, offset
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        lane = try container.decode(AudioLane.self, forKey: .lane)
+        muted = try container.decode(Bool.self, forKey: .muted)
+        gain = try container.decode([GainKeyframe].self, forKey: .gain)
+        // Optional so documents written before slip existed still load.
+        offset = try container.decodeIfPresent(TimeInterval.self, forKey: .offset) ?? 0
     }
 }
 
@@ -146,6 +165,10 @@ struct SessionEdit: Codable, Equatable, Sendable {
     func overlay(at t: TimeInterval) -> OverlayKeyframe? {
         let sorted = cameraOverlay.sorted { $0.t < $1.t }
         return sorted.last { $0.t <= t } ?? sorted.first
+    }
+
+    func offset(for lane: AudioLane) -> TimeInterval {
+        settings(for: lane).offset
     }
 
     func gain(for lane: AudioLane, at t: TimeInterval) -> Double {

@@ -46,12 +46,16 @@ struct ReviewWindowView: View {
                 transport
                 Divider()
                 WaveformLanesView(viewModel: viewModel)
-                    .frame(height: 140)
+                    .frame(height: 196)
             }
             .frame(minWidth: 560)
 
-            TranscriptPanelView(viewModel: viewModel)
-                .frame(minWidth: 260, idealWidth: 320)
+            VStack(spacing: 0) {
+                TranscriptPanelView(viewModel: viewModel)
+                Divider()
+                AgentEditPanelView(viewModel: viewModel)
+            }
+            .frame(minWidth: 300, idealWidth: 360)
         }
         .overlay(alignment: .top) { errorBanner }
     }

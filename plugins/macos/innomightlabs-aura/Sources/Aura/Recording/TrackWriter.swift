@@ -14,6 +14,26 @@ final class TrackWriter: @unchecked Sendable {
     private let pauseClock = PauseClock()
     private let sessionStartTime: CMTime
 
+    private let firstSampleLock = NSLock()
+    private var _firstAppendedHostTime: CMTime?
+
+    /// Where the first sample this track accepted landed on the pause-compacted timeline.
+    ///
+    /// Capture sources warm up at different speeds, and `AVAssetWriter` only preserves that
+    /// offset for video (as a leading empty edit) — for audio it slides the first sample to
+    /// time zero and throws the offset away, which desynchronises audio from video by the
+    /// whole warm-up delay. Recording it here is what lets the review layer put the track
+    /// back where it belongs.
+    ///
+    /// This is the *rebased* timestamp, not the raw one: if the recording was paused before
+    /// this track produced anything, the raw time would include the paused span that the file
+    /// itself does not contain.
+    var firstAppendedHostTime: CMTime? {
+        firstSampleLock.lock()
+        defer { firstSampleLock.unlock() }
+        return _firstAppendedHostTime
+    }
+
     init(
         outputURL: URL,
         outputFileType: AVFileType,
@@ -64,10 +84,18 @@ final class TrackWriter: @unchecked Sendable {
         }
 
         if adjustedPTS == originalPTS {
-            input.append(sampleBuffer)
+            guard input.append(sampleBuffer) else { return }
         } else if let retimed = Self.retimed(sampleBuffer, newPresentationTime: adjustedPTS) {
-            input.append(retimed)
+            guard input.append(retimed) else { return }
+        } else {
+            return
         }
+
+        firstSampleLock.lock()
+        if _firstAppendedHostTime == nil {
+            _firstAppendedHostTime = adjustedPTS
+        }
+        firstSampleLock.unlock()
     }
 
     func finish(completion: @escaping @Sendable () -> Void) {

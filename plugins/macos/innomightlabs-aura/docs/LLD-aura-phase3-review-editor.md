@@ -163,6 +163,51 @@ The two lanes stay two separate composition audio tracks through to export, beca
 expressible at all. Merging them earlier would make a gap in one indistinguishable from silence in
 the other.
 
+## A/V synchronisation
+
+The recorded files are **not** self-aligned, and the reason is asymmetric handling in
+`AVAssetWriter`. All four writers call `startSession(atSourceTime: sessionStartTime)` with the
+same instant, and each capture source then starts producing samples some time later — measured
+on a real session: screen +0.13s, camera +1.02s. For **video** the writer preserves that delay
+as a leading empty edit, so the content stays where it belongs. For **audio** it does not: the
+track has no empty edit and its edit list maps target 0 to the first captured sample, i.e. the
+warm-up offset is discarded and the audio plays early by that entire amount. That is the
+audible desync, and it is several hundred milliseconds because the microphone starts last —
+after four writer setups and the `SCStream`.
+
+Rather than depend on that behaviour, alignment is now explicit. `TrackWriter` records where
+its first accepted sample landed (the pause-rebased timestamp, so a pause before the first
+sample cannot skew it), and `stop()` writes one `track_start` event per track carrying the
+offset from the session start. At review time each track's correction is
+
+    correction = recordedStartOffset - leadingEmptyEdit
+
+which is ~zero for video (the two agree) and the whole offset for audio (the file records
+none). `LayerInstructionCompositionBuilder` shifts each track's source range back by its
+correction when laying clips down, so the head of an audio track becomes silence — which is
+the truth: the microphone was not running yet. Verified end to end: with a recorded mic offset
+of 0.4s the built composition's mic track begins with a 0.4s empty edit while the video tracks
+begin at zero.
+
+Sessions recorded before `track_start` existed carry no offsets and get no automatic
+correction, so `AudioLaneSettings.offset` provides a manual per-lane slip (±5s, 10ms nudges),
+exposed in the lane header and available to the agent as `set_lane_offset`. It also covers
+residual device latency that nothing can measure. Note the raw files remain externally
+misaligned by design — the offsets live in `events.jsonl` and are applied by the composition,
+so it is the export, not the source files, that is correct.
+
+## Waveform zoom
+
+`WaveformWindow` (pure) decides which slice of the timeline the lanes draw. The window follows
+the playhead rather than carrying its own scroll offset: one control instead of two, and the
+playhead can never end up off screen. Zoom bottoms out at 0.25s visible, below which the
+1/100s peak buckets read as steps rather than a waveform. Because the cache is stored at that
+resolution, zooming never re-reads the audio.
+
+Each column is mapped composition time -> session time -> the lane's own file time (through
+`TimeMap` and then the lane offset), so the drawn waveform matches what is actually heard after
+both a cut and an A/V slip.
+
 ## Windows
 
 `ReviewWindowPresenter` opens review windows with AppKit rather than a SwiftUI `WindowGroup`, for
@@ -195,16 +240,38 @@ with the panel showing progress.
 This is deliberately *not* the Phase 2 branch's `Voice/Transcriber`, which collapses results to a
 joined string and discards all timing.
 
-## Agent integration (next phase)
+## Agent edits
 
-`EditOperation` is the contract. Transcription stays on-device — the backend has no audio endpoint
-and needs none. For suggestions the existing seams suffice: the widget auth path (`X-API-Key` plus a
-custom-scheme redirect to `innomightlabs-aura://auth-callback`, Keychain-stored, with a working
-refresh), `POST /widget/generate-text` for a first request/response cut, and later a
-`video_edit_suggestions` skill returning `{"ok": true, "type": "edit_suggestions", "operations":
-[...]}` read off the existing `TOOL_CALL_RESULT` SSE frame — following the `html_canvas` precedent,
-with no new event type. Suggestions land as a pending list and are never auto-applied; accepting one
-calls the same `apply` a mouse drag calls.
+`AgentEditPanelView` is where the user asks for a change in words, typed or dictated.
+`VoiceInstructionRecorder` captures a short clip with `AVAudioRecorder` and transcribes it with
+the same on-device WhisperKit pipeline, so dictation needs no network.
+
+The request goes out over **Agent2Agent** (`POST /a2a/agents/{id}/message:send`), not the
+widget endpoints. A2A is the only surface that authenticates with the API key alone; the widget
+path additionally needs a visitor token obtained through a browser redirect, which is a poor
+fit for a desktop app. It requires Agent2Agent sharing enabled on the agent, and an API key
+created with empty allowed origins (a native client sends no `Origin`). The key lives in the
+Keychain, the base URL and agent id in `UserDefaults`.
+
+Two pieces carry the weight and are unit-tested accordingly. `EditSuggestionPrompt` states the
+operation vocabulary exactly and includes the transcript **shifted into recording time** by
+`micTimeOffset` — handing over the microphone's own clock would make every AI-proposed cut land
+slightly wrong — plus the current edit state, so suggestions are relative to the edit as it
+stands rather than to the original recording. `EditSuggestionParser` reads the reply
+defensively, since it is free text from a language model: fenced or bare JSON, an array, an
+`{"operations": […]}` wrapper, or a single object, with bracket scanning that ignores string
+contents. An operation this build cannot represent is dropped rather than guessed at, and the
+valid ones around it survive.
+
+Suggestions are never auto-applied. They stage in a pending list, and accepting one runs
+through the same `EditDocumentStore.apply` a mouse drag does — so an AI edit is reviewable
+before it lands and undoable after, and the agent has exactly the user's powers and no more.
+"Apply All" is one undo step and all-or-nothing.
+
+A future backend improvement would be a `video_edit_suggestions` skill returning
+`{"ok": true, "type": "edit_suggestions", "operations": [...]}` read off the existing
+`TOOL_CALL_RESULT` SSE frame, following the `html_canvas` precedent — structured output instead
+of parsing prose, with no new event type needed.
 
 `PiPStyle` (`cornerRadius`, `borderWidth`, `shadow`) is carried in `ResolvedTimeline` now and ignored
 by the layer-instruction builder, so `edit.json`, `EditOperation`, and the UI do not change when a
@@ -220,6 +287,9 @@ custom compositor lands — only which builder is constructed.
   not whether the cropped region keeps its in-frame offset or re-origins to (0,0).
 - **No rounded corners, borders, shadows, or non-rectangular PiP.** The built-in compositor supports
   only affine transform, opacity, and an axis-aligned crop. These need the custom compositor.
+- **The agent transport is unverified against a live backend.** The A2A request and reply
+  shapes are implemented from the API's contract and covered by unit tests, but nothing here has
+  been exercised against a running InnomightLabs instance.
 - **Export always re-encodes.** `AVAssetExportPresetPassthrough` ignores `videoComposition`
   entirely, and there is nothing to pass through when two tracks composite into one. The
   document-level fast path (single full-range clip, PiP hidden throughout, unity gain, no mute -> copy

@@ -19,6 +19,17 @@ struct EventTimeline: Equatable {
     var screenshots: [Entry] { entries.filter { $0.event.type == .screenSnapshot } }
     var failedTracks: [Entry] { entries.filter { $0.event.type == .trackFailed } }
 
+    /// How far behind the session start each track's first sample was, keyed by track kind.
+    /// Absent for sessions recorded before this was logged.
+    var trackStartOffsets: [String: TimeInterval] {
+        var offsets: [String: TimeInterval] = [:]
+        for entry in entries where entry.event.type == .trackStart {
+            guard let kind = entry.event.label else { continue }
+            offsets[kind] = entry.event.mediaTs ?? entry.event.ts
+        }
+        return offsets
+    }
+
     /// Pure. Events are assumed to be in the order they were logged, which is the order
     /// an append-only `EventLogWriter` produces.
     init(events: [RecordingEvent]) {

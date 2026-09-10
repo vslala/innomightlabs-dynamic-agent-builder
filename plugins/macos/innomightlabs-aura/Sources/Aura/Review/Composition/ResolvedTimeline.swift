@@ -29,6 +29,9 @@ struct ResolvedVideoLayer: Equatable, Sendable {
     let probe: SourceTrackProbe
     /// Non-empty, sorted, deduplicated, and guaranteed to start at composition time zero.
     let keyframes: [ResolvedOverlayKeyframe]
+    /// How much later this file's content plays than its own timeline implies. See
+    /// `SourceTrackProbe.alignmentCorrection`.
+    let timeOffset: CMTime
 }
 
 struct ResolvedAudioLane: Equatable, Sendable {
@@ -36,6 +39,8 @@ struct ResolvedAudioLane: Equatable, Sendable {
     let probe: SourceTrackProbe
     /// Non-empty, sorted, deduplicated, and guaranteed to start at composition time zero.
     let keyframes: [ResolvedGainKeyframe]
+    /// The automatic alignment correction plus the user's manual slip.
+    let timeOffset: CMTime
 }
 
 /// Everything needed to build a composition, as Sendable value types with no AVFoundation
