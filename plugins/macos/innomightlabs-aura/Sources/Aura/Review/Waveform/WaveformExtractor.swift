@@ -96,6 +96,72 @@ actor WaveformExtractor {
         return Extraction(peaks: accumulator.finish(), isComplete: reader.status == .completed)
     }
 
+    /// High-resolution peaks for one window of the file.
+    ///
+    /// The cached envelope is 10ms per bucket, which is plenty when the whole recording is on
+    /// screen but only ~25 data points across a quarter-second zoom — so it draws as a row of
+    /// steps rather than a waveform, and there is nothing to aim a cut at. This re-reads just
+    /// the visible window at whatever resolution the display can show, which is cheap because
+    /// the window is short: a second of mono audio is 44k samples.
+    func detail(
+        url: URL,
+        range: TimeSpan,
+        bucketsPerSecond: Int
+    ) async -> WaveformPeaks? {
+        guard range.duration > 0, bucketsPerSecond > 0 else { return nil }
+
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        guard
+            let track = try? await asset.loadTracks(withMediaType: .audio).first,
+            let reader = try? AVAssetReader(asset: asset)
+        else { return nil }
+
+        // Reading only the window is what keeps this affordable at any zoom level.
+        reader.timeRange = CMTimeRange(
+            start: Timeline.time(seconds: range.start),
+            end: Timeline.time(seconds: range.end)
+        )
+
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: Self.outputSettings)
+        output.alwaysCopiesSampleData = false
+        guard reader.canAdd(output) else { return nil }
+        reader.add(output)
+        guard reader.startReading() else { return nil }
+
+        var accumulator = PeakAccumulator(
+            bucketCount: Int((range.duration * Double(bucketsPerSecond)).rounded(.up)),
+            samplesPerBucket: Self.sampleRate / Double(bucketsPerSecond),
+            bucketsPerSecond: bucketsPerSecond
+        )
+
+        while let sample = output.copyNextSampleBuffer() {
+            if Task.isCancelled {
+                reader.cancelReading()
+                return nil
+            }
+
+            let pts = sample.presentationTimeStamp
+            guard pts.isNumeric else { continue }
+            // Relative to the window's start, since that is where these buckets begin.
+            let offset = CMTimeGetSeconds(pts) - range.start
+            let firstSampleIndex = Int((offset * Self.sampleRate).rounded())
+
+            try? sample.withAudioBufferList { bufferList, _ in
+                for buffer in bufferList {
+                    guard let data = buffer.mData else { continue }
+                    let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                    accumulator.accumulate(
+                        UnsafeBufferPointer(start: data.assumingMemoryBound(to: Float.self), count: count),
+                        channelCount: Int(buffer.mNumberChannels),
+                        firstSampleIndex: firstSampleIndex
+                    )
+                }
+            }
+        }
+
+        return accumulator.finish()
+    }
+
     /// Reads from the cache if it is still valid for the source file, otherwise extracts and
     /// caches. The cache is what makes reopening a session instant.
     ///

@@ -8,7 +8,8 @@ import Foundation
 /// in the header — no separate index to keep in step.
 enum PeaksCache {
     private static let magic = Array("AURAPEAK".utf8)
-    private static let formatVersion: UInt32 = 1
+    /// v2 added the per-bucket RMS band. A v1 blob is rejected and re-extracted.
+    private static let formatVersion: UInt32 = 2
 
     struct SourceStamp: Equatable {
         let size: UInt64
@@ -46,6 +47,7 @@ enum PeaksCache {
         for index in 0..<peaks.bucketCount {
             data.append(contentsOf: littleEndianBytes(peaks.minima[index].bitPattern))
             data.append(contentsOf: littleEndianBytes(peaks.maxima[index].bitPattern))
+            data.append(contentsOf: littleEndianBytes(peaks.rms[index].bitPattern))
         }
         for covered in peaks.coverage {
             data.append(covered ? 1 : 0)
@@ -80,16 +82,20 @@ enum PeaksCache {
         let count = Int(bucketCount)
         var minima: [Float] = []
         var maxima: [Float] = []
+        var rms: [Float] = []
         minima.reserveCapacity(count)
         maxima.reserveCapacity(count)
+        rms.reserveCapacity(count)
 
         for _ in 0..<count {
             guard
                 let low: UInt32 = read(4).flatMap(value),
-                let high: UInt32 = read(4).flatMap(value)
+                let high: UInt32 = read(4).flatMap(value),
+                let mean: UInt32 = read(4).flatMap(value)
             else { return nil }
             minima.append(Float(bitPattern: low))
             maxima.append(Float(bitPattern: high))
+            rms.append(Float(bitPattern: mean))
         }
 
         guard let coverageBytes = read(count) else { return nil }
@@ -98,6 +104,7 @@ enum PeaksCache {
             bucketsPerSecond: Int(bucketsPerSecond),
             minima: minima,
             maxima: maxima,
+            rms: rms,
             coverage: coverageBytes.map { $0 != 0 }
         )
     }

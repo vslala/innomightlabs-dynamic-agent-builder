@@ -6,6 +6,8 @@ import SwiftUI
 struct ReviewWindowView: View {
     @ObservedObject var viewModel: ReviewViewModel
 
+    @State private var isHoveringPreview = false
+
     var body: some View {
         Group {
             switch viewModel.state {
@@ -66,6 +68,7 @@ struct ReviewWindowView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay { overlayHandles }
             .onTapGesture { viewModel.togglePlayback() }
+            .onHover { isHoveringPreview = $0 }
     }
 
     @ViewBuilder
@@ -79,6 +82,7 @@ struct ReviewWindowView: View {
                 cameraDisplaySize: size,
                 keyframe: keyframe,
                 style: viewModel.cameraStyle,
+                showsHandles: isHoveringPreview,
                 onCommit: { viewModel.setOverlay(rect: $0, visible: keyframe.visible) }
             )
         }

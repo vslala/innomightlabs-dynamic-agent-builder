@@ -14,6 +14,11 @@ struct WaveformPeaks: Equatable, Sendable {
     let bucketsPerSecond: Int
     let minima: [Float]
     let maxima: [Float]
+    /// Root-mean-square per bucket — the loudness of the bucket rather than its extreme.
+    /// Drawn as a solid inner band over the lighter peak envelope, which is what gives an
+    /// Audacity-style waveform its readable body: peaks alone are spiky and say little about
+    /// where speech actually is.
+    let rms: [Float]
     let coverage: [Bool]
 
     var bucketCount: Int { maxima.count }
@@ -25,6 +30,7 @@ struct WaveformPeaks: Equatable, Sendable {
         bucketsPerSecond: defaultBucketsPerSecond,
         minima: [],
         maxima: [],
+        rms: [],
         coverage: []
     )
 
@@ -36,9 +42,11 @@ struct WaveformPeaks: Equatable, Sendable {
         let stride = Double(bucketCount) / Double(count)
         var minima: [Float] = []
         var maxima: [Float] = []
+        var rms: [Float] = []
         var coverage: [Bool] = []
         minima.reserveCapacity(count)
         maxima.reserveCapacity(count)
+        rms.reserveCapacity(count)
         coverage.reserveCapacity(count)
 
         for index in 0..<count {
@@ -48,6 +56,9 @@ struct WaveformPeaks: Equatable, Sendable {
 
             minima.append(self.minima[range].min() ?? 0)
             maxima.append(self.maxima[range].max() ?? 0)
+            // Quadratic mean, since averaging RMS values directly would understate loudness.
+            let squares = self.rms[range].reduce(0.0) { $0 + Double($1) * Double($1) }
+            rms.append(Float((squares / Double(range.count)).squareRoot()))
             coverage.append(self.coverage[range].contains(true))
         }
 
@@ -55,6 +66,7 @@ struct WaveformPeaks: Equatable, Sendable {
             bucketsPerSecond: Int((Double(bucketsPerSecond) / stride).rounded()),
             minima: minima,
             maxima: maxima,
+            rms: rms,
             coverage: coverage
         )
     }
@@ -68,6 +80,8 @@ struct PeakAccumulator {
     private let samplesPerBucket: Double
     private var minima: [Float]
     private var maxima: [Float]
+    private var sumSquares: [Double]
+    private var counts: [Int]
     private var coverage: [Bool]
     private let bucketsPerSecond: Int
 
@@ -79,6 +93,8 @@ struct PeakAccumulator {
         self.bucketsPerSecond = bucketsPerSecond
         minima = Array(repeating: 0, count: count)
         maxima = Array(repeating: 0, count: count)
+        sumSquares = Array(repeating: 0, count: count)
+        counts = Array(repeating: 0, count: count)
         coverage = Array(repeating: false, count: count)
     }
 
@@ -108,6 +124,8 @@ struct PeakAccumulator {
                     minima[bucket] = Swift.min(minima[bucket], value)
                     maxima[bucket] = Swift.max(maxima[bucket], value)
                 }
+                sumSquares[bucket] += Double(value) * Double(value)
+                counts[bucket] += 1
             }
         }
     }
@@ -123,6 +141,9 @@ struct PeakAccumulator {
             bucketsPerSecond: bucketsPerSecond,
             minima: minima,
             maxima: maxima,
+            rms: zip(sumSquares, counts).map { squares, count in
+                count > 0 ? Float((squares / Double(count)).squareRoot()) : 0
+            },
             coverage: coverage
         )
     }

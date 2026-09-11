@@ -132,4 +132,25 @@ struct ResolvedTimeline: Equatable, Sendable {
 
     var duration: CMTime { timeMap.cmDuration }
     var hasVideo: Bool { base != nil }
+
+    /// Whether the built-in compositor can render this faithfully.
+    ///
+    /// It can only place a layer with an affine transform, which means aspect-**fitting** the
+    /// camera into its rect and letterboxing the remainder. That is invisible while the rect
+    /// matches the camera's aspect ratio — which the drag handles guarantee — but an agent
+    /// can set any rect it likes, and then a camera placed at x = 0 sits inset from the edge
+    /// with a visible gap beside it. Core Image fills the rect instead, so a mismatched rect
+    /// routes there rather than being drawn wrongly by the cheaper path.
+    var canUseLayerInstructions: Bool {
+        guard style.isPlainRectangle else { return false }
+        guard let overlay, let camera = overlay.probe.displaySize, camera.height > 0 else { return true }
+
+        let cameraAspect = camera.width / camera.height
+        return overlay.keyframes.allSatisfy { keyframe in
+            guard keyframe.visible else { return true }
+            let rect = keyframe.rect.scaled(to: renderSize)
+            guard rect.height > 0 else { return true }
+            return abs(rect.width / rect.height - cameraAspect) / cameraAspect < 0.02
+        }
+    }
 }

@@ -16,10 +16,14 @@ struct CameraOverlayView: View {
     let cameraDisplaySize: CGSize
     let keyframe: OverlayKeyframe
     let style: PiPStyle
+    /// Handles are chrome, not content: they clutter the frame when the pointer is elsewhere,
+    /// so they appear on hover and stay while a drag is in flight.
+    let showsHandles: Bool
     let onCommit: (NormalizedRect) -> Void
 
     @State private var dragOffset: CGSize = .zero
     @State private var resizeScale: CGFloat = 1
+    @State private var isInteracting = false
 
     private static let minNormalizedWidth: Double = 0.05
 
@@ -33,13 +37,18 @@ struct CameraOverlayView: View {
             let live = liveRect(in: videoRect)
 
             if keyframe.visible {
+                let active = showsHandles || isInteracting
+
                 Rectangle()
-                    .stroke(.white.opacity(0.9), lineWidth: 1.5)
+                    .stroke(.white.opacity(active ? 0.9 : 0), lineWidth: 1.5)
                     .background(Color.white.opacity(0.001)) // hit area without tinting the video
                     .frame(width: live.width, height: live.height)
-                    .overlay(alignment: .bottomTrailing) { resizeHandle(videoRect: videoRect, live: live) }
+                    .overlay(alignment: .bottomTrailing) {
+                        if active { resizeHandle(videoRect: videoRect, live: live) }
+                    }
                     .position(x: live.midX, y: live.midY)
                     .gesture(moveGesture(videoRect: videoRect))
+                    .animation(.easeOut(duration: 0.12), value: active)
             }
         }
     }
@@ -67,18 +76,21 @@ struct CameraOverlayView: View {
             width: base.width * resizeScale * videoRect.width,
             height: base.height * resizeScale * videoRect.height
         )
-        let fitted = PiPGeometry.fittedRect(displaySize: cameraDisplaySize, destination: destination)
-        // A circle is drawn into a squared-off subrect, so the handles have to frame that
-        // rather than the requested rect.
-        return PiPMask.drawnRect(for: style, in: fitted)
+        // Core Image fills the rect, so the handles frame the rect itself rather than a
+        // letterboxed subrect. A circle is squared from the rect's origin, matching the render.
+        return PiPMask.drawnRect(for: style, in: destination)
     }
 
     private func moveGesture(videoRect: CGRect) -> some Gesture {
         DragGesture()
-            .onChanged { dragOffset = $0.translation }
+            .onChanged {
+                isInteracting = true
+                dragOffset = $0.translation
+            }
             .onEnded { _ in
                 commit(liveRect(in: videoRect), in: videoRect)
                 dragOffset = .zero
+                isInteracting = false
             }
     }
 
@@ -86,12 +98,14 @@ struct CameraOverlayView: View {
         DragGesture()
             .onChanged { value in
                 guard live.width > 0 else { return }
+                isInteracting = true
                 let proposed = (live.width + value.translation.width) / live.width
                 resizeScale = max(0.1, min(6, proposed))
             }
             .onEnded { _ in
                 commit(liveRect(in: videoRect), in: videoRect)
                 resizeScale = 1
+                isInteracting = false
             }
     }
 

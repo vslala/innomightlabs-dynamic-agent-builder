@@ -59,6 +59,21 @@ struct WaveformLanesView: View {
 
             Button("Fit") { viewModel.zoomToFit() }
                 .disabled(!viewModel.canZoomOut)
+
+            Divider().frame(height: 12)
+
+            Picker("", selection: Binding(
+                get: { viewModel.waveformScale },
+                set: { viewModel.setWaveformScale($0) }
+            )) {
+                ForEach(WaveformScale.allCases, id: \.self) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 116)
+            .help("Speech has too wide a dynamic range for a linear axis; dB spends the lane's height where the audio actually is")
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 10)
@@ -135,13 +150,17 @@ struct WaveformLaneView: View {
 
             WaveformCanvas(
                 peaks: viewModel.peaks[lane],
+                detail: viewModel.laneDetail[lane],
+                detailSpan: viewModel.laneDetailSpan,
                 visibleSpan: viewModel.visibleSpan,
                 timeline: viewModel.timeline,
                 laneOffset: viewModel.automaticCorrection(for: lane) + viewModel.laneOffset(lane),
                 playhead: Timeline.seconds(viewModel.playhead),
                 isMuted: isMuted,
                 onSeek: { viewModel.commitScrub(to: $0) },
-                onScrub: { viewModel.scrub(to: $0) }
+                onScrub: { viewModel.scrub(to: $0) },
+                onNeedsDetail: { viewModel.requestWaveformDetail(viewWidth: $0) },
+                scale: viewModel.waveformScale
             )
         }
         .padding(.horizontal, 10)
@@ -188,6 +207,9 @@ struct WaveformLaneView: View {
 
 struct WaveformCanvas: View {
     let peaks: WaveformPeaks?
+    /// Higher-resolution peaks for the zoomed window, when the cache is too coarse to draw.
+    let detail: WaveformPeaks?
+    let detailSpan: TimeSpan?
     let visibleSpan: TimeSpan
     let timeline: ResolvedTimeline?
     /// Where this lane's audio sits relative to the composition, so the drawn waveform lines
@@ -197,6 +219,8 @@ struct WaveformCanvas: View {
     let isMuted: Bool
     let onSeek: (TimeInterval) -> Void
     let onScrub: (TimeInterval) -> Void
+    let onNeedsDetail: (CGFloat) -> Void
+    let scale: WaveformScale
 
     var body: some View {
         GeometryReader { geometry in
@@ -205,11 +229,15 @@ struct WaveformCanvas: View {
                 // While zoomed the window follows the playhead so it does redraw, but when
                 // fitted to the whole recording — the common case — it is drawn once.
                 WaveformTrace(
-                    peaks: peaks,
+                    peaks: usableDetail ?? peaks,
+                    // Detail peaks are already relative to their own window, so the trace is
+                    // told where they start instead of mapping them through the whole file.
+                    peaksStart: usableDetail == nil ? 0 : (detailSpan?.start ?? 0),
                     visibleSpan: visibleSpan,
                     timeline: timeline,
-                    laneOffset: laneOffset,
-                    isMuted: isMuted
+                    laneOffset: usableDetail == nil ? laneOffset : 0,
+                    isMuted: isMuted,
+                    scale: scale
                 )
                 .equatable()
 
@@ -226,12 +254,24 @@ struct WaveformCanvas: View {
             }
             .background(.quaternary.opacity(0.35))
             .contentShape(Rectangle())
+            .onAppear { onNeedsDetail(geometry.size.width) }
+            .onChange(of: visibleSpan) { _, _ in onNeedsDetail(geometry.size.width) }
+            .onChange(of: geometry.size.width) { _, width in onNeedsDetail(width) }
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { onScrub(time(at: $0.location.x, width: geometry.size.width)) }
                     .onEnded { onSeek(time(at: $0.location.x, width: geometry.size.width)) }
             )
         }
+    }
+
+    /// Detail is only usable while it covers the window being drawn; otherwise the cached
+    /// envelope is shown until the new read lands, rather than a torn mixture.
+    private var usableDetail: WaveformPeaks? {
+        guard let detail, let detailSpan else { return nil }
+        guard detailSpan.start <= visibleSpan.start + 0.001,
+              detailSpan.end >= visibleSpan.end - 0.001 else { return nil }
+        return detail
     }
 
     private func time(at x: CGFloat, width: CGFloat) -> TimeInterval {
@@ -254,10 +294,23 @@ struct WaveformCanvas: View {
 /// in step with the video both after a cut and after an A/V slip.
 struct WaveformTrace: View, Equatable {
     let peaks: WaveformPeaks?
+    /// Time the first bucket corresponds to. Zero for the whole-file cache; the window's
+    /// start for a detail read.
+    let peaksStart: TimeInterval
     let visibleSpan: TimeSpan
     let timeline: ResolvedTimeline?
     let laneOffset: TimeInterval
     let isMuted: Bool
+    let scale: WaveformScale
+
+    /// One column's worth of the envelope.
+    private struct Column {
+        let x: Double
+        let peakTop: Double
+        let peakBottom: Double
+        let rmsTop: Double
+        let rmsBottom: Double
+    }
 
     var body: some View {
         Canvas { context, size in
@@ -268,30 +321,87 @@ struct WaveformTrace: View, Equatable {
             else { return }
 
             let midY = size.height / 2
-            var path = Path()
+            let columns = columns(peaks: peaks, timeline: timeline, size: size, midY: midY)
+            guard !columns.isEmpty else { return }
 
-            for column in 0..<Int(size.width) {
-                let compositionTime = visibleSpan.start
-                    + Double(column) / Double(size.width) * visibleSpan.duration
-                guard let source = timeline.timeMap.sourceTime(forComposition: compositionTime) else { continue }
-
-                // Composition -> session -> this file's own timeline.
-                let fileTime = source - laneOffset
-                let bucket = Int(fileTime * Double(peaks.bucketsPerSecond))
-                guard bucket >= 0, bucket < peaks.bucketCount, peaks.coverage[bucket] else { continue }
-
-                let x = Double(column) + 0.5
-                let top = midY - midY * Double(peaks.maxima[bucket])
-                let bottom = midY - midY * Double(peaks.minima[bucket])
-                path.move(to: CGPoint(x: x, y: min(top, bottom)))
-                path.addLine(to: CGPoint(x: x, y: max(bottom, top) + 0.5))
-            }
-
-            context.stroke(
-                path,
-                with: .color(isMuted ? .secondary.opacity(0.35) : .accentColor.opacity(0.8)),
-                lineWidth: 1
+            // Two filled bands, the way Audacity draws it: a light outer envelope of the
+            // extremes, and a solid inner band of RMS. The peaks alone are spiky and say
+            // little about where speech actually is; the RMS body is what makes it readable.
+            let colour: Color = isMuted ? .secondary : .accentColor
+            context.fill(
+                band(columns, top: \.peakTop, bottom: \.peakBottom, midY: midY),
+                with: .color(colour.opacity(isMuted ? 0.2 : 0.45))
             )
+            context.fill(
+                band(columns, top: \.rmsTop, bottom: \.rmsBottom, midY: midY),
+                with: .color(colour.opacity(isMuted ? 0.35 : 0.95))
+            )
+
+            // Centre line, so silence still reads as a lane rather than as nothing.
+            var centre = Path()
+            centre.move(to: CGPoint(x: 0, y: midY))
+            centre.addLine(to: CGPoint(x: size.width, y: midY))
+            context.stroke(centre, with: .color(colour.opacity(0.5)), lineWidth: 0.5)
         }
+    }
+
+    private func columns(
+        peaks: WaveformPeaks,
+        timeline: ResolvedTimeline,
+        size: CGSize,
+        midY: Double
+    ) -> [Column] {
+        var result: [Column] = []
+        result.reserveCapacity(Int(size.width))
+
+        for column in 0..<Int(size.width) {
+            let compositionTime = visibleSpan.start
+                + Double(column) / Double(size.width) * visibleSpan.duration
+            guard let source = timeline.timeMap.sourceTime(forComposition: compositionTime) else { continue }
+
+            // Composition -> session -> this file's own timeline, then into the bucket
+            // array's own origin.
+            let fileTime = source - laneOffset
+            let bucket = Int((fileTime - peaksStart) * Double(peaks.bucketsPerSecond))
+            guard bucket >= 0, bucket < peaks.bucketCount, peaks.coverage[bucket] else { continue }
+
+            let high = scale.fraction(peaks.maxima[bucket])
+            let low = scale.fraction(peaks.minima[bucket])
+            let loudness = scale.fraction(peaks.rms[bucket])
+
+            result.append(Column(
+                x: Double(column) + 0.5,
+                peakTop: midY - midY * max(high, 0),
+                peakBottom: midY - midY * min(low, 0),
+                rmsTop: midY - midY * loudness,
+                rmsBottom: midY + midY * loudness
+            ))
+        }
+        return result
+    }
+
+    /// A filled ribbon: along the top edge, then back along the bottom.
+    ///
+    /// Every column is given at least a hairline of height so a quiet-but-present stretch
+    /// still draws as a line rather than disappearing — the difference between "silent" and
+    /// "quiet" matters when deciding where to cut.
+    private func band(
+        _ columns: [Column],
+        top: KeyPath<Column, Double>,
+        bottom: KeyPath<Column, Double>,
+        midY: Double
+    ) -> Path {
+        var path = Path()
+        guard let first = columns.first else { return path }
+
+        path.move(to: CGPoint(x: first.x, y: min(first[keyPath: top], midY - 0.25)))
+        for column in columns {
+            path.addLine(to: CGPoint(x: column.x, y: min(column[keyPath: top], midY - 0.25)))
+        }
+        for column in columns.reversed() {
+            path.addLine(to: CGPoint(x: column.x, y: max(column[keyPath: bottom], midY + 0.25)))
+        }
+        path.closeSubpath()
+        return path
     }
 }

@@ -80,21 +80,17 @@ enum PiPMask {
 
     /// Where the overlay is actually drawn.
     ///
-    /// A circle needs a square to be round. The overlay rect follows the camera's aspect
-    /// ratio, so it is virtually never square — max-rounding it directly produces a capsule,
-    /// which is what happened the first time this was rendered. Squaring to the shorter side
-    /// and centring within the requested rect gives a true circle and keeps it where the user
-    /// put it.
+    /// A circle needs a square to be round: the overlay rect follows the camera's aspect
+    /// ratio, so it is virtually never square, and max-rounding it directly produces a
+    /// capsule. Squaring is therefore unavoidable — but it is **anchored to the rect's
+    /// origin**, not centred. Centring meant an overlay placed at x = 0 did not touch the
+    /// left edge, because the square was inset inside a wider rect. Anchoring keeps the rule
+    /// the caller expects: the rect's origin is where the overlay starts.
     static func drawnRect(for style: PiPStyle, in destination: CGRect) -> CGRect {
         guard style.shape == .circle else { return destination }
 
         let side = min(destination.width, destination.height)
-        return CGRect(
-            x: destination.midX - side / 2,
-            y: destination.midY - side / 2,
-            width: side,
-            height: side
-        )
+        return CGRect(x: destination.minX, y: destination.minY, width: side, height: side)
     }
 
     /// A circle is a rounded rect whose radius is half the shorter side — one code path

@@ -130,8 +130,20 @@ final class PiPMaskTests: XCTestCase {
 
         XCTAssertEqual(drawn.width, drawn.height, "a circle needs a square or it renders as a capsule")
         XCTAssertEqual(drawn.width, 144)
-        XCTAssertEqual(drawn.midX, wide.midX, "and it should stay where the user put it")
-        XCTAssertEqual(drawn.midY, wide.midY)
+        // Anchored to the rect's origin, not centred. Centring meant an overlay placed at
+        // x = 0 didn't touch the left edge — the square sat inset inside a wider rect, which
+        // read as an odd gap beside the camera.
+        XCTAssertEqual(drawn.minX, wide.minX, "the rect's origin is where the overlay starts")
+        XCTAssertEqual(drawn.minY, wide.minY)
+    }
+
+    func testCircleAtTheLeftEdgeTouchesTheLeftEdge() {
+        var style = PiPStyle.plain
+        style.shape = .circle
+        // x = 0, the case that was visibly wrong.
+        let flush = CGRect(x: 0, y: 810, width: 640, height: 360)
+
+        XCTAssertEqual(PiPMask.drawnRect(for: style, in: flush).minX, 0)
     }
 
     func testNonCircleShapesKeepTheirFullRect() {
@@ -144,24 +156,24 @@ final class PiPMaskTests: XCTestCase {
         XCTAssertEqual(PiPMask.drawnRect(for: rounded, in: wide), wide)
     }
 
-    func testCircleOnAWideOverlayLeavesTheSidesShowingTheBase() throws {
+    func testCircleOnAWideOverlayOccupiesTheLeadingSquare() throws {
         var style = PiPStyle.plain
         style.shape = .circle
 
-        // Destination 300 wide by 150 tall: a true circle occupies the middle 150px only.
+        // 300x150 requested, so the circle is the leading 150x150: x 50-200, centre (125,200).
         let wide = CGRect(x: 50, y: 125, width: 300, height: 150)
         let image = PiPMask.compose(
             base: base, overlay: overlay, destination: wide,
             renderSize: renderSize, style: style, opacity: 1
         )
 
-        let middle = try pixel(image, x: 200, y: 200)
-        XCTAssertGreaterThan(middle.r, 200, "the circle should cover the centre")
+        let centre = try pixel(image, x: 125, y: 200)
+        XCTAssertGreaterThan(centre.r, 200, "the circle should cover its own centre")
 
-        // Well inside the requested rect horizontally, but outside a centred circle.
-        let side = try pixel(image, x: 70, y: 200)
-        XCTAssertGreaterThan(side.g, 200, "the base should show beside a circle on a wide rect")
-        XCTAssertLessThan(side.r, 80)
+        // Inside the requested rect but beyond the circle's trailing edge.
+        let trailing = try pixel(image, x: 300, y: 200)
+        XCTAssertGreaterThan(trailing.g, 200, "the base should show beyond a circle on a wide rect")
+        XCTAssertLessThan(trailing.r, 80)
     }
 
     // MARK: - Radius arithmetic
@@ -313,5 +325,135 @@ final class PiPMaskTests: XCTestCase {
         let decoded = try JSONDecoder().decode(SessionEdit.self, from: Data(json.utf8))
 
         XCTAssertEqual(decoded.cameraStyle, .plain)
+    }
+}
+
+/// When the built-in compositor can be trusted, and when it would letterboxe an overlay.
+final class CompositorSelectionTests: XCTestCase {
+    private func probe(_ kind: TrackKind, size: CGSize) -> SourceTrackProbe {
+        SourceTrackProbe(
+            url: URL(fileURLWithPath: "/tmp/\(kind.rawValue)"),
+            kind: kind,
+            duration: Timeline.time(seconds: 30),
+            displaySize: size,
+            preferredTransform: .identity
+        )
+    }
+
+    /// 2560x1440 screen, 640x480 (4:3) camera — the real pairing from a recording.
+    private func resolve(rect: NormalizedRect, shape: PiPStyle.Shape = .rectangle) -> ResolvedTimeline {
+        var document = SessionEdit.initial(duration: 30)
+        document.cameraOverlay = [OverlayKeyframe(t: 0, rect: rect, visible: true)]
+        document.cameraStyle.shape = shape
+
+        return TimelineResolver.resolve(
+            document: document,
+            probes: [
+                probe(.screen, size: CGSize(width: 2560, height: 1440)),
+                probe(.camera, size: CGSize(width: 640, height: 480))
+            ]
+        )
+    }
+
+    func testARectMatchingTheCameraAspectUsesTheCheapPath() {
+        // 4:3 on a 16:9 frame: width 0.25 needs height 0.5926 to stay 4:3.
+        let matching = NormalizedRect(x: 0, y: 0.4, width: 0.25, height: 0.25 * (2560.0 / 1440.0) / (640.0 / 480.0))
+
+        XCTAssertTrue(resolve(rect: matching).canUseLayerInstructions)
+    }
+
+    func testAMismatchedRectRoutesToCoreImageSoItIsNotLetterboxed() {
+        // What an agent naturally sends: a square-looking normalized rect. Aspect-fitting a
+        // 4:3 camera into it would inset the picture and leave a gap at x = 0.
+        let mismatched = NormalizedRect(x: 0, y: 0.75, width: 0.25, height: 0.25)
+
+        XCTAssertFalse(resolve(rect: mismatched).canUseLayerInstructions)
+    }
+
+    func testAnyShapeBeyondARectangleRoutesToCoreImage() {
+        let matching = NormalizedRect(x: 0, y: 0.4, width: 0.25, height: 0.25 * (2560.0 / 1440.0) / (640.0 / 480.0))
+
+        XCTAssertFalse(resolve(rect: matching, shape: .circle).canUseLayerInstructions)
+    }
+
+    func testAHiddenOverlayDoesNotForceCoreImage() {
+        var document = SessionEdit.initial(duration: 30)
+        document.cameraOverlay = [OverlayKeyframe(
+            t: 0,
+            rect: NormalizedRect(x: 0, y: 0.75, width: 0.25, height: 0.25),
+            visible: false
+        )]
+
+        let resolved = TimelineResolver.resolve(
+            document: document,
+            probes: [
+                probe(.screen, size: CGSize(width: 2560, height: 1440)),
+                probe(.camera, size: CGSize(width: 640, height: 480))
+            ]
+        )
+
+        XCTAssertTrue(resolved.canUseLayerInstructions, "nothing is drawn, so nothing can be letterboxed")
+    }
+
+    func testNoOverlayAtAllUsesTheCheapPath() {
+        var document = SessionEdit.initial(duration: 30)
+        document.cameraOverlay = []
+
+        let resolved = TimelineResolver.resolve(
+            document: document,
+            probes: [probe(.screen, size: CGSize(width: 2560, height: 1440))]
+        )
+
+        XCTAssertTrue(resolved.canUseLayerInstructions)
+    }
+}
+
+/// Deciding when the cached 10ms envelope is too coarse to draw as a waveform.
+final class WaveformDetailRequestTests: XCTestCase {
+    private let cached = WaveformPeaks.defaultBucketsPerSecond   // 100/s
+
+    func testWholeRecordingNeedsNoDetail() {
+        XCTAssertNil(WaveformDetailRequest.bucketsPerSecond(
+            visibleDuration: 265, viewWidth: 600, cachedBucketsPerSecond: cached
+        ))
+    }
+
+    func testAQuarterSecondWindowNeedsDetail() {
+        // 0.25s at 100 buckets/s is 25 points across 600px — a row of steps, not a waveform.
+        let requested = WaveformDetailRequest.bucketsPerSecond(
+            visibleDuration: 0.25, viewWidth: 600, cachedBucketsPerSecond: cached
+        )
+
+        XCTAssertNotNil(requested)
+        XCTAssertGreaterThan(requested ?? 0, cached)
+    }
+
+    func testRequestedResolutionGivesAboutOneBucketPerPoint() {
+        let width: CGFloat = 600
+        let duration: TimeInterval = 0.5
+        let requested = try? XCTUnwrap(WaveformDetailRequest.bucketsPerSecond(
+            visibleDuration: duration, viewWidth: width, cachedBucketsPerSecond: cached
+        ))
+
+        let bucketsInView = Double(requested ?? 0) * duration
+        XCTAssertEqual(bucketsInView, Double(width), accuracy: 2)
+    }
+
+    func testResolutionIsCapped() {
+        // An extreme zoom must not ask for an unbounded number of buckets.
+        let requested = WaveformDetailRequest.bucketsPerSecond(
+            visibleDuration: 0.01, viewWidth: 2000, cachedBucketsPerSecond: cached
+        )
+
+        XCTAssertEqual(requested, WaveformDetailRequest.maximumBucketsPerSecond)
+    }
+
+    func testDegenerateInputAsksForNothing() {
+        XCTAssertNil(WaveformDetailRequest.bucketsPerSecond(
+            visibleDuration: 0, viewWidth: 600, cachedBucketsPerSecond: cached
+        ))
+        XCTAssertNil(WaveformDetailRequest.bucketsPerSecond(
+            visibleDuration: 1, viewWidth: 0, cachedBucketsPerSecond: cached
+        ))
     }
 }

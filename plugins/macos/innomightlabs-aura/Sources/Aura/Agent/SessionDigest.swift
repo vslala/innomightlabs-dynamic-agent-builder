@@ -114,10 +114,14 @@ struct SessionDigest: Codable, Equatable, Sendable {
         events: EventTimeline,
         document: SessionEdit,
         transcript: Transcript?,
+        /// Seconds to add to a transcript time to get recording time. Passed in rather than
+        /// read from the document, because it has to match the offset the composition
+        /// actually applies to the microphone lane.
+        transcriptOffset: TimeInterval? = nil,
         focus: TimeInterval? = nil,
         detailRange: TimeSpan? = nil
     ) -> SessionDigest {
-        let offset = document.micTimeOffset
+        let offset = transcriptOffset ?? document.micTimeOffset
         let allWords = (transcript?.allWords ?? []).map {
             Word(i: $0.id, s: round2($0.start + offset), e: round2($0.end + offset), t: $0.text)
         }

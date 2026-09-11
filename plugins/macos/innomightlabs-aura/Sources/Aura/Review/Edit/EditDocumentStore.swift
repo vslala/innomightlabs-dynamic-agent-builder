@@ -89,6 +89,17 @@ final class EditDocumentStore: ObservableObject {
         }
     }
 
+    /// Corrects derived data in place, without an undo step.
+    ///
+    /// For repairs rather than edits: the user never asked for it, so it should not consume
+    /// their undo history or be something they can accidentally undo into a broken state.
+    func repair(_ transform: (inout SessionEdit) -> Bool) {
+        var updated = document
+        guard transform(&updated), updated != document else { return }
+        document = updated
+        scheduleSave()
+    }
+
     func undo() {
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(document)

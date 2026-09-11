@@ -274,6 +274,38 @@ then presents them as one reviewable suggestion naming what will go. Aura has th
 transcript where the agent may have a trimmed view, so it finds instances the agent would
 miss; scoping is required because an unscoped sweep removes words that carried meaning.
 
+### The transcript's clock must match the microphone lane's
+
+Word cuts are applied to the timeline, so they are only correct if the transcript and the audio
+agree on when a word happens — and they do not, natively.
+
+The transcript is produced by WhisperKit reading the **raw** microphone track, so its zero is
+the first captured sample. The composition, meanwhile, shifts the microphone lane later by
+`alignmentCorrection` to undo the capture delay (see A/V synchronisation). The conversion
+between the two is therefore the *total offset applied to that lane* — the automatic correction
+plus any manual slip — and it is computed from the resolved timeline rather than read from the
+document, so a stale stored value cannot desync them.
+
+Getting this wrong is silent and looks like the feature not working at all: the word is struck
+through in the transcript, the timeline genuinely shortens, and yet the word is still audible
+because the cut removed the audio beside it. It shipped that way once, with
+`SessionEdit.micTimeOffset` seeded from the microphone's *leading empty edit* — which is always
+zero for audio, precisely because `AVAssetWriter` discards it. `WordExclusionIntegrationTests`
+now covers document, composition, and view model together, since no single-layer test could
+have caught it.
+
+### Word ids are authoritative; spans are a cache
+
+`ExcludedWord` stores both the word id and its resolved span, and the span is **re-derived
+from the transcript** whenever one is loaded. The id is the real handle; the span exists only
+so `edit.json` can play back without the transcript.
+
+That reconciliation is a repair, not an edit — it does not consume undo history, because the
+user never asked for it. It exists because a build that converted transcript times to session
+times incorrectly baked 112 wrong spans into a real document, and without self-healing those
+would have kept cutting the wrong audio forever. Making the derived value derived again means
+this class of bug fixes itself on next open.
+
 ### The 32,000-character budget
 
 Treated as a useful constraint rather than something to remove. The digest splits into:
@@ -293,6 +325,46 @@ When the agent needs detail it does not have, it asks: `request_transcript{from,
 Aura answers as a follow-up turn in the same conversation, capped at three hops so it cannot
 loop. Verified against the live agent, which spontaneously used it.
 
+## Waveform legibility
+
+A linear amplitude axis cannot render speech. Measured on a real recording: peak 0.35
+(-9 dBFS), but the **median 10ms bucket peaks at 0.0022** — 0.22% of half-height, which is
+sub-pixel. Only the top 1% of buckets exceed 10% of the lane. Drawn linearly it is a flat line
+with occasional flecks, and nothing can be edited against it.
+
+Two changes make it readable, both borrowed from Audacity:
+
+**A decibel vertical axis** (`WaveformScale`, the default), mapping -60 dBFS…0 to the lane's
+half-height. That same median bucket becomes 12% and peaks reach 85%, so the lane's height is
+spent on the range the audio actually occupies. -60 dB is below a normal room's noise floor, so
+genuine silence still reads as silence. Linear remains available and the choice persists in
+`ReviewPreferences`.
+
+**A peak-plus-RMS envelope.** `WaveformPeaks` now carries per-bucket RMS alongside the
+extremes, drawn as a solid inner band under a lighter outer envelope. Peaks alone are spiky and
+say little about where speech is; the RMS body is what gives the shape meaning. Reducing for
+zoom-out combines RMS quadratically, since averaging RMS values understates loudness. Both are
+drawn as filled ribbons with a minimum hairline, so a quiet-but-present stretch still shows as
+a line — the distinction between "silent" and "quiet" is exactly what a cut decision turns on.
+
+The peaks cache is at format v2 as a result; a v1 blob is rejected and re-extracted.
+
+## Waveform zoom resolution
+
+The cached envelope is 10ms per bucket, which is ample for the whole recording on screen and
+useless up close: a quarter-second window is 25 data points, which draws as a row of steps with
+nothing to aim a cut at.
+
+So when the cache is coarser than roughly one bucket per four points of width,
+`WaveformExtractor.detail` re-reads **just the visible window** at display resolution — about
+one bucket per point, capped at 8,000/s. That is affordable precisely because the window is
+short: a quarter-second of mono audio is 11k samples, and `AVAssetReader.timeRange` means only
+that much is decoded. Measured on a real recording, a 0.25s window goes from 25 buckets to 600.
+
+Requests are coalesced (the window follows the playhead, so it is asked for constantly during
+playback) and the cached envelope keeps drawing until the finer read lands, rather than showing
+a torn mixture of the two.
+
 ## Camera overlay styling
 
 Shape, border, and shadow need a real compositor: the built-in one offers only an affine
@@ -300,7 +372,22 @@ transform, opacity, and an axis-aligned crop. `CoreImagePiPCompositor` provides 
 `PiPStyle.isPlainRectangle` selects it — the cheaper layer-instruction path stays in place for
 an unstyled overlay, and is still the default.
 
-Two things only a rendered frame revealed:
+The overlay rect is authoritative: its origin is where the overlay starts. Getting that wrong
+is conspicuous — an overlay placed at x = 0 that does not touch the left edge reads as a bug,
+and there were two separate causes.
+
+A circle has to be squared off (see below), and squaring was **centred**, which inset the
+circle inside a wider rect and left a gap beside it. It is now anchored to the rect's origin.
+
+Separately, the built-in compositor can only place a layer with an affine transform, so it
+aspect-**fits** the camera and letterboxes the remainder. That is invisible while the rect
+matches the camera's aspect ratio — which the drag handles guarantee — but an agent can send
+any rect, and a 4:3 camera fitted into a square-ish rect sits inset with a gap. Rather than
+depend on `setCropRectangle`, whose origin semantics the SDK leaves unstated,
+`ResolvedTimeline.canUseLayerInstructions` routes an aspect-mismatched overlay to Core Image,
+which fills. Correctness by construction; the cheap path still handles the common case.
+
+Two more things only a rendered frame revealed:
 
 - **A circle needs a square.** The overlay rect follows the camera's aspect ratio, so it is
   virtually never square; max-rounding it produced a capsule. `PiPMask.drawnRect` squares to
@@ -437,6 +524,13 @@ custom compositor lands — only which builder is constructed.
 - **Word timing is the floor, not character timing.** Whisper reports per-word boundaries and
   nothing finer, and a word is the smallest unit that is audibly sensible to cut — so
   "character-level" control means addressing text, not splitting audio mid-word.
+- **Screen capture is native-resolution, not a fixed 4K.** `CaptureTarget.pixelSize` is
+  `contentRect x pointPixelScale`, i.e. the display's backing pixels, so a Retina or scaled
+  display records at its true framebuffer size. A 1440p panel therefore records 2560x1440
+  because that is all there is — the preview's 1600px cap is separate and applies only to
+  playback, never to the recording or the export.
+- **Overlay handles are hover-only.** They are chrome, not content, so they appear when the
+  pointer is over the preview and persist through a drag.
 - **Style is not keyframed.** Shape, border, and shadow apply to the whole recording: a camera
   that changes shape partway through reads as a glitch rather than an edit. Position and
   visibility remain keyframed.

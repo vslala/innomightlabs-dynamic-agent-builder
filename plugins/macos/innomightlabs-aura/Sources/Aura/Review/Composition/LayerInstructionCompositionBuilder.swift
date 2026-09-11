@@ -42,7 +42,7 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         // The built-in compositor cannot draw a shape, border, or shadow, so anything beyond a
         // plain rectangle routes to the Core Image compositor. The cheap path is kept for the
         // common case because it is markedly faster.
-        let videoComposition = timeline.style.isPlainRectangle
+        let videoComposition = timeline.canUseLayerInstructions
             ? makeVideoComposition(
                 timeline: timeline,
                 renderSize: renderSize,
@@ -63,7 +63,7 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         #if DEBUG
         // Only the built-in path can be validated: `isValid(for:…)` inspects layer
         // instructions, which a custom compositor's instructions deliberately don't have.
-        if timeline.style.isPlainRectangle {
+        if timeline.canUseLayerInstructions {
             await Self.assertValid(videoComposition, snapshot: snapshot, duration: composition.duration)
         }
         #endif
@@ -272,6 +272,8 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
                     baseTrackID: base.trackID,
                     overlayTrackID: hasOverlay ? overlay?.trackID : nil,
                     overlayRect: (state?.rect ?? .defaultCameraOverlay).scaled(to: renderSize),
+                    // The compositor applies `PiPMask.drawnRect` itself, so the raw rect is
+                    // passed through and squared there — one place decides the geometry.
                     overlayOpacity: (state?.visible ?? false) ? 1 : 0,
                     renderSize: renderSize,
                     style: timeline.style

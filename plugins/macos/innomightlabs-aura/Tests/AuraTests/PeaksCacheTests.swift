@@ -9,6 +9,7 @@ final class PeaksCacheTests: XCTestCase {
             bucketsPerSecond: 100,
             minima: [-0.5, 0, -1],
             maxima: [0.5, 0, 1],
+            rms: [0.25, 0, 0.7],
             coverage: [true, false, true]
         )
     }
@@ -56,12 +57,13 @@ final class PeaksCacheTests: XCTestCase {
             bucketsPerSecond: 100,
             minima: Array(repeating: -0.5, count: 180_000),
             maxima: Array(repeating: 0.5, count: 180_000),
+            rms: Array(repeating: 0.3, count: 180_000),
             coverage: Array(repeating: true, count: 180_000)
         )
 
         let data = PeaksCache.encode(big, stamp: stamp)
 
-        XCTAssertLessThan(data.count, 3_000_000)
+        XCTAssertLessThan(data.count, 4_000_000)
         XCTAssertEqual(PeaksCache.decode(data, expecting: stamp)?.bucketCount, 180_000)
     }
 

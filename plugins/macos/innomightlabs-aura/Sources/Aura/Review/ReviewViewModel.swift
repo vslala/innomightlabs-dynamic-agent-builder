@@ -53,6 +53,13 @@ final class ReviewViewModel: ObservableObject {
     /// Session markers, already converted onto the media timeline.
     @Published private(set) var markers: [EventTimeline.Entry] = []
     @Published private(set) var peaks: [AudioLane: WaveformPeaks] = [:]
+    /// High-resolution peaks for the zoomed window, keyed by lane. Nil entries mean the
+    /// cached envelope is good enough at this zoom level.
+    @Published private(set) var laneDetail: [AudioLane: WaveformPeaks] = [:]
+    /// The window `laneDetail` describes, so a view can tell whether it is still current.
+    @Published private(set) var laneDetailSpan: TimeSpan?
+    /// Vertical axis for the lanes. Decibel by default — see `WaveformScale`.
+    @Published private(set) var waveformScale: WaveformScale = ReviewPreferences.waveformScale
     @Published private(set) var transcript: Transcript?
     @Published private(set) var transcriptState: TranscriptState = .absent
     /// Published only when it changes, so the transcript list is not invalidated 30x a second.
@@ -99,6 +106,7 @@ final class ReviewViewModel: ObservableObject {
     /// would otherwise leave two builds racing to `replaceCurrentItem` and the later document
     /// losing to the earlier one's item.
     private var rebuildTask: Task<Void, Never>?
+    private var detailTask: Task<Void, Never>?
 
     /// Caps the preview's render size. Compositing a Retina screen capture and a camera means
     /// two HEVC decodes per composed frame, which drops frames on lower-end machines; the
@@ -134,7 +142,10 @@ final class ReviewViewModel: ObservableObject {
         // The four files share a time origin but not a duration, so the recording is as long
         // as its longest track rather than any particular one.
         let recordedDuration = probes.map(\.duration).max() ?? .zero
-        let micOffset = probes.first { $0.kind == .microphone }?.leadingEmptyEdit ?? .zero
+        // The *correction applied to the mic lane*, not its leading empty edit. For audio the
+        // empty edit is always zero — `AVAssetWriter` discards it — so using it here left the
+        // transcript on a different clock than the audio it describes.
+        let micOffset = probes.first { $0.kind == .microphone }?.alignmentCorrection ?? .zero
 
         let store = EditDocumentStore.load(
             folder: folder,
@@ -299,6 +310,7 @@ final class ReviewViewModel: ObservableObject {
         exportTask?.cancel()
         rebuildTask?.cancel()
         suggestTask?.cancel()
+        detailTask?.cancel()
         cancellables.removeAll()
         store?.flush()
     }
@@ -386,8 +398,77 @@ final class ReviewViewModel: ObservableObject {
             : max(Self.minimumVisibleDuration, proposed)
     }
 
+    func setWaveformScale(_ scale: WaveformScale) {
+        waveformScale = scale
+        ReviewPreferences.waveformScale = scale
+    }
+
     func zoomToFit() {
         visibleDuration = nil
+        detailTask?.cancel()
+        laneDetail = [:]
+        laneDetailSpan = nil
+    }
+
+    /// Re-reads the visible window at display resolution when the cached 10ms envelope is too
+    /// coarse to draw as a waveform. Called by the lane view, which is the only thing that
+    /// knows how wide it is.
+    func requestWaveformDetail(viewWidth: CGFloat) {
+        let span = visibleSpan
+        guard
+            let bucketsPerSecond = WaveformDetailRequest.bucketsPerSecond(
+                visibleDuration: span.duration,
+                viewWidth: viewWidth,
+                cachedBucketsPerSecond: WaveformPeaks.defaultBucketsPerSecond
+            )
+        else {
+            // Zoomed out far enough that the cache suffices.
+            if laneDetailSpan != nil {
+                detailTask?.cancel()
+                laneDetail = [:]
+                laneDetailSpan = nil
+            }
+            return
+        }
+
+        // Already have this window at sufficient resolution.
+        if let existing = laneDetailSpan,
+           abs(existing.start - span.start) < 0.001,
+           abs(existing.end - span.end) < 0.001 {
+            return
+        }
+
+        detailTask?.cancel()
+        detailTask = Task { [weak self] in
+            guard let self else { return }
+            // Coalesce: the window follows the playhead, so this is asked for constantly
+            // during playback and a read per frame would be wasted work.
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+
+            var fetched: [AudioLane: WaveformPeaks] = [:]
+            for lane in AudioLane.allCases {
+                guard let probe = self.probes.first(where: { $0.kind.lane == lane }) else { continue }
+                // Into the audio file's own clock, which is where its samples live.
+                let offset = Timeline.seconds(
+                    self.timeline?.audio.first { $0.lane == lane }?.timeOffset ?? .zero
+                )
+                let inFileTime = TimeSpan(start: span.start - offset, end: span.end - offset)
+                guard inFileTime.end > 0 else { continue }
+
+                if let detail = await self.extractor.detail(
+                    url: probe.url,
+                    range: TimeSpan(start: max(0, inFileTime.start), end: inFileTime.end),
+                    bucketsPerSecond: bucketsPerSecond
+                ) {
+                    fetched[lane] = detail
+                }
+            }
+
+            guard !Task.isCancelled else { return }
+            self.laneDetail = fetched
+            self.laneDetailSpan = span
+        }
     }
 
     // MARK: - Editing
@@ -462,7 +543,7 @@ final class ReviewViewModel: ObservableObject {
         if document.isExcluded(wordID: word.id) {
             apply(.restoreWords(ids: [word.id]))
         } else {
-            let offset = document.micTimeOffset
+            let offset = transcriptOffset
             apply(.excludeWords([ExcludedWord(
                 id: word.id,
                 start: word.start + offset,
@@ -508,20 +589,34 @@ final class ReviewViewModel: ObservableObject {
 
     // MARK: - Transcript
 
+    /// Seconds to add to a transcript time to get session time.
+    ///
+    /// Must equal the total offset the composition applies to the microphone lane, or a cut
+    /// made from a transcript time lands somewhere other than the words it names. Computed
+    /// from the resolved timeline rather than read from the document, so an automatic sync
+    /// correction and a manual slip are both accounted for and a stale stored value can't
+    /// desync the two.
+    var transcriptOffset: TimeInterval {
+        if let lane = timeline?.audio.first(where: { $0.lane == .microphone }) {
+            return Timeline.seconds(lane.timeOffset)
+        }
+        return store?.document.micTimeOffset ?? 0
+    }
+
     /// Composition time -> the clock the transcript is stamped in.
     private func transcriptTime(forComposition time: CMTime) -> TimeInterval {
         guard
             let timeline,
             let mapped = timeline.timeMap.sourceTime(forComposition: time)
         else { return 0 }
-        return Timeline.seconds(mapped.source) - (store?.document.micTimeOffset ?? 0)
+        return Timeline.seconds(mapped.source) - transcriptOffset
     }
 
     /// Where a transcript cue appears on the composition timeline. Empty when the cue's
     /// content was cut, and more than one entry if a cut split it.
     func compositionSpans(for segment: Transcript.Segment) -> [TimeSpan] {
         guard let timeline else { return [] }
-        let offset = store?.document.micTimeOffset ?? 0
+        let offset = transcriptOffset
         return timeline.timeMap.compositionSpans(
             forSource: TimeSpan(start: segment.start + offset, end: segment.end + offset)
         )
@@ -535,14 +630,43 @@ final class ReviewViewModel: ObservableObject {
     /// Removes the range a transcript cue occupies. The operation is expressed in session
     /// time, so it stays correct regardless of what has already been cut.
     func removeRange(of segment: Transcript.Segment) {
-        let offset = store?.document.micTimeOffset ?? 0
+        let offset = transcriptOffset
         apply(.removeRange(TimeSpan(start: segment.start + offset, end: segment.end + offset)))
+    }
+
+    /// Re-derives every excluded word's span from the transcript.
+    ///
+    /// The id is the real handle; the stored span is a cache that lets `edit.json` play back
+    /// without the transcript. Recomputing it whenever the transcript is available makes the
+    /// pair self-healing — which matters because a build that converted transcript times to
+    /// session times incorrectly baked wrong spans into saved documents, and those would
+    /// otherwise keep cutting the wrong audio forever.
+    private func reconcileExcludedWords() {
+        guard let store, let transcript, !store.document.excludedWords.isEmpty else { return }
+
+        let byID = transcript.wordsByID
+        let offset = transcriptOffset
+
+        store.repair { document in
+            var changed = false
+            document.excludedWords = document.excludedWords.map { excluded in
+                guard let word = byID[excluded.id] else { return excluded }
+                var corrected = excluded
+                corrected.start = word.start + offset
+                corrected.end = word.end + offset
+                corrected.text = word.text
+                if abs(corrected.start - excluded.start) > 0.0005 { changed = true }
+                return corrected
+            }
+            return changed
+        }
     }
 
     private func loadTranscript() async {
         if let existing = Transcript.load(from: folder.transcriptURL) {
             transcript = existing
             transcriptState = .ready
+            reconcileExcludedWords()
             return
         }
 
@@ -558,6 +682,7 @@ final class ReviewViewModel: ObservableObject {
             produced.write(to: folder.transcriptURL)
             transcript = produced
             transcriptState = .ready
+            reconcileExcludedWords()
         } catch {
             guard !Task.isCancelled else { return }
             transcriptState = .failed(error.localizedDescription)
@@ -588,6 +713,7 @@ final class ReviewViewModel: ObservableObject {
             events: eventTimeline,
             document: document,
             transcript: transcript,
+            transcriptOffset: transcriptOffset,
             // Word detail centres on the playhead when the whole transcript won't fit: that
             // is the part of the recording the user is actually looking at.
             focus: playheadSourceTime,
@@ -650,7 +776,7 @@ final class ReviewViewModel: ObservableObject {
                        span: span,
                        why: why,
                        transcript: transcript,
-                       micTimeOffset: store?.document.micTimeOffset ?? 0,
+                       micTimeOffset: transcriptOffset,
                        alreadyExcluded: excluded
                    ) {
                     resolved.append(suggestion)

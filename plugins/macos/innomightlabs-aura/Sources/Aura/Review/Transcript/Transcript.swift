@@ -3,8 +3,9 @@ import Foundation
 /// A timestamped transcript, persisted as `transcript.json`.
 ///
 /// Times are in **mic media time**, because that is what the engine that produced it saw.
-/// `SessionEdit.micTimeOffset` converts to session time; everything that positions a cue on
-/// the timeline goes through that rather than assuming the two agree.
+/// `ReviewViewModel.transcriptOffset` converts to session time — it must match the offset the
+/// composition applies to the microphone lane, or an edit made from a transcript time lands
+/// somewhere other than the words it names.
 struct Transcript: Codable, Equatable, Sendable {
     /// v2 added stable word ids and stopped storing Whisper's raw special tokens in cue text.
     /// A v1 file is discarded rather than migrated: its text is polluted with
