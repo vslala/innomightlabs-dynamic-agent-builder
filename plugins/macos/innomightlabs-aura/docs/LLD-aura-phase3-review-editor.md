@@ -228,6 +228,93 @@ presenter owns the view model and tears it down on `willClose`. Windows are keye
 asking twice for the same recording focuses the existing window rather than building a second
 composition over the same files.
 
+## Word-level editing
+
+The first round of agent editing was imprecise, and the agent diagnosed it itself: "the digest
+only provides phrase-level timing, not exact word-level". Reading a real session's files found
+four faults behind that.
+
+**Whisper markup was being sent as speech.** All 56 cues in a real recording carried inline
+control tokens — `<|startoftranscript|><|en|><|transcribe|><|0.00|> Hey everyone…` — because
+cue text came from `segment.text`. The per-word text was clean all along, so cue text is now
+rebuilt from the words, and `Transcript.cleaned` strips `<|…|>` from anything else.
+
+**The transcript ran past the end of the video.** A hallucinated `[BLANK_AUDIO]` cue sat at
+291.8s on a 265.3s recording, so the agent could propose edits beyond the end. Cues are now
+dropped or clamped against the media duration.
+
+**Word timings were available but never sent.** 596 words existed in `transcript.json`;
+the digest carried 56 phrases. Words now have stable ids and travel in the digest, so the
+agent addresses a word instead of computing a timestamp.
+
+**Rounded times made keyframes unaddressable.** A real `edit.json` held overlay keyframes at
+`84.5` and `84.5001`; both render as "84.5" once rounded for the agent, which is why it got
+"There is no camera keyframe at 84.50s". Two fixes: keyframes within one frame of each other
+are now the same keyframe (the earlier time is kept, so repeated nudges don't make it creep),
+and removal matches the nearest keyframe within a frame rather than demanding float equality.
+
+`Transcript` is at schema v2 and a v1 file is **discarded rather than migrated** — its text is
+polluted, and re-running the model produces something correct instead of something patched.
+
+### Reversible exclusions
+
+Cutting words is a separate, reversible layer: `SessionEdit.excludedWords` rather than edits to
+`clips`. `effectiveClips` subtracts them, so removal is non-destructive and a single word can be
+restored later, individually and out of order, by either the user (clicking a struck-through
+word) or the agent (`restore_words`). Unwinding one word months later shouldn't mean undoing
+everything since.
+
+Each entry stores its resolved span in session time as well as its id, which keeps `edit.json`
+self-contained — playback and export never need the transcript — while the id stays the handle
+for addressing it.
+
+Filler sweeps are **range-scoped and resolved locally**. The agent emits
+`exclude_filler_words{words, from, to}` and Aura finds every instance from the full word list,
+then presents them as one reviewable suggestion naming what will go. Aura has the whole
+transcript where the agent may have a trimmed view, so it finds instances the agent would
+miss; scoping is required because an unscoped sweep removes words that carried meaning.
+
+### The 32,000-character budget
+
+Treated as a useful constraint rather than something to remove. The digest splits into:
+
+- `outline` — a coarse map of the **whole** recording, cues merged into blocks capped at 60
+  regardless of length (blocks widen for a long recording) with text abridged. Bounded by
+  construction, because a full phrase-level transcript exceeds the cap on its own and an agent
+  that has lost the shape of the recording cannot even ask a sensible question.
+- `words` — word-level detail for `[detailFrom, detailTo]`, centred on the playhead, with
+  compact keys (`i` id, `s` start, `e` end, `t` text) and a legend in the prompt. Full key
+  names would cost ~20 characters per word and put a long recording out of reach.
+
+Each is guaranteed a share of the budget (the outline takes at most 45%) so neither starves the
+other, and what was dropped is counted so the agent knows it has a partial view.
+
+When the agent needs detail it does not have, it asks: `request_transcript{from, to}`, which
+Aura answers as a follow-up turn in the same conversation, capped at three hops so it cannot
+loop. Verified against the live agent, which spontaneously used it.
+
+## Camera overlay styling
+
+Shape, border, and shadow need a real compositor: the built-in one offers only an affine
+transform, opacity, and an axis-aligned crop. `CoreImagePiPCompositor` provides them, and
+`PiPStyle.isPlainRectangle` selects it — the cheaper layer-instruction path stays in place for
+an unstyled overlay, and is still the default.
+
+Two things only a rendered frame revealed:
+
+- **A circle needs a square.** The overlay rect follows the camera's aspect ratio, so it is
+  virtually never square; max-rounding it produced a capsule. `PiPMask.drawnRect` squares to
+  the shorter side and centres within the requested rect, and the drag handles use the same
+  rect so they still frame what is drawn.
+- **Masking has to stay premultiplied.** `CIBlendWithAlphaMask` against an empty background
+  leaves masked-out pixels as white with zero alpha, which looks right through a software
+  context and composites as opaque white on the GPU path. `CISourceInCompositing` (and
+  `CISourceOutCompositing` for the border ring) multiplies through the mask's alpha and is
+  correct in both.
+
+`PiPMask` is verified by rendering and reading pixels — the only way to know a circle is round
+— and the compositor is verified through a real composition and a real export.
+
 ## Transcription
 
 On-device WhisperKit (`transcribe(audioPath:decodeOptions:)` with `DecodingOptions(wordTimestamps:
@@ -347,6 +434,12 @@ custom compositor lands — only which builder is constructed.
 
 ## Known limitations / follow-ups
 
+- **Word timing is the floor, not character timing.** Whisper reports per-word boundaries and
+  nothing finer, and a word is the smallest unit that is audibly sensible to cut — so
+  "character-level" control means addressing text, not splitting audio mid-word.
+- **Style is not keyframed.** Shape, border, and shadow apply to the whole recording: a camera
+  that changes shape partway through reads as a glitch rather than an edit. Position and
+  visibility remain keyframed.
 - **Aspect-fit only.** The PiP is authored at the camera's own aspect ratio with aspect-locked drag
   handles, which avoids `cropRectangle` entirely and keeps geometry to pure scale-plus-translate.
   This matters more than it sounds: a real session paired a 2560x1440 screen with a 640x480 (4:3)

@@ -78,6 +78,7 @@ struct ReviewWindowView: View {
                 renderSize: timeline.renderSize,
                 cameraDisplaySize: size,
                 keyframe: keyframe,
+                style: viewModel.cameraStyle,
                 onCommit: { viewModel.setOverlay(rect: $0, visible: keyframe.visible) }
             )
         }
@@ -112,6 +113,8 @@ struct ReviewWindowView: View {
                         )
                     }
                     .help("Takes effect from the playhead onwards")
+
+                    CameraStyleMenu(viewModel: viewModel)
                 }
 
                 if let store = viewModel.store {

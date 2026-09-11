@@ -429,9 +429,55 @@ final class ReviewViewModel: ObservableObject {
         setOverlay(rect: current.rect, visible: !current.visible)
     }
 
+    var cameraStyle: PiPStyle { store?.document.cameraStyle ?? .plain }
+
+    func setCameraStyle(_ style: PiPStyle) {
+        apply(.setCameraStyle(style))
+    }
+
+    func setCameraShape(_ shape: PiPStyle.Shape) {
+        var style = cameraStyle
+        style.shape = shape
+        // A rounded shape with no radius looks like a rectangle, which reads as the control
+        // having done nothing.
+        if shape == .rounded, style.cornerRadius <= 0 { style.cornerRadius = 0.2 }
+        setCameraStyle(style)
+    }
+
     func setLaneMuted(_ lane: AudioLane, _ muted: Bool) {
         apply(.setLaneMuted(lane: lane, muted: muted))
     }
+
+    // MARK: - Words
+
+    func isWordExcluded(_ word: Transcript.Word) -> Bool {
+        store?.document.isExcluded(wordID: word.id) ?? false
+    }
+
+    /// Cut or restore a single word from the transcript panel — the manual counterpart to the
+    /// agent doing it, through the same operations.
+    func toggleWord(_ word: Transcript.Word) {
+        guard let document = store?.document else { return }
+
+        if document.isExcluded(wordID: word.id) {
+            apply(.restoreWords(ids: [word.id]))
+        } else {
+            let offset = document.micTimeOffset
+            apply(.excludeWords([ExcludedWord(
+                id: word.id,
+                start: word.start + offset,
+                end: word.end + offset,
+                text: word.text
+            )]))
+        }
+    }
+
+    func restoreAllWords() {
+        guard let ids = store?.document.excludedWords.map(\.id), !ids.isEmpty else { return }
+        apply(.restoreWords(ids: ids))
+    }
+
+    var excludedWordCount: Int { store?.document.excludedWords.count ?? 0 }
 
     func setLaneGain(_ lane: AudioLane, _ gain: Double) {
         apply(.setLaneGain(lane: lane, keyframe: GainKeyframe(t: playheadSourceTime, gain: gain)))
@@ -504,7 +550,10 @@ final class ReviewViewModel: ObservableObject {
         transcriptState = .transcribing
 
         do {
-            let produced = try await SessionTranscriber().transcribe(microphoneURL: folder.microphoneURL)
+            let produced = try await SessionTranscriber().transcribe(
+                microphoneURL: folder.microphoneURL,
+                mediaDuration: Timeline.seconds(duration)
+            )
             guard !Task.isCancelled else { return }
             produced.write(to: folder.transcriptURL)
             transcript = produced
@@ -529,7 +578,7 @@ final class ReviewViewModel: ObservableObject {
     /// the edit as it currently stands, and written to `digest.json` so what the agent was
     /// told is always inspectable.
     @discardableResult
-    func buildDigest() -> SessionDigest? {
+    func buildDigest(detailRange: TimeSpan? = nil) -> SessionDigest? {
         guard let document = store?.document else { return nil }
 
         let digest = SessionDigest.make(
@@ -538,7 +587,11 @@ final class ReviewViewModel: ObservableObject {
             probes: probes,
             events: eventTimeline,
             document: document,
-            transcript: transcript
+            transcript: transcript,
+            // Word detail centres on the playhead when the whole transcript won't fit: that
+            // is the part of the recording the user is actually looking at.
+            focus: playheadSourceTime,
+            detailRange: detailRange
         )
         digest.write(to: folder.digestURL)
         return digest
@@ -563,22 +616,89 @@ final class ReviewViewModel: ObservableObject {
         suggestTask = Task { [weak self] in
             guard let self else { return }
             defer { self.suggestTask = nil }
+            await self.converse(instruction: instruction, context: context, hopsRemaining: Self.maximumFetchHops)
+        }
+    }
 
-            do {
-                let result = try await self.suggester.suggest(instruction: instruction, context: context)
-                guard !Task.isCancelled else { return }
-                if !result.reply.isEmpty {
-                    self.conversation.append(AgentTurn(speaker: .agent, text: result.reply))
-                }
-                // Replaces rather than accumulates: a new answer supersedes the previous
-                // proposal, and leaving stale operations pending invites applying edits the
-                // user has already moved past.
-                self.suggestions = result.suggestions
-                self.agentState = .idle
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.agentState = .failed(error.localizedDescription)
+    /// At most this many automatic follow-ups per request, so an agent that keeps asking for
+    /// transcript can't loop indefinitely at the user's expense.
+    private static let maximumFetchHops = 3
+
+    /// One exchange, plus any follow-ups the agent asks for.
+    private func converse(
+        instruction: String,
+        context: EditSuggestionContext,
+        hopsRemaining: Int
+    ) async {
+        do {
+            let result = try await suggester.suggest(instruction: instruction, context: context)
+            guard !Task.isCancelled else { return }
+
+            if !result.reply.isEmpty {
+                conversation.append(AgentTurn(speaker: .agent, text: result.reply))
             }
+
+            // Filler sweeps are resolved here rather than by the agent: Aura has the whole
+            // word list, so it finds every instance instead of the handful the agent could
+            // see in a trimmed digest.
+            var resolved = result.suggestions
+            let excluded = Set(store?.document.excludedWords.map(\.id) ?? [])
+            for request in result.requests {
+                if case .fillerSweep(let words, let span, let why) = request,
+                   let suggestion = AgentRequestResolver.resolveFillerSweep(
+                       words: words,
+                       span: span,
+                       why: why,
+                       transcript: transcript,
+                       micTimeOffset: store?.document.micTimeOffset ?? 0,
+                       alreadyExcluded: excluded
+                   ) {
+                    resolved.append(suggestion)
+                }
+            }
+
+            // Replaces rather than accumulates: a new answer supersedes the previous
+            // proposal, and leaving stale operations pending invites applying edits the user
+            // has already moved past.
+            suggestions = resolved
+
+            // If it asked for more transcript, answer it and let it continue.
+            if
+                hopsRemaining > 0,
+                resolved.isEmpty,
+                let wanted = result.requests.compactMap({ request -> TimeSpan? in
+                    if case .transcript(let span) = request { return span }
+                    return nil
+                }).first,
+                let document = store?.document
+            {
+                conversation.append(AgentTurn(
+                    speaker: .user,
+                    text: String(format: "(sending word detail for %.1f–%.1fs)", wanted.start, wanted.end)
+                ))
+
+                var next = context
+                next = EditSuggestionContext(
+                    sessionID: context.sessionID,
+                    duration: context.duration,
+                    transcript: context.transcript,
+                    document: document,
+                    markers: context.markers,
+                    digest: buildDigest(detailRange: wanted),
+                    fulfilling: wanted
+                )
+                await converse(
+                    instruction: "Here is the word detail you asked for. Continue with the original request.",
+                    context: next,
+                    hopsRemaining: hopsRemaining - 1
+                )
+                return
+            }
+
+            agentState = .idle
+        } catch {
+            guard !Task.isCancelled else { return }
+            agentState = .failed(error.localizedDescription)
         }
     }
 

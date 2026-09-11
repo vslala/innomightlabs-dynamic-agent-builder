@@ -19,24 +19,40 @@ final class SessionDigestTests: XCTestCase {
             source: "microphone.m4a",
             engine: "test",
             language: "en",
-            segments: (0..<count).map {
-                Transcript.Segment(id: $0, start: Double($0), end: Double($0) + 0.9, text: "cue number \($0) said something", words: nil)
+            segments: (0..<count).map { index in
+                Transcript.Segment(
+                    id: index,
+                    start: Double(index),
+                    end: Double(index) + 0.9,
+                    text: "cue number \(index) said something",
+                    words: ["cue", "number", "\(index)", "said", "something"].enumerated().map { offset, text in
+                        Transcript.Word(
+                            id: index * 5 + offset,
+                            start: Double(index) + Double(offset) * 0.15,
+                            end: Double(index) + Double(offset) * 0.15 + 0.12,
+                            text: text
+                        )
+                    }
+                )
             }
         )
     }
 
+    /// Duration follows the transcript's extent, so a fixture always describes a coherent
+    /// recording rather than a 54-second video with an hour of speech in it.
     private func digest(
-        document: SessionEdit = .initial(duration: 54.23),
+        document: SessionEdit? = nil,
         events: EventTimeline = EventTimeline(events: []),
         transcript: Transcript? = nil,
         probes: [SourceTrackProbe]? = nil
     ) -> SessionDigest {
-        SessionDigest.make(
+        let duration = max(54.23, (transcript?.segments.last?.end ?? 0) + 0.5)
+        return SessionDigest.make(
             sessionID: "20260909-215437-6d81",
-            duration: 54.23,
+            duration: duration,
             probes: probes ?? [probe(.screen), probe(.camera), probe(.microphone, recordedOffset: 0.4)],
             events: events,
-            document: document,
+            document: document ?? .initial(duration: duration),
             transcript: transcript
         )
     }
@@ -110,8 +126,26 @@ final class SessionDigestTests: XCTestCase {
         let document = SessionEdit.initial(duration: 54.23, micTimeOffset: 0.4)
         let subject = digest(document: document, transcript: transcript(3))
 
-        XCTAssertEqual(subject.transcript.first?.start ?? 0, 0.4, accuracy: 0.001)
-        XCTAssertEqual(subject.transcript.first?.end ?? 0, 1.3, accuracy: 0.001)
+        XCTAssertEqual(subject.outline.first?.start ?? 0, 0.4, accuracy: 0.001)
+        XCTAssertEqual(subject.words.first?.s ?? 0, 0.4, accuracy: 0.001)
+    }
+
+    func testWordLevelDetailIsIncluded() {
+        // The gap that made agent edits "conservative": the digest used to carry phrase
+        // timing only, and the agent said so itself.
+        let subject = digest(transcript: transcript(5))
+
+        XCTAssertFalse(subject.words.isEmpty)
+        XCTAssertEqual(subject.words.first?.i, 0)
+        XCTAssertNotNil(subject.detailFrom)
+        XCTAssertNotNil(subject.detailTo)
+    }
+
+    func testExcludedWordsAreReportedSoTheyCanBeRestored() throws {
+        let document = try SessionEdit.initial(duration: 54.23)
+            .applying(.excludeWords([ExcludedWord(id: 2, start: 2, end: 2.4, text: "um")]))
+
+        XCTAssertEqual(digest(document: document).excludedWordIds, [2])
     }
 
     // MARK: - Compactness: fitting the message cap
@@ -138,17 +172,57 @@ final class SessionDigestTests: XCTestCase {
         let fitted = big.fitting(characterBudget: 20_000)
 
         XCTAssertLessThanOrEqual(fitted.compactJSON().count, 20_000)
-        XCTAssertGreaterThan(fitted.transcript.count, 0, "should keep as much transcript as fits")
-        XCTAssertLessThan(fitted.transcript.count, 4_000)
+    }
+
+    func testOutlineIsBoundedSoItAlwaysSurvives() {
+        // Coarse by construction: a 4,000-cue recording still produces an outline that fits
+        // alongside word detail, which is what keeps the agent oriented.
+        let fitted = digest(transcript: transcript(4_000)).fitting(characterBudget: 20_000)
+
+        XCTAssertFalse(fitted.outline.isEmpty, "the outline should survive")
+        XCTAssertFalse(fitted.words.isEmpty, "word detail should also survive")
+        XCTAssertLessThanOrEqual(fitted.compactJSON().count, 20_000)
+    }
+
+    func testOutlineMergesCuesIntoBlocks() {
+        let subject = digest(transcript: transcript(200))
+
+        // 200 one-second cues should collapse to blocks, not 200 entries.
+        XCTAssertLessThan(subject.outline.count, 20)
+        XCTAssertGreaterThan(subject.outline.count, 2)
+    }
+
+    func testOutlineBlockCountIsCappedRegardlessOfLength() {
+        // A long recording widens its blocks instead of producing more of them.
+        let subject = digest(transcript: transcript(4_000))
+
+        XCTAssertLessThanOrEqual(subject.outline.count, SessionDigest.maximumOutlineBlocks + 1)
+    }
+
+    func testOutlineBlockTextIsAbridged() {
+        let subject = digest(transcript: transcript(200))
+
+        for block in subject.outline {
+            XCTAssertLessThanOrEqual(block.text.count, SessionDigest.outlineBlockCharacters + 1)
+        }
     }
 
     func testTrimmingReportsWhatWasDropped() {
-        // So the agent knows it is not seeing the whole recording, rather than assuming the
-        // transcript simply ends there.
-        let fitted = digest(transcript: transcript(4_000)).fitting(characterBudget: 8_000)
+        // So the agent knows it is looking at a partial view rather than assuming the
+        // recording ends where the data does.
+        let fitted = digest(transcript: transcript(4_000)).fitting(characterBudget: 20_000)
 
-        XCTAssertGreaterThan(fitted.transcriptCuesOmitted, 0)
-        XCTAssertEqual(fitted.transcriptCuesOmitted, 4_000 - fitted.transcript.count)
+        XCTAssertGreaterThan(fitted.wordsOmitted, 0)
+    }
+
+    func testTrimmingNarrowsAroundTheDetailWindowRatherThanLoppingTheEnd() {
+        let fitted = digest(transcript: transcript(2_000)).fitting(characterBudget: 12_000)
+
+        guard let first = fitted.words.first, let last = fitted.words.last else {
+            return XCTFail("expected some word detail to survive")
+        }
+        XCTAssertEqual(fitted.detailFrom ?? -1, first.s, accuracy: 0.001)
+        XCTAssertEqual(fitted.detailTo ?? -1, last.e, accuracy: 0.001)
     }
 
     func testTrimmingKeepsTheStructuralFactsAndOnlyDropsTranscript() {
@@ -187,7 +261,8 @@ final class SessionDigestTests: XCTestCase {
 
         let reloaded = try JSONDecoder().decode(SessionDigest.self, from: try Data(contentsOf: url))
         XCTAssertEqual(reloaded.sessionId, "20260909-215437-6d81")
-        XCTAssertEqual(reloaded.transcript.count, 3)
+        XCTAssertFalse(reloaded.outline.isEmpty)
+        XCTAssertEqual(reloaded.words.count, 15)
     }
 
     // MARK: - The prompt built around it
@@ -212,6 +287,8 @@ final class SessionDigestTests: XCTestCase {
         XCTAssertTrue(prompt.contains("SESSION DIGEST (JSON):"))
         XCTAssertTrue(prompt.contains("cut the boring bits"))
         XCTAssertTrue(prompt.contains("\"sessionId\":\"20260909-215437-6d81\""))
+        // The compact word keys are meaningless unless the legend travels with them.
+        XCTAssertTrue(prompt.contains("i = word id"))
     }
 
     func testPromptStillDeclaresEveryOperation() {
@@ -225,9 +302,23 @@ final class SessionDigestTests: XCTestCase {
         )
 
         for op in ["remove_range", "split_clip", "set_overlay_keyframe", "remove_overlay_keyframe",
-                   "set_lane_gain", "set_lane_muted", "set_lane_offset"] {
+                   "set_lane_gain", "set_lane_muted", "set_lane_offset",
+                   "exclude_words", "restore_words", "request_transcript", "exclude_filler_words"] {
             XCTAssertTrue(prompt.contains(op), "the agent isn't told about \(op)")
         }
+    }
+
+    func testPromptTellsTheAgentToPreferWordIDsOverTimestamps() {
+        let prompt = EditSuggestionPrompt.build(
+            instruction: "tidy up",
+            context: EditSuggestionContext(
+                sessionID: "s", duration: 10, transcript: nil,
+                document: .initial(duration: 10), markers: [], digest: nil
+            ),
+            characterBudget: 32_000
+        )
+
+        XCTAssertTrue(prompt.localizedCaseInsensitiveContains("prefer word ids"))
     }
 
     func testPromptWorksWithoutAPrebuiltDigest() {

@@ -14,8 +14,10 @@ enum TimelineResolver {
     static func resolve(
         document: SessionEdit,
         probes: [SourceTrackProbe],
-        style: PiPStyle = .plain
+        style: PiPStyle? = nil
     ) -> ResolvedTimeline {
+        // The document owns the style; the parameter is an override for previews and tests.
+        let style = style ?? document.cameraStyle
         let byKind = Dictionary(probes.map { ($0.kind, $0) }, uniquingKeysWith: { first, _ in first })
         let timeMap = document.timeMap
 

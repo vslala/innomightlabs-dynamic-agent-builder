@@ -54,10 +54,15 @@ struct TranscriptPanelView: View {
             Text("Transcript")
                 .font(.headline)
             Spacer()
-            if let engine = viewModel.transcript?.engine {
-                Text(engine)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+            if viewModel.excludedWordCount > 0 {
+                Button {
+                    viewModel.restoreAllWords()
+                } label: {
+                    Text("\(viewModel.excludedWordCount) cut")
+                        .font(.caption2)
+                }
+                .buttonStyle(.borderless)
+                .help("Restore every cut word")
             }
         }
         .padding(10)
@@ -104,21 +109,48 @@ struct TranscriptPanelView: View {
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.tertiary)
 
-            Text(segment.text)
-                .font(.callout)
-                .strikethrough(isRemoved)
-                .foregroundStyle(isRemoved ? .secondary : .primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if segment.words.isEmpty {
+                Text(segment.text)
+                    .font(.callout)
+                    .strikethrough(isRemoved)
+                    .foregroundStyle(isRemoved ? .secondary : .primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                words(segment, cueRemoved: isRemoved)
+            }
         }
         .padding(6)
         .background(isActive ? Color.accentColor.opacity(0.18) : .clear, in: .rect(cornerRadius: 5))
         .contentShape(Rectangle())
         .onTapGesture { viewModel.seek(to: segment) }
         .contextMenu {
-            Button("Remove This From the Video", systemImage: "scissors") {
+            Button("Remove This Whole Line", systemImage: "scissors") {
                 viewModel.removeRange(of: segment)
             }
             .disabled(isRemoved)
         }
+    }
+
+    /// Word-by-word, so a single word can be cut or brought back by clicking it. Cutting
+    /// words is reversible by design — a struck-through word is still there, just excluded —
+    /// which is why this reads as a toggle rather than a delete.
+    private func words(_ segment: Transcript.Segment, cueRemoved: Bool) -> some View {
+        FlowLayout(spacing: 3, lineSpacing: 2) {
+            ForEach(segment.words) { word in
+                let cut = viewModel.isWordExcluded(word)
+                Text(word.text)
+                    .font(.callout)
+                    .strikethrough(cut || cueRemoved)
+                    .foregroundStyle(cut || cueRemoved ? .secondary : .primary)
+                    .padding(.horizontal, 1)
+                    .background(
+                        cut ? Color.red.opacity(0.12) : .clear,
+                        in: .rect(cornerRadius: 3)
+                    )
+                    .onTapGesture { viewModel.toggleWord(word) }
+                    .help(cut ? "Click to bring “\(word.text)” back" : "Click to cut “\(word.text)”")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

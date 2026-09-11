@@ -23,7 +23,24 @@ enum EditOperationDescription {
             return "\(muted ? "Mute" : "Unmute") \(name(lane))"
         case .setLaneOffset(let lane, let seconds):
             return String(format: "Slip %@ by %+.0fms", name(lane), seconds * 1000)
+        case .excludeWords(let words):
+            // Quote what is being cut: with word-level edits the times mean far less to the
+            // reader than the words themselves.
+            return "Cut \(words.count) word\(words.count == 1 ? "" : "s"): \(quoted(words.map(\.text)))"
+        case .restoreWords(let ids):
+            return "Restore \(ids.count) cut word\(ids.count == 1 ? "" : "s")"
+        case .setCameraStyle(let style):
+            var parts = [style.shape.rawValue]
+            if style.borderWidth > 0 { parts.append("border") }
+            if style.shadowOpacity > 0 { parts.append("shadow") }
+            return "Camera: \(parts.joined(separator: " + "))"
         }
+    }
+
+    /// The first few, so a sweep of fifty filler words stays one readable line.
+    private static func quoted(_ texts: [String]) -> String {
+        let shown = texts.prefix(6).map { "“\($0)”" }.joined(separator: ", ")
+        return texts.count > 6 ? "\(shown) +\(texts.count - 6) more" : shown
     }
 
     private static func name(_ lane: AudioLane) -> String {

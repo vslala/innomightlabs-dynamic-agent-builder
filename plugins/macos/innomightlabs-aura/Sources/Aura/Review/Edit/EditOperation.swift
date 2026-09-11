@@ -21,6 +21,13 @@ enum EditOperation: Codable, Equatable, Sendable {
     case setLaneGain(lane: AudioLane, keyframe: GainKeyframe)
     case setLaneMuted(lane: AudioLane, muted: Bool)
     case setLaneOffset(lane: AudioLane, seconds: TimeInterval)
+    /// Cut individual words, reversibly. Spans are resolved from the transcript before the
+    /// operation is built, so the document never needs the transcript to play back.
+    case excludeWords([ExcludedWord])
+    /// Bring excluded words back, by id and in any order.
+    case restoreWords(ids: [Int])
+    /// Shape, border, and shadow for the camera overlay.
+    case setCameraStyle(PiPStyle)
 
     private enum Op: String, Codable {
         case removeRange = "remove_range"
@@ -30,10 +37,14 @@ enum EditOperation: Codable, Equatable, Sendable {
         case setLaneGain = "set_lane_gain"
         case setLaneMuted = "set_lane_muted"
         case setLaneOffset = "set_lane_offset"
+        case excludeWords = "exclude_words"
+        case restoreWords = "restore_words"
+        case setCameraStyle = "set_camera_style"
     }
 
     private enum CodingKeys: String, CodingKey {
-        case op, start, end, t, rect, visible, lane, gain, muted, seconds
+        case op, start, end, t, rect, visible, lane, gain, muted, seconds, words, ids
+        case shape, cornerRadius, borderWidth, borderColor, shadowOpacity, shadowRadius
     }
 
     init(from decoder: Decoder) throws {
@@ -72,6 +83,19 @@ enum EditOperation: Codable, Equatable, Sendable {
                 lane: try container.decode(AudioLane.self, forKey: .lane),
                 seconds: try container.decode(TimeInterval.self, forKey: .seconds)
             )
+        case .excludeWords:
+            self = .excludeWords(try container.decode([ExcludedWord].self, forKey: .words))
+        case .restoreWords:
+            self = .restoreWords(ids: try container.decode([Int].self, forKey: .ids))
+        case .setCameraStyle:
+            self = .setCameraStyle(PiPStyle(
+                shape: try container.decodeIfPresent(PiPStyle.Shape.self, forKey: .shape) ?? .rectangle,
+                cornerRadius: try container.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? 0,
+                borderWidth: try container.decodeIfPresent(Double.self, forKey: .borderWidth) ?? 0,
+                borderColor: try container.decodeIfPresent([Double].self, forKey: .borderColor) ?? [1, 1, 1],
+                shadowOpacity: try container.decodeIfPresent(Double.self, forKey: .shadowOpacity) ?? 0,
+                shadowRadius: try container.decodeIfPresent(Double.self, forKey: .shadowRadius) ?? 0
+            ))
         }
     }
 
@@ -106,6 +130,20 @@ enum EditOperation: Codable, Equatable, Sendable {
             try container.encode(Op.setLaneOffset, forKey: .op)
             try container.encode(lane, forKey: .lane)
             try container.encode(seconds, forKey: .seconds)
+        case .excludeWords(let words):
+            try container.encode(Op.excludeWords, forKey: .op)
+            try container.encode(words, forKey: .words)
+        case .restoreWords(let ids):
+            try container.encode(Op.restoreWords, forKey: .op)
+            try container.encode(ids, forKey: .ids)
+        case .setCameraStyle(let style):
+            try container.encode(Op.setCameraStyle, forKey: .op)
+            try container.encode(style.shape, forKey: .shape)
+            try container.encode(style.cornerRadius, forKey: .cornerRadius)
+            try container.encode(style.borderWidth, forKey: .borderWidth)
+            try container.encode(style.borderColor, forKey: .borderColor)
+            try container.encode(style.shadowOpacity, forKey: .shadowOpacity)
+            try container.encode(style.shadowRadius, forKey: .shadowRadius)
         }
     }
 }
@@ -123,6 +161,9 @@ enum EditOperationError: Error, Equatable, LocalizedError {
     case wouldRemoveLastOverlayKeyframe
     case gainOutOfRange(Double)
     case offsetOutOfRange(TimeInterval)
+    case noWordsGiven
+    case wouldRemoveEntireTimeline_words
+    case invalidCameraStyle
 
     var errorDescription: String? {
         switch self {
@@ -146,6 +187,12 @@ enum EditOperationError: Error, Equatable, LocalizedError {
             return String(format: "Gain %.2f is outside 0-1.", gain)
         case .offsetOutOfRange(let seconds):
             return String(format: "An audio slip of %.2fs is outside the +/-5s limit.", seconds)
+        case .noWordsGiven:
+            return "No words were given to change."
+        case .wouldRemoveEntireTimeline_words:
+            return "Cutting those words would leave nothing behind."
+        case .invalidCameraStyle:
+            return "That camera style has values outside the allowed range."
         }
     }
 }
@@ -166,13 +213,17 @@ extension SessionEdit {
             edit.cameraOverlay = Self.upserting(updated, into: cameraOverlay)
         case .removeOverlayKeyframe(let t):
             let time = try Self.snapped(t)
-            guard cameraOverlay.contains(where: { $0.t == time }) else {
-                throw EditOperationError.noOverlayKeyframe(at: time)
-            }
+            // Nearest within a frame, rather than an exact float match. The agent works from
+            // a rounded digest, so it will ask to remove "84.5" for a keyframe stored at
+            // 84.5001 — and demanding exactness made those keyframes unremovable.
+            guard let target = cameraOverlay
+                .filter({ abs($0.t - time) <= Self.keyframeTolerance })
+                .min(by: { abs($0.t - time) < abs($1.t - time) })
+            else { throw EditOperationError.noOverlayKeyframe(at: time) }
             guard cameraOverlay.count > 1 else {
                 throw EditOperationError.wouldRemoveLastOverlayKeyframe
             }
-            edit.cameraOverlay = cameraOverlay.filter { $0.t != time }
+            edit.cameraOverlay = cameraOverlay.filter { $0.t != target.t }
         case .setLaneGain(let lane, let keyframe):
             guard keyframe.gain.isFinite, (0...1).contains(keyframe.gain) else {
                 throw EditOperationError.gainOutOfRange(keyframe.gain)
@@ -188,12 +239,37 @@ extension SessionEdit {
                 throw EditOperationError.offsetOutOfRange(seconds)
             }
             edit.audioLanes = try Self.updatingLane(lane, in: audioLanes) { $0.offset = seconds }
+
+        case .excludeWords(let words):
+            let usable = words.filter { $0.end > $0.start && $0.start.isFinite && $0.end.isFinite }
+            guard !usable.isEmpty else { throw EditOperationError.noWordsGiven }
+
+            let existing = Set(excludedWords.map(\.id))
+            edit.excludedWords = (excludedWords + usable.filter { !existing.contains($0.id) })
+                .sorted { $0.start < $1.start }
+            guard edit.effectiveClips.contains(where: { !$0.source.isEmpty }) else {
+                throw EditOperationError.wouldRemoveEntireTimeline_words
+            }
+
+        case .restoreWords(let ids):
+            guard !ids.isEmpty else { throw EditOperationError.noWordsGiven }
+            let wanted = Set(ids)
+            edit.excludedWords = excludedWords.filter { !wanted.contains($0.id) }
+
+        case .setCameraStyle(let style):
+            guard style.isValid else { throw EditOperationError.invalidCameraStyle }
+            edit.cameraStyle = style
         }
         return edit
     }
 
     /// A slip beyond this is a sign something is wrong rather than a sync nudge.
     static let maximumLaneOffset: TimeInterval = 5
+
+    /// One frame at 30fps. Overlay keyframes closer together than this are the same keyframe:
+    /// nothing needs two camera positions inside a single frame, and allowing it produced
+    /// pairs the agent could not address.
+    static let keyframeTolerance: TimeInterval = 1.0 / 30.0
 
     /// Snaps to `Timeline.timescale` so that a time authored by the UI, by an agent, or read
     /// back from `edit.json` all land on the same tick and compare equal.
@@ -249,8 +325,22 @@ extension SessionEdit {
         }
     }
 
+    /// Replaces any keyframe within a frame of the new one, rather than only an exact time
+    /// match. Two drags at almost the same playhead used to leave a near-duplicate pair that
+    /// rounded to the same displayed time and could not then be told apart.
+    ///
+    /// The existing keyframe's time is kept and only its contents updated, so that repeatedly
+    /// nudging the camera at roughly the same spot doesn't make the keyframe creep along the
+    /// timeline — and a time the agent was told about stays valid afterwards.
     private static func upserting(_ keyframe: OverlayKeyframe, into keyframes: [OverlayKeyframe]) -> [OverlayKeyframe] {
-        (keyframes.filter { $0.t != keyframe.t } + [keyframe]).sorted { $0.t < $1.t }
+        let nearby = keyframes.filter { abs($0.t - keyframe.t) <= Self.keyframeTolerance }
+        var updated = keyframe
+        if let earliest = nearby.map(\.t).min() {
+            updated.t = earliest
+        }
+
+        return (keyframes.filter { abs($0.t - keyframe.t) > Self.keyframeTolerance } + [updated])
+            .sorted { $0.t < $1.t }
     }
 
     private static func upserting(_ keyframe: GainKeyframe, into keyframes: [GainKeyframe]) -> [GainKeyframe] {

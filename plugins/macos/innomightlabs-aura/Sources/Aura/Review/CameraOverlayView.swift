@@ -15,6 +15,7 @@ struct CameraOverlayView: View {
     let renderSize: CGSize
     let cameraDisplaySize: CGSize
     let keyframe: OverlayKeyframe
+    let style: PiPStyle
     let onCommit: (NormalizedRect) -> Void
 
     @State private var dragOffset: CGSize = .zero
@@ -66,7 +67,10 @@ struct CameraOverlayView: View {
             width: base.width * resizeScale * videoRect.width,
             height: base.height * resizeScale * videoRect.height
         )
-        return PiPGeometry.fittedRect(displaySize: cameraDisplaySize, destination: destination)
+        let fitted = PiPGeometry.fittedRect(displaySize: cameraDisplaySize, destination: destination)
+        // A circle is drawn into a squared-off subrect, so the handles have to frame that
+        // rather than the requested rect.
+        return PiPMask.drawnRect(for: style, in: fitted)
     }
 
     private func moveGesture(videoRect: CGRect) -> some Gesture {

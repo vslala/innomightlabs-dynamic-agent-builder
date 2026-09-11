@@ -1,16 +1,81 @@
 import CoreMedia
 import Foundation
 
-/// Cosmetic PiP treatment. Carried here now and **ignored** by
-/// `LayerInstructionCompositionBuilder`, whose compositor supports only an affine transform,
-/// opacity, and an axis-aligned crop. When a custom compositor lands it reads these and
-/// nothing upstream — `edit.json`, `EditOperation`, the UI — has to change.
+/// How the camera picture-in-picture is drawn.
+///
+/// The built-in compositor supports only an affine transform, opacity, and an axis-aligned
+/// crop, so anything here beyond a plain rectangle requires `CoreImagePiPCompositor`. The
+/// style lives in the edit document, so `LayerInstructionCompositionBuilder` remains valid
+/// for the plain case and the expensive compositor is used only when it is actually needed.
 struct PiPStyle: Codable, Hashable, Sendable {
-    var cornerRadius: Double
-    var borderWidth: Double
-    var shadowOpacity: Double
+    enum Shape: String, Codable, Sendable, CaseIterable {
+        case rectangle
+        case rounded
+        case circle
+    }
 
-    static let plain = PiPStyle(cornerRadius: 0, borderWidth: 0, shadowOpacity: 0)
+    var shape: Shape
+    /// Fraction of the overlay's shorter side. Only used by `.rounded`.
+    var cornerRadius: Double
+    /// Fraction of the overlay's shorter side.
+    var borderWidth: Double
+    /// sRGB components, 0-1.
+    var borderColor: [Double]
+    var shadowOpacity: Double
+    /// Fraction of the overlay's shorter side.
+    var shadowRadius: Double
+
+    static let plain = PiPStyle(
+        shape: .rectangle,
+        cornerRadius: 0,
+        borderWidth: 0,
+        borderColor: [1, 1, 1],
+        shadowOpacity: 0,
+        shadowRadius: 0
+    )
+
+    /// Fractions must stay in range or the Core Image filters produce nothing visible.
+    var isValid: Bool {
+        [cornerRadius, borderWidth, shadowOpacity, shadowRadius].allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 1 }
+            && borderColor.count >= 3
+            && borderColor.allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 1 }
+    }
+
+    /// True when the built-in compositor can render this, which is the cheaper path.
+    var isPlainRectangle: Bool {
+        shape == .rectangle && borderWidth <= 0 && shadowOpacity <= 0
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case shape, cornerRadius, borderWidth, borderColor, shadowOpacity, shadowRadius
+    }
+
+    init(
+        shape: Shape,
+        cornerRadius: Double,
+        borderWidth: Double,
+        borderColor: [Double],
+        shadowOpacity: Double,
+        shadowRadius: Double
+    ) {
+        self.shape = shape
+        self.cornerRadius = cornerRadius
+        self.borderWidth = borderWidth
+        self.borderColor = borderColor
+        self.shadowOpacity = shadowOpacity
+        self.shadowRadius = shadowRadius
+    }
+
+    /// Tolerant, so a document written before any of this existed still loads.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        shape = try container.decodeIfPresent(Shape.self, forKey: .shape) ?? .rectangle
+        cornerRadius = try container.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? 0
+        borderWidth = try container.decodeIfPresent(Double.self, forKey: .borderWidth) ?? 0
+        borderColor = try container.decodeIfPresent([Double].self, forKey: .borderColor) ?? [1, 1, 1]
+        shadowOpacity = try container.decodeIfPresent(Double.self, forKey: .shadowOpacity) ?? 0
+        shadowRadius = try container.decodeIfPresent(Double.self, forKey: .shadowRadius) ?? 0
+    }
 }
 
 /// A step keyframe on the **composition** timeline. Holds until the next one.

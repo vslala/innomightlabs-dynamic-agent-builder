@@ -16,7 +16,10 @@ actor SessionTranscriber {
 
     private var pipeline: WhisperKit?
 
-    func transcribe(microphoneURL: URL) async throws -> Transcript {
+    /// - Parameter mediaDuration: the recording's length, used to discard the speech the
+    ///   model hallucinates over trailing silence. Without it a run of `[BLANK_AUDIO]` can
+    ///   land seconds past the end of the video and the agent will happily propose edits there.
+    func transcribe(microphoneURL: URL, mediaDuration: TimeInterval? = nil) async throws -> Transcript {
         let pipeline = try await pipeline()
 
         let results = try await pipeline.transcribe(
@@ -24,30 +27,30 @@ actor SessionTranscriber {
             decodeOptions: DecodingOptions(wordTimestamps: true)
         )
 
-        var segments: [Transcript.Segment] = []
-        for segment in results.flatMap(\.segments) {
-            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { continue }
-            segments.append(Transcript.Segment(
-                id: segments.count,
+        // Raw: `Transcript.normalized` does the cleaning, numbering, and clamping, so the
+        // rules live in one tested place rather than here and there.
+        let raw = results.flatMap(\.segments).map { segment in
+            Transcript.Segment(
+                id: 0,
                 start: TimeInterval(segment.start),
                 end: TimeInterval(segment.end),
-                text: text,
-                words: segment.words?.map {
+                text: segment.text,
+                words: (segment.words ?? []).map {
                     Transcript.Word(
+                        id: 0,
                         start: TimeInterval($0.start),
                         end: TimeInterval($0.end),
-                        text: $0.word.trimmingCharacters(in: .whitespaces)
+                        text: $0.word
                     )
                 }
-            ))
+            )
         }
 
         return Transcript(
             source: microphoneURL.lastPathComponent,
             engine: "whisperkit/openai_whisper-\(Self.model)",
             language: results.first?.language,
-            segments: segments.sorted { $0.start < $1.start }
+            segments: Transcript.normalized(segments: raw, mediaDuration: mediaDuration)
         )
     }
 

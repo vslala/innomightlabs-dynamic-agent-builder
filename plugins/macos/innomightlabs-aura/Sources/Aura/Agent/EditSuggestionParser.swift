@@ -50,17 +50,29 @@ enum EditSuggestionParser {
 
     static func parse(_ reply: String) -> EditSuggestionResult {
         guard let json = extractJSON(from: reply) else {
-            return EditSuggestionResult(reply: reply.trimmingCharacters(in: .whitespacesAndNewlines), suggestions: [])
+            return EditSuggestionResult(
+                reply: reply.trimmingCharacters(in: .whitespacesAndNewlines),
+                suggestions: [],
+                requests: []
+            )
         }
 
-        let boxes = decodeBoxes(json.payload)
-        let suggestions = boxes.compactMap { box -> EditSuggestion? in
-            guard let operation = try? JSONDecoder().decode(EditOperation.self, from: box.data) else { return nil }
+        var suggestions: [EditSuggestion] = []
+        var requests: [AgentRequest] = []
+
+        for box in decodeBoxes(json.payload) {
+            // Requests first: they share the `op` field but are not applicable edits.
+            if let object = try? JSONSerialization.jsonObject(with: box.data) as? [String: Any],
+               let request = AgentRequest.from(json: object) {
+                requests.append(request)
+                continue
+            }
+            guard let operation = try? JSONDecoder().decode(EditOperation.self, from: box.data) else { continue }
             let why = (try? JSONDecoder().decode(Rationale.self, from: box.data))?.why
-            return EditSuggestion(operation: operation, rationale: why?.isEmpty == false ? why : nil)
+            suggestions.append(EditSuggestion(operation: operation, rationale: why?.isEmpty == false ? why : nil))
         }
 
-        return EditSuggestionResult(reply: json.prose, suggestions: suggestions)
+        return EditSuggestionResult(reply: json.prose, suggestions: suggestions, requests: requests)
     }
 
     private static func decodeBoxes(_ data: Data) -> [JSONValueBox] {

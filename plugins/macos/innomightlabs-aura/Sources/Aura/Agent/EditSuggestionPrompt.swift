@@ -38,24 +38,47 @@ enum EditSuggestionPrompt {
 
         Reason only from the digest below. It describes this recording and no other.
 
-        All times are seconds on the recording's own timeline, matching `transcript` in the
-        digest — not the shortened timeline that results from cuts. `keptSpans` tells you what
-        currently survives; propose changes relative to that.
+        All times are seconds on the recording's own timeline, matching the digest — not the
+        shortened timeline that results from cuts. `keptSpans` tells you what currently
+        survives; propose changes relative to that.
 
-        Operations:
-        {"op":"remove_range","start":<s>,"end":<s>}   cut this span out
-        {"op":"split_clip","t":<s>}                   split without removing anything
+        DIGEST FORMAT
+        `outline` is phrase-level and covers the whole recording: {start, end, text}.
+        `words` is word-level detail for the range [detailFrom, detailTo], compactly keyed:
+            i = word id, s = start, e = end, t = text
+        `wordsOmitted`/`outlineCuesOmitted` count what did not fit — if the words you need are
+        outside [detailFrom, detailTo], ask for them with request_transcript.
+        `excludedWordIds` are words already cut; they can be brought back.
+        `cameraOverlay[].rect` is [x, y, width, height] normalized to the frame.
+
+        PREFER WORD IDS. Cutting by word id is exact; cutting by timestamp is not, and a
+        timestamp you compute yourself will usually be slightly wrong.
+
+        OPERATIONS
+        {"op":"exclude_words","words":[{"id":<i>,"start":<s>,"end":<e>,"text":"<t>"}]}
+              cut these words. Copy id/start/end/text from the digest verbatim — do not
+              recompute the times. Reversible.
+        {"op":"restore_words","ids":[<i>]}             bring cut words back
+        {"op":"remove_range","start":<s>,"end":<s>}    cut a whole span (coarse)
+        {"op":"split_clip","t":<s>}                    split without removing anything
         {"op":"set_overlay_keyframe","t":<s>,"rect":{"x":0-1,"y":0-1,"width":0-1,"height":0-1},"visible":<bool>}
-                                                      move/resize/hide the camera from t onwards
+              move/resize/hide the camera from t onwards
         {"op":"remove_overlay_keyframe","t":<s>}
         {"op":"set_lane_gain","lane":"microphone"|"system_audio","t":<s>,"gain":0-1}
         {"op":"set_lane_muted","lane":"microphone"|"system_audio","muted":<bool>}
         {"op":"set_lane_offset","lane":"microphone"|"system_audio","seconds":<-5..5>}
-                                                      nudge that lane's audio sync
+              nudge that lane's audio sync
+
+        REQUESTS (not edits — Aura answers these and you continue)
+        {"op":"request_transcript","from":<s>,"to":<s>}
+              get word detail for another range. Use this instead of guessing.
+        {"op":"exclude_filler_words","words":["um","uh"],"from":<s>,"to":<s>}
+              Aura finds every instance of those words in that range and proposes cutting
+              them, so you do not have to enumerate ids. Scope it with from/to — a whole
+              recording sweep usually removes something that mattered.
 
         Add a "why" string to every operation: the user sees it and decides whether to apply.
-        Only remove_range removes content. Never propose removing the whole recording.
-        In the digest, `cameraOverlay[].rect` is [x, y, width, height] normalized to the frame.
+        Never propose removing the whole recording.
 
         SESSION DIGEST (JSON):
         \(digest.compactJSON())

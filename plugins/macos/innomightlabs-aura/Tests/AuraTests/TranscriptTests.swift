@@ -8,7 +8,7 @@ final class TranscriptTests: XCTestCase {
             engine: "whisperkit/openai_whisper-base",
             language: "en",
             segments: spans.enumerated().map { index, span in
-                Transcript.Segment(id: index, start: span.0, end: span.1, text: "cue \(index)", words: nil)
+                Transcript.Segment(id: index, start: span.0, end: span.1, text: "cue \(index)", words: [])
             }
         )
     }
@@ -16,8 +16,8 @@ final class TranscriptTests: XCTestCase {
     func testRoundTripsThroughJSON() throws {
         var subject = transcript([(0, 2), (2, 5)])
         subject.segments[0].words = [
-            Transcript.Word(start: 0.1, end: 0.4, text: "Hello"),
-            Transcript.Word(start: 0.5, end: 0.9, text: "there")
+            Transcript.Word(id: 0, start: 0.1, end: 0.4, text: "Hello"),
+            Transcript.Word(id: 0, start: 0.5, end: 0.9, text: "there")
         ]
 
         let data = try JSONEncoder().encode(subject)
@@ -105,7 +105,7 @@ final class TranscriptTests: XCTestCase {
     func testCueSpanSurvivesAnEarlierCutShiftedEarlier() throws {
         let edit = try SessionEdit.initial(duration: 30)
             .applying(.removeRange(TimeSpan(start: 5, end: 10)))
-        let cue = Transcript.Segment(id: 0, start: 20, end: 22, text: "later", words: nil)
+        let cue = Transcript.Segment(id: 0, start: 20, end: 22, text: "later", words: [])
 
         let spans = edit.timeMap.compositionSpans(forSource: cue.span)
 
@@ -115,7 +115,7 @@ final class TranscriptTests: XCTestCase {
     func testCueInsideACutRangeMapsToNothing() throws {
         let edit = try SessionEdit.initial(duration: 30)
             .applying(.removeRange(TimeSpan(start: 5, end: 10)))
-        let cue = Transcript.Segment(id: 0, start: 6, end: 8, text: "removed", words: nil)
+        let cue = Transcript.Segment(id: 0, start: 6, end: 8, text: "removed", words: [])
 
         XCTAssertTrue(edit.timeMap.compositionSpans(forSource: cue.span).isEmpty)
     }
@@ -124,7 +124,7 @@ final class TranscriptTests: XCTestCase {
         // If the decoder read the raw track it started counting at the first real sample,
         // which is late by the leading empty edit.
         let offset = 0.184
-        let cue = Transcript.Segment(id: 0, start: 10, end: 12, text: "speech", words: nil)
+        let cue = Transcript.Segment(id: 0, start: 10, end: 12, text: "speech", words: [])
         let edit = SessionEdit.initial(duration: 30, micTimeOffset: offset)
 
         let shifted = TimeSpan(start: cue.start + edit.micTimeOffset, end: cue.end + edit.micTimeOffset)

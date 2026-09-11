@@ -58,10 +58,28 @@ struct NormalizedRect: Codable, Hashable, Sendable {
     }
 }
 
+/// A word removed from the video, kept rather than deleted so it can be brought back.
+///
+/// Carries its resolved span in **session time** as well as its id, which keeps `edit.json`
+/// self-contained: playback and export never need the transcript to know what was cut, while
+/// the id remains the handle the user or the agent uses to restore it. `text` is stored so the
+/// UI can show what was removed, and so the document reads intelligibly on its own.
+struct ExcludedWord: Codable, Hashable, Sendable, Identifiable {
+    var id: Int
+    var start: TimeInterval
+    var end: TimeInterval
+    var text: String
+
+    var span: TimeSpan { TimeSpan(start: start, end: end) }
+}
+
 /// Where the camera sits at a point in time. Keyframes are step-interpolated: a keyframe
 /// holds until the next one, which is what lets the camera be hidden for one stretch of the
 /// recording and visible for another.
 struct OverlayKeyframe: Codable, Hashable, Sendable {
+    /// `t` is the identity. Keyframes are kept at least one frame apart (see
+    /// `EditOperation.keyframeTolerance`), so no two can round to the same displayed time —
+    /// which is what previously made a pair at 84.5 and 84.5001 impossible to address.
     var t: TimeInterval
     var rect: NormalizedRect
     var visible: Bool
@@ -130,6 +148,50 @@ struct SessionEdit: Codable, Equatable, Sendable {
     var clips: [TimelineClip]
     var cameraOverlay: [OverlayKeyframe]
     var audioLanes: [AudioLaneSettings]
+    /// How the camera overlay is drawn. Beyond a plain rectangle this selects the Core Image
+    /// compositor, so it lives in the document rather than being a view-level preference.
+    var cameraStyle: PiPStyle
+
+    /// Words cut from the video, reversibly. Separate from `clips` so a word-level edit can be
+    /// undone individually and out of order — restoring one word months later shouldn't mean
+    /// unwinding every edit made after it.
+    var excludedWords: [ExcludedWord]
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, micTimeOffset, clips, cameraOverlay, audioLanes, excludedWords, cameraStyle
+    }
+
+    init(
+        schemaVersion: Int,
+        micTimeOffset: TimeInterval,
+        clips: [TimelineClip],
+        cameraOverlay: [OverlayKeyframe],
+        audioLanes: [AudioLaneSettings],
+        excludedWords: [ExcludedWord],
+        cameraStyle: PiPStyle = .plain
+    ) {
+        self.cameraStyle = cameraStyle
+        self.schemaVersion = schemaVersion
+        self.micTimeOffset = micTimeOffset
+        self.clips = clips
+        self.cameraOverlay = cameraOverlay
+        self.audioLanes = audioLanes
+        self.excludedWords = excludedWords
+    }
+
+    /// Hand-written so that a document saved before word exclusions existed still loads.
+    /// Swift's synthesized decoder requires every non-optional key regardless of defaults, so
+    /// relying on it here would have thrown away a user's existing edits on upgrade.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        micTimeOffset = try container.decodeIfPresent(TimeInterval.self, forKey: .micTimeOffset) ?? 0
+        clips = try container.decode([TimelineClip].self, forKey: .clips)
+        cameraOverlay = try container.decode([OverlayKeyframe].self, forKey: .cameraOverlay)
+        audioLanes = try container.decode([AudioLaneSettings].self, forKey: .audioLanes)
+        excludedWords = try container.decodeIfPresent([ExcludedWord].self, forKey: .excludedWords) ?? []
+        cameraStyle = try container.decodeIfPresent(PiPStyle.self, forKey: .cameraStyle) ?? .plain
+    }
 
     /// A fresh document for an unedited recording: one clip spanning the whole thing, the
     /// camera parked in a corner, both lanes at unity gain.
@@ -144,11 +206,51 @@ struct SessionEdit: Codable, Equatable, Sendable {
             micTimeOffset: micTimeOffset,
             clips: [TimelineClip(source: TimeSpan(start: 0, end: max(0, duration)))],
             cameraOverlay: [OverlayKeyframe(t: 0, rect: cameraRect, visible: cameraVisible)],
-            audioLanes: AudioLane.allCases.map { AudioLaneSettings(lane: $0) }
+            audioLanes: AudioLane.allCases.map { AudioLaneSettings(lane: $0) },
+            excludedWords: []
         )
     }
 
-    var timeMap: TimeMap { TimeMap(clips: clips) }
+    /// What actually plays: the coarse clip list with every excluded word subtracted.
+    ///
+    /// Two independent layers rather than one, because they are edited differently — clips by
+    /// dragging and cutting ranges, words by name — and collapsing them would make word
+    /// removal destructive.
+    var effectiveClips: [TimelineClip] {
+        guard !excludedWords.isEmpty else { return clips }
+
+        var result = clips
+        for word in excludedWords.sorted(by: { $0.start < $1.start }) where !word.span.isEmpty {
+            result = Self.subtracting(word.span, from: result)
+        }
+        return result
+    }
+
+    var timeMap: TimeMap { TimeMap(clips: effectiveClips) }
+
+    func isExcluded(wordID: Int) -> Bool {
+        excludedWords.contains { $0.id == wordID }
+    }
+
+    /// Lenient span subtraction, for composing word exclusions. Unlike the `removeRange`
+    /// operation this never rejects: a word outside the surviving clips simply removes
+    /// nothing, which is the right behaviour when a coarse cut already covered it.
+    static func subtracting(_ span: TimeSpan, from clips: [TimelineClip]) -> [TimelineClip] {
+        clips.flatMap { clip -> [TimelineClip] in
+            let source = clip.source
+            guard span.start < source.end, span.end > source.start else { return [clip] }
+
+            var pieces: [TimelineClip] = []
+            if span.start > source.start {
+                pieces.append(TimelineClip(id: clip.id, source: TimeSpan(start: source.start, end: span.start)))
+            }
+            if span.end < source.end {
+                let id = pieces.isEmpty ? clip.id : UUID()
+                pieces.append(TimelineClip(id: id, source: TimeSpan(start: span.end, end: source.end)))
+            }
+            return pieces
+        }
+    }
 
     /// Total played duration, which is the sum of the clips rather than the recording length
     /// once anything has been cut.

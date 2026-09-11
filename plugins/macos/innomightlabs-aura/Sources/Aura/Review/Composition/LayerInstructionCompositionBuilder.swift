@@ -39,11 +39,21 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         }
 
         let renderSize = PiPGeometry.renderSize(timeline.renderSize, maxDimension: maxRenderDimension)
-        let videoComposition = makeVideoComposition(
-            timeline: timeline,
-            renderSize: renderSize,
-            layers: [overlay, base].compactMap { $0 } // front-to-back: the PiP goes on top
-        )
+        // The built-in compositor cannot draw a shape, border, or shadow, so anything beyond a
+        // plain rectangle routes to the Core Image compositor. The cheap path is kept for the
+        // common case because it is markedly faster.
+        let videoComposition = timeline.style.isPlainRectangle
+            ? makeVideoComposition(
+                timeline: timeline,
+                renderSize: renderSize,
+                layers: [overlay, base].compactMap { $0 } // front-to-back: the PiP goes on top
+            )
+            : makeStyledVideoComposition(
+                timeline: timeline,
+                renderSize: renderSize,
+                base: base,
+                overlay: overlay
+            )
         let audioMix = makeAudioMix(lanes: audio)
 
         // A snapshot, so nothing that happens to the mutable composition afterwards can
@@ -51,7 +61,11 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         let snapshot = composition.copy() as? AVComposition ?? composition
 
         #if DEBUG
-        await Self.assertValid(videoComposition, snapshot: snapshot, duration: composition.duration)
+        // Only the built-in path can be validated: `isValid(for:…)` inspects layer
+        // instructions, which a custom compositor's instructions deliberately don't have.
+        if timeline.style.isPlainRectangle {
+            await Self.assertValid(videoComposition, snapshot: snapshot, duration: composition.duration)
+        }
         #endif
 
         return BuiltComposition(
@@ -221,6 +235,46 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
                     layers: layers,
                     timeline: timeline,
                     renderSize: renderSize
+                )
+            }
+
+        return videoComposition.copy() as? AVVideoComposition ?? videoComposition
+    }
+
+    /// The Core Image path. Same instruction tiling, but each instruction carries the overlay
+    /// rect and style for the compositor to draw rather than a transform for AVFoundation to
+    /// apply.
+    private func makeStyledVideoComposition(
+        timeline: ResolvedTimeline,
+        renderSize: CGSize,
+        base: InsertedVideoLayer?,
+        overlay: InsertedVideoLayer?
+    ) -> AVVideoComposition? {
+        guard let base, timeline.duration > .zero else { return nil }
+
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.renderSize = renderSize
+        videoComposition.frameDuration = timeline.frameDuration
+        videoComposition.customVideoCompositorClass = CoreImagePiPCompositor.self
+
+        let layers = [overlay, base].compactMap { $0 }
+        videoComposition.instructions = Self.boundaries(timeline: timeline, layers: layers)
+            .adjacentPairs()
+            .compactMap { start, end -> AVVideoCompositionInstructionProtocol? in
+                let timeRange = CMTimeRange(start: start, end: end)
+                guard timeRange.duration > .zero else { return nil }
+
+                let hasOverlay = overlay?.covers(timeRange) ?? false
+                let state = overlay.map { Self.state(of: $0.layer, at: start) }
+
+                return PiPCompositionInstruction(
+                    timeRange: timeRange,
+                    baseTrackID: base.trackID,
+                    overlayTrackID: hasOverlay ? overlay?.trackID : nil,
+                    overlayRect: (state?.rect ?? .defaultCameraOverlay).scaled(to: renderSize),
+                    overlayOpacity: (state?.visible ?? false) ? 1 : 0,
+                    renderSize: renderSize,
+                    style: timeline.style
                 )
             }
 

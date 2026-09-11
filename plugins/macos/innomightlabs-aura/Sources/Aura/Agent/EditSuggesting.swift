@@ -21,6 +21,15 @@ struct EditSuggestionResult: Equatable, Sendable {
     /// What the agent said, for the cases where it declined or asked a question.
     let reply: String
     let suggestions: [EditSuggestion]
+    /// Things the agent asked Aura for rather than proposed. Answered locally and, where it
+    /// needs another turn, followed up automatically.
+    let requests: [AgentRequest]
+
+    init(reply: String, suggestions: [EditSuggestion], requests: [AgentRequest] = []) {
+        self.reply = reply
+        self.suggestions = suggestions
+        self.requests = requests
+    }
 }
 
 /// The seam the review window talks to. `InnomightLabsEditSuggester` is the real
@@ -41,6 +50,8 @@ struct EditSuggestionContext: Equatable, Sendable {
     let markers: [(time: TimeInterval, label: String)]
     /// The compact session digest the agent reasons from.
     let digest: SessionDigest?
+    /// Set when this turn is Aura answering the agent's own `request_transcript`.
+    var fulfilling: TimeSpan? = nil
 
     /// One durable conversation per recording. Deterministic from the session id, so it
     /// survives app restarts without anything being persisted.
