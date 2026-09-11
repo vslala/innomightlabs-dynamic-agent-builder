@@ -1,16 +1,20 @@
 import Foundation
 
-/// Asks the InnomightLabs agent for edit suggestions over the Agent2Agent endpoint.
+/// Talks to the InnomightLabs agent over the Agent2Agent protocol.
 ///
-/// A2A rather than the widget endpoints because it is the only surface that authenticates
-/// with the API key alone — the widget path additionally needs a visitor token obtained
-/// through a browser redirect, which is a poor fit for a desktop app. It requires
-/// Agent2Agent sharing to be enabled on the agent.
+/// A2A rather than the widget endpoints for two reasons. It authenticates with the agent API
+/// key alone (`Authorization: Bearer pk_live_…`), where the widget conversation endpoints want
+/// a visitor token obtained through a browser redirect. And `contextId` is a first-class
+/// conversation key, so one recording maps to one durable conversation — the widget path
+/// derives its conversation from WordPress-shaped `site_url`/`post_id` fields, which works but
+/// couples Aura to a contract that has nothing to do with it.
 ///
-/// The reply is located defensively: A2A returns a task whose text can sit in the status
-/// message, the history, or an artifact depending on how the agent answered, so rather than
-/// assuming one shape this collects every text part it can find.
+/// Verified against the live agent: same `contextId` continues a conversation, and the reply
+/// arrives at `result.task.status.message.parts[].text`.
 struct InnomightLabsEditSuggester: EditSuggesting {
+    /// The server rejects a message whose parts exceed this in total.
+    static let maximumMessageCharacters = 32_000
+
     private let session: URLSession
 
     init(session: URLSession = .shared) {
@@ -21,21 +25,19 @@ struct InnomightLabsEditSuggester: EditSuggesting {
         let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw EditSuggestionError.emptyInstruction }
 
-        guard
-            AgentSettings.isConfigured,
-            let agentID = AgentSettings.agentID,
-            let apiKey = AgentSettings.apiKey,
-            let url = URL(string: AgentSettings.baseURL)?
-                .appendingPathComponent("a2a/agents/\(agentID)/message:send")
-        else { throw EditSuggestionError.notConfigured }
+        let configuration = try AgentSettings.resolved()
+        let prompt = EditSuggestionPrompt.build(
+            instruction: trimmed,
+            context: context,
+            characterBudget: Self.maximumMessageCharacters
+        )
 
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: configuration.messageEndpoint)
         request.httpMethod = "POST"
-        request.timeoutInterval = 120
+        request.timeoutInterval = 180
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try body(instruction: trimmed, context: context)
+        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try Self.rpcBody(prompt: prompt, contextID: context.conversationKey)
 
         let data: Data
         let response: URLResponse
@@ -49,23 +51,93 @@ struct InnomightLabsEditSuggester: EditSuggesting {
             throw EditSuggestionError.server(status: http.statusCode, detail: Self.detail(in: data))
         }
 
-        guard let reply = Self.textParts(in: data).first(where: { !$0.isEmpty }) else {
-            throw EditSuggestionError.unreadableReply
-        }
-        return EditSuggestionParser.parse(reply)
+        return EditSuggestionParser.parse(try Self.reply(in: data))
     }
 
-    private func body(instruction: String, context: EditSuggestionContext) throws -> Data {
-        // A2A carries text parts only, so the whole briefing goes in one message.
+    static func rpcBody(prompt: String, contextID: String) throws -> Data {
+        // JSON-RPC 2.0. Note the method names are PascalCase (`SendMessage`) rather than the
+        // A2A spec's `message/send`, and the role is the enum value `ROLE_USER`.
         let payload: [String: Any] = [
-            "message": [
-                "messageId": UUID().uuidString,
-                "role": "user",
-                "parts": [["kind": "text", "text": EditSuggestionPrompt.build(instruction: instruction, context: context)]]
-            ],
-            "configuration": ["acceptedOutputModes": ["text/plain"]]
+            "jsonrpc": "2.0",
+            "id": UUID().uuidString,
+            "method": "SendMessage",
+            "params": [
+                "message": [
+                    "messageId": UUID().uuidString,
+                    "role": "ROLE_USER",
+                    "parts": [["kind": "text", "text": prompt]],
+                    "contextId": contextID
+                ],
+                "configuration": ["acceptedOutputModes": ["text/plain"]]
+            ]
         ]
         return try JSONSerialization.data(withJSONObject: payload)
+    }
+
+    // MARK: - Response
+
+    private struct RPCEnvelope: Decodable {
+        struct Failure: Decodable {
+            let code: Int
+            let message: String
+        }
+
+        struct Result: Decodable {
+            let task: Task
+        }
+
+        struct Task: Decodable {
+            let contextId: String?
+            let status: Status
+        }
+
+        struct Status: Decodable {
+            let state: String
+            let message: Message?
+        }
+
+        struct Message: Decodable {
+            let parts: [Part]
+        }
+
+        struct Part: Decodable {
+            let text: String?
+        }
+
+        let result: Result?
+        let error: Failure?
+    }
+
+    /// The agent's text, or a thrown error explaining why there isn't any.
+    static func reply(in data: Data) throws -> String {
+        let envelope = try? JSONDecoder().decode(RPCEnvelope.self, from: data)
+
+        // JSON-RPC reports failures in the body with HTTP 200, so this is the real error path.
+        if let failure = envelope?.error {
+            throw EditSuggestionError.server(status: failure.code, detail: failure.message)
+        }
+
+        if let task = envelope?.result?.task {
+            let text = (task.status.message?.parts ?? [])
+                .compactMap(\.text)
+                .joined()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if !text.isEmpty { return text }
+            guard task.status.state == "TASK_STATE_COMPLETED" else {
+                throw EditSuggestionError.server(
+                    status: 0,
+                    detail: "The agent finished in state \(task.status.state) without a reply."
+                )
+            }
+        }
+
+        // Fall back to scavenging any text part, so an unexpected task shape still yields
+        // something rather than nothing.
+        if let scavenged = textParts(in: data).first {
+            return scavenged
+        }
+        throw EditSuggestionError.unreadableReply
     }
 
     /// FastAPI reports errors as `{"detail": "..."}` or `{"detail": [{"msg": "..."}]}`.
@@ -75,20 +147,21 @@ struct InnomightLabsEditSuggester: EditSuggesting {
         if let items = object["detail"] as? [[String: Any]] {
             return items.compactMap { $0["msg"] as? String }.joined(separator: "; ")
         }
+        if let error = object["error"] as? [String: Any], let message = error["message"] as? String {
+            return message
+        }
         return ""
     }
 
-    /// Every `{"kind":"text","text":…}` in the response, deepest-last, so the agent's answer
-    /// is found wherever the task put it. Longest first: the substantive reply is the long one.
+    /// Every text part anywhere in the payload, longest first — the substantive reply is the
+    /// long one. Used only as a fallback when the task shape isn't what we expect.
     static func textParts(in data: Data) -> [String] {
         guard let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
 
         var found: [String] = []
         func walk(_ value: Any) {
             if let dictionary = value as? [String: Any] {
-                if dictionary["kind"] as? String == "text", let text = dictionary["text"] as? String {
-                    found.append(text)
-                }
+                if let text = dictionary["text"] as? String { found.append(text) }
                 dictionary.values.forEach(walk)
             } else if let array = value as? [Any] {
                 array.forEach(walk)

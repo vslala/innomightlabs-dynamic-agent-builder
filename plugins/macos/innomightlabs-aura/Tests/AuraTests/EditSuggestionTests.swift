@@ -2,100 +2,6 @@ import XCTest
 @testable import Aura
 
 final class EditSuggestionTests: XCTestCase {
-    private func context(
-        transcript: Transcript? = nil,
-        document: SessionEdit = .initial(duration: 60),
-        markers: [(time: TimeInterval, label: String)] = []
-    ) -> EditSuggestionContext {
-        EditSuggestionContext(
-            sessionID: "20260101-120000-aaaa",
-            duration: 60,
-            transcript: transcript,
-            document: document,
-            markers: markers
-        )
-    }
-
-    private func transcript(_ cues: [(TimeInterval, TimeInterval, String)]) -> Transcript {
-        Transcript(
-            source: "microphone.m4a",
-            engine: "test",
-            language: "en",
-            segments: cues.enumerated().map { index, cue in
-                Transcript.Segment(id: index, start: cue.0, end: cue.1, text: cue.2, words: nil)
-            }
-        )
-    }
-
-    // MARK: - Prompt
-
-    func testPromptDeclaresEveryOperationTheParserAccepts() {
-        let prompt = EditSuggestionPrompt.build(instruction: "tidy this up", context: context())
-
-        for op in ["remove_range", "split_clip", "set_overlay_keyframe", "remove_overlay_keyframe",
-                   "set_lane_gain", "set_lane_muted", "set_lane_offset"] {
-            XCTAssertTrue(prompt.contains(op), "the agent isn't told about \(op)")
-        }
-    }
-
-    func testPromptIncludesTheInstructionAndTheDuration() {
-        let prompt = EditSuggestionPrompt.build(instruction: "cut the stumble", context: context())
-
-        XCTAssertTrue(prompt.contains("cut the stumble"))
-        XCTAssertTrue(prompt.contains("60.00s"))
-    }
-
-    func testPromptDescribesTheCurrentEditNotJustTheRecording() throws {
-        // Otherwise the agent proposes edits against content that is no longer there.
-        let document = try SessionEdit.initial(duration: 60)
-            .applying(.removeRange(TimeSpan(start: 10, end: 20)))
-            .applying(.setLaneMuted(lane: .systemAudio, muted: true))
-
-        let prompt = EditSuggestionPrompt.build(instruction: "what next", context: context(document: document))
-
-        XCTAssertTrue(prompt.contains("0.00-10.00"))
-        XCTAssertTrue(prompt.contains("20.00-60.00"))
-        XCTAssertTrue(prompt.contains("system_audio: muted"))
-    }
-
-    func testTranscriptTimesAreShiftedIntoRecordingTime() {
-        // The transcript is stamped in the microphone file's clock; operations are in
-        // recording time. Handing over the unshifted numbers would make every AI cut land
-        // slightly wrong.
-        let document = SessionEdit.initial(duration: 60, micTimeOffset: 0.5)
-        let prompt = EditSuggestionPrompt.build(
-            instruction: "cut the first bit",
-            context: context(transcript: transcript([(10, 12, "hello there")]), document: document)
-        )
-
-        XCTAssertTrue(prompt.contains("10.50-12.50 hello there"), "expected mic offset applied")
-        XCTAssertFalse(prompt.contains("10.00-12.00 hello there"))
-    }
-
-    func testPromptSaysWhenThereIsNoTranscript() {
-        let prompt = EditSuggestionPrompt.build(instruction: "help", context: context())
-        XCTAssertTrue(prompt.contains("Transcript: not available"))
-    }
-
-    func testPromptIncludesMarkers() {
-        let prompt = EditSuggestionPrompt.build(
-            instruction: "cut what I flagged",
-            context: context(markers: [(time: 42, label: "mistake")])
-        )
-        XCTAssertTrue(prompt.contains("42.00: mistake"))
-    }
-
-    func testVeryLongTranscriptIsTruncatedAndSaysSo() {
-        let cues = (0..<600).map { (Double($0), Double($0) + 0.5, "cue \($0)") }
-        let prompt = EditSuggestionPrompt.build(
-            instruction: "summarise",
-            context: context(transcript: transcript(cues))
-        )
-
-        XCTAssertTrue(prompt.contains("further cues omitted"))
-        XCTAssertFalse(prompt.contains("cue 599"))
-    }
-
     // MARK: - Parsing
 
     func testParsesFencedJSONAndKeepsTheProse() {
@@ -214,6 +120,63 @@ final class EditSuggestionTests: XCTestCase {
         XCTAssertNil(EditSuggestionParser.parse(reply).suggestions.first?.rationale)
     }
 
+    /// Verbatim output from the live InnomightLabs agent, kept as a fixture so a change to
+    /// the parser can't quietly stop understanding what the real agent actually sends.
+    func testParsesVerbatimReplyFromTheLiveAgent() {
+        let reply = """
+        I’d cut the opening false start and hide the camera during the terminal section.
+
+        ```json
+        [
+          {
+            "op": "remove_range",
+            "start": 0.0,
+            "end": 6.3,
+            "why": "Removes the stumbled false start and begins on the clean intro."
+          },
+          {
+            "op": "set_overlay_keyframe",
+            "t": 10.0,
+            "rect": { "x": 0.72, "y": 0.70, "width": 0.25, "height": 0.25 },
+            "visible": false,
+            "why": "Hide camera while the terminal is being shown."
+          },
+          {
+            "op": "set_overlay_keyframe",
+            "t": 14.5,
+            "rect": { "x": 0.72, "y": 0.70, "width": 0.25, "height": 0.25 },
+            "visible": true,
+            "why": "Restore camera after the terminal segment."
+          }
+        ]
+        ```
+        """
+
+        let result = EditSuggestionParser.parse(reply)
+
+        XCTAssertEqual(result.suggestions.count, 3)
+        XCTAssertEqual(result.suggestions[0].operation, .removeRange(TimeSpan(start: 0, end: 6.3)))
+        XCTAssertEqual(
+            result.suggestions[1].operation,
+            .setOverlayKeyframe(OverlayKeyframe(
+                t: 10,
+                rect: NormalizedRect(x: 0.72, y: 0.70, width: 0.25, height: 0.25),
+                visible: false
+            ))
+        )
+        XCTAssertEqual(result.suggestions[2].rationale, "Restore camera after the terminal segment.")
+        XCTAssertEqual(result.reply, "I’d cut the opening false start and hide the camera during the terminal section.")
+
+        // And every one of them must be applicable to a real document.
+        var document = SessionEdit.initial(duration: 54.23)
+        for suggestion in result.suggestions {
+            document = (try? document.applying(suggestion.operation)) ?? document
+        }
+        XCTAssertEqual(document.duration, 54.23 - 6.3, accuracy: 0.01)
+        XCTAssertEqual(document.overlay(at: 12)?.visible, false)
+        XCTAssertEqual(document.overlay(at: 20)?.visible, true)
+    }
+
     // MARK: - Server error shapes
 
     func testFastAPIStringDetailIsSurfaced() {
@@ -231,29 +194,89 @@ final class EditSuggestionTests: XCTestCase {
         XCTAssertEqual(InnomightLabsEditSuggester.detail(in: data), "field required; bad id")
     }
 
-    // MARK: - Finding the reply in an A2A task
+    // MARK: - The A2A envelope
+    //
+    // Shapes below are copied from real responses from the live agent.
 
-    func testTextPartsAreFoundWhereverTheTaskPutThem() {
+    func testReadsTheReplyFromARealA2AEnvelope() throws {
         let data = Data("""
-        {"id":"t1","status":{"state":"completed","message":{"parts":[{"kind":"text","text":"short"}]}},
-         "artifacts":[{"parts":[{"kind":"text","text":"the substantive reply with operations"}]}]}
+        {"jsonrpc":"2.0","id":"1","result":{"task":{"id":"b97e4f32","contextId":"aura-A",
+         "status":{"state":"TASK_STATE_COMPLETED","message":{"messageId":"ef7337a0","role":"ROLE_AGENT",
+         "parts":[{"text":"Here are the proposed edits."}]}},
+         "history":[{"messageId":"2da9bcb0","role":"ROLE_USER","parts":[{"text":"the prompt"}],"contextId":"aura-A"}]}}}
         """.utf8)
 
-        let parts = InnomightLabsEditSuggester.textParts(in: data)
-
-        // Longest first, since the substantive answer is the long one.
-        XCTAssertEqual(parts.first, "the substantive reply with operations")
-        XCTAssertTrue(parts.contains("short"))
+        // The prompt appears in `history` and is longer, so a naive scavenge would pick it up
+        // instead of the answer — the decoder has to read the status message specifically.
+        XCTAssertEqual(try InnomightLabsEditSuggester.reply(in: data), "Here are the proposed edits.")
     }
 
-    func testNonTextPartsAreIgnored() {
-        let data = Data(#"{"artifacts":[{"parts":[{"kind":"file","uri":"x"}]}]}"#.utf8)
+    func testJSONRPCErrorIsSurfacedEvenThoughItArrivesWithHTTP200() {
+        let data = Data(#"{"jsonrpc":"2.0","id":"1","error":{"code":-32601,"message":"Unsupported A2A method: message/send"}}"#.utf8)
 
-        XCTAssertTrue(InnomightLabsEditSuggester.textParts(in: data).isEmpty)
+        XCTAssertThrowsError(try InnomightLabsEditSuggester.reply(in: data)) { error in
+            XCTAssertEqual(
+                error as? EditSuggestionError,
+                .server(status: -32601, detail: "Unsupported A2A method: message/send")
+            )
+        }
     }
 
-    func testGarbageResponseYieldsNoTextParts() {
-        XCTAssertTrue(InnomightLabsEditSuggester.textParts(in: Data("not json".utf8)).isEmpty)
+    func testValidationErrorIsSurfaced() {
+        let data = Data(#"{"jsonrpc":"2.0","id":"1","error":{"code":-32602,"message":"1 validation error for A2AMessageSendRequest"}}"#.utf8)
+
+        XCTAssertThrowsError(try InnomightLabsEditSuggester.reply(in: data)) { error in
+            guard case .server(let status, _)? = error as? EditSuggestionError else {
+                return XCTFail("expected a server error")
+            }
+            XCTAssertEqual(status, -32602)
+        }
+    }
+
+    func testFailedTaskWithoutAReplyIsAnError() {
+        let data = Data(#"{"jsonrpc":"2.0","result":{"task":{"status":{"state":"TASK_STATE_FAILED"}}}}"#.utf8)
+
+        XCTAssertThrowsError(try InnomightLabsEditSuggester.reply(in: data)) { error in
+            guard case .server(_, let detail)? = error as? EditSuggestionError else {
+                return XCTFail("expected a server error")
+            }
+            XCTAssertTrue(detail.contains("TASK_STATE_FAILED"))
+        }
+    }
+
+    func testUnexpectedShapeFallsBackToScavengingText() throws {
+        // Defensive: if the task shape ever changes, a reply is better than an error.
+        let data = Data(#"{"result":{"something":{"parts":[{"text":"a reply in an unexpected place"}]}}}"#.utf8)
+
+        XCTAssertEqual(try InnomightLabsEditSuggester.reply(in: data), "a reply in an unexpected place")
+    }
+
+    func testGarbageResponseThrows() {
+        XCTAssertThrowsError(try InnomightLabsEditSuggester.reply(in: Data("not json".utf8))) { error in
+            XCTAssertEqual(error as? EditSuggestionError, .unreadableReply)
+        }
+    }
+
+    // MARK: - The request
+
+    func testRequestBodyMatchesWhatTheServerAccepts() throws {
+        // Pinned because the server rejects anything else: PascalCase method names rather than
+        // the A2A spec's `message/send`, and `ROLE_USER` rather than `user`.
+        let data = try InnomightLabsEditSuggester.rpcBody(prompt: "do the thing", contextID: "aura-session-x")
+        let body = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(body["jsonrpc"] as? String, "2.0")
+        XCTAssertEqual(body["method"] as? String, "SendMessage")
+
+        let params = try XCTUnwrap(body["params"] as? [String: Any])
+        let message = try XCTUnwrap(params["message"] as? [String: Any])
+        XCTAssertEqual(message["role"] as? String, "ROLE_USER")
+        XCTAssertEqual(message["contextId"] as? String, "aura-session-x")
+
+        let parts = try XCTUnwrap(message["parts"] as? [[String: Any]])
+        XCTAssertEqual(parts.count, 1)
+        XCTAssertEqual(parts[0]["kind"] as? String, "text")
+        XCTAssertEqual(parts[0]["text"] as? String, "do the thing")
     }
 
     // MARK: - Summaries shown in the suggestion list

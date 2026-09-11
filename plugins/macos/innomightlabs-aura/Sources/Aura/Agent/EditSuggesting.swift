@@ -30,13 +30,21 @@ protocol EditSuggesting: Sendable {
 }
 
 /// Everything the agent needs to reason about the recording, gathered by the caller so the
-/// suggester stays a pure transport.
+/// suggester stays a pure transport. `markers` and `transcript` are retained alongside the
+/// digest because the digest is a lossy, budget-trimmed view and callers sometimes need the
+/// full thing.
 struct EditSuggestionContext: Equatable, Sendable {
     let sessionID: String
     let duration: TimeInterval
     let transcript: Transcript?
     let document: SessionEdit
     let markers: [(time: TimeInterval, label: String)]
+    /// The compact session digest the agent reasons from.
+    let digest: SessionDigest?
+
+    /// One durable conversation per recording. Deterministic from the session id, so it
+    /// survives app restarts without anything being persisted.
+    var conversationKey: String { "aura-session-\(sessionID)" }
 
     static func == (lhs: EditSuggestionContext, rhs: EditSuggestionContext) -> Bool {
         lhs.sessionID == rhs.sessionID
@@ -44,6 +52,7 @@ struct EditSuggestionContext: Equatable, Sendable {
             && lhs.transcript == rhs.transcript
             && lhs.document == rhs.document
             && lhs.markers.map(\.time) == rhs.markers.map(\.time)
+            && lhs.digest == rhs.digest
     }
 }
 

@@ -33,13 +33,39 @@ enum AgentSettings {
         }
     }
 
-    static var isConfigured: Bool {
+    /// Environment overrides, for scripts and tests. The app itself relies on the Keychain,
+    /// because a GUI app launched from Finder or via `open` inherits no shell environment.
+    private static func environment(_ name: String) -> String? {
+        guard let value = ProcessInfo.processInfo.environment[name], !value.isEmpty else { return nil }
+        return value
+    }
+
+    static var resolvedBaseURL: String { environment("AURA_AGENT_BASE_URL") ?? baseURL }
+    static var resolvedAgentID: String? { environment("AURA_AGENT_ID") ?? agentID }
+    static var resolvedAPIKey: String? { environment("AURA_AGENT_API_KEY") ?? apiKey }
+
+    static var isConfigured: Bool { (try? resolved()) != nil }
+
+    /// Everything a request needs, validated once so callers don't each re-check.
+    struct Resolved {
+        let baseURL: URL
+        let agentID: String
+        let apiKey: String
+
+        /// A2A JSON-RPC endpoint for this agent.
+        var messageEndpoint: URL { baseURL.appendingPathComponent("a2a/agents/\(agentID)") }
+        var cardEndpoint: URL { baseURL.appendingPathComponent("a2a/agents/\(agentID)/card") }
+        var widgetConfigEndpoint: URL { baseURL.appendingPathComponent("widget/config") }
+    }
+
+    static func resolved() throws -> Resolved {
         guard
-            let agentID, !agentID.isEmpty,
-            let apiKey, !apiKey.isEmpty,
-            URL(string: baseURL) != nil
-        else { return false }
-        return true
+            let baseURL = URL(string: resolvedBaseURL), baseURL.scheme != nil,
+            let agentID = resolvedAgentID, !agentID.isEmpty,
+            let apiKey = resolvedAPIKey, !apiKey.isEmpty
+        else { throw EditSuggestionError.notConfigured }
+
+        return Resolved(baseURL: baseURL, agentID: agentID, apiKey: apiKey)
     }
 }
 

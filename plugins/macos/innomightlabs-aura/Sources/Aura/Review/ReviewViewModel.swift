@@ -25,8 +25,15 @@ final class ReviewViewModel: ObservableObject {
     enum AgentState: Equatable {
         case idle
         case thinking
-        case replied(String)
         case failed(String)
+    }
+
+    struct AgentTurn: Identifiable, Equatable {
+        enum Speaker { case user, agent }
+
+        let id = UUID()
+        let speaker: Speaker
+        let text: String
     }
 
     enum ExportState: Equatable {
@@ -58,6 +65,9 @@ final class ReviewViewModel: ObservableObject {
     @Published private(set) var agentState: AgentState = .idle
     /// Proposed edits, never applied until accepted.
     @Published private(set) var suggestions: [EditSuggestion] = []
+    /// The conversation for this recording. One conversation per video, so the user can keep
+    /// talking as they edit instead of restating context every time.
+    @Published private(set) var conversation: [AgentTurn] = []
 
     let folder: SessionFolder
     /// One long-lived player for the window's whole life. Never replaced: a periodic time
@@ -72,6 +82,7 @@ final class ReviewViewModel: ObservableObject {
     private var suggestTask: Task<Void, Never>?
     private let extractor = WaveformExtractor()
     private var probes: [SourceTrackProbe] = []
+    private var eventTimeline = EventTimeline(events: [])
     private var timeObserver: Any?
     private var cancellables: Set<AnyCancellable> = []
     private var endObserver: NSObjectProtocol?
@@ -142,7 +153,8 @@ final class ReviewViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        markers = EventTimeline.load(eventsURL: folder.eventsURL).markers
+        eventTimeline = EventTimeline.load(eventsURL: folder.eventsURL)
+        markers = eventTimeline.markers
 
         await rebuild(document: store.document, preservingPlayhead: false)
         startObservingTime()
@@ -513,6 +525,25 @@ final class ReviewViewModel: ObservableObject {
 
     var isAgentConfigured: Bool { AgentSettings.isConfigured }
 
+    /// The compact description the agent reasons from, rebuilt at request time so it reflects
+    /// the edit as it currently stands, and written to `digest.json` so what the agent was
+    /// told is always inspectable.
+    @discardableResult
+    func buildDigest() -> SessionDigest? {
+        guard let document = store?.document else { return nil }
+
+        let digest = SessionDigest.make(
+            sessionID: folder.id,
+            duration: Timeline.seconds(duration),
+            probes: probes,
+            events: eventTimeline,
+            document: document,
+            transcript: transcript
+        )
+        digest.write(to: folder.digestURL)
+        return digest
+    }
+
     /// Asks the agent what to change. Nothing is applied here — suggestions are staged for
     /// the user to accept, and accepting routes through the same `apply` a drag does.
     func requestSuggestions(instruction: String) {
@@ -523,9 +554,11 @@ final class ReviewViewModel: ObservableObject {
             duration: Timeline.seconds(duration),
             transcript: transcript,
             document: document,
-            markers: markers.map { (time: $0.mediaTs, label: $0.event.label ?? "Marker") }
+            markers: markers.map { (time: $0.mediaTs, label: $0.event.label ?? "Marker") },
+            digest: buildDigest()
         )
 
+        conversation.append(AgentTurn(speaker: .user, text: instruction))
         agentState = .thinking
         suggestTask = Task { [weak self] in
             guard let self else { return }
@@ -534,8 +567,14 @@ final class ReviewViewModel: ObservableObject {
             do {
                 let result = try await self.suggester.suggest(instruction: instruction, context: context)
                 guard !Task.isCancelled else { return }
+                if !result.reply.isEmpty {
+                    self.conversation.append(AgentTurn(speaker: .agent, text: result.reply))
+                }
+                // Replaces rather than accumulates: a new answer supersedes the previous
+                // proposal, and leaving stale operations pending invites applying edits the
+                // user has already moved past.
                 self.suggestions = result.suggestions
-                self.agentState = .replied(result.reply)
+                self.agentState = .idle
             } catch {
                 guard !Task.isCancelled else { return }
                 self.agentState = .failed(error.localizedDescription)
@@ -568,9 +607,16 @@ final class ReviewViewModel: ObservableObject {
         suggestions.removeAll { $0.id == suggestion.id }
     }
 
-    func clearAgentReply() {
-        agentState = .idle
+    func dismissSuggestions() {
         suggestions = []
+    }
+
+    /// Clears the visible transcript of the chat. The server-side conversation is untouched —
+    /// the agent still remembers, which is the point of one conversation per recording.
+    func clearConversationView() {
+        conversation = []
+        suggestions = []
+        agentState = .idle
     }
 
     // MARK: - Export

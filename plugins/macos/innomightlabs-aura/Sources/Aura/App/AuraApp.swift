@@ -8,10 +8,10 @@ struct AuraApp: App {
     /// the menu's content view does not exist most of the time.
     private let reviewWindows = ReviewWindowPresenter()
 
-    // TEMPORARY (Phase 2, Stage 2 manual verification only): wires WakeWordListener
-    // straight to debug logging so wake-word detection can be tested against real
-    // speech before any downstream command-capture/intent code exists. Replaced by
-    // VoiceController in Stage 5 — do not build on top of this.
+    // Behind `FeatureFlags.isWakeWordListenerEnabled` and off by default — see there for why.
+    // Still the Stage 2 manual-verification wiring: detections only reach a debug log, so
+    // this is a diagnostic harness rather than a feature. Lazily built, so with the flag off
+    // the CoreML models are never even loaded.
     private static let wakeWordListener: WakeWordListener? = {
         guard
             let resourcesURL = Bundle.main.resourceURL,
@@ -50,6 +50,9 @@ struct AuraApp: App {
         controller.onSessionCompleted = { folder in presenter.open(folder) }
         _recordingController = StateObject(wrappedValue: controller)
 
+        // No microphone permission prompt and no listener unless the flag is on: with it off,
+        // Aura touches the microphone only while actually recording.
+        guard FeatureFlags.isWakeWordListenerEnabled else { return }
         Task {
             guard await AVCaptureDevice.requestAccess(for: .audio) else { return }
             try? Self.wakeWordListener?.start()

@@ -11,6 +11,9 @@ struct SessionFolder {
     let eventsURL: URL
     let transcriptURL: URL
     let editURL: URL
+    /// The compact session description sent to the agent, kept so a suggestion can always be
+    /// traced back to exactly what the agent was told.
+    let digestURL: URL
 
     /// Waveform peak caches sit beside the audio file they describe, so the review
     /// layer never has to rebuild a path to find one.
@@ -55,6 +58,7 @@ struct SessionFolder {
         eventsURL = rootURL.appendingPathComponent("events.jsonl")
         transcriptURL = rootURL.appendingPathComponent("transcript.json")
         editURL = rootURL.appendingPathComponent("edit.json")
+        digestURL = rootURL.appendingPathComponent("digest.json")
     }
 
     private static func peaksURL(for audioURL: URL) -> URL {

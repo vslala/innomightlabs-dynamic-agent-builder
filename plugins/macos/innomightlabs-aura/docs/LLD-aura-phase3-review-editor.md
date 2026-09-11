@@ -242,16 +242,84 @@ joined string and discards all timing.
 
 ## Agent edits
 
-`AgentEditPanelView` is where the user asks for a change in words, typed or dictated.
-`VoiceInstructionRecorder` captures a short clip with `AVAudioRecorder` and transcribes it with
-the same on-device WhisperKit pipeline, so dictation needs no network.
+`AgentEditPanelView` is the conversation with the agent about this recording, typed or
+dictated. `VoiceInstructionRecorder` captures a short clip with `AVAudioRecorder` and
+transcribes it with the same on-device WhisperKit pipeline, so dictation needs no network.
 
-The request goes out over **Agent2Agent** (`POST /a2a/agents/{id}/message:send`), not the
-widget endpoints. A2A is the only surface that authenticates with the API key alone; the widget
-path additionally needs a visitor token obtained through a browser redirect, which is a poor
-fit for a desktop app. It requires Agent2Agent sharing enabled on the agent, and an API key
-created with empty allowed origins (a native client sends no `Origin`). The key lives in the
-Keychain, the base URL and agent id in `UserDefaults`.
+### Transport
+
+**Agent2Agent JSON-RPC**, verified against the live service. `POST /a2a/agents/{id}` with
+`Authorization: Bearer pk_live_…`; the key alone is sufficient, where the widget conversation
+endpoints additionally want a visitor token obtained through a browser redirect — a poor fit
+for a desktop app. Requires Agent2Agent sharing enabled on the agent.
+
+Three things about this endpoint are not what its own spec would suggest, and each was found
+by trying it:
+
+- Methods are **PascalCase** (`SendMessage`, `GetTask`, `ListTasks`), not the A2A spec's
+  `message/send`, which returns `-32601 Unsupported A2A method`.
+- `role` is the enum value **`ROLE_USER`**, not `user`.
+- JSON-RPC failures arrive with **HTTP 200** and an `error` object, so status codes alone
+  never reveal them.
+
+The reply is at `result.task.status.message.parts[].text`. It is decoded from that path
+specifically rather than scavenged, because the prompt is echoed back in `history` and is
+longer — a "pick the longest text" heuristic would return the question instead of the answer.
+Scavenging remains only as a fallback for an unexpected task shape.
+
+Messages are capped at **32,000 characters over at most 16 parts**, which is what bounds the
+digest below.
+
+The alternative, `POST /widget/generate-text`, also works with the key alone and was slightly
+faster in a single sample (11.7s vs 15.6s — noise at that resolution). It was not chosen
+because its conversation key is derived from WordPress-shaped `context.site_url` and
+`context.post_id` fields, which would couple Aura to a contract that has nothing to do with it.
+
+### One conversation per recording
+
+`contextId` is A2A's first-class conversation key, and Aura sets it to
+`aura-session-<sessionID>` — deterministic from the session id, so it survives app restarts
+with nothing persisted. Verified: a follow-up in the same context answered from the earlier
+turn without the context being restated.
+
+**Known issue, not solved by A2A:** the agent's long-term memory spans conversations. A
+codeword given only in one `contextId` was recalled under a different one, because memory is
+scoped to the API key's owner rather than the conversation. Per-recording history works;
+per-recording *isolation* does not. The prompt mitigates it by naming the session and telling
+the agent to reason only from the digest in front of it, but a real fix belongs in `api/`.
+
+### The digest
+
+`SessionDigest` is the compact, complete description of one recording, sent to the agent as
+JSON and written to `digest.json` in the session folder.
+
+Rich, because the agent can only propose sound edits knowing what actually happened: which
+tracks exist and how long they are, their recorded start offsets and sync corrections, where
+the recording was paused, what the user flagged, which tracks failed, what currently survives
+(`keptSpans`), the camera keyframes, the audio lane state, and the transcript.
+
+Compact, because it competes with the instruction for a 32,000-character budget: short keys,
+times rounded to centiseconds, zero-valued offsets omitted, and `rect` as a four-element array
+rather than an object. A real session came out at **1,035 characters**. When it does not fit,
+only the transcript is trimmed — everything else is small, bounded and structural, while a long
+recording's transcript is unbounded — and `transcriptCuesOmitted` tells the agent it is not
+seeing everything, rather than letting it assume the recording ends early.
+
+Sent as JSON rather than prose because it is unambiguous, and because the same content is
+persisted: a suggestion that looks wrong is diagnosed by reading exactly what the agent was
+told. Transcript times are shifted into recording time by `micTimeOffset` first — handing over
+the microphone's own clock would make every proposed cut land slightly wrong.
+
+### Configuration
+
+The key lives in the **Keychain**; base URL and agent id in `UserDefaults`. A GUI app launched
+from Finder inherits no shell environment, so environment variables (`AURA_AGENT_API_KEY`,
+`AURA_AGENT_ID`, `AURA_AGENT_BASE_URL`) are honoured only as an override for scripts and tests.
+
+`AgentConnectionCheck` powers "Test Connection" in the settings sheet and answers two different
+questions: `/widget/config` needs only the key, so it both proves the key valid and returns the
+agent id (the user pastes a key and the id fills itself in); the A2A card then confirms sharing
+is actually enabled, which the key alone cannot tell you.
 
 Two pieces carry the weight and are unit-tested accordingly. `EditSuggestionPrompt` states the
 operation vocabulary exactly and includes the transcript **shifted into recording time** by
@@ -287,9 +355,13 @@ custom compositor lands — only which builder is constructed.
   not whether the cropped region keeps its in-frame offset or re-origins to (0,0).
 - **No rounded corners, borders, shadows, or non-rectangular PiP.** The built-in compositor supports
   only affine transform, opacity, and an axis-aligned crop. These need the custom compositor.
-- **The agent transport is unverified against a live backend.** The A2A request and reply
-  shapes are implemented from the API's contract and covered by unit tests, but nothing here has
-  been exercised against a running InnomightLabs instance.
+- **The agent's memory is not scoped per recording** — see above. Client-side prompting
+  mitigates, but the fix belongs in `api/`.
+- **Always-on wake-word detection is behind `FeatureFlags.isWakeWordListenerEnabled`, off.**
+  It held the microphone open for the life of the app while nothing downstream consumed a
+  detection, so the privacy cost bought nothing. With it off Aura touches the microphone only
+  during a recording and while dictating. The CoreML models are lazily loaded, so the flag
+  being off means they are never even read.
 - **Export always re-encodes.** `AVAssetExportPresetPassthrough` ignores `videoComposition`
   entirely, and there is nothing to pass through when two tracks composite into one. The
   document-level fast path (single full-range clip, PiP hidden throughout, unity gain, no mute -> copy

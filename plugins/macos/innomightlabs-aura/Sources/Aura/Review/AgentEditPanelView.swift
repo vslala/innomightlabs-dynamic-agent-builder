@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Where the user asks for an edit in words — typed, or dictated into the mic.
+/// The conversation with the agent about this recording — typed, or dictated into the mic.
 ///
-/// The agent never edits directly: it proposes operations, they appear here, and accepting one
-/// runs it through the same `EditDocumentStore.apply` a drag does. So an AI edit is reviewable
-/// before it lands and undoable after.
+/// One conversation per video, held server-side, so the user can keep talking as they edit
+/// without restating what they're working on. The agent never edits directly: it proposes
+/// operations, they appear here, and accepting one runs through the same
+/// `EditDocumentStore.apply` a drag does — so an AI edit is reviewable before it lands and
+/// undoable after.
 struct AgentEditPanelView: View {
     @ObservedObject var viewModel: ReviewViewModel
     @StateObject private var voice = VoiceInstructionRecorder()
@@ -14,23 +16,15 @@ struct AgentEditPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Label("Ask Aura", systemImage: "sparkles")
-                    .font(.headline)
-                Spacer()
-                Button {
-                    showingSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .buttonStyle(.borderless)
-                .help("Agent settings")
-            }
+            header
 
             if viewModel.isAgentConfigured {
-                composer
-                statusLine
+                if !viewModel.conversation.isEmpty {
+                    conversation
+                }
                 suggestionList
+                statusLine
+                composer
             } else {
                 notConfigured
             }
@@ -41,10 +35,69 @@ struct AgentEditPanelView: View {
         }
     }
 
+    private var header: some View {
+        HStack {
+            Label("Ask Aura", systemImage: "sparkles")
+                .font(.headline)
+            Spacer()
+            if !viewModel.conversation.isEmpty {
+                Button {
+                    viewModel.clearConversationView()
+                } label: {
+                    Image(systemName: "eraser")
+                }
+                .buttonStyle(.borderless)
+                .help("Clear the visible chat (the agent still remembers this recording)")
+            }
+            Button {
+                showingSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.borderless)
+            .help("Agent settings")
+        }
+    }
+
+    private var conversation: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(viewModel.conversation) { turn in
+                        turnView(turn).id(turn.id)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .frame(maxHeight: 180)
+            .onChange(of: viewModel.conversation.count) { _, _ in
+                guard let last = viewModel.conversation.last else { return }
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last.id, anchor: .bottom) }
+            }
+        }
+    }
+
+    private func turnView(_ turn: ReviewViewModel.AgentTurn) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: turn.speaker == .user ? "person.fill" : "sparkles")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+                .frame(width: 12)
+
+            Text(turn.text)
+                .font(.caption)
+                .foregroundStyle(turn.speaker == .user ? .secondary : .primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     private var composer: some View {
         HStack(spacing: 6) {
             TextField(
-                "e.g. cut the part where I stumble, and hide the camera while the terminal is up",
+                viewModel.conversation.isEmpty
+                    ? "e.g. cut the false start, and hide the camera while the terminal is up"
+                    : "Reply…",
                 text: $instruction,
                 axis: .vertical
             )
@@ -62,14 +115,12 @@ struct AgentEditPanelView: View {
             }
             .buttonStyle(.borderless)
             .disabled(instruction.trimmingCharacters(in: .whitespaces).isEmpty || viewModel.isAwaitingAgent)
-            .help("Ask for these edits")
+            .help("Send")
         }
     }
 
-    /// Press and hold to dictate, matching how push-to-talk works elsewhere in the app.
     private var micButton: some View {
         Button {
-            // Handled by the long-press gesture below; a plain click starts and stops.
             toggleDictation()
         } label: {
             Image(systemName: voice.state == .listening ? "mic.fill" : "mic")
@@ -78,39 +129,15 @@ struct AgentEditPanelView: View {
         .buttonStyle(.borderless)
         .disabled(voice.state == .transcribing || viewModel.isAwaitingAgent)
         .help(voice.state == .listening ? "Stop dictating" : "Dictate an instruction")
-        .overlay(alignment: .bottom) {
-            if voice.state == .transcribing {
-                ProgressView().controlSize(.small).offset(y: 14)
-            }
-        }
     }
 
     @ViewBuilder
     private var statusLine: some View {
         switch viewModel.agentState {
-        case .idle:
-            if case .failed(let reason) = voice.state {
-                Text(reason)
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-            } else if voice.state == .listening {
-                Text("Listening… click the mic again when you're done.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
         case .thinking:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text("Thinking…").font(.caption)
-            }
-
-        case .replied(let reply):
-            if !reply.isEmpty {
-                Text(reply)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text("Thinking…").font(.caption2).foregroundStyle(.secondary)
             }
 
         case .failed(let reason):
@@ -118,6 +145,23 @@ struct AgentEditPanelView: View {
                 .font(.caption2)
                 .foregroundStyle(.red)
                 .fixedSize(horizontal: false, vertical: true)
+
+        case .idle:
+            switch voice.state {
+            case .listening:
+                Text("Listening… click the mic again when you're done.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            case .transcribing:
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Transcribing…").font(.caption2).foregroundStyle(.secondary)
+                }
+            case .failed(let reason):
+                Text(reason).font(.caption2).foregroundStyle(.red)
+            case .idle:
+                EmptyView()
+            }
         }
     }
 
@@ -131,7 +175,7 @@ struct AgentEditPanelView: View {
                 Spacer()
                 Button("Apply All") { viewModel.acceptAllSuggestions() }
                     .font(.caption)
-                Button("Dismiss") { viewModel.clearAgentReply() }
+                Button("Dismiss") { viewModel.dismissSuggestions() }
                     .font(.caption)
             }
 
