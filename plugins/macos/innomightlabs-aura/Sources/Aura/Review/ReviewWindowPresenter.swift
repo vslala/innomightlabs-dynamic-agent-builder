@@ -16,6 +16,7 @@ final class ReviewWindowPresenter {
         let controller: NSWindowController
         let viewModel: ReviewViewModel
         let observer: NSObjectProtocol
+        let keyMonitor: Any?
     }
 
     /// Keyed by session id, so asking twice for the same recording focuses the open window
@@ -55,7 +56,8 @@ final class ReviewWindowPresenter {
         presented[folder.id] = Presented(
             controller: NSWindowController(window: window),
             viewModel: viewModel,
-            observer: observer
+            observer: observer,
+            keyMonitor: Self.installKeyMonitor(window: window, viewModel: viewModel)
         )
         presented[folder.id]?.controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -64,7 +66,49 @@ final class ReviewWindowPresenter {
     private func dismiss(_ id: String) {
         guard let entry = presented.removeValue(forKey: id) else { return }
         NotificationCenter.default.removeObserver(entry.observer)
+        if let monitor = entry.keyMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
         entry.viewModel.close()
         entry.controller.window?.contentView = nil
+    }
+
+    /// One local key monitor for the whole window, consulting `ReviewKeyCommand`.
+    ///
+    /// Preferred over `.keyboardShortcut` on buttons, which this window cannot host well: it
+    /// has no `commands` scene to put a menu in, a shortcut on a conditionally-shown button
+    /// does not exist while that button is hidden, and a window-wide unmodified shortcut is
+    /// resolved ahead of the field editor — so the agent panel's text field could not reliably
+    /// receive a space.
+    ///
+    /// Scoped to this window, and it asks the first responder whether a text field is editing
+    /// before treating a bare keystroke as a command.
+    private static func installKeyMonitor(window: NSWindow, viewModel: ReviewViewModel) -> Any? {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.window === window else { return event }
+
+            let focus: ReviewKeyCommand.Focus = Self.isEditingText(in: window) ? .textInput : .timeline
+            var modifiers: ReviewKeyCommand.Modifiers = []
+            if event.modifierFlags.contains(.command) { modifiers.insert(.command) }
+            if event.modifierFlags.contains(.shift) { modifiers.insert(.shift) }
+            if event.modifierFlags.contains(.option) { modifiers.insert(.option) }
+            if event.modifierFlags.contains(.control) { modifiers.insert(.control) }
+
+            guard let command = ReviewKeyCommand.resolve(
+                characters: (event.charactersIgnoringModifiers ?? "").lowercased(),
+                keyCode: event.keyCode,
+                modifiers: modifiers,
+                focus: focus
+            ) else { return event }
+
+            // Unhandled commands fall through, so a keystroke is never silently eaten.
+            return MainActor.assumeIsolated { viewModel.perform(command) } ? nil : event
+        }
+    }
+
+    private static func isEditingText(in window: NSWindow) -> Bool {
+        guard let responder = window.firstResponder else { return false }
+        if let textView = responder as? NSTextView { return textView.isEditable }
+        return responder is NSTextField
     }
 }

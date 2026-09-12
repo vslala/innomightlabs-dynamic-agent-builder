@@ -28,6 +28,14 @@ enum EditOperation: Codable, Equatable, Sendable {
     case restoreWords(ids: [Int])
     /// Shape, border, and shadow for the camera overlay.
     case setCameraStyle(PiPStyle)
+    /// Restore specific cuts by id — what clicking a shaded region on the waveform does.
+    case uncut(ids: [UUID])
+    /// Remove an edit boundary previously added by `splitClip`.
+    case removeSplit(at: TimeInterval)
+    case addMarker(EditMarker)
+    case removeMarker(id: UUID)
+    case renameMarker(id: UUID, label: String)
+    case moveMarker(id: UUID, to: TimeInterval)
 
     private enum Op: String, Codable {
         case removeRange = "remove_range"
@@ -40,11 +48,22 @@ enum EditOperation: Codable, Equatable, Sendable {
         case excludeWords = "exclude_words"
         case restoreWords = "restore_words"
         case setCameraStyle = "set_camera_style"
+        case uncut
+        case removeSplit = "remove_split"
+        case addMarker = "add_marker"
+        case removeMarker = "remove_marker"
+        case renameMarker = "rename_marker"
+        case moveMarker = "move_marker"
     }
 
     private enum CodingKeys: String, CodingKey {
         case op, start, end, t, rect, visible, lane, gain, muted, seconds, words, ids
         case shape, cornerRadius, borderWidth, borderColor, shadowOpacity, shadowRadius
+        case cutIds, id, label
+        // Accepted on decode only, never written: a language model reaches for these names
+        // regardless of what we document, and losing a whole operation to a synonym is worse
+        // than accepting one.
+        case at, to
     }
 
     init(from decoder: Decoder) throws {
@@ -87,6 +106,31 @@ enum EditOperation: Codable, Equatable, Sendable {
             self = .excludeWords(try container.decode([ExcludedWord].self, forKey: .words))
         case .restoreWords:
             self = .restoreWords(ids: try container.decode([Int].self, forKey: .ids))
+        case .uncut:
+            self = .uncut(ids: try container.decodeIfPresent([UUID].self, forKey: .cutIds)
+                ?? container.decode([UUID].self, forKey: .ids))
+        case .removeSplit:
+            self = .removeSplit(at: try container.decode(TimeInterval.self, forKey: .t))
+        case .addMarker:
+            self = .addMarker(EditMarker(
+                at: try container.decodeIfPresent(TimeInterval.self, forKey: .t)
+                    ?? container.decode(TimeInterval.self, forKey: .at),
+                label: try container.decodeIfPresent(String.self, forKey: .label) ?? ""
+            ))
+        case .removeMarker:
+            self = .removeMarker(id: try container.decode(UUID.self, forKey: .id))
+        case .renameMarker:
+            self = .renameMarker(
+                id: try container.decode(UUID.self, forKey: .id),
+                label: try container.decode(String.self, forKey: .label)
+            )
+        case .moveMarker:
+            self = .moveMarker(
+                id: try container.decode(UUID.self, forKey: .id),
+                to: try container.decodeIfPresent(TimeInterval.self, forKey: .t)
+                    ?? container.decodeIfPresent(TimeInterval.self, forKey: .to)
+                    ?? container.decode(TimeInterval.self, forKey: .at)
+            )
         case .setCameraStyle:
             self = .setCameraStyle(PiPStyle(
                 shape: try container.decodeIfPresent(PiPStyle.Shape.self, forKey: .shape) ?? .rectangle,
@@ -136,6 +180,27 @@ enum EditOperation: Codable, Equatable, Sendable {
         case .restoreWords(let ids):
             try container.encode(Op.restoreWords, forKey: .op)
             try container.encode(ids, forKey: .ids)
+        case .uncut(let ids):
+            try container.encode(Op.uncut, forKey: .op)
+            try container.encode(ids, forKey: .cutIds)
+        case .removeSplit(let t):
+            try container.encode(Op.removeSplit, forKey: .op)
+            try container.encode(t, forKey: .t)
+        case .addMarker(let marker):
+            try container.encode(Op.addMarker, forKey: .op)
+            try container.encode(marker.at, forKey: .t)
+            try container.encode(marker.label, forKey: .label)
+        case .removeMarker(let id):
+            try container.encode(Op.removeMarker, forKey: .op)
+            try container.encode(id, forKey: .id)
+        case .renameMarker(let id, let label):
+            try container.encode(Op.renameMarker, forKey: .op)
+            try container.encode(id, forKey: .id)
+            try container.encode(label, forKey: .label)
+        case .moveMarker(let id, let time):
+            try container.encode(Op.moveMarker, forKey: .op)
+            try container.encode(id, forKey: .id)
+            try container.encode(time, forKey: .t)
         case .setCameraStyle(let style):
             try container.encode(Op.setCameraStyle, forKey: .op)
             try container.encode(style.shape, forKey: .shape)
@@ -162,8 +227,12 @@ enum EditOperationError: Error, Equatable, LocalizedError {
     case gainOutOfRange(Double)
     case offsetOutOfRange(TimeInterval)
     case noWordsGiven
-    case wouldRemoveEntireTimeline_words
     case invalidCameraStyle
+    case noCutsGiven
+    case noSuchCut
+    case noSuchMarker
+    case alreadySplit(TimeInterval)
+    case noSplit(at: TimeInterval)
 
     var errorDescription: String? {
         switch self {
@@ -189,28 +258,64 @@ enum EditOperationError: Error, Equatable, LocalizedError {
             return String(format: "An audio slip of %.2fs is outside the +/-5s limit.", seconds)
         case .noWordsGiven:
             return "No words were given to change."
-        case .wouldRemoveEntireTimeline_words:
-            return "Cutting those words would leave nothing behind."
         case .invalidCameraStyle:
             return "That camera style has values outside the allowed range."
+        case .noCutsGiven:
+            return "No cuts were given to restore."
+        case .noSuchCut:
+            return "That cut is no longer there."
+        case .noSuchMarker:
+            return "That marker is no longer there."
+        case .alreadySplit(let t):
+            return String(format: "There is already a split at %.2fs.", t)
+        case .noSplit(let t):
+            return String(format: "There is no split at %.2fs.", t)
         }
     }
 }
 
 extension SessionEdit {
+    /// A slip beyond this is a sign something is wrong rather than a sync nudge.
+    static let maximumLaneOffset: TimeInterval = 5
+
+    /// One frame at 30fps. Overlay keyframes closer together than this are the same keyframe:
+    /// nothing needs two camera positions inside a single frame, and allowing it produced
+    /// pairs the agent could not address.
+    static let keyframeTolerance: TimeInterval = 1.0 / 30.0
+
     /// Pure. Returns the document the operation produces, or throws without touching it.
     func applying(_ operation: EditOperation) throws -> SessionEdit {
         var edit = self
         switch operation {
         case .removeRange(let span):
-            edit.clips = try Self.removing(span, from: clips)
+            edit.cuts = try appendingCut(span: span, origin: .range)
+
         case .splitClip(let t):
-            edit.clips = try Self.splitting(clips, at: try Self.snapped(t))
+            let time = try Self.snapped(t)
+            // Strictly inside a surviving clip: splitting at the recording's edge, or inside
+            // something already cut, is not an edit.
+            guard clips.contains(where: { $0.source.start < time && time < $0.source.end }) else {
+                throw EditOperationError.noSplitPointInsideAClip(time)
+            }
+            guard !splitPoints.contains(where: { abs($0 - time) <= Self.keyframeTolerance }) else {
+                throw EditOperationError.alreadySplit(time)
+            }
+            edit.splitPoints = (splitPoints + [time]).sorted()
+
+        case .removeSplit(let t):
+            let time = try Self.snapped(t)
+            guard let existing = splitPoints
+                .filter({ abs($0 - time) <= Self.keyframeTolerance })
+                .min(by: { abs($0 - time) < abs($1 - time) })
+            else { throw EditOperationError.noSplit(at: time) }
+            edit.splitPoints = splitPoints.filter { $0 != existing }
+
         case .setOverlayKeyframe(let keyframe):
             guard keyframe.rect.isValid else { throw EditOperationError.invalidRect }
             var updated = keyframe
             updated.t = try Self.snapped(keyframe.t)
             edit.cameraOverlay = Self.upserting(updated, into: cameraOverlay)
+
         case .removeOverlayKeyframe(let t):
             let time = try Self.snapped(t)
             // Nearest within a frame, rather than an exact float match. The agent works from
@@ -224,37 +329,84 @@ extension SessionEdit {
                 throw EditOperationError.wouldRemoveLastOverlayKeyframe
             }
             edit.cameraOverlay = cameraOverlay.filter { $0.t != target.t }
+
         case .setLaneGain(let lane, let keyframe):
             guard keyframe.gain.isFinite, (0...1).contains(keyframe.gain) else {
                 throw EditOperationError.gainOutOfRange(keyframe.gain)
             }
             let time = try Self.snapped(keyframe.t)
-            edit.audioLanes = try Self.updatingLane(lane, in: audioLanes) { settings in
+            edit.audioLanes = Self.updatingLane(lane, in: audioLanes) { settings in
                 settings.gain = Self.upserting(GainKeyframe(t: time, gain: keyframe.gain), into: settings.gain)
             }
+
         case .setLaneMuted(let lane, let muted):
-            edit.audioLanes = try Self.updatingLane(lane, in: audioLanes) { $0.muted = muted }
+            edit.audioLanes = Self.updatingLane(lane, in: audioLanes) { $0.muted = muted }
+
         case .setLaneOffset(let lane, let seconds):
             guard seconds.isFinite, abs(seconds) <= Self.maximumLaneOffset else {
                 throw EditOperationError.offsetOutOfRange(seconds)
             }
-            edit.audioLanes = try Self.updatingLane(lane, in: audioLanes) { $0.offset = seconds }
+            edit.audioLanes = Self.updatingLane(lane, in: audioLanes) { $0.offset = seconds }
 
         case .excludeWords(let words):
             let usable = words.filter { $0.end > $0.start && $0.start.isFinite && $0.end.isFinite }
             guard !usable.isEmpty else { throw EditOperationError.noWordsGiven }
 
-            let existing = Set(excludedWords.map(\.id))
-            edit.excludedWords = (excludedWords + usable.filter { !existing.contains($0.id) })
-                .sorted { $0.start < $1.start }
-            guard edit.effectiveClips.contains(where: { !$0.source.isEmpty }) else {
-                throw EditOperationError.wouldRemoveEntireTimeline_words
-            }
+            let already = Set(cuts.compactMap(\.wordID))
+            let added = usable
+                .filter { !already.contains($0.id) }
+                .map { Cut(
+                    span: TimeSpan(start: $0.start, end: $0.end),
+                    origin: .word(id: $0.id, text: $0.text)
+                ) }
+            guard !added.isEmpty else { return edit }
+            edit.cuts = try Self.validated(cuts + added, recordingDuration: recordingDuration)
 
         case .restoreWords(let ids):
             guard !ids.isEmpty else { throw EditOperationError.noWordsGiven }
             let wanted = Set(ids)
-            edit.excludedWords = excludedWords.filter { !wanted.contains($0.id) }
+            edit.cuts = cuts.filter { cut in cut.wordID.map { !wanted.contains($0) } ?? true }
+
+        case .uncut(let ids):
+            guard !ids.isEmpty else { throw EditOperationError.noCutsGiven }
+            let wanted = Set(ids)
+            guard cuts.contains(where: { wanted.contains($0.id) }) else {
+                throw EditOperationError.noSuchCut
+            }
+            edit.cuts = cuts.filter { !wanted.contains($0.id) }
+
+        case .addMarker(let marker):
+            let at = try Self.snapped(marker.at)
+            guard at <= recordingDuration else { throw EditOperationError.timeOutsideTimeline(at) }
+            var updated = marker
+            updated.at = at
+            edit.markers = (markers + [updated]).sorted { $0.at < $1.at }
+
+        case .removeMarker(let id):
+            guard markers.contains(where: { $0.id == id }) else { throw EditOperationError.noSuchMarker }
+            edit.markers = markers.filter { $0.id != id }
+
+        case .renameMarker(let id, let label):
+            guard markers.contains(where: { $0.id == id }) else { throw EditOperationError.noSuchMarker }
+            edit.markers = markers.map { marker in
+                guard marker.id == id else { return marker }
+                var updated = marker
+                updated.label = label
+                return updated
+            }
+
+        case .moveMarker(let id, let time):
+            let at = try Self.snapped(time)
+            guard at <= recordingDuration else { throw EditOperationError.timeOutsideTimeline(at) }
+            guard markers.contains(where: { $0.id == id }) else { throw EditOperationError.noSuchMarker }
+            edit.markers = markers
+                .map { marker -> EditMarker in
+                    guard marker.id == id else { return marker }
+                    var updated = marker
+                    updated.at = at
+                    return updated
+                }
+                .sorted { $0.at < $1.at }
 
         case .setCameraStyle(let style):
             guard style.isValid else { throw EditOperationError.invalidCameraStyle }
@@ -263,66 +415,46 @@ extension SessionEdit {
         return edit
     }
 
-    /// A slip beyond this is a sign something is wrong rather than a sync nudge.
-    static let maximumLaneOffset: TimeInterval = 5
-
-    /// One frame at 30fps. Overlay keyframes closer together than this are the same keyframe:
-    /// nothing needs two camera positions inside a single frame, and allowing it produced
-    /// pairs the agent could not address.
-    static let keyframeTolerance: TimeInterval = 1.0 / 30.0
-
-    /// Snaps to `Timeline.timescale` so that a time authored by the UI, by an agent, or read
-    /// back from `edit.json` all land on the same tick and compare equal.
-    private static func snapped(_ t: TimeInterval) throws -> TimeInterval {
-        guard t.isFinite, t >= 0 else { throw EditOperationError.timeNotFinite }
-        return Timeline.seconds(Timeline.time(seconds: t))
-    }
-
-    private static func removing(_ span: TimeSpan, from clips: [TimelineClip]) throws -> [TimelineClip] {
-        let start = try snapped(span.start)
-        let end = try snapped(span.end)
+    /// Adds one cut, validating the span and the result.
+    ///
+    /// The new cut is appended rather than merged into any it overlaps: merging would mean
+    /// un-cutting it could not re-expose what was underneath, which is the whole reason cuts
+    /// are stored individually.
+    private func appendingCut(span: TimeSpan, origin: Cut.Origin) throws -> [Cut] {
+        let start = try Self.snapped(span.start)
+        let end = try Self.snapped(span.end)
         guard end > start else { throw EditOperationError.emptyRange }
 
-        // Rejected rather than treated as a no-op: a range that touches nothing means the
-        // caller (or the agent) was working from a stale view of the timeline.
+        // Rejected rather than treated as a no-op: a range that touches nothing surviving
+        // means the caller (or the agent) was working from a stale view of the timeline.
         guard clips.contains(where: { start < $0.source.end && end > $0.source.start }) else {
             throw EditOperationError.timeOutsideTimeline(start)
         }
 
-        let survivors: [TimelineClip] = clips.flatMap { clip -> [TimelineClip] in
-            let source = clip.source
-            guard start < source.end, end > source.start else { return [clip] }
-
-            var pieces: [TimelineClip] = []
-            if start > source.start {
-                pieces.append(TimelineClip(id: clip.id, source: TimeSpan(start: source.start, end: start)))
-            }
-            if end < source.end {
-                let id = pieces.isEmpty ? clip.id : UUID()
-                pieces.append(TimelineClip(id: id, source: TimeSpan(start: end, end: source.end)))
-            }
-            return pieces
-        }
-
-        guard survivors.contains(where: { !$0.source.isEmpty }) else {
-            throw EditOperationError.wouldRemoveEntireTimeline
-        }
-        return survivors
+        return try Self.validated(
+            cuts + [Cut(span: TimeSpan(start: start, end: end), origin: origin)],
+            recordingDuration: recordingDuration
+        )
     }
 
-    private static func splitting(_ clips: [TimelineClip], at t: TimeInterval) throws -> [TimelineClip] {
-        // Strictly inside: splitting at a clip's own boundary is already-split, not an edit.
-        guard clips.contains(where: { $0.source.start < t && t < $0.source.end }) else {
-            throw EditOperationError.noSplitPointInsideAClip(t)
+    /// Refuses a cut set that would leave nothing to play.
+    ///
+    /// Without this the document on disk becomes unopenable: an empty clip list yields a zero
+    /// duration, every track insert fails, and the next open lands on the error screen with no
+    /// undo history to escape by.
+    private static func validated(_ cuts: [Cut], recordingDuration: TimeInterval) throws -> [Cut] {
+        let remaining = deriveClips(recordingDuration: recordingDuration, cuts: cuts)
+        guard remaining.contains(where: { !$0.source.isEmpty }) else {
+            throw EditOperationError.wouldRemoveEntireTimeline
         }
+        return cuts
+    }
 
-        return clips.flatMap { clip -> [TimelineClip] in
-            guard clip.source.start < t, t < clip.source.end else { return [clip] }
-            return [
-                TimelineClip(id: clip.id, source: TimeSpan(start: clip.source.start, end: t)),
-                TimelineClip(source: TimeSpan(start: t, end: clip.source.end))
-            ]
-        }
+    /// Snaps to `Timeline.timescale` so that a time authored by the UI, by an agent, or read
+    /// back from `edit.json` all land on the same tick and compare equal.
+    static func snapped(_ t: TimeInterval) throws -> TimeInterval {
+        guard t.isFinite, t >= 0 else { throw EditOperationError.timeNotFinite }
+        return Timeline.seconds(Timeline.time(seconds: t))
     }
 
     /// Replaces any keyframe within a frame of the new one, rather than only an exact time
@@ -351,7 +483,7 @@ extension SessionEdit {
         _ lane: AudioLane,
         in lanes: [AudioLaneSettings],
         _ mutate: (inout AudioLaneSettings) -> Void
-    ) throws -> [AudioLaneSettings] {
+    ) -> [AudioLaneSettings] {
         var lanes = lanes
         if !lanes.contains(where: { $0.lane == lane }) {
             lanes.append(AudioLaneSettings(lane: lane))

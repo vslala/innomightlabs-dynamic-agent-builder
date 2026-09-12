@@ -28,9 +28,9 @@ final class EditDocumentStore: ObservableObject {
         self.fileURL = fileURL
     }
 
-    /// Reopens a session's edit document, falling back to a fresh one when there is nothing
-    /// on disk yet, when it is unreadable, or when it was written by a newer schema than this
-    /// build understands.
+    /// Reopens a session's edit document, migrating an older schema and falling back to a
+    /// fresh one when there is nothing on disk, it is unreadable, or it came from a newer
+    /// build.
     static func load(
         folder: SessionFolder,
         duration: TimeInterval,
@@ -38,21 +38,37 @@ final class EditDocumentStore: ObservableObject {
     ) -> EditDocumentStore {
         let fallback = SessionEdit.initial(duration: duration, micTimeOffset: micTimeOffset)
 
-        guard
-            let data = try? Data(contentsOf: folder.editURL),
-            let decoded = try? JSONDecoder().decode(SessionEdit.self, from: data),
-            decoded.schemaVersion <= SessionEdit.currentSchemaVersion
-        else {
+        guard let data = try? Data(contentsOf: folder.editURL) else {
             return EditDocumentStore(document: fallback, fileURL: folder.editURL)
         }
 
-        return EditDocumentStore(document: decoded, fileURL: folder.editURL)
+        switch SessionEditMigration.decode(data, recordingDuration: duration) {
+        case .current(let document):
+            return EditDocumentStore(document: document, fileURL: folder.editURL)
+
+        case .migrated(let document):
+            // Keep the original before anything overwrites it. `repair` schedules a save
+            // within 400ms of the window opening, so without this the only copy of the old
+            // format is gone before the user has done anything — and rolling a build back
+            // would then mean losing their edits.
+            let backup = folder.editURL.appendingPathExtension("v1.bak")
+            if !FileManager.default.fileExists(atPath: backup.path) {
+                try? data.write(to: backup, options: .atomic)
+            }
+            return EditDocumentStore(document: document, fileURL: folder.editURL)
+
+        case .unreadable, .tooNew:
+            return EditDocumentStore(document: fallback, fileURL: folder.editURL)
+        }
     }
 
     @discardableResult
     func apply(_ operation: EditOperation) -> Bool {
         do {
             let updated = try document.applying(operation)
+            // An operation that changes nothing must not consume an undo step, or the user
+            // presses undo and apparently nothing happens.
+            guard updated != document else { return true }
             undoStack.append(document)
             redoStack.removeAll()
             document = updated
@@ -75,6 +91,7 @@ final class EditDocumentStore: ObservableObject {
 
         do {
             let updated = try operations.reduce(document) { try $0.applying($1) }
+            guard updated != document else { return true }
             undoStack.append(document)
             redoStack.removeAll()
             document = updated

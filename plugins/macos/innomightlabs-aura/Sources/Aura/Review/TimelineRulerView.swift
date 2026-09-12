@@ -1,17 +1,23 @@
 import SwiftUI
 
-/// Scrub bar with clip boundaries and session markers.
+/// The scrub bar, on the **edited** timeline — this is the transport, so it shows what plays.
 ///
-/// Markers come from `events.jsonl` and are placed by media time, then mapped through the
-/// time map — so a marker still points at the moment it was made even after cuts move it.
+/// It draws splits and markers only. Cut stitches belong to the waveform lane: a real document
+/// has 40-odd cut boundaries, which over a few hundred points is a grey smear, and `ForEach`
+/// over rounded times would collide and silently drop duplicates.
 struct TimelineRulerView: View {
     @ObservedObject var viewModel: ReviewViewModel
 
     @State private var isScrubbing = false
+    /// The marker whose rename field is open. Transient UI state, deliberately not in the
+    /// view model: an abandoned rename must leave no trace in the document or the undo stack.
+    @State private var renaming: ProjectedMarker?
+    @State private var draftLabel = ""
+
+    private var edited: StampSpan<Composition> { viewModel.projection.edited }
 
     var body: some View {
         GeometryReader { geometry in
-            let duration = Timeline.seconds(viewModel.duration)
             let width = geometry.size.width
 
             ZStack(alignment: .leading) {
@@ -21,28 +27,16 @@ struct TimelineRulerView: View {
 
                 Capsule()
                     .fill(.tint)
-                    .frame(width: max(0, fraction(duration) * width), height: 6)
+                    .frame(width: max(0, playheadFraction * width), height: 6)
 
-                ForEach(clipBoundaries(), id: \.self) { boundary in
-                    Rectangle()
-                        .fill(.secondary)
-                        .frame(width: 1, height: 14)
-                        .offset(x: boundary / max(duration, 0.001) * width)
-                }
-
-                ForEach(markers(), id: \.time) { marker in
-                    Image(systemName: "flag.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.orange)
-                        .offset(x: marker.time / max(duration, 0.001) * width - 4)
-                        .help(marker.label)
-                }
+                splits(width: width)
+                markers(width: width)
 
                 Circle()
                     .fill(.white)
                     .shadow(radius: 1)
                     .frame(width: 11, height: 11)
-                    .offset(x: fraction(duration) * width - 5.5)
+                    .offset(x: playheadFraction * width - 5.5)
             }
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
@@ -53,45 +47,121 @@ struct TimelineRulerView: View {
                             isScrubbing = true
                             viewModel.pause()
                         }
-                        viewModel.scrub(to: seconds(at: value.location.x, width: width, duration: duration))
+                        viewModel.scrub(to: stamp(atX: value.location.x, width: width).seconds)
                     }
                     .onEnded { value in
-                        viewModel.commitScrub(to: seconds(at: value.location.x, width: width, duration: duration))
+                        viewModel.commitScrub(to: stamp(atX: value.location.x, width: width).seconds)
                         isScrubbing = false
                     }
             )
         }
     }
 
-    private func fraction(_ duration: TimeInterval) -> Double {
-        guard duration > 0 else { return 0 }
-        return min(1, max(0, Timeline.seconds(viewModel.playhead) / duration))
+    private var playheadFraction: Double {
+        edited.fraction(of: Stamp(viewModel.playhead))
     }
 
-    private func seconds(at x: CGFloat, width: CGFloat, duration: TimeInterval) -> TimeInterval {
-        guard width > 0 else { return 0 }
-        return min(duration, max(0, Double(x / width) * duration))
+    private func stamp(atX x: CGFloat, width: CGFloat) -> Stamp<Composition> {
+        guard width > 0 else { return edited.start }
+        return edited.stamp(atFraction: Double(x / width))
     }
 
-    /// Internal cut points, i.e. every clip start except the first.
-    private func clipBoundaries() -> [Double] {
-        guard let segments = viewModel.timeline?.timeMap.segments else { return [] }
-        return segments.dropFirst().map { Timeline.seconds($0.composition.start) }
-    }
-
-    private func markers() -> [(time: Double, label: String)] {
-        guard let timeline = viewModel.timeline else { return [] }
-        return viewModel.markers.compactMap { marker in
-            // Source ranges are half-open, so a marker made in the instant before Stop maps
-            // to nothing; clamp it to the end rather than dropping the flag.
-            let composition = timeline.timeMap.compositionTimes(forSource: marker.mediaTs).first
-                ?? (marker.mediaTs >= lastSourceEnd(timeline) ? Timeline.seconds(timeline.duration) : nil)
-            guard let composition else { return nil }
-            return (composition, marker.event.label ?? "Marker")
+    /// User-meaningful edit boundaries. Their composition position comes from the projection,
+    /// since a split's own time is in the recording's clock.
+    private func splits(width: CGFloat) -> some View {
+        ForEach(viewModel.projection.splits, id: \.seconds) { split in
+            if let composition = viewModel.projection.compositionTime(forSource: split) {
+                Rectangle()
+                    .fill(ReviewPalette.split)
+                    .frame(width: 1, height: 14)
+                    .offset(x: edited.fraction(of: composition) * width)
+            }
         }
     }
 
-    private func lastSourceEnd(_ timeline: ResolvedTimeline) -> TimeInterval {
-        timeline.timeMap.segments.last.map { Timeline.seconds($0.source.end) } ?? 0
+    private func markers(width: CGFloat) -> some View {
+        ForEach(viewModel.projection.markers) { marker in
+            if let composition = marker.composition {
+                Image(systemName: marker.isEditorial ? "bookmark.fill" : "flag.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(marker.isEditorial
+                                     ? ReviewPalette.editorialMarker
+                                     : ReviewPalette.recordingMarker)
+                    // A 8pt glyph is a small target; widen the hit area without moving it.
+                    .frame(width: 14, height: 14)
+                    .contentShape(Rectangle())
+                    .offset(x: edited.fraction(of: composition) * width - 7)
+                    .help(markerHelp(marker))
+                    // Simultaneous, not `.onTapGesture`: a child gesture outranks the scrub
+                    // bar's drag, so each marker would otherwise punch a 14pt hole in the
+                    // transport where scrubbing cannot begin.
+                    .simultaneousGesture(TapGesture().onEnded { viewModel.seek(to: marker) })
+                    .contextMenu { markerMenu(marker) }
+                    .popover(isPresented: renameBinding(for: marker), arrowEdge: .bottom) {
+                        renameField(marker)
+                    }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func markerMenu(_ marker: ProjectedMarker) -> some View {
+        Button("Go to Marker") { viewModel.seek(to: marker) }
+
+        if marker.isEditorial {
+            Divider()
+            Button("Rename…") {
+                draftLabel = marker.label
+                renaming = marker
+            }
+            Button("Move Here") { viewModel.moveMarker(marker, to: playheadSource) }
+                .disabled(playheadSource == marker.source)
+            Button("Delete", role: .destructive) { viewModel.removeMarker(marker) }
+        } else {
+            Divider()
+            // Stated rather than silently absent, so the greyed-out menu explains itself.
+            Text("Logged while recording — not editable")
+        }
+    }
+
+    private func renameField(_ marker: ProjectedMarker) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Marker name").font(.caption).foregroundStyle(.secondary)
+            TextField("Name", text: $draftLabel)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 180)
+                .onSubmit { commitRename(marker) }
+            HStack {
+                Spacer()
+                Button("Cancel") { renaming = nil }
+                Button("Save") { commitRename(marker) }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(12)
+    }
+
+    private func commitRename(_ marker: ProjectedMarker) {
+        let trimmed = draftLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed != marker.label {
+            viewModel.renameMarker(marker, to: trimmed)
+        }
+        renaming = nil
+    }
+
+    /// One popover per marker, driven off a single piece of state — otherwise every marker in
+    /// the ForEach binds the same `isPresented` and they all open together.
+    private func renameBinding(for marker: ProjectedMarker) -> Binding<Bool> {
+        Binding(
+            get: { renaming?.id == marker.id },
+            set: { if !$0, renaming?.id == marker.id { renaming = nil } }
+        )
+    }
+
+    /// The playhead in recording time, which is the clock markers live on.
+    private var playheadSource: Stamp<Source> { viewModel.playheadSourceStamp }
+
+    private func markerHelp(_ marker: ProjectedMarker) -> String {
+        let name = marker.label.isEmpty ? "Marker" : marker.label
+        return marker.isEditorial ? name : "\(name) (logged while recording)"
     }
 }

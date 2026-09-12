@@ -48,7 +48,25 @@ final class ReviewViewModel: ObservableObject {
     @Published private(set) var playhead: CMTime = .zero
     @Published private(set) var isPlaying = false
     @Published private(set) var timeline: ResolvedTimeline?
+    /// Everything the surfaces read, with every clock already reconciled. Published at the
+    /// same instant as `timeline`, never from the document sink — publishing earlier would
+    /// leave a window where the waveform shows new cuts while the player is still on the old
+    /// composition, which is the bug class this exists to remove.
+    @Published private(set) var projection: ReviewProjection = .empty
+    /// Transient: a source-time range the user has selected. Deliberately not in the
+    /// document — it must not persist, must not be undoable, and must not rebuild the
+    /// composition.
+    @Published var selection: StampSpan<Source>?
+    /// The cut region the user has selected, if any. Single click selects; double click
+    /// restores, so a scrub cannot accidentally un-cut a long range.
+    @Published var selectedCutRegionID: UUID?
+    /// Highlighted word, published only when it changes.
+    @Published private(set) var activeWordID: Int?
     @Published var lastError: String?
+    /// Something the user should know that is not a failure. Separate from `lastError`
+    /// because that renders a red banner, and a benign, expected event presented as an error
+    /// reads as breakage.
+    @Published var lastNotice: String?
 
     /// Session markers, already converted onto the media timeline.
     @Published private(set) var markers: [EventTimeline.Entry] = []
@@ -57,7 +75,8 @@ final class ReviewViewModel: ObservableObject {
     /// cached envelope is good enough at this zoom level.
     @Published private(set) var laneDetail: [AudioLane: WaveformPeaks] = [:]
     /// The window `laneDetail` describes, so a view can tell whether it is still current.
-    @Published private(set) var laneDetailSpan: TimeSpan?
+    /// The source-time window `laneDetail` covers.
+    @Published private(set) var laneDetailSpan: StampSpan<Source>?
     /// Vertical axis for the lanes. Decibel by default — see `WaveformScale`.
     @Published private(set) var waveformScale: WaveformScale = ReviewPreferences.waveformScale
     @Published private(set) var transcript: Transcript?
@@ -69,6 +88,9 @@ final class ReviewViewModel: ObservableObject {
     /// anything else is a window that follows the playhead, which is what makes frame-level
     /// edits possible without a separate pan control.
     @Published private(set) var visibleDuration: TimeInterval?
+    /// Left edge of the zoom window, in source time. Anchored rather than following the
+    /// playhead — see `visibleSpan`.
+    @Published private(set) var viewportStart: TimeInterval = 0
     @Published private(set) var agentState: AgentState = .idle
     /// Proposed edits, never applied until accepted.
     @Published private(set) var suggestions: [EditSuggestion] = []
@@ -106,6 +128,9 @@ final class ReviewViewModel: ObservableObject {
     /// would otherwise leave two builds racing to `replaceCurrentItem` and the later document
     /// losing to the earlier one's item.
     private var rebuildTask: Task<Void, Never>?
+    /// The document the current composition was built from, so an annotation-only change can
+    /// be told from one that alters the timeline.
+    private var lastBuiltDocument: SessionEdit?
     private var detailTask: Task<Void, Never>?
 
     /// Caps the preview's render size. Compositing a Retina screen capture and a camera means
@@ -160,7 +185,14 @@ final class ReviewViewModel: ObservableObject {
             .dropFirst()
             .removeDuplicates()
             .sink { [weak self] document in
-                self?.scheduleRebuild(document: document)
+                guard let self else { return }
+                if let previous = self.lastBuiltDocument,
+                   self.onlyAffectsAnnotations(previous, document) {
+                    self.lastBuiltDocument = document
+                    self.reproject()
+                    return
+                }
+                self.scheduleRebuild(document: document)
             }
             .store(in: &cancellables)
 
@@ -190,6 +222,16 @@ final class ReviewViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             peaks[lane] = extracted
         }
+    }
+
+    /// True when a document change cannot alter what plays, so the composition need not be
+    /// rebuilt — markers and splits. Saves a player-item swap and a re-seek for an edit the
+    /// timeline is indifferent to.
+    private func onlyAffectsAnnotations(_ before: SessionEdit, _ after: SessionEdit) -> Bool {
+        var normalised = after
+        normalised.markers = before.markers
+        normalised.splitPoints = before.splitPoints
+        return normalised == before
     }
 
     private func scheduleRebuild(document: SessionEdit) {
@@ -222,6 +264,13 @@ final class ReviewViewModel: ObservableObject {
             observeEnd(of: item)
 
             timeline = resolved
+            lastBuiltDocument = document
+            projection = ReviewProjector.project(
+                timeline: resolved,
+                document: document,
+                transcript: transcript,
+                events: eventTimeline
+            )
             state = .ready
 
             if resumeAt > .zero, resumeAt < built.duration {
@@ -241,6 +290,21 @@ final class ReviewViewModel: ObservableObject {
                 state = .failed(error.localizedDescription)
             }
         }
+    }
+
+    /// Recomputes the projection without rebuilding the composition.
+    ///
+    /// Only for inputs that do not change what plays — the transcript arriving, or markers
+    /// moving. Anything that alters the timeline goes through `rebuild`, so the projection and
+    /// the player item always change together.
+    private func reproject() {
+        guard let timeline, let document = store?.document else { return }
+        projection = ReviewProjector.project(
+            timeline: timeline,
+            document: document,
+            transcript: transcript,
+            events: eventTimeline
+        )
     }
 
     // MARK: - Playhead
@@ -266,10 +330,15 @@ final class ReviewViewModel: ObservableObject {
     private func handleTick(_ time: CMTime) {
         playhead = time
 
-        // Gate the transcript's invalidation on the highlighted cue actually changing.
-        let cue = transcript?.segment(at: transcriptTime(forComposition: time))?.id
-        if cue != activeCueID {
-            activeCueID = cue
+        // Gated on the highlight actually changing, so the transcript list is not invalidated
+        // 30 times a second. Resolved from the projection rather than by converting clocks
+        // here.
+        let word = projection.word(atComposition: Stamp(time))
+        if word?.id != activeWordID {
+            activeWordID = word?.id
+        }
+        if word?.cueID != activeCueID {
+            activeCueID = word?.cueID
         }
     }
 
@@ -357,45 +426,60 @@ final class ReviewViewModel: ObservableObject {
     private static let minimumVisibleDuration: TimeInterval = 0.25
     private static let zoomFactor: TimeInterval = 1.8
 
-    /// The window the lanes draw, in composition time.
-    var visibleSpan: TimeSpan {
-        WaveformWindow.span(
-            total: Timeline.seconds(duration),
-            visibleDuration: visibleDuration,
-            playhead: Timeline.seconds(playhead)
-        )
+    /// The window the lanes draw, in **source** time — the lane shows the whole recording so
+    /// cuts are visible, which means the axis is the recording's, not the edited timeline's.
+    ///
+    /// Anchored where the user put it rather than centred on the playhead. On a to-scale
+    /// source axis the playhead teleports over every cut — 113 times on a real document — and
+    /// a playhead-following window would pan the waveform each time, re-reading the audio for
+    /// detail on every pan. The playhead can therefore scroll out of view while playing, which
+    /// is the accepted trade for a stable view and no read thrash.
+    var visibleSpan: StampSpan<Source> {
+        let total = recordingDuration
+        guard let visibleDuration, visibleDuration < total else {
+            return StampSpan(start: 0, end: total)
+        }
+        let start = min(max(0, viewportStart), max(0, total - visibleDuration))
+        return StampSpan(start: start, end: start + visibleDuration)
+    }
+
+    /// The recording's full extent — the zoom axis. Read from the document rather than the
+    /// composition: zooming out to the composition's length would make the cut portions of the
+    /// recording unreachable.
+    var recordingDuration: TimeInterval {
+        store?.document.recordingDuration ?? Timeline.seconds(duration)
     }
 
     var canZoomIn: Bool {
-        (visibleDuration ?? Timeline.seconds(duration)) > Self.minimumVisibleDuration
+        (visibleDuration ?? recordingDuration) > Self.minimumVisibleDuration
     }
 
     var canZoomOut: Bool { visibleDuration != nil }
 
     func zoomIn() {
-        let total = Timeline.seconds(duration)
+        let total = recordingDuration
         guard total > 0 else { return }
         let current = visibleDuration ?? total
         let proposed = max(Self.minimumVisibleDuration, current / Self.zoomFactor)
-        visibleDuration = proposed < total ? proposed : nil
+        zoom(to: proposed < total ? proposed : nil, around: anchor)
     }
 
     func zoomOut() {
-        let total = Timeline.seconds(duration)
+        let total = recordingDuration
         guard let current = visibleDuration, total > 0 else { return }
-        let proposed = current * Self.zoomFactor
-        visibleDuration = proposed >= total ? nil : proposed
+        zoom(to: current * Self.zoomFactor >= total ? nil : current * Self.zoomFactor, around: anchor)
     }
 
     /// Used by pinch, where the scale arrives as a continuous multiplier.
     func setZoom(scale: Double) {
-        let total = Timeline.seconds(duration)
+        let total = recordingDuration
         guard total > 0, scale > 0 else { return }
         let current = visibleDuration ?? total
         let proposed = current / scale
-        visibleDuration = proposed >= total
-            ? nil
-            : max(Self.minimumVisibleDuration, proposed)
+        zoom(
+            to: proposed >= total ? nil : max(Self.minimumVisibleDuration, proposed),
+            around: anchor
+        )
     }
 
     func setWaveformScale(_ scale: WaveformScale) {
@@ -403,16 +487,71 @@ final class ReviewViewModel: ObservableObject {
         ReviewPreferences.waveformScale = scale
     }
 
+    /// Where zooming keeps its focus: the playhead if it is on screen, otherwise the middle
+    /// of the current window — so zooming never jumps the user somewhere they weren't looking.
+    private var anchor: Stamp<Source> {
+        let window = visibleSpan
+        if let playheadSource = projection.sourceTime(forComposition: Stamp(playhead)),
+           window.contains(playheadSource) {
+            return playheadSource
+        }
+        return window.stamp(atFraction: 0.5)
+    }
+
+    private func zoom(to duration: TimeInterval?, around anchor: Stamp<Source>) {
+        guard let duration else {
+            visibleDuration = nil
+            viewportStart = 0
+            return
+        }
+        visibleDuration = duration
+        viewportStart = max(0, min(anchor.seconds - duration / 2, recordingDuration - duration))
+    }
+
+    /// Moves the window without changing the zoom level.
+    func scrollViewport(to start: TimeInterval) {
+        guard let visibleDuration else { return }
+        viewportStart = max(0, min(start, recordingDuration - visibleDuration))
+    }
+
+    /// Centres the window on a point in the recording, for jumping to something the user
+    /// picked from a list rather than found on screen.
+    func revealInViewport(_ stamp: Stamp<Source>) {
+        guard let visibleDuration else { return }
+        scrollViewport(to: stamp.seconds - visibleDuration / 2)
+    }
+
+    /// Brings the playhead back into view — offered as an action rather than done
+    /// automatically, since automatic following is what caused the panning.
+    func scrollToPlayhead() {
+        guard
+            let visibleDuration,
+            let source = projection.sourceTime(forComposition: Stamp(playhead))
+        else { return }
+        scrollViewport(to: source.seconds - visibleDuration / 2)
+    }
+
+    var isPlayheadVisible: Bool {
+        guard let source = projection.sourceTime(forComposition: Stamp(playhead)) else { return false }
+        return visibleSpan.contains(source)
+    }
+
     func zoomToFit() {
         visibleDuration = nil
+        viewportStart = 0
         detailTask?.cancel()
         laneDetail = [:]
         laneDetailSpan = nil
     }
 
     /// Re-reads the visible window at display resolution when the cached 10ms envelope is too
-    /// coarse to draw as a waveform. Called by the lane view, which is the only thing that
-    /// knows how wide it is.
+    /// coarse to draw as a waveform.
+    ///
+    /// The window is already in source time, because the lane's axis is the recording's — so
+    /// reaching the audio file is one subtraction of that lane's offset and nothing else. The
+    /// previous version took a *composition* window and subtracted only the lane offset,
+    /// skipping the time map: once anything was cut it read the wrong region and then indexed
+    /// past the bucket array, so the lane silently drew nothing at any zoom level.
     func requestWaveformDetail(viewWidth: CGFloat) {
         let span = visibleSpan
         guard
@@ -422,7 +561,6 @@ final class ReviewViewModel: ObservableObject {
                 cachedBucketsPerSecond: WaveformPeaks.defaultBucketsPerSecond
             )
         else {
-            // Zoomed out far enough that the cache suffices.
             if laneDetailSpan != nil {
                 detailTask?.cancel()
                 laneDetail = [:]
@@ -431,7 +569,6 @@ final class ReviewViewModel: ObservableObject {
             return
         }
 
-        // Already have this window at sufficient resolution.
         if let existing = laneDetailSpan,
            abs(existing.start - span.start) < 0.001,
            abs(existing.end - span.end) < 0.001 {
@@ -441,24 +578,23 @@ final class ReviewViewModel: ObservableObject {
         detailTask?.cancel()
         detailTask = Task { [weak self] in
             guard let self else { return }
-            // Coalesce: the window follows the playhead, so this is asked for constantly
-            // during playback and a read per frame would be wasted work.
+            // Coalesced: zooming and scrolling ask for this repeatedly, and a read per event
+            // would be wasted work.
             try? await Task.sleep(for: .milliseconds(80))
             guard !Task.isCancelled else { return }
 
             var fetched: [AudioLane: WaveformPeaks] = [:]
             for lane in AudioLane.allCases {
                 guard let probe = self.probes.first(where: { $0.kind.lane == lane }) else { continue }
-                // Into the audio file's own clock, which is where its samples live.
-                let offset = Timeline.seconds(
-                    self.timeline?.audio.first { $0.lane == lane }?.timeOffset ?? .zero
-                )
-                let inFileTime = TimeSpan(start: span.start - offset, end: span.end - offset)
-                guard inFileTime.end > 0 else { continue }
+
+                // Source -> this lane's own audio file, the projection's only expression of it.
+                let fileStart = self.projection.audioFileTime(forSource: span.start, lane: lane)
+                let fileEnd = self.projection.audioFileTime(forSource: span.end, lane: lane)
+                guard fileEnd > 0 else { continue }
 
                 if let detail = await self.extractor.detail(
                     url: probe.url,
-                    range: TimeSpan(start: max(0, inFileTime.start), end: inFileTime.end),
+                    range: TimeSpan(start: max(0, fileStart), end: fileEnd),
                     bucketsPerSecond: bucketsPerSecond
                 ) {
                     fetched[lane] = detail
@@ -487,13 +623,17 @@ final class ReviewViewModel: ObservableObject {
 
     /// Converts the playhead into the session time that `EditOperation`s are expressed in.
     /// Falls back to the end of the timeline so an edit at the very last frame still lands.
-    var playheadSourceTime: TimeInterval {
-        guard let timeline else { return 0 }
-        if let mapped = timeline.timeMap.sourceTime(forComposition: playhead) {
-            return Timeline.seconds(mapped.source)
+    ///
+    /// Goes through the projection rather than reaching into `timeMap` directly, so this is
+    /// not a second conversion site that can drift from the first.
+    var playheadSourceStamp: Stamp<Source> {
+        if let mapped = projection.sourceTime(forComposition: Stamp(playhead)) {
+            return mapped
         }
-        return timeline.timeMap.segments.last.map { Timeline.seconds($0.source.end) } ?? 0
+        return projection.regions.last?.span.end ?? projection.recording.end
     }
+
+    var playheadSourceTime: TimeInterval { playheadSourceStamp.seconds }
 
     var currentOverlay: OverlayKeyframe? {
         store?.document.overlay(at: playheadSourceTime)
@@ -529,7 +669,210 @@ final class ReviewViewModel: ObservableObject {
         apply(.setLaneMuted(lane: lane, muted: muted))
     }
 
+    // MARK: - Keyboard
+
+    /// Runs a resolved key command. Returns false when there was nothing to do, so the event
+    /// monitor can pass the keystroke on rather than swallowing it.
+    @discardableResult
+    func perform(_ command: ReviewKeyCommand) -> Bool {
+        switch command {
+        case .togglePlayback:
+            togglePlayback()
+        case .cutSelection:
+            guard selection != nil else { return false }
+            cutSelection()
+        case .clearSelection:
+            guard selection != nil || selectedCutRegionID != nil else { return false }
+            clearSelection()
+        case .splitAtPlayhead:
+            splitAtPlayhead()
+        case .addMarker:
+            addMarkerAtPlayhead()
+        case .undo:
+            guard store?.canUndo == true else { return false }
+            store?.undo()
+        case .redo:
+            guard store?.canRedo == true else { return false }
+            store?.redo()
+        case .zoomIn:
+            guard canZoomIn else { return false }
+            zoomIn()
+        case .zoomOut:
+            guard canZoomOut else { return false }
+            zoomOut()
+        case .zoomToFit:
+            zoomToFit()
+        case .nudgePlayhead(let frames):
+            // Pause first: while playing, the next 30Hz tick overwrites the playhead and the
+            // nudge is invisible — but the keystroke was still swallowed.
+            pause()
+            let step = Timeline.seconds(Timeline.frameDuration) * Double(frames)
+            Task { await seek(to: playhead + Timeline.time(seconds: step), exact: true) }
+        }
+        return true
+    }
+
+    // MARK: - Selection
+
+    var selectedCutRegion: ProjectedRegion? {
+        guard let id = selectedCutRegionID else { return nil }
+        return projection.regions.first { $0.id == id }
+    }
+
+    /// Selection is transient and lives only here: it must not persist, must not be undoable,
+    /// and must not rebuild the composition.
+    func select(from: Stamp<Source>, to: Stamp<Source>) {
+        let span = StampSpan<Source>(
+            start: Stamp(min(from.seconds, to.seconds)),
+            end: Stamp(max(from.seconds, to.seconds))
+        )
+        guard span.duration > 0.001 else { return }
+        selection = span
+        selectedCutRegionID = nil
+    }
+
+    func clearSelection() {
+        selection = nil
+        selectedCutRegionID = nil
+    }
+
+    /// A click with no drag: seek there, and select a cut region if that is what was hit.
+    ///
+    /// A single click only *selects* a cut — restoring takes a second click. Restoring on one
+    /// click would let a scrub accidentally un-cut a long range with nothing but a shade
+    /// changing to show it.
+    func handleLaneClick(at stamp: Stamp<Source>) {
+        selection = nil
+
+        if let region = projection.region(atSource: stamp), region.isCut {
+            selectedCutRegionID = region.id
+        } else {
+            selectedCutRegionID = nil
+        }
+
+        // Inside a cut there is no composition time, so this lands on the cut's boundary —
+        // the nearest point that actually exists on the edited timeline.
+        guard let composition = projection.nearestCompositionTime(forSource: stamp) else { return }
+        Task { await seek(to: composition.cm, exact: true) }
+    }
+
+    /// Removes the selected range. One cut, not merged into any it overlaps, so restoring it
+    /// re-exposes whatever was underneath.
+    func cutSelection() {
+        guard let selection else { return }
+        guard apply(.removeRange(selection.timeSpan)) else { return }
+        clearSelection()
+    }
+
+    func splitAtSelectionStart() {
+        guard let selection else { return }
+        apply(.splitClip(at: selection.start.seconds))
+    }
+
+    func splitAtPlayhead() {
+        apply(.splitClip(at: playheadSourceTime))
+    }
+
+    /// Restores every cut covering the selected region — plural, because a word cut can sit
+    /// inside a range cut and removing only one would visibly do nothing.
+    func restoreSelectedCutRegion() {
+        guard let region = selectedCutRegion, !region.cutIDs.isEmpty else { return }
+        guard apply(.uncut(ids: region.cutIDs)) else { return }
+        selectedCutRegionID = nil
+    }
+
+    /// Double-clicking a cut region restores it directly.
+    /// Restores a region already in hand, so a click on it does not have to be re-resolved
+    /// through a coordinate — the 2pt-wide hairline a word cut draws as is narrower than the
+    /// rounding in that round trip.
+    func restoreCutRegion(_ region: ProjectedRegion) {
+        guard region.isCut, !region.cutIDs.isEmpty else { return }
+        apply(.uncut(ids: region.cutIDs))
+        selectedCutRegionID = nil
+    }
+
+    func restoreCutRegion(at stamp: Stamp<Source>) {
+        guard let region = projection.region(atSource: stamp), region.isCut else { return }
+        apply(.uncut(ids: region.cutIDs))
+        selectedCutRegionID = nil
+    }
+
+    // MARK: - Markers
+
+    func addMarkerAtPlayhead(label: String = "") {
+        apply(.addMarker(EditMarker(at: playheadSourceTime, label: label)))
+    }
+
+    /// Editorial markers only. A recording marker is a fact from `events.jsonl` and refuses to
+    /// move or be renamed rather than silently forking into an editable copy.
+    func moveMarker(_ marker: ProjectedMarker, to stamp: Stamp<Source>) {
+        guard let id = marker.editorialID else {
+            lastError = "Markers made while recording can't be moved."
+            return
+        }
+        apply(.moveMarker(id: id, to: stamp.seconds))
+    }
+
+    func renameMarker(_ marker: ProjectedMarker, to label: String) {
+        guard let id = marker.editorialID else {
+            lastError = "Markers made while recording can't be renamed."
+            return
+        }
+        apply(.renameMarker(id: id, label: label))
+    }
+
+    func removeMarker(_ marker: ProjectedMarker) {
+        guard let id = marker.editorialID else {
+            lastError = "Markers made while recording can't be deleted."
+            return
+        }
+        apply(.removeMarker(id: id))
+    }
+
+    func seek(to marker: ProjectedMarker) {
+        guard let composition = marker.composition else { return }
+        Task { await seek(to: composition.cm, exact: true) }
+    }
+
     // MARK: - Words
+
+    var cutWordCount: Int { projection.words.filter(\.isCut).count }
+
+    /// Cut or restore a single word. The projection already carries its source span, so no
+    /// clock conversion happens here.
+    func toggle(word: ProjectedWord) {
+        guard let document = store?.document else { return }
+
+        if document.isExcluded(wordID: word.id) {
+            apply(.restoreWords(ids: [word.id]))
+        } else if word.isCut {
+            // Not cut by name but still absent — a coarse cut covers it. Restore whatever
+            // covers it instead, which is what the user means by clicking it.
+            let ids = projection.cutIDs(overlapping: word.source)
+            guard !ids.isEmpty else { return }
+            apply(.uncut(ids: ids))
+        } else {
+            apply(.excludeWords([ExcludedWord(
+                id: word.id,
+                start: word.source.start.seconds,
+                end: word.source.end.seconds,
+                text: word.text
+            )]))
+        }
+    }
+
+    func cut(cue: ProjectedCue) {
+        apply(.removeRange(cue.source.timeSpan))
+    }
+
+    func addMarker(at stamp: Stamp<Source>, label: String = "") {
+        apply(.addMarker(EditMarker(at: stamp.seconds, label: label)))
+    }
+
+    func seek(to cue: ProjectedCue) {
+        guard let start = cue.composition.first?.start else { return }
+        Task { await seek(to: start.cm, exact: true) }
+    }
 
     func isWordExcluded(_ word: Transcript.Word) -> Bool {
         store?.document.isExcluded(wordID: word.id) ?? false
@@ -604,27 +947,23 @@ final class ReviewViewModel: ObservableObject {
     }
 
     /// Composition time -> the clock the transcript is stamped in.
+    ///
+    /// Routed through the projection, which owns every clock conversion — reaching into
+    /// `timeMap` here would be a second implementation of the same mapping.
     private func transcriptTime(forComposition time: CMTime) -> TimeInterval {
-        guard
-            let timeline,
-            let mapped = timeline.timeMap.sourceTime(forComposition: time)
-        else { return 0 }
-        return Timeline.seconds(mapped.source) - transcriptOffset
+        guard let mapped = projection.sourceTime(forComposition: Stamp(time)) else { return 0 }
+        return mapped.seconds - transcriptOffset
     }
 
-    /// Where a transcript cue appears on the composition timeline. Empty when the cue's
-    /// content was cut, and more than one entry if a cut split it.
-    func compositionSpans(for segment: Transcript.Segment) -> [TimeSpan] {
-        guard let timeline else { return [] }
-        let offset = transcriptOffset
-        return timeline.timeMap.compositionSpans(
-            forSource: TimeSpan(start: segment.start + offset, end: segment.end + offset)
-        )
-    }
-
+    /// Seeks to where a cue starts on the edited timeline.
+    ///
+    /// Reads the already-projected cue instead of re-mapping the segment: the projection
+    /// computed exactly this, and mapping it a second time here is how the two answers drift
+    /// apart. A cue whose content was entirely cut has no composition span, so nothing moves.
     func seek(to segment: Transcript.Segment) {
-        guard let start = compositionSpans(for: segment).first?.start else { return }
-        Task { await seek(to: Timeline.time(seconds: start), exact: true) }
+        guard let start = projection.cues.first(where: { $0.id == segment.id })?
+            .composition.first?.start else { return }
+        Task { await seek(to: start.cm, exact: true) }
     }
 
     /// Removes the range a transcript cue occupies. The operation is expressed in session
@@ -642,23 +981,90 @@ final class ReviewViewModel: ObservableObject {
     /// session times incorrectly baked wrong spans into saved documents, and those would
     /// otherwise keep cutting the wrong audio forever.
     private func reconcileExcludedWords() {
-        guard let store, let transcript, !store.document.excludedWords.isEmpty else { return }
+        guard let store, let transcript else { return }
+        let identity = transcript.identity
+
+        // A different transcript renumbers every word, so the saved ids no longer mean what
+        // they meant. Re-deriving against it would move each cut onto whatever word now holds
+        // that id — unrelated audio. Detach instead, before any re-derivation can run.
+        if let recorded = store.document.transcriptIdentity, recorded != identity {
+            detachWordCuts()
+        }
+
+        guard !store.document.excludedWords.isEmpty else {
+            // Still worth stamping: it is what makes the *next* re-transcription detectable.
+            stampTranscriptIdentity(identity)
+            return
+        }
 
         let byID = transcript.wordsByID
         let offset = transcriptOffset
 
         store.repair { document in
-            var changed = false
-            document.excludedWords = document.excludedWords.map { excluded in
-                guard let word = byID[excluded.id] else { return excluded }
-                var corrected = excluded
-                corrected.start = word.start + offset
-                corrected.end = word.end + offset
-                corrected.text = word.text
-                if abs(corrected.start - excluded.start) > 0.0005 { changed = true }
+            document.cuts = document.cuts.map { cut in
+                // Only word cuts are derived from the transcript; a range, filler or agent cut
+                // has no word to re-derive from and must be left exactly as it is.
+                guard case .word(let wordID, _) = cut.origin, let word = byID[wordID] else { return cut }
+
+                var corrected = cut
+                // Snap both sides and compare exactly. A tolerance here would have to be
+                // looser than one tick (1/90000s), and anything looser can oscillate between
+                // neighbouring ticks and rebuild the composition indefinitely.
+                corrected.span = TimeSpan(
+                    start: (try? SessionEdit.snapped(word.start + offset)) ?? cut.span.start,
+                    end: (try? SessionEdit.snapped(word.end + offset)) ?? cut.span.end
+                )
+                corrected.origin = .word(id: wordID, text: word.text)
                 return corrected
             }
-            return changed
+            document.transcriptIdentity = identity
+            // Unconditionally true, and NOT "did a span move".
+            //
+            // Gating on that dropped the identity stamp whenever the spans were already
+            // correct — which is the common case, including every freshly migrated v1
+            // document. The identity then stayed nil, the mismatch guard above could never
+            // fire, and a later re-transcription silently re-derived every cut onto whatever
+            // word had inherited its id. `repair` discards a no-op commit on its own via
+            // `updated != document`, so there is nothing to save here anyway.
+            return true
+        }
+    }
+
+    /// Turns word cuts into plain range cuts, keeping the exact spans.
+    ///
+    /// The audio stays cut precisely where it was — the span is the authority for playback, and
+    /// it was correct when authored. What is dropped is the claim that the cut corresponds to a
+    /// particular transcript word, which is no longer true. The transcript panel stays
+    /// consistent regardless, because it decides a word is cut from the geometry of the
+    /// timeline rather than from these origins. And `uncut` still reverses them.
+    private func detachWordCuts() {
+        guard let store else { return }
+        let affected = store.document.cuts.filter { $0.wordID != nil }.count
+        guard affected > 0 else { return }
+
+        store.repair { document in
+            document.cuts = document.cuts.map { cut in
+                guard cut.wordID != nil else { return cut }
+                var detached = cut
+                detached.origin = .range
+                return detached
+            }
+            return true
+        }
+
+        // Surfaced rather than done quietly: the cuts still play exactly as before, but they
+        // are no longer tied to transcript words, so the user should know why the transcript
+        // stopped naming them. A notice, not an error — nothing went wrong.
+        lastNotice = "The transcript was regenerated, so \(affected) word \(affected == 1 ? "cut" : "cuts") "
+            + "\(affected == 1 ? "is" : "are") now a plain time \(affected == 1 ? "range" : "ranges"). "
+            + "Nothing was un-cut — they just no longer follow the words."
+    }
+
+    private func stampTranscriptIdentity(_ identity: String) {
+        guard let store, store.document.transcriptIdentity != identity else { return }
+        store.repair { document in
+            document.transcriptIdentity = identity
+            return true
         }
     }
 
@@ -667,6 +1073,7 @@ final class ReviewViewModel: ObservableObject {
             transcript = existing
             transcriptState = .ready
             reconcileExcludedWords()
+            reproject()
             return
         }
 
@@ -683,6 +1090,7 @@ final class ReviewViewModel: ObservableObject {
             transcript = produced
             transcriptState = .ready
             reconcileExcludedWords()
+            reproject()
         } catch {
             guard !Task.isCancelled else { return }
             transcriptState = .failed(error.localizedDescription)

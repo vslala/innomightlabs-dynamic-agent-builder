@@ -56,6 +56,45 @@ struct Transcript: Codable, Equatable, Sendable {
         self.segments = segments
     }
 
+    // MARK: - Identity
+
+    /// A fingerprint of the word sequence, used to tell whether a saved edit's word ids still
+    /// mean what they meant when it was authored.
+    ///
+    /// Word ids are positional, so re-running the model renumbers everything: a cut recorded
+    /// against id 57 would silently re-derive onto whatever word is 57th this time, moving the
+    /// cut onto unrelated audio. Comparing this string catches that.
+    ///
+    /// Built from the text and timing of every word rather than the file's bytes, because the
+    /// same transcript re-encoded must compare equal — only a genuine re-transcription should
+    /// invalidate.
+    /// Deliberately FNV-1a and not `Hasher`: Swift seeds `Hasher` per process, so a
+    /// `hashValue`-derived identity would differ on every launch and detach every word cut
+    /// from a transcript that had not changed. This must be stable across launches and
+    /// machines, because it is persisted in `edit.json`.
+    var identity: String {
+        let words = allWords
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+
+        func feed(_ bytes: some Sequence<UInt8>) {
+            for byte in bytes {
+                hash ^= UInt64(byte)
+                hash = hash &* 0x100_0000_01b3
+            }
+        }
+
+        feed("\(schemaVersion)|\(engine)|".utf8)
+        for word in words {
+            // Quantised to milliseconds: a re-serialised transcript can differ in the last
+            // float digit without being a different transcript.
+            let start = Int((word.start * 1000).rounded())
+            let end = Int((word.end * 1000).rounded())
+            feed("\(word.id):\(start):\(end):\(word.text)|".utf8)
+        }
+
+        return "w\(words.count)-\(String(hash, radix: 16))"
+    }
+
     // MARK: - Lookup
 
     var allWords: [Word] { segments.flatMap(\.words) }

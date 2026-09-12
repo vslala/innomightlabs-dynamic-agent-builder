@@ -130,11 +130,45 @@ final class EditOperationTests: XCTestCase {
 
     // MARK: - splitClip
 
-    func testSplittingProducesTwoAdjacentClipsAndKeepsTotalDuration() throws {
+    func testSplittingRecordsABoundaryWithoutChangingWhatPlays() throws {
+        // A split removes nothing, so it deliberately does not reach the composition: an
+        // extra segment would mean an extra insert per track and another boundary at which
+        // AVFoundation picks the nearest decodable frame, for identical output.
         let edit = try initial().applying(.splitClip(at: 12))
 
-        XCTAssertEqual(spans(edit), [TimeSpan(start: 0, end: 12), TimeSpan(start: 12, end: 30)])
+        XCTAssertEqual(edit.splitPoints, [12])
+        XCTAssertEqual(spans(edit), [TimeSpan(start: 0, end: 30)], "the timeline is untouched")
         XCTAssertEqual(edit.duration, 30)
+    }
+
+    func testSplittingTwiceAtTheSamePlaceIsRejected() throws {
+        let once = try initial().applying(.splitClip(at: 12))
+
+        XCTAssertThrowsError(try once.applying(.splitClip(at: 12))) { error in
+            XCTAssertEqual(error as? EditOperationError, .alreadySplit(12))
+        }
+    }
+
+    func testASplitCanBeRemoved() throws {
+        let edit = try initial()
+            .applying(.splitClip(at: 12))
+            .applying(.removeSplit(at: 12))
+
+        XCTAssertTrue(edit.splitPoints.isEmpty)
+    }
+
+    func testRemovingASplitThatIsNotThereIsRejected() {
+        XCTAssertThrowsError(try initial().applying(.removeSplit(at: 12))) { error in
+            XCTAssertEqual(error as? EditOperationError, .noSplit(at: 12))
+        }
+    }
+
+    func testSplittingInsideACutIsRejected() throws {
+        let edit = try initial().applying(.removeRange(TimeSpan(start: 10, end: 20)))
+
+        XCTAssertThrowsError(try edit.applying(.splitClip(at: 15))) { error in
+            XCTAssertEqual(error as? EditOperationError, .noSplitPointInsideAClip(15))
+        }
     }
 
     func testSplittingAtAClipBoundaryIsRejected() {
@@ -149,10 +183,51 @@ final class EditOperationTests: XCTestCase {
         }
     }
 
-    func testSplitClipsGetDistinctIdentities() throws {
-        let edit = try initial().applying(.splitClip(at: 12))
+    func testCutsAreIndividuallyAddressable() throws {
+        // The reason cuts are stored rather than folded into a clip list: each one can be
+        // pointed at and undone on its own, in any order.
+        let edit = try initial()
+            .applying(.removeRange(TimeSpan(start: 5, end: 8)))
+            .applying(.removeRange(TimeSpan(start: 15, end: 18)))
+        XCTAssertEqual(edit.cuts.count, 2)
 
-        XCTAssertEqual(Set(edit.clips.map(\.id)).count, 2)
+        let first = try XCTUnwrap(edit.cuts.first)
+        let restored = try edit.applying(.uncut(ids: [first.id]))
+
+        XCTAssertEqual(restored.cuts.count, 1)
+        XCTAssertEqual(spans(restored), [TimeSpan(start: 0, end: 15), TimeSpan(start: 18, end: 30)])
+    }
+
+    func testUncuttingSomethingAlreadyGoneIsRejected() {
+        XCTAssertThrowsError(try initial().applying(.uncut(ids: [UUID()]))) { error in
+            XCTAssertEqual(error as? EditOperationError, .noSuchCut)
+        }
+    }
+
+    func testOverlappingCutsAreNotMergedInTheDocument() throws {
+        // Merging would mean un-cutting the outer range could not re-expose the inner cut.
+        let edit = try initial()
+            .applying(.excludeWords([ExcludedWord(id: 1, start: 12, end: 12.4, text: "um")]))
+            .applying(.removeRange(TimeSpan(start: 10, end: 20)))
+
+        XCTAssertEqual(edit.cuts.count, 2)
+        XCTAssertEqual(spans(edit), [TimeSpan(start: 0, end: 10), TimeSpan(start: 20, end: 30)])
+
+        // Restoring only the range leaves the word still cut.
+        let rangeCut = try XCTUnwrap(edit.cuts.first { $0.origin == .range })
+        let restored = try edit.applying(.uncut(ids: [rangeCut.id]))
+
+        XCTAssertEqual(spans(restored), [TimeSpan(start: 0, end: 12), TimeSpan(start: 12.4, end: 30)])
+        XCTAssertTrue(restored.isExcluded(wordID: 1))
+    }
+
+    func testTouchingCutsMergeWhenDerivingClips() throws {
+        // Adjacent cuts must not leave a zero-length clip between them.
+        let edit = try initial()
+            .applying(.removeRange(TimeSpan(start: 10, end: 15)))
+            .applying(.removeRange(TimeSpan(start: 15, end: 20)))
+
+        XCTAssertEqual(spans(edit), [TimeSpan(start: 0, end: 10), TimeSpan(start: 20, end: 30)])
     }
 
     // MARK: - overlay keyframes

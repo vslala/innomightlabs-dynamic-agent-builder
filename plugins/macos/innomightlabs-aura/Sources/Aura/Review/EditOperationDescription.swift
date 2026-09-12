@@ -29,6 +29,19 @@ enum EditOperationDescription {
             return "Cut \(words.count) word\(words.count == 1 ? "" : "s"): \(quoted(words.map(\.text)))"
         case .restoreWords(let ids):
             return "Restore \(ids.count) cut word\(ids.count == 1 ? "" : "s")"
+        case .uncut(let ids):
+            return "Restore \(ids.count) cut\(ids.count == 1 ? "" : "s")"
+        case .removeSplit(let t):
+            return "Remove split at \(TimeFormatting.timecode(t))"
+        case .addMarker(let marker):
+            let name = marker.label.isEmpty ? "marker" : "“\(marker.label)”"
+            return "Add \(name) at \(TimeFormatting.timecode(marker.at))"
+        case .removeMarker:
+            return "Remove marker"
+        case .renameMarker(_, let label):
+            return "Rename marker to “\(label)”"
+        case .moveMarker(_, let time):
+            return "Move marker to \(TimeFormatting.timecode(time))"
         case .setCameraStyle(let style):
             var parts = [style.shape.rawValue]
             if style.borderWidth > 0 { parts.append("border") }

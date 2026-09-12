@@ -27,14 +27,17 @@ struct TimeSpan: Codable, Hashable, Sendable {
     func contains(_ t: TimeInterval) -> Bool { t >= start && t < end }
 }
 
-/// One entry in the edit decision list. `source` is on the session timeline — the
+/// One surviving stretch of the recording. `source` is on the session timeline — the
 /// pause-compacted clock all four recorded files share.
-struct TimelineClip: Codable, Hashable, Sendable, Identifiable {
-    var id: UUID
+///
+/// Deliberately identity-free. The old `id` was write-only (set on every derivation, read by
+/// nobody), and regenerating it made `TimeMap == TimeMap` false for identical timelines, which
+/// defeated the `.equatable()` short-circuit that stops the waveform re-rasterising on every
+/// publish.
+struct TimelineClip: Codable, Hashable, Sendable {
     var source: TimeSpan
 
-    init(id: UUID = UUID(), source: TimeSpan) {
-        self.id = id
+    init(source: TimeSpan) {
         self.source = source
     }
 }
@@ -55,6 +58,83 @@ struct NormalizedRect: Codable, Hashable, Sendable {
 
     func scaled(to size: CGSize) -> CGRect {
         CGRect(x: x * size.width, y: y * size.height, width: width * size.width, height: height * size.height)
+    }
+}
+
+/// One removal from the recording, addressable and individually reversible.
+///
+/// Cuts are *facts about the original recording*, not mutations of a clip list — which is what
+/// lets a single cut be pointed at, shaded on the waveform, and restored on its own. Two cuts
+/// may legitimately cover the same region (a word cut inside a coarse range cut), so anything
+/// resolving a point back to cuts must handle several.
+struct Cut: Identifiable, Codable, Hashable, Sendable {
+    /// Why this was cut, which is what the UI labels and what restoration means.
+    enum Origin: Codable, Hashable, Sendable {
+        /// A range the user selected directly.
+        case range
+        /// One transcript word. Carries the word's identity so the span can be re-derived.
+        case word(id: Int, text: String)
+        /// Part of a filler sweep.
+        case filler(word: String)
+        /// Proposed by the agent and accepted.
+        case agent(reason: String)
+    }
+
+    let id: UUID
+    /// Session time.
+    var span: TimeSpan
+    var origin: Origin
+
+    init(id: UUID = UUID(), span: TimeSpan, origin: Origin) {
+        self.id = id
+        self.span = span
+        self.origin = origin
+    }
+
+    var isFiller: Bool {
+        if case .filler = origin { return true }
+        return false
+    }
+
+    var wordID: Int? {
+        if case .word(let id, _) = origin { return id }
+        return nil
+    }
+
+    /// A one-word tag for the agent digest, which has no room for the associated values.
+    var digestLabel: String {
+        switch origin {
+        case .range: return "user"
+        case .word: return "word"
+        case .filler: return "filler"
+        case .agent: return "agent"
+        }
+    }
+
+    /// What was removed, for labelling a shaded region or a suggestion.
+    var text: String? {
+        switch origin {
+        case .word(_, let text): return text
+        case .filler(let word): return word
+        case .range, .agent: return nil
+        }
+    }
+}
+
+/// A point the user marked while editing, as distinct from a marker logged during recording.
+///
+/// Recording markers live in `events.jsonl` and are immutable facts; these are editorial and
+/// can be moved, renamed and deleted.
+struct EditMarker: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    /// Session time.
+    var at: TimeInterval
+    var label: String
+
+    init(id: UUID = UUID(), at: TimeInterval, label: String = "") {
+        self.id = id
+        self.at = at
+        self.label = label
     }
 }
 
@@ -130,71 +210,108 @@ struct AudioLaneSettings: Codable, Hashable, Sendable {
     }
 }
 
-/// The non-destructive edit document, persisted as `edit.json` beside the recorded files.
+/// The non-destructive edit document, persisted as `edit.json`.
 ///
-/// This is the single source of truth for the review window, and deliberately contains no
-/// AVFoundation types: it is also the shape the InnomightLabs agent reads when suggesting
-/// edits, and the shape `EditOperation`s mutate. Compositions are derived from it and never
-/// the other way round.
+/// **Declarative.** It records what was *removed* from the original recording, not what
+/// survives: `cuts` plus `splitPoints`, from which the surviving clip list is derived. That
+/// inversion is what makes every cut addressable and individually restorable, and it means
+/// there is one definition of the timeline rather than a clip list and an exclusion list that
+/// can disagree.
+///
+/// Contains no AVFoundation types: it is also the shape the InnomightLabs agent reads, and the
+/// shape `EditOperation`s mutate. Compositions are derived from it and never the other way
+/// round.
 struct SessionEdit: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 1
+    /// v2 made the document declarative: `cuts`/`splitPoints`/`markers` replaced a mutable
+    /// clip list and a separate word-exclusion list. A v1 document is migrated by
+    /// `SessionEditMigration`, never decoded directly — see there for why.
+    static let currentSchemaVersion = 2
 
     var schemaVersion: Int
+    /// The original recording's full extent, in session time.
+    ///
+    /// Stored rather than measured from the media on each open. Three places need the extent
+    /// and have no probes — `applying(_:)` (pure by design, and where the "would remove
+    /// everything" guard lives), `SessionDigest.make`, and `EditSuggestionPrompt.build` — and
+    /// probing is not even stable: a moved or truncated file probes as absent, which would
+    /// silently shorten the timeline and discard edits beyond the new end.
+    var recordingDuration: TimeInterval
+    /// Removals. Never merged here, only when deriving clips: merging would destroy the
+    /// individual restorability that is the point of storing them separately.
+    var cuts: [Cut]
+    /// Boundaries that remove nothing. Deliberately **not** part of the derived timeline —
+    /// see `clips`.
+    var splitPoints: [TimeInterval]
+    /// Editorial markers, distinct from the recording markers in `events.jsonl`.
+    var markers: [EditMarker]
     /// Seconds between the session timeline and mic media time. The transcript is produced
     /// from `microphone.m4a`, so it is stamped in mic media time; if the mic writer had
-    /// warm-up latency that file carries a leading empty edit and the two clocks differ by
-    /// 100-300ms. Resolved once at import and read from here by everything else.
+    /// warm-up latency the two clocks differ by 100-300ms.
     var micTimeOffset: TimeInterval
-    var clips: [TimelineClip]
     var cameraOverlay: [OverlayKeyframe]
     var audioLanes: [AudioLaneSettings]
     /// How the camera overlay is drawn. Beyond a plain rectangle this selects the Core Image
     /// compositor, so it lives in the document rather than being a view-level preference.
     var cameraStyle: PiPStyle
-
-    /// Words cut from the video, reversibly. Separate from `clips` so a word-level edit can be
-    /// undone individually and out of order — restoring one word months later shouldn't mean
-    /// unwinding every edit made after it.
-    var excludedWords: [ExcludedWord]
+    /// Identifies the transcript the `.word` cuts were made against.
+    ///
+    /// Word ids are renumbered densely per transcript file, so re-transcribing invalidates
+    /// them. Without this, the span-repair pass would rewrite cuts onto whichever words now
+    /// hold those ids — turning a safety net into a corruption mechanism.
+    var transcriptIdentity: String?
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, micTimeOffset, clips, cameraOverlay, audioLanes, excludedWords, cameraStyle
+        case schemaVersion, recordingDuration, cuts, splitPoints, markers
+        case micTimeOffset, cameraOverlay, audioLanes, cameraStyle, transcriptIdentity
     }
 
     init(
-        schemaVersion: Int,
-        micTimeOffset: TimeInterval,
-        clips: [TimelineClip],
+        schemaVersion: Int = currentSchemaVersion,
+        recordingDuration: TimeInterval,
+        cuts: [Cut] = [],
+        splitPoints: [TimeInterval] = [],
+        markers: [EditMarker] = [],
+        micTimeOffset: TimeInterval = 0,
         cameraOverlay: [OverlayKeyframe],
         audioLanes: [AudioLaneSettings],
-        excludedWords: [ExcludedWord],
-        cameraStyle: PiPStyle = .plain
+        cameraStyle: PiPStyle = .plain,
+        transcriptIdentity: String? = nil
     ) {
-        self.cameraStyle = cameraStyle
         self.schemaVersion = schemaVersion
+        self.recordingDuration = recordingDuration
+        self.cuts = cuts
+        self.splitPoints = splitPoints
+        self.markers = markers
         self.micTimeOffset = micTimeOffset
-        self.clips = clips
         self.cameraOverlay = cameraOverlay
         self.audioLanes = audioLanes
-        self.excludedWords = excludedWords
+        self.cameraStyle = cameraStyle
+        self.transcriptIdentity = transcriptIdentity
     }
 
-    /// Hand-written so that a document saved before word exclusions existed still loads.
-    /// Swift's synthesized decoder requires every non-optional key regardless of defaults, so
-    /// relying on it here would have thrown away a user's existing edits on upgrade.
+    /// Strict about the two keys that define the timeline.
+    ///
+    /// `cuts` and `recordingDuration` are **required**, unlike the tolerant defaults used for
+    /// additive fields. Defaulting them would mean a v2 document that somehow lost `cuts`
+    /// decodes as "nothing was cut" and silently discards every edit — which is precisely the
+    /// failure the hand-written decoder exists to prevent. A v1 document is routed to
+    /// `SessionEditMigration` before it ever reaches here.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        recordingDuration = try container.decode(TimeInterval.self, forKey: .recordingDuration)
+        cuts = try container.decode([Cut].self, forKey: .cuts)
+        splitPoints = try container.decodeIfPresent([TimeInterval].self, forKey: .splitPoints) ?? []
+        markers = try container.decodeIfPresent([EditMarker].self, forKey: .markers) ?? []
         micTimeOffset = try container.decodeIfPresent(TimeInterval.self, forKey: .micTimeOffset) ?? 0
-        clips = try container.decode([TimelineClip].self, forKey: .clips)
         cameraOverlay = try container.decode([OverlayKeyframe].self, forKey: .cameraOverlay)
         audioLanes = try container.decode([AudioLaneSettings].self, forKey: .audioLanes)
-        excludedWords = try container.decodeIfPresent([ExcludedWord].self, forKey: .excludedWords) ?? []
         cameraStyle = try container.decodeIfPresent(PiPStyle.self, forKey: .cameraStyle) ?? .plain
+        transcriptIdentity = try container.decodeIfPresent(String.self, forKey: .transcriptIdentity)
     }
 
-    /// A fresh document for an unedited recording: one clip spanning the whole thing, the
-    /// camera parked in a corner, both lanes at unity gain.
+    /// A fresh document for an unedited recording: nothing cut, the camera parked in a corner,
+    /// both lanes at unity gain.
     static func initial(
         duration: TimeInterval,
         micTimeOffset: TimeInterval = 0,
@@ -202,77 +319,125 @@ struct SessionEdit: Codable, Equatable, Sendable {
         cameraVisible: Bool = true
     ) -> SessionEdit {
         SessionEdit(
-            schemaVersion: currentSchemaVersion,
+            recordingDuration: max(0, duration),
             micTimeOffset: micTimeOffset,
-            clips: [TimelineClip(source: TimeSpan(start: 0, end: max(0, duration)))],
             cameraOverlay: [OverlayKeyframe(t: 0, rect: cameraRect, visible: cameraVisible)],
-            audioLanes: AudioLane.allCases.map { AudioLaneSettings(lane: $0) },
-            excludedWords: []
+            audioLanes: AudioLane.allCases.map { AudioLaneSettings(lane: $0) }
         )
     }
 
-    /// What actually plays: the coarse clip list with every excluded word subtracted.
-    ///
-    /// Two independent layers rather than one, because they are edited differently — clips by
-    /// dragging and cutting ranges, words by name — and collapsing them would make word
-    /// removal destructive.
-    var effectiveClips: [TimelineClip] {
-        guard !excludedWords.isEmpty else { return clips }
+    // MARK: - Derived timeline
 
-        var result = clips
-        for word in excludedWords.sorted(by: { $0.start < $1.start }) where !word.span.isEmpty {
-            result = Self.subtracting(word.span, from: result)
+    /// What actually plays: the recording minus every cut.
+    ///
+    /// Derived from **cuts only**. `splitPoints` are deliberately excluded: nothing yet moves,
+    /// trims or reorders clips, so a split that removes nothing would add a composition
+    /// segment, an extra `insertTimeRange` per track, and another boundary at which
+    /// AVFoundation picks the nearest decodable frame — visibly duplicating or dropping a
+    /// frame for byte-identical output. Splits stay an editing concern (drawn on the ruler,
+    /// used to bound selections) until trim or move lands.
+    var clips: [TimelineClip] {
+        Self.deriveClips(recordingDuration: recordingDuration, cuts: cuts)
+    }
+
+    var timeMap: TimeMap { TimeMap(clips: clips) }
+
+    /// Total played duration: the recording minus what was cut.
+    var duration: TimeInterval { timeMap.duration }
+
+    /// Cuts merged into disjoint, ascending ranges. Merging happens **only** here.
+    static func mergedCutRanges(_ cuts: [Cut], recordingDuration: TimeInterval) -> [CMTimeRange] {
+        let limit = Timeline.time(seconds: max(0, recordingDuration))
+        guard limit > .zero else { return [] }
+
+        let ranges = cuts
+            .compactMap { cut -> CMTimeRange? in
+                guard cut.span.start.isFinite, cut.span.end.isFinite else { return nil }
+                let start = max(.zero, Timeline.time(seconds: cut.span.start))
+                let end = min(limit, Timeline.time(seconds: cut.span.end))
+                guard end > start else { return nil }
+                return CMTimeRange(start: start, end: end)
+            }
+            .sorted { lhs, rhs in
+                lhs.start == rhs.start ? lhs.end < rhs.end : lhs.start < rhs.start
+            }
+
+        var merged: [CMTimeRange] = []
+        for range in ranges {
+            // `<=` so touching cuts merge too; otherwise the derivation emits zero-length
+            // clips between them.
+            if let last = merged.last, range.start <= last.end {
+                merged[merged.count - 1] = CMTimeRange(start: last.start, end: max(last.end, range.end))
+            } else {
+                merged.append(range)
+            }
+        }
+        return merged
+    }
+
+    /// `[0, duration]` minus the merged cuts, in one forward sweep.
+    static func deriveClips(recordingDuration: TimeInterval, cuts: [Cut]) -> [TimelineClip] {
+        let limit = Timeline.time(seconds: max(0, recordingDuration))
+        guard limit > .zero else { return [] }
+
+        var result: [TimelineClip] = []
+        var cursor = CMTime.zero
+
+        for cut in mergedCutRanges(cuts, recordingDuration: recordingDuration) {
+            if cut.start > cursor {
+                result.append(TimelineClip(source: TimeSpan(CMTimeRange(start: cursor, end: cut.start))))
+            }
+            cursor = max(cursor, cut.end)
+        }
+        if cursor < limit {
+            result.append(TimelineClip(source: TimeSpan(CMTimeRange(start: cursor, end: limit))))
         }
         return result
     }
 
-    var timeMap: TimeMap { TimeMap(clips: effectiveClips) }
+    // MARK: - Cuts
+
+    func cut(id: UUID) -> Cut? { cuts.first { $0.id == id } }
+
+    /// Every cut covering a point in session time — plural, because a word cut can sit inside
+    /// a range cut, so restoring only one of them would visibly do nothing.
+    func cuts(at time: TimeInterval) -> [Cut] {
+        cuts.filter { $0.span.contains(time) }
+    }
 
     func isExcluded(wordID: Int) -> Bool {
-        excludedWords.contains { $0.id == wordID }
+        cuts.contains { $0.wordID == wordID }
     }
 
-    /// Lenient span subtraction, for composing word exclusions. Unlike the `removeRange`
-    /// operation this never rejects: a word outside the surviving clips simply removes
-    /// nothing, which is the right behaviour when a coarse cut already covered it.
-    static func subtracting(_ span: TimeSpan, from clips: [TimelineClip]) -> [TimelineClip] {
-        clips.flatMap { clip -> [TimelineClip] in
-            let source = clip.source
-            guard span.start < source.end, span.end > source.start else { return [clip] }
-
-            var pieces: [TimelineClip] = []
-            if span.start > source.start {
-                pieces.append(TimelineClip(id: clip.id, source: TimeSpan(start: source.start, end: span.start)))
-            }
-            if span.end < source.end {
-                let id = pieces.isEmpty ? clip.id : UUID()
-                pieces.append(TimelineClip(id: id, source: TimeSpan(start: span.end, end: source.end)))
-            }
-            return pieces
+    /// The word cuts, in the shape the agent and the transcript panel already expect.
+    var excludedWords: [ExcludedWord] {
+        cuts.compactMap { cut in
+            guard case .word(let id, let text) = cut.origin else { return nil }
+            return ExcludedWord(id: id, start: cut.span.start, end: cut.span.end, text: text)
         }
+        .sorted { $0.start < $1.start }
     }
 
-    /// Total played duration, which is the sum of the clips rather than the recording length
-    /// once anything has been cut.
-    var duration: TimeInterval { timeMap.duration }
+    // MARK: - Lookups
 
     func settings(for lane: AudioLane) -> AudioLaneSettings {
         audioLanes.first { $0.lane == lane } ?? AudioLaneSettings(lane: lane)
-    }
-
-    /// The overlay state in force at a composition time. Returns the last keyframe at or
-    /// before `t`; falls back to the first keyframe so there is always an answer, because
-    /// leaving the camera layer without an explicit transform makes AVFoundation render it
-    /// full-size in the top-left corner.
-    func overlay(at t: TimeInterval) -> OverlayKeyframe? {
-        let sorted = cameraOverlay.sorted { $0.t < $1.t }
-        return sorted.last { $0.t <= t } ?? sorted.first
     }
 
     func offset(for lane: AudioLane) -> TimeInterval {
         settings(for: lane).offset
     }
 
+    /// The overlay state in force at a **session** time. Returns the last keyframe at or
+    /// before `t`, falling back to the first so there is always an answer — leaving the camera
+    /// layer without an explicit transform makes AVFoundation render it full-size in the
+    /// top-left corner.
+    func overlay(at t: TimeInterval) -> OverlayKeyframe? {
+        let sorted = cameraOverlay.sorted { $0.t < $1.t }
+        return sorted.last { $0.t <= t } ?? sorted.first
+    }
+
+    /// Linear gain for a lane at a **session** time.
     func gain(for lane: AudioLane, at t: TimeInterval) -> Double {
         let settings = settings(for: lane)
         if settings.muted { return 0 }

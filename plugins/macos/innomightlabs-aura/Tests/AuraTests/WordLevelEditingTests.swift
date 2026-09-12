@@ -180,7 +180,7 @@ final class WordLevelEditingTests: XCTestCase {
         let everything = ExcludedWord(id: 0, start: 0, end: 60, text: "all of it")
 
         XCTAssertThrowsError(try SessionEdit.initial(duration: 60).applying(.excludeWords([everything]))) { error in
-            XCTAssertEqual(error as? EditOperationError, .wouldRemoveEntireTimeline_words)
+            XCTAssertEqual(error as? EditOperationError, .wouldRemoveEntireTimeline)
         }
     }
 
@@ -202,20 +202,27 @@ final class WordLevelEditingTests: XCTestCase {
     }
 
     func testDocumentsWrittenBeforeWordExclusionsStillLoad() throws {
-        // Regression: a real edit.json with 18 clips had no `excludedWords` key, and the
-        // synthesized decoder would have thrown it all away on upgrade.
+        // A real edit.json with no `excludedWords` key. It now routes through migration:
+        // decoding v1 directly is deliberately refused, so that a *malformed v2* document
+        // fails loudly instead of decoding as "nothing was cut" and discarding every edit.
         let json = """
         {"schemaVersion":1,"micTimeOffset":0,
-         "clips":[{"id":"\(UUID().uuidString)","source":{"start":0,"end":30}},
-                  {"id":"\(UUID().uuidString)","source":{"start":40,"end":60}}],
+         "clips":[{"source":{"start":0,"end":30}},
+                  {"source":{"start":40,"end":60}}],
          "cameraOverlay":[{"t":0,"rect":{"x":0.7,"y":0.7,"width":0.25,"height":0.25},"visible":true}],
          "audioLanes":[{"lane":"microphone","muted":false,"gain":[]}]}
         """
-        let decoded = try JSONDecoder().decode(SessionEdit.self, from: Data(json.utf8))
 
-        XCTAssertEqual(decoded.clips.count, 2)
-        XCTAssertTrue(decoded.excludedWords.isEmpty)
-        XCTAssertEqual(decoded.duration, 50, accuracy: 0.001)
+        guard case .migrated(let document) = SessionEditMigration.decode(Data(json.utf8), recordingDuration: 60) else {
+            return XCTFail("expected a migration")
+        }
+
+        XCTAssertEqual(document.clips.map(\.source), [
+            TimeSpan(start: 0, end: 30),
+            TimeSpan(start: 40, end: 60)
+        ])
+        XCTAssertTrue(document.excludedWords.isEmpty)
+        XCTAssertEqual(document.duration, 50, accuracy: 0.001)
     }
 
     // MARK: - Keyframe addressing (the reported failure)

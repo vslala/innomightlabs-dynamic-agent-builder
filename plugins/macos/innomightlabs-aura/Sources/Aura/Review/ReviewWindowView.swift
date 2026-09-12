@@ -99,7 +99,9 @@ struct ReviewWindowView: View {
                 } label: {
                     Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
                 }
-                .keyboardShortcut(.space, modifiers: [])
+                // No `.keyboardShortcut` here: an unmodified window-wide shortcut is resolved
+                // ahead of the field editor, so it could swallow spaces typed into the agent
+                // prompt. `ReviewKeyCommand` owns the keyboard and checks focus first.
 
                 Text("\(TimeFormatting.timecode(Timeline.seconds(viewModel.playhead))) / \(TimeFormatting.timecode(Timeline.seconds(viewModel.duration)))")
                     .font(.system(.caption, design: .monospaced))
@@ -128,7 +130,6 @@ struct ReviewWindowView: View {
                         Image(systemName: "arrow.uturn.backward")
                     }
                     .disabled(!store.canUndo)
-                    .keyboardShortcut("z", modifiers: .command)
 
                     Button {
                         store.redo()
@@ -136,7 +137,6 @@ struct ReviewWindowView: View {
                         Image(systemName: "arrow.uturn.forward")
                     }
                     .disabled(!store.canRedo)
-                    .keyboardShortcut("z", modifiers: [.command, .shift])
                 }
 
                 ExportButton(viewModel: viewModel)
@@ -149,16 +149,36 @@ struct ReviewWindowView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let message = viewModel.lastError {
-            HStack {
-                Text(message)
-                    .font(.caption)
-                Spacer()
-                Button("Dismiss") { viewModel.lastError = nil }
-                    .font(.caption)
+            banner(message, background: .red.opacity(0.85), foreground: .white) {
+                viewModel.lastError = nil
             }
-            .padding(8)
-            .background(.red.opacity(0.85))
-            .foregroundStyle(.white)
         }
+
+        // Distinct from the error banner on purpose: this reports something expected, and
+        // colouring it red would make a benign event look like a failure.
+        if let notice = viewModel.lastNotice {
+            banner(notice, background: .thinMaterial, foreground: .primary) {
+                viewModel.lastNotice = nil
+            }
+        }
+    }
+
+    private func banner(
+        _ message: String,
+        background: some ShapeStyle,
+        foreground: some ShapeStyle,
+        dismiss: @escaping () -> Void
+    ) -> some View {
+        HStack {
+            Text(message)
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button("Dismiss", action: dismiss)
+                .font(.caption)
+        }
+        .padding(8)
+        .background(background)
+        .foregroundStyle(foreground)
     }
 }

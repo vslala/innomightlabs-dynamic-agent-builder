@@ -318,11 +318,13 @@ final class PiPMaskTests: XCTestCase {
     func testDocumentsWithoutAStyleDefaultToAPlainRectangle() throws {
         let json = """
         {"schemaVersion":1,"micTimeOffset":0,
-         "clips":[{"id":"\(UUID().uuidString)","source":{"start":0,"end":30}}],
+         "clips":[{"source":{"start":0,"end":30}}],
          "cameraOverlay":[{"t":0,"rect":{"x":0.7,"y":0.7,"width":0.25,"height":0.25},"visible":true}],
          "audioLanes":[]}
         """
-        let decoded = try JSONDecoder().decode(SessionEdit.self, from: Data(json.utf8))
+        guard case .migrated(let decoded) = SessionEditMigration.decode(Data(json.utf8), recordingDuration: 30) else {
+            return XCTFail("expected a migration")
+        }
 
         XCTAssertEqual(decoded.cameraStyle, .plain)
     }

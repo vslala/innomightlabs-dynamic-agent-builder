@@ -12,7 +12,6 @@ import Foundation
 /// All arithmetic is on `CMTime` at `Timeline.timescale` so boundaries compare exactly.
 struct TimeMap: Equatable, Sendable {
     struct Segment: Equatable, Sendable {
-        let clipID: UUID
         /// Half-open `[start, end)` on the composition timeline.
         let composition: CMTimeRange
         /// Half-open `[start, end)` on the session timeline.
@@ -32,7 +31,6 @@ struct TimeMap: Equatable, Sendable {
             let source = clip.source.cmRange
             guard source.duration > .zero else { continue }
             built.append(Segment(
-                clipID: clip.id,
                 composition: CMTimeRange(start: cursor, duration: source.duration),
                 source: source
             ))
@@ -44,13 +42,25 @@ struct TimeMap: Equatable, Sendable {
 
     /// The source time playing at a composition time, or `nil` past the end of the timeline.
     /// Boundaries are half-open, so a time exactly on a cut belongs to the later clip.
-    func sourceTime(forComposition t: CMTime) -> (clipID: UUID, source: CMTime)? {
+    func sourceTime(forComposition t: CMTime) -> CMTime? {
         let time = Timeline.normalized(t)
         guard let segment = segments.first(where: {
             time >= $0.composition.start && time < $0.composition.end
         }) else { return nil }
 
-        return (segment.clipID, segment.source.start + (time - segment.composition.start))
+        return segment.source.start + (time - segment.composition.start)
+    }
+
+    /// Composition time for a session time that sits exactly on a cut's leading edge.
+    ///
+    /// `compositionTimes(forSource:)` returns nothing there, because ranges are half-open and
+    /// a cut's start is the *exclusive* end of the clip before it. Seeking "to the start of
+    /// this cut" therefore needs the preceding segment's composition end, and resolving that
+    /// once here keeps the third instance of that off-by-one from being written a fourth time.
+    func compositionTime(atCutBoundary source: CMTime) -> CMTime? {
+        let time = Timeline.normalized(source)
+        if let inside = compositionTimes(forSource: time).first { return inside }
+        return segments.last { $0.source.end <= time }?.composition.end
     }
 
     /// Where a source time appears on the composition timeline.
@@ -85,7 +95,11 @@ struct TimeMap: Equatable, Sendable {
     }
 
     func sourceTime(forComposition t: TimeInterval) -> TimeInterval? {
-        sourceTime(forComposition: Timeline.time(seconds: t)).map { Timeline.seconds($0.source) }
+        sourceTime(forComposition: Timeline.time(seconds: t)).map(Timeline.seconds)
+    }
+
+    func compositionTime(atCutBoundary source: TimeInterval) -> TimeInterval? {
+        compositionTime(atCutBoundary: Timeline.time(seconds: source)).map(Timeline.seconds)
     }
 
     func compositionTimes(forSource t: TimeInterval) -> [TimeInterval] {

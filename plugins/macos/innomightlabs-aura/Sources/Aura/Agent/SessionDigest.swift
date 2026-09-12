@@ -13,10 +13,23 @@ import Foundation
 /// same bytes are persisted, a suggestion that looks wrong can be diagnosed by reading exactly
 /// what the agent was told.
 struct SessionDigest: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 2
+    /// v3: `keptSpans` covers only coarse cuts; word removals are `excludedWordIds`.
+    static let currentSchemaVersion = 3
 
     /// Roughly how much of the recording each outline block covers, for a short recording.
     static let outlineBlockSeconds: Double = 20
+
+    /// Hard caps on the fields `fitting(characterBudget:)` cannot trim.
+    ///
+    /// Only `outline` and `words` shrink under budget pressure, so any other list must be
+    /// bounded at construction or the digest can exceed the server's cap with no way to
+    /// recover. A filler sweep is the realistic case: it can mint hundreds of cuts at once,
+    /// and each carries a 36-character UUID.
+    static let maxRangeCuts = 40
+    static let maxEditMarkers = 40
+    static let maxSplits = 60
+    static let maxKeptSpans = 60
+    static let maxExcludedWordIds = 400
     /// Abridging limit for a block's text.
     static let outlineBlockCharacters = 180
     /// Hard ceiling on outline blocks, so the outline's size is bounded by the cap rather
@@ -82,8 +95,23 @@ struct SessionDigest: Codable, Equatable, Sendable {
     let trackFailures: [String]
     /// The current edit: which spans of the recording survive, in order.
     let keptSpans: [Span]
+    var keptSpansOmitted: Int
     let cameraOverlay: [Overlay]
     let audioLanes: [Lane]
+    struct EditMark: Codable, Equatable, Sendable {
+        let id: String
+        let at: Double
+        let label: String
+    }
+
+    struct CutRef: Codable, Equatable, Sendable {
+        let id: String
+        let start: Double
+        let end: Double
+        /// Why it was cut, so the agent can tell its own edits from the user's.
+        let origin: String
+    }
+
     /// A coarse map of the **whole** recording, always present: consecutive cues merged into
     /// blocks of roughly `outlineBlockSeconds` with the text abridged.
     ///
@@ -102,6 +130,19 @@ struct SessionDigest: Codable, Equatable, Sendable {
     var wordsOmitted: Int
     /// Words currently cut. Reversible: the agent can restore any of them by id.
     let excludedWordIds: [Int]
+    var excludedWordIdsOmitted: Int
+    /// Split points on the recording's timeline — boundaries that divide the timeline without
+    /// removing anything.
+    let splits: [Double]
+    var splitsOmitted: Int
+    /// Markers the *editor* placed, which the agent may move, rename, or remove. Distinct from
+    /// `markers`, which are facts recorded during capture and cannot be edited.
+    let editMarkers: [EditMark]
+    var editMarkersOmitted: Int
+    /// Span cuts, with the handle needed to reverse one. Word cuts are not listed here — they
+    /// travel in `excludedWordIds` and are reversed with `restore_words`.
+    let rangeCuts: [CutRef]
+    var rangeCutsOmitted: Int
 
     // MARK: - Building
 
@@ -128,6 +169,28 @@ struct SessionDigest: Codable, Equatable, Sendable {
         let window = detailRange ?? TimeSpan(start: 0, end: max(duration, 0.01))
         let windowed = allWords.filter { $0.e > window.start && $0.s < window.end }
 
+        let allSplits = document.splitPoints.sorted().map { round2($0) }
+        let allEditMarkers = document.markers.sorted { $0.at < $1.at }.map {
+            EditMark(id: $0.id.uuidString, at: round2($0.at), label: $0.label)
+        }
+        let allKeptSpans = SessionEdit
+            .deriveClips(
+                recordingDuration: document.recordingDuration,
+                cuts: document.cuts.filter { $0.wordID == nil && !$0.isFiller }
+            )
+            .map { Span(start: round2($0.source.start), end: round2($0.source.end)) }
+        let allExcludedWordIds = document.excludedWords.map(\.id).sorted()
+        let allRangeCuts = document.cuts
+            .filter { $0.wordID == nil }
+            .map {
+                CutRef(
+                    id: $0.id.uuidString,
+                    start: round2($0.span.start),
+                    end: round2($0.span.end),
+                    origin: $0.digestLabel
+                )
+            }
+
         return SessionDigest(
             schemaVersion: currentSchemaVersion,
             sessionId: sessionID,
@@ -145,7 +208,15 @@ struct SessionDigest: Codable, Equatable, Sendable {
             markers: events.markers.map { Mark(at: round2($0.mediaTs), label: $0.event.label ?? "marker") },
             screenshots: events.screenshots.map { round2($0.mediaTs) },
             trackFailures: events.failedTracks.compactMap { $0.event.label },
-            keptSpans: document.clips.map { Span(start: round2($0.source.start), end: round2($0.source.end)) },
+            // Coarse deliberately: the real timeline is 44 clips once word cuts are counted,
+            // which is ~3.5kB of a 32,000 budget the trimmer can only reclaim from `outline`
+            // and `words` — so the agent would trade away the detail it edits with for a list
+            // it cannot reason about. Word removals travel in `excludedWordIds` instead.
+            // Capped like the rest: this is derived from every user/agent range cut with no
+            // natural bound, so a heavily hand-edited recording could push it past the budget
+            // on its own — and `fitting` can only reclaim from `outline` and `words`.
+            keptSpans: allKeptSpans.prefix(maxKeptSpans).map { $0 },
+            keptSpansOmitted: max(0, allKeptSpans.count - maxKeptSpans),
             cameraOverlay: document.cameraOverlay.sorted { $0.t < $1.t }.map { keyframe in
                 Overlay(
                     at: round2(keyframe.t),
@@ -169,7 +240,19 @@ struct SessionDigest: Codable, Equatable, Sendable {
             detailTo: windowed.isEmpty ? nil : round2(window.end),
             words: windowed,
             wordsOmitted: allWords.count - windowed.count,
-            excludedWordIds: document.excludedWords.map(\.id).sorted()
+            excludedWordIds: allExcludedWordIds.prefix(maxExcludedWordIds).map { $0 },
+            excludedWordIdsOmitted: max(0, allExcludedWordIds.count - maxExcludedWordIds),
+            splits: allSplits.prefix(maxSplits).map { $0 },
+            splitsOmitted: max(0, allSplits.count - maxSplits),
+            editMarkers: allEditMarkers.prefix(maxEditMarkers).map { $0 },
+            editMarkersOmitted: max(0, allEditMarkers.count - maxEditMarkers),
+            // Longest first, so what survives the cap is what the agent is most likely to be
+            // asked about — a stray 12-second cut matters more than the 61st "um".
+            rangeCuts: allRangeCuts
+                .sorted { $0.end - $0.start > $1.end - $1.start }
+                .prefix(maxRangeCuts)
+                .sorted { $0.start < $1.start },
+            rangeCutsOmitted: max(0, allRangeCuts.count - maxRangeCuts)
         )
     }
 

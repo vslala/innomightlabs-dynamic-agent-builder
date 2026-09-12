@@ -87,7 +87,8 @@ final class TimelineResolverTests: XCTestCase {
     func testEmptyDocumentStillResolvesOneOverlayKeyframe() {
         var edit = SessionEdit.initial(duration: 30)
         edit.cameraOverlay = []
-        edit.clips = []
+        // An empty timeline is now expressed the only way it can be: everything cut.
+        edit.cuts = [Cut(span: TimeSpan(start: 0, end: 30), origin: .range)]
 
         let resolved = TimelineResolver.resolve(document: edit, probes: allProbes)
 
