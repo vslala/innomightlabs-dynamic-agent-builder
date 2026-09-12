@@ -259,10 +259,14 @@ struct SessionEdit: Codable, Equatable, Sendable {
     /// them. Without this, the span-repair pass would rewrite cuts onto whichever words now
     /// hold those ids — turning a safety net into a corruption mechanism.
     var transcriptIdentity: String?
+    /// What the user calls this recording. Nil until renamed, so the UI can fall back to
+    /// something derived from the capture date rather than persisting a default it would then
+    /// have to distinguish from a real choice.
+    var name: String?
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, recordingDuration, cuts, splitPoints, markers
-        case micTimeOffset, cameraOverlay, audioLanes, cameraStyle, transcriptIdentity
+        case micTimeOffset, cameraOverlay, audioLanes, cameraStyle, transcriptIdentity, name
     }
 
     init(
@@ -275,7 +279,8 @@ struct SessionEdit: Codable, Equatable, Sendable {
         cameraOverlay: [OverlayKeyframe],
         audioLanes: [AudioLaneSettings],
         cameraStyle: PiPStyle = .plain,
-        transcriptIdentity: String? = nil
+        transcriptIdentity: String? = nil,
+        name: String? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.recordingDuration = recordingDuration
@@ -287,6 +292,7 @@ struct SessionEdit: Codable, Equatable, Sendable {
         self.audioLanes = audioLanes
         self.cameraStyle = cameraStyle
         self.transcriptIdentity = transcriptIdentity
+        self.name = name
     }
 
     /// Strict about the two keys that define the timeline.
@@ -308,6 +314,7 @@ struct SessionEdit: Codable, Equatable, Sendable {
         audioLanes = try container.decode([AudioLaneSettings].self, forKey: .audioLanes)
         cameraStyle = try container.decodeIfPresent(PiPStyle.self, forKey: .cameraStyle) ?? .plain
         transcriptIdentity = try container.decodeIfPresent(String.self, forKey: .transcriptIdentity)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
     }
 
     /// A fresh document for an unedited recording: nothing cut, the camera parked in a corner,

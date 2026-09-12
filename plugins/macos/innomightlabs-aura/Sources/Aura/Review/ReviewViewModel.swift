@@ -1,4 +1,5 @@
 import AVFoundation
+import AppKit
 import Combine
 import CoreMedia
 import Foundation
@@ -79,6 +80,15 @@ final class ReviewViewModel: ObservableObject {
     @Published private(set) var laneDetailSpan: StampSpan<Source>?
     /// Vertical axis for the lanes. Decibel by default — see `WaveformScale`.
     @Published private(set) var waveformScale: WaveformScale = ReviewPreferences.waveformScale
+    /// Whether the timeline pages along to keep the playhead visible during playback.
+    @Published var followsPlayhead = ReviewPreferences.followsPlayhead {
+        didSet { ReviewPreferences.followsPlayhead = followsPlayhead }
+    }
+    /// True while a drag on the timeline is in progress, which suspends following.
+    ///
+    /// Without it, dragging a selection while audio plays can page the view out from under the
+    /// cursor mid-gesture — the drag then continues against coordinates that have moved.
+    @Published var isDraggingTimeline = false
     @Published private(set) var transcript: Transcript?
     @Published private(set) var transcriptState: TranscriptState = .absent
     /// Published only when it changes, so the transcript list is not invalidated 30x a second.
@@ -91,6 +101,11 @@ final class ReviewViewModel: ObservableObject {
     /// Left edge of the zoom window, in source time. Anchored rather than following the
     /// playhead — see `visibleSpan`.
     @Published private(set) var viewportStart: TimeInterval = 0
+    /// True while the pointer is over the timeline lanes, so a horizontal scroll gesture can
+    /// be routed to panning rather than being ignored.
+    @Published var isPointerOverTimeline = false
+    /// Width of the timeline's content column, for mapping a scroll delta to seconds.
+    private var timelineViewWidth: CGFloat = 0
     @Published private(set) var agentState: AgentState = .idle
     /// Proposed edits, never applied until accepted.
     @Published private(set) var suggestions: [EditSuggestion] = []
@@ -105,12 +120,110 @@ final class ReviewViewModel: ObservableObject {
     let player = AVPlayer()
 
     @Published private(set) var store: EditDocumentStore?
+
+    // MARK: - Studio shell
+
+    /// Which left-nav item reads as active. Purely presentational — the recording is the object
+    /// being edited regardless of what is highlighted.
+    @Published var activeSection: StudioSection = .sessions
+    @Published var rightPanel: RightPanel = .ai
+    @Published var isCommandPaletteOpen = false
+    /// Armed by `B`: the next timeline click splits there instead of seeking.
+    @Published var isBladeArmed = false
+    /// Whether subtitles are drawn over the preview and captions appear in the timeline.
+    @Published var showsCaptions = true
+    @Published private(set) var playbackRate: PlaybackRate = .normal
+    /// Thumbnails per video lane, arriving after the window is already playable.
+    @Published private(set) var filmstrips: [VideoLane: FilmstripFrames] = [:]
+
+    enum RightPanel: String, CaseIterable, Sendable {
+        case ai
+        case transcript
+
+        var title: String {
+            switch self {
+            case .ai: return "AI Copilot"
+            case .transcript: return "Transcript"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .ai: return "sparkles"
+            case .transcript: return "text.alignleft"
+            }
+        }
+    }
+
+    /// What the header shows. Falls back to the capture date rather than the folder id, which
+    /// is a timestamp with a random suffix and reads as a machine name.
+    var sessionName: String {
+        if let name = store?.document.name, !name.isEmpty { return name }
+        return Self.derivedName(from: folder)
+    }
+
+    var hasCustomName: Bool { store?.document.name?.isEmpty == false }
+
+    /// `20260911-223036-664b` -> `Recording · 11 Sep, 22:30`.
+    static func derivedName(from folder: SessionFolder) -> String {
+        let parts = folder.id.split(separator: "-")
+        guard parts.count >= 2, parts[0].count == 8, parts[1].count == 6 else {
+            return "Recording \(folder.id)"
+        }
+
+        let parser = DateFormatter()
+        parser.dateFormat = "yyyyMMdd-HHmmss"
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        guard let date = parser.date(from: "\(parts[0])-\(parts[1])") else {
+            return "Recording \(folder.id)"
+        }
+
+        let display = DateFormatter()
+        display.dateFormat = "d MMM, HH:mm"
+        return "Recording · \(display.string(from: date))"
+    }
+
+    func rename(to name: String) {
+        apply(.rename(name))
+    }
+
+    func revealInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([folder.rootURL])
+    }
+
+    func toggleCommandPalette() {
+        isCommandPaletteOpen.toggle()
+    }
+
+    /// The caption to draw over the preview, or nil when captions are off, the transcript has
+    /// not arrived, or the playhead is in a gap between cues.
+    var activeSubtitle: String? {
+        guard showsCaptions else { return nil }
+        guard let cue = projection.cue(atComposition: Stamp(playhead)) else { return nil }
+        let text = cue.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    // MARK: - Layout modes
+
+    var layoutMode: LayoutMode { LayoutMode.mode(of: currentOverlay) }
+
+    var canChangeLayout: Bool { timeline?.overlay != nil }
+
+    func setLayoutMode(_ mode: LayoutMode) {
+        guard canChangeLayout else { return }
+        apply(.setOverlayKeyframe(mode.keyframe(
+            at: playheadSourceTime,
+            defaultRect: currentOverlay?.rect ?? .defaultCameraOverlay
+        )))
+    }
     private let builder: any CompositionBuilding
     private let exporter: any ExportEngine
     private let suggester: any EditSuggesting
     private var suggestTask: Task<Void, Never>?
     private let extractor = WaveformExtractor()
-    private var probes: [SourceTrackProbe] = []
+    private let filmstripExtractor = FilmstripExtractor()
+    private(set) var probes: [SourceTrackProbe] = []
     private var eventTimeline = EventTimeline(events: [])
     private var timeObserver: Any?
     private var cancellables: Set<AnyCancellable> = []
@@ -118,6 +231,7 @@ final class ReviewViewModel: ObservableObject {
     /// Separate handles: the transcript's "Try Again" used to cancel a shared task and take
     /// in-flight waveform extraction down with it, with nothing to restart it.
     private var waveformTask: Task<Void, Never>?
+    private var filmstripTask: Task<Void, Never>?
     private var transcriptTask: Task<Void, Never>?
     private var exportTask: Task<Void, Never>?
     /// Bumped whenever an export starts or is cancelled. A task whose generation no longer
@@ -208,6 +322,37 @@ final class ReviewViewModel: ObservableObject {
         // multi-second waveform decode would delay the panel for no reason.
         waveformTask = Task { [weak self] in await self?.loadWaveforms() }
         transcriptTask = Task { [weak self] in await self?.loadTranscript() }
+        filmstripTask = Task { [weak self] in await self?.loadFilmstrips() }
+    }
+
+    /// Thumbnails for the Screen and Camera lanes.
+    ///
+    /// Cached first, extracted only on a miss, and always after the window is playable —
+    /// sampling a long HEVC screen capture takes real time and nothing about watching the
+    /// recording depends on it.
+    private func loadFilmstrips() async {
+        let tracks: [(VideoLane, URL, URL)] = [
+            (.screen, folder.screenURL, folder.screenFilmstripURL),
+            (.camera, folder.cameraURL, folder.cameraFilmstripURL)
+        ]
+
+        for (lane, source, cacheURL) in tracks {
+            guard probes.contains(where: { $0.kind.videoLane == lane }) else { continue }
+
+            if let cached = FilmstripCache.load(from: cacheURL, source: source) {
+                filmstrips[lane] = FilmstripFrames(cached)
+                continue
+            }
+
+            guard let strip = await filmstripExtractor.extract(
+                from: source,
+                duration: recordingDuration
+            ) else { continue }
+            guard !Task.isCancelled else { return }
+
+            FilmstripCache.write(strip, to: cacheURL, source: source)
+            filmstrips[lane] = FilmstripFrames(strip)
+        }
     }
 
     private func loadWaveforms() async {
@@ -329,6 +474,7 @@ final class ReviewViewModel: ObservableObject {
 
     private func handleTick(_ time: CMTime) {
         playhead = time
+        followPlayheadIfNeeded()
 
         // Gated on the highlight actually changing, so the transcript list is not invalidated
         // 30 times a second. Resolved from the projection rather than by converting clocks
@@ -375,6 +521,7 @@ final class ReviewViewModel: ObservableObject {
         endObserver = nil
         player.pause()
         waveformTask?.cancel()
+        filmstripTask?.cancel()
         transcriptTask?.cancel()
         exportTask?.cancel()
         rebuildTask?.cancel()
@@ -389,7 +536,71 @@ final class ReviewViewModel: ObservableObject {
     func play() {
         guard case .ready = state else { return }
         player.play()
+        // Applied after `play()`, which resets rate to 1.
+        player.rate = Float(playbackRate.rawValue)
         isPlaying = true
+    }
+
+    func setPlaybackRate(_ rate: PlaybackRate) {
+        playbackRate = rate
+        if isPlaying { player.rate = Float(rate.rawValue) }
+    }
+
+    /// J/K/L shuttle. `K` stops, `J` and `L` step through the rate ladder in each direction,
+    /// as in an NLE — pressing `L` repeatedly accelerates rather than toggling.
+    func shuttle(_ direction: ShuttleDirection) {
+        switch direction {
+        case .stop:
+            pause()
+        case .forward:
+            // First press plays at normal speed; each further press accelerates. Jumping
+            // straight to 2x from a standstill is not what L means.
+            if isPlaying {
+                setPlaybackRate(playbackRate.faster)
+            } else {
+                setPlaybackRate(.normal)
+                play()
+            }
+        case .reverse:
+            // AVPlayer supports negative rates only when the item allows it, and a composition
+            // with a custom compositor generally does not. Stepping back a chunk at a time is
+            // honest and predictable, where a silently ignored negative rate is not.
+            pause()
+            Task { await seek(to: playhead - Timeline.time(seconds: 1), exact: true) }
+        }
+    }
+
+    enum ShuttleDirection { case reverse, stop, forward }
+
+    /// Jumps to the next edit boundary — a cut edge or a split — on the edited timeline.
+    ///
+    /// "Previous/next" on a recording with no chapters is otherwise meaningless; the boundaries
+    /// the user created are the interesting landmarks.
+    func stepToNextBoundary() {
+        let current = Timeline.seconds(playhead)
+        guard let next = boundaries.first(where: { $0 > current + 0.01 }) else { return }
+        Task { await seek(to: Timeline.time(seconds: next), exact: true) }
+    }
+
+    func stepToPreviousBoundary() {
+        let current = Timeline.seconds(playhead)
+        guard let previous = boundaries.last(where: { $0 < current - 0.01 }) else { return }
+        Task { await seek(to: Timeline.time(seconds: previous), exact: true) }
+    }
+
+    /// Composition times of every clip edge and split, plus the timeline's ends.
+    private var boundaries: [TimeInterval] {
+        var result: Set<TimeInterval> = [0, Timeline.seconds(duration)]
+        for clip in projection.timeline.timeMap.segments {
+            result.insert(Timeline.seconds(clip.composition.start))
+            result.insert(Timeline.seconds(clip.composition.end))
+        }
+        for split in projection.splits {
+            if let composition = projection.compositionTime(forSource: split) {
+                result.insert(composition.seconds)
+            }
+        }
+        return result.sorted()
     }
 
     func pause() {
@@ -407,6 +618,10 @@ final class ReviewViewModel: ObservableObject {
         guard case .ready = state else { return }
         let clamped = min(max(.zero, Timeline.normalized(time)), duration)
         playhead = clamped
+        // Reveal on an explicit seek too, not only during playback: jumping to a transcript
+        // line or a marker that is off-screen should bring the timeline with it, otherwise the
+        // playhead lands somewhere the user cannot see.
+        pagePlayheadIntoView()
 
         let tolerance = exact ? CMTime.zero : CMTime(value: 1, timescale: 10)
         await player.seek(to: clamped, toleranceBefore: tolerance, toleranceAfter: tolerance)
@@ -523,6 +738,59 @@ final class ReviewViewModel: ObservableObject {
 
     /// Brings the playhead back into view — offered as an action rather than done
     /// automatically, since automatic following is what caused the panning.
+    /// Keeps the playhead in view by paging the window, not by tracking it.
+    ///
+    /// Tracking continuously is the obvious implementation and it is wrong here. The timeline's
+    /// axis is the recording, so during playback the playhead *teleports* across every cut —
+    /// on a real document that is over a hundred jumps per playthrough. Following each one
+    /// pans the view constantly and re-reads the waveform at display resolution every time.
+    ///
+    /// Paging moves the window only when the playhead actually leaves it, which is a handful
+    /// of times per playthrough: a cut jump within the visible window costs nothing, and the
+    /// waveform is re-read once per page rather than once per cut.
+    private func followPlayheadIfNeeded() {
+        // Only while playing. When paused the user is inspecting something, and moving the
+        // view out from under them is exactly the behaviour that made following annoying
+        // enough to switch off in the first place.
+        guard isPlaying else { return }
+        pagePlayheadIntoView()
+    }
+
+    /// Pages the window if the playhead is outside it. Shared by playback and by explicit
+    /// navigation, which should reveal the destination whether or not anything is playing.
+    private func pagePlayheadIntoView() {
+        guard followsPlayhead, !isDraggingTimeline, let visibleDuration else { return }
+        guard let source = projection.sourceTime(forComposition: Stamp(playhead)) else { return }
+
+        guard let start = PlayheadFollower.viewportStart(
+            playhead: source.seconds,
+            window: (start: visibleSpan.start.seconds, duration: visibleDuration),
+            recordingDuration: recordingDuration,
+            leadInFraction: PlayheadFollower.leadInFraction
+        ) else { return }
+
+        scrollViewport(to: start)
+    }
+
+    /// Pans the window by a horizontal scroll gesture.
+    ///
+    /// - Parameter points: the gesture's horizontal delta in points, in AppKit's sense — the
+    ///   system already accounts for the natural-scrolling preference, so this needs no
+    ///   direction flag of its own.
+    ///
+    /// Returns false when there is nothing to pan, so the caller can let the event through
+    /// rather than swallowing a scroll the user meant for something else.
+    @discardableResult
+    func panViewport(byScrollPoints points: CGFloat) -> Bool {
+        guard let visibleDuration, timelineViewWidth > 0 else { return false }
+        guard visibleDuration < recordingDuration else { return false }
+        guard points != 0 else { return false }
+
+        let seconds = Double(points / timelineViewWidth) * visibleDuration
+        scrollViewport(to: viewportStart - seconds)
+        return true
+    }
+
     func scrollToPlayhead() {
         guard
             let visibleDuration,
@@ -553,6 +821,11 @@ final class ReviewViewModel: ObservableObject {
     /// skipping the time map: once anything was cut it read the wrong region and then indexed
     /// past the bucket array, so the lane silently drew nothing at any zoom level.
     func requestWaveformDetail(viewWidth: CGFloat) {
+        // Remembered so a scroll gesture can convert pixels to seconds. The lane width is
+        // otherwise known only inside the view's GeometryReader, and the scroll monitor is an
+        // AppKit-level thing with no access to it.
+        timelineViewWidth = viewWidth
+
         let span = visibleSpan
         guard
             let bucketsPerSecond = WaveformDetailRequest.bucketsPerSecond(
@@ -682,8 +955,18 @@ final class ReviewViewModel: ObservableObject {
             guard selection != nil else { return false }
             cutSelection()
         case .clearSelection:
-            guard selection != nil || selectedCutRegionID != nil else { return false }
-            clearSelection()
+            // Escape unwinds one thing at a time, outermost first: the palette, then the
+            // blade, then the selection. Clearing everything at once loses the selection the
+            // user was still working with.
+            if isCommandPaletteOpen {
+                isCommandPaletteOpen = false
+            } else if isBladeArmed {
+                isBladeArmed = false
+            } else if selection != nil || selectedCutRegionID != nil {
+                clearSelection()
+            } else {
+                return false
+            }
         case .splitAtPlayhead:
             splitAtPlayhead()
         case .addMarker:
@@ -702,6 +985,25 @@ final class ReviewViewModel: ObservableObject {
             zoomOut()
         case .zoomToFit:
             zoomToFit()
+        case .armBlade:
+            isBladeArmed.toggle()
+
+        case .markIn:
+            markIn()
+
+        case .markOut:
+            markOut()
+
+        case .commandPalette:
+            isCommandPaletteOpen.toggle()
+
+        case .shuttle(let direction):
+            switch direction {
+            case .reverse: shuttle(.reverse)
+            case .stop: shuttle(.stop)
+            case .forward: shuttle(.forward)
+            }
+
         case .nudgePlayhead(let frames):
             // Pause first: while playing, the next 30Hz tick overwrites the playhead and the
             // nudge is invisible — but the keystroke was still swallowed.
@@ -769,6 +1071,37 @@ final class ReviewViewModel: ObservableObject {
         apply(.splitClip(at: selection.start.seconds))
     }
 
+    /// Splits at an arbitrary point, for the blade tool. Disarms the blade afterwards so it
+    /// is a one-shot rather than a mode the user has to remember to leave.
+    /// I / O set the selection's edges from the playhead.
+    ///
+    /// Reuses the Phase 4 selection rather than introducing a second range concept: mark-in and
+    /// mark-out *are* a selection, and having two would mean deciding which one Delete acts on.
+    func markIn() {
+        let playhead = playheadSourceStamp
+        let end = selection?.end
+        if let end, end > playhead {
+            select(from: playhead, to: end)
+        } else {
+            select(from: playhead, to: Stamp(min(recordingDuration, playhead.seconds + 1)))
+        }
+    }
+
+    func markOut() {
+        let playhead = playheadSourceStamp
+        let start = selection?.start
+        if let start, start < playhead {
+            select(from: start, to: playhead)
+        } else {
+            select(from: Stamp(max(0, playhead.seconds - 1)), to: playhead)
+        }
+    }
+
+    func splitAt(_ stamp: Stamp<Source>) {
+        isBladeArmed = false
+        apply(.splitClip(at: stamp.seconds))
+    }
+
     func splitAtPlayhead() {
         apply(.splitClip(at: playheadSourceTime))
     }
@@ -827,6 +1160,25 @@ final class ReviewViewModel: ObservableObject {
             return
         }
         apply(.removeMarker(id: id))
+    }
+
+    /// Seeks to a projected cue. Nothing happens for a cue that has been cut — it has no
+    /// position on the edited timeline to go to.
+    func seek(toCue cue: ProjectedCue) {
+        guard let start = cue.composition.first?.start else { return }
+        Task { await seek(to: start.cm, exact: true) }
+    }
+
+    /// Hands one transcript line to the agent, pre-quoted, and switches to the AI panel.
+    ///
+    /// Saves the user retyping something the app already knows exactly — and quoting the line
+    /// with its time gives the agent an unambiguous anchor instead of a paraphrase.
+    func askAboutCue(_ cue: ProjectedCue) {
+        rightPanel = .ai
+        let timecode = TimeFormatting.timecode(cue.source.start.seconds)
+        requestSuggestions(
+            instruction: "About the line at \(timecode): \"\(cue.text)\". What would you do with it?"
+        )
     }
 
     func seek(to marker: ProjectedMarker) {
@@ -1133,6 +1485,117 @@ final class ReviewViewModel: ObservableObject {
 
     /// Asks the agent what to change. Nothing is applied here — suggestions are staged for
     /// the user to accept, and accepting routes through the same `apply` a drag does.
+    // MARK: - Studio actions
+
+    /// Runs one of the AI panel's suggested actions.
+    ///
+    /// The local ones each produce exactly one operation, so a single Cmd+Z reverses the whole
+    /// sweep — which is what "remove silences" has to mean.
+    func perform(_ action: StudioAction) {
+        switch action.kind {
+        case .local:
+            performLocally(action)
+        case .agent(let prompt):
+            requestSuggestions(instruction: prompt)
+        case .unavailable(let reason):
+            lastNotice = reason
+        }
+    }
+
+    private func performLocally(_ action: StudioAction) {
+        switch action {
+        case .removeSilences:
+            removeSilences()
+        case .removeFillerWords:
+            removeFillerWords()
+        case .generateCaptions:
+            generateCaptions()
+        case .createHighlights, .shortenVideo, .cleanAudio:
+            // Not local; `perform` routes these elsewhere. Kept exhaustive so adding an action
+            // without deciding how it runs fails to compile.
+            break
+        }
+    }
+
+    /// Cuts the long pauses out of the voice track, in one operation.
+    func removeSilences(options: SilenceDetector.Options = .default) {
+        guard let peaks = peaks[.microphone] else {
+            lastNotice = "The voice waveform is still loading — try again in a moment."
+            return
+        }
+
+        let fileSpans = SilenceDetector.silences(
+            levels: peaks.rms.map(Double.init),
+            secondsPerBucket: 1 / Double(peaks.bucketsPerSecond),
+            coverage: peaks.coverage,
+            options: options
+        )
+
+        // Bucket time is the *audio file's* clock. Converted through the projection, never by
+        // subtracting an offset here — doing that by hand is how the waveform ended up drawing
+        // twice the lane offset out of position.
+        let spans = fileSpans.compactMap { span -> TimeSpan? in
+            let start = projection.sourceTime(forAudioFile: span.start, lane: .microphone)
+            let end = projection.sourceTime(forAudioFile: span.end, lane: .microphone)
+            let clampedStart = max(0, start.seconds)
+            let clampedEnd = min(recordingDuration, end.seconds)
+            guard clampedEnd > clampedStart else { return nil }
+            return TimeSpan(start: clampedStart, end: clampedEnd)
+        }
+
+        guard !spans.isEmpty else {
+            lastNotice = "No pauses longer than \(Int(options.minimumDuration * 1000))ms to remove."
+            return
+        }
+
+        let removed = spans.reduce(0) { $0 + $1.duration }
+        guard apply(.removeRanges(spans)) else { return }
+        lastNotice = String(
+            format: "Removed %d %@ of silence (%.1fs).",
+            spans.count,
+            spans.count == 1 ? "pause" : "pauses",
+            removed
+        )
+    }
+
+    /// The default filler vocabulary. Scoped to the whole recording here because the user
+    /// asked for exactly that by pressing the button; the agent's own sweep stays range-scoped.
+    static let fillerWords = ["um", "uh", "erm", "ah", "like", "you know", "sort of", "kind of"]
+
+    func removeFillerWords() {
+        guard let transcript else {
+            lastNotice = "The transcript is still being generated."
+            return
+        }
+
+        let excluded = Set(store?.document.excludedWords.map(\.id) ?? [])
+        guard let suggestion = AgentRequestResolver.resolveFillerSweep(
+            words: Self.fillerWords,
+            span: nil,
+            why: "Filler words",
+            transcript: transcript,
+            micTimeOffset: transcriptOffset,
+            alreadyExcluded: excluded
+        ) else {
+            lastNotice = "No filler words left to remove."
+            return
+        }
+
+        guard apply(suggestion.operation) else { return }
+        lastNotice = EditOperationDescription.summary(suggestion.operation)
+    }
+
+    /// Captions are derived from the transcript, so there is nothing to generate — only to
+    /// show. Honest about that rather than pretending to do work.
+    func generateCaptions() {
+        guard transcript != nil else {
+            lastNotice = "The transcript is still being generated — captions come from it."
+            return
+        }
+        showsCaptions = true
+        lastNotice = "Captions are on. They export as a subtitle file alongside the video."
+    }
+
     func requestSuggestions(instruction: String) {
         guard let document = store?.document, suggestTask == nil else { return }
 
@@ -1302,6 +1765,7 @@ final class ReviewViewModel: ObservableObject {
                         self.report(.running(fraction: fraction), generation: generation)
                     }
                 }
+                self.writeSubtitleSidecar(beside: destination)
                 self.report(.finished(destination), generation: generation)
             } catch {
                 // AVFoundation reports cancellation as `AVError.operationCancelled`, not
@@ -1318,6 +1782,23 @@ final class ReviewViewModel: ObservableObject {
                 self.exportTask = nil
             }
         }
+    }
+
+    /// Writes captions next to the exported video.
+    ///
+    /// Best-effort: a failure here must not fail the export, since the video itself is what
+    /// was asked for. Skipped when captions are switched off, which is how the user says they
+    /// do not want them.
+    private func writeSubtitleSidecar(beside destination: URL) {
+        guard showsCaptions, !projection.cues.isEmpty else { return }
+
+        let contents = SubtitleFile.render(cues: projection.cues, as: .srt)
+        guard !contents.isEmpty else { return }
+
+        let url = destination
+            .deletingPathExtension()
+            .appendingPathExtension(SubtitleFile.Format.srt.fileExtension)
+        try? contents.write(to: url, atomically: true, encoding: .utf8)
     }
 
     private func report(_ state: ExportState, generation: Int) {

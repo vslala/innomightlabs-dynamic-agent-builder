@@ -20,6 +20,14 @@ struct SessionFolder {
     var microphonePeaksURL: URL { Self.peaksURL(for: microphoneURL) }
     var systemAudioPeaksURL: URL { Self.peaksURL(for: systemAudioURL) }
 
+    /// Thumbnail caches, beside the video they describe, for the same reason.
+    var screenFilmstripURL: URL { Self.filmstripURL(for: screenURL) }
+    var cameraFilmstripURL: URL { Self.filmstripURL(for: cameraURL) }
+
+    static func filmstripURL(for source: URL) -> URL {
+        source.deletingPathExtension().appendingPathExtension("filmstrip")
+    }
+
     private static let idFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"

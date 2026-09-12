@@ -7,6 +7,10 @@ import SwiftUI
 /// operations, they appear here, and accepting one runs through the same
 /// `EditDocumentStore.apply` a drag does — so an AI edit is reviewable before it lands and
 /// undoable after.
+///
+/// The suggested actions are not prompts dressed as buttons. Three of them are computed
+/// locally and deterministically; the ones that go to the agent say so by behaving like the
+/// rest of the conversation. One is unavailable and admits it.
 struct AgentEditPanelView: View {
     @ObservedObject var viewModel: ReviewViewModel
     @StateObject private var voice = VoiceInstructionRecorder()
@@ -15,150 +19,270 @@ struct AgentEditPanelView: View {
     @State private var showingSettings = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            header
+        ScrollView {
+            VStack(alignment: .leading, spacing: AuraTheme.Space.md) {
+                if viewModel.isAgentConfigured {
+                    if viewModel.conversation.isEmpty {
+                        intro
+                    } else {
+                        conversation
+                    }
 
-            if viewModel.isAgentConfigured {
-                if !viewModel.conversation.isEmpty {
-                    conversation
+                    composer
+                    statusLine
+                    suggestionList
+
+                    if viewModel.suggestions.isEmpty {
+                        actionGrid
+                    }
+                } else {
+                    notConfigured
                 }
-                suggestionList
-                statusLine
-                composer
-            } else {
-                notConfigured
             }
+            .padding(AuraTheme.Space.md)
         }
-        .padding(10)
+        .background(AuraTheme.surface)
         .sheet(isPresented: $showingSettings) {
             AgentSettingsView()
         }
     }
 
-    private var header: some View {
-        HStack {
-            Label("Ask Aura", systemImage: "sparkles")
-                .font(.headline)
-            Spacer()
-            if !viewModel.conversation.isEmpty {
+    // MARK: - Intro
+
+    private var intro: some View {
+        VStack(alignment: .leading, spacing: AuraTheme.Space.sm) {
+            HStack(spacing: AuraTheme.Space.sm + 2) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(AuraTheme.accent)
+                    .frame(width: 38, height: 38)
+                    .background {
+                        RoundedRectangle(cornerRadius: AuraTheme.Radius.md)
+                            .fill(AuraTheme.accentFill(0.18))
+                    }
+
+                Text("Hey, I'm Aura")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(AuraTheme.textPrimary)
+            }
+
+            Text("""
+            Your AI editing partner. This video was recorded in Aura, so I already know your \
+            screen, camera and audio — and they're all in sync.
+            """)
+            .font(.system(size: 12))
+            .foregroundStyle(AuraTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - Conversation
+
+    private var conversation: some View {
+        VStack(alignment: .leading, spacing: AuraTheme.Space.sm) {
+            HStack {
+                Text("Conversation")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(AuraTheme.textSecondary)
+                Spacer()
                 Button {
                     viewModel.clearConversationView()
                 } label: {
                     Image(systemName: "eraser")
+                        .font(.system(size: 10))
+                        .foregroundStyle(AuraTheme.textSecondary)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .help("Clear the visible chat (the agent still remembers this recording)")
             }
-            Button {
-                showingSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-            }
-            .buttonStyle(.borderless)
-            .help("Agent settings")
-        }
-    }
 
-    private var conversation: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(viewModel.conversation) { turn in
-                        turnView(turn).id(turn.id)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-            .frame(maxHeight: 180)
-            .onChange(of: viewModel.conversation.count) { _, _ in
-                guard let last = viewModel.conversation.last else { return }
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last.id, anchor: .bottom) }
+            ForEach(viewModel.conversation) { turn in
+                turnView(turn)
             }
         }
     }
 
     private func turnView(_ turn: ReviewViewModel.AgentTurn) -> some View {
-        HStack(alignment: .top, spacing: 6) {
+        HStack(alignment: .top, spacing: AuraTheme.Space.sm) {
             Image(systemName: turn.speaker == .user ? "person.fill" : "sparkles")
                 .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
-                .frame(width: 12)
+                .foregroundStyle(turn.speaker == .user ? AuraTheme.textTertiary : AuraTheme.accent)
+                .frame(width: 14)
 
             Text(turn.text)
-                .font(.caption)
-                .foregroundStyle(turn.speaker == .user ? .secondary : .primary)
+                .font(.system(size: 12))
+                .foregroundStyle(turn.speaker == .user ? AuraTheme.textSecondary : AuraTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(AuraTheme.Space.sm + 2)
+        .background {
+            RoundedRectangle(cornerRadius: AuraTheme.Radius.sm)
+                .fill(turn.speaker == .user ? Color.clear : AuraTheme.surfaceElevated)
+        }
     }
 
+    // MARK: - Composer
+
     private var composer: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: AuraTheme.Space.sm) {
             TextField(
                 viewModel.conversation.isEmpty
-                    ? "e.g. cut the false start, and hide the camera while the terminal is up"
+                    ? "Describe what you want to do…"
                     : "Reply…",
                 text: $instruction,
                 axis: .vertical
             )
-            .lineLimit(1...3)
-            .textFieldStyle(.roundedBorder)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+            .foregroundStyle(AuraTheme.textPrimary)
+            .lineLimit(1...4)
             .onSubmit(submit)
             .disabled(viewModel.isAwaitingAgent)
 
             micButton
-
-            Button {
-                submit()
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-            }
-            .buttonStyle(.borderless)
-            .disabled(instruction.trimmingCharacters(in: .whitespaces).isEmpty || viewModel.isAwaitingAgent)
-            .help("Send")
+            sendButton
         }
+        .padding(.horizontal, AuraTheme.Space.sm + 4)
+        .padding(.vertical, AuraTheme.Space.sm + 2)
+        .background {
+            RoundedRectangle(cornerRadius: AuraTheme.Radius.lg)
+                .fill(AuraTheme.surfaceElevated)
+                .overlay {
+                    RoundedRectangle(cornerRadius: AuraTheme.Radius.lg)
+                        .stroke(AuraTheme.border, lineWidth: 1)
+                }
+        }
+    }
+
+    private var canSend: Bool {
+        !instruction.trimmingCharacters(in: .whitespaces).isEmpty && !viewModel.isAwaitingAgent
+    }
+
+    private var sendButton: some View {
+        Button(action: submit) {
+            Image(systemName: "arrow.right")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(canSend ? AuraTheme.textPrimary : AuraTheme.textTertiary)
+                .frame(width: 26, height: 26)
+                .background {
+                    Circle().fill(canSend ? AuraTheme.accent : AuraTheme.surface)
+                }
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSend)
+        .help("Send")
     }
 
     private var micButton: some View {
-        Button {
-            toggleDictation()
-        } label: {
+        Button(action: toggleDictation) {
             Image(systemName: voice.state == .listening ? "mic.fill" : "mic")
-                .foregroundStyle(voice.state == .listening ? .red : .primary)
+                .font(.system(size: 11))
+                .foregroundStyle(voice.state == .listening ? ReviewPalette.cut : AuraTheme.textSecondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .disabled(voice.state == .transcribing || viewModel.isAwaitingAgent)
         .help(voice.state == .listening ? "Stop dictating" : "Dictate an instruction")
     }
+
+    // MARK: - Suggested actions
+
+    private var actionGrid: some View {
+        LazyVGrid(
+            columns: [GridItem(.flexible(), spacing: AuraTheme.Space.sm),
+                      GridItem(.flexible(), spacing: AuraTheme.Space.sm)],
+            spacing: AuraTheme.Space.sm
+        ) {
+            ForEach(StudioAction.allCases) { action in
+                actionCard(action)
+            }
+        }
+    }
+
+    private func actionCard(_ action: StudioAction) -> some View {
+        let available = !isUnavailable(action)
+
+        return Button {
+            viewModel.perform(action)
+        } label: {
+            VStack(alignment: .leading, spacing: AuraTheme.Space.xs + 2) {
+                Image(systemName: action.symbol)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(available ? AuraTheme.accent : AuraTheme.textTertiary)
+
+                Text(action.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(available ? AuraTheme.textPrimary : AuraTheme.textTertiary)
+
+                Text(action.subtitle)
+                    .font(.system(size: 10))
+                    .foregroundStyle(AuraTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(AuraTheme.Space.sm + 2)
+            .background {
+                RoundedRectangle(cornerRadius: AuraTheme.Radius.md)
+                    .fill(AuraTheme.surfaceElevated)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!available || viewModel.isAwaitingAgent)
+        .help(helpText(action))
+    }
+
+    private func isUnavailable(_ action: StudioAction) -> Bool {
+        if case .unavailable = action.kind { return true }
+        return false
+    }
+
+    private func helpText(_ action: StudioAction) -> String {
+        switch action.kind {
+        case .unavailable(let reason): return reason
+        case .local: return "\(action.title) — computed here, one undo step"
+        case .agent: return "\(action.title) — asks the agent, then you review each edit"
+        }
+    }
+
+    // MARK: - Status and suggestions
 
     @ViewBuilder
     private var statusLine: some View {
         switch viewModel.agentState {
         case .thinking:
-            HStack(spacing: 6) {
+            HStack(spacing: AuraTheme.Space.sm) {
                 ProgressView().controlSize(.small)
-                Text("Thinking…").font(.caption2).foregroundStyle(.secondary)
+                Text("Thinking…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AuraTheme.textSecondary)
             }
 
         case .failed(let reason):
             Text(reason)
-                .font(.caption2)
-                .foregroundStyle(.red)
+                .font(.system(size: 11))
+                .foregroundStyle(ReviewPalette.cut)
                 .fixedSize(horizontal: false, vertical: true)
 
         case .idle:
             switch voice.state {
             case .listening:
                 Text("Listening… click the mic again when you're done.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(AuraTheme.textSecondary)
             case .transcribing:
-                HStack(spacing: 6) {
+                HStack(spacing: AuraTheme.Space.sm) {
                     ProgressView().controlSize(.small)
-                    Text("Transcribing…").font(.caption2).foregroundStyle(.secondary)
+                    Text("Transcribing…")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AuraTheme.textSecondary)
                 }
             case .failed(let reason):
-                Text(reason).font(.caption2).foregroundStyle(.red)
+                Text(reason)
+                    .font(.system(size: 11))
+                    .foregroundStyle(ReviewPalette.cut)
             case .idle:
                 EmptyView()
             }
@@ -168,39 +292,42 @@ struct AgentEditPanelView: View {
     @ViewBuilder
     private var suggestionList: some View {
         if !viewModel.suggestions.isEmpty {
-            HStack {
-                Text("\(viewModel.suggestions.count) proposed")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Apply All") { viewModel.acceptAllSuggestions() }
-                    .font(.caption)
-                Button("Dismiss") { viewModel.dismissSuggestions() }
-                    .font(.caption)
-            }
+            VStack(alignment: .leading, spacing: AuraTheme.Space.sm) {
+                HStack {
+                    Text("\(viewModel.suggestions.count) proposed")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AuraTheme.textSecondary)
+                    Spacer()
+                    Button("Apply All") { viewModel.acceptAllSuggestions() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AuraTheme.accent)
+                    Button("Dismiss") { viewModel.dismissSuggestions() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11))
+                        .foregroundStyle(AuraTheme.textSecondary)
+                }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(viewModel.suggestions) { suggestion in
-                        SuggestionRow(
-                            suggestion: suggestion,
-                            onAccept: { viewModel.accept(suggestion) },
-                            onReject: { viewModel.reject(suggestion) }
-                        )
-                    }
+                ForEach(viewModel.suggestions) { suggestion in
+                    SuggestionRow(
+                        suggestion: suggestion,
+                        onAccept: { viewModel.accept(suggestion) },
+                        onReject: { viewModel.reject(suggestion) }
+                    )
                 }
             }
-            .frame(maxHeight: 150)
         }
     }
 
     private var notConfigured: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Connect your InnomightLabs agent to edit by asking.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: AuraTheme.Space.sm) {
+            Text("Connect your agent to edit by asking.")
+                .font(.system(size: 12))
+                .foregroundStyle(AuraTheme.textSecondary)
             Button("Agent Settings…") { showingSettings = true }
-                .font(.caption)
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AuraTheme.accent)
         }
     }
 
@@ -230,27 +357,44 @@ private struct SuggestionRow: View {
     let onReject: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(alignment: .top, spacing: AuraTheme.Space.sm) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(EditOperationDescription.summary(suggestion.operation))
                     .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AuraTheme.textPrimary)
                 if let rationale = suggestion.rationale {
                     Text(rationale)
                         .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AuraTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button(action: onAccept) { Image(systemName: "checkmark") }
-                .buttonStyle(.borderless)
-                .help("Apply this edit")
-            Button(action: onReject) { Image(systemName: "xmark") }
-                .buttonStyle(.borderless)
-                .help("Discard this suggestion")
+            Button(action: onAccept) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(AuraTheme.accent)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Apply this edit")
+
+            Button(action: onReject) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(AuraTheme.textSecondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Discard this suggestion")
         }
-        .padding(6)
-        .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 5))
+        .padding(AuraTheme.Space.sm + 2)
+        .background {
+            RoundedRectangle(cornerRadius: AuraTheme.Radius.sm)
+                .fill(AuraTheme.surfaceElevated)
+        }
     }
 }

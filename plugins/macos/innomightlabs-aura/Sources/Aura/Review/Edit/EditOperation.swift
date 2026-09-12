@@ -36,6 +36,13 @@ enum EditOperation: Codable, Equatable, Sendable {
     case removeMarker(id: UUID)
     case renameMarker(id: UUID, label: String)
     case moveMarker(id: UUID, to: TimeInterval)
+    case rename(String)
+    /// Removes several spans as ONE operation.
+    ///
+    /// Exists so a bulk action — remove silences, a filler sweep — is a single undo step.
+    /// Applying N single cuts would put N entries on the stack, and a user who asks to remove
+    /// silences expects one Cmd+Z to bring them all back.
+    case removeRanges([TimeSpan])
 
     private enum Op: String, Codable {
         case removeRange = "remove_range"
@@ -54,12 +61,14 @@ enum EditOperation: Codable, Equatable, Sendable {
         case removeMarker = "remove_marker"
         case renameMarker = "rename_marker"
         case moveMarker = "move_marker"
+        case rename
+        case removeRanges = "remove_ranges"
     }
 
     private enum CodingKeys: String, CodingKey {
         case op, start, end, t, rect, visible, lane, gain, muted, seconds, words, ids
         case shape, cornerRadius, borderWidth, borderColor, shadowOpacity, shadowRadius
-        case cutIds, id, label
+        case cutIds, id, label, name, spans
         // Accepted on decode only, never written: a language model reaches for these names
         // regardless of what we document, and losing a whole operation to a synonym is worse
         // than accepting one.
@@ -131,6 +140,10 @@ enum EditOperation: Codable, Equatable, Sendable {
                     ?? container.decodeIfPresent(TimeInterval.self, forKey: .to)
                     ?? container.decode(TimeInterval.self, forKey: .at)
             )
+        case .rename:
+            self = .rename(try container.decode(String.self, forKey: .name))
+        case .removeRanges:
+            self = .removeRanges(try container.decode([TimeSpan].self, forKey: .spans))
         case .setCameraStyle:
             self = .setCameraStyle(PiPStyle(
                 shape: try container.decodeIfPresent(PiPStyle.Shape.self, forKey: .shape) ?? .rectangle,
@@ -201,6 +214,12 @@ enum EditOperation: Codable, Equatable, Sendable {
             try container.encode(Op.moveMarker, forKey: .op)
             try container.encode(id, forKey: .id)
             try container.encode(time, forKey: .t)
+        case .rename(let name):
+            try container.encode(Op.rename, forKey: .op)
+            try container.encode(name, forKey: .name)
+        case .removeRanges(let spans):
+            try container.encode(Op.removeRanges, forKey: .op)
+            try container.encode(spans, forKey: .spans)
         case .setCameraStyle(let style):
             try container.encode(Op.setCameraStyle, forKey: .op)
             try container.encode(style.shape, forKey: .shape)
@@ -407,6 +426,29 @@ extension SessionEdit {
                     return updated
                 }
                 .sorted { $0.at < $1.at }
+
+        case .rename(let name):
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Cleared rather than stored as "", so the UI's "has the user named this?" test
+            // stays a simple nil check.
+            edit.name = trimmed.isEmpty ? nil : String(trimmed.prefix(120))
+
+        case .removeRanges(let spans):
+            // Validated once over the whole set. Folding `appendingCut` would reject a span
+            // that only overlaps a clip the *previous* span in this batch removed — which is
+            // normal for a silence sweep, where adjacent gaps can merge.
+            var appended = cuts
+            for span in spans {
+                let start = try Self.snapped(span.start)
+                let end = try Self.snapped(span.end)
+                guard end > start else { throw EditOperationError.emptyRange }
+                guard start >= 0, end <= recordingDuration else {
+                    throw EditOperationError.timeOutsideTimeline(start)
+                }
+                appended.append(Cut(span: TimeSpan(start: start, end: end), origin: .range))
+            }
+            guard appended.count > cuts.count else { throw EditOperationError.emptyRange }
+            edit.cuts = try Self.validated(appended, recordingDuration: recordingDuration)
 
         case .setCameraStyle(let style):
             guard style.isValid else { throw EditOperationError.invalidCameraStyle }

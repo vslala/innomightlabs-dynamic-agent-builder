@@ -17,6 +17,7 @@ final class ReviewWindowPresenter {
         let viewModel: ReviewViewModel
         let observer: NSObjectProtocol
         let keyMonitor: Any?
+        let scrollMonitor: Any?
     }
 
     /// Keyed by session id, so asking twice for the same recording focuses the open window
@@ -33,12 +34,21 @@ final class ReviewWindowPresenter {
 
         let viewModel = ReviewViewModel(folder: folder)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
+            // `.fullSizeContentView` lets the content run under the titlebar so the studio's
+            // own header occupies that strip, with the traffic lights floating over it.
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Aura — \(folder.id)"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        // Forced rather than following the system. The design tokens are exact values chosen
+        // against a dark ground, and a media editor has no use for a light variant — honouring
+        // the system theme would mean designing and maintaining a second palette.
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = NSColor(srgbRed: 0x0B / 255, green: 0x0D / 255, blue: 0x12 / 255, alpha: 1)
         window.contentView = NSHostingView(rootView: ReviewWindowView(viewModel: viewModel))
         window.isReleasedWhenClosed = false
         window.center()
@@ -57,7 +67,8 @@ final class ReviewWindowPresenter {
             controller: NSWindowController(window: window),
             viewModel: viewModel,
             observer: observer,
-            keyMonitor: Self.installKeyMonitor(window: window, viewModel: viewModel)
+            keyMonitor: Self.installKeyMonitor(window: window, viewModel: viewModel),
+            scrollMonitor: Self.installScrollMonitor(window: window, viewModel: viewModel)
         )
         presented[folder.id]?.controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -66,7 +77,7 @@ final class ReviewWindowPresenter {
     private func dismiss(_ id: String) {
         guard let entry = presented.removeValue(forKey: id) else { return }
         NotificationCenter.default.removeObserver(entry.observer)
-        if let monitor = entry.keyMonitor {
+        for monitor in [entry.keyMonitor, entry.scrollMonitor].compactMap({ $0 }) {
             NSEvent.removeMonitor(monitor)
         }
         entry.viewModel.close()
@@ -103,6 +114,37 @@ final class ReviewWindowPresenter {
 
             // Unhandled commands fall through, so a keystroke is never silently eaten.
             return MainActor.assumeIsolated { viewModel.perform(command) } ? nil : event
+        }
+    }
+
+    /// Routes two-finger horizontal scrolling over the timeline to panning.
+    ///
+    /// A monitor rather than an `NSView` in the hierarchy: a view can only receive
+    /// `scrollWheel` if it is hit-testable, and a hit-testable overlay across the lanes would
+    /// swallow the clicks and drags the timeline depends on. This is the same approach the
+    /// keyboard already takes, for the same reason.
+    private static func installScrollMonitor(window: NSWindow, viewModel: ReviewViewModel) -> Any? {
+        NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            guard event.window === window else { return event }
+
+            // Horizontal only. A vertical scroll over the timeline is not ours — and
+            // requiring the horizontal component to dominate stops a slightly-off vertical
+            // gesture from nudging the view sideways.
+            let horizontal = event.scrollingDeltaX
+            guard abs(horizontal) > abs(event.scrollingDeltaY) else { return event }
+
+            // Precise deltas are already in points; a legacy mouse wheel reports lines, which
+            // need scaling to feel like the same gesture.
+            let points = event.hasPreciseScrollingDeltas ? horizontal : horizontal * 16
+
+            // The decision crosses the isolation boundary as a Bool: `NSEvent` is not
+            // `Sendable`, so it cannot be returned out of `assumeIsolated`.
+            let handled = MainActor.assumeIsolated {
+                viewModel.isPointerOverTimeline && viewModel.panViewport(byScrollPoints: points)
+            }
+
+            // Unhandled scrolls fall through, so a gesture is never silently eaten.
+            return handled ? nil : event
         }
     }
 

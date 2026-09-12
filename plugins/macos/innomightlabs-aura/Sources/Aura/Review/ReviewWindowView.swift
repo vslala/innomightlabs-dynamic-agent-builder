@@ -1,184 +1,175 @@
 import AVFoundation
 import SwiftUI
 
-/// The review window: composited preview with the camera overlay on top, transport and
-/// timeline below, transcript alongside.
+/// The studio shell.
+///
+/// Layout only — header, navigation, preview, right panel, timeline. It holds no editing logic,
+/// which is what keeps the arrangement changeable without touching anything that can break a
+/// timeline.
+///
+/// The timeline takes a fraction of the height rather than a fixed number of points, so the
+/// preview keeps the majority of the area at any window size.
 struct ReviewWindowView: View {
     @ObservedObject var viewModel: ReviewViewModel
 
-    @State private var isHoveringPreview = false
+    @State private var showingSettings = false
 
     var body: some View {
-        Group {
+        ZStack {
+            AuraTheme.background.ignoresSafeArea()
+
             switch viewModel.state {
             case .loading:
-                VStack(spacing: 8) {
-                    ProgressView()
-                    Text("Opening \(viewModel.folder.id)…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
+                loading
             case .failed(let message):
-                VStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text(message)
-                        .font(.callout)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(40)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
+                failure(message)
             case .ready:
-                content
+                studio
             }
         }
-        .frame(minWidth: 900, minHeight: 600)
+        .frame(minWidth: 1100, minHeight: 720)
+        .environment(\.colorScheme, .dark)
         .task { await viewModel.load() }
+        .sheet(isPresented: $showingSettings) { AgentSettingsView() }
     }
 
-    private var content: some View {
-        HSplitView {
-            VStack(spacing: 0) {
-                preview
-                Divider()
-                transport
-                Divider()
-                WaveformLanesView(viewModel: viewModel)
-                    .frame(height: 196)
-            }
-            .frame(minWidth: 560)
+    // MARK: - States
 
-            VStack(spacing: 0) {
-                TranscriptPanelView(viewModel: viewModel)
-                Divider()
-                AgentEditPanelView(viewModel: viewModel)
-            }
-            .frame(minWidth: 300, idealWidth: 360)
+    private var loading: some View {
+        VStack(spacing: AuraTheme.Space.md) {
+            ProgressView()
+            Text("Opening \(viewModel.sessionName)…")
+                .font(.system(size: 12))
+                .foregroundStyle(AuraTheme.textSecondary)
         }
-        .overlay(alignment: .top) { errorBanner }
     }
 
-    private var preview: some View {
-        VideoPreviewView(player: viewModel.player)
-            .background(.black)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay { overlayHandles }
-            .onTapGesture { viewModel.togglePlayback() }
-            .onHover { isHoveringPreview = $0 }
+    private func failure(_ message: String) -> some View {
+        VStack(spacing: AuraTheme.Space.md) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 26))
+                .foregroundStyle(AuraTheme.textSecondary)
+            Text(message)
+                .font(.system(size: 13))
+                .foregroundStyle(AuraTheme.textPrimary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(AuraTheme.Space.xl)
     }
+
+    // MARK: - Studio
+
+    private var studio: some View {
+        GeometryReader { geometry in
+            let timelineHeight = AuraTheme.Timeline.height(forWindowHeight: geometry.size.height)
+
+            VStack(spacing: 0) {
+                StudioHeaderView(viewModel: viewModel)
+
+                HStack(spacing: 0) {
+                    StudioSidebarView(viewModel: viewModel, onSelect: select)
+
+                    VStack(spacing: 0) {
+                        PreviewStageView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: AuraTheme.Radius.lg))
+
+                        PreviewScrubBar(viewModel: viewModel)
+                            .padding(.horizontal, AuraTheme.Space.xs)
+
+                        PreviewControlsView(viewModel: viewModel, onToggleFullScreen: toggleFullScreen)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(AuraTheme.Space.md)
+
+                    RightPanelView(viewModel: viewModel)
+                        .frame(width: 380)
+                }
+                .frame(maxHeight: .infinity)
+
+                TimelineView(viewModel: viewModel)
+                    .frame(height: timelineHeight)
+            }
+        }
+        .overlay(alignment: .top) { banners }
+        .overlay {
+            if viewModel.isCommandPaletteOpen {
+                CommandPaletteView(viewModel: viewModel, onOpenSettings: { showingSettings = true })
+            }
+        }
+    }
+
+    private func select(_ section: StudioSection) {
+        viewModel.activeSection = section
+        switch section {
+        case .transcript:
+            viewModel.rightPanel = .transcript
+        case .export:
+            viewModel.rightPanel = .ai
+            NotificationCenter.default.post(name: .auraExportRequested, object: nil)
+        case .settings:
+            showingSettings = true
+        case .library, .sessions:
+            break
+        }
+    }
+
+    private func toggleFullScreen() {
+        NSApp.keyWindow?.toggleFullScreen(nil)
+    }
+
+    // MARK: - Banners
 
     @ViewBuilder
-    private var overlayHandles: some View {
-        if let timeline = viewModel.timeline,
-           let camera = timeline.overlay,
-           let size = camera.probe.displaySize,
-           let keyframe = viewModel.currentOverlay {
-            CameraOverlayView(
-                renderSize: timeline.renderSize,
-                cameraDisplaySize: size,
-                keyframe: keyframe,
-                style: viewModel.cameraStyle,
-                showsHandles: isHoveringPreview,
-                onCommit: { viewModel.setOverlay(rect: $0, visible: keyframe.visible) }
-            )
-        }
-    }
-
-    private var transport: some View {
-        VStack(spacing: 6) {
-            TimelineRulerView(viewModel: viewModel)
-                .frame(height: 28)
-
-            HStack(spacing: 12) {
-                Button {
-                    viewModel.togglePlayback()
-                } label: {
-                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                }
-                // No `.keyboardShortcut` here: an unmodified window-wide shortcut is resolved
-                // ahead of the field editor, so it could swallow spaces typed into the agent
-                // prompt. `ReviewKeyCommand` owns the keyboard and checks focus first.
-
-                Text("\(TimeFormatting.timecode(Timeline.seconds(viewModel.playhead))) / \(TimeFormatting.timecode(Timeline.seconds(viewModel.duration)))")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                if viewModel.timeline?.overlay != nil, let keyframe = viewModel.currentOverlay {
-                    Button {
-                        viewModel.toggleOverlayVisibility()
-                    } label: {
-                        Label(
-                            keyframe.visible ? "Hide Camera" : "Show Camera",
-                            systemImage: keyframe.visible ? "video.slash" : "video"
-                        )
-                    }
-                    .help("Takes effect from the playhead onwards")
-
-                    CameraStyleMenu(viewModel: viewModel)
-                }
-
-                if let store = viewModel.store {
-                    Button {
-                        store.undo()
-                    } label: {
-                        Image(systemName: "arrow.uturn.backward")
-                    }
-                    .disabled(!store.canUndo)
-
-                    Button {
-                        store.redo()
-                    } label: {
-                        Image(systemName: "arrow.uturn.forward")
-                    }
-                    .disabled(!store.canRedo)
-                }
-
-                ExportButton(viewModel: viewModel)
+    private var banners: some View {
+        VStack(spacing: AuraTheme.Space.sm) {
+            if let message = viewModel.lastError {
+                banner(message, tint: ReviewPalette.cut) { viewModel.lastError = nil }
             }
-            .padding(.horizontal, 12)
-        }
-        .padding(.vertical, 8)
-    }
-
-    @ViewBuilder
-    private var errorBanner: some View {
-        if let message = viewModel.lastError {
-            banner(message, background: .red.opacity(0.85), foreground: .white) {
-                viewModel.lastError = nil
+            // Distinct from the error banner on purpose: a notice reports something expected,
+            // and colouring it red would make a benign event look like a failure.
+            if let notice = viewModel.lastNotice {
+                banner(notice, tint: AuraTheme.accent) { viewModel.lastNotice = nil }
             }
         }
-
-        // Distinct from the error banner on purpose: this reports something expected, and
-        // colouring it red would make a benign event look like a failure.
-        if let notice = viewModel.lastNotice {
-            banner(notice, background: .thinMaterial, foreground: .primary) {
-                viewModel.lastNotice = nil
-            }
-        }
+        .padding(.top, 60)
+        .padding(.horizontal, AuraTheme.Space.lg)
     }
 
     private func banner(
         _ message: String,
-        background: some ShapeStyle,
-        foreground: some ShapeStyle,
+        tint: Color,
         dismiss: @escaping () -> Void
     ) -> some View {
-        HStack {
+        HStack(spacing: AuraTheme.Space.sm) {
+            Circle().fill(tint).frame(width: 6, height: 6)
             Text(message)
-                .font(.caption)
+                .font(.system(size: 12))
+                .foregroundStyle(AuraTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer()
+            Spacer(minLength: AuraTheme.Space.md)
             Button("Dismiss", action: dismiss)
-                .font(.caption)
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(AuraTheme.textSecondary)
         }
-        .padding(8)
-        .background(background)
-        .foregroundStyle(foreground)
+        .padding(.horizontal, AuraTheme.Space.md)
+        .padding(.vertical, AuraTheme.Space.sm + 2)
+        .background {
+            RoundedRectangle(cornerRadius: AuraTheme.Radius.md)
+                .fill(AuraTheme.surfaceElevated)
+                .overlay {
+                    RoundedRectangle(cornerRadius: AuraTheme.Radius.md)
+                        .stroke(tint.opacity(0.35), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
+        }
+        .frame(maxWidth: 560)
     }
+}
+
+extension Notification.Name {
+    /// Lets the sidebar's Export item trigger the same save panel the header button opens,
+    /// without the sidebar having to own the export flow.
+    static let auraExportRequested = Notification.Name("aura.exportRequested")
 }

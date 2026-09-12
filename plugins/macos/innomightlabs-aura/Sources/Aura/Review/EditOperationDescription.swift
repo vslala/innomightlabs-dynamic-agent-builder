@@ -6,6 +6,16 @@ enum EditOperationDescription {
         switch operation {
         case .removeRange(let span):
             return "Remove \(TimeFormatting.timecode(span.start))–\(TimeFormatting.timecode(span.end))"
+        case .removeRanges(let spans):
+            let total = spans.reduce(0) { $0 + $1.duration }
+            return String(
+                format: "Remove %d %@ (%.1fs)",
+                spans.count,
+                spans.count == 1 ? "range" : "ranges",
+                total
+            )
+        case .rename(let name):
+            return name.isEmpty ? "Clear session name" : "Rename to “\(name)”"
         case .splitClip(let t):
             return "Split at \(TimeFormatting.timecode(t))"
         case .setOverlayKeyframe(let keyframe):

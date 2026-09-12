@@ -50,6 +50,8 @@ struct AuraApp: App {
         controller.onSessionCompleted = { folder in presenter.open(folder) }
         _recordingController = StateObject(wrappedValue: controller)
 
+        Task { @MainActor in Self.openSessionFromEnvironment(using: presenter) }
+
         // No microphone permission prompt and no listener unless the flag is on: with it off,
         // Aura touches the microphone only while actually recording.
         guard FeatureFlags.isWakeWordListenerEnabled else { return }
@@ -63,5 +65,24 @@ struct AuraApp: App {
         MenuBarExtra("Aura", systemImage: "waveform") {
             MenuBarContentView(controller: recordingController, reviewWindows: reviewWindows)
         }
+    }
+
+    /// Opens a session's review window at launch when `AURA_OPEN_SESSION` names one.
+    ///
+    /// A development affordance: the studio UI is most of the app's surface, and iterating on
+    /// it otherwise means recording a new session by hand every time. Accepts either a folder
+    /// name under Movies/Aura or an absolute path. Does nothing when the variable is unset, so
+    /// it cannot affect a normal launch.
+    private static func openSessionFromEnvironment(using presenter: ReviewWindowPresenter) {
+        guard let value = ProcessInfo.processInfo.environment["AURA_OPEN_SESSION"],
+              !value.isEmpty
+        else { return }
+
+        let url = value.hasPrefix("/")
+            ? URL(fileURLWithPath: value)
+            : SessionFolder.defaultBaseDirectory.appendingPathComponent(value, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+
+        presenter.open(SessionFolder.load(rootURL: url))
     }
 }

@@ -1,16 +1,18 @@
 import SwiftUI
 
-/// Shape, border, and shadow for the camera overlay.
+/// Shape, border, and shadow for the camera overlay, as menu items.
 ///
 /// Unlike position, the style applies to the whole recording rather than being keyframed:
-/// a camera that changes shape partway through reads as a glitch, not an edit.
+/// a camera that changes shape partway through reads as a glitch, not an edit. That is also
+/// why it lives inside the layout menu rather than beside the keyframed layout modes — the two
+/// look similar but one is a property of the recording and the other is a point in time.
 struct CameraStyleMenu: View {
     @ObservedObject var viewModel: ReviewViewModel
 
     var body: some View {
         let style = viewModel.cameraStyle
 
-        return Menu {
+        return Group {
             Picker("Shape", selection: Binding(
                 get: { style.shape },
                 set: { viewModel.setCameraShape($0) }
@@ -41,19 +43,6 @@ struct CameraStyleMenu: View {
                     viewModel.setCameraStyle(updated)
                 }
             ))
-        } label: {
-            Label("Camera Style", systemImage: icon(for: style.shape))
-        }
-        .help(style.isPlainRectangle
-              ? "Shape, border, and shadow"
-              : "Styled overlays render through the Core Image compositor")
-    }
-
-    private func icon(for shape: PiPStyle.Shape) -> String {
-        switch shape {
-        case .rectangle: return "rectangle"
-        case .rounded: return "rectangle.roundedtop"
-        case .circle: return "circle"
         }
     }
 }

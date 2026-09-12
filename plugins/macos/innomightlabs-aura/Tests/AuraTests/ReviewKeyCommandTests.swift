@@ -55,16 +55,59 @@ final class ReviewKeyCommandTests: XCTestCase {
         XCTAssertEqual(resolve("", keyCode: 53), .clearSelection)
     }
 
-    func testArrowsNudgeByOneFrameAndShiftNudgesByTen() {
-        XCTAssertEqual(resolve("", keyCode: 123), .nudgePlayhead(frames: -1))
-        XCTAssertEqual(resolve("", keyCode: 124), .nudgePlayhead(frames: 1))
-        XCTAssertEqual(resolve("", keyCode: 123, modifiers: .shift), .nudgePlayhead(frames: -10))
-        XCTAssertEqual(resolve("", keyCode: 124, modifiers: .shift), .nudgePlayhead(frames: 10))
+    /// Escape is the one bare key that has to work while typing: it is how you leave the
+    /// command palette, and it never inserts a character.
+    func testEscapeWorksEvenInATextField() {
+        XCTAssertEqual(resolve("", keyCode: 53, focus: .textInput), .clearSelection)
     }
 
-    func testSplitAndMarker() {
-        XCTAssertEqual(resolve("s"), .splitAtPlayhead)
+    func testArrowsSeekSmallAndShiftArrowsSeekLarge() {
+        let small = ReviewKeyCommand.smallSeekFrames
+        let large = ReviewKeyCommand.largeSeekFrames
+
+        XCTAssertEqual(resolve("", keyCode: 123), .nudgePlayhead(frames: -small))
+        XCTAssertEqual(resolve("", keyCode: 124), .nudgePlayhead(frames: small))
+        XCTAssertEqual(resolve("", keyCode: 123, modifiers: .shift), .nudgePlayhead(frames: -large))
+        XCTAssertEqual(resolve("", keyCode: 124, modifiers: .shift), .nudgePlayhead(frames: large))
+        XCTAssertGreaterThan(large, small)
+    }
+
+    func testEditingKeys() {
         XCTAssertEqual(resolve("m"), .addMarker)
+        XCTAssertEqual(resolve("i"), .markIn)
+        XCTAssertEqual(resolve("o"), .markOut)
+    }
+
+    /// `B` arms the blade; splitting immediately is the command chord. Conflating them would
+    /// mean a stray keystroke silently cutting the timeline.
+    func testBladeIsAModeAndSplitIsACommandChord() {
+        XCTAssertEqual(resolve("b"), .armBlade)
+        XCTAssertEqual(resolve("b", modifiers: .command), .splitAtPlayhead)
+    }
+
+    func testShuttle() {
+        XCTAssertEqual(resolve("j"), .shuttle(.reverse))
+        XCTAssertEqual(resolve("k"), .shuttle(.stop))
+        XCTAssertEqual(resolve("l"), .shuttle(.forward))
+    }
+
+    func testCommandPalette() {
+        XCTAssertEqual(resolve("k", modifiers: .command), .commandPalette)
+        // Cmd+K must beat the bare `k` shuttle binding.
+        XCTAssertNotEqual(resolve("k", modifiers: .command), .shuttle(.stop))
+    }
+
+    func testBareZoomKeys() {
+        XCTAssertEqual(resolve("+"), .zoomIn)
+        XCTAssertEqual(resolve("="), .zoomIn)
+        XCTAssertEqual(resolve("-"), .zoomOut)
+    }
+
+    /// Aura's timeline is derived from cuts and cannot hold a gap, so there is no "lift" to
+    /// distinguish from a ripple delete. Both keys do the same thing on purpose.
+    func testShiftDeleteIsTheSameRippleDeleteAsDelete() {
+        XCTAssertEqual(resolve("", keyCode: 51), .cutSelection)
+        XCTAssertEqual(resolve("", keyCode: 51, modifiers: .shift), .cutSelection)
     }
 
     // MARK: - Command chords

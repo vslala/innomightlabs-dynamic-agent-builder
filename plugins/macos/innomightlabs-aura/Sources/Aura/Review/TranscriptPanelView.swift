@@ -12,7 +12,6 @@ struct TranscriptPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider()
 
             switch viewModel.transcriptState {
             case .ready:
@@ -23,9 +22,11 @@ struct TranscriptPanelView: View {
                 }
 
             case .transcribing:
-                VStack(spacing: 8) {
+                VStack(spacing: AuraTheme.Space.sm) {
                     ProgressView().controlSize(.small)
-                    Text("Transcribing…").font(.caption).foregroundStyle(.secondary)
+                    Text("Transcribing…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AuraTheme.textSecondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -33,15 +34,17 @@ struct TranscriptPanelView: View {
                 message("This session has no microphone track to transcribe.")
 
             case .failed(let reason):
-                VStack(spacing: 8) {
+                VStack(spacing: AuraTheme.Space.sm) {
                     Text(reason)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(AuraTheme.textSecondary)
                         .multilineTextAlignment(.center)
                     Button("Try Again") { viewModel.retryTranscription() }
-                        .font(.caption)
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AuraTheme.accent)
                 }
-                .padding(20)
+                .padding(AuraTheme.Space.lg)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -49,27 +52,35 @@ struct TranscriptPanelView: View {
 
     private var header: some View {
         HStack {
-            Text("Transcript").font(.headline)
+            Text("Click a word to cut it")
+                .font(.system(size: 11))
+                .foregroundStyle(AuraTheme.textTertiary)
             Spacer()
             if viewModel.cutWordCount > 0 {
                 Button {
                     viewModel.restoreAllWords()
                 } label: {
-                    Text("\(viewModel.cutWordCount) cut").font(.caption2)
+                    Text("\(viewModel.cutWordCount) cut")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(ReviewPalette.cut)
+                        .padding(.horizontal, AuraTheme.Space.sm)
+                        .padding(.vertical, 3)
+                        .background { Capsule().fill(ReviewPalette.cut.opacity(0.16)) }
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .help("Restore every cut word")
             }
         }
-        .padding(10)
+        .padding(.horizontal, AuraTheme.Space.md)
+        .padding(.vertical, AuraTheme.Space.sm + 2)
     }
 
     private func message(_ text: String) -> some View {
         Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(.system(size: 12))
+            .foregroundStyle(AuraTheme.textSecondary)
             .multilineTextAlignment(.center)
-            .padding(20)
+            .padding(AuraTheme.Space.lg)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -101,7 +112,7 @@ struct TranscriptPanelView: View {
                  .map { TimeFormatting.timecode($0.start.seconds) }
                  ?? "cut · \(TimeFormatting.timecode(cue.source.start.seconds))")
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(cue.isCut ? ReviewPalette.cut.opacity(0.8) : AuraTheme.textTertiary)
 
             FlowLayout(spacing: 3, lineSpacing: 2) {
                 ForEach(words) { word in
@@ -110,16 +121,27 @@ struct TranscriptPanelView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(6)
-        .background(isActive ? ReviewPalette.activeWord.opacity(0.12) : .clear, in: .rect(cornerRadius: 5))
+        .padding(AuraTheme.Space.sm)
+        .background {
+            RoundedRectangle(cornerRadius: AuraTheme.Radius.sm)
+                .fill(isActive ? AuraTheme.accentFill(0.16) : .clear)
+        }
         .contentShape(Rectangle())
         .contextMenu {
-            Button("Remove This Whole Line", systemImage: "scissors") {
+            Button("Remove Section", systemImage: "scissors") {
                 viewModel.cut(cue: cue)
             }
             .disabled(cue.isCut)
-            Button("Mark Here", systemImage: "bookmark") {
+            Button("Go to This Line", systemImage: "arrow.right.circle") {
+                viewModel.seek(toCue: cue)
+            }
+            .disabled(cue.isCut)
+            Button("Add Marker Here", systemImage: "bookmark") {
                 viewModel.addMarker(at: cue.source.start, label: String(cue.text.prefix(40)))
+            }
+            Divider()
+            Button("Ask Aura About This", systemImage: "sparkles") {
+                viewModel.askAboutCue(cue)
             }
         }
     }
@@ -130,14 +152,14 @@ struct TranscriptPanelView: View {
         let isActive = viewModel.activeWordID == word.id
 
         return Text(word.text)
-            .font(.callout)
+            .font(.system(size: 13))
             .strikethrough(word.isCut)
-            .foregroundStyle(word.isCut ? .secondary : .primary)
+            .foregroundStyle(word.isCut ? AuraTheme.textTertiary : AuraTheme.textPrimary)
             .padding(.horizontal, 2)
             .background(
                 word.isCut
-                    ? ReviewPalette.cut.opacity(0.14)
-                    : (isActive ? ReviewPalette.activeWord.opacity(0.3) : .clear),
+                    ? ReviewPalette.cut.opacity(0.18)
+                    : (isActive ? AuraTheme.accentFill(0.35) : .clear),
                 in: .rect(cornerRadius: 3)
             )
             .onTapGesture { viewModel.toggle(word: word) }

@@ -17,6 +17,14 @@ enum TrackKind: String, Sendable, CaseIterable {
 
     var isVideo: Bool { mediaType == .video }
 
+    var videoLane: VideoLane? {
+        switch self {
+        case .screen: return .screen
+        case .camera: return .camera
+        case .microphone, .systemAudio: return nil
+        }
+    }
+
     var lane: AudioLane? {
         switch self {
         case .microphone: return .microphone

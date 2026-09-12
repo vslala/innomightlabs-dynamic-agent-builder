@@ -6,39 +6,70 @@ struct ExportButton: View {
     @ObservedObject var viewModel: ReviewViewModel
 
     var body: some View {
+        content
+            // The sidebar's Export item and the command palette both route here, so the save
+            // panel lives in one place rather than being duplicated per entry point.
+            .onReceive(.auraExportRequested) {
+                guard case .idle = viewModel.exportState else { return }
+                chooseDestination()
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch viewModel.exportState {
         case .idle:
-            Button {
-                chooseDestination()
-            } label: {
-                Label("Export…", systemImage: "square.and.arrow.up")
-            }
-            .disabled(viewModel.timeline == nil)
+            primary(title: "Export", symbol: "square.and.arrow.up") { chooseDestination() }
+                .disabled(viewModel.timeline == nil)
 
         case .running(let fraction):
-            HStack(spacing: 6) {
+            HStack(spacing: AuraTheme.Space.sm) {
                 ProgressView(value: fraction)
-                    .frame(width: 70)
+                    .frame(width: 76)
                 Button("Cancel") { viewModel.cancelExport() }
-                    .font(.caption)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AuraTheme.textSecondary)
             }
 
         case .finished(let url):
-            Button {
+            primary(title: "Show in Finder", symbol: "checkmark.circle") {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
-            } label: {
-                Label("Show in Finder", systemImage: "checkmark.circle")
             }
             .help(url.path)
 
         case .failed(let reason):
-            Button {
+            primary(title: "Export Failed", symbol: "exclamationmark.triangle", tint: ReviewPalette.cut) {
                 chooseDestination()
-            } label: {
-                Label("Export Failed", systemImage: "exclamationmark.triangle")
             }
             .help(reason)
         }
+    }
+
+    /// The window's one filled button. Everything else is quiet, so this reads as *the* action.
+    private func primary(
+        title: String,
+        symbol: String,
+        tint: Color = AuraTheme.accent,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: AuraTheme.Space.sm - 2) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, AuraTheme.Space.md - 2)
+            .padding(.vertical, AuraTheme.Space.sm)
+            .background {
+                RoundedRectangle(cornerRadius: AuraTheme.Radius.sm)
+                    .fill(tint)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// Asks where to write before doing any work. The panel also owns the overwrite

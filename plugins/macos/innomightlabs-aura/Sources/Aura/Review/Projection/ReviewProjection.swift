@@ -228,9 +228,17 @@ struct ReviewProjection: Equatable, Sendable {
         return nil
     }
 
+    /// The cue covering a playhead position.
+    ///
+    /// Matched against the cue's own **composition** spans rather than by looking up the
+    /// active word and taking its cue. Word lookup returns nothing in the gaps *between* words
+    /// — including the pauses inside a single phrase — which made the subtitle flicker off
+    /// mid-sentence. Matching the cue's span also means a cue that has been cut simply never
+    /// matches, so there is no separate bookkeeping for which captions still exist.
     func cue(atComposition stamp: Stamp<Composition>) -> ProjectedCue? {
-        guard let word = word(atComposition: stamp) else { return nil }
-        return cues.first { $0.id == word.cueID }
+        cues.first { cue in
+            cue.composition.contains { $0.contains(stamp) }
+        }
     }
 
     /// The region covering a source time. Binary search over regions, which tile `recording`.

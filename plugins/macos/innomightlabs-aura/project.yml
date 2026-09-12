@@ -26,12 +26,22 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
-        ENABLE_HARDENED_RUNTIME: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: Aura.entitlements
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: N88DX83XHU
         CODE_SIGN_IDENTITY: "Apple Development"
+        INFOPLIST_KEY_CFBundleDisplayName: Aura
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © InnomightLabs. All rights reserved."
         INFOPLIST_KEY_NSCameraUsageDescription: "Aura uses your camera to record webcam video alongside your screen recording."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Aura uses your microphone to record narration audio alongside your screen recording."
+      configs:
+        # Off for Debug so the development loop is unaffected, on for Release because
+        # notarization requires it — and the entitlements above exist to satisfy it.
+        Debug:
+          ENABLE_HARDENED_RUNTIME: NO
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES
 
   AuraTests:
     type: bundle.unit-test
