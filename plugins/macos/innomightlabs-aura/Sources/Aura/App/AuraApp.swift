@@ -62,8 +62,15 @@ struct AuraApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Aura", systemImage: "waveform") {
+        MenuBarExtra {
             MenuBarContentView(controller: recordingController, reviewWindows: reviewWindows)
+        } label: {
+            // `.original` keeps the mark's colour. A menu bar image is templated by default,
+            // and the silhouette of this logo is a shapeless blob — the gradient *is* the
+            // identity. The trade-off, accepted deliberately: a colour icon does not invert
+            // with the menu bar's appearance or tint white while the menu is open.
+            Image("MenuBarIcon")
+                .renderingMode(.original)
         }
     }
 
