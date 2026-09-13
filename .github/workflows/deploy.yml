@@ -49,7 +49,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # vitest requires Node ^22.12 || ^24 || >=26; keep this in step with
+          # local development, which runs Node 24.
+          node-version: '24'
           cache: 'yarn'
           cache-dependency-path: |
             spa/yarn.lock
@@ -62,6 +64,10 @@ jobs:
       - name: Install widget dependencies
         working-directory: spa/widget
         run: yarn install --frozen-lockfile
+
+      - name: Run SPA tests
+        working-directory: spa
+        run: yarn test
 
       - name: Create environment file
         working-directory: spa
