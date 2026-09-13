@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, Share2, Workflow } from "lucide-react";
-import { Link, Outlet, useNavigate, useParams } from "react-router-dom";
+import { ChevronLeft, Workflow } from "lucide-react";
+import { Outlet, useNavigate, useParams } from "react-router-dom";
 import "./AutomationDetailLayout.css";
 
 import {
@@ -19,7 +19,6 @@ import {
   Label,
   Textarea,
 } from "../../../components/ui";
-import { StatusBadge } from "../../../components/ui/status-badge";
 import { FieldGroup, Inline, Stack } from "../../../components/layout";
 import { automationApiService } from "../../../services/automations";
 import { automationMarketplaceApiService } from "../../../services/automationMarketplace";
@@ -29,13 +28,6 @@ import type {
   AutomationSkillResponse,
 } from "../../../types/automation";
 import type { MarketplaceAutomationImportInput } from "../../../types/automationMarketplace";
-import { AutomationSideNav } from "./components/AutomationSideNav";
-
-function toBadgeStatus(status: AutomationResponse["status"]) {
-  if (status === "active") return "active";
-  if (status === "draft") return "draft";
-  return "inactive";
-}
 
 export function AutomationDetailLayout() {
   const { automationId } = useParams<{ automationId: string }>();
@@ -171,37 +163,18 @@ export function AutomationDetailLayout() {
   }
 
   return (
-    <div className="automation-detail">
-      <div className="automation-detail__header">
-        <div className="automation-detail__title-row">
-          <Button variant="ghost" size="icon" asChild>
-            <Link to="/dashboard/automations">
-              <ChevronLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="automation-detail__icon">
-            <Workflow />
-          </div>
-          <div>
-            <div className="automation-detail__heading">
-              <h1>{automation.title}</h1>
-              <StatusBadge status={toBadgeStatus(automation.status)} label={automation.status} />
-            </div>
-            <p>{automation.description || "Automation workflow"}</p>
-          </div>
-        </div>
-        <Button className="automation-detail__publish" variant="outline" onClick={openPublishDialog}>
-          <Share2 className="h-4 w-4" />
-          Publish
-        </Button>
-      </div>
-
-      <div className="automation-detail__workspace">
-        <AutomationSideNav />
-        <main className="automation-detail__content">
-          <Outlet context={{ automation, reloadAutomation: loadAutomation }} />
-        </main>
-      </div>
+    <div className="automation-detail automation-detail--full">
+      {/*
+        The workspace owns its own header, so the layout contributes only data
+        and the publish dialog. That gives the chain the full page height.
+      */}
+      <Outlet
+        context={{
+          automation,
+          reloadAutomation: loadAutomation,
+          openPublishDialog: () => void openPublishDialog(),
+        }}
+      />
 
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
         <DialogContent className="max-h-[88vh] max-w-4xl overflow-y-auto">

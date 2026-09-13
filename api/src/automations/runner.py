@@ -1,9 +1,7 @@
 """Automation runner for manual/test execution."""
 
 import asyncio
-import json
 import logging
-import re
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import dataclass
@@ -33,6 +31,7 @@ from src.automations.run_state import (
 )
 from src.automations.errors import AutomationValidationError
 from src.automations.service import AutomationGraph, AutomationService
+from src.automations.smart_values import SmartValueResolver
 from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
 from src.connectors.service import ConnectorService, get_connector_service
@@ -137,6 +136,8 @@ class AutomationRunner:
                     "trigger_id": trigger.trigger_id if trigger else None,
                 },
                 "nodes": {},
+                "steps": {},
+                "execution": {},
             },
             created_by=user_email,
         )
@@ -172,6 +173,8 @@ class AutomationRunner:
                     "schedule_id": schedule_id,
                 },
                 "nodes": {},
+                "steps": {},
+                "execution": {},
             },
             created_by=user_email,
         )
@@ -229,7 +232,7 @@ class AutomationRunner:
                 node = node_by_id[current_node_id]
                 run = self.run_state.heartbeat(run, current_node_id=node.node_id, node_started=True)
                 if node.type == AutomationNodeType.FINAL:
-                    self._store_context_node(run, node.node_id, "succeeded", {}, {})
+                    self._store_context_node(run, node, "succeeded", {}, {})
                     return self.run_state.succeed(run)
 
                 result = await self._execute_node(
@@ -243,7 +246,7 @@ class AutomationRunner:
 
                 self._store_context_node(
                     run,
-                    node.node_id,
+                    node,
                     result.status,
                     result.output,
                     result.message_ids,
@@ -605,86 +608,36 @@ class AutomationRunner:
     def _store_context_node(
         self,
         run: AutomationRun,
-        node_id: str,
+        node: AutomationNode,
         status: AutomationNodeRunStatus | str,
         output: dict[str, Any],
         message_ids: dict[str, str],
         error: str | None = None,
     ) -> None:
-        run.context.setdefault("nodes", {})[node_id] = {
+        """Record a node result under both its node id and its smart-value alias."""
+        result = {
             "status": status.value if isinstance(status, AutomationNodeRunStatus) else status,
             "output": output,
             "message_ids": message_ids,
             "error": error,
         }
+        run.context.setdefault("nodes", {})[node.node_id] = result
+        execution = run.context.setdefault("execution", {})
+        execution["last_node_id"] = node.node_id
+        if node.alias:
+            run.context.setdefault("steps", {})[node.alias] = {
+                **result,
+                "node_id": node.node_id,
+                "name": node.name,
+                "type": node.type.value,
+            }
+            execution["last_step_alias"] = node.alias
 
     def _render_template(self, template: str, context: dict[str, Any]) -> str:
-        def replace(match: re.Match[str]) -> str:
-            value = self._resolve_json_path(match.group(1).strip(), context)
-            if isinstance(value, (dict, list)):
-                return json.dumps(value)
-            return "" if value is None else str(value)
-
-        return re.sub(r"\{\{\s*(\$\.[^}]+)\s*\}\}", replace, template)
+        return SmartValueResolver(context).render_template(template)
 
     def _render_smart_values(self, value: Any, context: dict[str, Any]) -> Any:
-        if isinstance(value, dict):
-            return {key: self._render_smart_values(item, context) for key, item in value.items()}
-        if isinstance(value, list):
-            return [self._render_smart_values(item, context) for item in value]
-        if isinstance(value, str):
-            return self._render_smart_string(value, context)
-        return value
-
-    def _render_smart_string(self, value: str, context: dict[str, Any]) -> Any:
-        whole_match = re.fullmatch(r"\s*\{\{\s*(\$\.[^}]+|\$)\s*\}\}\s*", value)
-        if whole_match:
-            return self._resolve_json_path(whole_match.group(1).strip(), context)
-
-        def replace(match: re.Match[str]) -> str:
-            resolved = self._resolve_json_path(match.group(1).strip(), context)
-            if isinstance(resolved, (dict, list)):
-                return json.dumps(resolved)
-            return "" if resolved is None else str(resolved)
-
-        return re.sub(r"\{\{\s*(\$\.[^}]+|\$)\s*\}\}", replace, value)
-
-    def _resolve_json_path(self, path: str, context: dict[str, Any]) -> Any:
-        if path == "$":
-            return context
-        if not path.startswith("$."):
-            return None
-        current: Any = context
-        for part in path[2:].split("."):
-            if isinstance(current, dict):
-                current = current.get(part)
-            elif isinstance(current, list) and part.isdigit():
-                current = current[int(part)]
-            else:
-                return None
-        return current
+        return SmartValueResolver(context).render_value(value)
 
     def _evaluate_condition(self, expression: str, context: dict[str, Any]) -> bool:
-        expression = expression.strip()
-        if "==" in expression:
-            left, right = expression.split("==", 1)
-            return bool(self._resolve_json_path(left.strip(), context) == self._literal_value(right.strip()))
-        if "!=" in expression:
-            left, right = expression.split("!=", 1)
-            return bool(self._resolve_json_path(left.strip(), context) != self._literal_value(right.strip()))
-        return bool(self._resolve_json_path(expression, context))
-
-    def _literal_value(self, value: str) -> Any:
-        value = value.strip()
-        if value in {"true", "false"}:
-            return value == "true"
-        if value in {"null", "None"}:
-            return None
-        if (value.startswith('"') and value.endswith('"')) or (
-            value.startswith("'") and value.endswith("'")
-        ):
-            return value[1:-1]
-        try:
-            return int(value)
-        except ValueError:
-            return value
+        return SmartValueResolver(context).evaluate_condition(expression)

@@ -9,6 +9,7 @@ from src.agents.repository import AgentRepository
 from src.automations.models import (
     Automation,
     AutomationActionType,
+    AutomationRun,
     AutomationActionCatalogItemResponse,
     AutomationActionCatalogResponse,
     AutomationEdge,
@@ -28,19 +29,25 @@ from src.automations.models import (
     CreateAutomationRequest,
     CreateAutomationTriggerRequest,
     SaveAutomationGraphRequest,
+    SmartValuePreviewRequest,
+    SmartValuePreviewResponse,
+    SmartValueTokenPreviewResponse,
     UpdateAutomationEdgeRequest,
     UpdateAutomationSkillRequest,
     UpdateAutomationNodeRequest,
     UpdateAutomationRequest,
     UpdateAutomationTriggerRequest,
 )
+from src.automations.aliases import assign_missing_aliases
 from src.automations.errors import AutomationNotFoundError, AutomationValidationError
 from src.automations.repository import AutomationRepository
+from src.automations.smart_values import SmartValueResolver
 from src.automations.validation import (
     ActionNodeValidationPolicy,
     AutomationGraphValidator,
     ConditionNodeValidationPolicy,
     FinalNodeValidationPolicy,
+    GraphValidationMode,
     InvokeAgentActionValidator,
     SkillActionValidator,
     StartNodeValidationPolicy,
@@ -226,6 +233,20 @@ class AutomationService:
             )
         automation.status = next_status
 
+    def _save_mode(self, automation: Automation) -> GraphValidationMode:
+        """Drafts may be saved half-configured; a live automation may not.
+
+        An active automation can fire from a schedule at any moment, so its stored
+        graph must always be runnable. Draft and disabled automations are edited
+        continuously by the builder's autosave and are validated strictly when
+        activated or test-run instead.
+        """
+        return (
+            GraphValidationMode.STRICT
+            if automation.status == AutomationStatus.ACTIVE
+            else GraphValidationMode.DRAFT
+        )
+
     def _node_from_graph_item(self, automation_id: str, item: Any) -> AutomationNode:
         return self._ensure_node_id(
             AutomationNode(
@@ -233,6 +254,7 @@ class AutomationService:
                 automation_id=automation_id,
                 type=item.type,
                 name=item.name,
+                alias=getattr(item, "alias", None),
                 description=item.description,
                 position=item.position,
                 config=item.config,
@@ -250,6 +272,7 @@ class AutomationService:
                 automation_id=automation_id,
                 type=body.type,
                 name=body.name,
+                alias=body.alias,
                 description=body.description,
                 position=body.position,
                 config=body.config,
@@ -323,10 +346,19 @@ class AutomationService:
         self, automation_id: str, body: SaveAutomationGraphRequest, user_email: str
     ) -> AutomationGraph:
         automation = self.get_automation(automation_id, user_email)
-        nodes = [self._node_from_graph_item(automation_id, item) for item in body.nodes]
+        nodes = assign_missing_aliases(
+            [self._node_from_graph_item(automation_id, item) for item in body.nodes]
+        )
         edges = [self._edge_from_graph_item(automation_id, item) for item in body.edges]
         existing_nodes, _, existing_triggers = self.repo.get_graph(automation_id)
-        self.validate_graph(nodes, edges, existing_triggers, user_email, automation_id)
+        self.validate_graph(
+            nodes,
+            edges,
+            existing_triggers,
+            user_email,
+            automation_id,
+            mode=self._save_mode(automation),
+        )
         self._run_removed_node_lifecycle(automation_id, existing_nodes, nodes, user_email)
         self.repo.save_graph(automation_id, nodes, edges, existing_triggers)
         return AutomationGraph(automation, nodes, edges, existing_triggers)
@@ -336,7 +368,15 @@ class AutomationService:
     ) -> AutomationNode:
         graph = self.get_graph(automation_id, user_email)
         node = self._node_from_create_request(automation_id, body)
-        self.validate_graph([*graph.nodes, node], graph.edges, graph.triggers, user_email, automation_id)
+        nodes = assign_missing_aliases([*graph.nodes, node])
+        self.validate_graph(
+            nodes,
+            graph.edges,
+            graph.triggers,
+            user_email,
+            automation_id,
+            mode=self._save_mode(graph.automation),
+        )
         return self.repo.save_node(node)
 
     def update_node(
@@ -354,14 +394,25 @@ class AutomationService:
             node.type = body.type
         if body.name is not None:
             node.name = body.name
+        if body.alias is not None:
+            node.alias = body.alias or None
         if body.description is not None:
             node.description = body.description
         if body.position is not None:
             node.position = body.position
         if body.config is not None:
             node.config = body.config
-        updated_nodes = [node if item.node_id == node_id else item for item in graph.nodes]
-        self.validate_graph(updated_nodes, graph.edges, graph.triggers, user_email, automation_id)
+        updated_nodes = assign_missing_aliases(
+            [node if item.node_id == node_id else item for item in graph.nodes]
+        )
+        self.validate_graph(
+            updated_nodes,
+            graph.edges,
+            graph.triggers,
+            user_email,
+            automation_id,
+            mode=self._save_mode(graph.automation),
+        )
         return self.repo.save_node(node)
 
     def delete_node(self, automation_id: str, node_id: str, user_email: str) -> None:
@@ -375,7 +426,14 @@ class AutomationService:
             if edge.source_node_id != node_id and edge.target_node_id != node_id
         ]
         triggers = [trigger for trigger in graph.triggers if trigger.entry_node_id != node_id]
-        self.validate_graph(nodes, edges, triggers, user_email, automation_id)
+        self.validate_graph(
+            nodes,
+            edges,
+            triggers,
+            user_email,
+            automation_id,
+            mode=self._save_mode(graph.automation),
+        )
         deleted_node = next(node for node in graph.nodes if node.node_id == node_id)
         self._run_action_delete_lifecycle(
             automation_id,
@@ -396,7 +454,14 @@ class AutomationService:
     ) -> AutomationEdge:
         graph = self.get_graph(automation_id, user_email)
         edge = self._edge_from_create_request(automation_id, body)
-        self.validate_graph(graph.nodes, [*graph.edges, edge], graph.triggers, user_email, automation_id)
+        self.validate_graph(
+            graph.nodes,
+            [*graph.edges, edge],
+            graph.triggers,
+            user_email,
+            automation_id,
+            mode=self._save_mode(graph.automation),
+        )
         return self.repo.save_edge(edge)
 
     def update_edge(
@@ -419,7 +484,14 @@ class AutomationService:
         if body.condition is not None:
             edge.condition = body.condition
         updated_edges = [edge if item.edge_id == edge_id else item for item in graph.edges]
-        self.validate_graph(graph.nodes, updated_edges, graph.triggers, user_email, automation_id)
+        self.validate_graph(
+            graph.nodes,
+            updated_edges,
+            graph.triggers,
+            user_email,
+            automation_id,
+            mode=self._save_mode(graph.automation),
+        )
         return self.repo.save_edge(edge)
 
     def delete_edge(self, automation_id: str, edge_id: str, user_email: str) -> None:
@@ -427,7 +499,14 @@ class AutomationService:
         edges = [edge for edge in graph.edges if edge.edge_id != edge_id]
         if len(edges) == len(graph.edges):
             raise AutomationNotFoundError("Edge not found")
-        self.validate_graph(graph.nodes, edges, graph.triggers, user_email, automation_id)
+        self.validate_graph(
+            graph.nodes,
+            edges,
+            graph.triggers,
+            user_email,
+            automation_id,
+            mode=self._save_mode(graph.automation),
+        )
         self.repo.delete_edge(automation_id, edge_id)
 
     def add_trigger(
@@ -504,8 +583,47 @@ class AutomationService:
         triggers: list[AutomationTrigger],
         user_email: str,
         automation_id: str | None = None,
+        mode: GraphValidationMode = GraphValidationMode.STRICT,
     ) -> None:
-        self.graph_validator.validate(nodes, edges, triggers, user_email, automation_id)
+        self.graph_validator.validate(nodes, edges, triggers, user_email, automation_id, mode=mode)
+
+    def preview_smart_values(
+        self,
+        automation_id: str,
+        body: SmartValuePreviewRequest,
+        user_email: str,
+    ) -> SmartValuePreviewResponse:
+        """Render a template against a run context so the editor can show real values."""
+        self.get_automation(automation_id, user_email)
+        run = self._preview_run(automation_id, body.run_id, user_email)
+        preview = SmartValueResolver(run.context if run else {}).preview(body.template)
+        return SmartValuePreviewResponse(
+            rendered=preview.rendered,
+            run_id=run.run_id if run else None,
+            tokens=[
+                SmartValueTokenPreviewResponse(
+                    token=token.token,
+                    path=token.path,
+                    status=token.status,
+                    value=token.value,
+                )
+                for token in preview.tokens
+            ],
+        )
+
+    def _preview_run(
+        self,
+        automation_id: str,
+        run_id: str | None,
+        user_email: str,
+    ) -> AutomationRun | None:
+        if run_id:
+            run = self.repo.find_run_by_id(run_id, user_email)
+            if not run or run.automation_id != automation_id:
+                raise AutomationNotFoundError("Run not found")
+            return run
+        runs, _, _ = self.repo.find_runs_by_automation(automation_id, 1, None)
+        return runs[0] if runs else None
 
     def list_skills(self, automation_id: str, user_email: str) -> list[AutomationSkillResponse]:
         self.get_automation(automation_id, user_email)

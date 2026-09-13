@@ -1,8 +1,13 @@
 # Low Level Design: Automation Builder Frontend
 
 Date: 2026-05-18
-Status: Proposed
+Status: Superseded by [LLD-automation-workflow-editor-redesign.md](./LLD-automation-workflow-editor-redesign.md) (2026-09-13)
 Owner: InnomightLabs SPA
+
+> The React Flow canvas described here was built and has since been replaced by
+> the linear rule-chain workspace. The graph model, service layer, routing, and
+> node-id-based context paths documented below are still accurate; the canvas,
+> inspector, and per-surface routes are not.
 
 ## Summary
 Add an Automations area to the dashboard that lets users create, edit, test, activate, deactivate, inspect, and delete automation workflows. The first builder version is a full-page node graph canvas powered by React Flow (`@xyflow/react`) while persisting the backend's graph-native automation model directly.

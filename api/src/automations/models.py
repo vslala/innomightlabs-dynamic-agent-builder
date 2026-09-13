@@ -129,6 +129,7 @@ class AutomationNodeResponse(BaseModel):
     automation_id: str
     type: AutomationNodeType
     name: str
+    alias: Optional[str] = None
     description: Optional[str] = None
     position: dict[str, Any] = Field(default_factory=dict)
     config: dict[str, Any] = Field(default_factory=dict)
@@ -262,6 +263,7 @@ class CreateAutomationNodeRequest(BaseModel):
     node_id: Optional[str] = None
     type: AutomationNodeType
     name: str = Field(min_length=1, max_length=200)
+    alias: Optional[str] = Field(default=None, max_length=63)
     description: Optional[str] = Field(default=None, max_length=1000)
     position: dict[str, Any] = Field(default_factory=dict)
     config: dict[str, Any] = Field(default_factory=dict)
@@ -270,6 +272,7 @@ class CreateAutomationNodeRequest(BaseModel):
 class UpdateAutomationNodeRequest(BaseModel):
     type: Optional[AutomationNodeType] = None
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    alias: Optional[str] = Field(default=None, max_length=63)
     description: Optional[str] = Field(default=None, max_length=1000)
     position: Optional[dict[str, Any]] = None
     config: Optional[dict[str, Any]] = None
@@ -316,6 +319,24 @@ class SaveAutomationGraphRequest(BaseModel):
 class StartAutomationRunRequest(BaseModel):
     trigger_id: Optional[str] = None
     input: dict[str, Any] = Field(default_factory=dict)
+
+
+class SmartValuePreviewRequest(BaseModel):
+    template: str = Field(max_length=20000)
+    run_id: Optional[str] = None
+
+
+class SmartValueTokenPreviewResponse(BaseModel):
+    token: str
+    path: str
+    status: str
+    value: Optional[str] = None
+
+
+class SmartValuePreviewResponse(BaseModel):
+    rendered: str
+    run_id: Optional[str] = None
+    tokens: list[SmartValueTokenPreviewResponse] = Field(default_factory=list)
 
 
 class EnableAutomationSkillRequest(BaseModel):
@@ -383,6 +404,7 @@ class AutomationNode(BaseModel):
     automation_id: str
     type: AutomationNodeType
     name: str
+    alias: Optional[str] = None
     description: Optional[str] = None
     position: dict[str, Any] = Field(default_factory=dict)
     config: dict[str, Any] = Field(default_factory=dict)
@@ -405,6 +427,7 @@ class AutomationNode(BaseModel):
             "automation_id": self.automation_id,
             "type": self.type.value,
             "name": self.name,
+            "alias": self.alias,
             "description": self.description,
             "position": self.position,
             "config": self.config,
@@ -421,6 +444,7 @@ class AutomationNode(BaseModel):
             automation_id=item["automation_id"],
             type=AutomationNodeType(item["type"]),
             name=item["name"],
+            alias=item.get("alias"),
             description=item.get("description"),
             position=item.get("position") or {},
             config=item.get("config") or {},

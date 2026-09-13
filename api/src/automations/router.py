@@ -26,6 +26,8 @@ from src.automations.models import (
     CreateAutomationTriggerRequest,
     EnableAutomationSkillRequest,
     SaveAutomationGraphRequest,
+    SmartValuePreviewRequest,
+    SmartValuePreviewResponse,
     StartAutomationRunRequest,
     UpdateAutomationEdgeRequest,
     UpdateAutomationSkillRequest,
@@ -189,6 +191,19 @@ async def get_action_catalog(
 ) -> AutomationActionCatalogResponse:
     try:
         return service.list_action_catalog(automation_id, get_user_email(request))
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.post("/{automation_id}/smart-values/preview", response_model=SmartValuePreviewResponse)
+async def preview_smart_values(
+    request: Request,
+    automation_id: str,
+    body: SmartValuePreviewRequest,
+    service: Annotated[AutomationService, Depends(get_automation_service)],
+) -> SmartValuePreviewResponse:
+    try:
+        return service.preview_smart_values(automation_id, body, get_user_email(request))
     except Exception as exc:
         raise translate_error(exc) from exc
 

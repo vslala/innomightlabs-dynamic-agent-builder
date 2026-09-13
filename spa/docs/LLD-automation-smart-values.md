@@ -1,8 +1,14 @@
 # Low Level Design: Automation Smart Values
 
 Date: 2026-05-19
-Status: Proposed
+Status: Implemented (2026-09-13)
 Owner: InnomightLabs SPA/API
+
+> Implemented as part of [LLD-automation-workflow-editor-redesign.md](./LLD-automation-workflow-editor-redesign.md).
+> Deviations from this document: the optional `GET /automations/{id}/smart-values`
+> endpoint was not added, because the SPA already holds the graph and the selected
+> run and builds the catalog client-side; `POST /automations/{id}/smart-values/preview`
+> was built and is used by the field-level Preview control.
 
 ## Summary
 

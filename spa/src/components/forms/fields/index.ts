@@ -6,4 +6,5 @@ export { SearchSelectField } from "./SearchSelectField";
 export { ChoiceField } from "./ChoiceField";
 export { FileUploadField } from "./FileUploadField";
 export { KeyValueField } from "./KeyValueField";
+export { SmartValueTextField } from "./SmartValueTextField";
 export { DefaultField } from "./DefaultField";

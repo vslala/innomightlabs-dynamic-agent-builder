@@ -8,6 +8,7 @@
 import type { FormInput, FormValue } from "../../types/form";
 import { FormFieldShell } from "./FormFieldShell";
 import { SmartSuggestionControl } from "./SmartSuggestionControl";
+import { fieldWantsSmartValues } from "./SmartValueContext";
 import {
   ChoiceField,
   DefaultField,
@@ -16,6 +17,7 @@ import {
   PasswordField,
   SearchSelectField,
   SelectField,
+  SmartValueTextField,
   TextAreaField,
   TextField,
 } from "./fields";
@@ -31,10 +33,18 @@ export function FormField({ field, value, formData, onChange }: FormFieldProps) 
   const renderInput = () => {
     switch (field.input_type) {
       case "text":
-        return <TextField field={field} value={value} onChange={onChange} />;
+        return fieldWantsSmartValues(field.attr) ? (
+          <SmartValueTextField field={field} value={value} onChange={onChange} />
+        ) : (
+          <TextField field={field} value={value} onChange={onChange} />
+        );
 
       case "text_area":
-        return <TextAreaField field={field} value={value} onChange={onChange} />;
+        return fieldWantsSmartValues(field.attr) ? (
+          <SmartValueTextField field={field} value={value} onChange={onChange} multiline />
+        ) : (
+          <TextAreaField field={field} value={value} onChange={onChange} />
+        );
 
       case "password":
         return <PasswordField field={field} value={value} onChange={onChange} />;

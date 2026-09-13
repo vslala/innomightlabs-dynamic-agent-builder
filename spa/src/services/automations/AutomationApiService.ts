@@ -2,6 +2,7 @@ import { httpClient } from "../http/client";
 import type {
   AutomationGraphResponse,
   AutomationActionCatalogResponse,
+  AutomationNode,
   AutomationResponse,
   AutomationSkillResponse,
   AutomationRunDetailResponse,
@@ -11,9 +12,12 @@ import type {
   EnableAutomationSkillRequest,
   PaginatedResponse,
   SaveAutomationGraphRequest,
+  SmartValuePreviewRequest,
+  SmartValuePreviewResponse,
   StartAutomationRunRequest,
   AutomationTrigger,
   AutomationTriggerType,
+  UpdateAutomationNodeRequest,
   UpdateAutomationRequest,
   UpdateAutomationTriggerRequest,
 } from "../../types/automation";
@@ -71,6 +75,27 @@ class AutomationApiService {
     data: SaveAutomationGraphRequest
   ): Promise<AutomationGraphResponse> {
     return httpClient.put<AutomationGraphResponse>(`/automations/${automationId}/graph`, data);
+  }
+
+  async updateNode(
+    automationId: string,
+    nodeId: string,
+    data: UpdateAutomationNodeRequest
+  ): Promise<AutomationNode> {
+    return httpClient.patch<AutomationNode>(
+      `/automations/${automationId}/nodes/${nodeId}`,
+      data
+    );
+  }
+
+  async previewSmartValues(
+    automationId: string,
+    data: SmartValuePreviewRequest
+  ): Promise<SmartValuePreviewResponse> {
+    return httpClient.post<SmartValuePreviewResponse>(
+      `/automations/${automationId}/smart-values/preview`,
+      data
+    );
   }
 
   async listTriggers(automationId: string): Promise<AutomationTrigger[]> {

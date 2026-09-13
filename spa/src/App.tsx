@@ -46,10 +46,8 @@ const AgentA2ATasksPage = lazyRoute(() => import('./pages/dashboard/agent-detail
 const AgentAnalyticsPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentAnalyticsPage'), 'AgentAnalyticsPage');
 const AutomationsListPage = lazyRoute(() => import('./pages/dashboard/automations/AutomationsListPage'), 'AutomationsListPage');
 const AutomationDetailLayout = lazyRoute(() => import('./pages/dashboard/automations/AutomationDetailLayout'), 'AutomationDetailLayout');
-const AutomationBuilderPage = lazyRoute(() => import('./pages/dashboard/automations/AutomationBuilderPage'), 'AutomationBuilderPage');
-const AutomationRunsPage = lazyRoute(() => import('./pages/dashboard/automations/AutomationRunsPage'), 'AutomationRunsPage');
-const AutomationAnalyticsPage = lazyRoute(() => import('./pages/dashboard/automations/AutomationAnalyticsPage'), 'AutomationAnalyticsPage');
-const AutomationTriggersPage = lazyRoute(() => import('./pages/dashboard/automations/AutomationTriggersPage'), 'AutomationTriggersPage');
+const AutomationWorkspacePage = lazyRoute(() => import('./pages/dashboard/automations/AutomationWorkspacePage'), 'AutomationWorkspacePage');
+const WorkspaceRedirect = lazyRoute(() => import('./pages/dashboard/automations/WorkspaceRedirect'), 'WorkspaceRedirect');
 const AutomationMarketplacePage = lazyRoute(() => import('./pages/dashboard/automation-marketplace/AutomationMarketplacePage'), 'AutomationMarketplacePage');
 const AutomationMarketplaceDetail = lazyRoute(() => import('./pages/dashboard/automation-marketplace/AutomationMarketplaceDetail'), 'AutomationMarketplaceDetail');
 const WhatsNewPage = lazyRoute(() => import('./pages/dashboard/WhatsNewPage'), 'WhatsNewPage');
@@ -135,10 +133,11 @@ function App() {
           <Route path="automations/marketplace" element={<AutomationMarketplacePage />} />
           <Route path="automations/marketplace/:templateId" element={<AutomationMarketplaceDetail />} />
           <Route path="automations/:automationId" element={<AutomationDetailLayout />}>
-            <Route index element={<AutomationBuilderPage />} />
-            <Route path="triggers" element={<AutomationTriggersPage />} />
-            <Route path="runs" element={<AutomationRunsPage />} />
-            <Route path="analytics" element={<AutomationAnalyticsPage />} />
+            <Route index element={<AutomationWorkspacePage />} />
+            {/* Triggers, runs, and analytics are panels in the workspace now. */}
+            <Route path="triggers" element={<WorkspaceRedirect step="trigger" />} />
+            <Route path="runs" element={<WorkspaceRedirect panel="runs" />} />
+            <Route path="analytics" element={<WorkspaceRedirect panel="analytics" />} />
           </Route>
           <Route path="conversations" element={<Conversations />} />
           <Route path="conversations/:conversationId" element={<ConversationDetail />} />

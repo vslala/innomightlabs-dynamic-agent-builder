@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from enum import Enum
 from typing import Callable, Protocol
 
 from src.agents.repository import AgentRepository
+from src.automations.aliases import alias_errors
 from src.automations.errors import AutomationValidationError
 from src.automations.models import (
     AutomationActionType,
@@ -23,6 +25,20 @@ from src.automations.triggers.models import ScheduleTriggerConfig
 from src.connectors.service import ConnectorService
 from src.scheduler.cron import ScheduleExpression, validate_schedule_expression
 from src.skills.registry import SkillRegistry
+
+
+class GraphValidationMode(str, Enum):
+    """How strictly a graph write is checked.
+
+    ``DRAFT`` enforces every structural invariant the runner depends on -- unique
+    ids, start/final boundaries, resolvable edge endpoints, trigger references,
+    reachability, and acyclicity -- but defers per-node config semantics so a
+    half-configured step can still be saved. ``STRICT`` additionally validates
+    node configuration and is required before an automation can run.
+    """
+
+    DRAFT = "draft"
+    STRICT = "strict"
 
 
 @dataclass(frozen=True)
@@ -210,6 +226,7 @@ class AutomationGraphValidator:
         triggers: list[AutomationTrigger],
         user_email: str,
         automation_id: str | None = None,
+        mode: GraphValidationMode = GraphValidationMode.STRICT,
     ) -> None:
         node_by_id = self._validate_identity(nodes, edges, triggers)
         start_nodes = self._validate_required_boundaries(nodes)
@@ -222,6 +239,8 @@ class AutomationGraphValidator:
         }
         self._validate_reachability(nodes, entry_node_ids, outgoing)
         self._reject_cycles(entry_node_ids, outgoing)
+        if mode is GraphValidationMode.DRAFT:
+            return
         ctx = GraphValidationContext(
             nodes=nodes,
             edges=edges,
@@ -253,6 +272,9 @@ class AutomationGraphValidator:
         node_by_id = {node.node_id: node for node in nodes}
         if len(node_by_id) != len(nodes):
             raise AutomationValidationError("Node IDs must be unique")
+        errors = alias_errors(nodes)
+        if errors:
+            raise AutomationValidationError(errors[0])
         edge_ids = {edge.edge_id for edge in edges}
         if len(edge_ids) != len(edges):
             raise AutomationValidationError("Edge IDs must be unique")

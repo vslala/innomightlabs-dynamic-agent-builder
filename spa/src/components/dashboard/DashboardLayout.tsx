@@ -18,9 +18,18 @@ const pageTitles: Record<string, string> = {
   "/dashboard/settings": "Settings",
 };
 
+const AUTOMATION_WORKSPACE_PATTERN = /^\/dashboard\/automations\/(?!marketplace)[^/]+(\/(triggers|runs|analytics))?$/;
+
+function isAutomationWorkspace(pathname: string): boolean {
+  return AUTOMATION_WORKSPACE_PATTERN.test(pathname);
+}
+
 export function DashboardLayout() {
   const location = useLocation();
-  const isFullBleedPage = location.pathname === "/dashboard/conversations";
+  // The automation workspace and the conversation view draw their own chrome
+  // edge to edge, so the dashboard drops its content padding for them.
+  const isFullBleedPage =
+    location.pathname === "/dashboard/conversations" || isAutomationWorkspace(location.pathname);
   const isSettingsPage = location.pathname === "/dashboard/settings";
 
   useEffect(() => {

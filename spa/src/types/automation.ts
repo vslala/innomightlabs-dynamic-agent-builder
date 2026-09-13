@@ -28,6 +28,8 @@ export interface AutomationNode {
   automation_id: string;
   type: AutomationNodeType;
   name: string;
+  /** Stable reference name used by smart values: {{ steps.<alias>.output.x }} */
+  alias?: string | null;
   description?: string | null;
   position: AutomationNodePosition;
   config: Record<string, unknown>;
@@ -145,9 +147,39 @@ export interface CreateAutomationNodeRequest {
   node_id?: string | null;
   type: AutomationNodeType;
   name: string;
+  alias?: string | null;
   description?: string | null;
   position?: AutomationNodePosition;
   config?: Record<string, unknown>;
+}
+
+export interface UpdateAutomationNodeRequest {
+  type?: AutomationNodeType;
+  name?: string;
+  alias?: string | null;
+  description?: string | null;
+  position?: AutomationNodePosition;
+  config?: Record<string, unknown>;
+}
+
+export interface SmartValuePreviewRequest {
+  template: string;
+  run_id?: string | null;
+}
+
+export type SmartValueTokenStatus = "resolved" | "empty" | "unknown" | "invalid";
+
+export interface SmartValueTokenPreview {
+  token: string;
+  path: string;
+  status: SmartValueTokenStatus;
+  value?: string | null;
+}
+
+export interface SmartValuePreviewResponse {
+  rendered: string;
+  run_id?: string | null;
+  tokens: SmartValueTokenPreview[];
 }
 
 export interface CreateAutomationEdgeRequest {

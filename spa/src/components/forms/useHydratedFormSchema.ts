@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { agentApiService } from "../../services/agents/AgentApiService";
 import type { FormInput, FormSchema, SelectOption } from "../../types/form";
@@ -14,13 +14,20 @@ export function useHydratedFormSchema(schema: FormSchema): {
   const requiredSources = useMemo(() => sourcesForSchema(schema), [schema]);
   const [optionsBySource, setOptionsBySource] = useState<Record<string, SelectOption[]>>({});
   const [loading, setLoading] = useState(false);
+  // Callers commonly rebuild the schema object on every render, so this effect
+  // re-runs often. Track what has already been requested rather than relying on
+  // the result having landed, or a slow or failed load is retried on each render.
+  const requestedSources = useRef(new Set<string>());
 
   useEffect(() => {
     let cancelled = false;
-    const unloaded = requiredSources.filter((source) => !optionsBySource[source]);
+    const unloaded = requiredSources.filter(
+      (source) => !optionsBySource[source] && !requestedSources.current.has(source)
+    );
     if (unloaded.length === 0) {
       return;
     }
+    unloaded.forEach((source) => requestedSources.current.add(source));
 
     async function loadOptions() {
       setLoading(true);
@@ -34,6 +41,10 @@ export function useHydratedFormSchema(schema: FormSchema): {
             ...Object.fromEntries(entries),
           }));
         }
+      } catch (error) {
+        // The field renders with no options rather than retrying on every
+        // render; remounting the form asks again.
+        console.error("Error loading form options:", error);
       } finally {
         if (!cancelled) {
           setLoading(false);

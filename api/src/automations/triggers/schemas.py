@@ -4,12 +4,28 @@ from src.automations.models import AutomationNode, AutomationNodeType
 from src.form_models import Form, FormInput, FormInputType, SelectOption, SmartSuggestionConfig
 
 
-def build_schedule_trigger_form(nodes: list[AutomationNode], submit_path: str = "") -> Form:
-    entry_options = [
-        SelectOption(value=node.node_id, label=node.name)
-        for node in nodes
-        if node.type == AutomationNodeType.START
+def _entry_step_input(nodes: list[AutomationNode]) -> list[FormInput]:
+    """Only ask which step to enter when the graph has more than one start.
+
+    A single-start automation has exactly one answer, so the builder supplies it
+    and the field is noise.
+    """
+    start_nodes = [node for node in nodes if node.type == AutomationNodeType.START]
+    if len(start_nodes) <= 1:
+        return []
+    return [
+        FormInput(
+            input_type=FormInputType.SELECT,
+            name="entry_node_id",
+            label="Entry step",
+            options=[
+                SelectOption(value=node.node_id, label=node.name) for node in start_nodes
+            ],
+        )
     ]
+
+
+def build_schedule_trigger_form(nodes: list[AutomationNode], submit_path: str = "") -> Form:
     return Form(
         form_name="Schedule Trigger",
         submit_path=submit_path,
@@ -20,12 +36,7 @@ def build_schedule_trigger_form(nodes: list[AutomationNode], submit_path: str = 
                 label="Name",
                 attr={"placeholder": "Weekday cleanup"},
             ),
-            FormInput(
-                input_type=FormInputType.SELECT,
-                name="entry_node_id",
-                label="Entry step",
-                options=entry_options,
-            ),
+            *_entry_step_input(nodes),
             FormInput(
                 input_type=FormInputType.TEXT,
                 name="cron_expression",
@@ -74,11 +85,6 @@ def build_schedule_trigger_form(nodes: list[AutomationNode], submit_path: str = 
 
 
 def build_manual_trigger_form(nodes: list[AutomationNode], submit_path: str = "") -> Form:
-    entry_options = [
-        SelectOption(value=node.node_id, label=node.name)
-        for node in nodes
-        if node.type == AutomationNodeType.START
-    ]
     return Form(
         form_name="Manual Trigger",
         submit_path=submit_path,
@@ -89,12 +95,7 @@ def build_manual_trigger_form(nodes: list[AutomationNode], submit_path: str = ""
                 label="Name",
                 attr={"placeholder": "Manual run"},
             ),
-            FormInput(
-                input_type=FormInputType.SELECT,
-                name="entry_node_id",
-                label="Entry step",
-                options=entry_options,
-            ),
+            *_entry_step_input(nodes),
             FormInput(
                 input_type=FormInputType.SELECT,
                 name="enabled",

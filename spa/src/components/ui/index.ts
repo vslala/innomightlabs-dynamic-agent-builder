@@ -38,6 +38,8 @@ export * from "./stats";
 export * from "./pill";
 export * from "./list-row";
 
+export * from "./confirmation-dialog";
+
 // Card variants
 export * from "./expandable-card";
 export * from "./icon-card";
