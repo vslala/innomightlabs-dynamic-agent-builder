@@ -39,6 +39,10 @@ tmp/
 *.zip
 .codex
 
+# Packaged plugin downloads written by scripts/downloads/package_*_plugin.sh
+# (sub-projects such as spa/ ignore their own dist/ separately)
+/dist/
+
 # Xcode (project files are XcodeGen-generated from project.yml — never hand-edited)
 *.xcodeproj/
 xcuserdata/

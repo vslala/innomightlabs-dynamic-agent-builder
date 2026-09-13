@@ -4,6 +4,11 @@
   "description": "An extension that helps you write code side-by-side like a pair programmer",
   "version": "0.0.1",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vslala/innomightlabs-dynamic-agent-builder.git",
+    "directory": "plugins/ide/vscode/innomightlabs-code-assist"
+  },
   "engines": {
     "vscode": "^1.113.0"
   },
