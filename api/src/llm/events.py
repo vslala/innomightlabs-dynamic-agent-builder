@@ -94,3 +94,45 @@ class SSEEvent(BaseModel):
         Returns a properly formatted SSE data string with double newline.
         """
         return f"data: {self.model_dump_json()}\n\n"
+
+
+#: Event types worth persisting with a completed invocation.
+#:
+#: A stored invocation is not a live stream. Response deltas, agent thoughts,
+#: lifecycle notices, and token-usage pings exist to drive a chat UI as it
+#: renders; `AgentInvocationResult.response_text` already holds the assembled
+#: answer. Keeping the rest is what pushed automation run items past DynamoDB's
+#: 400KB limit, since the same payload lands in the node result and again in the
+#: run context for every step.
+#:
+#: Both tool-call types are retained because a run inspector pairs
+#: TOOL_CALL_START, which carries the arguments, with TOOL_CALL_RESULT.
+RECORDED_EVENT_TYPES = frozenset(
+    {
+        SSEEventType.TOOL_CALL_START,
+        SSEEventType.TOOL_CALL_RESULT,
+    }
+)
+
+#: One tool result can exhaust an item budget on its own, so recorded content is
+#: capped. The marker keeps a truncated value from reading as the whole result.
+MAX_RECORDED_EVENT_CONTENT_CHARS = 16_000
+RECORDED_CONTENT_TRUNCATION_MARKER = "\u2026 [truncated by run log]"
+
+
+def recorded_events(events: list["SSEEvent"]) -> list[dict]:
+    """Tool-call events only, with oversized content capped."""
+    return [
+        _cap_recorded_content(event.model_dump(mode="json", exclude_none=True))
+        for event in events
+        if event.event_type in RECORDED_EVENT_TYPES
+    ]
+
+
+def _cap_recorded_content(event: dict) -> dict:
+    content = event.get("content")
+    if isinstance(content, str) and len(content) > MAX_RECORDED_EVENT_CONTENT_CHARS:
+        event["content"] = (
+            content[:MAX_RECORDED_EVENT_CONTENT_CHARS] + RECORDED_CONTENT_TRUNCATION_MARKER
+        )
+    return event

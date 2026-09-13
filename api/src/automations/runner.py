@@ -34,6 +34,7 @@ from src.automations.service import AutomationGraph, AutomationService
 from src.automations.smart_values import SmartValueResolver
 from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
+from src.llm.events import recorded_events
 from src.connectors.service import ConnectorService, get_connector_service
 from src.skills.service import SkillService
 from src.skills.service import get_skill_service
@@ -361,10 +362,7 @@ class AutomationRunner:
             input_data={"agent_id": agent_id, "prompt": prompt},
             output={
                 "response_text": invocation.response_text,
-                "events": [
-                    event.model_dump(mode="json", exclude_none=True)
-                    for event in invocation.events
-                ],
+                "events": recorded_events(invocation.events),
             },
             error=invocation.error,
             message_ids={

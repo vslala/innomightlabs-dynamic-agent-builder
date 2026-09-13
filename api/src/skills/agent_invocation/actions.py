@@ -6,6 +6,7 @@ from src.agents.architectures import get_agent_architecture
 from src.agents.repository import AgentRepository
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
+from src.llm.events import recorded_events
 from src.messages.repositories import get_message_repository
 from src.skills.agent_invocation.models import InvokeAgentRequest
 
@@ -54,7 +55,7 @@ async def invoke(
 
     return {
         "response_text": invocation.response_text,
-        "events": [event.model_dump(mode="json", exclude_none=True) for event in invocation.events],
+        "events": recorded_events(invocation.events),
         "message_ids": {
             key: value
             for key, value in {
