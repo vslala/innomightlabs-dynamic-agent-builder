@@ -265,6 +265,13 @@ function walkSample(
   });
 }
 
+/**
+ * Read a resolver path out of a run context, mirroring the backend resolver
+ * (api/src/automations/smart_values.py).
+ *
+ * `steps.<alias>` is an index, not a store: the run context holds each result
+ * once under its node id, so an alias has to be followed to that entry.
+ */
 export function resolvePath(context: unknown, path: string): unknown {
   if (!context || typeof context !== "object") return undefined;
   const segments = path.split(".");
@@ -277,8 +284,11 @@ export function resolvePath(context: unknown, path: string): unknown {
         ? (execution as Record<string, unknown>).last_step_alias
         : undefined;
     if (typeof alias !== "string") return undefined;
-    current = resolvePath(context, `steps.${alias}`);
+    current = resolveStep(context, alias);
     segments.shift();
+  } else if (segments[0] === "steps" && segments.length > 1) {
+    current = resolveStep(context, segments[1]);
+    segments.splice(0, 2);
   }
 
   for (const segment of segments) {
@@ -293,6 +303,32 @@ export function resolvePath(context: unknown, path: string): unknown {
     current = (current as Record<string, unknown>)[segment];
   }
   return current;
+}
+
+/**
+ * A step's identity fields laid over the node result it indexes.
+ *
+ * The alias entry comes last so a context written before results were stored
+ * once, which inlined the result under the alias, still resolves from its copy.
+ */
+function resolveStep(context: unknown, alias: string): unknown {
+  const steps = (context as Record<string, unknown>).steps;
+  const entry =
+    steps && typeof steps === "object"
+      ? (steps as Record<string, unknown>)[alias]
+      : undefined;
+  if (!entry || typeof entry !== "object") return undefined;
+
+  const nodes = (context as Record<string, unknown>).nodes;
+  const nodeId = (entry as Record<string, unknown>).node_id;
+  const node =
+    nodes && typeof nodes === "object" && typeof nodeId === "string"
+      ? (nodes as Record<string, unknown>)[nodeId]
+      : undefined;
+
+  return node && typeof node === "object"
+    ? { ...(node as Record<string, unknown>), ...(entry as Record<string, unknown>) }
+    : entry;
 }
 
 function readRecord(

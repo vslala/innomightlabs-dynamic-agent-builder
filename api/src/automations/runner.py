@@ -612,19 +612,24 @@ class AutomationRunner:
         message_ids: dict[str, str],
         error: str | None = None,
     ) -> None:
-        """Record a node result under both its node id and its smart-value alias."""
-        result = {
+        """Record a node result once, and index it by the node's smart-value alias.
+
+        The alias entry holds a reference rather than a copy of the result. A run
+        context has to fit in one DynamoDB item, and duplicating every node
+        output under its alias doubled the largest thing in it.
+        `SmartValueResolver` follows the reference, so `{{ steps.<alias>.… }}`
+        resolves exactly as before.
+        """
+        run.context.setdefault("nodes", {})[node.node_id] = {
             "status": status.value if isinstance(status, AutomationNodeRunStatus) else status,
             "output": output,
             "message_ids": message_ids,
             "error": error,
         }
-        run.context.setdefault("nodes", {})[node.node_id] = result
         execution = run.context.setdefault("execution", {})
         execution["last_node_id"] = node.node_id
         if node.alias:
             run.context.setdefault("steps", {})[node.alias] = {
-                **result,
                 "node_id": node.node_id,
                 "name": node.name,
                 "type": node.type.value,

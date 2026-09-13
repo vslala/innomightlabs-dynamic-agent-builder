@@ -1,5 +1,7 @@
 """Smart value resolution, alias generation, and draft/strict validation modes."""
 
+import json
+
 import pytest
 
 from src.automations.aliases import (
@@ -27,7 +29,39 @@ from tests.mock_data import TEST_USER_EMAIL
 from tests.test_automations_service_validation import make_service
 
 
+def make_pointer_context() -> dict:
+    """Current shape: each result stored once, the alias indexing it."""
+    return {
+        "input": {"topic": "inbox cleanup", "count": 3},
+        "trigger": {"type": "manual", "trigger_id": "trig-1"},
+        "nodes": {
+            "action-1": {
+                "status": "succeeded",
+                "output": {
+                    "response_text": "found 12 senders",
+                    "messages": [{"subject": "Q3 recap"}, {"subject": "Sale"}],
+                },
+                "message_ids": {},
+                "error": None,
+            }
+        },
+        "steps": {
+            "find_senders": {
+                "node_id": "action-1",
+                "name": "Find Senders",
+                "type": "action",
+            }
+        },
+        "execution": {"last_step_alias": "find_senders", "last_node_id": "action-1"},
+    }
+
+
 def make_context() -> dict:
+    """Legacy shape: the result inlined under the alias as well.
+
+    Kept as the compatibility fixture -- every run stored before results were
+    written once still has to resolve.
+    """
     return {
         "input": {"topic": "inbox cleanup", "count": 3},
         "trigger": {"type": "manual", "trigger_id": "trig-1"},
@@ -166,6 +200,79 @@ def test_condition_can_compare_two_paths():
     resolver = SmartValueResolver(make_context())
     assert resolver.evaluate_condition("input.topic == steps.find_senders.name") is False
     assert resolver.evaluate_condition("input.count == 3") is True
+
+
+def test_alias_paths_resolve_through_the_node_result():
+    """The alias is an index: following it must give the same values as inlining."""
+    resolver = SmartValueResolver(make_pointer_context())
+
+    assert (
+        resolver.render_template("{{ steps.find_senders.output.response_text }}")
+        == "found 12 senders"
+    )
+    assert resolver.render_template("{{ steps.find_senders.status }}") == "succeeded"
+    assert resolver.render_template("{{ last.output.response_text }}") == "found 12 senders"
+    assert (
+        resolver.render_template("{{ steps.find_senders.output.messages.0.subject }}") == "Q3 recap"
+    )
+    assert resolver.evaluate_condition("steps.find_senders.status == 'succeeded'") is True
+
+
+def test_alias_entry_keeps_its_own_identity_fields():
+    resolver = SmartValueResolver(make_pointer_context())
+
+    assert resolver.render_template("{{ steps.find_senders.name }}") == "Find Senders"
+    assert resolver.render_template("{{ steps.find_senders.node_id }}") == "action-1"
+    assert resolver.render_template("{{ steps.find_senders.type }}") == "action"
+
+
+def test_whole_step_object_still_carries_the_result():
+    step = SmartValueResolver(make_pointer_context()).resolve("steps.find_senders")
+
+    assert step["node_id"] == "action-1"
+    assert step["output"]["response_text"] == "found 12 senders"
+
+
+def test_unknown_alias_and_dangling_reference_resolve_empty():
+    context = make_pointer_context()
+    context["steps"]["orphan"] = {"node_id": "gone", "name": "Orphan", "type": "action"}
+    resolver = SmartValueResolver(context)
+
+    assert resolver.render_template("[{{ steps.nope.output.response_text }}]") == "[]"
+    assert resolver.render_template("[{{ steps.orphan.output.response_text }}]") == "[]"
+    assert resolver.render_template("{{ steps.orphan.name }}") == "Orphan"
+
+
+def test_run_context_stores_each_result_once(dynamodb_table):
+    """The size fix: a node output must not be duplicated under its alias."""
+    from src.automations.models import AutomationNode, AutomationNodeType, AutomationRun
+    from src.automations.runner import AutomationRunner
+
+    node = AutomationNode(
+        automation_id="auto-1",
+        node_id="action-1",
+        type=AutomationNodeType.ACTION,
+        name="Find Senders",
+        alias="find_senders",
+    )
+    run = AutomationRun(automation_id="auto-1", created_by=TEST_USER_EMAIL, context={})
+    payload = {"response_text": "x" * 5_000}
+
+    AutomationRunner()._store_context_node(run, node, "succeeded", payload, {})
+
+    assert run.context["nodes"]["action-1"]["output"] == payload
+    assert run.context["steps"]["find_senders"] == {
+        "node_id": "action-1",
+        "name": "Find Senders",
+        "type": "action",
+    }
+    assert "output" not in run.context["steps"]["find_senders"]
+    assert run.context["execution"] == {
+        "last_node_id": "action-1",
+        "last_step_alias": "find_senders",
+    }
+    # The alias costs bytes, not a second copy of the payload.
+    assert len(json.dumps(run.context)) < len(json.dumps(payload)) * 2
 
 
 def test_preview_reports_token_status():

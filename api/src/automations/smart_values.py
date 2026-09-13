@@ -261,16 +261,38 @@ class SmartValueResolver:
             if step is None:
                 return default
             return _walk(step, segments[1:], default)
+        if root == "steps" and len(segments) > 1:
+            step = self._step(segments[1])
+            if step is None:
+                return default
+            return _walk(step, segments[2:], default)
         return _walk(self.context.get(root), segments[1:], default)
+
+    def _step(self, alias: str) -> Any:
+        """A step view: its identity fields laid over the node result it indexes.
+
+        The run context stores each result once under its node id; the alias
+        entry is a reference to it. Merging with the alias entry last means a
+        context written before that change, which inlined the result under the
+        alias, still resolves from its own copy.
+        """
+        steps = self.context.get("steps")
+        entry = steps.get(alias) if isinstance(steps, dict) else None
+        if not isinstance(entry, dict):
+            return None
+        nodes = self.context.get("nodes")
+        node = nodes.get(entry.get("node_id")) if isinstance(nodes, dict) else None
+        return {**node, **entry} if isinstance(node, dict) else entry
 
     def _last_step(self) -> Any:
         execution = self.context.get("execution")
         if not isinstance(execution, dict):
             return None
         alias = execution.get("last_step_alias")
-        steps = self.context.get("steps")
-        if alias and isinstance(steps, dict) and alias in steps:
-            return steps[alias]
+        if alias:
+            step = self._step(alias)
+            if step is not None:
+                return step
         node_id = execution.get("last_node_id")
         nodes = self.context.get("nodes")
         if node_id and isinstance(nodes, dict):

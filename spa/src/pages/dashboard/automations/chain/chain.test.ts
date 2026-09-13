@@ -29,7 +29,12 @@ import {
   stopLane,
 } from "./chainOperations";
 import { validateChain } from "./chainValidation";
-import { buildSmartValueGroups, detectInputKeys, eligibleSteps } from "./smartValues";
+import {
+  buildSmartValueGroups,
+  detectInputKeys,
+  eligibleSteps,
+  resolvePath,
+} from "./smartValues";
 import {
   insertTokenAt,
   isUnknownPath,
@@ -549,9 +554,25 @@ describe("validateChain", () => {
 });
 
 describe("smart values", () => {
+  /** Stored shape: the result lives once under its node id, the alias indexes it. */
   const context = {
     input: { topic: "inbox" },
     trigger: { type: "manual", trigger_id: "trig-1" },
+    nodes: {
+      a: {
+        status: "succeeded",
+        output: { result: { messages: [{ subject: "Q3 recap" }] } },
+        message_ids: {},
+        error: null,
+      },
+    },
+    steps: { a: { node_id: "a", name: "a", type: "action" } },
+    execution: { last_step_alias: "a", last_node_id: "a" },
+  };
+
+  /** Shape stored before results were written once, which inlined them. */
+  const legacyContext = {
+    ...context,
     steps: {
       a: {
         node_id: "a",
@@ -561,7 +582,6 @@ describe("smart values", () => {
         output: { result: { messages: [{ subject: "Q3 recap" }] } },
       },
     },
-    execution: { last_step_alias: "a", last_node_id: "a" },
   };
 
   it("offers only steps that can run before the edited one", () => {
@@ -603,6 +623,25 @@ describe("smart values", () => {
       true
     );
     expect(groups.find((group) => group.id === "last")).toBeTruthy();
+  });
+
+  it("follows an alias to the single stored node result", () => {
+    expect(resolvePath(context, "steps.a.output.result.messages.0.subject")).toBe("Q3 recap");
+    expect(resolvePath(context, "steps.a.status")).toBe("succeeded");
+    expect(resolvePath(context, "last.output.result.messages.0.subject")).toBe("Q3 recap");
+    // Identity fields come from the alias entry itself.
+    expect(resolvePath(context, "steps.a.name")).toBe("a");
+  });
+
+  it("still resolves a context that inlined the result under the alias", () => {
+    expect(resolvePath(legacyContext, "steps.a.output.result.messages.0.subject")).toBe("Q3 recap");
+    expect(resolvePath(legacyContext, "last.output.result.messages.0.subject")).toBe("Q3 recap");
+  });
+
+  it("resolves an unknown alias or a dangling reference to undefined", () => {
+    expect(resolvePath(context, "steps.gone.output.result")).toBeUndefined();
+    const dangling = { ...context, steps: { a: { node_id: "missing" } } };
+    expect(resolvePath(dangling, "steps.a.output.result")).toBeUndefined();
   });
 
   it("falls back to node id paths when a step has no alias", () => {
