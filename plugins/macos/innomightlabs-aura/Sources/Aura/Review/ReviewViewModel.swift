@@ -206,6 +206,10 @@ final class ReviewViewModel: ObservableObject {
 
     // MARK: - Layout modes
 
+    /// False for a podcast or any other recording with no usable video track — the studio
+    /// shows `AudioStageView` instead of `PreviewStageView` in that case.
+    var hasVideo: Bool { timeline?.hasVideo ?? false }
+
     var layoutMode: LayoutMode { LayoutMode.mode(of: currentOverlay) }
 
     var canChangeLayout: Bool { timeline?.overlay != nil }
@@ -1739,14 +1743,22 @@ final class ReviewViewModel: ObservableObject {
     // MARK: - Export
 
     /// Where an export defaults to: beside the recording, named after the session.
+    /// Derived from the timeline rather than the recording profile — a screen recording whose
+    /// video track came back empty must export as audio too. Defaults to `.video` before the
+    /// timeline is ready; `suggestedExportURL` is only shown once it is.
+    var exportFormat: ExportFormat {
+        timeline.map(ExportFormat.init(timeline:)) ?? .video
+    }
+
     var suggestedExportURL: URL {
-        folder.rootURL.appendingPathComponent("\(folder.id).mp4")
+        folder.rootURL.appendingPathComponent("\(folder.id).\(exportFormat.fileExtension)")
     }
 
     /// Exports at full render size from the same timeline the preview uses, so the file
     /// matches what was previewed rather than coming from a second code path.
     func export(to destination: URL) {
         guard let timeline, exportTask == nil else { return }
+        let format = ExportFormat(timeline: timeline)
 
         exportGeneration += 1
         let generation = exportGeneration
@@ -1757,7 +1769,7 @@ final class ReviewViewModel: ObservableObject {
 
             do {
                 let built = try await self.builder.build(timeline, maxRenderDimension: nil)
-                try await self.exporter.export(built, to: destination) { progress in
+                try await self.exporter.export(built, as: format, to: destination) { progress in
                     switch progress {
                     case .preparing:
                         self.report(.running(fraction: 0), generation: generation)

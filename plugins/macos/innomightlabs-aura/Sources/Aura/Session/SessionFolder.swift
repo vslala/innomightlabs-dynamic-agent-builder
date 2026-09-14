@@ -14,6 +14,9 @@ struct SessionFolder {
     /// The compact session description sent to the agent, kept so a suggestion can always be
     /// traced back to exactly what the agent was told.
     let digestURL: URL
+    /// What the user asked to record. Absent for sessions recorded before Phase 6 — see
+    /// `RecordingManifest` for why nothing downstream may depend on this file existing.
+    let manifestURL: URL
 
     /// Waveform peak caches sit beside the audio file they describe, so the review
     /// layer never has to rebuild a path to find one.
@@ -67,6 +70,7 @@ struct SessionFolder {
         transcriptURL = rootURL.appendingPathComponent("transcript.json")
         editURL = rootURL.appendingPathComponent("edit.json")
         digestURL = rootURL.appendingPathComponent("digest.json")
+        manifestURL = rootURL.appendingPathComponent("recording.json")
     }
 
     private static func peaksURL(for audioURL: URL) -> URL {

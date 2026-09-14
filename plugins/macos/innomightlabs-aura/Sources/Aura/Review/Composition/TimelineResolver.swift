@@ -21,7 +21,7 @@ enum TimelineResolver {
         let byKind = Dictionary(probes.map { ($0.kind, $0) }, uniquingKeysWith: { first, _ in first })
         let timeMap = document.timeMap
 
-        // Normally screen is the base and camera the overlay. But `ScreenCaptureSession`
+        // Normally screen is the base and camera the overlay. But `ScreenCaptureSource`
         // forwards only complete frames and sets no maximum frame interval, so recording a
         // static screen can yield a screen track with no frames at all — in which case the
         // camera is promoted to full frame rather than floating over black.

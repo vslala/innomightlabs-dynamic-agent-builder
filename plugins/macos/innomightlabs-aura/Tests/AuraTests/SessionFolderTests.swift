@@ -29,6 +29,7 @@ final class SessionFolderTests: XCTestCase {
         XCTAssertEqual(folder.eventsURL, folder.rootURL.appendingPathComponent("events.jsonl"))
         XCTAssertEqual(folder.transcriptURL, folder.rootURL.appendingPathComponent("transcript.json"))
         XCTAssertEqual(folder.editURL, folder.rootURL.appendingPathComponent("edit.json"))
+        XCTAssertEqual(folder.manifestURL, folder.rootURL.appendingPathComponent("recording.json"))
     }
 
     func testPeakCachesSitBesideTheAudioTheyDescribe() {
@@ -52,6 +53,7 @@ final class SessionFolderTests: XCTestCase {
         XCTAssertEqual(loaded.eventsURL, made.eventsURL)
         XCTAssertEqual(loaded.transcriptURL, made.transcriptURL)
         XCTAssertEqual(loaded.editURL, made.editURL)
+        XCTAssertEqual(loaded.manifestURL, made.manifestURL)
         XCTAssertEqual(loaded.microphonePeaksURL, made.microphonePeaksURL)
         XCTAssertEqual(loaded.systemAudioPeaksURL, made.systemAudioPeaksURL)
     }

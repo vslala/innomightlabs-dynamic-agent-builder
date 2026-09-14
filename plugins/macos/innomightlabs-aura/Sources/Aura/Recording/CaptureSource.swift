@@ -1,0 +1,128 @@
+import AVFoundation
+import CoreMedia
+import CoreVideo
+import Foundation
+
+/// What every capture source is handed at start: the session it writes into, and the one shared
+/// host time its writers must be anchored to.
+///
+/// The start time is passed in rather than read per source, because a single shared origin is
+/// exactly what keeps the tracks mutually aligned — `SourceTrackProbe.alignmentCorrection` and
+/// the `track_start` offsets are both measured against it. A source reading its own clock would
+/// reintroduce the desync those exist to remove.
+struct CaptureContext: Sendable {
+    let folder: SessionFolder
+    let sessionStartTime: CMTime
+}
+
+/// One recordable device, owning its device session, its `TrackWriter`s and its own callback
+/// wiring.
+///
+/// `RecordingController` composes a list of these from the profile and fans the lifecycle over
+/// it, so adding or removing a recordable source is one conformer and one line in
+/// `CaptureSourceFactory` — not a branch in five methods.
+///
+/// Classes, and `@unchecked Sendable` like the implementations already are: each owns a
+/// capture queue that appends to its writers, while `start`/`stop` are driven from the main
+/// actor.
+protocol CaptureSource: AnyObject, Sendable {
+    /// The tracks this source writes. Known before `start`, so the controller can report
+    /// per-track without asking what any given source is.
+    var kinds: [TrackKind] { get }
+
+    /// The writers this source created, available after `start`. Owned here; the controller
+    /// only fans the shared pause/resume/finish over them, because those three must happen at
+    /// one host time across every track at once.
+    var writers: [TrackKind: TrackWriter] { get }
+
+    /// Reported when the source dies mid-recording. Only `ScreenCaptureSource` currently can.
+    var onFailure: (@Sendable (Error) -> Void)? { get set }
+
+    /// Permission prompts and device configuration, before any file exists. Throws
+    /// `RecordingError` so the menu bar can explain what was refused.
+    func prepare() async throws
+
+    /// Creates and starts this source's writers, wires its callbacks, starts its device
+    /// session. Throwing here is a failed start; the controller cancels every source.
+    ///
+    /// `async` because `ScreenCaptureSource` must await `SCStream.startCapture()` to propagate
+    /// a rejected configuration synchronously — a fire-and-forget start would let the
+    /// controller reach `.recording` on a stream that never actually started. The
+    /// `AVCaptureSession`-backed sources have nothing to await; they simply don't suspend.
+    func start(context: CaptureContext) async throws
+
+    func stop() async
+    func cancel()
+
+    /// Muting is a property of sources that can be muted. A default no-op is what lets the
+    /// controller say `sources.forEach { $0.setMuted(true) }` without asking which is the mic.
+    func setMuted(_ muted: Bool)
+
+    /// The most recent full frame, for `screenshot()`. Default nil.
+    var latestVideoFrame: CVPixelBuffer? { get }
+}
+
+extension CaptureSource {
+    func setMuted(_ muted: Bool) {}
+    var latestVideoFrame: CVPixelBuffer? { nil }
+}
+
+/// Everything needed to create one `TrackWriter`, as a value — so a source declares its tracks
+/// and a single shared function builds them.
+struct TrackSpec {
+    let kind: TrackKind
+    let outputURL: URL
+    let outputFileType: AVFileType
+    let outputSettings: [String: Any]
+
+    static func video(kind: TrackKind, url: URL, pixelSize: CGSize) -> TrackSpec {
+        TrackSpec(
+            kind: kind,
+            outputURL: url,
+            outputFileType: .mov,
+            outputSettings: [
+                AVVideoCodecKey: AVVideoCodecType.hevc,
+                AVVideoWidthKey: Int(pixelSize.width),
+                AVVideoHeightKey: Int(pixelSize.height),
+                AVVideoCompressionPropertiesKey: [
+                    AVVideoExpectedSourceFrameRateKey: 30,
+                    AVVideoMaxKeyFrameIntervalKey: 30
+                ] as [String: Any]
+            ]
+        )
+    }
+
+    static func audio(kind: TrackKind, url: URL) -> TrackSpec {
+        TrackSpec(
+            kind: kind,
+            outputURL: url,
+            outputFileType: .m4a,
+            outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVNumberOfChannelsKey: 2,
+                AVSampleRateKey: 44_100,
+                AVEncoderBitRateKey: 128_000
+            ]
+        )
+    }
+}
+
+extension CaptureSource {
+    /// Builds and starts a writer per spec. One implementation, so a new source cannot get the
+    /// `startSession(atSourceTime:)` anchoring subtly wrong.
+    func makeWriters(_ specs: [TrackSpec], context: CaptureContext) throws -> [TrackKind: TrackWriter] {
+        var writers: [TrackKind: TrackWriter] = [:]
+        for spec in specs {
+            let writer = try TrackWriter(
+                outputURL: spec.outputURL,
+                outputFileType: spec.outputFileType,
+                mediaType: spec.kind.mediaType,
+                outputSettings: spec.outputSettings,
+                sessionStartTime: context.sessionStartTime
+            )
+            try writer.start()
+            writers[spec.kind] = writer
+        }
+        return writers
+    }
+}

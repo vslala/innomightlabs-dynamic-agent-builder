@@ -17,6 +17,7 @@ enum ExportProgress: Equatable, Sendable {
 protocol ExportEngine {
     func export(
         _ composition: BuiltComposition,
+        as format: ExportFormat,
         to url: URL,
         onProgress: @escaping (ExportProgress) -> Void
     ) async throws
@@ -37,19 +38,25 @@ enum ExportError: Error, LocalizedError {
 struct AVAssetExportEngine: ExportEngine {
     func export(
         _ composition: BuiltComposition,
+        as format: ExportFormat,
         to url: URL,
         onProgress: @escaping (ExportProgress) -> Void
     ) async throws {
+        let presetName = switch format {
         // Quality-based rather than one of the fixed-size HEVC presets, which produce the
         // preset's video size and would rescale or letterbox a screen-native render size.
-        guard let session = AVAssetExportSession(
-            asset: composition.asset,
-            presetName: AVAssetExportPresetHEVCHighestQuality
-        ) else {
+        case .video: AVAssetExportPresetHEVCHighestQuality
+        // No video composition, no video encode: an asset with no video track cannot be
+        // exported with a video preset at all — the session reports unsupported.
+        case .audio: AVAssetExportPresetAppleM4A
+        }
+        guard let session = AVAssetExportSession(asset: composition.asset, presetName: presetName) else {
             throw ExportError.unsupportedConfiguration
         }
 
-        session.videoComposition = composition.videoComposition
+        if case .video = format {
+            session.videoComposition = composition.videoComposition
+        }
         session.audioMix = composition.audioMix
         session.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
         session.shouldOptimizeForNetworkUse = true
@@ -74,6 +81,6 @@ struct AVAssetExportEngine: ExportEngine {
 
         // Cancellation runs through Task.cancel(): the async overload already wraps the work
         // in a cancellation handler that calls cancelExport().
-        try await session.export(to: url, as: .mp4)
+        try await session.export(to: url, as: format.fileType)
     }
 }

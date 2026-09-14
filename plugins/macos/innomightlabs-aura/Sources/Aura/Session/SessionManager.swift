@@ -28,6 +28,10 @@ final class SessionManager {
         try? eventLogWriter?.append(event)
     }
 
+    func writeManifest(_ manifest: RecordingManifest) throws {
+        try manifest.write(to: folder.manifestURL)
+    }
+
     func close() {
         eventLogWriter?.close()
     }

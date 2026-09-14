@@ -72,6 +72,13 @@ struct AuraApp: App {
             Image("MenuBarIcon")
                 .renderingMode(.original)
         }
+        // Without this, `.automatic` renders as a native `NSMenu` whenever the content is
+        // menu-compatible (Toggle/Picker/Divider/...) — which silently degrades every custom
+        // control (a Picker becomes a nested submenu, a Toggle becomes a plain checkmark, and
+        // a hand-drawn view like the level meter doesn't render at all) and can differ between
+        // states, since `.recording`'s plain Text/ProgressView content isn't menu-compatible.
+        // `.window` forces one consistent floating panel across every state.
+        .menuBarExtraStyle(.window)
     }
 
     /// Opens a session's review window at launch when `AURA_OPEN_SESSION` names one.

@@ -2,8 +2,10 @@ import SwiftUI
 
 struct MenuBarContentView: View {
     @ObservedObject var controller: RecordingController
-    @StateObject private var pickerViewModel = ShareablePickerViewModel()
-    @StateObject private var cameraPickerViewModel = CameraPickerViewModel()
+    @StateObject private var setup = RecordingSetupViewModel()
+    @StateObject private var screenPicker = ShareablePickerViewModel()
+    @StateObject private var cameraPicker = CameraPickerViewModel()
+    @StateObject private var microphonePicker = MicrophonePickerViewModel()
     let reviewWindows: ReviewWindowPresenter
 
     /// Enumerated once when the menu opens rather than on every body pass — reading it
@@ -25,27 +27,7 @@ struct MenuBarContentView: View {
 
             switch controller.state {
             case .idle:
-                Group {
-                    ShareablePickerView(viewModel: pickerViewModel)
-
-                    if !cameraPickerViewModel.cameras.isEmpty {
-                        Picker("Camera", selection: $cameraPickerViewModel.selectedDeviceID) {
-                            Text("Default").tag(String?.none)
-                            ForEach(cameraPickerViewModel.cameras, id: \.uniqueID) { camera in
-                                Text(camera.localizedName).tag(String?.some(camera.uniqueID))
-                            }
-                        }
-                        .labelsHidden()
-                    }
-
-                    Button("Start Recording") {
-                        guard let target = pickerViewModel.selectedTarget else { return }
-                        let cameraDeviceID = cameraPickerViewModel.selectedDeviceID
-                        Task { await controller.start(target: target, cameraDeviceID: cameraDeviceID) }
-                    }
-                    .disabled(pickerViewModel.selectedTarget == nil)
-                }
-                .task { cameraPickerViewModel.refresh() }
+                idleContent
 
             case .starting:
                 HStack {
@@ -54,23 +36,7 @@ struct MenuBarContentView: View {
                 }
 
             case .recording, .paused:
-                Text(controller.state == .recording ? "Recording" : "Paused")
-                    .font(.headline)
-                if let name = controller.currentTargetName {
-                    Text(name)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                HStack {
-                    if controller.state == .recording {
-                        Button("Pause") { controller.pause() }
-                    } else {
-                        Button("Resume") { controller.resume() }
-                    }
-                    Button("Stop") {
-                        Task { await controller.stop() }
-                    }
-                }
+                recordingContent
 
             case .stopping:
                 HStack {
@@ -94,9 +60,83 @@ struct MenuBarContentView: View {
             }
         }
         .padding(12)
-        .frame(width: 260)
+        .frame(width: 300)
         .task {
             recentSessions = Array(SessionFolder.existingSessions().prefix(10))
+        }
+    }
+
+    // MARK: - Idle
+
+    private var idleContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            RecordingProfileView(
+                setup: setup,
+                screenPicker: screenPicker,
+                cameraPicker: cameraPicker,
+                microphonePicker: microphonePicker
+            )
+
+            if let reason = validationReason {
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button("Start Recording") {
+                Task { await controller.start(currentRequest) }
+            }
+            .disabled(!currentRequest.isValid)
+        }
+        .task {
+            // The screen picker is refreshed here regardless of whether the Screen row is
+            // visible: a System Audio-only profile still needs `screenPicker.displays` for the
+            // fallback filter target in `currentRequest`.
+            await screenPicker.refresh()
+            cameraPicker.refresh()
+            microphonePicker.refresh()
+        }
+    }
+
+    /// System audio still needs an `SCContentFilter`, so when Screen is off but System Audio
+    /// is on, the primary display stands in for it — the stream attaches no `.screen` output,
+    /// so nothing about *what* is recorded changes.
+    private var currentRequest: RecordingRequest {
+        RecordingRequest(
+            profile: setup.profile,
+            screenTarget: screenPicker.selectedTarget ?? screenPicker.displays.first.map(CaptureTarget.display),
+            cameraDeviceID: cameraPicker.selectedDeviceID,
+            microphoneDeviceID: microphonePicker.selectedDeviceID
+        )
+    }
+
+    private var validationReason: String? {
+        guard !currentRequest.isValid else { return nil }
+        guard setup.profile.isRecordable else { return "Pick at least one thing to record." }
+        return "Choose a display or window."
+    }
+
+    // MARK: - Recording
+
+    private var recordingContent: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(controller.state == .recording ? "Recording" : "Paused")
+                .font(.headline)
+            if let profile = controller.currentProfile {
+                Text(profile.enabledKinds.map(\.title).joined(separator: ", "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                if controller.state == .recording {
+                    Button("Pause") { controller.pause() }
+                } else {
+                    Button("Resume") { controller.resume() }
+                }
+                Button("Stop") {
+                    Task { await controller.stop() }
+                }
+            }
         }
     }
 }

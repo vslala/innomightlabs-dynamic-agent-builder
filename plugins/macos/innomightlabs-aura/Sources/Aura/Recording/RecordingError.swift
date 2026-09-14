@@ -5,6 +5,7 @@ enum RecordingError: Error, Equatable, LocalizedError {
     case cameraPermissionDenied
     case microphonePermissionDenied
     case noShareableContentFound
+    case noSourcesSelected
     case writerSetupFailed(String)
     case captureStreamStopped(String)
 
@@ -18,6 +19,8 @@ enum RecordingError: Error, Equatable, LocalizedError {
             return "Microphone permission is required. Grant it in System Settings > Privacy & Security > Microphone."
         case .noShareableContentFound:
             return "No recordable screens, windows, or apps were found."
+        case .noSourcesSelected:
+            return "Pick at least one thing to record — screen, camera, microphone or system audio."
         case .writerSetupFailed(let reason):
             return "Failed to set up recording: \(reason)"
         case .captureStreamStopped(let reason):

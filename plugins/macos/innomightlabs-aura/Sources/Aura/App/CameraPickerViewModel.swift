@@ -13,7 +13,7 @@ final class CameraPickerViewModel: ObservableObject {
     }
 
     func refresh() {
-        cameras = CameraRecorder.availableDevices()
+        cameras = CameraCaptureSource.availableDevices()
         if let selectedDeviceID, !cameras.contains(where: { $0.uniqueID == selectedDeviceID }) {
             self.selectedDeviceID = nil
         }

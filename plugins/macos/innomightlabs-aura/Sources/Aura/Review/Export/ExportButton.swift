@@ -81,7 +81,7 @@ struct ExportButton: View {
         panel.title = "Export Recording"
         panel.nameFieldStringValue = suggested.lastPathComponent
         panel.directoryURL = suggested.deletingLastPathComponent()
-        panel.allowedContentTypes = [.mpeg4Movie]
+        panel.allowedContentTypes = [viewModel.exportFormat.contentType]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
 

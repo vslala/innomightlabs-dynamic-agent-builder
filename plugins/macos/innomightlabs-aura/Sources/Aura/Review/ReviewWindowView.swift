@@ -70,9 +70,15 @@ struct ReviewWindowView: View {
                     StudioSidebarView(viewModel: viewModel, onSelect: select)
 
                     VStack(spacing: 0) {
-                        PreviewStageView(viewModel: viewModel)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: AuraTheme.Radius.lg))
+                        Group {
+                            if viewModel.hasVideo {
+                                PreviewStageView(viewModel: viewModel)
+                            } else {
+                                AudioStageView(viewModel: viewModel)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: AuraTheme.Radius.lg))
 
                         PreviewScrubBar(viewModel: viewModel)
                             .padding(.horizontal, AuraTheme.Space.xs)

@@ -9,15 +9,16 @@ final class RecordingController: ObservableObject {
     @Published private(set) var state: RecordingState = .idle
     @Published var lastError: RecordingError?
     @Published private(set) var currentTargetName: String?
+    @Published private(set) var currentProfile: RecordingProfile?
 
     /// Called once a session's files are finalized, so a review window can open over it.    /// A callback rather than a published property because `stop()` completes asynchronously
     /// after the menu that started it has already been dismissed — there is no view alive at
     /// that moment to observe a change.
     var onSessionCompleted: ((SessionFolder) -> Void)?
 
-    private let screenCaptureSession = ScreenCaptureSession()
-    private let cameraRecorder = CameraRecorder()
-    private let microphoneRecorder = MicrophoneRecorder()
+    /// One entry per enabled track, in whatever order `CaptureSourceFactory` created them —
+    /// not `TrackKind.allCases` order. Anything needing that order goes through `writersByKind`.
+    private var sources: [any CaptureSource] = []
 
     private var sessionManager: SessionManager?
     private var sessionStartTime: CMTime = .zero
@@ -28,99 +29,64 @@ final class RecordingController: ObservableObject {
     private var accumulatedPausedDuration: CMTime = .zero
     private var pauseStartedAt: CMTime?
 
-    private var screenWriter: TrackWriter?
-    private var cameraWriter: TrackWriter?
-    private var microphoneWriter: TrackWriter?
-    private var systemAudioWriter: TrackWriter?
-    private var systemAudioSink: SystemAudioSink?
-
-    /// Written only on the main actor, read from the mic capture queue in `wireCallbacks`.
-    /// A stale read for one buffer is harmless (worst case one extra/missing sample at the
-    /// mute boundary) — unlike `PauseClock`, exact correctness isn't required here.
-    private var isMicMuted = false
-
-    /// Last-write-wins cache of the most recent complete screen frame, for `screenshot()`.
-    /// Written from the video capture queue, read on the main actor — `CVPixelBuffer`
-    /// retain/release is thread-safe, so no lock is needed.
-    private var latestVideoPixelBuffer: CVPixelBuffer?
-
-    private var allTrackWriters: [TrackWriter] {
-        [screenWriter, cameraWriter, microphoneWriter, systemAudioWriter].compactMap { $0 }
-    }
-
+    /// Every writer across every source, ordered by `TrackKind.allCases` so writer teardown,
+    /// the `track_start` events and `pause`/`resume` fan-out are deterministic regardless of
+    /// which order the sources were constructed in.
     private var writersByKind: [(TrackKind, TrackWriter)] {
-        [
-            (.screen, screenWriter), (.camera, cameraWriter),
-            (.microphone, microphoneWriter), (.systemAudio, systemAudioWriter)
-        ].compactMap { kind, writer in writer.map { (kind, $0) } }
+        let merged = sources.reduce(into: [TrackKind: TrackWriter]()) { result, source in
+            result.merge(source.writers) { existing, _ in existing }
+        }
+        return TrackKind.allCases.compactMap { kind in merged[kind].map { (kind, $0) } }
     }
 
-    func start(target: CaptureTarget, cameraDeviceID: String? = nil) async {
+    private var allTrackWriters: [TrackWriter] { writersByKind.map(\.1) }
+
+    func start(_ request: RecordingRequest) async {
+        guard request.isValid else {
+            lastError = request.profile.isRecordable
+                ? .writerSetupFailed("Choose a display or window to record.")
+                : .noSourcesSelected
+            return
+        }
         guard applyTransition(.start) else { return }
 
+        let sources = CaptureSourceFactory.sources(for: request)
+
         do {
-            try await checkDevicePermissions()
+            // Permission prompts and device configuration, before a session directory exists —
+            // so a refusal leaves nothing behind.
+            for source in sources {
+                try await source.prepare()
+            }
 
             let manager = SessionManager()
             try manager.createSessionDirectory()
 
             let startTime = CMClockGetTime(CMClockGetHostTimeClock())
-
-            let screenWriter = try TrackWriter(
-                outputURL: manager.folder.screenURL,
-                outputFileType: .mov,
-                mediaType: .video,
-                outputSettings: Self.videoOutputSettings(pixelSize: target.pixelSize),
-                sessionStartTime: startTime
-            )
-            let cameraSize = CameraRecorder.devicePixelSize(deviceID: cameraDeviceID) ?? CGSize(width: 1280, height: 720)
-            let cameraWriter = try TrackWriter(
-                outputURL: manager.folder.cameraURL,
-                outputFileType: .mov,
-                mediaType: .video,
-                outputSettings: Self.videoOutputSettings(pixelSize: cameraSize),
-                sessionStartTime: startTime
-            )
-            let microphoneWriter = try TrackWriter(
-                outputURL: manager.folder.microphoneURL,
-                outputFileType: .m4a,
-                mediaType: .audio,
-                outputSettings: Self.audioOutputSettings(),
-                sessionStartTime: startTime
-            )
-            let systemAudioWriter = try TrackWriter(
-                outputURL: manager.folder.systemAudioURL,
-                outputFileType: .m4a,
-                mediaType: .audio,
-                outputSettings: Self.audioOutputSettings(),
-                sessionStartTime: startTime
-            )
-
-            try screenWriter.start()
-            try cameraWriter.start()
-            try microphoneWriter.start()
-            try systemAudioWriter.start()
+            let context = CaptureContext(folder: manager.folder, sessionStartTime: startTime)
 
             self.sessionManager = manager
             self.sessionStartTime = startTime
-            self.screenWriter = screenWriter
-            self.cameraWriter = cameraWriter
-            self.microphoneWriter = microphoneWriter
-            self.systemAudioWriter = systemAudioWriter
-            self.systemAudioSink = SystemAudioSink(trackWriter: systemAudioWriter)
+            self.sources = sources
 
-            wireCallbacks(
-                screenWriter: screenWriter,
-                cameraWriter: cameraWriter,
-                microphoneWriter: microphoneWriter
-            )
+            for source in sources {
+                source.onFailure = { [weak self] error in
+                    Task { @MainActor [weak self] in
+                        self?.handleSourceFailure(error)
+                    }
+                }
+                try await source.start(context: context)
+            }
 
-            try await screenCaptureSession.start(target: target)
-            try cameraRecorder.start(deviceID: cameraDeviceID)
-            try microphoneRecorder.start()
+            try manager.writeManifest(RecordingManifest(
+                profile: request.profile,
+                startedAt: Date(),
+                screenTargetName: request.profile.tracks.contains(.screen) ? request.screenTarget?.displayName : nil
+            ))
 
-            currentTargetName = target.displayName
-            logEvent(.recordStart, at: startTime, app: target.displayName)
+            currentProfile = request.profile
+            currentTargetName = request.profile.tracks.contains(.screen) ? request.screenTarget?.displayName : nil
+            logEvent(.recordStart, at: startTime, app: currentTargetName, label: request.profile.eventLabel)
             applyTransition(.didStart)
         } catch let error as RecordingError {
             await rollbackFailedStart()
@@ -158,9 +124,7 @@ final class RecordingController: ObservableObject {
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         logEvent(.recordStop, at: hostTime)
 
-        cameraRecorder.stop()
-        microphoneRecorder.stop()
-        try? await screenCaptureSession.stop()
+        for source in sources { await source.stop() }
 
         // Recorded before teardown: this is what lets the review layer realign a track whose
         // warm-up offset `AVAssetWriter` discarded (which it does for every audio track).
@@ -189,12 +153,12 @@ final class RecordingController: ObservableObject {
 
     func mute() {
         guard state == .recording || state == .paused else { return }
-        isMicMuted = true
+        sources.forEach { $0.setMuted(true) }
     }
 
     func unmute() {
         guard state == .recording || state == .paused else { return }
-        isMicMuted = false
+        sources.forEach { $0.setMuted(false) }
     }
 
     func mark(label: String) {
@@ -205,7 +169,14 @@ final class RecordingController: ObservableObject {
 
     func screenshot() async {
         guard state == .recording || state == .paused else { return }
-        guard let pixelBuffer = latestVideoPixelBuffer, let sessionManager else { return }
+        // Screen before camera, so screen wins when both are recording and a camera-only
+        // session gets screenshots for free.
+        let videoKinds: [TrackKind] = [.screen, .camera]
+        let pixelBuffer = videoKinds
+            .lazy
+            .compactMap { kind in self.sources.first { $0.kinds.contains(kind) }?.latestVideoFrame }
+            .first
+        guard let pixelBuffer, let sessionManager else { return }
 
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         let ts = elapsed(hostTime)
@@ -219,10 +190,7 @@ final class RecordingController: ObservableObject {
     func cancel() async {
         guard applyTransition(.cancel) else { return }
 
-        cameraRecorder.stop()
-        microphoneRecorder.stop()
-        try? await screenCaptureSession.stop()
-
+        for source in sources { source.cancel() }
         allTrackWriters.forEach { $0.cancel() }
 
         let rootURL = sessionManager?.folder.rootURL
@@ -244,40 +212,14 @@ final class RecordingController: ObservableObject {
         return CGImageDestinationFinalize(destination)
     }
 
-    private func wireCallbacks(screenWriter: TrackWriter, cameraWriter: TrackWriter, microphoneWriter: TrackWriter) {
-        screenCaptureSession.onVideoSampleBuffer = { [weak self, weak screenWriter] buffer in
-            if let imageBuffer = CMSampleBufferGetImageBuffer(buffer) {
-                self?.latestVideoPixelBuffer = imageBuffer
-            }
-            screenWriter?.append(buffer)
-        }
-        screenCaptureSession.onAudioSampleBuffer = { [weak self] buffer in
-            self?.systemAudioSink?.handle(buffer)
-        }
-        screenCaptureSession.onStreamStopped = { [weak self] error in
-            Task { @MainActor [weak self] in
-                self?.handleStreamFailure(error)
-            }
-        }
-        cameraRecorder.onSampleBuffer = { [weak cameraWriter] buffer in
-            cameraWriter?.append(buffer)
-        }
-        microphoneRecorder.onSampleBuffer = { [weak self, weak microphoneWriter] buffer in
-            guard self?.isMicMuted != true else { return }
-            microphoneWriter?.append(buffer)
-        }
-    }
-
-    private func handleStreamFailure(_ error: Error) {
+    private func handleSourceFailure(_ error: Error) {
         guard state == .recording || state == .paused else { return }
         lastError = .captureStreamStopped(error.localizedDescription)
         Task { await stop() }
     }
 
     private func rollbackFailedStart() async {
-        cameraRecorder.stop()
-        microphoneRecorder.stop()
-        try? await screenCaptureSession.stop()
+        for source in sources { source.cancel() }
         tearDownSessionState()
         applyTransition(.startFailed)
     }
@@ -285,14 +227,9 @@ final class RecordingController: ObservableObject {
     private func tearDownSessionState() {
         sessionManager?.close()
         sessionManager = nil
-        screenWriter = nil
-        cameraWriter = nil
-        microphoneWriter = nil
-        systemAudioWriter = nil
-        systemAudioSink = nil
+        sources = []
         currentTargetName = nil
-        isMicMuted = false
-        latestVideoPixelBuffer = nil
+        currentProfile = nil
         accumulatedPausedDuration = .zero
         pauseStartedAt = nil
     }
@@ -308,29 +245,6 @@ final class RecordingController: ObservableObject {
                 }
             }
         }
-    }
-
-    private func checkDevicePermissions() async throws {
-        let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
-        if cameraStatus == .notDetermined {
-            guard await AVCaptureDevice.requestAccess(for: .video) else {
-                throw RecordingError.cameraPermissionDenied
-            }
-        } else if cameraStatus != .authorized {
-            throw RecordingError.cameraPermissionDenied
-        }
-
-        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-        if micStatus == .notDetermined {
-            guard await AVCaptureDevice.requestAccess(for: .audio) else {
-                throw RecordingError.microphonePermissionDenied
-            }
-        } else if micStatus != .authorized {
-            throw RecordingError.microphonePermissionDenied
-        }
-        // Screen Recording has no pre-flight authorization API; a denied/not-yet-granted
-        // state surfaces instead as SCShareableContent.current throwing in the picker,
-        // or SCStream.startCapture() throwing above.
     }
 
     @discardableResult
@@ -386,26 +300,5 @@ final class RecordingController: ObservableObject {
     private func mediaElapsed(_ hostTime: CMTime) -> TimeInterval {
         let effective = pauseStartedAt ?? hostTime
         return max(0, CMTimeGetSeconds(effective - sessionStartTime - accumulatedPausedDuration))
-    }
-
-    private static func videoOutputSettings(pixelSize: CGSize) -> [String: Any] {
-        [
-            AVVideoCodecKey: AVVideoCodecType.hevc,
-            AVVideoWidthKey: Int(pixelSize.width),
-            AVVideoHeightKey: Int(pixelSize.height),
-            AVVideoCompressionPropertiesKey: [
-                AVVideoExpectedSourceFrameRateKey: 30,
-                AVVideoMaxKeyFrameIntervalKey: 30
-            ] as [String: Any]
-        ]
-    }
-
-    private static func audioOutputSettings() -> [String: Any] {
-        [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVNumberOfChannelsKey: 2,
-            AVSampleRateKey: 44_100,
-            AVEncoderBitRateKey: 128_000
-        ]
     }
 }

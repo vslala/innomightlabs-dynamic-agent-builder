@@ -78,8 +78,11 @@ struct PreviewControlsView: View {
             .foregroundStyle(AuraTheme.textSecondary)
             .help("Playback speed")
 
-            iconButton("arrow.up.left.and.arrow.down.right", size: 11, help: "Full screen") {
-                onToggleFullScreen()
+            // Meaningless without video: a podcast has no frame to fill the screen with.
+            if viewModel.hasVideo {
+                iconButton("arrow.up.left.and.arrow.down.right", size: 11, help: "Full screen") {
+                    onToggleFullScreen()
+                }
             }
         }
     }

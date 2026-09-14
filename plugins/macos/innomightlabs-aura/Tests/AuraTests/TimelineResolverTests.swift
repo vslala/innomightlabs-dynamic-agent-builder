@@ -263,4 +263,29 @@ final class TimelineResolverTests: XCTestCase {
 
         XCTAssertEqual(size, CGSize(width: 1280, height: 720))
     }
+
+    // MARK: - Recording profiles (Phase 6)
+
+    func testAudioOnlyProbesHaveNoBaseLayerAndFallBackToTheDefaultRenderSize() {
+        let resolved = TimelineResolver.resolve(document: .initial(duration: 30), probes: [probe(.microphone)])
+
+        XCTAssertNil(resolved.base)
+        XCTAssertNil(resolved.overlay)
+        XCTAssertFalse(resolved.hasVideo)
+        XCTAssertEqual(resolved.renderSize, TimelineResolver.fallbackRenderSize)
+        XCTAssertEqual(resolved.audio.map(\.lane), [.microphone])
+    }
+
+    func testCameraOnlyProbesPromoteTheCameraToTheBaseLayerWithNoOverlay() {
+        let cameraSize = CGSize(width: 1280, height: 720)
+        let resolved = TimelineResolver.resolve(
+            document: .initial(duration: 30),
+            probes: [probe(.camera, displaySize: cameraSize), probe(.microphone)]
+        )
+
+        XCTAssertEqual(resolved.base?.probe.kind, .camera)
+        XCTAssertNil(resolved.overlay)
+        XCTAssertTrue(resolved.hasVideo)
+        XCTAssertEqual(resolved.renderSize, cameraSize)
+    }
 }

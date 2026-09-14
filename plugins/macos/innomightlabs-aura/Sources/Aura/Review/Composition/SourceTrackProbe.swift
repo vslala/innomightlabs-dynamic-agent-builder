@@ -2,7 +2,7 @@ import AVFoundation
 import CoreMedia
 import Foundation
 
-enum TrackKind: String, Sendable, CaseIterable {
+enum TrackKind: String, Sendable, CaseIterable, Codable {
     case screen
     case camera
     case microphone
@@ -32,6 +32,27 @@ enum TrackKind: String, Sendable, CaseIterable {
         case .screen, .camera: return nil
         }
     }
+
+    /// The user's word for this source. "Voice" rather than "Microphone", matching
+    /// `TimelineLane.title` — the recording picker and the timeline must not name the same
+    /// track differently.
+    var title: String {
+        switch self {
+        case .screen: return "Screen"
+        case .camera: return "Camera"
+        case .microphone: return "Voice"
+        case .systemAudio: return "System Audio"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .screen: return "display"
+        case .camera: return "camera"
+        case .microphone: return "mic"
+        case .systemAudio: return "speaker.wave.2"
+        }
+    }
 }
 
 /// What the review layer knows about one recorded file, reduced to Sendable value types.
@@ -39,7 +60,7 @@ enum TrackKind: String, Sendable, CaseIterable {
 /// `AVAsset` and `AVAssetTrack` are not Sendable, so primitives are extracted at the
 /// boundary and nothing downstream ever holds an AVFoundation object. The geometry here is
 /// always read from the written file rather than from what the recorder declared —
-/// `CameraRecorder` reads `activeFormat` before the capture session applies its preset, so
+/// `CameraCaptureSource` reads `activeFormat` before the capture session applies its preset, so
 /// its declared size can disagree with what actually got encoded.
 struct SourceTrackProbe: Sendable, Equatable {
     let url: URL
