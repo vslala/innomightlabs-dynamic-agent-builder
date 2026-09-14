@@ -127,6 +127,19 @@ struct MenuBarContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            // Only while actively recording: a source added mid-pause would need a
+            // `PauseClock` seeded already-paused, which switching while paused is deferred
+            // rather than getting subtly wrong. See the Phase 7 design doc.
+            if controller.state == .recording {
+                Picker("Preset", selection: presetBinding) {
+                    ForEach(RecordingPreset.allCases) { preset in
+                        Text(preset.title).tag(Optional(preset))
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .font(.caption)
+            }
             HStack {
                 if controller.state == .recording {
                     Button("Pause") { controller.pause() }
@@ -138,5 +151,18 @@ struct MenuBarContentView: View {
                 }
             }
         }
+    }
+
+    /// `nil` when the live profile matches no preset ("Custom"). Picking a preset from there
+    /// moves the recording onto it; there is no UI for moving back to an arbitrary Custom
+    /// profile mid-take, matching the picker showing presets only in `RecordingProfileView`.
+    private var presetBinding: Binding<RecordingPreset?> {
+        Binding(
+            get: { controller.currentProfile.flatMap(RecordingPreset.matching) },
+            set: { preset in
+                guard let preset else { return }
+                Task { await controller.switchProfile(to: preset.profile) }
+            }
+        )
     }
 }

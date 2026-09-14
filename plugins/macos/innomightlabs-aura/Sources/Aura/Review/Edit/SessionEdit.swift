@@ -317,18 +317,19 @@ struct SessionEdit: Codable, Equatable, Sendable {
         name = try container.decodeIfPresent(String.self, forKey: .name)
     }
 
-    /// A fresh document for an unedited recording: nothing cut, the camera parked in a corner,
-    /// both lanes at unity gain.
+    /// A fresh document for an unedited recording: nothing cut, both lanes at unity gain, and
+    /// the camera overlay defaulting to one corner keyframe — or, when the caller supplies
+    /// `cameraOverlay` (see `CameraOverlaySeed`), whatever full-frame/corner keyframes match
+    /// where the screen was actually recording.
     static func initial(
         duration: TimeInterval,
         micTimeOffset: TimeInterval = 0,
-        cameraRect: NormalizedRect = .defaultCameraOverlay,
-        cameraVisible: Bool = true
+        cameraOverlay: [OverlayKeyframe] = [OverlayKeyframe(t: 0, rect: .defaultCameraOverlay, visible: true)]
     ) -> SessionEdit {
         SessionEdit(
             recordingDuration: max(0, duration),
             micTimeOffset: micTimeOffset,
-            cameraOverlay: [OverlayKeyframe(t: 0, rect: cameraRect, visible: cameraVisible)],
+            cameraOverlay: cameraOverlay,
             audioLanes: AudioLane.allCases.map { AudioLaneSettings(lane: $0) }
         )
     }

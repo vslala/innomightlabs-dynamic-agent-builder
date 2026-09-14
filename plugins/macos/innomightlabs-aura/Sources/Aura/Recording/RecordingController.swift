@@ -20,6 +20,14 @@ final class RecordingController: ObservableObject {
     /// not `TrackKind.allCases` order. Anything needing that order goes through `writersByKind`.
     private var sources: [any CaptureSource] = []
 
+    /// What `sources` was built from, minus the profile — kept so `switchProfile` needs only a
+    /// new profile and never has to ask the caller to resupply the screen target or device ids.
+    private var activeRequest: RecordingRequest?
+
+    /// The next on-window ("segment") index to use per kind. Absent means `0`, which is also
+    /// what a session that never switches profiles uses throughout — see `SessionFolder`.
+    private var segmentCounts: [TrackKind: Int] = [:]
+
     private var sessionManager: SessionManager?
     private var sessionStartTime: CMTime = .zero
 
@@ -63,20 +71,21 @@ final class RecordingController: ObservableObject {
             try manager.createSessionDirectory()
 
             let startTime = CMClockGetTime(CMClockGetHostTimeClock())
-            let context = CaptureContext(folder: manager.folder, sessionStartTime: startTime)
-
             self.sessionManager = manager
             self.sessionStartTime = startTime
+            // Assigned before starting, not after: a source that throws partway through the
+            // loop below is handled by `rollbackFailedStart`, which cancels every entry in
+            // `self.sources` — including ones that had not started yet. Assigning only on
+            // success would leave those already-begun sources uncancelled on partial failure.
             self.sources = sources
+            let context = makeContext(folder: manager.folder)
 
             for source in sources {
-                source.onFailure = { [weak self] error in
-                    Task { @MainActor [weak self] in
-                        self?.handleSourceFailure(error)
-                    }
-                }
+                source.onFailure = makeFailureHandler()
                 try await source.start(context: context)
             }
+            advanceSegmentCounts(for: sources.flatMap { $0.kinds })
+            activeRequest = request
 
             try manager.writeManifest(RecordingManifest(
                 profile: request.profile,
@@ -118,21 +127,65 @@ final class RecordingController: ObservableObject {
         logEvent(.resume, at: hostTime)
     }
 
+    /// Replaces the live profile without interrupting the sources it has in common with the
+    /// new one — the camera and microphone keep recording into the same files while the screen
+    /// is switched on or off around them.
+    ///
+    /// Added sources are prepared *and started* before anything already running is retired, so
+    /// a refused permission prompt or a rejected `SCStream` configuration leaves the recording
+    /// exactly as it was. That ordering is the whole reason this is not one loop over the diff.
+    func switchProfile(to profile: RecordingProfile) async {
+        guard state == .recording, let activeRequest, let folder = sessionManager?.folder else { return }
+
+        let request = activeRequest.replacing(profile: profile)
+        guard request.isValid else {
+            lastError = profile.isRecordable
+                ? .writerSetupFailed("Choose a display or window to record.")
+                : .noSourcesSelected
+            return
+        }
+
+        let plan = CaptureSourceFactory.plan(live: sources, for: request)
+        guard !plan.isEmpty else { return }
+
+        let context = makeContext(folder: folder)
+        do {
+            for source in plan.added {
+                try await source.prepare()
+            }
+            for source in plan.added {
+                source.onFailure = makeFailureHandler()
+                try await source.start(context: context)
+            }
+        } catch {
+            // No-op on failure: `sources` was never touched, so only what this call itself
+            // started needs undoing.
+            plan.added.forEach { $0.cancel() }
+            lastError = (error as? RecordingError) ?? .writerSetupFailed(error.localizedDescription)
+            return
+        }
+
+        let failures = await retire(plan.removed)
+        sources = plan.resulting
+        advanceSegmentCounts(for: plan.added.flatMap { $0.kinds })
+        self.activeRequest = request
+        currentProfile = profile
+
+        let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
+        failures.forEach { logEvent(.trackFailed, at: hostTime, label: $0) }
+        if !failures.isEmpty {
+            lastError = .writerSetupFailed(failures.joined(separator: "; "))
+        }
+        logEvent(.profileChanged, at: hostTime, label: profile.eventLabel)
+    }
+
     func stop() async {
         guard applyTransition(.stop) else { return }
 
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         logEvent(.recordStop, at: hostTime)
 
-        for source in sources { await source.stop() }
-
-        // Recorded before teardown: this is what lets the review layer realign a track whose
-        // warm-up offset `AVAssetWriter` discarded (which it does for every audio track).
-        logTrackStartOffsets()
-
-        let writers = allTrackWriters
-        await finishWriters()
-        let failures = writers.compactMap(\.failureReason)
+        let failures = await retire(sources)
         // Recorded into the log so the review window knows a track is expected-missing
         // rather than having to guess why an asset won't load.
         failures.forEach { logEvent(.trackFailed, at: hostTime, label: $0) }
@@ -228,14 +281,34 @@ final class RecordingController: ObservableObject {
         sessionManager?.close()
         sessionManager = nil
         sources = []
+        activeRequest = nil
+        segmentCounts = [:]
         currentTargetName = nil
         currentProfile = nil
         accumulatedPausedDuration = .zero
         pauseStartedAt = nil
     }
 
-    private func finishWriters() async {
-        let writers = allTrackWriters
+    /// Stops capturing, records where each retiring track's file actually began, and
+    /// finalizes its files. Returns each failed writer's reason, if any.
+    ///
+    /// Two phases rather than one loop per source: every device should stop at as nearly the
+    /// same instant as possible, and only once every source has stopped is it safe to
+    /// finalize — finishing one writer while a sibling source is still mid-callback would race
+    /// the finalize against a buffer still in flight.
+    ///
+    /// Shared by `stop()` (retiring every source) and `switchProfile` (retiring only the ones
+    /// the new profile drops), so the two can never log offsets or finalize differently.
+    private func retire(_ retiring: [any CaptureSource]) async -> [String] {
+        for source in retiring { await source.stop() }
+
+        let writers = retiring.flatMap { source in source.writers.map { ($0.key, $0.value) } }
+        logTrackStartOffsets(of: writers)
+        await finish(writers.map(\.1))
+        return writers.compactMap { $0.1.failureReason }
+    }
+
+    private func finish(_ writers: [TrackWriter]) async {
         await withTaskGroup(of: Void.self) { group in
             for writer in writers {
                 group.addTask {
@@ -243,6 +316,31 @@ final class RecordingController: ObservableObject {
                         writer.finish { continuation.resume() }
                     }
                 }
+            }
+        }
+    }
+
+    /// The context a source being (re)started should use: the shared session clock, how much
+    /// pause time already elapsed, and which on-window each kind is about to write.
+    private func makeContext(folder: SessionFolder) -> CaptureContext {
+        CaptureContext(
+            folder: folder,
+            sessionStartTime: sessionStartTime,
+            elapsedPausedDuration: accumulatedPausedDuration,
+            segmentIndices: segmentCounts
+        )
+    }
+
+    private func advanceSegmentCounts(for kinds: [TrackKind]) {
+        for kind in kinds {
+            segmentCounts[kind, default: 0] += 1
+        }
+    }
+
+    private func makeFailureHandler() -> @Sendable (Error) -> Void {
+        { [weak self] error in
+            Task { @MainActor [weak self] in
+                self?.handleSourceFailure(error)
             }
         }
     }
@@ -258,17 +356,23 @@ final class RecordingController: ObservableObject {
         }
     }
 
-    /// One `track_start` per track, carrying how far behind the shared session start that
-    /// track's first sample actually was.
-    private func logTrackStartOffsets() {
-        for (kind, writer) in writersByKind {
+    /// One `track_start` per writer, carrying how far behind the shared session start its
+    /// file's first sample actually was, and which file it belongs to.
+    ///
+    /// Takes the writers explicitly rather than reading `writersByKind`, which reflects only
+    /// the *live* source list — a writer retired mid-session is already gone from it by the
+    /// time this runs, and a segment logged with no offset plays from zero, which for audio
+    /// means early by the entire time it was not recording.
+    private func logTrackStartOffsets(of writers: [(TrackKind, TrackWriter)]) {
+        for (kind, writer) in writers {
             guard let firstSample = writer.firstAppendedHostTime else { continue }
             let offset = max(0, CMTimeGetSeconds(firstSample - sessionStartTime))
             sessionManager?.logEvent(RecordingEvent(
                 ts: offset,
                 type: .trackStart,
                 mediaTs: offset,
-                label: kind.rawValue
+                label: kind.rawValue,
+                path: writer.outputURL.lastPathComponent
             ))
         }
     }

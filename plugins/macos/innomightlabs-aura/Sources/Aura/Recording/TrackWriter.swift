@@ -11,8 +11,13 @@ import CoreMedia
 final class TrackWriter: @unchecked Sendable {
     private let writer: AVAssetWriter
     private let input: AVAssetWriterInput
-    private let pauseClock = PauseClock()
+    private let pauseClock: PauseClock
     private let sessionStartTime: CMTime
+
+    /// The file this writer is producing. Read back by `RecordingController` to name the
+    /// `track_start` event this writer's segment logs, since a segmented track needs that
+    /// event keyed by file rather than by kind.
+    let outputURL: URL
 
     private let firstSampleLock = NSLock()
     private var _firstAppendedHostTime: CMTime?
@@ -39,9 +44,12 @@ final class TrackWriter: @unchecked Sendable {
         outputFileType: AVFileType,
         mediaType: AVMediaType,
         outputSettings: [String: Any],
-        sessionStartTime: CMTime
+        sessionStartTime: CMTime,
+        elapsedPausedDuration: CMTime = .zero
     ) throws {
+        self.outputURL = outputURL
         self.sessionStartTime = sessionStartTime
+        pauseClock = PauseClock(accumulatedPausedDuration: elapsedPausedDuration)
         writer = try AVAssetWriter(outputURL: outputURL, fileType: outputFileType)
         input = AVAssetWriterInput(mediaType: mediaType, outputSettings: outputSettings)
         input.expectsMediaDataInRealTime = true

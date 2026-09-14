@@ -70,9 +70,4 @@ final class RecordingProfileTests: XCTestCase {
     func testFullStudioPresetIsEveryTrack() {
         XCTAssertEqual(RecordingPreset.fullStudio.profile.tracks, Set(TrackKind.allCases))
     }
-
-    func testCameraQualityIsOverlayWithScreenAndPrimaryWithout() {
-        XCTAssertEqual(CameraQuality(profile: RecordingProfile(tracks: [.screen, .camera])), .overlay)
-        XCTAssertEqual(CameraQuality(profile: RecordingProfile(tracks: [.camera, .microphone])), .primary)
-    }
 }

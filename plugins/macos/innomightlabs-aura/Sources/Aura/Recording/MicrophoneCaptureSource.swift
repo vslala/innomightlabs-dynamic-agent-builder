@@ -58,7 +58,7 @@ final class MicrophoneCaptureSource: NSObject, CaptureSource, @unchecked Sendabl
 
     func start(context: CaptureContext) async throws {
         writers = try makeWriters(
-            [.audio(kind: .microphone, url: context.folder.microphoneURL)],
+            [.audio(kind: .microphone, url: context.outputURL(for: .microphone))],
             context: context
         )
         session.startRunning()

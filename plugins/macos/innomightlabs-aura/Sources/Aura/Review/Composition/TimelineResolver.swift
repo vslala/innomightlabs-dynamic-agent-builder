@@ -18,55 +18,60 @@ enum TimelineResolver {
     ) -> ResolvedTimeline {
         // The document owns the style; the parameter is an override for previews and tests.
         let style = style ?? document.cameraStyle
-        let byKind = Dictionary(probes.map { ($0.kind, $0) }, uniquingKeysWith: { first, _ in first })
+        // Grouped rather than a one-probe-per-kind dictionary: a track a live profile switch
+        // turned off and back on probes as several segments of the same kind, ascending —
+        // `SourceTrackProbe.probeAll` already returns them in that order.
+        let byKind = Dictionary(grouping: probes, by: \.kind)
         let timeMap = document.timeMap
 
         // Normally screen is the base and camera the overlay. But `ScreenCaptureSource`
         // forwards only complete frames and sets no maximum frame interval, so recording a
         // static screen can yield a screen track with no frames at all — in which case the
         // camera is promoted to full frame rather than floating over black.
-        let baseProbe = byKind[.screen] ?? byKind[.camera]
-        let overlayProbe = baseProbe?.kind == .screen ? byKind[.camera] : nil
+        let screenSegments = byKind[.screen]
+        let cameraSegments = byKind[.camera]
+        let baseSegments = screenSegments ?? cameraSegments
+        let overlaySegments = screenSegments != nil ? cameraSegments : nil
 
-        let renderSize = renderSize(for: baseProbe)
+        let renderSize = renderSize(for: baseSegments?.first)
         let overlayKeyframes = resolveOverlay(document: document, timeMap: timeMap)
 
         return ResolvedTimeline(
             timeMap: timeMap,
             renderSize: renderSize,
             frameDuration: Timeline.frameDuration,
-            base: baseProbe.map {
+            base: baseSegments.map {
                 // The base layer fills the frame; it has no keyframes of its own.
                 ResolvedVideoLayer(
-                    probe: $0,
+                    segments: Self.placeSegments($0),
                     keyframes: [ResolvedOverlayKeyframe(
                         at: .zero,
                         rect: NormalizedRect(x: 0, y: 0, width: 1, height: 1),
                         visible: true
-                    )],
-                    timeOffset: $0.alignmentCorrection
+                    )]
                 )
             },
-            overlay: overlayProbe.map {
-                ResolvedVideoLayer(
-                    probe: $0,
-                    keyframes: overlayKeyframes,
-                    timeOffset: $0.alignmentCorrection
-                )
+            overlay: overlaySegments.map {
+                ResolvedVideoLayer(segments: Self.placeSegments($0), keyframes: overlayKeyframes)
             },
             audio: AudioLane.allCases.compactMap { lane in
-                guard let probe = probes.first(where: { $0.kind.lane == lane }) else { return nil }
+                let segments = probes.filter { $0.kind.lane == lane }
+                guard !segments.isEmpty else { return nil }
+                // Automatic per-segment correction plus the user's one manual slip for the
+                // whole lane.
+                let slip = Timeline.time(seconds: document.offset(for: lane))
                 return ResolvedAudioLane(
                     lane: lane,
-                    probe: probe,
-                    keyframes: resolveGain(document: document, lane: lane, timeMap: timeMap),
-                    // Automatic correction plus the user's manual slip.
-                    timeOffset: probe.alignmentCorrection
-                        + Timeline.time(seconds: document.offset(for: lane))
+                    segments: segments.map { PlacedSegment(probe: $0, timeOffset: $0.alignmentCorrection + slip) },
+                    keyframes: resolveGain(document: document, lane: lane, timeMap: timeMap)
                 )
             },
             style: style
         )
+    }
+
+    private static func placeSegments(_ probes: [SourceTrackProbe]) -> [PlacedSegment] {
+        probes.map { PlacedSegment(probe: $0, timeOffset: $0.alignmentCorrection) }
     }
 
     /// The base track's display size, floored to even dimensions because HEVC wants them.

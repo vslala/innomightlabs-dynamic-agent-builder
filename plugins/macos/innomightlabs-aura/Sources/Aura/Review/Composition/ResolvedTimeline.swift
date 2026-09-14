@@ -90,22 +90,40 @@ struct ResolvedGainKeyframe: Equatable, Sendable {
     let gain: Double
 }
 
-struct ResolvedVideoLayer: Equatable, Sendable {
+/// One recorded file, plus where its content belongs on the session timeline.
+struct PlacedSegment: Equatable, Sendable {
     let probe: SourceTrackProbe
-    /// Non-empty, sorted, deduplicated, and guaranteed to start at composition time zero.
-    let keyframes: [ResolvedOverlayKeyframe]
     /// How much later this file's content plays than its own timeline implies. See
     /// `SourceTrackProbe.alignmentCorrection`.
     let timeOffset: CMTime
 }
 
+struct ResolvedVideoLayer: Equatable, Sendable {
+    /// One entry per recorded on-window ("segment") of this kind, ascending. A session that
+    /// never switched profiles has exactly one. Every entry is the same device at the same
+    /// preset — changing devices or the screen target mid-session is out of scope — so
+    /// geometry and colour tags are read from the first, via `probe` below.
+    let segments: [PlacedSegment]
+    /// Non-empty, sorted, deduplicated, and guaranteed to start at composition time zero.
+    let keyframes: [ResolvedOverlayKeyframe]
+
+    var probe: SourceTrackProbe? { segments.first?.probe }
+    var timeOffset: CMTime { segments.first?.timeOffset ?? .zero }
+}
+
 struct ResolvedAudioLane: Equatable, Sendable {
     let lane: AudioLane
-    let probe: SourceTrackProbe
+    /// One entry per recorded on-window of this lane, ascending. See `ResolvedVideoLayer.segments`.
+    let segments: [PlacedSegment]
     /// Non-empty, sorted, deduplicated, and guaranteed to start at composition time zero.
     let keyframes: [ResolvedGainKeyframe]
-    /// The automatic alignment correction plus the user's manual slip.
-    let timeOffset: CMTime
+
+    /// The first segment's offset — what a consumer that reasons about "this lane" as a
+    /// single thing (the transcript, which is produced from only the microphone's first
+    /// on-window) should align against. `ReviewProjector` is the only reader.
+    var timeOffset: CMTime { segments.first?.timeOffset ?? .zero }
+
+    var probe: SourceTrackProbe? { segments.first?.probe }
 }
 
 /// Everything needed to build a composition, as Sendable value types with no AVFoundation
@@ -143,7 +161,7 @@ struct ResolvedTimeline: Equatable, Sendable {
     /// routes there rather than being drawn wrongly by the cheaper path.
     var canUseLayerInstructions: Bool {
         guard style.isPlainRectangle else { return false }
-        guard let overlay, let camera = overlay.probe.displaySize, camera.height > 0 else { return true }
+        guard let overlay, let camera = overlay.probe?.displaySize, camera.height > 0 else { return true }
 
         let cameraAspect = camera.width / camera.height
         return overlay.keyframes.allSatisfy { keyframe in

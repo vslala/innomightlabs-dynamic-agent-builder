@@ -39,7 +39,7 @@ struct PreviewStageView: View {
     private func cameraHandles(videoRect: CGRect) -> some View {
         if let timeline = viewModel.timeline,
            let camera = timeline.overlay,
-           let size = camera.probe.displaySize,
+           let size = camera.probe?.displaySize,
            let keyframe = viewModel.currentOverlay,
            keyframe.visible {
             CameraOverlayView(

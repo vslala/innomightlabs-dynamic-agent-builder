@@ -42,10 +42,10 @@ final class ScreenCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
     func start(context: CaptureContext) async throws {
         var specs: [TrackSpec] = []
         if capturesVideo {
-            specs.append(.video(kind: .screen, url: context.folder.screenURL, pixelSize: target.pixelSize))
+            specs.append(.video(kind: .screen, url: context.outputURL(for: .screen), pixelSize: target.pixelSize))
         }
         if capturesAudio {
-            specs.append(.audio(kind: .systemAudio, url: context.folder.systemAudioURL))
+            specs.append(.audio(kind: .systemAudio, url: context.outputURL(for: .systemAudio)))
         }
         writers = try makeWriters(specs, context: context)
 

@@ -14,10 +14,7 @@ enum CaptureSourceFactory {
             sources.append(ScreenCaptureSource(target: target, kinds: screenKinds))
         }
         if request.profile.tracks.contains(.camera) {
-            sources.append(CameraCaptureSource(
-                deviceID: request.cameraDeviceID,
-                quality: CameraQuality(profile: request.profile)
-            ))
+            sources.append(CameraCaptureSource(deviceID: request.cameraDeviceID))
         }
         if request.profile.tracks.contains(.microphone) {
             sources.append(MicrophoneCaptureSource(deviceID: request.microphoneDeviceID))

@@ -13,6 +13,35 @@ import Foundation
 struct CaptureContext: Sendable {
     let folder: SessionFolder
     let sessionStartTime: CMTime
+
+    /// Paused time already elapsed before this source existed. Zero for every source created
+    /// at `RecordingController.start`; non-zero only for one added later by a live profile
+    /// switch, after the session was paused and resumed at least once already. See
+    /// `PauseClock.init`.
+    var elapsedPausedDuration: CMTime = .zero
+
+    /// The on-window ("segment") index each kind is about to write, so a track that was
+    /// switched off and back on gets its own file rather than resuming the finished one.
+    /// Absent kinds default to `0` — the same file name a session that never switches uses.
+    private var segmentIndices: [TrackKind: Int] = [:]
+
+    init(
+        folder: SessionFolder,
+        sessionStartTime: CMTime,
+        elapsedPausedDuration: CMTime = .zero,
+        segmentIndices: [TrackKind: Int] = [:]
+    ) {
+        self.folder = folder
+        self.sessionStartTime = sessionStartTime
+        self.elapsedPausedDuration = elapsedPausedDuration
+        self.segmentIndices = segmentIndices
+    }
+
+    /// The file a source should write `kind` into. A source asks for its own file rather than
+    /// naming one itself, so the segment-numbering rule has exactly one owner.
+    func outputURL(for kind: TrackKind) -> URL {
+        folder.url(for: kind, segment: segmentIndices[kind] ?? 0)
+    }
 }
 
 /// One recordable device, owning its device session, its `TrackWriter`s and its own callback
@@ -118,7 +147,8 @@ extension CaptureSource {
                 outputFileType: spec.outputFileType,
                 mediaType: spec.kind.mediaType,
                 outputSettings: spec.outputSettings,
-                sessionStartTime: context.sessionStartTime
+                sessionStartTime: context.sessionStartTime,
+                elapsedPausedDuration: context.elapsedPausedDuration
             )
             try writer.start()
             writers[spec.kind] = writer

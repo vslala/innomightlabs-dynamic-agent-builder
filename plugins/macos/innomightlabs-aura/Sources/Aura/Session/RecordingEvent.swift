@@ -9,6 +9,9 @@ enum RecordingEventKind: String, Codable {
     case screenSnapshot = "screen_snapshot"
     case trackFailed = "track_failed"
     case trackStart = "track_start"
+    /// Diagnostic only. The composition layer learns what a session recorded from the files
+    /// on disk, never from this — see `RecordingManifest`'s doc comment for why.
+    case profileChanged = "profile_changed"
 }
 
 struct RecordingEvent: Codable, Equatable {

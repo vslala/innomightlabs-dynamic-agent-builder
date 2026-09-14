@@ -97,4 +97,58 @@ final class SessionFolderTests: XCTestCase {
         let folder = SessionFolder.make(date: fixedDate, suffix: "ab12", baseDirectory: baseDirectory)
         XCTAssertEqual(folder.rootURL.deletingLastPathComponent(), baseDirectory)
     }
+
+    // MARK: - Segments
+
+    /// Window 0 must keep the unsegmented name for every kind, which is what makes a session
+    /// that never switches profiles byte-identical to one recorded before segmenting existed.
+    func testWindowZeroKeepsTheLegacyFileName() {
+        XCTAssertEqual(SessionFolder.fileName(for: .screen, segment: 0), "screen.mov")
+        XCTAssertEqual(SessionFolder.fileName(for: .camera, segment: 0), "camera.mov")
+        XCTAssertEqual(SessionFolder.fileName(for: .microphone, segment: 0), "microphone.m4a")
+        XCTAssertEqual(SessionFolder.fileName(for: .systemAudio, segment: 0), "system-audio.m4a")
+    }
+
+    func testLaterSegmentsAreSuffixed() {
+        XCTAssertEqual(SessionFolder.fileName(for: .screen, segment: 1), "screen-1.mov")
+        XCTAssertEqual(SessionFolder.fileName(for: .systemAudio, segment: 2), "system-audio-2.m4a")
+    }
+
+    func testURLForSegmentIsRootedUnderTheSessionFolder() {
+        let folder = SessionFolder.make(date: fixedDate, suffix: "ab12", baseDirectory: baseDirectory)
+        XCTAssertEqual(folder.url(for: .screen, segment: 0), folder.screenURL)
+        XCTAssertEqual(
+            folder.url(for: .screen, segment: 1),
+            folder.rootURL.appendingPathComponent("screen-1.mov")
+        )
+    }
+
+    func testSegmentURLsDiscoversAndSortsExistingSegments() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aura-segments-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let folder = SessionFolder.make(date: fixedDate, suffix: "ab12", baseDirectory: base)
+        try FileManager.default.createDirectory(at: folder.rootURL, withIntermediateDirectories: true)
+
+        // Out of order on disk, plus a screenshot directory and a camera file that must not be
+        // mistaken for a screen segment despite the shared "screen" prefix.
+        for name in ["screen-2.mov", "screen.mov", "screen-1.mov", "camera.mov"] {
+            try Data().write(to: folder.rootURL.appendingPathComponent(name))
+        }
+        try FileManager.default.createDirectory(
+            at: folder.rootURL.appendingPathComponent("screenshots", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+
+        let segments = folder.segmentURLs(for: .screen)
+
+        XCTAssertEqual(segments.map(\.lastPathComponent), ["screen.mov", "screen-1.mov", "screen-2.mov"])
+    }
+
+    func testSegmentURLsIsEmptyWhenNothingWasEverRecordedForThatKind() {
+        let folder = SessionFolder.make(date: fixedDate, suffix: "ab12", baseDirectory: baseDirectory)
+        XCTAssertTrue(folder.segmentURLs(for: .systemAudio).isEmpty)
+    }
 }

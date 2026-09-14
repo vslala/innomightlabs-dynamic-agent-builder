@@ -101,8 +101,8 @@ final class TimelineResolverTests: XCTestCase {
     func testScreenIsTheBaseLayerAndCameraTheOverlay() {
         let resolved = TimelineResolver.resolve(document: .initial(duration: 30), probes: allProbes)
 
-        XCTAssertEqual(resolved.base?.probe.kind, .screen)
-        XCTAssertEqual(resolved.overlay?.probe.kind, .camera)
+        XCTAssertEqual(resolved.base?.probe?.kind, .screen)
+        XCTAssertEqual(resolved.overlay?.probe?.kind, .camera)
     }
 
     func testCameraIsPromotedToFullFrameWhenTheScreenTrackIsUnusable() {
@@ -113,7 +113,7 @@ final class TimelineResolverTests: XCTestCase {
             probes: [probe(.camera, displaySize: CGSize(width: 1280, height: 720)), probe(.microphone)]
         )
 
-        XCTAssertEqual(resolved.base?.probe.kind, .camera)
+        XCTAssertEqual(resolved.base?.probe?.kind, .camera)
         XCTAssertNil(resolved.overlay, "Promoting the camera must not also leave it as a PiP")
         XCTAssertEqual(resolved.renderSize, CGSize(width: 1280, height: 720))
     }
@@ -136,7 +136,7 @@ final class TimelineResolverTests: XCTestCase {
             probes: [probe(.screen), probe(.microphone)]
         )
 
-        XCTAssertEqual(resolved.base?.probe.kind, .screen)
+        XCTAssertEqual(resolved.base?.probe?.kind, .screen)
         XCTAssertNil(resolved.overlay)
     }
 
@@ -283,7 +283,7 @@ final class TimelineResolverTests: XCTestCase {
             probes: [probe(.camera, displaySize: cameraSize), probe(.microphone)]
         )
 
-        XCTAssertEqual(resolved.base?.probe.kind, .camera)
+        XCTAssertEqual(resolved.base?.probe?.kind, .camera)
         XCTAssertNil(resolved.overlay)
         XCTAssertTrue(resolved.hasVideo)
         XCTAssertEqual(resolved.renderSize, cameraSize)

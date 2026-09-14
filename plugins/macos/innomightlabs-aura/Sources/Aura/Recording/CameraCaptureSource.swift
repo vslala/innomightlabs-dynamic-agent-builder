@@ -2,35 +2,18 @@ import AVFoundation
 import CoreMedia
 import CoreVideo
 
-/// How much camera resolution this recording justifies. Chosen by `CaptureSourceFactory`,
-/// because only the profile knows whether the camera is the frame or a corner of it.
-enum CameraQuality: Equatable, Sendable {
-    /// The camera is the whole frame (no screen track).
-    case primary
-    /// The camera is a corner overlay, typically a quarter of the frame's width.
-    case overlay
-
-    var preset: AVCaptureSession.Preset {
-        switch self {
-        case .primary: return .hd1920x1080
-        case .overlay: return .hd1280x720
-        }
-    }
-
-    /// The camera is the frame unless a screen track will be under it.
-    init(profile: RecordingProfile) {
-        self = profile.tracks.contains(.screen) ? .overlay : .primary
-    }
-}
-
 /// Owns a dedicated, webcam-only `AVCaptureSession` for `camera.mov`.
+///
+/// Always records at `.hd1920x1080`. A profile switch can promote any camera track to full
+/// frame at any point in the session (see Phase 7), and the preset cannot change once the
+/// session is running without reconfiguring — and thereby interrupting — the capture. With no
+/// safe moment left to choose a lower preset, there is no case where it is knowably sufficient.
 final class CameraCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
     private let session = AVCaptureSession()
     private let output = AVCaptureVideoDataOutput()
     private let queue = DispatchQueue(label: "com.innomightlabs.aura.camera")
 
     private let deviceID: String?
-    private let quality: CameraQuality
     /// Read from `activeFormat` after the session preset is applied in `prepare()`. Reading it
     /// before the preset applies is the defect this fixes: the declared size could disagree
     /// with what the session actually encodes.
@@ -50,9 +33,8 @@ final class CameraCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
 
     private static let fallbackPixelSize = CGSize(width: 1280, height: 720)
 
-    init(deviceID: String?, quality: CameraQuality) {
+    init(deviceID: String?) {
         self.deviceID = deviceID
-        self.quality = quality
     }
 
     /// All connected cameras (built-in, external/USB, Continuity Camera, Desk View), for the
@@ -81,8 +63,8 @@ final class CameraCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
         let input = try AVCaptureDeviceInput(device: device)
 
         session.beginConfiguration()
-        if session.canSetSessionPreset(quality.preset) {
-            session.sessionPreset = quality.preset
+        if session.canSetSessionPreset(.hd1920x1080) {
+            session.sessionPreset = .hd1920x1080
         }
         if session.canAddInput(input) {
             session.addInput(input)
@@ -101,7 +83,7 @@ final class CameraCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
 
     func start(context: CaptureContext) async throws {
         writers = try makeWriters(
-            [.video(kind: .camera, url: context.folder.cameraURL, pixelSize: pixelSize ?? Self.fallbackPixelSize)],
+            [.video(kind: .camera, url: context.outputURL(for: .camera), pixelSize: pixelSize ?? Self.fallbackPixelSize)],
             context: context
         )
         session.startRunning()

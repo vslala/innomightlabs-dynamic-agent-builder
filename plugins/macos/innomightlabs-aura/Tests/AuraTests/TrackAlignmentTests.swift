@@ -56,6 +56,8 @@ final class TrackAlignmentTests: XCTestCase {
 
     // MARK: - Reading the offsets back out of the event log
 
+    /// These events carry `label` (the kind) and no `path` — the shape logged before
+    /// segmenting existed — so they key to that kind's window-0 file name.
     func testTrackStartOffsetsAreRecoveredFromTheEventLog() {
         let timeline = EventTimeline(events: [
             RecordingEvent(ts: 0, type: .recordStart, mediaTs: 0),
@@ -64,10 +66,21 @@ final class TrackAlignmentTests: XCTestCase {
             RecordingEvent(ts: 0.35, type: .trackStart, mediaTs: 0.35, label: "microphone")
         ])
 
-        XCTAssertEqual(timeline.trackStartOffsets["screen"] ?? -1, 0.13, accuracy: 0.0001)
-        XCTAssertEqual(timeline.trackStartOffsets["camera"] ?? -1, 1.02, accuracy: 0.0001)
-        XCTAssertEqual(timeline.trackStartOffsets["microphone"] ?? -1, 0.35, accuracy: 0.0001)
-        XCTAssertNil(timeline.trackStartOffsets["system_audio"])
+        XCTAssertEqual(timeline.segmentStartOffsets["screen.mov"] ?? -1, 0.13, accuracy: 0.0001)
+        XCTAssertEqual(timeline.segmentStartOffsets["camera.mov"] ?? -1, 1.02, accuracy: 0.0001)
+        XCTAssertEqual(timeline.segmentStartOffsets["microphone.m4a"] ?? -1, 0.35, accuracy: 0.0001)
+        XCTAssertNil(timeline.segmentStartOffsets["system-audio.m4a"])
+    }
+
+    /// A modern event, logged with `path`, keys to that exact file rather than window 0 —
+    /// what a later on-window of a segmented track needs.
+    func testSegmentStartOffsetIsKeyedByPathWhenPresent() {
+        let timeline = EventTimeline(events: [
+            RecordingEvent(ts: 42, type: .trackStart, mediaTs: 42, label: "screen", path: "screen-1.mov")
+        ])
+
+        XCTAssertEqual(timeline.segmentStartOffsets["screen-1.mov"] ?? -1, 42, accuracy: 0.0001)
+        XCTAssertNil(timeline.segmentStartOffsets["screen.mov"])
     }
 
     func testTrackStartEventsAreNotTreatedAsMarkers() {

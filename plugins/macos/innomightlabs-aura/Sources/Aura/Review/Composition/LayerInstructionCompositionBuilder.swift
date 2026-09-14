@@ -114,8 +114,7 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         track.preferredTransform = .identity
 
         guard let covered = await insertClips(
-            of: layer.probe,
-            offset: layer.timeOffset,
+            of: layer.segments,
             into: track,
             timeline: timeline
         ) else {
@@ -139,8 +138,7 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         ) else { return nil }
 
         guard await insertClips(
-            of: lane.probe,
-            offset: lane.timeOffset,
+            of: lane.segments,
             into: track,
             timeline: timeline
         ) != nil else {
@@ -151,11 +149,34 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         return InsertedAudioLane(lane: lane, trackID: track.trackID)
     }
 
-    /// Lays the edit decision list down on one composition track.
+    /// Lays every recorded on-window's edit decision list down on the same composition track.
     ///
-    /// Source ranges are intersected with what the file actually contains first: the four
-    /// recorded files share a time origin but not a duration, so a clip can legitimately
-    /// extend past the end of one of them. The leading empty edit each file carries from
+    /// A kind with two on-windows is still **one** composition track carrying two inserted
+    /// ranges — exactly what `covered`'s existing multi-range shape (see `InsertedVideoLayer`)
+    /// was already built to hold, since it already had to tolerate a video track ending early.
+    private func insertClips(
+        of segments: [PlacedSegment],
+        into track: AVMutableCompositionTrack,
+        timeline: ResolvedTimeline
+    ) async -> [CMTimeRange]? {
+        var covered: [CMTimeRange] = []
+        for segment in segments {
+            guard let segmentCovered = await insertClips(
+                of: segment.probe,
+                offset: segment.timeOffset,
+                into: track,
+                timeline: timeline
+            ) else { continue }
+            covered.append(contentsOf: segmentCovered)
+        }
+        return covered.isEmpty ? nil : covered
+    }
+
+    /// Lays one recorded file's edit decision list down on one composition track.
+    ///
+    /// Source ranges are intersected with what the file actually contains first: recorded
+    /// files share a time origin but not a duration, so a clip can legitimately extend past
+    /// the end of one of them. The leading empty edit each file carries from
     /// `startSession(atSourceTime:)` is what keeps their origins aligned, so source time is
     /// used directly rather than being re-aligned here.
     private func insertClips(
@@ -334,8 +355,8 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
 
             let destination = state.rect.scaled(to: renderSize)
             let transform = PiPGeometry.transform(
-                displaySize: inserted.layer.probe.displaySize ?? renderSize,
-                preferredTransform: inserted.layer.probe.preferredTransform,
+                displaySize: inserted.layer.probe?.displaySize ?? renderSize,
+                preferredTransform: inserted.layer.probe?.preferredTransform ?? .identity,
                 destination: destination
             )
 

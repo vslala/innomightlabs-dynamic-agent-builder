@@ -61,10 +61,10 @@ struct SessionFolder {
     private init(rootURL: URL, id: String) {
         self.id = id
         self.rootURL = rootURL
-        screenURL = rootURL.appendingPathComponent("screen.mov")
-        cameraURL = rootURL.appendingPathComponent("camera.mov")
-        microphoneURL = rootURL.appendingPathComponent("microphone.m4a")
-        systemAudioURL = rootURL.appendingPathComponent("system-audio.m4a")
+        screenURL = rootURL.appendingPathComponent(Self.fileName(for: .screen, segment: 0))
+        cameraURL = rootURL.appendingPathComponent(Self.fileName(for: .camera, segment: 0))
+        microphoneURL = rootURL.appendingPathComponent(Self.fileName(for: .microphone, segment: 0))
+        systemAudioURL = rootURL.appendingPathComponent(Self.fileName(for: .systemAudio, segment: 0))
         screenshotsURL = rootURL.appendingPathComponent("screenshots", isDirectory: true)
         eventsURL = rootURL.appendingPathComponent("events.jsonl")
         transcriptURL = rootURL.appendingPathComponent("transcript.json")
@@ -75,6 +75,61 @@ struct SessionFolder {
 
     private static func peaksURL(for audioURL: URL) -> URL {
         audioURL.deletingPathExtension().appendingPathExtension("peaks")
+    }
+
+    // MARK: - Segments
+
+    /// One kind's unchanging name stem, shared by `fileName(for:segment:)` and
+    /// `segmentURLs(for:)` so the two can never disagree about what a kind's files are called.
+    private static func stem(for kind: TrackKind) -> String {
+        switch kind {
+        case .screen: return "screen"
+        case .camera: return "camera"
+        case .microphone: return "microphone"
+        case .systemAudio: return "system-audio"
+        }
+    }
+
+    private static func fileExtension(for kind: TrackKind) -> String {
+        kind.isVideo ? "mov" : "m4a"
+    }
+
+    /// The file one on-window ("segment") of a track is written to.
+    ///
+    /// Window `0` keeps the unsegmented name (`screen.mov`), so a session that never switches
+    /// profiles is byte-identical to one recorded before segmenting existed — every existing
+    /// session, cache path and test stays valid.
+    static func fileName(for kind: TrackKind, segment: Int) -> String {
+        let stem = stem(for: kind)
+        let ext = fileExtension(for: kind)
+        return segment == 0 ? "\(stem).\(ext)" : "\(stem)-\(segment).\(ext)"
+    }
+
+    func url(for kind: TrackKind, segment: Int) -> URL {
+        rootURL.appendingPathComponent(Self.fileName(for: kind, segment: segment))
+    }
+
+    /// Every segment already written for `kind`, ascending by window index.
+    ///
+    /// A directory listing rather than a sequence of existence probes: a session that switched
+    /// a track off and back on twice has windows 0 and 2 but not 1 if window 1 failed to write
+    /// anything, and probing "0, 1, 2, …" until one is missing would silently stop at the gap.
+    func segmentURLs(for kind: TrackKind) -> [URL] {
+        let stem = Self.stem(for: kind)
+        let ext = "." + Self.fileExtension(for: kind)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: rootURL.path)) ?? []
+
+        return names
+            .compactMap { name -> (index: Int, name: String)? in
+                guard name.hasSuffix(ext) else { return nil }
+                let base = String(name.dropLast(ext.count))
+                if base == stem { return (0, name) }
+                guard base.hasPrefix(stem + "-") else { return nil }
+                guard let index = Int(base.dropFirst(stem.count + 1)) else { return nil }
+                return (index, name)
+            }
+            .sorted { $0.index < $1.index }
+            .map { rootURL.appendingPathComponent($0.name) }
     }
 
     static var defaultBaseDirectory: URL {

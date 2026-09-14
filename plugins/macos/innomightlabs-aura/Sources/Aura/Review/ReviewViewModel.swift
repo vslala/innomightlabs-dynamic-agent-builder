@@ -282,18 +282,31 @@ final class ReviewViewModel: ObservableObject {
             return
         }
 
-        // The four files share a time origin but not a duration, so the recording is as long
-        // as its longest track rather than any particular one.
-        let recordedDuration = probes.map(\.duration).max() ?? .zero
+        // Every recorded file shares a time origin but not a duration, so the recording is as
+        // long as the latest-ending track — where that track *ends* on the session timeline,
+        // which is its own offset plus its own duration, not its duration alone. A segment
+        // added late by a live profile switch has a small duration and a large offset, so
+        // measuring by duration alone would understate the session.
+        let recordedDuration = probes.map { $0.alignmentCorrection + $0.duration }.max() ?? .zero
         // The *correction applied to the mic lane*, not its leading empty edit. For audio the
         // empty edit is always zero — `AVAssetWriter` discards it — so using it here left the
         // transcript on a different clock than the audio it describes.
         let micOffset = probes.first { $0.kind == .microphone }?.alignmentCorrection ?? .zero
+        // Where the screen was actually recording, in session time — how the fallback edit
+        // document seeds the camera to fill the frame outside those stretches. See
+        // `CameraOverlaySeed`.
+        let screenWindows = probes.filter { $0.kind == .screen }.map {
+            TimeSpan(
+                start: Timeline.seconds($0.alignmentCorrection),
+                end: Timeline.seconds($0.alignmentCorrection + $0.duration)
+            )
+        }
 
         let store = EditDocumentStore.load(
             folder: folder,
             duration: Timeline.seconds(recordedDuration),
-            micTimeOffset: Timeline.seconds(micOffset)
+            micTimeOffset: Timeline.seconds(micOffset),
+            screenWindows: screenWindows
         )
         self.store = store
 
@@ -1268,7 +1281,7 @@ final class ReviewViewModel: ObservableObject {
     /// The correction already applied automatically from the recorded track start offsets,
     /// shown so the user can tell "already handled" from "needs a nudge".
     func automaticCorrection(for lane: AudioLane) -> TimeInterval {
-        guard let probe = timeline?.audio.first(where: { $0.lane == lane })?.probe else { return 0 }
+        guard let probe = (timeline?.audio.first { $0.lane == lane })?.probe else { return 0 }
         return Timeline.seconds(probe.alignmentCorrection)
     }
 

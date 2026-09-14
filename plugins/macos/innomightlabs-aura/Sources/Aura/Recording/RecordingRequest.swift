@@ -17,4 +17,16 @@ struct RecordingRequest: Sendable {
         if profile.needsScreenCaptureStream && screenTarget == nil { return false }
         return true
     }
+
+    /// The same request with a different profile. `RecordingController.switchProfile` uses
+    /// this to turn "what the session started with" into "what it should record now" without
+    /// asking the caller to resupply the screen target or device ids, which never change.
+    func replacing(profile: RecordingProfile) -> RecordingRequest {
+        RecordingRequest(
+            profile: profile,
+            screenTarget: screenTarget,
+            cameraDeviceID: cameraDeviceID,
+            microphoneDeviceID: microphoneDeviceID
+        )
+    }
 }

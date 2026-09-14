@@ -19,13 +19,23 @@ struct EventTimeline: Equatable {
     var screenshots: [Entry] { entries.filter { $0.event.type == .screenSnapshot } }
     var failedTracks: [Entry] { entries.filter { $0.event.type == .trackFailed } }
 
-    /// How far behind the session start each track's first sample was, keyed by track kind.
-    /// Absent for sessions recorded before this was logged.
-    var trackStartOffsets: [String: TimeInterval] {
+    /// How far behind the session start each recorded file's first sample was, keyed by file
+    /// name.
+    ///
+    /// Keyed by **file** rather than by track kind: a source switched off and back on writes
+    /// one file per on-window and each has its own offset, so a kind-keyed dictionary would
+    /// silently keep only the last one written. A `track_start` event logged before segmenting
+    /// existed carries `label` (the kind) and no `path`; it keys to that kind's window-0 file
+    /// name, which is the only file such a session ever wrote.
+    var segmentStartOffsets: [String: TimeInterval] {
         var offsets: [String: TimeInterval] = [:]
         for entry in entries where entry.event.type == .trackStart {
-            guard let kind = entry.event.label else { continue }
-            offsets[kind] = entry.event.mediaTs ?? entry.event.ts
+            let mediaTs = entry.event.mediaTs ?? entry.event.ts
+            if let path = entry.event.path {
+                offsets[path] = mediaTs
+            } else if let label = entry.event.label, let kind = TrackKind(rawValue: label) {
+                offsets[SessionFolder.fileName(for: kind, segment: 0)] = mediaTs
+            }
         }
         return offsets
     }

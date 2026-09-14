@@ -1,6 +1,6 @@
 import Foundation
 
-/// What the user asked to record, as distinct from what came back.
+/// What the user asked to record when the session *started*, as distinct from what came back.
 ///
 /// **Behaviour is never derived from this.** The editor decides what it can do from the files
 /// that actually exist (`SourceTrackProbe.probeAll`), which is the only honest source: a
@@ -9,6 +9,11 @@ import Foundation
 /// The manifest is for *explanation* — "Camera was recording but produced no frames" instead of
 /// silently promoting the camera-less composition — and for making a session folder
 /// self-describing.
+///
+/// `profile` is not rewritten when `RecordingController.switchProfile` changes what is being
+/// recorded mid-session — it stays the profile the session *started* with. Every in-session
+/// change is a `profile_changed` event in `events.jsonl`, and the files themselves are what the
+/// editor actually reads.
 struct RecordingManifest: Codable, Equatable, Sendable {
     static let currentSchemaVersion = 1
 

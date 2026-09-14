@@ -34,9 +34,14 @@ final class EditDocumentStore: ObservableObject {
     static func load(
         folder: SessionFolder,
         duration: TimeInterval,
-        micTimeOffset: TimeInterval
+        micTimeOffset: TimeInterval,
+        screenWindows: [TimeSpan] = []
     ) -> EditDocumentStore {
-        let fallback = SessionEdit.initial(duration: duration, micTimeOffset: micTimeOffset)
+        let fallback = SessionEdit.initial(
+            duration: duration,
+            micTimeOffset: micTimeOffset,
+            cameraOverlay: CameraOverlaySeed.keyframes(screenWindows: screenWindows, recordingDuration: duration)
+        )
 
         guard let data = try? Data(contentsOf: folder.editURL) else {
             return EditDocumentStore(document: fallback, fileURL: folder.editURL)

@@ -152,22 +152,22 @@ struct SourceTrackProbe: Sendable, Equatable {
         CMFormatDescriptionGetExtension(format, extensionKey: key) as? String
     }
 
+    /// One probe per recorded on-window ("segment"), so a track a live profile switch turned
+    /// off and back on comes back as several probes of the same kind rather than one — a
+    /// session that never switched profiles has exactly one segment per kind, same as before
+    /// segmenting existed.
     static func probeAll(in folder: SessionFolder) async -> [SourceTrackProbe] {
-        let sources: [(URL, TrackKind)] = [
-            (folder.screenURL, .screen),
-            (folder.cameraURL, .camera),
-            (folder.microphoneURL, .microphone),
-            (folder.systemAudioURL, .systemAudio)
-        ]
-        let recordedOffsets = EventTimeline.load(eventsURL: folder.eventsURL).trackStartOffsets
+        let recordedOffsets = EventTimeline.load(eventsURL: folder.eventsURL).segmentStartOffsets
 
         var probes: [SourceTrackProbe] = []
-        for (url, kind) in sources {
-            guard var probe = await probe(url: url, kind: kind) else { continue }
-            if let offset = recordedOffsets[kind.rawValue] {
-                probe.recordedStartOffset = Timeline.time(seconds: offset)
+        for kind in TrackKind.allCases {
+            for url in folder.segmentURLs(for: kind) {
+                guard var probe = await probe(url: url, kind: kind) else { continue }
+                if let offset = recordedOffsets[url.lastPathComponent] {
+                    probe.recordedStartOffset = Timeline.time(seconds: offset)
+                }
+                probes.append(probe)
             }
-            probes.append(probe)
         }
         return probes
     }
