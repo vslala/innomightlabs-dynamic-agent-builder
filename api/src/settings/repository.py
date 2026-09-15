@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Optional
 import logging
 
-from src.settings.models import Agent2AgentSettings, ProviderSettings
+from src.settings.models import Agent2AgentSettings, DefaultAgentPreference, ProviderSettings
 from src.config import settings
 
 log = logging.getLogger(__name__)
@@ -158,3 +158,50 @@ class Agent2AgentSettingsRepository:
 
 def get_agent2agent_settings_repository() -> Agent2AgentSettingsRepository:
     return Agent2AgentSettingsRepository()
+
+
+class DefaultAgentPreferenceRepository:
+    """
+    Repository for the user's default-agent preference.
+
+    Key Structure:
+        pk: User#{user_email}
+        sk: DefaultAgentPreference
+    """
+
+    def __init__(self):
+        self.dynamodb = get_dynamodb_resource()
+        self.table = self.dynamodb.Table(settings.dynamodb_table)
+
+    def save(self, preference: DefaultAgentPreference) -> DefaultAgentPreference:
+        existing = self.find_by_user(preference.user_email)
+        if existing:
+            preference.created_at = existing.created_at
+            preference.updated_at = datetime.now(timezone.utc)
+
+        self.table.put_item(Item=preference.to_dynamo_item())
+        log.info("Saved default agent preference for user %s", preference.user_email)
+        return preference
+
+    def find_by_user(self, user_email: str) -> Optional[DefaultAgentPreference]:
+        response = self.table.get_item(
+            Key={
+                "pk": f"User#{user_email}",
+                "sk": "DefaultAgentPreference",
+            }
+        )
+        item = response.get("Item")
+        return DefaultAgentPreference.from_dynamo_item(item) if item else None
+
+    def delete(self, user_email: str) -> None:
+        self.table.delete_item(
+            Key={
+                "pk": f"User#{user_email}",
+                "sk": "DefaultAgentPreference",
+            }
+        )
+        log.info("Cleared default agent preference for user %s", user_email)
+
+
+def get_default_agent_preference_repository() -> DefaultAgentPreferenceRepository:
+    return DefaultAgentPreferenceRepository()

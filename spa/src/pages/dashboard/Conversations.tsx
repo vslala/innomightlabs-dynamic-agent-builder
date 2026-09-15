@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
+import { defaultAgentService } from "../../services/settings/DefaultAgentService";
 import { featureFlags } from "../../config/featureFlags";
 import type { ConversationResponse } from "../../types/conversation";
 import { userVisibleConversations } from "../../utils/conversations";
@@ -31,13 +32,20 @@ export function Conversations() {
   const loadData = async () => {
     try {
       setError(null);
-      const [conversationsData, agentsData] = await Promise.all([
+      const [conversationsData, agentsData, defaultAgentPreference] = await Promise.all([
         conversationApiService.listConversations(50),
         agentApiService.listAgents(),
+        defaultAgentService.getDefaultAgent().catch(() => null),
       ]);
       setConversations(userVisibleConversations(conversationsData.items));
       setAgents(agentsData);
-      setSelectedAgentId((current) => current || agentsData[0]?.agent_id || "");
+
+      // A default agent that's been deleted/lost access is treated as unset, not an error.
+      const defaultAgentId = defaultAgentPreference?.agent_id;
+      const validDefaultAgentId = agentsData.some((agent) => agent.agent_id === defaultAgentId)
+        ? defaultAgentId
+        : null;
+      setSelectedAgentId((current) => current || validDefaultAgentId || agentsData[0]?.agent_id || "");
     } catch (err) {
       setError("Failed to load conversations. Please try again.");
       console.error("Error loading conversations:", err);

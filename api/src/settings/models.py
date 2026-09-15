@@ -121,3 +121,45 @@ class Agent2AgentSettingsResponse(BaseModel):
     allowed_origins_map: dict[str, str] = Field(default_factory=dict)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class DefaultAgentPreference(BaseModel):
+    """User's preferred agent to preselect when starting a new conversation."""
+
+    user_email: str
+    agent_id: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+
+    @property
+    def pk(self) -> str:
+        return f"User#{self.user_email}"
+
+    @property
+    def sk(self) -> str:
+        return "DefaultAgentPreference"
+
+    def to_dynamo_item(self) -> dict[str, Any]:
+        return {
+            "pk": self.pk,
+            "sk": self.sk,
+            "user_email": self.user_email,
+            "agent_id": self.agent_id,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "entity_type": "DefaultAgentPreference",
+        }
+
+    @classmethod
+    def from_dynamo_item(cls, item: dict[str, Any]) -> "DefaultAgentPreference":
+        return cls(
+            user_email=item["user_email"],
+            agent_id=item["agent_id"],
+            created_at=datetime.fromisoformat(item["created_at"]),
+            updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
+        )
+
+
+class DefaultAgentPreferenceResponse(BaseModel):
+    agent_id: Optional[str] = None
+    updated_at: Optional[datetime] = None

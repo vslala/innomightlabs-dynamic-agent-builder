@@ -10,6 +10,7 @@ import json
 import logging
 
 import src.form_models as form_models
+from src.agents.repository import AgentRepository
 from src.settings.agent2agent_policy import (
     Agent2AgentPolicy,
     Agent2AgentPolicyError,
@@ -18,11 +19,15 @@ from src.settings.agent2agent_policy import (
 )
 from src.settings.models import (
     Agent2AgentSettingsResponse,
+    DefaultAgentPreference,
+    DefaultAgentPreferenceResponse,
     ProviderSettings,
     ProviderSettingsResponse,
 )
 from src.settings.repository import (
+    DefaultAgentPreferenceRepository,
     ProviderSettingsRepository,
+    get_default_agent_preference_repository,
     get_provider_settings_repository,
 )
 from src.settings.schemas import (
@@ -44,12 +49,18 @@ router = APIRouter(
     dependencies=[Depends(security)]
 )
 
+agent_repository = AgentRepository()
+
 
 class ProviderWithStatus(BaseModel):
     """Provider schema with configuration status."""
     provider_name: str
     form: form_models.Form
     is_configured: bool
+
+
+class SetDefaultAgentRequest(BaseModel):
+    agent_id: str
 
 
 def get_agent2agent_policy() -> Agent2AgentPolicy:
@@ -249,3 +260,56 @@ async def delete_provider_settings(
         )
 
     log.info(f"Deleted provider settings for {provider_name} for user {user_email}")
+
+
+@router.get("/default-agent", response_model=DefaultAgentPreferenceResponse)
+async def get_default_agent(
+    request: Request,
+    repo: Annotated[DefaultAgentPreferenceRepository, Depends(get_default_agent_preference_repository)],
+) -> DefaultAgentPreferenceResponse:
+    """
+    Get the user's default-agent preference.
+
+    Returns the raw stored agent_id with no server-side existence check —
+    callers (e.g. the conversation-start screen, which already has the
+    user's agent list) are responsible for treating a stale/deleted agent_id
+    as unset.
+    """
+    user_email: str = request.state.user_email
+    preference = repo.find_by_user(user_email)
+    if not preference:
+        return DefaultAgentPreferenceResponse()
+
+    return DefaultAgentPreferenceResponse(agent_id=preference.agent_id, updated_at=preference.updated_at)
+
+
+@router.put("/default-agent", response_model=DefaultAgentPreferenceResponse)
+async def set_default_agent(
+    request: Request,
+    body: SetDefaultAgentRequest,
+    repo: Annotated[DefaultAgentPreferenceRepository, Depends(get_default_agent_preference_repository)],
+) -> DefaultAgentPreferenceResponse:
+    """Set the user's default agent. The agent must exist and belong to the user."""
+    user_email: str = request.state.user_email
+
+    if not agent_repository.find_agent_by_id(body.agent_id, user_email):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent '{body.agent_id}' not found or does not belong to you",
+        )
+
+    saved = repo.save(DefaultAgentPreference(user_email=user_email, agent_id=body.agent_id))
+    log.info(f"Set default agent to {body.agent_id} for user {user_email}")
+
+    return DefaultAgentPreferenceResponse(agent_id=saved.agent_id, updated_at=saved.updated_at)
+
+
+@router.delete("/default-agent", status_code=status.HTTP_204_NO_CONTENT)
+async def clear_default_agent(
+    request: Request,
+    repo: Annotated[DefaultAgentPreferenceRepository, Depends(get_default_agent_preference_repository)],
+) -> None:
+    """Clear the user's default-agent preference."""
+    user_email: str = request.state.user_email
+    repo.delete(user_email)
+    log.info(f"Cleared default agent for user {user_email}")

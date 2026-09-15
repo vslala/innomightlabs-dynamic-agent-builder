@@ -15,6 +15,11 @@ import {
   LoadingState,
   InlineEmptyState,
   ListRow,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "../../components/ui";
 import { FieldGroup, Grid, Inline, PageBody, Stack } from "../../components/layout";
 import { SchemaForm } from "../../components/forms";
@@ -34,6 +39,8 @@ import {
   smartSuggestionService,
   type SmartSuggestionSettings,
 } from "../../services/smartSuggestions";
+import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
+import { defaultAgentService } from "../../services/settings/DefaultAgentService";
 import { getStoredTheme, setStoredTheme, type AppTheme } from "../../lib/theme";
 import styles from "./Settings.module.css";
 
@@ -72,6 +79,10 @@ export function Settings() {
   const [agent2AgentLoading, setAgent2AgentLoading] = useState(true);
   const [agent2AgentSaving, setAgent2AgentSaving] = useState(false);
   const [theme, setTheme] = useState<AppTheme>(() => getStoredTheme());
+  const [agents, setAgents] = useState<AgentResponse[]>([]);
+  const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
+  const [defaultAgentLoading, setDefaultAgentLoading] = useState(true);
+  const [defaultAgentSaving, setDefaultAgentSaving] = useState(false);
 
   // Track which provider is being configured
   const [configuringProvider, setConfiguringProvider] = useState<string | null>(null);
@@ -85,6 +96,7 @@ export function Settings() {
     loadSubscription();
     loadSmartSuggestionSettings();
     loadAgent2AgentSettings();
+    loadDefaultAgentSettings();
   }, []);
 
   const getErrorMessage = (err: unknown, fallback: string) => {
@@ -266,6 +278,54 @@ export function Settings() {
     }
   };
 
+  const loadDefaultAgentSettings = async () => {
+    setDefaultAgentLoading(true);
+    try {
+      const [agentsData, preference] = await Promise.all([
+        agentApiService.listAgents(),
+        defaultAgentService.getDefaultAgent(),
+      ]);
+      setAgents(agentsData);
+      // A default agent that's been deleted/lost access is treated as unset, not an error.
+      setDefaultAgentId(
+        agentsData.some((agent) => agent.agent_id === preference.agent_id) ? preference.agent_id : null
+      );
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to load default agent settings. Please try again."));
+      console.error("Error loading default agent settings:", err);
+    } finally {
+      setDefaultAgentLoading(false);
+    }
+  };
+
+  const handleSetDefaultAgent = async (agentId: string) => {
+    setDefaultAgentSaving(true);
+    setError(null);
+    try {
+      const preference = await defaultAgentService.setDefaultAgent(agentId);
+      setDefaultAgentId(preference.agent_id);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to set default agent. Please try again."));
+      console.error("Error setting default agent:", err);
+    } finally {
+      setDefaultAgentSaving(false);
+    }
+  };
+
+  const handleClearDefaultAgent = async () => {
+    setDefaultAgentSaving(true);
+    setError(null);
+    try {
+      await defaultAgentService.clearDefaultAgent();
+      setDefaultAgentId(null);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to clear default agent. Please try again."));
+      console.error("Error clearing default agent:", err);
+    } finally {
+      setDefaultAgentSaving(false);
+    }
+  };
+
   const handleCancelSubscription = async () => {
     if (!subscription?.is_active) return;
 
@@ -411,6 +471,56 @@ export function Settings() {
               );
             })}
           </Grid>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Default Agent</CardTitle>
+          <CardDescription>
+            Automatically preselect an agent whenever you start a new conversation.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {defaultAgentLoading ? (
+            <div className={styles.loadingRow}>
+              <Loader2 className={styles.sectionLoadingSpinner} />
+            </div>
+          ) : agents.length === 0 ? (
+            <p className={styles.mutedText}>Create an agent first to set a default.</p>
+          ) : (
+            <Stack gap="sm">
+              <FieldGroup>
+                <Label htmlFor="default-agent">Default agent</Label>
+                <Select
+                  value={defaultAgentId ?? ""}
+                  onValueChange={handleSetDefaultAgent}
+                  disabled={defaultAgentSaving}
+                >
+                  <SelectTrigger id="default-agent">
+                    <SelectValue placeholder="No default — choose manually each time" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                        {agent.agent_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldGroup>
+              {defaultAgentId && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleClearDefaultAgent}
+                  disabled={defaultAgentSaving}
+                >
+                  Clear default
+                </Button>
+              )}
+            </Stack>
+          )}
         </CardContent>
       </Card>
 
