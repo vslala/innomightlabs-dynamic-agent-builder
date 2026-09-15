@@ -12,6 +12,10 @@ enum RecordingEventKind: String, Codable {
     /// Diagnostic only. The composition layer learns what a session recorded from the files
     /// on disk, never from this — see `RecordingManifest`'s doc comment for why.
     case profileChanged = "profile_changed"
+    /// Diagnostic only, logged once per track at retirement — never per frame, which would
+    /// itself become a performance problem under the load that causes drops in the first
+    /// place. See `TrackWriter.droppedSampleCount` and `CaptureSource.droppedFrameCount`.
+    case framesDropped = "frames_dropped"
 }
 
 struct RecordingEvent: Codable, Equatable {

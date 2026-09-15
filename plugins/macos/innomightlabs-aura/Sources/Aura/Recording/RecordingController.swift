@@ -304,8 +304,24 @@ final class RecordingController: ObservableObject {
 
         let writers = retiring.flatMap { source in source.writers.map { ($0.key, $0.value) } }
         logTrackStartOffsets(of: writers)
+        logDroppedFrames(sources: retiring, writers: writers)
         await finish(writers.map(\.1))
         return writers.compactMap { $0.1.failureReason }
+    }
+
+    /// One diagnostic event per kind that dropped anything, logged once here rather than per
+    /// frame — logging every frame would itself become a performance problem under exactly
+    /// the load that causes drops. See `CaptureSource.droppedFrameCount` and
+    /// `TrackWriter.droppedSampleCount`.
+    private func logDroppedFrames(sources: [any CaptureSource], writers: [(TrackKind, TrackWriter)]) {
+        let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
+        for source in sources where source.droppedFrameCount > 0 {
+            let kinds = source.kinds.map(\.rawValue).joined(separator: "+")
+            logEvent(.framesDropped, at: hostTime, label: "\(kinds):upstream=\(source.droppedFrameCount)")
+        }
+        for (kind, writer) in writers where writer.droppedSampleCount > 0 {
+            logEvent(.framesDropped, at: hostTime, label: "\(kind.rawValue):backpressure=\(writer.droppedSampleCount)")
+        }
     }
 
     private func finish(_ writers: [TrackWriter]) async {

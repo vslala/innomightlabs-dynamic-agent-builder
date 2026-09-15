@@ -22,6 +22,18 @@ final class TrackWriter: @unchecked Sendable {
     private let firstSampleLock = NSLock()
     private var _firstAppendedHostTime: CMTime?
 
+    private let droppedCountLock = NSLock()
+    private var _droppedSampleCount = 0
+
+    /// Samples discarded because the encoder wasn't ready for more data — real backpressure,
+    /// not the pacing gap `PauseClock` intentionally creates. Read once, at retirement; see
+    /// `CaptureSource.droppedFrameCount` for why this isn't logged per occurrence.
+    var droppedSampleCount: Int {
+        droppedCountLock.lock()
+        defer { droppedCountLock.unlock() }
+        return _droppedSampleCount
+    }
+
     /// Where the first sample this track accepted landed on the pause-compacted timeline.
     ///
     /// Capture sources warm up at different speeds, and `AVAssetWriter` only preserves that
@@ -84,7 +96,12 @@ final class TrackWriter: @unchecked Sendable {
     }
 
     func append(_ sampleBuffer: CMSampleBuffer) {
-        guard input.isReadyForMoreMediaData else { return }
+        guard input.isReadyForMoreMediaData else {
+            droppedCountLock.lock()
+            _droppedSampleCount += 1
+            droppedCountLock.unlock()
+            return
+        }
 
         let originalPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         guard let adjustedPTS = pauseClock.adjustedTime(for: originalPTS) else {

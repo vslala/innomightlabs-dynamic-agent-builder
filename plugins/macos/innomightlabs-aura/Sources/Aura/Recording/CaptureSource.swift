@@ -89,11 +89,18 @@ protocol CaptureSource: AnyObject, Sendable {
 
     /// The most recent full frame, for `screenshot()`. Default nil.
     var latestVideoFrame: CVPixelBuffer? { get }
+
+    /// Frames dropped before ever reaching a writer — e.g. ScreenCaptureKit delivering a
+    /// non-`.complete` frame during heavy system load. Zero for sources that cannot drop
+    /// upstream of their writers. Read once, at retirement, purely for diagnostics: logging
+    /// per drop would itself be a performance problem under the load that causes drops.
+    var droppedFrameCount: Int { get }
 }
 
 extension CaptureSource {
     func setMuted(_ muted: Bool) {}
     var latestVideoFrame: CVPixelBuffer? { nil }
+    var droppedFrameCount: Int { 0 }
 }
 
 /// Everything needed to create one `TrackWriter`, as a value — so a source declares its tracks
@@ -104,7 +111,13 @@ struct TrackSpec {
     let outputFileType: AVFileType
     let outputSettings: [String: Any]
 
-    static func video(kind: TrackKind, url: URL, pixelSize: CGSize) -> TrackSpec {
+    /// `frameRate` is an encoder hint, not an enforced cadence — real frames still land at
+    /// whatever their own presentation timestamps say. It drives keyframe spacing (one per
+    /// second of `frameRate` frames) and the encoder's bitrate planning, so it should match
+    /// what the source actually delivers: 60 for `ScreenCaptureSource`, once its
+    /// `minimumFrameInterval` allows that; the camera's default of 30 matches what most
+    /// webcams deliver at the presets `CameraCaptureSource` requests.
+    static func video(kind: TrackKind, url: URL, pixelSize: CGSize, frameRate: Int = 30) -> TrackSpec {
         TrackSpec(
             kind: kind,
             outputURL: url,
@@ -114,8 +127,8 @@ struct TrackSpec {
                 AVVideoWidthKey: Int(pixelSize.width),
                 AVVideoHeightKey: Int(pixelSize.height),
                 AVVideoCompressionPropertiesKey: [
-                    AVVideoExpectedSourceFrameRateKey: 30,
-                    AVVideoMaxKeyFrameIntervalKey: 30
+                    AVVideoExpectedSourceFrameRateKey: frameRate,
+                    AVVideoMaxKeyFrameIntervalKey: frameRate
                 ] as [String: Any]
             ]
         )

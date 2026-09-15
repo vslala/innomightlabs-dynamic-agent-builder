@@ -9,6 +9,11 @@ import CoreVideo
 /// between them with reference-counted start/stop — more machinery to express less truth.
 final class ScreenCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
     static let supportedKinds: Set<TrackKind> = [.screen, .systemAudio]
+    /// 60, not 30: fast, continuous motion — game camera pans, particle effects — reads as
+    /// visibly less smooth at half the temporal resolution, even when every frame that *is*
+    /// captured lands cleanly. `minimumFrameInterval` is a floor, not a guarantee: a static
+    /// desktop still delivers far fewer frames, since only genuinely new content produces one.
+    static let captureFrameRate = 60
 
     private let target: CaptureTarget
     private let requested: Set<TrackKind>
@@ -26,6 +31,16 @@ final class ScreenCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
     /// so no lock is needed.
     private(set) var latestVideoFrame: CVPixelBuffer?
 
+    private let droppedFrameCountLock = NSLock()
+    private var _droppedFrameCount = 0
+    /// Non-`.complete` frames ScreenCaptureKit delivered — idle/blank/suspended, or genuinely
+    /// falling behind under load. Written on the video queue, read on the main actor.
+    var droppedFrameCount: Int {
+        droppedFrameCountLock.lock()
+        defer { droppedFrameCountLock.unlock() }
+        return _droppedFrameCount
+    }
+
     private var capturesVideo: Bool { requested.contains(.screen) }
     private var capturesAudio: Bool { requested.contains(.systemAudio) }
 
@@ -42,7 +57,12 @@ final class ScreenCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
     func start(context: CaptureContext) async throws {
         var specs: [TrackSpec] = []
         if capturesVideo {
-            specs.append(.video(kind: .screen, url: context.outputURL(for: .screen), pixelSize: target.pixelSize))
+            specs.append(.video(
+                kind: .screen,
+                url: context.outputURL(for: .screen),
+                pixelSize: target.pixelSize,
+                frameRate: Self.captureFrameRate
+            ))
         }
         if capturesAudio {
             specs.append(.audio(kind: .systemAudio, url: context.outputURL(for: .systemAudio)))
@@ -50,7 +70,10 @@ final class ScreenCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
         writers = try makeWriters(specs, context: context)
 
         let configuration = SCStreamConfiguration()
-        configuration.queueDepth = 5
+        // 8, not 5: more slack for ScreenCaptureKit to hold a frame while the writer is
+        // momentarily busy, before it has to drop something upstream of `TrackWriter` — which
+        // `droppedFrameCount` would otherwise report happening more than necessary.
+        configuration.queueDepth = 8
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.showsCursor = true
         configuration.capturesAudio = capturesAudio
@@ -60,7 +83,7 @@ final class ScreenCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
             let pixelSize = target.pixelSize
             configuration.width = Int(pixelSize.width)
             configuration.height = Int(pixelSize.height)
-            configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+            configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(Self.captureFrameRate))
         } else {
             // ScreenCaptureKit has no audio-only stream: a filter and a configuration are
             // always required. No `.screen` output is attached below, so no frame is ever
@@ -103,7 +126,15 @@ extension ScreenCaptureSource: SCStreamOutput {
             // suspended/started) with no real new pixel data whenever the screen content
             // isn't actively changing. Appending one of those to AVAssetWriterInput
             // corrupts the encoder pipeline, so only forward genuinely complete frames.
-            guard Self.isCompleteFrame(sampleBuffer) else { return }
+            // Counted regardless — mostly benign during an idle desktop, but a source worth
+            // checking first if a *constantly* rendering capture (a game) still turns out
+            // choppy despite the frame-rate fix above.
+            guard Self.isCompleteFrame(sampleBuffer) else {
+                droppedFrameCountLock.lock()
+                _droppedFrameCount += 1
+                droppedFrameCountLock.unlock()
+                return
+            }
             if let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
                 latestVideoFrame = imageBuffer
             }
