@@ -76,6 +76,32 @@ async def fake_run_agentic_tool_loop(**kwargs):
     yield AgenticLoopEvent(kind="complete", payload={"full_text": "final answer"})
 
 
+async def fake_mcp_tool_call_loop(**kwargs):
+    yield AgenticLoopEvent(
+        kind="tool_call_start",
+        payload={
+            "tool_call_id": "tooluse_mcp",
+            "tool_name": "call_mcp_tool",
+            "tool_args": {
+                "mcp_id": "atlassian",
+                "tool_name": "searchJiraIssuesUsingJql",
+                "arguments": {"jql": "project = KAN"},
+            },
+        },
+    )
+    yield AgenticLoopEvent(
+        kind="tool_call_result",
+        payload={
+            "tool_call_id": "tooluse_mcp",
+            "tool_name": "call_mcp_tool",
+            "result": "[]",
+            "success": True,
+        },
+    )
+    yield AgenticLoopEvent(kind="text", payload={"content": "no issues found"})
+    yield AgenticLoopEvent(kind="complete", payload={"full_text": "no issues found"})
+
+
 async def fake_prompt_refresh_loop(**kwargs):
     yield AgenticLoopEvent(kind="prompt_refresh_needed", payload={})
     yield AgenticLoopEvent(kind="complete", payload={"full_text": ""})
@@ -219,6 +245,76 @@ async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
     assert audit.tool_args == {"query": "pricing"}
     assert audit.result == "pricing result"
     assert audit.success is True
+
+
+async def test_krishna_memgpt_unwraps_call_mcp_tool_for_display(monkeypatch):
+    monkeypatch.setattr(
+        "src.agents.agentic_loop.run_agentic_tool_loop",
+        fake_mcp_tool_call_loop,
+    )
+    monkeypatch.setattr(
+        "src.agents.architectures.krishna_memgpt.get_llm_provider",
+        lambda provider_name: object(),
+    )
+    monkeypatch.setattr(
+        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        fake_load_provider_credentials,
+    )
+
+    architecture = KrishnaMemGPTArchitecture()
+    architecture.message_repo = FakeMessageRepository()
+    architecture.provider_settings_repo = FakeProviderSettingsRepository()
+    architecture.tool_handler = FakeToolHandler()
+    architecture.skill_runtime = FakeSkillRuntime()
+    architecture._get_linked_kb_ids = lambda agent_id: []
+    architecture._ensure_memory_initialized = lambda agent_id, user_id: None
+    architecture._load_core_memory_snapshot = lambda agent_id, user_id: object()
+    architecture._check_capacity_warnings_from_snapshot = lambda snapshot: []
+    architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
+
+    agent = Agent(
+        agent_name="Audit Agent",
+        agent_architecture="krishna-memgpt",
+        agent_provider="Bedrock",
+        agent_persona="Helpful",
+        created_by="owner@example.com",
+    )
+    conversation = Conversation(
+        title="Audit",
+        agent_id=agent.agent_id,
+        created_by="owner@example.com",
+    )
+
+    events = [
+        event
+        async for event in architecture.handle_message(
+            agent=agent,
+            conversation=conversation,
+            user_message="Search Jira",
+            owner_email="owner@example.com",
+            actor_email="owner@example.com",
+            actor_id="owner@example.com",
+            attachments=[],
+        )
+    ]
+
+    start_event = next(event for event in events if event.event_type == SSEEventType.TOOL_CALL_START)
+    result_event = next(event for event in events if event.event_type == SSEEventType.TOOL_CALL_RESULT)
+
+    # Raw wrapper values are preserved for audit/debug views.
+    assert start_event.tool_name == "call_mcp_tool"
+    assert start_event.tool_args == {
+        "mcp_id": "atlassian",
+        "tool_name": "searchJiraIssuesUsingJql",
+        "arguments": {"jql": "project = KAN"},
+    }
+    # Display fields carry the unwrapped, real MCP tool identity.
+    assert start_event.display_tool_name == "searchJiraIssuesUsingJql"
+    assert start_event.display_tool_args == {"jql": "project = KAN"}
+
+    assert result_event.tool_name == "call_mcp_tool"
+    assert result_event.display_tool_name == "searchJiraIssuesUsingJql"
+    assert result_event.display_tool_args == {"jql": "project = KAN"}
 
 
 async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):

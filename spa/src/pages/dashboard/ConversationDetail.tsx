@@ -558,6 +558,8 @@ export function ConversationDetail() {
               status: "running",
               content: event.content,
               tool_args: event.tool_args,
+              display_tool_name: event.display_tool_name,
+              display_tool_args: event.display_tool_args,
             };
             setToolActivities((prev) => [...prev, activity]);
           }

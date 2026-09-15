@@ -3,6 +3,7 @@ import { CheckCircle2, Loader2, Wrench, XCircle } from "lucide-react";
 import type { ToolActivity } from "../../types/message";
 import { AccordionPanel, Card } from "../ui";
 import styles from "./ToolActivitySummary.module.css";
+import { toolActivityTitle } from "./toolActivityFormat";
 
 interface ToolActivitySummaryProps {
   activities: ToolActivity[];
@@ -57,39 +58,4 @@ function ToolActivitySummaryItem({ activity }: { activity: ToolActivity }) {
       </span>
     </Card>
   );
-}
-
-function toolActivityTitle(activity: ToolActivity): string {
-  const skillId = stringArgument(activity.tool_args, "skill_id");
-  const action = stringArgument(activity.tool_args, "action");
-  const skillName = skillId ? humanizeIdentifier(skillId.split(":", 1)[0]) : null;
-
-  if (activity.tool_name === "execute_skill_action") {
-    if (skillName && action) return `${skillName} · ${humanizeIdentifier(action)}`;
-    if (action) return humanizeIdentifier(action);
-    if (skillName) return skillName;
-  }
-
-  if (activity.tool_name === "load_skill" && skillName) {
-    return `Loading ${skillName}`;
-  }
-
-  if (activity.tool_name === "check_tool_job") {
-    return "Checking task progress";
-  }
-
-  return humanizeIdentifier(activity.tool_name);
-}
-
-function stringArgument(args: Record<string, unknown> | undefined, key: string): string | null {
-  const value = args?.[key];
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function humanizeIdentifier(value: string): string {
-  return value
-    .split(/[._:\-/]+/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }

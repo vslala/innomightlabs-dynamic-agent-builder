@@ -56,6 +56,11 @@ class SSEEvent(BaseModel):
     tool_name: Optional[str] = None
     tool_args: Optional[dict] = None
     success: Optional[bool] = None
+    # Display-friendly name/args for wrapper tools (e.g. call_mcp_tool unwrapped
+    # to the real MCP tool it invoked). Falls back to tool_name/tool_args when
+    # there's nothing to unwrap.
+    display_tool_name: Optional[str] = None
+    display_tool_args: Optional[dict] = None
 
     # UI events
     form: Optional[dict] = None

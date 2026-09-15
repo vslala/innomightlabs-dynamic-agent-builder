@@ -18,6 +18,7 @@ from src.agents.models import MemoryCapacityWarning
 from src.config import settings
 from src.connectors.mcp.service import MCPConnectorService
 from src.agents.tool_audit import ToolCallStart, build_tool_call_audit_message
+from src.agents.tool_display import derive_display_tool
 from src.agents.tool_execution import ToolExecutionRouter
 from src.agents.tool_runtime import (
     ToolCommandCategory,
@@ -280,11 +281,16 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                         started_at=datetime.now(timezone.utc),
                     )
 
+                    display_tool_name, display_tool_args = derive_display_tool(
+                        loop_event.payload["tool_name"], loop_event.payload["tool_args"]
+                    )
                     yield SSEEvent(
                         event_type=SSEEventType.TOOL_CALL_START,
                         content=f"Calling {loop_event.payload['tool_name']}...",
                         tool_name=loop_event.payload["tool_name"],
                         tool_args=loop_event.payload["tool_args"],
+                        display_tool_name=display_tool_name,
+                        display_tool_args=display_tool_args,
                     )
 
                 elif loop_event.kind == "tool_call_result":
@@ -366,11 +372,16 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                         )
 
                     # Always emit a tool result for the timeline.
+                    result_display_name, result_display_args = derive_display_tool(
+                        loop_event.payload["tool_name"], start.tool_args if start else None
+                    )
                     yield SSEEvent(
                         event_type=SSEEventType.TOOL_CALL_RESULT,
                         content=result,
                         tool_name=loop_event.payload["tool_name"],
                         success=loop_event.payload["success"],
+                        display_tool_name=result_display_name,
+                        display_tool_args=result_display_args,
                     )
 
                 elif loop_event.kind == "prompt_refresh_needed":

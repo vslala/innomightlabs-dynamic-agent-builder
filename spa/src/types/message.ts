@@ -139,6 +139,11 @@ export interface SSEEvent {
   tool_name?: string;
   tool_args?: Record<string, unknown>;
   success?: boolean;
+  // Display-friendly name/args for wrapper tools (e.g. call_mcp_tool unwrapped
+  // to the real MCP tool it invoked). Falls back to tool_name/tool_args when
+  // there's nothing to unwrap.
+  display_tool_name?: string;
+  display_tool_args?: Record<string, unknown>;
   image_b64?: string;
   image_mime_type?: string;
   image_url?: string;
@@ -171,6 +176,8 @@ export interface ToolActivity {
   status: "running" | "success" | "error";
   content: string;
   tool_args?: Record<string, unknown>;
+  display_tool_name?: string;
+  display_tool_args?: Record<string, unknown>;
 }
 
 /**
