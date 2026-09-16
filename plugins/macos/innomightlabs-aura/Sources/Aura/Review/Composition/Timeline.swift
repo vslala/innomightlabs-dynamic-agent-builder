@@ -13,7 +13,11 @@ import Foundation
 enum Timeline {
     static let timescale: CMTimeScale = 90_000
 
-    static let frameDuration = CMTime(value: 1, timescale: 30)
+    /// 60, not 30: this is the frame duration `AVMutableVideoComposition` renders at for both
+    /// preview and export (see `LayerInstructionCompositionBuilder`), so it caps the smoothness
+    /// of every recording, screen or camera, regardless of what `ScreenCaptureSource` actually
+    /// captured — a mismatch here is why a 60fps capture can still play back and export jaggy.
+    static let frameDuration = CMTime(value: 1, timescale: 60)
 
     static func time(seconds: TimeInterval) -> CMTime {
         guard seconds.isFinite else { return .zero }
