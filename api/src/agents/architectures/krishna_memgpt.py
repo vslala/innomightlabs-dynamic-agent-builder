@@ -19,6 +19,7 @@ from src.config import settings
 from src.connectors.mcp.service import MCPConnectorService
 from src.agents.tool_audit import ToolCallStart, build_tool_call_audit_message
 from src.agents.tool_display import derive_display_tool
+from src.llm.ollama import merge_thinking_override
 from src.agents.tool_execution import ToolExecutionRouter
 from src.agents.tool_runtime import (
     ToolCommandCategory,
@@ -190,6 +191,10 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 provider_settings=provider_settings,
                 provider_settings_repo=self.provider_settings_repo,
             )
+            if state.provider_name == "Ollama":
+                state.credentials = merge_thinking_override(
+                    state.credentials, thinking_mode=agent.agent_ollama_thinking
+                )
 
             # 4. Load core memory and build system prompt
             yield SSEEvent(

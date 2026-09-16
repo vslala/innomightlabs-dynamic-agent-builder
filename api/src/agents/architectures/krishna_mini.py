@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, AsyncIterator
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.credentials import load_provider_credentials
 from src.llm.events import SSEEvent, SSEEventType
+from src.llm.ollama import merge_thinking_override
 from src.llm.providers import get_llm_provider
 from src.messages.models import Message, Attachment
 from src.messages.repositories import MessageRepository, get_message_repository
@@ -124,6 +125,10 @@ class KrishnaMiniArchitecture(AgentArchitecture):
                 provider_settings=provider_settings,
                 provider_settings_repo=self.provider_settings_repo,
             )
+            if agent.agent_provider == "Ollama":
+                credentials = merge_thinking_override(
+                    credentials, thinking_mode=agent.agent_ollama_thinking
+                )
 
             # 3. Build context
             yield SSEEvent(

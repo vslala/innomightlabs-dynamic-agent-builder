@@ -31,6 +31,31 @@ SESSION_TIMEOUT_OPTIONS = [
     SelectOption(value="0", label="No timeout (load all)"),
 ]
 
+# Thinking-mode choices for Ollama reasoning models (qwen3, deepseek-r1, ...).
+# Ignored for every other provider.
+OLLAMA_THINKING_OPTIONS = [
+    SelectOption(value="default", label="Provider default"),
+    SelectOption(value="enabled", label="Enabled"),
+    SelectOption(value="disabled", label="Disabled"),
+]
+
+
+def _ollama_thinking_field() -> FormInput:
+    return FormInput(
+        label="Ollama Thinking Mode",
+        name="agent_ollama_thinking",
+        input_type=FormInputType.CHOICE,
+        options=OLLAMA_THINKING_OPTIONS,
+        value="default",
+        attr={
+            "optional": "true",
+            "help_text": (
+                "Only applies to Ollama agents using a reasoning model (e.g. qwen3, "
+                "deepseek-r1). Ignored for every other provider."
+            ),
+        },
+    )
+
 
 def _agent_instructions_field() -> FormInput:
     return FormInput(
@@ -95,6 +120,7 @@ def get_create_agent_form() -> Form:
                 value="60",  # Default value
                 input_type=FormInputType.SELECT,
             ),
+            _ollama_thinking_field(),
         ],
     )
 
@@ -144,6 +170,7 @@ def get_update_agent_form(
                 options=SESSION_TIMEOUT_OPTIONS,
                 input_type=FormInputType.SELECT,
             ),
+            _ollama_thinking_field(),
         ],
     )
 
@@ -169,7 +196,7 @@ UPDATE_AGENT_FORM = Form(
         FormInput(
             label="Provider Name",
             name="agent_provider",
-            values=["Bedrock", "Anthropic", "OpenAI", "Gemini"],
+            values=["Bedrock", "Anthropic", "OpenAI", "Gemini", "Ollama"],
             input_type=FormInputType.SELECT,
         ),
         FormInput(
@@ -184,5 +211,6 @@ UPDATE_AGENT_FORM = Form(
             options=SESSION_TIMEOUT_OPTIONS,
             input_type=FormInputType.SELECT,
         ),
+        _ollama_thinking_field(),
     ],
 )

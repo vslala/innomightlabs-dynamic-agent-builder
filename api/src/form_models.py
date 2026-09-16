@@ -64,6 +64,15 @@ class FormInput(BaseModel):
     smart_suggestion: None | SmartSuggestionConfig = None
     attr: None | dict[str, str] = None
 
+    @property
+    def is_optional(self) -> bool:
+        """Whether this input may be omitted or left blank on submit.
+
+        Declared as `attr={"optional": "true"}` -- the convention already used
+        by the agent and provider schemas.
+        """
+        return (self.attr or {}).get("optional", "").strip().lower() == "true"
+
 
 class Form(BaseModel):
     form_name: str

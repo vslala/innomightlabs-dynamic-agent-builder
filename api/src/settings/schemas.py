@@ -49,6 +49,35 @@ GEMINI_PROVIDER_FORM = Form(
     ]
 )
 
+OLLAMA_PROVIDER_FORM = Form(
+    form_name="Ollama Configuration",
+    submit_path="/settings/providers/Ollama",
+    form_inputs=[
+        FormInput(
+            input_type=FormInputType.TEXT,
+            name="endpoint_url",
+            label="Endpoint URL",
+            attr={
+                "type": "url",
+                "placeholder": "http://localhost:11434",
+                "help_text": "Base URL of your Ollama server. Models are listed from this endpoint.",
+            },
+        ),
+        FormInput(
+            input_type=FormInputType.PASSWORD,
+            name="api_key",
+            label="API Key (optional)",
+            attr={
+                "optional": "true",
+                "help_text": (
+                    "Only needed when the endpoint sits behind a proxy or gateway "
+                    "requiring a bearer token. Leave blank for a plain local Ollama."
+                ),
+            },
+        ),
+    ],
+)
+
 OPENAI_PROVIDER_FORM = Form(
     form_name="OpenAI OAuth Configuration",
     submit_path="/auth/openai/complete",
@@ -71,6 +100,7 @@ PROVIDER_SCHEMAS: dict[str, Form] = {
     "Anthropic": ANTHROPIC_PROVIDER_FORM,
     "OpenAI": OPENAI_PROVIDER_FORM,
     "Gemini": GEMINI_PROVIDER_FORM,
+    "Ollama": OLLAMA_PROVIDER_FORM,
 }
 
 # List of all supported provider names

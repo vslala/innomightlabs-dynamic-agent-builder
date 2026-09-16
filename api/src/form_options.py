@@ -110,68 +110,44 @@ class AgentModelChoices:
 
 
 def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
-    from src.llm.models import models_service
+    from src.llm.models import PROVIDER_MODEL_SOURCES, models_service
 
     cached = context.cache.get("agent_model_choices")
     if isinstance(cached, AgentModelChoices):
         return cached
 
     repo = context.provider_settings_repository or get_provider_settings_repository()
-    bedrock_models = models_service.get_bedrock_models()
+
+    # Bedrock is always offered; every other provider appears once the user has
+    # configured it. A provider whose model listing fails is still offered, so a
+    # transient outage doesn't silently drop it from the picker.
     providers = ["Bedrock"]
     model_options = [
         SelectOption(value=model.model_name, label=model.display_name)
-        for model in bedrock_models
+        for model in models_service.get_bedrock_models()
     ]
 
-    anthropic_settings = repo.find_by_provider(
-        user_email=context.user_email,
-        provider_name="Anthropic",
-    )
-    if anthropic_settings:
-        try:
-            anthropic_models = models_service.get_anthropic_models(
-                provider_settings=anthropic_settings
-            )
-            providers.append("Anthropic")
-            model_options.extend(
-                SelectOption(value=model.model_name, label=model.display_name)
-                for model in anthropic_models
-            )
-        except Exception as e:
-            log.warning("Failed to load Anthropic models for user %s: %s", context.user_email, e)
+    for source in PROVIDER_MODEL_SOURCES:
+        provider_settings = repo.find_by_provider(
+            user_email=context.user_email,
+            provider_name=source.provider_name,
+        )
+        if not provider_settings:
+            continue
 
-    openai_settings = repo.find_by_provider(
-        user_email=context.user_email,
-        provider_name="OpenAI",
-    )
-    if openai_settings:
-        providers.append("OpenAI")
+        providers.append(source.provider_name)
         try:
-            openai_models = models_service.get_openai_models()
             model_options.extend(
                 SelectOption(value=model.model_name, label=model.display_name)
-                for model in openai_models
+                for model in source.load_models(provider_settings)
             )
         except Exception as e:
-            log.warning("Failed to load OpenAI models for user %s: %s", context.user_email, e)
-
-    gemini_settings = repo.find_by_provider(
-        user_email=context.user_email,
-        provider_name="Gemini",
-    )
-    if gemini_settings:
-        providers.append("Gemini")
-        try:
-            gemini_models = models_service.get_gemini_models(
-                provider_settings=gemini_settings
+            log.warning(
+                "Failed to load %s models for user %s: %s",
+                source.provider_name,
+                context.user_email,
+                e,
             )
-            model_options.extend(
-                SelectOption(value=model.model_name, label=model.display_name)
-                for model in gemini_models
-            )
-        except Exception as e:
-            log.warning("Failed to load Gemini models for user %s: %s", context.user_email, e)
 
     choices = AgentModelChoices(providers=providers, models=model_options)
     context.cache["agent_model_choices"] = choices

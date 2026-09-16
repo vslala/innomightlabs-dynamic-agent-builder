@@ -44,6 +44,18 @@ class ToolDefinition(BaseModel):
             }
         }
 
+    def to_ollama(self) -> dict[str, Any]:
+        # Ollama's native chat API nests the function under a "function" key,
+        # unlike the flat Responses-API shape `to_openai` emits.
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.input_schema,
+            },
+        }
+
 
 def normalize_tool_definitions(tools: list[dict[Any, Any]] | None) -> list[ToolDefinition]:
     definitions: list[ToolDefinition] = []

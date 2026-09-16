@@ -203,9 +203,12 @@ async def save_provider_settings(
             detail="GoogleDrive must be configured using OAuth via /auth/google-drive/start",
         )
 
-    # Validate required fields from schema
-    required_fields = [field.name for field in schema.form_inputs]
-    missing_fields = [f for f in required_fields if f not in body or not body[f]]
+    # Validate required fields from schema (fields marked optional may be blank)
+    missing_fields = [
+        field.name
+        for field in schema.form_inputs
+        if not field.is_optional and not body.get(field.name)
+    ]
     if missing_fields:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

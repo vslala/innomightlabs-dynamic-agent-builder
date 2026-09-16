@@ -4,14 +4,18 @@ LLM Models service - fetches available models from providers.
 
 import json
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Optional
 
 import boto3
+import httpx
 from pydantic import BaseModel, Field
 
 from src.agents.image_generation.capabilities import image_capability_registry
 from src.crypto import decrypt
 from src.config import settings
+from src.llm.ollama import DISCOVERY_TIMEOUT_SECONDS, OllamaConnection
 from src.settings.models import ProviderSettings
 
 log = logging.getLogger(__name__)
@@ -301,5 +305,82 @@ class ModelsService:
             ),
         ]
 
+    def get_ollama_models(self, provider_settings: ProviderSettings) -> list[ModelInfo]:
+        """List models pulled on the user's Ollama host via `GET /api/tags`.
+
+        There is no fallback list: which models exist depends entirely on what
+        the user has pulled, so an unreachable endpoint yields no models rather
+        than tags that would fail at call time.
+        """
+        try:
+            connection = OllamaConnection.from_provider_settings(provider_settings)
+            response = httpx.get(
+                f"{connection.base_url}/api/tags",
+                headers=connection.headers,
+                timeout=DISCOVERY_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            models = response.json().get("models")
+        except Exception as e:
+            log.error("Error fetching Ollama models: %s", e, exc_info=True)
+            return []
+
+        if not isinstance(models, list):
+            log.error("Ollama /api/tags returned an unexpected payload shape")
+            return []
+
+        return [
+            ModelInfo(
+                model_id=tag,
+                model_name=tag,
+                display_name=f"[Ollama] {tag}",
+                provider="ollama",
+            )
+            for tag in (_ollama_model_tag(model) for model in models)
+            if tag
+        ]
+
+
+def _ollama_model_tag(model: object) -> str | None:
+    name = model.get("name") if isinstance(model, dict) else None
+    return name.strip() or None if isinstance(name, str) else None
+
+
 # Singleton instance
 models_service = ModelsService()
+
+
+@dataclass(frozen=True)
+class ProviderModelSource:
+    """How to list one provider's models once the user has configured it."""
+
+    provider_name: str
+    load_models: Callable[[ProviderSettings], list[ModelInfo]]
+
+
+#: Providers whose model list depends on user-configured settings. Bedrock is
+#: absent because it is always offered and needs no per-user credentials.
+PROVIDER_MODEL_SOURCES: tuple[ProviderModelSource, ...] = (
+    ProviderModelSource(
+        "Anthropic",
+        lambda provider_settings: models_service.get_anthropic_models(provider_settings=provider_settings),
+    ),
+    ProviderModelSource("OpenAI", lambda _: models_service.get_openai_models()),
+    ProviderModelSource(
+        "Gemini",
+        lambda provider_settings: models_service.get_gemini_models(provider_settings=provider_settings),
+    ),
+    ProviderModelSource(
+        "Ollama",
+        lambda provider_settings: models_service.get_ollama_models(provider_settings=provider_settings),
+    ),
+)
+
+
+def find_model_source(provider_name: str) -> ProviderModelSource | None:
+    """Look up a configurable provider's model source, case-insensitively."""
+    normalized = provider_name.strip().lower()
+    return next(
+        (source for source in PROVIDER_MODEL_SOURCES if source.provider_name.lower() == normalized),
+        None,
+    )

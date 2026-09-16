@@ -8,6 +8,7 @@ from src.llm.providers.anthropic import AnthropicProvider
 from .base import LLMProvider
 from .bedrock import BedrockProvider
 from .gemini import GeminiProvider
+from .ollama import OllamaProvider
 from .openai import OpenAIProvider
 
 
@@ -29,6 +30,7 @@ def get_llm_provider(provider_name: str) -> LLMProvider:
         "Anthropic": AnthropicProvider(),
         "OpenAI": OpenAIProvider(),
         "Gemini": GeminiProvider(),
+        "Ollama": OllamaProvider(),
     }
 
     provider = providers.get(provider_name)
