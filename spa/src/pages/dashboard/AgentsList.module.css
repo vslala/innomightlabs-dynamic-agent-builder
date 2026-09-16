@@ -16,12 +16,12 @@
   @apply h-7 w-7 text-white;
 }
 
-.hoverActions {
-  @apply opacity-0 transition-opacity group-hover:opacity-100;
-}
-
 .deleteButton {
   @apply text-red-400 hover:text-red-300;
+}
+
+.toast {
+  @apply fixed bottom-6 right-6 z-50 max-w-sm;
 }
 
 .agentName {

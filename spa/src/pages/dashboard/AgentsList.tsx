@@ -15,6 +15,7 @@ import {
   LoadingState,
   ErrorState,
   EmptyState,
+  AlertBanner,
 } from "../../components/ui";
 import {
   agentApiService,
@@ -33,6 +34,13 @@ export function AgentsList() {
     null
   );
   const [isDeleting, setIsDeleting] = useState(false);
+  const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const loadAgents = async () => {
     try {
@@ -53,14 +61,17 @@ export function AgentsList() {
 
   const handleDelete = async () => {
     if (!selectedAgent) return;
+    const agentName = selectedAgent.agent_name;
     setIsDeleting(true);
     try {
       await agentApiService.deleteAgent(selectedAgent.agent_id);
       setIsDeleteDialogOpen(false);
       setSelectedAgent(null);
+      setToast({ message: `"${agentName}" was deleted.`, variant: "success" });
       loadAgents();
     } catch (err) {
       console.error("Error deleting agent:", err);
+      setToast({ message: `Failed to delete "${agentName}". Please try again.`, variant: "error" });
     } finally {
       setIsDeleting(false);
     }
@@ -106,7 +117,7 @@ export function AgentsList() {
               return (
               <Card
                 key={agent.agent_id}
-                className={`group ${styles.agentCard}`}
+                className={styles.agentCard}
               >
                 <CardContent>
                   <Stack gap="md">
@@ -114,7 +125,7 @@ export function AgentsList() {
                   <div className={styles.agentIcon}>
                     <AgentIcon className={styles.agentIconSvg} />
                   </div>
-                  <Inline gap="xs" className={styles.hoverActions}>
+                  <Inline gap="xs">
                     <Link to={`/dashboard/agents/${agent.agent_id}`}>
                       <Button variant="ghost" size="icon">
                         <Settings className="h-4 w-4" />
@@ -186,6 +197,15 @@ export function AgentsList() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {toast && (
+        <AlertBanner
+          className={styles.toast}
+          message={toast.message}
+          variant={toast.variant}
+          onDismiss={() => setToast(null)}
+        />
+      )}
     </Page>
   );
 }
