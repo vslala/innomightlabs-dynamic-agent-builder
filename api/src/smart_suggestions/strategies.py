@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Protocol
 
 from pydantic import BaseModel, Field, ValidationError
@@ -221,13 +222,43 @@ def _context_string(request: SmartSuggestionRequest, key: str, *, default: str) 
     return default
 
 
-def _extract_json_object(raw_response: str) -> str:
-    stripped = raw_response.strip()
-    if stripped.startswith("{") and stripped.endswith("}"):
-        return stripped
+_THINK_BLOCK_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
-    start = stripped.find("{")
-    end = stripped.rfind("}")
-    if start >= 0 and end > start:
-        return stripped[start : end + 1]
+
+def _extract_json_object(raw_response: str) -> str:
+    """Extract the first well-formed top-level JSON object from a model response.
+
+    Reasoning models (e.g. Qwen3) wrap chain-of-thought in <think>...</think>, which can
+    itself contain JSON-shaped fragments; stripped first so it can't be mistaken for the
+    answer. The object is then found by depth-matching braces (string-aware, so `{`/`}`
+    inside a quoted value don't count) rather than "first { to last }", so trailing prose
+    or a second JSON-like fragment after the real object no longer gets swept into the same
+    string and produce a "trailing characters" parse error.
+    """
+    text = _THINK_BLOCK_PATTERN.sub("", raw_response)
+    start = text.find("{")
+    if start < 0:
+        raise SmartSuggestionError("Model did not return a JSON object")
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
     raise SmartSuggestionError("Model did not return a JSON object")

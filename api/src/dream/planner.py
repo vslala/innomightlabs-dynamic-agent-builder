@@ -6,11 +6,19 @@ import asyncio
 import json
 from dataclasses import dataclass
 
+from pydantic import ValidationError
+
 from src.dream.models import DreamPlan
 from src.dream.sessions import DreamSessionChunk
 from src.llm.providers.base import LLMProvider
 from src.memory.models import CoreMemory, MemoryBlockDefinition
 from src.smart_suggestions.strategies import _extract_json_object
+
+# The model responded but the content didn't parse into a valid plan -- often a one-off
+# sampling glitch on weaker/local models rather than something a fresh call won't fix.
+# A stall (dead connection, no data at all) raises TimeoutError instead, which is not
+# retried here: session atomicity already accepts a whole-session retry for that case.
+MAX_PARSE_ATTEMPTS = 3
 
 SYSTEM_PROMPT = """You are the dreaming subconscious of an AI agent reviewing a closed conversation session.
 Return ONLY JSON with this exact shape: {\"actions\":[...],\"session_summary\":\"string\"}.
@@ -67,14 +75,29 @@ class DreamPlanner:
                 for message in chunk.messages
             ],
         }
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(payload)},
+        ]
+        last_error: ValueError | ValidationError = ValueError("Dream planner returned an empty response")
+        for _attempt in range(MAX_PARSE_ATTEMPTS):
+            try:
+                return await self._stream_once(provider, credentials, model_name, messages, stall_timeout_seconds)
+            except (ValueError, ValidationError) as exc:
+                last_error = exc
+        raise last_error
+
+    async def _stream_once(
+        self,
+        provider: LLMProvider,
+        credentials: dict,
+        model_name: str,
+        messages: list[dict],
+        stall_timeout_seconds: float,
+    ) -> DreamPlanningResult:
         response = ""
         prompt_tokens = completion_tokens = 0
-        events = provider.stream_response(
-            [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": json.dumps(payload)}],
-            credentials,
-            tools=None,
-            model=model_name,
-        )
+        events = provider.stream_response(messages, credentials, tools=None, model=model_name)
         while True:
             try:
                 # A stall timeout, not a call timeout: it resets on every event, so a response

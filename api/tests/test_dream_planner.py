@@ -3,8 +3,9 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, cast
 
 import pytest
+from pydantic import ValidationError
 
-from src.dream.planner import DreamPlanner
+from src.dream.planner import MAX_PARSE_ATTEMPTS, DreamPlanner
 from src.dream.sessions import DreamSession, DreamSessionChunk
 from src.llm.providers.base import LLMEvent, LLMProvider
 from src.memory.models import CoreMemory, MemoryBlockDefinition
@@ -113,6 +114,94 @@ async def test_plan_accumulates_usage_events_across_the_stream() -> None:
 
     assert result.plan.session_summary == "done"
     assert (result.prompt_tokens, result.completion_tokens) == (17, 7)
+
+
+class SequencedProvider:
+    """Returns a different canned response on each successive call, to test retries."""
+
+    def __init__(self, responses: list[list[LLMEvent]]) -> None:
+        self.responses = responses
+        self.call_count = 0
+
+    async def stream_response(self, *args, **kwargs) -> AsyncIterator[LLMEvent]:
+        events = self.responses[self.call_count]
+        self.call_count += 1
+        for event in events:
+            yield event
+
+
+@pytest.mark.asyncio
+async def test_plan_ignores_json_like_fragments_inside_a_think_block() -> None:
+    """Reproduces a real Qwen3 response: reasoning wrapped in <think> mentions a JSON-shaped
+    tool-call fragment before the actual answer. Naive "first { to last }" extraction used to
+    span both and fail with a "trailing characters" error; this must succeed on the first try."""
+    provider = FakeProvider(
+        [
+            LLMEvent(
+                type="text",
+                content=(
+                    "<think>\n"
+                    'Maybe I should call {"action": "reset_thread"} but the instructions say JSON only.\n'
+                    "</think>\n"
+                    '{"actions": [], "session_summary": "Captured preference."}'
+                ),
+            )
+        ]
+    )
+    blocks, memories = memory_blocks()
+
+    result = await DreamPlanner().plan(
+        provider=cast(LLMProvider, provider),
+        credentials={},
+        model_name="dream-model",
+        chunk=dream_chunk(),
+        block_definitions=blocks,
+        core_memories=memories,
+    )
+
+    assert result.plan.session_summary == "Captured preference."
+    assert len(provider.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_plan_retries_after_malformed_json_then_succeeds() -> None:
+    provider = SequencedProvider(
+        [
+            [LLMEvent(type="text", content='{"actions": [}')],  # unbalanced bracket: invalid JSON
+            [LLMEvent(type="text", content='{"actions": [], "session_summary": "done on retry"}')],
+        ]
+    )
+    blocks, memories = memory_blocks()
+
+    result = await DreamPlanner().plan(
+        provider=cast(LLMProvider, provider),
+        credentials={},
+        model_name="dream-model",
+        chunk=dream_chunk(),
+        block_definitions=blocks,
+        core_memories=memories,
+    )
+
+    assert result.plan.session_summary == "done on retry"
+    assert provider.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_plan_gives_up_after_max_parse_attempts_and_raises_last_error() -> None:
+    provider = SequencedProvider([[LLMEvent(type="text", content='{"actions": [}')]] * MAX_PARSE_ATTEMPTS)
+    blocks, memories = memory_blocks()
+
+    with pytest.raises(ValidationError):
+        await DreamPlanner().plan(
+            provider=cast(LLMProvider, provider),
+            credentials={},
+            model_name="dream-model",
+            chunk=dream_chunk(),
+            block_definitions=blocks,
+            core_memories=memories,
+        )
+
+    assert provider.call_count == MAX_PARSE_ATTEMPTS
 
 
 class StallingProvider:

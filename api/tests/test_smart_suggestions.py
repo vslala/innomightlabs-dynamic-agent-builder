@@ -14,6 +14,7 @@ from src.smart_suggestions.strategies import (
     AwsCliCommandPolicySuggestionStrategy,
     CronExpressionSuggestionStrategy,
     SmartSuggestionError,
+    _extract_json_object,
 )
 from tests.mock_data import TEST_USER_EMAIL
 
@@ -37,6 +38,23 @@ def test_agent_instructions_field_declares_smart_suggestion(form):
     assert instructions_field.smart_suggestion is not None
     assert instructions_field.smart_suggestion.suggestion_type == "agent_instructions"
     assert instructions_field.smart_suggestion.button_label == "Suggest instructions"
+
+
+def test_extract_json_object_strips_think_blocks_and_ignores_trailing_content():
+    raw_response = (
+        "<think>\n"
+        'Maybe the answer is {"not": "this"}.\n'
+        "</think>\n"
+        '{"cron_expression": "0 9 * * 1-5"}\n'
+        "Some trailing prose the model added anyway."
+    )
+
+    assert _extract_json_object(raw_response) == '{"cron_expression": "0 9 * * 1-5"}'
+
+
+def test_extract_json_object_raises_when_no_object_present():
+    with pytest.raises(SmartSuggestionError, match="JSON object"):
+        _extract_json_object("I cannot help with that today.")
 
 
 def test_cron_strategy_parses_and_validates_model_json():
