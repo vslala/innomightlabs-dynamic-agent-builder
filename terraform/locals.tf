@@ -19,6 +19,16 @@ locals {
     STRIPE_PUBLISHABLE_KEY       = var.stripe_publishable_key
     STRIPE_WEBHOOK_SECRET        = var.stripe_webhook_secret
     LOG_LEVEL                    = "INFO"
+    DREAM_ENABLED                = "true"
+    DREAM_DEFAULT_CRON           = "0 3 * * *"
+    DREAM_BACKFILL_DAYS          = "30"
+    DREAM_SOFT_SESSIONS_PER_RUN  = "25"
+    DREAM_SOFT_CHUNKS_PER_RUN    = "120"
+    DREAM_SOFT_ACTIONS_PER_RUN   = "40"
+    DREAM_MIN_CONFIDENCE         = "0.75"
+    DREAM_MESSAGE_PAGE_SIZE      = "200"
+    DREAM_CHUNK_MAX_WORDS        = "6000"
+    DREAM_WINDOW_OVERLAP_WORDS   = "100"
     SES_FROM_EMAIL     = var.ses_from_email
     SES_REPLY_TO_EMAIL = var.ses_reply_to_email
   }

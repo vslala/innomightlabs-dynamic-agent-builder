@@ -24,6 +24,8 @@ from src.a2a.repository import A2ATaskRepository
 from src.apikeys.repository import ApiKeyRepository
 from src.conversations.repository import ConversationRepository
 from src.crypto import encrypt_secret_fields
+from src.dream.repository import DreamRepository
+from src.dream.service import DreamService
 from src.form_options import FormOptionsContext, hydrate_form_options
 from src.llm.events import SSEEvent, SSEEventType
 from src.messages.models import Attachment, MAX_FILES, MAX_TOTAL_SIZE
@@ -183,6 +185,10 @@ async def create_agent(
     )
 
     saved_agent = repo.save(agent)
+    if saved_agent.agent_architecture == "krishna-memgpt":
+        dream_settings = DreamRepository().find_settings(user_email)
+        if dream_settings:
+            DreamService().ensure_schedule(saved_agent.agent_id, user_email, user_email, dream_settings)
     log.info(f"Created new agent '{saved_agent.agent_name}' (id={saved_agent.agent_id}) for user {user_email}")
 
     return saved_agent.to_response()
@@ -354,6 +360,12 @@ async def update_agent(
         setattr(agent, field_name, value)
 
     saved_agent = repo.save(agent)
+    dream_service = DreamService()
+    dream_settings = DreamRepository().find_settings(user_email)
+    if saved_agent.agent_architecture == "krishna-memgpt" and dream_settings:
+        dream_service.ensure_schedule(saved_agent.agent_id, user_email, user_email, dream_settings)
+    elif saved_agent.agent_architecture != "krishna-memgpt":
+        dream_service.delete_schedule(saved_agent.agent_id, user_email, user_email)
     log.info(f"Updated agent '{saved_agent.agent_name}' (id={saved_agent.agent_id}) for user {user_email}")
 
     return saved_agent.to_response()
@@ -371,6 +383,7 @@ async def delete_agent(
     This endpoint is idempotent - returns success even if agent doesn't exist.
     """
     user_email: str = request.state.user_email
+    DreamService().delete_schedule(agent_id, user_email, user_email)
     repo.delete_by_id(agent_id, user_email)
     try:
         ConversationMediaStorage().delete_agent_prefix(agent_id)

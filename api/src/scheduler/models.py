@@ -16,6 +16,7 @@ from src.utils.dynamodb import convert_decimals
 class ScheduleTargetType(str, Enum):
     AGENT_MESSAGE = "agent_message"
     AUTOMATION_RUN = "automation_run"
+    DREAM_RUN = "dream_run"
 
 
 class ScheduleStatus(str, Enum):

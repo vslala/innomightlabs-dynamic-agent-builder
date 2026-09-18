@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from datetime import datetime
 from typing import Optional, Tuple
 
 from boto3.dynamodb.conditions import Key
@@ -52,6 +53,19 @@ class DynamoDBMessageRepository:
 
         log.info(f"Found {len(messages)} messages for conversation {conversation_id}")
         return messages
+
+    def has_messages_after(self, conversation_id: str, after: datetime) -> bool:
+        response = self.table.query(
+            KeyConditionExpression=(
+                Key("pk").eq(f"CONVERSATION#{conversation_id}")
+                # The stored sort key includes `#{message_id}` after the timestamp.
+                # `\uffff` excludes every message at the exact watermark timestamp.
+                & Key("sk").gt(f"MESSAGE#{after.isoformat()}\uffff")
+            ),
+            Limit=1,
+            ProjectionExpression="sk",
+        )
+        return bool(response.get("Items"))
 
     def find_by_conversation_paginated(
         self, conversation_id: str, limit: int = 50, cursor: Optional[str] = None

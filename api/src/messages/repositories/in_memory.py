@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional, Tuple
 
 from src.messages.models import Message
@@ -34,15 +35,25 @@ class InMemoryMessageRepository:
         messages.sort(key=lambda item: item.created_at)
         return messages
 
+    def has_messages_after(self, conversation_id: str, after: datetime) -> bool:
+        return any(
+            message.created_at > after
+            for message in self._messages
+            if message.conversation_id == conversation_id
+        )
+
     def find_by_conversation_paginated(
         self,
         conversation_id: str,
         limit: int = 50,
         cursor: Optional[str] = None,
     ) -> Tuple[list[Message], Optional[str], bool]:
-        del cursor
         messages = self.find_by_conversation(conversation_id)
-        return messages[:limit], None, len(messages) > limit
+        offset = int(cursor or "0")
+        page = messages[offset : offset + limit]
+        next_offset = offset + len(page)
+        has_more = next_offset < len(messages)
+        return page, str(next_offset) if has_more else None, has_more
 
     def find_by_conversation_newest_first(
         self,
@@ -50,9 +61,12 @@ class InMemoryMessageRepository:
         limit: int = 20,
         cursor: Optional[str] = None,
     ) -> Tuple[list[Message], Optional[str], bool]:
-        del cursor
         messages = list(reversed(self.find_by_conversation(conversation_id)))
-        return messages[:limit], None, len(messages) > limit
+        offset = int(cursor or "0")
+        page = messages[offset : offset + limit]
+        next_offset = offset + len(page)
+        has_more = next_offset < len(messages)
+        return page, str(next_offset) if has_more else None, has_more
 
     def count_by_conversation(self, conversation_id: str) -> int:
         return len(self.find_by_conversation(conversation_id))

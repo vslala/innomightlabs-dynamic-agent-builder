@@ -68,6 +68,18 @@ class Settings:
     scheduler_runtime_enabled: bool = True
     # Throttles unforced liveness pings only; forced per-page progress writes always go through.
     crawl_job_heartbeat_interval_seconds: int = 60
+
+    # Dream framework
+    dream_enabled: bool = True
+    dream_default_cron: str = "0 3 * * *"
+    dream_backfill_days: int = 30
+    dream_soft_sessions_per_run: int = 25
+    dream_soft_chunks_per_run: int = 120
+    dream_soft_actions_per_run: int = 40
+    dream_min_confidence: float = 0.75
+    dream_message_page_size: int = 200
+    dream_chunk_max_words: int = 6000
+    dream_window_overlap_words: int = 100
     crawl_job_stale_timeout_seconds: int = 15 * 60
     crawl_job_reaper_interval_seconds: int = 5 * 60
     mcp_oauth_redirect_uri: str = ""
@@ -358,6 +370,16 @@ class Settings:
             crawl_job_heartbeat_interval_seconds=int(
                 os.getenv("CRAWL_JOB_HEARTBEAT_INTERVAL_SECONDS", "60")
             ),
+            dream_enabled=env_bool("DREAM_ENABLED", True),
+            dream_default_cron=os.getenv("DREAM_DEFAULT_CRON", "0 3 * * *"),
+            dream_backfill_days=int(os.getenv("DREAM_BACKFILL_DAYS", "30")),
+            dream_soft_sessions_per_run=int(os.getenv("DREAM_SOFT_SESSIONS_PER_RUN", "25")),
+            dream_soft_chunks_per_run=int(os.getenv("DREAM_SOFT_CHUNKS_PER_RUN", "120")),
+            dream_soft_actions_per_run=int(os.getenv("DREAM_SOFT_ACTIONS_PER_RUN", "40")),
+            dream_min_confidence=float(os.getenv("DREAM_MIN_CONFIDENCE", "0.75")),
+            dream_message_page_size=int(os.getenv("DREAM_MESSAGE_PAGE_SIZE", "200")),
+            dream_chunk_max_words=int(os.getenv("DREAM_CHUNK_MAX_WORDS", "6000")),
+            dream_window_overlap_words=int(os.getenv("DREAM_WINDOW_OVERLAP_WORDS", "100")),
             crawl_job_stale_timeout_seconds=int(
                 os.getenv("CRAWL_JOB_STALE_TIMEOUT_SECONDS", "900")
             ),

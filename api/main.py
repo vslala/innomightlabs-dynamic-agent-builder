@@ -35,6 +35,7 @@ from src.agent_marketplace import router as agent_marketplace_router
 from src.automation_marketplace.router import router as automation_marketplace_router
 from src.scheduler.router import router as scheduler_router
 from src.smart_suggestions.router import router as smart_suggestions_router
+from src.dream.router import router as dream_router
 from src.scheduler.runtime import get_scheduler_runtime
 from src.exceptions import register_exception_handlers
 from src.middleware.request_id import RequestIdMiddleware
@@ -165,6 +166,7 @@ def create_app() -> FastAPI:
     app.include_router(router=automation_marketplace_router)
     app.include_router(router=scheduler_router)
     app.include_router(router=smart_suggestions_router)
+    app.include_router(router=dream_router)
 
     # Skill-owned API routers (optional, mounted under /skills/{skill_id}/...)
     # If a skill folder (and its manifest) is removed, it simply won't be loaded.

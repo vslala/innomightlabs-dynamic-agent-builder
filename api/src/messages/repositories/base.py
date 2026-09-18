@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional, Protocol, Tuple
 
 from src.messages.models import Message
@@ -18,6 +19,9 @@ class MessageRepository(Protocol):
         limit: int = 50,
         cursor: Optional[str] = None,
     ) -> Tuple[list[Message], Optional[str], bool]:
+        ...
+
+    def has_messages_after(self, conversation_id: str, after: datetime) -> bool:
         ...
 
     def find_by_conversation_newest_first(

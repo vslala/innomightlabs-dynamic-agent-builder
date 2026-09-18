@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from importlib import import_module
+from typing import Any, cast
 
 from src.scheduler.models import (
     Schedule,
@@ -32,10 +33,7 @@ class SchedulerDispatcher:
     ):
         self.repository = repository or SchedulerRepository()
         self.service = service or SchedulerService(repository=self.repository)
-        self.executors = executors or {
-            ScheduleTargetType.AGENT_MESSAGE: AgentScheduledMessageExecutor(),
-            ScheduleTargetType.AUTOMATION_RUN: AutomationScheduledRunExecutor(),
-        }
+        self.executors = executors or self._default_executors()
 
     async def dispatch(
         self,
@@ -83,6 +81,23 @@ class SchedulerDispatcher:
             self.repository.save_run(run)
         return run
 
+    def _default_executors(self) -> dict[ScheduleTargetType, ScheduleTargetExecutor]:
+        executors: dict[ScheduleTargetType, ScheduleTargetExecutor] = {
+            ScheduleTargetType.AGENT_MESSAGE: AgentScheduledMessageExecutor(),
+            ScheduleTargetType.AUTOMATION_RUN: AutomationScheduledRunExecutor(),
+        }
+        try:
+            # Dream is developed independently; do not prevent ordinary schedules from dispatching
+            # while its executor module is temporarily unavailable.
+            module = import_module("src.dream.executor")
+        except ModuleNotFoundError as exc:
+            if exc.name not in {"src.dream", "src.dream.executor"}:
+                raise
+        else:
+            executor_type = cast(type[ScheduleTargetExecutor], module.DreamScheduledExecutor)
+            executors[ScheduleTargetType.DREAM_RUN] = executor_type()
+        return executors
+
     def _target_ref(self, schedule: Schedule) -> dict[str, Any]:
         if schedule.target_type == ScheduleTargetType.AGENT_MESSAGE:
             return {
@@ -93,5 +108,10 @@ class SchedulerDispatcher:
             return {
                 "automation_id": schedule.target.get("automation_id"),
                 "trigger_id": schedule.target.get("trigger_id"),
+            }
+        if schedule.target_type == ScheduleTargetType.DREAM_RUN:
+            return {
+                "agent_id": schedule.target.get("agent_id"),
+                "user_id": schedule.target.get("user_id") or schedule.owner_email,
             }
         return {}

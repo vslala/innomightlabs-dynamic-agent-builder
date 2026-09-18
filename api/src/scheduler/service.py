@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from src.scheduler.backends import get_scheduler_backend
 from src.scheduler.backends.base import SchedulerBackend
@@ -12,9 +12,11 @@ from src.scheduler.models import (
     CreateScheduleRequest,
     Schedule,
     ScheduleStatus,
+    ScheduleTargetType,
     UpdateScheduleRequest,
 )
 from src.scheduler.repository import SchedulerRepository
+from src.scheduler.targets import TARGET_VALIDATORS
 
 
 class SchedulerValidationError(ValueError):
@@ -139,17 +141,12 @@ class SchedulerService:
         return self.repository.save_schedule(schedule)
 
     def _validate_target(self, target_type: str, target: dict) -> None:
-        if target_type == "agent_message":
-            if not str(target.get("agent_id") or "").strip():
-                raise SchedulerValidationError("Agent message schedules require agent_id")
-            if not str(target.get("message") or "").strip():
-                raise SchedulerValidationError("Agent message schedules require message")
-            return
-        if target_type == "automation_run":
-            if not str(target.get("automation_id") or "").strip():
-                raise SchedulerValidationError("Automation schedules require automation_id")
-            raw_input = target.get("input", {})
-            if raw_input is not None and not isinstance(raw_input, dict):
-                raise SchedulerValidationError("Automation schedule input must be an object")
-            return
-        raise SchedulerValidationError(f"Unsupported schedule target type: {target_type}")
+        try:
+            validator = TARGET_VALIDATORS[ScheduleTargetType(target_type)]
+        except ValueError:
+            raise SchedulerValidationError(f"Unsupported schedule target type: {target_type}") from None
+
+        try:
+            validator.validate(target)
+        except ValueError as exc:
+            raise SchedulerValidationError(str(exc)) from None
