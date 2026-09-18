@@ -57,17 +57,29 @@ final class RecordingProfileTests: XCTestCase {
         XCTAssertEqual(profile.eventLabel, "screen+microphone")
     }
 
-    func testPodcastPresetIsMicrophoneOnly() {
+    func testVoiceOnlyPresetIsMicrophoneOnly() {
         // Deliberately excludes system audio: it would drag in the Screen Recording
         // permission an audio-only recording otherwise never needs.
-        XCTAssertEqual(RecordingPreset.podcast.profile.tracks, [.microphone])
+        XCTAssertEqual(RecordingPreset.voiceOnly.profile.tracks, [.microphone])
     }
 
-    func testCameraOnlyPresetIncludesTheMicrophone() {
-        XCTAssertEqual(RecordingPreset.cameraOnly.profile.tracks, [.camera, .microphone])
+    func testVoiceAndCameraPresetIncludesTheMicrophone() {
+        XCTAssertEqual(RecordingPreset.voiceAndCamera.profile.tracks, [.camera, .microphone])
     }
 
     func testFullStudioPresetIsEveryTrack() {
         XCTAssertEqual(RecordingPreset.fullStudio.profile.tracks, Set(TrackKind.allCases))
+    }
+
+    func testScreenVoiceCameraPresetExcludesSystemAudio() {
+        XCTAssertEqual(RecordingPreset.screenVoiceCamera.profile.tracks, [.screen, .camera, .microphone])
+    }
+
+    func testScreenVoiceSystemAudioPresetExcludesCamera() {
+        XCTAssertEqual(RecordingPreset.screenVoiceSystemAudio.profile.tracks, [.screen, .microphone, .systemAudio])
+    }
+
+    func testScreenAndSystemAudioPresetExcludesTheMicrophone() {
+        XCTAssertEqual(RecordingPreset.screenAndSystemAudio.profile.tracks, [.screen, .systemAudio])
     }
 }

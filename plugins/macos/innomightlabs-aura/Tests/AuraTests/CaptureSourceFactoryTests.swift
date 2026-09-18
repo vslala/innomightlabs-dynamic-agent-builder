@@ -12,7 +12,7 @@ import XCTest
 /// `ScreenCaptureSource` at all.
 final class CaptureSourceFactoryTests: XCTestCase {
     func testPodcastProfileProducesOneMicrophoneSource() {
-        let request = RecordingRequest(profile: RecordingPreset.podcast.profile, screenTarget: nil)
+        let request = RecordingRequest(profile: RecordingPreset.voiceOnly.profile, screenTarget: nil)
         let sources = CaptureSourceFactory.sources(for: request)
 
         XCTAssertEqual(sources.count, 1)
@@ -21,7 +21,7 @@ final class CaptureSourceFactoryTests: XCTestCase {
     }
 
     func testCameraOnlyProfileProducesCameraAndMicrophoneSourcesButNoScreenSource() {
-        let request = RecordingRequest(profile: RecordingPreset.cameraOnly.profile, screenTarget: nil)
+        let request = RecordingRequest(profile: RecordingPreset.voiceAndCamera.profile, screenTarget: nil)
         let sources = CaptureSourceFactory.sources(for: request)
 
         XCTAssertEqual(Set(sources.flatMap(\.kinds)), [.camera, .microphone])

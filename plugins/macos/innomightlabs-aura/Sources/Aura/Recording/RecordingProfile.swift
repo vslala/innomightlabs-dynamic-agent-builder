@@ -44,22 +44,31 @@ struct RecordingProfile: Equatable, Codable, Sendable {
 
 /// The named modes in the menu bar. A preset is a shortcut that *writes* a profile; the
 /// profile remains the source of truth, and a profile matching no preset is "Custom".
+///
+/// Declaration order is display order: `allCases` drives both preset pickers directly, widest
+/// combination (every track) down to the narrowest (voice alone) — not alphabetical or by
+/// track count, but by how a presenter would scan the list looking for "the one with screen
+/// and system audio but no camera."
 enum RecordingPreset: String, CaseIterable, Identifiable, Sendable {
     case fullStudio
-    case screenAndVoice
+    case screenVoiceCamera
+    case screenVoiceSystemAudio
     case screenAndSystemAudio
-    case podcast
-    case cameraOnly
+    case screenAndVoice
+    case voiceAndCamera
+    case voiceOnly
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .fullStudio: return "Full Studio"
-        case .screenAndVoice: return "Screen + Voice"
+        case .fullStudio: return "Full Studio Recording"
+        case .screenVoiceCamera: return "Screen + Voice + Camera"
+        case .screenVoiceSystemAudio: return "Screen + Voice + System Audio"
         case .screenAndSystemAudio: return "Screen + System Audio"
-        case .podcast: return "Podcast (audio only)"
-        case .cameraOnly: return "Camera only"
+        case .screenAndVoice: return "Screen + Voice"
+        case .voiceAndCamera: return "Voice + Camera"
+        case .voiceOnly: return "Voice Only"
         }
     }
 
@@ -67,18 +76,24 @@ enum RecordingPreset: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .fullStudio:
             return .fullStudio
-        case .screenAndVoice:
-            return RecordingProfile(tracks: [.screen, .microphone])
+        case .screenVoiceCamera:
+            return RecordingProfile(tracks: [.screen, .camera, .microphone])
+        case .screenVoiceSystemAudio:
+            return RecordingProfile(tracks: [.screen, .microphone, .systemAudio])
+        // No microphone: this is the silent screen-plus-system-audio capture, distinct from
+        // `screenVoiceSystemAudio` which adds a narrated voice track.
         case .screenAndSystemAudio:
             return RecordingProfile(tracks: [.screen, .systemAudio])
+        case .screenAndVoice:
+            return RecordingProfile(tracks: [.screen, .microphone])
+        // With the mic, because a talking head with no voice is not a thing anyone records.
+        case .voiceAndCamera:
+            return RecordingProfile(tracks: [.camera, .microphone])
         // Voice only, not voice + system audio: system audio would drag in the Screen
         // Recording permission that an audio-only recording otherwise never needs. A remote
         // guest is one visible toggle away, which makes it a choice rather than a surprise.
-        case .podcast:
+        case .voiceOnly:
             return RecordingProfile(tracks: [.microphone])
-        // With the mic, because a talking head with no voice is not a thing anyone records.
-        case .cameraOnly:
-            return RecordingProfile(tracks: [.camera, .microphone])
         }
     }
 
