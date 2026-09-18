@@ -80,6 +80,16 @@ class Settings:
     dream_message_page_size: int = 200
     dream_chunk_max_words: int = 6000
     dream_window_overlap_words: int = 100
+    # A DynamoDB lease prevents the same agent's Dream pass running concurrently
+    # across scheduler reloads or multiple API processes.
+    dream_run_lease_seconds: int = 15 * 60
+    # A periodic sweep that fails any DreamRun still `running` whose lease is
+    # gone (worker died without releasing it) — mirrors the crawl-job reaper.
+    dream_run_reaper_interval_seconds: int = 5 * 60
+    # A stall (inactivity) timeout for a single streaming planner call: it resets on every
+    # event, so an actively-streaming response is never cut off, only a provider that goes
+    # quiet mid-stream (connection kept open, nothing arriving) trips it.
+    dream_planner_timeout_seconds: int = 150
     crawl_job_stale_timeout_seconds: int = 15 * 60
     crawl_job_reaper_interval_seconds: int = 5 * 60
     mcp_oauth_redirect_uri: str = ""

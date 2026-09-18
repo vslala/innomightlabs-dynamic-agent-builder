@@ -15,6 +15,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from src.config import settings
+from src.dream.repository import DreamRepository
 from src.knowledge.run_state import CrawlJobStateService
 from src.scheduler.models import Schedule, ScheduleStatus
 from src.scheduler.repository import SchedulerRepository
@@ -22,6 +23,7 @@ from src.scheduler.repository import SchedulerRepository
 log = logging.getLogger(__name__)
 
 CRAWL_JOB_REAPER_ID = "internal:stale-crawl-job-reaper"
+DREAM_RUN_REAPER_ID = "internal:stale-dream-run-reaper"
 
 
 class SchedulerRuntime:
@@ -31,9 +33,11 @@ class SchedulerRuntime:
         self,
         repository: SchedulerRepository | None = None,
         crawl_job_state_service: CrawlJobStateService | None = None,
+        dream_repository: DreamRepository | None = None,
     ):
         self.repository = repository or SchedulerRepository()
         self.crawl_job_state_service = crawl_job_state_service or CrawlJobStateService()
+        self.dream_repository = dream_repository or DreamRepository()
         self.scheduler = AsyncIOScheduler(timezone=timezone.utc)
         self._started = False
 
@@ -49,6 +53,17 @@ class SchedulerRuntime:
                 timezone=timezone.utc,
             ),
             id=CRAWL_JOB_REAPER_ID,
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        self.scheduler.add_job(
+            self._reap_stale_dream_runs,
+            trigger=IntervalTrigger(
+                seconds=settings.dream_run_reaper_interval_seconds,
+                timezone=timezone.utc,
+            ),
+            id=DREAM_RUN_REAPER_ID,
             replace_existing=True,
             coalesce=True,
             max_instances=1,
@@ -107,6 +122,14 @@ class SchedulerRuntime:
                 log.warning("Marked %s stale crawl job(s) as failed", failed_count)
         except Exception:
             log.exception("Failed to reap stale crawl jobs")
+
+    async def _reap_stale_dream_runs(self) -> None:
+        try:
+            failed_count = self.dream_repository.fail_stale_runs()
+            if failed_count:
+                log.warning("Marked %s stale dream run(s) as failed", failed_count)
+        except Exception:
+            log.exception("Failed to reap stale dream runs")
 
 
 _runtime: SchedulerRuntime | None = None

@@ -27,7 +27,7 @@ from src.scheduler.models import (
 )
 from src.scheduler.repository import ScheduleRunAlreadyExists, SchedulerRepository
 from src.scheduler import runtime as scheduler_runtime_module
-from src.scheduler.runtime import CRAWL_JOB_REAPER_ID, SchedulerRuntime
+from src.scheduler.runtime import CRAWL_JOB_REAPER_ID, DREAM_RUN_REAPER_ID, SchedulerRuntime
 from src.scheduler.service import SchedulerService
 from tests.mock_data import TEST_USER_EMAIL
 
@@ -228,6 +228,21 @@ async def test_scheduler_runtime_registers_global_crawl_job_reaper(dynamodb_tabl
     await runtime.start()
     try:
         assert runtime.scheduler.get_job(CRAWL_JOB_REAPER_ID) is not None
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_runtime_registers_global_dream_run_reaper(dynamodb_table):
+    dream_repository = SimpleNamespace(fail_stale_runs=lambda: 0)
+    runtime = SchedulerRuntime(
+        repository=SchedulerRepository(),
+        dream_repository=dream_repository,
+    )
+
+    await runtime.start()
+    try:
+        assert runtime.scheduler.get_job(DREAM_RUN_REAPER_ID) is not None
     finally:
         await runtime.stop()
 

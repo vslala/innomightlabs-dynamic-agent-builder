@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from typing import AsyncIterator, cast
 
@@ -112,3 +113,64 @@ async def test_plan_accumulates_usage_events_across_the_stream() -> None:
 
     assert result.plan.session_summary == "done"
     assert (result.prompt_tokens, result.completion_tokens) == (17, 7)
+
+
+class StallingProvider:
+    """Never yields, simulating a connection the provider keeps open but sends nothing on."""
+
+    async def stream_response(self, *args, **kwargs) -> AsyncIterator[LLMEvent]:
+        await asyncio.Event().wait()
+        yield LLMEvent(type="stop")  # pragma: no cover - unreachable, satisfies generator typing
+
+
+class SlowButProgressingProvider:
+    """Sends events slower than the stall timeout, but never goes quiet for that long."""
+
+    def __init__(self, events: list[LLMEvent], *, delay_seconds: float) -> None:
+        self.events = events
+        self.delay_seconds = delay_seconds
+
+    async def stream_response(self, *args, **kwargs) -> AsyncIterator[LLMEvent]:
+        for event in self.events:
+            await asyncio.sleep(self.delay_seconds)
+            yield event
+
+
+@pytest.mark.asyncio
+async def test_plan_raises_when_the_provider_goes_quiet_mid_stream() -> None:
+    blocks, memories = memory_blocks()
+
+    with pytest.raises(TimeoutError, match="received no data"):
+        await DreamPlanner().plan(
+            provider=cast(LLMProvider, StallingProvider()),
+            credentials={},
+            model_name="dream-model",
+            chunk=dream_chunk(),
+            block_definitions=blocks,
+            core_memories=memories,
+            stall_timeout_seconds=0.01,
+        )
+
+
+@pytest.mark.asyncio
+async def test_plan_does_not_time_out_a_response_that_keeps_actively_streaming() -> None:
+    blocks, memories = memory_blocks()
+    events = [
+        LLMEvent(type="text", content='{"actions": [], '),
+        LLMEvent(type="text", content='"session_summary": "done"}'),
+    ]
+    provider = SlowButProgressingProvider(events, delay_seconds=0.02)
+
+    result = await DreamPlanner().plan(
+        provider=cast(LLMProvider, provider),
+        credentials={},
+        model_name="dream-model",
+        chunk=dream_chunk(),
+        block_definitions=blocks,
+        core_memories=memories,
+        # Each individual gap (0.02s) is under the stall timeout even though the
+        # call's total duration (0.04s) exceeds it — proves this is not a flat cap.
+        stall_timeout_seconds=0.03,
+    )
+
+    assert result.plan.session_summary == "done"

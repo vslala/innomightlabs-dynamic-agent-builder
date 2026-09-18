@@ -8,6 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from fastapi.security import HTTPBearer
 
 from src.agents.repository import AgentRepository
+from src.config import settings as app_settings
 from src.dream.models import DreamSettings, DreamSettingsRequest
 from src.dream.repository import DreamRepository, get_dream_repository
 from src.dream.schemas import build_dream_settings_form
@@ -24,6 +25,12 @@ router = APIRouter(tags=["dream"], dependencies=[Depends(security)])
 def _agent_or_404(agent_id: str, user_email: str) -> None:
     if AgentRepository().find_agent_by_id(agent_id, user_email) is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+
+@router.get("/dream/status")
+async def get_status() -> dict[str, bool]:
+    """Expose the global feature flag so clients can omit unavailable Dream UI."""
+    return {"enabled": app_settings.dream_enabled}
 
 
 @router.get("/dream/settings", response_model=DreamSettings | None)

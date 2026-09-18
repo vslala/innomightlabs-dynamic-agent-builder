@@ -1,4 +1,7 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
+
+import pytest
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -22,6 +25,17 @@ class FakeDreamRepository:
         self.cursor = cursor
         self.runs = []
         self.action_logs = []
+        self.lease_available = True
+        self.released_lease_run_ids = []
+
+    def try_acquire_run_lease(self, agent_id, user_id, run_id, lease_seconds) -> bool:
+        return self.lease_available
+
+    def renew_run_lease(self, agent_id, user_id, run_id, lease_seconds) -> bool:
+        return True
+
+    def release_run_lease(self, agent_id, user_id, run_id) -> None:
+        self.released_lease_run_ids.append(run_id)
 
     def find_settings(self, user_email: str) -> DreamSettings | None:
         assert user_email == OWNER
@@ -131,6 +145,11 @@ class RecordingPlanner:
         )
 
 
+class CancelledPlanner:
+    async def plan(self, **kwargs):
+        raise asyncio.CancelledError()
+
+
 class FakeTokenUsageService:
     def __init__(self) -> None:
         self.records = []
@@ -203,6 +222,20 @@ def service_for(
     )
 
 
+async def test_dream_skips_when_another_run_holds_the_agent_lease():
+    repository = FakeDreamRepository(settings())
+    repository.lease_available = False
+    memory_repository = FakeMemoryRepository()
+    service = service_for(repository, memory_repository=memory_repository)
+
+    run = await service.dream(agent_id=AGENT_ID, user_id=USER_ID, owner_email=OWNER)
+
+    assert run.status == DreamRunStatus.SKIPPED
+    assert run.error == "another dream run is already active"
+    assert not memory_repository.initialized
+    assert repository.released_lease_run_ids == []
+
+
 async def test_dream_skips_when_disabled_without_initializing_memory():
     repository = FakeDreamRepository(settings(enabled=False, provider_name=None, model_name=None))
     memory_repository = FakeMemoryRepository()
@@ -236,6 +269,25 @@ async def test_dream_skips_agents_without_memgpt_core_memory():
     assert run.status == DreamRunStatus.SKIPPED
     assert run.error == "agent does not support core memory"
     assert not memory_repository.initialized
+
+
+async def test_dream_marks_run_failed_before_propagating_cancellation(monkeypatch):
+    stub_provider_access(monkeypatch)
+    conversation, messages = conversation_and_messages(message_contents=["durable fact"])
+    repository = FakeDreamRepository(settings())
+    service = service_for(
+        repository,
+        conversations=[conversation],
+        messages_by_conversation={conversation.conversation_id: messages},
+        planner=CancelledPlanner(),
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.dream(agent_id=AGENT_ID, user_id=USER_ID, owner_email=OWNER)
+
+    assert repository.runs[-1].status == DreamRunStatus.FAILED
+    assert repository.runs[-1].error == "Dream worker cancelled before the run completed"
+    assert repository.released_lease_run_ids == [repository.runs[-1].run_id]
 
 
 async def test_dream_carries_prior_summary_across_chunks_and_advances_cursor(monkeypatch):

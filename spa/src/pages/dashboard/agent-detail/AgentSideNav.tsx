@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { NavLink, useLocation, useParams } from "react-router-dom";
-import { BarChart3, BookOpen, Bot, Database, Key, Network, Server, Wrench } from "lucide-react";
+import { BarChart3, BookOpen, Bot, Brain, Database, Key, Network, Server, Wrench } from "lucide-react";
 
 import { cn } from "../../../lib/utils";
+import { dreamApiService } from "../../../services/dream";
 import "./AgentSideNav.css";
 
 interface AgentNavItem {
@@ -14,6 +16,7 @@ interface AgentNavItem {
 const navItems: AgentNavItem[] = [
   { path: "", label: "Overview", icon: Bot, end: true },
   { path: "memory", label: "Memory", icon: Database },
+  { path: "dream", label: "Dream", icon: Brain },
   { path: "api-keys", label: "API Keys", icon: Key },
   { path: "knowledge-bases", label: "Knowledge Bases", icon: BookOpen },
   { path: "skills", label: "Skills", icon: Wrench },
@@ -25,13 +28,18 @@ const navItems: AgentNavItem[] = [
 export function AgentSideNav() {
   const { agentId } = useParams<{ agentId: string }>();
   const location = useLocation();
+  const [dreamAvailable, setDreamAvailable] = useState(false);
+
+  useEffect(() => {
+    void dreamApiService.isAvailable().then((status) => setDreamAvailable(status.enabled)).catch(() => setDreamAvailable(false));
+  }, []);
 
   if (!agentId) return null;
 
   return (
     <aside className="agent-side-nav">
       <nav className="agent-side-nav__list">
-        {navItems.map((item) => {
+        {navItems.filter((item) => item.path !== "dream" || dreamAvailable).map((item) => {
           const to = item.path
             ? `/dashboard/agents/${agentId}/${item.path}`
             : `/dashboard/agents/${agentId}`;

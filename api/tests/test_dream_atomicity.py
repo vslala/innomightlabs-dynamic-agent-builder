@@ -21,6 +21,17 @@ class FakeDreamRepository:
         self.cursor: DreamCursor | None = None
         self.runs = []
         self.logs = []
+        self.lease_available = True
+        self.released_lease_run_ids = []
+
+    def try_acquire_run_lease(self, agent_id, user_id, run_id, lease_seconds):
+        return self.lease_available
+
+    def renew_run_lease(self, agent_id, user_id, run_id, lease_seconds):
+        return True
+
+    def release_run_lease(self, agent_id, user_id, run_id):
+        self.released_lease_run_ids.append(run_id)
 
     def find_settings(self, user_email: str):
         return self.settings
@@ -129,6 +140,10 @@ def result(*actions: DreamAction, summary: str = "summary") -> DreamPlanningResu
     return DreamPlanningResult(plan=DreamPlan(actions=list(actions), session_summary=summary), prompt_tokens=1, completion_tokens=1)
 
 
+def no_op() -> DreamAction:
+    return DreamAction(type=DreamActionType.NO_OP, reason="No durable memory change", confidence=1.0)
+
+
 def build_service(repository, memory, planner, messages: list[Message]) -> DreamService:
     conversation = Conversation(
         conversation_id="conversation-1", title="Dream test", agent_id=AGENT_ID, created_by=OWNER
@@ -189,6 +204,30 @@ async def test_action_budget_is_checked_between_sessions_after_finishing_current
     assert memory.memory.lines == ["first", "second"]
     assert repository.cursor is not None
     assert repository.cursor.sessions_dreamed == 1
+
+
+async def test_no_op_is_audited_without_consuming_action_budget(monkeypatch):
+    stub_provider_access(monkeypatch)
+    repository = FakeDreamRepository(
+        DreamSettings(
+            user_email=OWNER, enabled=True, provider_name="test", model_name="test-model",
+            soft_actions_per_run=1,
+        )
+    )
+    memory = FakeMemoryRepository()
+    service = build_service(repository, memory, PlannedActions([result(no_op())]), closed_messages())
+
+    run = await service.dream(agent_id=AGENT_ID, user_id=OWNER, owner_email=OWNER)
+
+    assert run.status == DreamRunStatus.SUCCEEDED
+    assert run.actions_proposed == 1
+    assert run.actions_executed == 0
+    assert run.actions_skipped == 0
+    assert run.actions_no_op == 1
+    assert run.actions_proposed == run.actions_executed + run.actions_skipped + run.actions_no_op
+    assert len(repository.logs) == 1
+    assert repository.logs[0].action_type == DreamActionType.NO_OP
+    assert repository.logs[0].outcome.value == "executed"
 
 
 async def test_crash_before_session_completion_leaves_cursor_unadvanced_and_retry_replays_session(monkeypatch):

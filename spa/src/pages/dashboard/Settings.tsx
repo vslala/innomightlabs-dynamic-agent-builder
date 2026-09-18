@@ -40,6 +40,7 @@ import {
   type SmartSuggestionSettings,
 } from "../../services/smartSuggestions";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
+import { dreamApiService } from "../../services/dream";
 import { defaultAgentService } from "../../services/settings/DefaultAgentService";
 import { getStoredTheme, setStoredTheme, type AppTheme } from "../../lib/theme";
 import styles from "./Settings.module.css";
@@ -74,6 +75,11 @@ export function Settings() {
   const [smartSuggestionSchema, setSmartSuggestionSchema] = useState<FormSchema | null>(null);
   const [smartSuggestionLoading, setSmartSuggestionLoading] = useState(true);
   const [smartSuggestionSaving, setSmartSuggestionSaving] = useState(false);
+
+  const [dreamSchema, setDreamSchema] = useState<FormSchema | null>(null);
+  const [dreamLoading, setDreamLoading] = useState(true);
+  const [dreamSaving, setDreamSaving] = useState(false);
+  const [dreamAvailable, setDreamAvailable] = useState(false);
   const [agent2AgentSettings, setAgent2AgentSettings] = useState<Agent2AgentSettings | null>(null);
   const [agent2AgentSchema, setAgent2AgentSchema] = useState<FormSchema | null>(null);
   const [agent2AgentLoading, setAgent2AgentLoading] = useState(true);
@@ -95,6 +101,10 @@ export function Settings() {
     loadProviders();
     loadSubscription();
     loadSmartSuggestionSettings();
+    void dreamApiService.isAvailable().then((status) => {
+      setDreamAvailable(status.enabled);
+      if (status.enabled) void loadDreamSettings();
+    }).catch(() => setDreamAvailable(false));
     loadAgent2AgentSettings();
     loadDefaultAgentSettings();
   }, []);
@@ -241,6 +251,36 @@ export function Settings() {
     } finally {
       setSmartSuggestionSaving(false);
     }
+  };
+
+  const loadDreamSettings = async () => {
+    setDreamLoading(true);
+    try {
+      setDreamSchema(await dreamApiService.getSettingsSchema());
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to load Dream settings. Please try again."));
+    } finally { setDreamLoading(false); }
+  };
+
+  const handleSaveDreamSettings = async (data: Record<string, FormValue>) => {
+    setDreamSaving(true); setError(null);
+    try {
+      const enabled = data.enabled === "true";
+      const providerName = typeof data.provider_name === "string" ? data.provider_name : null;
+      const modelName = typeof data.model_name === "string" ? data.model_name : null;
+      await dreamApiService.saveSettings({
+        enabled, provider_name: enabled ? providerName : null, model_name: enabled ? modelName : null,
+        cron_expression: typeof data.cron_expression === "string" ? data.cron_expression : "0 3 * * *",
+        timezone: typeof data.timezone === "string" ? data.timezone : "UTC",
+        soft_sessions_per_run: 25,
+        soft_chunks_per_run: 120,
+        soft_actions_per_run: 40,
+        min_confidence: 0.75,
+        backfill_days: 30,
+      });
+      await loadDreamSettings();
+    } catch (err) { setError(getErrorMessage(err, "Failed to save Dream settings. Please try again.")); }
+    finally { setDreamSaving(false); }
   };
 
   const loadAgent2AgentSettings = async () => {
@@ -743,6 +783,18 @@ export function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {dreamAvailable && <Card>
+        <CardHeader>
+          <CardTitle>Dream</CardTitle>
+          <CardDescription>Choose the model and nightly schedule used to organize agent memory.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {dreamLoading ? <div className={styles.loadingRow}><Loader2 className={styles.sectionLoadingSpinner} /></div> : dreamSchema ? <div className={styles.formSection}>
+            <SchemaForm schema={dreamSchema} onSubmit={handleSaveDreamSettings} submitLabel="Save Dream Settings" isLoading={dreamSaving} />
+          </div> : <p className={styles.mutedText}>Dream settings are unavailable.</p>}
+        </CardContent>
+      </Card>}
 
       <Card>
         <CardHeader>

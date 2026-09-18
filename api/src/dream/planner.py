@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 
@@ -37,6 +38,7 @@ class DreamPlanner:
         block_definitions: list[MemoryBlockDefinition],
         core_memories: list[CoreMemory],
         prior_summary: str = "",
+        stall_timeout_seconds: float = 150,
     ) -> DreamPlanningResult:
         payload = {
             "session": {
@@ -67,12 +69,24 @@ class DreamPlanner:
         }
         response = ""
         prompt_tokens = completion_tokens = 0
-        async for event in provider.stream_response(
+        events = provider.stream_response(
             [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": json.dumps(payload)}],
             credentials,
             tools=None,
             model=model_name,
-        ):
+        )
+        while True:
+            try:
+                # A stall timeout, not a call timeout: it resets on every event, so a response
+                # that keeps actively streaming can run as long as it needs to. Only a provider
+                # that goes quiet mid-stream (connection kept open, nothing arriving) trips it.
+                event = await asyncio.wait_for(events.__anext__(), timeout=stall_timeout_seconds)
+            except StopAsyncIteration:
+                break
+            except asyncio.TimeoutError as exc:
+                raise TimeoutError(
+                    f"Dream planner received no data for {stall_timeout_seconds} seconds"
+                ) from exc
             if event.type == "text":
                 response += event.content
             elif event.type == "usage":

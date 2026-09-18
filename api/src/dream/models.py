@@ -134,6 +134,7 @@ class DreamRun(BaseModel):
     actions_proposed: int = 0
     actions_executed: int = 0
     actions_skipped: int = 0
+    actions_no_op: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
     error: str | None = None

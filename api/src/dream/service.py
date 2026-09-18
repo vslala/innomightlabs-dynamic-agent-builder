@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from asyncio import CancelledError
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
@@ -113,6 +114,10 @@ class DreamService:
     ) -> DreamRun:
         run = DreamRun(run_id=str(uuid4()), agent_id=agent_id, user_id=user_id, owner_email=owner_email, mode=mode)
         self.dream_repository.save_run(run)
+        if not self.dream_repository.try_acquire_run_lease(
+            agent_id, user_id, run.run_id, app_settings.dream_run_lease_seconds
+        ):
+            return self._finish(run, DreamRunStatus.SKIPPED, "another dream run is already active")
         try:
             dream_settings = self.dream_repository.find_settings(owner_email)
             if not app_settings.dream_enabled or not dream_settings or (not dream_settings.enabled and mode != "manual"):
@@ -158,6 +163,10 @@ class DreamService:
                 prior_summary = ""
 
                 for chunk in chunks:
+                    if not self.dream_repository.renew_run_lease(
+                        agent_id, user_id, run.run_id, app_settings.dream_run_lease_seconds
+                    ):
+                        raise RuntimeError("lost Dream run lease")
                     if not any(message.role == "user" for message in chunk.messages):
                         run.chunks_skipped_empty += 1
                         continue
@@ -173,6 +182,7 @@ class DreamService:
                         block_definitions=self.memory_repository.get_block_definitions(agent_id, user_id),
                         core_memories=self.memory_repository.get_all_core_memories(agent_id, user_id),
                         prior_summary=prior_summary,
+                        stall_timeout_seconds=app_settings.dream_planner_timeout_seconds,
                     )
                     prior_summary = planning.plan.session_summary
                     run.chunks_planned += 1
@@ -193,7 +203,12 @@ class DreamService:
                             confidence=action.confidence, outcome=outcome, detail=detail,
                             session_ref=f"{session.conversation_id}:{session.ended_at.isoformat()}",
                         ))
-                        if outcome == DreamActionOutcome.EXECUTED:
+                        # `no_op` is an audited planner decision, not a memory write.
+                        # It must not consume the advisory action budget for the next session,
+                        # but still needs its own bucket so proposed == executed + skipped + no_op.
+                        if outcome == DreamActionOutcome.EXECUTED and action.type.value == "no_op":
+                            run.actions_no_op += 1
+                        elif outcome == DreamActionOutcome.EXECUTED:
                             run.actions_executed += 1
                         else:
                             run.actions_skipped += 1
@@ -211,8 +226,19 @@ class DreamService:
                 self.dream_repository.save_cursor(cursor)
             run.budget_overshoot_chunks = max(0, run.chunks_planned - dream_settings.soft_chunks_per_run)
             return self._finish(run, DreamRunStatus.PARTIAL if run.sessions_remaining else DreamRunStatus.SUCCEEDED)
+        except CancelledError:
+            self._finish(run, DreamRunStatus.FAILED, "Dream worker cancelled before the run completed")
+            raise
         except Exception as exc:
             return self._finish(run, DreamRunStatus.FAILED, str(exc))
+        finally:
+            # A transient error here must not replace the try block's real return value or
+            # exception. The lease is harmless to leak: it self-expires, and the periodic
+            # reaper (DreamRepository.fail_stale_runs) corrects the DreamRun row either way.
+            try:
+                self.dream_repository.release_run_lease(agent_id, user_id, run.run_id)
+            except Exception:
+                pass
 
     @staticmethod
     def _at_budget(run: DreamRun, dream_settings: DreamSettings) -> bool:

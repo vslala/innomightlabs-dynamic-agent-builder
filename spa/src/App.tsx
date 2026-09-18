@@ -38,6 +38,7 @@ const ConnectorsPage = lazyRoute(() => import('./pages/dashboard/ConnectorsPage'
 const AgentDetailLayout = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentDetailLayout'), 'AgentDetailLayout');
 const AgentOverviewPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentOverviewPage'), 'AgentOverviewPage');
 const AgentMemoryPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentMemoryPage'), 'AgentMemoryPage');
+const AgentDreamPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentDreamPage'), 'AgentDreamPage');
 const AgentApiKeysPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentApiKeysPage'), 'AgentApiKeysPage');
 const AgentKnowledgeBasesPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentKnowledgeBasesPage'), 'AgentKnowledgeBasesPage');
 const AgentSkillsPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentSkillsPage'), 'AgentSkillsPage');
@@ -122,6 +123,7 @@ function App() {
           <Route path="agents/:agentId" element={<AgentDetailLayout />}>
             <Route index element={<AgentOverviewPage />} />
             <Route path="memory" element={<AgentMemoryPage />} />
+            <Route path="dream" element={<AgentDreamPage />} />
             <Route path="api-keys" element={<AgentApiKeysPage />} />
             <Route path="knowledge-bases" element={<AgentKnowledgeBasesPage />} />
             <Route path="skills" element={<AgentSkillsPage />} />
