@@ -36,7 +36,7 @@ import {
 } from "../../components/ui/select";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
-import { chatService } from "../../services/chat";
+import { chatService, type ActiveTurn } from "../../services/chat";
 import { authService } from "../../services/auth";
 import type { ConversationResponse } from "../../types/conversation";
 import type { FormSchema } from "../../types/form";
@@ -77,6 +77,7 @@ export function ConversationDetail() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [activeForm, setActiveForm] = useState<{ form: FormSchema; submitLabel?: string } | null>(null);
@@ -109,6 +110,7 @@ export function ConversationDetail() {
   const pendingCanvasArtifactsRef = useRef<MessageCanvasArtifact[]>([]);
   const initialMessageSentRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
   const {
     attachments,
     error: attachmentError,
@@ -207,7 +209,42 @@ export function ConversationDetail() {
   useEffect(() => {
     initialMessageSentRef.current = false;
     loadData();
+
+    // Stop reading the stream when navigating away or switching conversations.
+    // The server-side turn keeps running either way — see
+    // api/docs/LLD-async-chat-turns.md. The reattach effect below picks it back
+    // up if this conversation still has one running.
+    return () => {
+      streamAbortRef.current?.abort();
+      streamAbortRef.current = null;
+      finishTurn();
+      resetTurnUiState();
+    };
   }, [conversationId]);
+
+  // Reattach to a turn still running for this conversation — covers navigating
+  // back and a full page refresh identically, since both start from scratch here.
+  useEffect(() => {
+    if (!conversation || !initialMessagesLoaded) return;
+    let cancelled = false;
+
+    (async () => {
+      let active: ActiveTurn | null = null;
+      try {
+        active = await chatService.getActiveTurn(conversation.agent_id, conversation.conversation_id);
+      } catch (err) {
+        console.error("Failed to check for an in-progress response:", err);
+        return;
+      }
+      if (cancelled || !active || active.status !== "running") return;
+      void attachToTurn(active.turn_id, "");
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation?.conversation_id, initialMessagesLoaded]);
 
   useEffect(() => {
     const state = location.state as ConversationNavigationState | null;
@@ -350,6 +387,300 @@ export function ConversationDetail() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isExpanded]);
 
+  // Transient turn UI (streaming text, tool activity, forms, image preview) — not
+  // the persisted message list, which loadData()/setMessages own separately.
+  const resetTurnUiState = () => {
+    setChatError(null);
+    setStatusMessage(null);
+    setStreamingContent("");
+    setToolActivities([]);
+    setActiveForm(null);
+    setIncompleteResponse(false);
+    streamingContentRef.current = "";
+    hadToolCallsRef.current = false;
+    renderedFormRef.current = false;
+    assistantMessageSavedRef.current = false;
+    pendingCanvasArtifactsRef.current = [];
+  };
+
+  const finishTurn = () => {
+    setIsSending(false);
+    setStatusMessage(null);
+    setActiveTurnId(null);
+  };
+
+  interface TurnEventContext {
+    conversationId: string;
+    /** The optimistic temp id to reconcile once the real user message is saved. */
+    optimisticUserMessageId: string;
+    imageLabel: string;
+    finish: () => void;
+  }
+
+  // Applies one SSE event to chat UI state. Shared by a fresh send and by
+  // reattaching to a turn still running server-side, so the two render
+  // identically — see api/docs/LLD-async-chat-turns.md.
+  const applyTurnEvent = (event: SSEEvent, ctx: TurnEventContext) => {
+    switch (event.event_type) {
+      case SSEEventType.LIFECYCLE_NOTIFICATION:
+        setStatusMessage(event.content);
+        setStreamingImagePreview((prev) =>
+          prev ? { ...prev, status: event.content } : prev
+        );
+        break;
+
+      case SSEEventType.AGENT_RESPONSE_TO_USER:
+        setStatusMessage(null);
+        streamingContentRef.current += event.content;
+        setStreamingContent(streamingContentRef.current);
+        break;
+
+      case SSEEventType.UI_FORM_RENDER:
+        if (event.form) {
+          renderedFormRef.current = true;
+          setPendingFormLabel(null);
+          setActiveForm({
+            form: event.form,
+            submitLabel: event.submit_label || undefined,
+          });
+        }
+        break;
+
+      case SSEEventType.CANVAS_ARTIFACT_READY:
+        if (event.canvas_artifact_id) {
+          pendingCanvasArtifactsRef.current.push({
+            artifact_id: event.canvas_artifact_id,
+            title: event.canvas_title || "Canvas",
+            mime_type: event.canvas_mime_type || "text/html",
+            caption: event.canvas_caption,
+            content_url: event.canvas_content_url,
+          });
+        }
+        break;
+
+      case SSEEventType.IMAGE_GENERATION_STARTED:
+        latestImagePreviewDataUrlRef.current = null;
+        setStatusMessage(event.content);
+        setStreamingImagePreview({
+          prompt: ctx.imageLabel || "Generated image",
+          dataUrl: null,
+          status: event.content,
+        });
+        break;
+
+      case SSEEventType.IMAGE_GENERATION_PARTIAL:
+        if (event.image_b64) {
+          const dataUrl = `data:${event.image_mime_type || "image/png"};base64,${event.image_b64}`;
+          latestImagePreviewDataUrlRef.current = dataUrl;
+          setStatusMessage(null);
+          setStreamingImagePreview({
+            prompt: ctx.imageLabel || "Generated image",
+            dataUrl,
+            status: "Painting preview...",
+          });
+        }
+        break;
+
+      case SSEEventType.IMAGE_GENERATION_COMPLETE:
+        {
+          const completedImages = event.images;
+          if (!completedImages || completedImages.length === 0) {
+            setStreamingImagePreview(null);
+            setStatusMessage(null);
+            break;
+          }
+
+          assistantMessageSavedRef.current = true;
+          const imageMessageId = event.message_id || `assistant-image-${Date.now()}`;
+          setMessages((prev) =>
+            prev.some((m) => m.message_id === imageMessageId)
+              ? prev
+              : [
+                  ...prev,
+                  {
+                    message_id: imageMessageId,
+                    conversation_id: ctx.conversationId,
+                    role: "assistant",
+                    content: `Generated image: ${ctx.imageLabel || "Generated image"}`,
+                    images: completedImages.map((image) => ({
+                      image_id: image.image_id,
+                      url: image.url,
+                      preview_data_url: latestImagePreviewDataUrlRef.current,
+                      filename: image.filename,
+                      mime_type: image.mime_type,
+                      size_bytes: image.size_bytes,
+                      width: image.width,
+                      height: image.height,
+                      prompt: image.prompt,
+                      revised_prompt: image.revised_prompt,
+                    })),
+                    created_at: new Date().toISOString(),
+                  },
+                ]
+          );
+        }
+        latestImagePreviewDataUrlRef.current = null;
+        setStreamingImagePreview(null);
+        setStatusMessage(null);
+        break;
+
+      case SSEEventType.USER_MESSAGE_SAVED:
+        // Reconcile the optimistic temp id with the real one. On reattach there
+        // is no matching temp message (the real one already came from history),
+        // so this is a harmless no-op.
+        if (event.message_id) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.message_id === ctx.optimisticUserMessageId
+                ? { ...m, message_id: event.message_id! }
+                : m
+            )
+          );
+        }
+        break;
+
+      case SSEEventType.ASSISTANT_MESSAGE_SAVED:
+        // Add assistant message to list using ref value
+        if (streamingContentRef.current) {
+          assistantMessageSavedRef.current = true;
+          const assistantMessageId = event.message_id || `assistant-${Date.now()}`;
+          setMessages((prev) =>
+            prev.some((m) => m.message_id === assistantMessageId)
+              ? prev
+              : [
+                  ...prev,
+                  {
+                    message_id: assistantMessageId,
+                    conversation_id: ctx.conversationId,
+                    role: "assistant",
+                    content: streamingContentRef.current,
+                    canvases: pendingCanvasArtifactsRef.current.length
+                      ? pendingCanvasArtifactsRef.current
+                      : undefined,
+                    created_at: new Date().toISOString(),
+                  },
+                ]
+          );
+        }
+        pendingCanvasArtifactsRef.current = [];
+        break;
+
+      case SSEEventType.STREAM_COMPLETE:
+        if (
+          !assistantMessageSavedRef.current &&
+          hadToolCallsRef.current &&
+          !renderedFormRef.current
+        ) {
+          // Had tool calls but no final response - incomplete
+          setIncompleteResponse(true);
+        }
+        streamingContentRef.current = "";
+        latestImagePreviewDataUrlRef.current = null;
+        setStreamingContent("");
+        setStreamingImagePreview(null);
+        ctx.finish();
+        break;
+
+      case SSEEventType.TOOL_CALL_START:
+        hadToolCallsRef.current = true;
+        if (event.tool_name) {
+          const activity: ToolActivity = {
+            id: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            timestamp: new Date(),
+            tool_name: event.tool_name,
+            status: "running",
+            content: event.content,
+            tool_args: event.tool_args,
+            display_tool_name: event.display_tool_name,
+            display_tool_args: event.display_tool_args,
+          };
+          setToolActivities((prev) => [...prev, activity]);
+        }
+        break;
+
+      case SSEEventType.TOOL_CALL_RESULT:
+        if (event.tool_name) {
+          setToolActivities((prev) =>
+            prev.map((activity) =>
+              activity.tool_name === event.tool_name && activity.status === "running"
+                ? {
+                    ...activity,
+                    status: event.success ? "success" : "error",
+                    content: event.content,
+                  }
+                : activity
+            )
+          );
+        }
+        break;
+
+      case SSEEventType.TOKEN_USAGE_UPDATE:
+        if (event.llm_model) {
+          setLiveTokenUsage({
+            llm_model: event.llm_model,
+            prompt_tokens: event.prompt_tokens ?? 0,
+            completion_tokens: event.completion_tokens ?? 0,
+            total_tokens: event.total_tokens ?? 0,
+            call_count: event.call_count ?? 0,
+          });
+        }
+        break;
+
+      case SSEEventType.ERROR:
+        setChatError(event.content);
+        latestImagePreviewDataUrlRef.current = null;
+        setStreamingImagePreview(null);
+        ctx.finish();
+        break;
+
+      default:
+        break;
+    }
+  };
+
+  // Reattach to a turn that is still running (or just finished) server-side —
+  // on navigating back, on a full page refresh, and on a 409 conflict from
+  // handleSendMessage when another tab already started one.
+  const attachToTurn = async (turnId: string, imageLabel: string) => {
+    if (!conversation) return;
+
+    resetTurnUiState();
+    setActiveTurnId(turnId);
+    setIsSending(true);
+
+    streamAbortRef.current?.abort();
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+
+    const ctx: TurnEventContext = {
+      conversationId: conversation.conversation_id,
+      optimisticUserMessageId: "",
+      imageLabel,
+      finish: finishTurn,
+    };
+
+    await chatService.followTurn(conversation.agent_id, conversation.conversation_id, turnId, {
+      onEvent: (event) => applyTurnEvent(event, ctx),
+      signal: controller.signal,
+      onError: (err) => {
+        setChatError(err.message);
+        finishTurn();
+      },
+      onComplete: () => {
+        finishTurn();
+      },
+    });
+  };
+
+  const handleStopTurn = async () => {
+    if (!conversation || !activeTurnId) return;
+    try {
+      await chatService.stopTurn(conversation.agent_id, conversation.conversation_id, activeTurnId);
+    } catch (err) {
+      console.error("Failed to stop the response:", err);
+    }
+  };
+
   // Handle sending a message
   const handleSendMessage = async (
     messageOverride?: string,
@@ -368,17 +699,7 @@ export function ConversationDetail() {
       clearAttachments();
     }
     setIsSending(true);
-    setChatError(null);
-    setStatusMessage(null);
-    setStreamingContent("");
-    setToolActivities([]);
-    setActiveForm(null);
-    setIncompleteResponse(false);
-    streamingContentRef.current = "";
-    hadToolCallsRef.current = false;
-    renderedFormRef.current = false;
-    assistantMessageSavedRef.current = false;
-    pendingCanvasArtifactsRef.current = [];
+    resetTurnUiState();
 
     // Add user message to the list immediately (unless it's a retry/continue message)
     const isRetryMessage = messageOverride?.startsWith("Please continue");
@@ -395,237 +716,42 @@ export function ConversationDetail() {
       await nextAnimationFrame();
     }
 
-    let streamFinalized = false;
-    const finishStream = () => {
-      if (streamFinalized) return;
-      streamFinalized = true;
-      setIsSending(false);
-      setStatusMessage(null);
+    streamAbortRef.current?.abort();
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+
+    const ctx: TurnEventContext = {
+      conversationId: conversation.conversation_id,
+      optimisticUserMessageId: userMsg.message_id,
+      imageLabel: messageToSend,
+      finish: finishTurn,
     };
 
-    const handleEvent = (event: SSEEvent) => {
-      switch (event.event_type) {
-        case SSEEventType.LIFECYCLE_NOTIFICATION:
-          setStatusMessage(event.content);
-          setStreamingImagePreview((prev) =>
-            prev ? { ...prev, status: event.content } : prev
-          );
-          break;
-
-        case SSEEventType.AGENT_RESPONSE_TO_USER:
-          setStatusMessage(null);
-          streamingContentRef.current += event.content;
-          setStreamingContent(streamingContentRef.current);
-          break;
-
-        case SSEEventType.UI_FORM_RENDER:
-          if (event.form) {
-            renderedFormRef.current = true;
-            setPendingFormLabel(null);
-            setActiveForm({
-              form: event.form,
-              submitLabel: event.submit_label || undefined,
-            });
+    await chatService.sendMessage(
+      conversation.agent_id,
+      conversation.conversation_id,
+      messageToSend || "",
+      attachmentsToSend,
+      featureFlags.enableDeepResearch && (deepResearchOverride ?? deepResearchEnabled),
+      {
+        onEvent: (event) => applyTurnEvent(event, ctx),
+        signal: controller.signal,
+        onTurnStarted: (turnId) => setActiveTurnId(turnId),
+        onConflict: (runningTurnId) => {
+          if (!isRetryMessage) {
+            setMessages((prev) => prev.filter((m) => m.message_id !== userMsg.message_id));
           }
-          break;
-
-        case SSEEventType.CANVAS_ARTIFACT_READY:
-          if (event.canvas_artifact_id) {
-            pendingCanvasArtifactsRef.current.push({
-              artifact_id: event.canvas_artifact_id,
-              title: event.canvas_title || "Canvas",
-              mime_type: event.canvas_mime_type || "text/html",
-              caption: event.canvas_caption,
-              content_url: event.canvas_content_url,
-            });
-          }
-          break;
-
-        case SSEEventType.IMAGE_GENERATION_STARTED:
-          latestImagePreviewDataUrlRef.current = null;
-          setStatusMessage(event.content);
-          setStreamingImagePreview({
-            prompt: messageToSend || "Generated image",
-            dataUrl: null,
-            status: event.content,
-          });
-          break;
-
-        case SSEEventType.IMAGE_GENERATION_PARTIAL:
-          if (event.image_b64) {
-            const dataUrl = `data:${event.image_mime_type || "image/png"};base64,${event.image_b64}`;
-            latestImagePreviewDataUrlRef.current = dataUrl;
-            setStatusMessage(null);
-            setStreamingImagePreview({
-              prompt: messageToSend || "Generated image",
-              dataUrl,
-              status: "Painting preview...",
-            });
-          }
-          break;
-
-        case SSEEventType.IMAGE_GENERATION_COMPLETE:
-          {
-            const completedImages = event.images;
-            if (!completedImages || completedImages.length === 0) {
-              setStreamingImagePreview(null);
-              setStatusMessage(null);
-              break;
-            }
-
-            assistantMessageSavedRef.current = true;
-            setMessages((prev) => [
-              ...prev,
-              {
-                message_id: event.message_id || `assistant-image-${Date.now()}`,
-                conversation_id: conversation.conversation_id,
-                role: "assistant",
-                content: `Generated image: ${messageToSend || "Generated image"}`,
-                images: completedImages.map((image) => ({
-                  image_id: image.image_id,
-                  url: image.url,
-                  preview_data_url: latestImagePreviewDataUrlRef.current,
-                  filename: image.filename,
-                  mime_type: image.mime_type,
-                  size_bytes: image.size_bytes,
-                  width: image.width,
-                  height: image.height,
-                  prompt: image.prompt,
-                  revised_prompt: image.revised_prompt,
-                })),
-                created_at: new Date().toISOString(),
-              },
-            ]);
-          }
-          latestImagePreviewDataUrlRef.current = null;
-          setStreamingImagePreview(null);
-          setStatusMessage(null);
-          break;
-
-        case SSEEventType.USER_MESSAGE_SAVED:
-          // Update user message ID if provided
-          if (event.message_id) {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.message_id === userMsg.message_id
-                  ? { ...m, message_id: event.message_id! }
-                  : m
-              )
-            );
-          }
-          break;
-
-        case SSEEventType.ASSISTANT_MESSAGE_SAVED:
-          // Add assistant message to list using ref value
-          if (streamingContentRef.current) {
-            assistantMessageSavedRef.current = true;
-            const assistantMsg: Message = {
-              message_id: event.message_id || `assistant-${Date.now()}`,
-              conversation_id: conversation.conversation_id,
-              role: "assistant",
-              content: streamingContentRef.current,
-              canvases: pendingCanvasArtifactsRef.current.length ? pendingCanvasArtifactsRef.current : undefined,
-              created_at: new Date().toISOString(),
-            };
-            setMessages((msgs) => [...msgs, assistantMsg]);
-          }
-          pendingCanvasArtifactsRef.current = [];
-          break;
-
-        case SSEEventType.STREAM_COMPLETE:
-          if (
-            !assistantMessageSavedRef.current &&
-            hadToolCallsRef.current &&
-            !renderedFormRef.current
-          ) {
-            // Had tool calls but no final response - incomplete
-            setIncompleteResponse(true);
-          }
-          streamingContentRef.current = "";
-          latestImagePreviewDataUrlRef.current = null;
-          setStreamingContent("");
-          setStreamingImagePreview(null);
-          finishStream();
-          break;
-
-        case SSEEventType.TOOL_CALL_START:
-          hadToolCallsRef.current = true;
-          if (event.tool_name) {
-            const activity: ToolActivity = {
-              id: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              timestamp: new Date(),
-              tool_name: event.tool_name,
-              status: "running",
-              content: event.content,
-              tool_args: event.tool_args,
-              display_tool_name: event.display_tool_name,
-              display_tool_args: event.display_tool_args,
-            };
-            setToolActivities((prev) => [...prev, activity]);
-          }
-          break;
-
-        case SSEEventType.TOOL_CALL_RESULT:
-          if (event.tool_name) {
-            setToolActivities((prev) =>
-              prev.map((activity) =>
-                activity.tool_name === event.tool_name && activity.status === "running"
-                  ? {
-                      ...activity,
-                      status: event.success ? "success" : "error",
-                      content: event.content,
-                    }
-                  : activity
-              )
-            );
-          }
-          break;
-
-        case SSEEventType.TOKEN_USAGE_UPDATE:
-          if (event.llm_model) {
-            setLiveTokenUsage({
-              llm_model: event.llm_model,
-              prompt_tokens: event.prompt_tokens ?? 0,
-              completion_tokens: event.completion_tokens ?? 0,
-              total_tokens: event.total_tokens ?? 0,
-              call_count: event.call_count ?? 0,
-            });
-          }
-          break;
-
-        case SSEEventType.ERROR:
-          setChatError(event.content);
-          latestImagePreviewDataUrlRef.current = null;
-          setStreamingImagePreview(null);
-          finishStream();
-          break;
-
-        default:
-          break;
+          void attachToTurn(runningTurnId, messageToSend);
+        },
+        onError: (err) => {
+          setChatError(err.message);
+          finishTurn();
+        },
+        onComplete: () => {
+          finishTurn();
+        },
       }
-    };
-
-    try {
-      await chatService.sendMessage(
-        conversation.agent_id,
-        conversation.conversation_id,
-        messageToSend || "",
-        attachmentsToSend,
-        featureFlags.enableDeepResearch && (deepResearchOverride ?? deepResearchEnabled),
-        {
-          onEvent: handleEvent,
-          onError: (err) => {
-            setChatError(err.message);
-            finishStream();
-          },
-          onComplete: () => {
-            finishStream();
-          },
-        }
-      );
-    } finally {
-      finishStream();
-    }
+    );
   };
 
   // Handle retry for incomplete responses
@@ -1292,6 +1418,9 @@ export function ConversationDetail() {
                 disabled: isGeneratingImage,
                 onChange: setDebugEnabled,
               }}
+              stopAction={
+                activeTurnId ? { onStop: () => void handleStopTurn() } : undefined
+              }
             />
           </div>
         </CardContent>

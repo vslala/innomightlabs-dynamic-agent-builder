@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, ReactNode, ClipboardEvent } from "react";
-import { Bug, Image as ImageIcon, Loader2, Paperclip, SearchCheck, Send } from "lucide-react";
+import { Bug, Image as ImageIcon, Loader2, Paperclip, SearchCheck, Send, Square } from "lucide-react";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { Toggle } from "../ui/toggle";
@@ -28,6 +28,11 @@ interface ComposerDebugAction {
   onChange: (enabled: boolean) => void;
 }
 
+interface ComposerStopAction {
+  onStop: () => void;
+  disabled?: boolean;
+}
+
 interface ChatComposerProps {
   value: string;
   placeholder?: string;
@@ -43,6 +48,8 @@ interface ChatComposerProps {
   imageAction?: ComposerImageAction;
   deepResearchAction?: ComposerDeepResearchAction;
   debugAction?: ComposerDebugAction;
+  /** While submitting, replaces the send button with a stop affordance for the running turn. */
+  stopAction?: ComposerStopAction;
   statusIndicator?: ReactNode;
 }
 
@@ -61,6 +68,7 @@ export function ChatComposer({
   imageAction,
   deepResearchAction,
   debugAction,
+  stopAction,
   statusIndicator,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -164,12 +172,22 @@ export function ChatComposer({
             {rightActions && <div className={styles.rightActions}>{rightActions}</div>}
             <Button
               type="button"
-              onClick={onSubmit}
-              disabled={submitDisabled ?? (!value.trim() || disabled || isSubmitting)}
+              onClick={isSubmitting && stopAction ? stopAction.onStop : onSubmit}
+              disabled={
+                isSubmitting
+                  ? Boolean(stopAction?.disabled)
+                  : (submitDisabled ?? (!value.trim() || disabled))
+              }
+              aria-label={isSubmitting && stopAction ? "Stop response" : "Send message"}
+              title={isSubmitting && stopAction ? "Stop response" : undefined}
               className={styles.sendButton}
             >
               {isSubmitting ? (
-                <Loader2 className={styles.sendSpinner} />
+                stopAction ? (
+                  <Square className={styles.buttonIcon} />
+                ) : (
+                  <Loader2 className={styles.sendSpinner} />
+                )
               ) : (
                 <Send className={styles.buttonIcon} />
               )}

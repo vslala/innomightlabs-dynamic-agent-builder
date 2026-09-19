@@ -10,6 +10,9 @@ import type {
 } from "../../types/message";
 
 const AUTH_TOKEN_KEY = "auth_token";
+const TURN_ID_HEADER = "X-Turn-Id";
+const FOLLOW_TURN_MAX_ATTEMPTS = 3;
+const FOLLOW_TURN_RETRY_DELAY_MS = 500;
 
 export type SSEEventHandler = (event: SSEEvent) => void;
 
@@ -17,11 +20,25 @@ export interface ChatStreamOptions {
   onEvent: SSEEventHandler;
   onError?: (error: Error) => void;
   onComplete?: () => void;
+  /** Fired once the response headers arrive, before any SSE event. */
+  onTurnStarted?: (turnId: string) => void;
+  /** A turn is already running for this conversation; attach to it instead of erroring. */
+  onConflict?: (turnId: string) => void;
+  /** Aborts reading the stream. Never aborts the server-side turn itself. */
+  signal?: AbortSignal;
+}
+
+/** A chat turn still running (or just finished) server-side, for reattaching after navigation. */
+export interface ActiveTurn {
+  turn_id: string;
+  conversation_id: string;
+  agent_id: string;
+  status: "running" | "succeeded" | "failed" | "cancelled";
+  created_at: string;
 }
 
 class ChatService {
   private baseUrl: string;
-  private abortController: AbortController | null = null;
 
   constructor() {
     this.baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -62,10 +79,8 @@ class ChatService {
     request: GenerateImageRequest,
     options: ChatStreamOptions
   ): Promise<void> {
-    const { onEvent, onError, onComplete } = options;
+    const { onEvent, onError, onComplete, signal } = options;
 
-    this.cancel();
-    this.abortController = new AbortController();
     const token = this.getAuthToken();
     const url = `${this.baseUrl}/agents/${agentId}/${conversationId}/generate-image-stream`;
 
@@ -77,7 +92,7 @@ class ChatService {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(request),
-        signal: this.abortController.signal,
+        signal,
       });
 
       if (!response.ok) {
@@ -96,13 +111,17 @@ class ChatService {
         return;
       }
       onError?.(error instanceof Error ? error : new Error(String(error)));
-    } finally {
-      this.abortController = null;
     }
   }
 
   /**
    * Send a message to an agent and stream the response via SSE.
+   *
+   * The turn keeps running server-side even if `options.signal` later aborts
+   * this read — see api/docs/LLD-async-chat-turns.md. The response carries an
+   * `X-Turn-Id` header (delivered via `onTurnStarted`); a caller that wants to
+   * reattach after navigating away or refreshing uses `followTurn` with that id
+   * instead of resending the message.
    *
    * @param agentId - The agent to send the message to
    * @param conversationId - The conversation context
@@ -119,12 +138,7 @@ class ChatService {
     deepResearch: boolean,
     options: ChatStreamOptions
   ): Promise<void> {
-    const { onEvent, onError, onComplete } = options;
-
-    // Cancel any existing stream
-    this.cancel();
-
-    this.abortController = new AbortController();
+    const { onEvent, onError, onComplete, onTurnStarted, onConflict, signal } = options;
     const token = this.getAuthToken();
 
     const url = `${this.baseUrl}/agents/${agentId}/${conversationId}/send-message`;
@@ -148,8 +162,18 @@ class ChatService {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(body),
-        signal: this.abortController.signal,
+        signal,
       });
+
+      if (response.status === 409) {
+        const errorData = await response.json().catch(() => ({}));
+        const runningTurnId = errorData.detail?.turn_id;
+        if (runningTurnId && onConflict) {
+          onConflict(runningTurnId);
+          return;
+        }
+        throw new Error(errorData.detail?.message || "This conversation already has a response in progress.");
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -158,6 +182,11 @@ class ChatService {
 
       if (!response.body) {
         throw new Error("No response body");
+      }
+
+      const turnId = response.headers.get(TURN_ID_HEADER);
+      if (turnId) {
+        onTurnStarted?.(turnId);
       }
 
       await this.readSSEStream(response.body, onEvent);
@@ -169,28 +198,101 @@ class ChatService {
         return;
       }
       onError?.(error instanceof Error ? error : new Error(String(error)));
-    } finally {
-      this.abortController = null;
     }
+  }
+
+  /** The turn still running for this conversation, if any — for reattaching on mount. */
+  async getActiveTurn(agentId: string, conversationId: string): Promise<ActiveTurn | null> {
+    const token = this.getAuthToken();
+    const response = await fetch(`${this.baseUrl}/agents/${agentId}/${conversationId}/turns/active`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return response.json();
   }
 
   /**
-   * Cancel the current streaming request.
+   * Tail a turn's transcript: replay everything already produced, then follow
+   * live. `onComplete` fires both when the turn finishes and when the turn is
+   * too old to replay (410 Gone) — in the latter case the caller should simply
+   * refetch messages, since the assistant message is already persisted by then.
    */
-  cancel(): void {
-    if (this.abortController) {
-      this.abortController.abort();
-      this.abortController = null;
+  async followTurn(
+    agentId: string,
+    conversationId: string,
+    turnId: string,
+    options: ChatStreamOptions
+  ): Promise<void> {
+    const { onEvent, onError, onComplete, signal } = options;
+    const token = this.getAuthToken();
+    let afterSequence = 0;
+
+    for (let attempt = 1; attempt <= FOLLOW_TURN_MAX_ATTEMPTS; attempt++) {
+      const url = `${this.baseUrl}/agents/${agentId}/${conversationId}/turns/${turnId}/events?after_sequence=${afterSequence}`;
+
+      try {
+        const response = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal,
+        });
+
+        if (response.status === 410) {
+          onComplete?.();
+          return;
+        }
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+        if (!response.body) {
+          throw new Error("No response body");
+        }
+
+        afterSequence = await this.readSSEStream(response.body, onEvent);
+        onComplete?.();
+        return;
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+        if (attempt === FOLLOW_TURN_MAX_ATTEMPTS) {
+          onError?.(error instanceof Error ? error : new Error(String(error)));
+          return;
+        }
+        await sleep(FOLLOW_TURN_RETRY_DELAY_MS * attempt);
+      }
     }
   }
 
+  /** Stop an in-progress turn. A 404 means it already finished — not an error. */
+  async stopTurn(agentId: string, conversationId: string, turnId: string): Promise<void> {
+    const token = this.getAuthToken();
+    const response = await fetch(
+      `${this.baseUrl}/agents/${agentId}/${conversationId}/turns/${turnId}/stop`,
+      {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }
+    );
+
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+  }
+
+  /** Reads one SSE response body, dispatching each event; returns the last `id:` sequence seen. */
   private async readSSEStream(
     body: ReadableStream<Uint8Array>,
     onEvent: SSEEventHandler
-  ): Promise<void> {
+  ): Promise<number> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let lastSequence = 0;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -201,22 +303,32 @@ class ChatService {
 
       buffer += decoder.decode(value, { stream: true });
 
-      const lines = buffer.split("\n\n");
-      buffer = lines.pop() || "";
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() || "";
 
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const jsonStr = line.slice(6);
-            const event: SSEEvent = JSON.parse(jsonStr);
-            onEvent(event);
-          } catch (e) {
-            console.error("Failed to parse SSE event:", e, line);
+      for (const block of blocks) {
+        for (const line of block.split("\n")) {
+          if (line.startsWith("id: ")) {
+            lastSequence = Number(line.slice(4)) || lastSequence;
+          } else if (line.startsWith("data: ")) {
+            try {
+              const jsonStr = line.slice(6);
+              const event: SSEEvent = JSON.parse(jsonStr);
+              onEvent(event);
+            } catch (e) {
+              console.error("Failed to parse SSE event:", e, line);
+            }
           }
         }
       }
     }
+
+    return lastSequence;
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // Singleton instance

@@ -92,6 +92,14 @@ class Settings:
     dream_planner_timeout_seconds: int = 150
     crawl_job_stale_timeout_seconds: int = 15 * 60
     crawl_job_reaper_interval_seconds: int = 5 * 60
+    # One chat turn keeps running after the browser leaves; these bound how long a
+    # turn orphaned by a process restart can sit in `running` before the reaper
+    # fails it. Deliberately not a wall-clock budget on the turn itself — see
+    # api/docs/LLD-async-chat-turns.md.
+    chat_turn_heartbeat_interval_seconds: int = 30
+    chat_turn_stale_timeout_seconds: int = 5 * 60
+    chat_turn_reaper_interval_seconds: int = 5 * 60
+    chat_turn_transcript_grace_seconds: int = 120
     mcp_oauth_redirect_uri: str = ""
     cli_runner_base_url: str = ""
     cli_runner_shared_token: str = ""

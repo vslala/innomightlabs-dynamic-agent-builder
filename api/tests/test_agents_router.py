@@ -5,12 +5,16 @@ Tests for agents router endpoints.
 import pytest
 from fastapi.testclient import TestClient
 
+from src.agents.turns.models import ConversationTurn, ConversationTurnStatus
+from src.agents.turns.repository import ConversationTurnRepository
+from src.llm.events import SSEEvent, SSEEventType
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.config.settings import DEFAULT_OPENAI_MODELS
 from tests.mock_data import (
     TEST_USER_EMAIL,
     AGENT_CREATE_REQUEST,
+    CONVERSATION_CREATE_REQUEST,
 )
 
 
@@ -306,3 +310,146 @@ class TestAgentsRouter:
         response = test_client.delete("/agents/non-existent-id", headers=auth_headers)
 
         assert response.status_code == 204
+
+
+class _FastArchitecture:
+    """A minimal architecture double: completes a turn in a handful of events."""
+
+    async def handle_message(
+        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None
+    ):
+        yield SSEEvent(event_type=SSEEventType.USER_MESSAGE_SAVED, content="saved", message_id="user-1")
+        yield SSEEvent(event_type=SSEEventType.AGENT_RESPONSE_TO_USER, content="hi")
+        yield SSEEvent(
+            event_type=SSEEventType.ASSISTANT_MESSAGE_SAVED, content="saved", message_id="assistant-1"
+        )
+        yield SSEEvent(event_type=SSEEventType.STREAM_COMPLETE, content="done")
+
+
+class TestChatTurnEndpoints:
+    """Durable chat turns: the X-Turn-Id contract, the concurrency guard, and the
+    tail/stop endpoints' ownership checks. See api/docs/LLD-async-chat-turns.md."""
+
+    def _create_agent_and_conversation(
+        self, test_client: TestClient, auth_headers: dict, agent_name: str = "Test Agent"
+    ) -> tuple[str, str]:
+        agent_response = test_client.post(
+            "/agents",
+            json={**AGENT_CREATE_REQUEST, "agent_name": agent_name},
+            headers=auth_headers,
+        )
+        agent_id = agent_response.json()["agent_id"]
+        return agent_id, self._create_conversation(test_client, auth_headers, agent_id)
+
+    def _create_conversation(self, test_client: TestClient, auth_headers: dict, agent_id: str) -> str:
+        conversation_response = test_client.post(
+            "/conversations/",
+            json={**CONVERSATION_CREATE_REQUEST, "agent_id": agent_id},
+            headers=auth_headers,
+        )
+        return conversation_response.json()["conversation_id"]
+
+    def test_send_message_response_carries_turn_id_header(
+        self, test_client: TestClient, auth_headers: dict, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "src.agents.turns.run.get_agent_architecture", lambda *_a, **_kw: _FastArchitecture()
+        )
+        agent_id, conversation_id = self._create_agent_and_conversation(test_client, auth_headers)
+
+        with test_client.stream(
+            "POST",
+            f"/agents/{agent_id}/{conversation_id}/send-message",
+            json={"content": "Hello"},
+            headers=auth_headers,
+        ) as response:
+            assert response.status_code == 200
+            assert response.headers.get("X-Turn-Id")
+            for _ in response.iter_lines():
+                break
+
+    def test_send_message_conflicts_with_running_turn(self, test_client: TestClient, auth_headers: dict):
+        agent_id, conversation_id = self._create_agent_and_conversation(test_client, auth_headers)
+        active_turn = ConversationTurn(
+            conversation_id=conversation_id, agent_id=agent_id, created_by=TEST_USER_EMAIL
+        )
+        ConversationTurnRepository().create(active_turn)
+
+        response = test_client.post(
+            f"/agents/{agent_id}/{conversation_id}/send-message",
+            json={"content": "Hello again"},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["turn_id"] == active_turn.turn_id
+
+    def test_get_active_turn_returns_null_when_idle_and_turn_when_running(
+        self, test_client: TestClient, auth_headers: dict
+    ):
+        agent_id, conversation_id = self._create_agent_and_conversation(test_client, auth_headers)
+
+        idle_response = test_client.get(
+            f"/agents/{agent_id}/{conversation_id}/turns/active", headers=auth_headers
+        )
+        assert idle_response.status_code == 200
+        assert idle_response.json() is None
+
+        active_turn = ConversationTurn(
+            conversation_id=conversation_id, agent_id=agent_id, created_by=TEST_USER_EMAIL
+        )
+        ConversationTurnRepository().create(active_turn)
+
+        running_response = test_client.get(
+            f"/agents/{agent_id}/{conversation_id}/turns/active", headers=auth_headers
+        )
+        assert running_response.status_code == 200
+        assert running_response.json()["turn_id"] == active_turn.turn_id
+
+    def test_stream_turn_events_404_for_mismatched_conversation(
+        self, test_client: TestClient, auth_headers: dict
+    ):
+        agent_id, conversation_a = self._create_agent_and_conversation(test_client, auth_headers)
+        conversation_b = self._create_conversation(test_client, auth_headers, agent_id)
+        turn_b = ConversationTurn(
+            conversation_id=conversation_b, agent_id=agent_id, created_by=TEST_USER_EMAIL
+        )
+        ConversationTurnRepository().create(turn_b)
+
+        response = test_client.get(
+            f"/agents/{agent_id}/{conversation_a}/turns/{turn_b.turn_id}/events", headers=auth_headers
+        )
+
+        assert response.status_code == 404
+
+    def test_stream_turn_events_410_when_transcript_not_live(
+        self, test_client: TestClient, auth_headers: dict
+    ):
+        agent_id, conversation_id = self._create_agent_and_conversation(test_client, auth_headers)
+        finished_turn = ConversationTurn(
+            conversation_id=conversation_id,
+            agent_id=agent_id,
+            created_by=TEST_USER_EMAIL,
+            status=ConversationTurnStatus.SUCCEEDED,
+        )
+        ConversationTurnRepository().create(finished_turn)
+
+        response = test_client.get(
+            f"/agents/{agent_id}/{conversation_id}/turns/{finished_turn.turn_id}/events", headers=auth_headers
+        )
+
+        assert response.status_code == 410
+
+    def test_stop_turn_404_for_mismatched_conversation(self, test_client: TestClient, auth_headers: dict):
+        agent_id, conversation_a = self._create_agent_and_conversation(test_client, auth_headers)
+        conversation_b = self._create_conversation(test_client, auth_headers, agent_id)
+        turn_b = ConversationTurn(
+            conversation_id=conversation_b, agent_id=agent_id, created_by=TEST_USER_EMAIL
+        )
+        ConversationTurnRepository().create(turn_b)
+
+        response = test_client.post(
+            f"/agents/{agent_id}/{conversation_a}/turns/{turn_b.turn_id}/stop", headers=auth_headers
+        )
+
+        assert response.status_code == 404

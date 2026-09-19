@@ -6,7 +6,6 @@ from typing import Annotated, Any, cast
 import logging
 
 import src.form_models as form_models
-from src.agents.architectures import get_agent_architecture
 from src.agents.image_generation.storage import ConversationMediaStorage
 from src.agents.image_generation.models import GenerateImageRequest, GenerateImageResponse
 from src.agents.image_generation.service import (
@@ -19,9 +18,18 @@ from src.agents.image_generation.service import (
 from src.agents.models import Agent, CreateAgentRequest, AgentResponse
 from src.agents.repository import AgentRepository
 from src.agents.schemas import get_create_agent_form, get_update_agent_form, UPDATE_AGENT_FORM
+from src.agents.turns import (
+    ConversationTurnRepository,
+    ConversationTurnResponse,
+    live_transcript,
+    start_turn,
+)
+from src.agents.turns import stop_turn as stop_conversation_turn
+from src.agents.turns.transcript import TurnTranscript
 from src.a2a.models import A2ATaskListResponse, A2ATaskResponse
 from src.a2a.repository import A2ATaskRepository
 from src.apikeys.repository import ApiKeyRepository
+from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.crypto import encrypt_secret_fields
 from src.dream.repository import DreamRepository
@@ -392,6 +400,50 @@ async def delete_agent(
     log.info(f"Deleted agent {agent_id} for user {user_email}")
 
 
+def _load_chat_target(
+    agent_repo: AgentRepository,
+    conversation_repo: ConversationRepository,
+    *,
+    agent_id: str,
+    conversation_id: str,
+    user_email: str,
+) -> tuple[Agent, Conversation]:
+    """Resolve and validate the (agent, conversation) pair a chat endpoint acts on.
+
+    Raises HTTPException(404) on any mismatch. `send_message` catches this to
+    preserve its existing 200-plus-in-stream-ERROR contract; the turn endpoints
+    let it surface as a real 404.
+    """
+    agent = agent_repo.find_agent_by_id(agent_id, user_email)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    conversation = conversation_repo.find_by_id(conversation_id, user_email)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    if conversation.agent_id != agent_id:
+        raise HTTPException(status_code=404, detail="Conversation does not belong to this agent")
+
+    return agent, conversation
+
+
+def _sse_error(message: str) -> StreamingResponse:
+    async def _single_error_event():
+        yield SSEEvent(event_type=SSEEventType.ERROR, content=message).to_sse()
+
+    return StreamingResponse(
+        _single_error_event(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
+
+
+async def _stream_transcript(transcript: TurnTranscript, *, after_sequence: int):
+    async for sequence, event in transcript.follow(after_sequence=after_sequence):
+        yield f"id: {sequence}\n{event.to_sse()}"
+
+
 @router.post("/{agent_id}/{conversation_id}/send-message")
 async def send_message(
     request: Request,
@@ -402,6 +454,14 @@ async def send_message(
 ):
     """
     Sends message to the agent along with the conversation id for the context.
+
+    The turn runs to completion server-side even if this connection closes —
+    see api/docs/LLD-async-chat-turns.md. The response carries an `X-Turn-Id`
+    header; a client that reconnects mid-turn tails
+    `GET /{agent_id}/{conversation_id}/turns/{turn_id}/events?after_sequence=N`
+    instead of resending the message. A second message on a conversation that
+    already has a turn running is rejected with 409, carrying that turn's id.
+
     This endpoint returns a streaming response using Server Side Events.
     The structure of the event is standard with the payload marshalled into json object.
 
@@ -414,78 +474,139 @@ async def send_message(
     - ERROR: An error occurred
     """
     user_email: str = request.state.user_email
-    user_id = user_email
     conversation_repo = ConversationRepository()
 
-    async def event_stream():
-        try:
-            # 1. Load and validate agent
-            yield SSEEvent(
-                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                content="Loading agent information..."
-            ).to_sse()
+    try:
+        agent, conversation = _load_chat_target(
+            agent_repo,
+            conversation_repo,
+            agent_id=agent_id,
+            conversation_id=conversation_id,
+            user_email=user_email,
+        )
+    except HTTPException as exc:
+        return _sse_error(str(exc.detail))
 
-            agent = agent_repo.find_agent_by_id(agent_id, user_email)
-            if not agent:
-                yield SSEEvent(
-                    event_type=SSEEventType.ERROR,
-                    content="Agent not found"
-                ).to_sse()
-                return
+    turn_repo = ConversationTurnRepository()
+    active_turn = turn_repo.find_active(conversation_id)
+    if active_turn:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "This conversation already has a response in progress.",
+                "turn_id": active_turn.turn_id,
+            },
+        )
 
-            # 2. Validate conversation ownership
-            yield SSEEvent(
-                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                content="Validating conversation..."
-            ).to_sse()
-
-            conversation = conversation_repo.find_by_id(conversation_id, user_email)
-            if not conversation:
-                yield SSEEvent(
-                    event_type=SSEEventType.ERROR,
-                    content="Conversation not found"
-                ).to_sse()
-                return
-
-            if conversation.agent_id != agent_id:
-                yield SSEEvent(
-                    event_type=SSEEventType.ERROR,
-                    content="Conversation does not belong to this agent"
-                ).to_sse()
-                return
-
-            # 3. Get architecture and delegate message handling
-            architecture = get_agent_architecture(agent.agent_architecture)
-
-            async for event in architecture.handle_message(  # pyright: ignore[reportGeneralTypeIssues]
-                agent=agent,
-                conversation=conversation,
-                user_message=body.content,
-                owner_email=user_email,
-                actor_email=user_email,
-                actor_id=user_id,
-                attachments=cast(list[Attachment], body.attachments or []),
-            ):
-                yield event.to_sse()
-
-            # 4. Update conversation timestamp after successful handling
-            conversation_repo.save(conversation)
-
-        except Exception as e:
-            log.error(f"Error in send_message stream: {e}", exc_info=True)
-            yield SSEEvent(
-                event_type=SSEEventType.ERROR,
-                content=str(e)
-            ).to_sse()
+    turn = start_turn(
+        agent=agent,
+        conversation=conversation,
+        user_message=body.content,
+        attachments=cast(list[Attachment], body.attachments or []),
+        owner_email=user_email,
+        actor_email=user_email,
+        actor_id=user_email,
+    )
+    transcript = cast(TurnTranscript, live_transcript(turn.turn_id))
 
     return StreamingResponse(
-        event_stream(),
+        _stream_transcript(transcript, after_sequence=0),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-        }
+            "X-Turn-Id": turn.turn_id,
+        },
     )
+
+
+@router.get("/{agent_id}/{conversation_id}/turns/active")
+async def get_active_turn(
+    request: Request,
+    agent_id: str,
+    conversation_id: str,
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+) -> ConversationTurnResponse | None:
+    """Report the running turn for this conversation, if any, so the SPA can reattach."""
+    user_email: str = request.state.user_email
+    _load_chat_target(
+        agent_repo,
+        ConversationRepository(),
+        agent_id=agent_id,
+        conversation_id=conversation_id,
+        user_email=user_email,
+    )
+
+    turn = ConversationTurnRepository().find_active(conversation_id)
+    if not turn or turn.agent_id != agent_id:
+        return None
+    return turn.to_response()
+
+
+@router.get("/{agent_id}/{conversation_id}/turns/{turn_id}/events")
+async def stream_turn_events(
+    request: Request,
+    agent_id: str,
+    conversation_id: str,
+    turn_id: str,
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    after_sequence: int = 0,
+):
+    """
+    Tail a turn's transcript: replay everything after `after_sequence`, then follow live.
+
+    Powers reattaching to an in-flight response after navigation or a page
+    refresh. Returns 410 once the turn has finished and its transcript's grace
+    window has passed — by then the assistant message is already persisted, so
+    the client should simply refetch messages.
+    """
+    user_email: str = request.state.user_email
+    _load_chat_target(
+        agent_repo,
+        ConversationRepository(),
+        agent_id=agent_id,
+        conversation_id=conversation_id,
+        user_email=user_email,
+    )
+
+    turn = ConversationTurnRepository().find_by_id(turn_id)
+    if not turn or turn.conversation_id != conversation_id or turn.agent_id != agent_id:
+        raise HTTPException(status_code=404, detail="Turn not found")
+
+    transcript = live_transcript(turn_id)
+    if transcript is None:
+        raise HTTPException(status_code=410, detail="This response is no longer available.")
+
+    return StreamingResponse(
+        _stream_transcript(transcript, after_sequence=after_sequence),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
+
+
+@router.post("/{agent_id}/{conversation_id}/turns/{turn_id}/stop", status_code=204)
+async def stop_turn(
+    request: Request,
+    agent_id: str,
+    conversation_id: str,
+    turn_id: str,
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+) -> None:
+    """Stop an in-progress chat turn."""
+    user_email: str = request.state.user_email
+    _load_chat_target(
+        agent_repo,
+        ConversationRepository(),
+        agent_id=agent_id,
+        conversation_id=conversation_id,
+        user_email=user_email,
+    )
+
+    turn = ConversationTurnRepository().find_by_id(turn_id)
+    if not turn or turn.conversation_id != conversation_id or turn.agent_id != agent_id:
+        raise HTTPException(status_code=404, detail="Turn not found")
+
+    stop_conversation_turn(turn)
 
 
 @router.post("/{agent_id}/{conversation_id}/generate-image", response_model=GenerateImageResponse)

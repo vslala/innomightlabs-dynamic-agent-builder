@@ -14,6 +14,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from src.agents.turns.repository import ConversationTurnRepository
 from src.config import settings
 from src.dream.repository import DreamRepository
 from src.knowledge.run_state import CrawlJobStateService
@@ -24,6 +25,7 @@ log = logging.getLogger(__name__)
 
 CRAWL_JOB_REAPER_ID = "internal:stale-crawl-job-reaper"
 DREAM_RUN_REAPER_ID = "internal:stale-dream-run-reaper"
+CHAT_TURN_REAPER_ID = "internal:stale-chat-turn-reaper"
 
 
 class SchedulerRuntime:
@@ -34,10 +36,12 @@ class SchedulerRuntime:
         repository: SchedulerRepository | None = None,
         crawl_job_state_service: CrawlJobStateService | None = None,
         dream_repository: DreamRepository | None = None,
+        chat_turn_repository: ConversationTurnRepository | None = None,
     ):
         self.repository = repository or SchedulerRepository()
         self.crawl_job_state_service = crawl_job_state_service or CrawlJobStateService()
         self.dream_repository = dream_repository or DreamRepository()
+        self.chat_turn_repository = chat_turn_repository or ConversationTurnRepository()
         self.scheduler = AsyncIOScheduler(timezone=timezone.utc)
         self._started = False
 
@@ -64,6 +68,17 @@ class SchedulerRuntime:
                 timezone=timezone.utc,
             ),
             id=DREAM_RUN_REAPER_ID,
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        self.scheduler.add_job(
+            self._reap_stale_chat_turns,
+            trigger=IntervalTrigger(
+                seconds=settings.chat_turn_reaper_interval_seconds,
+                timezone=timezone.utc,
+            ),
+            id=CHAT_TURN_REAPER_ID,
             replace_existing=True,
             coalesce=True,
             max_instances=1,
@@ -130,6 +145,14 @@ class SchedulerRuntime:
                 log.warning("Marked %s stale dream run(s) as failed", failed_count)
         except Exception:
             log.exception("Failed to reap stale dream runs")
+
+    async def _reap_stale_chat_turns(self) -> None:
+        try:
+            failed_count = self.chat_turn_repository.fail_stale_turns()
+            if failed_count:
+                log.warning("Marked %s stale chat turn(s) as failed", failed_count)
+        except Exception:
+            log.exception("Failed to reap stale chat turns")
 
 
 _runtime: SchedulerRuntime | None = None

@@ -1,1 +1,6 @@
-export { chatService, type SSEEventHandler, type ChatStreamOptions } from "./ChatService";
+export {
+  chatService,
+  type SSEEventHandler,
+  type ChatStreamOptions,
+  type ActiveTurn,
+} from "./ChatService";
