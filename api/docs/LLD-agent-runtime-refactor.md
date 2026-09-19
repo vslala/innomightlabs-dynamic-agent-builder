@@ -1,6 +1,8 @@
 # LLD — Agent runtime refactor (message → async turn → agentic loop → prompt)
 
-Status: **proposed plan, nothing implemented yet.**
+Status: **implemented** on `refactor/agent-runtime` (9 commits). This document is the plan it was
+built from; the "Outcome" section below records what actually shipped and where reality diverged
+from the estimates.
 
 ## Scope
 
@@ -22,10 +24,8 @@ tests/test_krishna_memgpt_*.py tests/test_tool_execution_commands.py tests/test_
 tests/test_agent_architecture_base.py tests/test_agents_router.py tests/test_tool_display.py
 tests/test_conversation_strategy.py` → **91 passed**. Every phase below must keep this green.
 
-**Headline numbers:** ~3,900 lines in scope. The plan removes a net **~1,150 lines** and **7 concepts**
-(`AgenticLoopEvent`, `AsyncJobSupervisor`, `ToolCommand`, `ExecutorToolCommand`, `ToolExecutor`,
-`ToolContextResolver`, `ToolExecutionContext`) while adding two (`ProviderSession`,
-`ToolResultInterpreter`). It also fixes three real defects found along the way (P0.1, P0.2, P1.4).
+**Headline estimate (see Outcome for what happened):** ~3,900 lines in scope, a net **~1,150 lines**
+removed and **7 concepts** deleted, plus three real defects fixed (P0.1, P0.2, P1.4).
 
 ---
 
@@ -937,3 +937,71 @@ Two cheap layer-1 wins worth taking **regardless** of A/B/C:
 - P0.2 (the GC-able task) — a job that is never executed is the most common way this breaks today.
 - Add a `ToolJob` reaper alongside the three existing ones in `scheduler/runtime.py`, so orphaned
   jobs fail fast instead of sitting `RUNNING` for seven days.
+
+
+---
+
+## Outcome
+
+Nine commits on `refactor/agent-runtime`, each independently green.
+
+| | main | after |
+| --- | --- | --- |
+| `src/agents` total | 6,305 | 5,923 (**−382**) |
+| `krishna_memgpt.py` | 648 | 401 (**−38%**) |
+| `krishna_mini.py` | 237 | 145 (**−39%**) |
+| `tool_runtime/` (excl. `jobs/`) | 757 | 515 (**−32%**) |
+| `tool_execution.py` | 95 | 63 |
+| `async_jobs.py` | 90 | 43 |
+| `agentic_loop.py` | 517 | 455 |
+| `router.py` | 676 | 627 |
+| Tests | 91 in scope | **882 passing**, 1 skipped |
+| mypy | 47 errors | 46 |
+
+**11 concepts deleted outright**, verified absent from `src`: `AgenticLoopEvent`,
+`AsyncJobSupervisor`, `ToolCommand`, `ExecutorToolCommand`, `ToolExecutor`, `ToolContextResolver`,
+`ToolExecutionContext`, `ToolCommandMetadata`, `ToolIdempotency`, `ToolTextOutput`,
+`ToolCommandRequest`. Six focused modules added: `provider_session.py`, `prompts.py`,
+`tool_results.py`, `tool_runtime/{specs,handlers}.py`, `common/time.py`.
+
+### Where the estimate was wrong
+
+The projected net was **−1,150**; the actual is **−382**. The deletions landed as planned — the
+shortfall is on the other side of the ledger. Two causes, both deliberate:
+
+1. **Comments and docstrings.** Most new code carries a *why* comment the old code did not have (why
+   the cache is per-thread, why archival writes are not memory writes, why the settle loop exists at
+   all). That is the house style and worth the lines, but it means "delete 200, add 90" where I had
+   budgeted "delete 200, add 20".
+2. **Named modules over inline deletion.** `tool_results.py` (171 lines) replaced ~60 lines of
+   inline `if`/`.get` pyramid. It is longer and better: the payload shapes are now declared as models
+   and independently tested. Same for `provider_session.py` and `prompts.py`.
+
+The line count was always the secondary goal. The concept count — 11 out, 6 in, all six with one
+clear job — is the result that matters.
+
+### Sequencing changes made during the work
+
+- **Phases 6 and 10 merged.** The duplicated tool-batch block the event rewrite would have had to
+  carry existed *only* to serve the async-job machinery. Removing that first made the event rewrite
+  much smaller, so they became one commit.
+- **Phase 9 scoped down.** Connection pooling shipped (and made the suite ~8% faster). Memoizing
+  architectures and repository factories did not: measured at **2.4 ms** per construction once
+  connections were pooled, against real thread-affinity and test-isolation coupling. See P1.5.
+
+### Defects found and fixed beyond the three in P0
+
+- **Lost update on conversation rename** (P2.3). The turn wrote back the `Conversation` it loaded
+  before starting, so renaming a conversation mid-turn was silently undone. Confirmed by a test that
+  fails against the old `save()` and passes against the new `touch()`.
+- **Orphaned tool jobs were never reaped.** Nothing queried queued/running `ToolJob` rows, so an
+  orphan sat `RUNNING` until its 7-day TTL. Added `fail_stale_jobs` and a fourth scheduler reaper.
+- **A second copy of `_convert_floats_to_decimals`** in `jobs/repository.py`, missed on the first
+  pass through `jobs/models.py`.
+
+### Still not verified
+
+Everything above is covered by the suite, mypy, and targeted before/after tests. What has **not**
+been checked is the running app: send a message, navigate away mid-response, reattach via
+`turns/{id}/events`, and confirm the transcript replays — plus one async skill action end to end,
+since P1.2 changed what the model sees. Both need a live provider credential.
