@@ -4,12 +4,18 @@ from typing import Any
 from src.agents.agentic_loop import (
     EMPTY_POST_TOOL_RETRY_PROMPT,
     POST_TOOL_CONTINUATION_PROMPT,
+    TurnComplete,
     run_agentic_tool_loop,
 )
 from src.agents.runtime_state import AgentTurnState
 from src.agents.turn_runtime import emit_turn_event
 from src.agents.tool_execution import ToolExecutionOutcome
 from src.llm.events import SSEEvent, SSEEventType
+
+
+def _type(item):
+    """The event type, or None for the loop's two control signals."""
+    return getattr(item, "event_type", None)
 
 
 @dataclass
@@ -257,13 +263,13 @@ async def test_agentic_loop_emits_tool_call_id_on_start_and_result():
         )
     ]
 
-    start = next(event for event in events if event.kind == "tool_call_start")
-    result = next(event for event in events if event.kind == "tool_call_result")
+    start = next(e for e in events if _type(e) == SSEEventType.TOOL_CALL_START)
+    result = next(e for e in events if _type(e) == SSEEventType.TOOL_CALL_RESULT)
 
-    assert start.payload["tool_call_id"] == "tooluse_1"
-    assert start.payload["tool_name"] == "lookup_customer"
-    assert result.payload["tool_call_id"] == "tooluse_1"
-    assert result.payload["result"] == "customer found"
+    assert start.tool_call_id == "tooluse_1"
+    assert start.tool_name == "lookup_customer"
+    assert result.tool_call_id == "tooluse_1"
+    assert result.content == "customer found"
 
 
 async def test_agentic_loop_prompts_model_to_continue_or_finish_after_tool_results():
@@ -284,8 +290,8 @@ async def test_agentic_loop_prompts_model_to_continue_or_finish_after_tool_resul
     ]
 
     assert [call["tool_name"] for call in router.calls] == ["create_epic", "create_task"]
-    assert events[-1].kind == "complete"
-    assert events[-1].payload["full_text"] == "Created the epic and task."
+    assert isinstance(events[-1], TurnComplete)
+    assert events[-1].full_text == "Created the epic and task."
 
 
 async def test_agentic_loop_retries_once_when_post_tool_response_is_empty():
@@ -306,8 +312,8 @@ async def test_agentic_loop_retries_once_when_post_tool_response_is_empty():
 
     assert provider.calls == 3
     assert _context_contains_text(provider.contexts[2], EMPTY_POST_TOOL_RETRY_PROMPT)
-    assert events[-1].kind == "complete"
-    assert events[-1].payload["full_text"] == "customer found"
+    assert isinstance(events[-1], TurnComplete)
+    assert events[-1].full_text == "customer found"
 
 
 async def test_agentic_loop_preserves_provider_thought_signature_in_tool_context():
@@ -326,7 +332,7 @@ async def test_agentic_loop_preserves_provider_thought_signature_in_tool_context
         )
     ]
 
-    assert next(event for event in events if event.kind == "complete")
+    assert any(isinstance(event, TurnComplete) for event in events)
     second_call_context = provider.contexts[1]
     assistant_tool_use = second_call_context[0]["content"][0]["toolUse"]
     assert assistant_tool_use["thoughtSignature"] == b"gemini-signature"
@@ -347,12 +353,16 @@ async def test_agentic_loop_surfaces_runtime_events_during_tool_execution():
     ]
 
     runtime_event_index = next(
-        index for index, event in enumerate(events) if event.kind == "runtime_event"
+        index
+        for index, event in enumerate(events)
+        if _type(event) == SSEEventType.IMAGE_GENERATION_PARTIAL
     )
     result_index = next(
-        index for index, event in enumerate(events) if event.kind == "tool_call_result"
+        index
+        for index, event in enumerate(events)
+        if _type(event) == SSEEventType.TOOL_CALL_RESULT
     )
-    runtime_event = events[runtime_event_index].payload["event"]
+    runtime_event = events[runtime_event_index]
 
     assert runtime_event_index < result_index
     assert runtime_event.event_type == SSEEventType.IMAGE_GENERATION_PARTIAL
@@ -374,14 +384,16 @@ async def test_agentic_loop_filters_internal_tool_markers_but_streams_status_tex
     ]
 
     streamed_text = "".join(
-        event.payload["content"] for event in events if event.kind == "text"
+        event.content
+        for event in events
+        if _type(event) == SSEEventType.AGENT_RESPONSE_TO_USER
     )
-    complete = next(event for event in events if event.kind == "complete")
+    complete = next(event for event in events if isinstance(event, TurnComplete))
 
     assert "I will check that." in streamed_text
     assert "Here are the tickets." in streamed_text
     assert "[tool_call name=call_mcp_tool]" not in streamed_text
-    assert "[tool_call name=call_mcp_tool]" not in complete.payload["full_text"]
+    assert "[tool_call name=call_mcp_tool]" not in complete.full_text
 
 
 async def test_agentic_loop_reports_max_iterations_as_failure(monkeypatch):
@@ -400,9 +412,9 @@ async def test_agentic_loop_reports_max_iterations_as_failure(monkeypatch):
         )
     ]
 
-    assert events[-1].kind == "failed"
-    assert events[-1].payload["reason"] == "max_tool_iterations"
-    assert not any(event.kind == "complete" for event in events)
+    assert _type(events[-1]) == SSEEventType.ERROR
+    assert "maximum tool iterations" in events[-1].content
+    assert not any(isinstance(event, TurnComplete) for event in events)
 
 
 async def test_agentic_loop_records_token_usage_once_per_llm_iteration():
@@ -424,7 +436,7 @@ async def test_agentic_loop_records_token_usage_once_per_llm_iteration():
         )
     ]
 
-    assert events[-1].kind == "complete"
+    assert isinstance(events[-1], TurnComplete)
     assert provider.calls == 2
     # record_usage must fire once per LLM iteration (twice here: one tool-call
     # round trip plus the final text response), not once per turn.
@@ -444,24 +456,17 @@ async def test_agentic_loop_records_token_usage_once_per_llm_iteration():
         "completion_tokens": 3,
     }
 
-    # A "token_usage" loop event is yielded once per recorded call too, so the
-    # caller (architecture layer) can push a live update to the client.
-    usage_events = [event for event in events if event.kind == "token_usage"]
+    # A TOKEN_USAGE_UPDATE is streamed once per recorded call too, so the
+    # client can show a live running total.
+    usage_events = [e for e in events if _type(e) == SSEEventType.TOKEN_USAGE_UPDATE]
     assert len(usage_events) == 2
-    assert usage_events[0].payload == {
-        "llm_model": "claude-sonnet-4-5",
-        "prompt_tokens": 10,
-        "completion_tokens": 5,
-        "total_tokens": 15,
-        "call_count": 1,
-    }
-    assert usage_events[1].payload == {
-        "llm_model": "claude-sonnet-4-5",
-        "prompt_tokens": 17,
-        "completion_tokens": 8,
-        "total_tokens": 25,
-        "call_count": 2,
-    }
+    assert [
+        (e.llm_model, e.prompt_tokens, e.completion_tokens, e.total_tokens, e.call_count)
+        for e in usage_events
+    ] == [
+        ("claude-sonnet-4-5", 10, 5, 15, 1),
+        ("claude-sonnet-4-5", 17, 8, 25, 2),
+    ]
 
 
 async def test_agentic_loop_swallows_token_usage_recording_errors():
@@ -486,8 +491,8 @@ async def test_agentic_loop_swallows_token_usage_recording_errors():
         )
     ]
 
-    assert events[-1].kind == "complete"
-    assert events[-1].payload["full_text"] == "done"
+    assert isinstance(events[-1], TurnComplete)
+    assert events[-1].full_text == "done"
 
 
 def _context_contains_text(context: list[dict[Any, Any]], expected_text: str) -> bool:
@@ -533,16 +538,70 @@ async def test_agentic_loop_loses_no_runtime_event_emitted_just_before_the_tool_
     ]
 
     notes = [
-        event.payload["event"].content
+        event.content
         for event in events
-        if event.kind == "runtime_event"
+        if _type(event) == SSEEventType.LIFECYCLE_NOTIFICATION
     ]
     result_index = next(
-        index for index, event in enumerate(events) if event.kind == "tool_call_result"
+        index
+        for index, event in enumerate(events)
+        if _type(event) == SSEEventType.TOOL_CALL_RESULT
     )
     last_note_index = max(
-        index for index, event in enumerate(events) if event.kind == "runtime_event"
+        index
+        for index, event in enumerate(events)
+        if _type(event) == SSEEventType.LIFECYCLE_NOTIFICATION
     )
 
     assert notes == [f"step-{index}" for index in range(5)]
     assert last_note_index < result_index
+
+
+class WrapperToolProvider:
+    """Calls a wrapper tool whose real identity is nested in its arguments."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def stream_response(self, context, credentials, tools, model):
+        self.calls += 1
+        if self.calls == 1:
+            yield FakeProviderEvent(
+                type="tool_use",
+                tool_name="call_mcp_tool",
+                tool_input={
+                    "mcp_id": "atlassian",
+                    "tool_name": "searchJiraIssuesUsingJql",
+                    "arguments": {"jql": "project = KAN"},
+                },
+                tool_use_id="tooluse_mcp",
+            )
+            yield FakeProviderEvent(type="stop")
+            return
+        yield FakeProviderEvent(type="text", content="no issues found")
+        yield FakeProviderEvent(type="stop")
+
+
+async def test_the_loop_unwraps_a_wrapper_tools_real_identity_for_display():
+    """The raw wrapper call still reaches the audit log; display fields carry
+    the tool the user actually sees."""
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=WrapperToolProvider(),
+            context=[],
+            credentials={},
+            tools=[],
+            model="test-model",
+            tool_router=FakeToolRouter(),
+            state=_turn_state(),
+        )
+    ]
+
+    start = next(e for e in events if _type(e) == SSEEventType.TOOL_CALL_START)
+    result = next(e for e in events if _type(e) == SSEEventType.TOOL_CALL_RESULT)
+
+    for event in (start, result):
+        assert event.tool_name == "call_mcp_tool"
+        assert event.display_tool_name == "searchJiraIssuesUsingJql"
+        assert event.display_tool_args == {"jql": "project = KAN"}

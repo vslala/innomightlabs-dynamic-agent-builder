@@ -1,40 +1,41 @@
-"""Agentic tool loop.
+"""Agentic tool loop: LLM -> tool calls -> tool results -> LLM.
 
-This isolates the iterative "LLM -> tool calls -> tool results -> LLM" pattern so
-architectures stay readable.
-
-Design constraints (for now):
-- preserve current behavior
-- keep provider interface unchanged
-- keep context format unchanged
-
-We can evolve this to emit richer structured errors and metrics later.
+The loop streams `SSEEvent`s straight through, so the architecture consuming it
+does not have to translate a parallel event vocabulary back into SSE. Two
+control signals are not events and so have their own types: `PromptRefreshNeeded`
+and `TurnComplete`.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Optional, Protocol
 
-from src.agents.async_jobs import AsyncJobStatus, AsyncJobSupervisor
+from src.agents.async_jobs import extract_async_job_status
 from src.agents.loop_context import (
     append_assistant_tool_uses,
     append_user_tool_results,
     tool_result_block,
-    tool_use_block,
 )
+from src.agents.tool_display import derive_display_tool
+from src.agents.tool_runtime.commands import ToolExecutionOutcome
+from src.agents.turn_runtime import AgentTurnRuntime, emit_turn_event, use_turn_runtime
 from src.common import MAX_TOOL_ITERATIONS
-from src.agents.turn_runtime import AgentTurnRuntime, use_turn_runtime
+from src.llm.events import SSEEvent, SSEEventType
 from src.token_usage.models import TokenUsageRecord
 from src.token_usage.service import TokenUsageService
 
 log = logging.getLogger(__name__)
 
 INTERNAL_TOOL_MARKER_PREFIXES = ("[tool_call ", "[tool_result]")
+
+#: How long the loop will wait, in total, for one async tool job to finish.
 ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS = 10 * 60
-MAX_ITERATIONS_REASON = "max_tool_iterations"
+ASYNC_JOB_POLL_SECONDS = 2
+
 POST_TOOL_CONTINUATION_PROMPT = (
     "Review the original user request and the latest tool result. "
     "If any requested work remains, call the next required tool now. "
@@ -46,10 +47,34 @@ EMPTY_POST_TOOL_RETRY_PROMPT = (
     "Continue from the latest tool result now. "
     "Call another tool if required; otherwise provide the final answer."
 )
+MAX_ITERATIONS_MESSAGE = (
+    "Agent stopped because it reached the maximum tool iterations "
+    f"({MAX_TOOL_ITERATIONS}) before producing a final answer."
+)
+ASYNC_JOB_TIMEOUT_MESSAGE = (
+    "Async tool job is still running after the maximum in-turn wait time. "
+    "The response was not completed because the agent has not received the final tool result."
+)
 
 
 class AsyncToolJobStillRunningError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class PromptRefreshNeeded:
+    """Tools mutated core memory; rebuild the system prompt before the next call."""
+
+
+@dataclass(frozen=True)
+class TurnComplete:
+    """The model has finished. `full_text` is everything it said to the user."""
+
+    full_text: str
+
+
+#: Everything `run_agentic_tool_loop` can yield.
+LoopYield = SSEEvent | PromptRefreshNeeded | TurnComplete
 
 
 class LLMProvider(Protocol):
@@ -71,7 +96,7 @@ class ToolRouter(Protocol):
         tool_input: dict[str, Any],
         tool_use_id: str,
         state: Any,
-    ):
+    ) -> ToolExecutionOutcome:
         ...
 
 
@@ -88,14 +113,6 @@ class TokenUsageRecorder(Protocol):
         ...
 
 
-@dataclass(frozen=True)
-class AgenticLoopEvent:
-    """Normalized events emitted by the loop."""
-
-    kind: str
-    payload: dict[str, Any]
-
-
 async def run_agentic_tool_loop(
     *,
     provider: LLMProvider,
@@ -106,59 +123,29 @@ async def run_agentic_tool_loop(
     tool_router: ToolRouter,
     state: Any,
     token_usage_service: Optional[TokenUsageRecorder] = None,
-) -> AsyncIterator[AgenticLoopEvent]:
-    """Run the agentic loop.
+) -> AsyncIterator[LoopYield]:
+    """Call the model, run whatever tools it asks for, repeat until it stops.
 
-    Yields:
-      - text chunks as they arrive
-      - tool call start notifications
-      - tool results
-      - final completion marker (no persistence)
-
-    The caller owns:
-      - converting loop events to SSE events
-      - persisting the assistant message
+    The caller owns persisting the assistant message; everything streamed here
+    is ready to hand to a client as-is.
     """
-
     full_response = ""
     text_filter = UserVisibleTextFilter()
     usage_service: TokenUsageRecorder = token_usage_service or TokenUsageService()
     runtime = AgentTurnRuntime()
-    async_jobs = AsyncJobSupervisor(max_wait_seconds=ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS)
-    needs_async_final_response = False
     awaiting_post_tool_response = False
     empty_post_tool_retry_used = False
     model_iterations = 0
 
     with use_turn_runtime(runtime):
         while True:
-            if async_jobs.has_active_jobs and async_jobs.deadline_expired():
-                raise AsyncToolJobStillRunningError(
-                    "Async tool job is still running after the maximum in-turn wait time. "
-                    "The response was not completed because the agent has not received the final tool result."
-                )
-            if _max_iterations_exceeded(
-                model_iterations=model_iterations,
-                has_active_async_jobs=async_jobs.has_active_jobs,
-                needs_async_final_response=needs_async_final_response,
-            ):
-                yield AgenticLoopEvent(
-                    kind="failed",
-                    payload={
-                        "reason": MAX_ITERATIONS_REASON,
-                        "message": (
-                            "Agent stopped because it reached the maximum tool iterations "
-                            f"({MAX_TOOL_ITERATIONS}) before producing a final answer."
-                        ),
-                    },
-                )
+            if model_iterations >= MAX_TOOL_ITERATIONS:
+                yield SSEEvent(event_type=SSEEventType.ERROR, content=MAX_ITERATIONS_MESSAGE)
                 return
 
             model_iterations += 1
-            has_tool_calls = False
             pending_tool_calls: list[Any] = []
             iteration_text = ""
-            needs_async_final_response = False
             is_post_tool_response = awaiting_post_tool_response
             awaiting_post_tool_response = False
             usage_event: Any = None
@@ -169,327 +156,261 @@ async def run_agentic_tool_loop(
                     if visible_content:
                         full_response += visible_content
                         iteration_text += visible_content
-                        yield AgenticLoopEvent(kind="text", payload={"content": visible_content})
+                        yield _text_event(visible_content)
 
                 elif event.type == "tool_use":
-                    has_tool_calls = True
                     pending_tool_calls.append(event)
-                    yield AgenticLoopEvent(
-                        kind="tool_call_start",
-                        payload={
-                            "tool_call_id": event.tool_use_id,
-                            "tool_name": event.tool_name,
-                            "tool_args": event.tool_input,
-                        },
-                    )
+                    yield _tool_call_start_event(event)
 
                 elif event.type == "usage":
                     usage_event = event
 
-                elif event.type == "stop":
-                    # Provider stop token
-                    pass
-
-            # Record token usage once per LLM call (not once per turn), so a
-            # turn with multiple tool-calling round trips records each call.
-            # Best-effort telemetry: never let this break the user-facing turn.
             if usage_event is not None:
-                try:
-                    # Offloaded to a thread so a slow DynamoDB round trip never
-                    # blocks the shared event loop's other concurrent requests.
-                    day_record: Optional[TokenUsageRecord] = await asyncio.to_thread(
-                        usage_service.record_usage,
-                        owner_email=state.owner_email,
-                        agent_id=state.agent_id,
-                        llm_model=state.model_name,
-                        prompt_tokens=usage_event.prompt_tokens,
-                        completion_tokens=usage_event.completion_tokens,
-                    )
-                    if day_record is not None:
-                        yield AgenticLoopEvent(
-                            kind="token_usage",
-                            payload={
-                                "llm_model": day_record.llm_model,
-                                "prompt_tokens": day_record.prompt_tokens,
-                                "completion_tokens": day_record.completion_tokens,
-                                "total_tokens": day_record.total_tokens,
-                                "call_count": day_record.call_count,
-                            },
-                        )
-                except Exception:
-                    log.exception("Failed to record token usage for agent turn")
+                usage = await _record_token_usage(usage_service, state, usage_event)
+                if usage is not None:
+                    yield usage
 
             visible_tail = text_filter.flush()
             if visible_tail:
                 full_response += visible_tail
                 iteration_text += visible_tail
-                yield AgenticLoopEvent(kind="text", payload={"content": visible_tail})
-
-            if not pending_tool_calls and async_jobs.has_active_jobs:
-                wait_event = async_jobs.next_wait_event()
-                pending_tool_calls.append(wait_event)
-                has_tool_calls = True
-                yield AgenticLoopEvent(
-                    kind="tool_call_start",
-                    payload={
-                        "tool_call_id": wait_event.tool_use_id,
-                        "tool_name": wait_event.tool_name,
-                        "tool_args": wait_event.tool_input,
-                    },
-                )
+                yield _text_event(visible_tail)
 
             if pending_tool_calls:
-                # Add assistant response to context (text + tool use)
                 append_assistant_tool_uses(
                     context,
                     iteration_text=iteration_text,
                     tool_events=pending_tool_calls,
                 )
 
-                # Execute tools and collect results
                 tool_results: list[dict[str, Any]] = []
-                async_job_starts: list[AsyncJobStatus] = []
-                completed_wait = False
                 for tool_event in pending_tool_calls:
-                    outcome = None
-                    async for execution_event in _execute_tool_with_runtime_events(
+                    result = None
+                    async for item in _run_tool(
                         runtime=runtime,
                         tool_router=tool_router,
                         tool_event=tool_event,
                         state=state,
                     ):
-                        if execution_event.kind == "tool_execution_complete":
-                            outcome = execution_event.payload["outcome"]
+                        if isinstance(item, _ToolFinished):
+                            result = item
                             continue
-                        yield execution_event
-                    if outcome is None:
+                        yield item
+                    if result is None:
                         raise RuntimeError(f"Tool execution did not complete: {tool_event.tool_name}")
 
-                    yield AgenticLoopEvent(
-                        kind="tool_call_result",
-                        payload={
-                            "tool_call_id": tool_event.tool_use_id,
-                            "tool_name": tool_event.tool_name,
-                            "result": outcome.result,
-                            "success": outcome.success,
-                        },
-                    )
-
-                    tool_results.append(tool_result_block(tool_event.tool_use_id, outcome.result))
-                    async_job = async_jobs.track_tool_result(outcome.result)
-                    if async_job:
-                        async_job_starts.append(async_job)
-                    if tool_event.tool_name == "wait":
-                        completed_wait = True
+                    yield _tool_call_result_event(tool_event, result)
+                    tool_results.append(tool_result_block(tool_event.tool_use_id, result.result))
 
                 append_user_tool_results(context, tool_results)
-                if async_job_starts:
-                    context.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "text": _build_async_job_followup_instruction(
-                                        async_job_starts,
-                                        max_wait_seconds=ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS,
-                                    )
-                                }
-                            ],
-                        }
-                    )
-                if completed_wait and async_jobs.has_active_jobs:
-                    checked_results: list[dict[str, Any]] = []
-                    checked_tool_uses: list[dict[str, Any]] = []
-                    for check_event in async_jobs.check_events_after_wait():
-                        job_id = str(check_event.tool_input["job_id"])
-                        yield AgenticLoopEvent(
-                            kind="tool_call_start",
-                            payload={
-                                "tool_call_id": check_event.tool_use_id,
-                                "tool_name": check_event.tool_name,
-                                "tool_args": check_event.tool_input,
-                            },
-                        )
-                        check_outcome = None
-                        async for execution_event in _execute_tool_with_runtime_events(
-                            runtime=runtime,
-                            tool_router=tool_router,
-                            tool_event=check_event,
-                            state=state,
-                        ):
-                            if execution_event.kind == "tool_execution_complete":
-                                check_outcome = execution_event.payload["outcome"]
-                                continue
-                            yield execution_event
-                        if check_outcome is None:
-                            raise RuntimeError("Tool execution did not complete: check_tool_job")
 
-                        yield AgenticLoopEvent(
-                            kind="tool_call_result",
-                            payload={
-                                "tool_call_id": check_event.tool_use_id,
-                                "tool_name": check_event.tool_name,
-                                "result": check_outcome.result,
-                                "success": check_outcome.success,
-                            },
-                        )
-                        checked_results.append(tool_result_block(check_event.tool_use_id, check_outcome.result))
-                        checked_tool_uses.append(tool_use_block(check_event))
-                        if async_jobs.mark_checked(job_id, check_outcome.result):
-                            needs_async_final_response = True
-
-                    if checked_results:
-                        context.append(
-                            {
-                                "role": "assistant",
-                                "content": checked_tool_uses,
-                            }
-                        )
-                        append_user_tool_results(context, checked_results)
-                        if async_jobs.has_active_jobs:
-                            context.append(
-                                {
-                                    "role": "user",
-                                    "content": [
-                                        {
-                                            "text": _build_async_job_followup_instruction(
-                                                list(async_jobs.active_jobs.values()),
-                                                max_wait_seconds=ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS,
-                                            )
-                                        }
-                                    ],
-                                }
-                            )
-
-                # If tools mutated core memory, request a prompt refresh before the next iteration.
+                # If tools mutated core memory, ask for a prompt refresh before
+                # the next call, at most once per batch.
                 if getattr(state, "prompt_dirty", False):
-                    yield AgenticLoopEvent(kind="prompt_refresh_needed", payload={})
-                    # Clear here so we refresh at most once per tool batch.
+                    yield PromptRefreshNeeded()
                     state.prompt_dirty = False
 
-                if not async_jobs.has_active_jobs:
-                    context.append(
-                        {
-                            "role": "user",
-                            "content": [{"text": POST_TOOL_CONTINUATION_PROMPT}],
-                        }
-                    )
-                    awaiting_post_tool_response = True
+                context.append({"role": "user", "content": [{"text": POST_TOOL_CONTINUATION_PROMPT}]})
+                awaiting_post_tool_response = True
+                continue
 
             if (
                 is_post_tool_response
-                and not pending_tool_calls
                 and not iteration_text.strip()
                 and not empty_post_tool_retry_used
             ):
                 empty_post_tool_retry_used = True
                 awaiting_post_tool_response = True
-                context.append(
-                    {
-                        "role": "user",
-                        "content": [{"text": EMPTY_POST_TOOL_RETRY_PROMPT}],
-                    }
-                )
+                context.append({"role": "user", "content": [{"text": EMPTY_POST_TOOL_RETRY_PROMPT}]})
                 continue
 
-            if not has_tool_calls:
-                break
+            break
 
-    if async_jobs.has_active_jobs:
-        raise AsyncToolJobStillRunningError(
-            "Async tool job is still running after the maximum in-turn wait time. "
-            "The response was not completed because the agent has not received the final tool result."
-        )
-
-    yield AgenticLoopEvent(kind="complete", payload={"full_text": full_response})
+    yield TurnComplete(full_text=full_response)
 
 
-def _build_async_job_followup_instruction(
-    jobs: list[AsyncJobStatus],
-    *,
-    max_wait_seconds: int,
-) -> str:
-    lines = [
-        "An async tool job has started. Do not finish the conversation after this queued/running status.",
-        "Briefly tell the user that the job is running if useful.",
-        "Then call wait. After wait returns, call check_tool_job for the job_id.",
-        "If the job is still queued or running, repeat the wait/check cycle.",
-        "When the job succeeds or fails, use the returned job payload as the final tool result.",
-        f"Do not wait longer than {max_wait_seconds} seconds total in this turn.",
-        "Jobs:",
-    ]
-    for job in jobs:
-        lines.append(f"- job_id={job.job_id} status={job.status}")
-    return "\n".join(lines)
+def _text_event(content: str) -> SSEEvent:
+    return SSEEvent(event_type=SSEEventType.AGENT_RESPONSE_TO_USER, content=content)
 
 
-def _max_iterations_exceeded(
-    *,
-    model_iterations: int,
-    has_active_async_jobs: bool,
-    needs_async_final_response: bool,
-) -> bool:
-    return (
-        not has_active_async_jobs
-        and not needs_async_final_response
-        and model_iterations >= MAX_TOOL_ITERATIONS
+def _tool_call_start_event(tool_event: Any) -> SSEEvent:
+    display_name, display_args = derive_display_tool(tool_event.tool_name, tool_event.tool_input)
+    return SSEEvent(
+        event_type=SSEEventType.TOOL_CALL_START,
+        content=f"Calling {tool_event.tool_name}...",
+        tool_call_id=tool_event.tool_use_id,
+        tool_name=tool_event.tool_name,
+        tool_args=tool_event.tool_input,
+        display_tool_name=display_name,
+        display_tool_args=display_args,
     )
 
 
-async def _execute_tool_with_runtime_events(
+def _tool_call_result_event(tool_event: Any, finished: "_ToolFinished") -> SSEEvent:
+    display_name, display_args = derive_display_tool(tool_event.tool_name, tool_event.tool_input)
+    return SSEEvent(
+        event_type=SSEEventType.TOOL_CALL_RESULT,
+        content=finished.result,
+        tool_call_id=tool_event.tool_use_id,
+        tool_name=tool_event.tool_name,
+        success=finished.success,
+        display_tool_name=display_name,
+        display_tool_args=display_args,
+    )
+
+
+async def _record_token_usage(
+    usage_service: TokenUsageRecorder,
+    state: Any,
+    usage_event: Any,
+) -> SSEEvent | None:
+    """Once per LLM call, so a turn with several round trips records each one.
+
+    Best-effort telemetry: never let it break the user-facing turn.
+    """
+    try:
+        # Offloaded to a thread so a slow DynamoDB round trip never blocks the
+        # shared event loop's other concurrent requests.
+        day_record: Optional[TokenUsageRecord] = await asyncio.to_thread(
+            usage_service.record_usage,
+            owner_email=state.owner_email,
+            agent_id=state.agent_id,
+            llm_model=state.model_name,
+            prompt_tokens=usage_event.prompt_tokens,
+            completion_tokens=usage_event.completion_tokens,
+        )
+    except Exception:
+        log.exception("Failed to record token usage for agent turn")
+        return None
+
+    if day_record is None:
+        return None
+    return SSEEvent(
+        event_type=SSEEventType.TOKEN_USAGE_UPDATE,
+        content="",
+        llm_model=day_record.llm_model,
+        prompt_tokens=day_record.prompt_tokens,
+        completion_tokens=day_record.completion_tokens,
+        total_tokens=day_record.total_tokens,
+        call_count=day_record.call_count,
+    )
+
+
+@dataclass(frozen=True)
+class _ToolFinished:
+    result: str
+    success: bool
+
+
+async def _run_tool(
     *,
     runtime: AgentTurnRuntime,
     tool_router: ToolRouter,
     tool_event: Any,
     state: Any,
-) -> AsyncIterator[AgenticLoopEvent]:
-    tool_task = asyncio.create_task(
-        tool_router.execute(
+) -> AsyncIterator[SSEEvent | _ToolFinished]:
+    """Execute one tool call, settling an async job before reporting a result."""
+
+    async def execute() -> _ToolFinished:
+        outcome = await tool_router.execute(
             tool_name=tool_event.tool_name,
             tool_input=tool_event.tool_input,
             tool_use_id=tool_event.tool_use_id,
             state=state,
         )
-    )
+        job = extract_async_job_status(outcome.result)
+        if job is None or not job.pending:
+            return _ToolFinished(result=outcome.result, success=outcome.success)
 
-    # A running tool can emit progress events (image previews, lifecycle notes)
-    # through the turn runtime. Race the tool against the next event rather than
-    # polling for one: a 50ms poll woke the shared event loop 20 times a second
-    # for the tool's entire duration -- 12,000 wakeups for a 10-minute job, on
-    # the loop every concurrent turn shares.
+        # The job runs as an in-process task and the loop already knows its id,
+        # so wait for it here. Asking the model to drive a wait/check cycle cost
+        # extra LLM round trips and put synthetic tool calls in the timeline.
+        settled = await _await_async_job(
+            job_id=job.job_id, tool_router=tool_router, state=state
+        )
+        return _ToolFinished(result=settled, success=outcome.success)
+
+    async for item in _with_runtime_events(runtime, execute()):
+        yield item
+
+
+async def _await_async_job(*, job_id: str, tool_router: ToolRouter, state: Any) -> str:
+    """Poll one tool job until it reaches a terminal state.
+
+    Raises AsyncToolJobStillRunningError if it outlives the in-turn budget: the
+    turn cannot produce an honest answer without the job's result.
+    """
+    deadline = time.monotonic() + ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS
+    attempt = 0
+
+    while True:
+        await asyncio.sleep(ASYNC_JOB_POLL_SECONDS)
+        attempt += 1
+        outcome = await tool_router.execute(
+            tool_name="check_tool_job",
+            tool_input={"job_id": job_id},
+            tool_use_id=f"job_wait_{job_id}_{attempt}",
+            state=state,
+        )
+
+        job = extract_async_job_status(outcome.result)
+        if job is None or not job.pending:
+            return outcome.result
+
+        if time.monotonic() >= deadline:
+            raise AsyncToolJobStillRunningError(ASYNC_JOB_TIMEOUT_MESSAGE)
+
+        await emit_turn_event(
+            SSEEvent(
+                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+                content=job.progress_message or "Still working on it...",
+            ),
+            droppable=True,
+        )
+
+
+async def _with_runtime_events(
+    runtime: AgentTurnRuntime,
+    awaitable: Any,
+) -> AsyncIterator[Any]:
+    """Run `awaitable`, interleaving the turn-runtime events it emits.
+
+    Yields each runtime event as it arrives, then the awaitable's result last.
+    Races the two rather than polling: a 50ms poll woke the shared event loop
+    20 times a second for as long as a tool ran.
+    """
+    task = asyncio.create_task(awaitable)
     next_event = asyncio.ensure_future(runtime.next_event())
 
     try:
         while True:
-            done, _ = await asyncio.wait(
-                {tool_task, next_event}, return_when=asyncio.FIRST_COMPLETED
-            )
+            done, _ = await asyncio.wait({task, next_event}, return_when=asyncio.FIRST_COMPLETED)
             if next_event in done:
-                yield AgenticLoopEvent(
-                    kind="runtime_event", payload={"event": next_event.result()}
-                )
+                yield next_event.result()
                 next_event = asyncio.ensure_future(runtime.next_event())
-            if tool_task in done:
+            if task in done:
                 break
 
-        outcome = await tool_task
+        result = await task
         # Cancelling a *done* future discards its result, so hand over anything
         # already in flight before draining the rest.
         if next_event.done() and not next_event.cancelled():
-            yield AgenticLoopEvent(
-                kind="runtime_event", payload={"event": next_event.result()}
-            )
+            yield next_event.result()
         for event in runtime.drain_available():
-            yield AgenticLoopEvent(kind="runtime_event", payload={"event": event})
-        yield AgenticLoopEvent(kind="tool_execution_complete", payload={"outcome": outcome})
+            yield event
+        yield result
     finally:
         next_event.cancel()
-        if not tool_task.done():
-            tool_task.cancel()
+        if not task.done():
+            task.cancel()
 
 
 class UserVisibleTextFilter:
-    """Remove internal tool transcript markers while preserving normal streaming text."""
+    """Remove internal tool transcript markers while preserving normal streaming text.
+
+    The markers come from the OpenAI provider, which flattens tool blocks into
+    text when encoding a request; the model then imitates them in its output.
+    """
 
     def __init__(self) -> None:
         self._pending = ""
@@ -528,4 +449,7 @@ class UserVisibleTextFilter:
 
     def _could_be_internal_marker(self, text: str) -> bool:
         stripped = text.lstrip()
-        return any(prefix.startswith(stripped) or stripped.startswith(prefix) for prefix in INTERNAL_TOOL_MARKER_PREFIXES)
+        return any(
+            prefix.startswith(stripped) or stripped.startswith(prefix)
+            for prefix in INTERNAL_TOOL_MARKER_PREFIXES
+        )

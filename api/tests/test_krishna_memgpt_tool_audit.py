@@ -1,12 +1,13 @@
 import json
 
-from src.agents.agentic_loop import AgenticLoopEvent
+from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete
 from src.agents.architectures.krishna_memgpt import KrishnaMemGPTArchitecture
+from src.agents.tool_display import derive_display_tool
 from src.agents.models import Agent
 from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_audit import ToolCallAuditMessage
 from src.conversations.models import Conversation
-from src.llm.events import SSEEventType
+from src.llm.events import SSEEvent, SSEEventType
 
 
 class FakeMessageRepository:
@@ -43,109 +44,99 @@ class FakeMCPConnectorService:
         return ["mcp-connection"]
 
 
-async def fake_run_agentic_tool_loop(**kwargs):
-    yield AgenticLoopEvent(
-        kind="tool_call_start",
-        payload={
-            "tool_call_id": "tooluse_1",
-            "tool_name": "search_docs",
-            "tool_args": {"query": "pricing"},
-        },
-    )
-    yield AgenticLoopEvent(
-        kind="tool_call_result",
-        payload={
-            "tool_call_id": "tooluse_1",
-            "tool_name": "search_docs",
-            "result": "pricing result",
-            "success": True,
-        },
-    )
-    yield AgenticLoopEvent(kind="text", payload={"content": "final answer"})
-    yield AgenticLoopEvent(kind="complete", payload={"full_text": "final answer"})
+def _tool_call(tool_call_id: str, tool_name: str, tool_args: dict):
+    """The pair of events the loop streams for one tool call.
+
+    Mirrors the real loop, display-name unwrapping included, so these tests
+    exercise what the architecture actually receives.
+    """
+    display_name, display_args = derive_display_tool(tool_name, tool_args)
+    return [
+        SSEEvent(
+            event_type=SSEEventType.TOOL_CALL_START,
+            content=f"Calling {tool_name}...",
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            display_tool_name=display_name,
+            display_tool_args=display_args,
+        ),
+        SSEEvent(
+            event_type=SSEEventType.TOOL_CALL_RESULT,
+            content="",
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            success=True,
+            display_tool_name=display_name,
+            display_tool_args=display_args,
+        ),
+    ]
 
 
-async def fake_mcp_tool_call_loop(**kwargs):
-    yield AgenticLoopEvent(
-        kind="tool_call_start",
-        payload={
-            "tool_call_id": "tooluse_mcp",
-            "tool_name": "call_mcp_tool",
-            "tool_args": {
+def _fake_loop(*items):
+    async def loop(**kwargs):
+        for item in items:
+            yield item
+
+    return loop
+
+
+def _with_result(events: list, result: str) -> list:
+    events[-1] = events[-1].model_copy(update={"content": result})
+    return events
+
+
+fake_run_agentic_tool_loop = _fake_loop(
+    *_with_result(
+        _tool_call("tooluse_1", "search_docs", {"query": "pricing"}), "pricing result"
+    ),
+    SSEEvent(event_type=SSEEventType.AGENT_RESPONSE_TO_USER, content="final answer"),
+    TurnComplete(full_text="final answer"),
+)
+
+fake_mcp_tool_call_loop = _fake_loop(
+    *_with_result(
+        _tool_call(
+            "tooluse_mcp",
+            "call_mcp_tool",
+            {
                 "mcp_id": "atlassian",
                 "tool_name": "searchJiraIssuesUsingJql",
                 "arguments": {"jql": "project = KAN"},
             },
-        },
-    )
-    yield AgenticLoopEvent(
-        kind="tool_call_result",
-        payload={
-            "tool_call_id": "tooluse_mcp",
-            "tool_name": "call_mcp_tool",
-            "result": "[]",
-            "success": True,
-        },
-    )
-    yield AgenticLoopEvent(kind="text", payload={"content": "no issues found"})
-    yield AgenticLoopEvent(kind="complete", payload={"full_text": "no issues found"})
+        ),
+        "[]",
+    ),
+    SSEEvent(event_type=SSEEventType.AGENT_RESPONSE_TO_USER, content="no issues found"),
+    TurnComplete(full_text="no issues found"),
+)
 
+fake_prompt_refresh_loop = _fake_loop(PromptRefreshNeeded(), TurnComplete(full_text=""))
 
-async def fake_prompt_refresh_loop(**kwargs):
-    yield AgenticLoopEvent(kind="prompt_refresh_needed", payload={})
-    yield AgenticLoopEvent(kind="complete", payload={"full_text": ""})
+fake_empty_tool_turn_loop = _fake_loop(
+    *_with_result(
+        _tool_call("tooluse_empty", "search_docs", {"query": "pricing"}), "pricing result"
+    ),
+    TurnComplete(full_text=""),
+)
 
-
-async def fake_empty_tool_turn_loop(**kwargs):
-    yield AgenticLoopEvent(
-        kind="tool_call_start",
-        payload={
-            "tool_call_id": "tooluse_empty",
-            "tool_name": "search_docs",
-            "tool_args": {"query": "pricing"},
-        },
-    )
-    yield AgenticLoopEvent(
-        kind="tool_call_result",
-        payload={
-            "tool_call_id": "tooluse_empty",
-            "tool_name": "search_docs",
-            "result": "pricing result",
-            "success": True,
-        },
-    )
-    yield AgenticLoopEvent(kind="complete", payload={"full_text": ""})
-
-
-async def fake_canvas_tool_loop(**kwargs):
-    yield AgenticLoopEvent(
-        kind="tool_call_start",
-        payload={
-            "tool_call_id": "tooluse_canvas",
-            "tool_name": "render_canvas",
-            "tool_args": {"title": "Revenue"},
-        },
-    )
-    yield AgenticLoopEvent(
-        kind="tool_call_result",
-        payload={
-            "tool_call_id": "tooluse_canvas",
-            "tool_name": "render_canvas",
-            "result": json.dumps(
-                {
-                    "ok": True,
-                    "type": "canvas_artifact",
-                    "artifact_id": "artifact-1",
-                    "title": "Revenue",
-                    "caption": "Q1 revenue",
-                    "mime_type": "text/html",
-                }
-            ),
-            "success": True,
-        },
-    )
-    yield AgenticLoopEvent(kind="text", payload={"content": "Here is your chart"})
-    yield AgenticLoopEvent(kind="complete", payload={"full_text": "Here is your chart"})
+fake_canvas_tool_loop = _fake_loop(
+    *_with_result(
+        _tool_call("tooluse_canvas", "render_canvas", {"title": "Revenue"}),
+        json.dumps(
+            {
+                "ok": True,
+                "type": "canvas_artifact",
+                "artifact_id": "artifact-1",
+                "title": "Revenue",
+                "caption": "Q1 revenue",
+                "mime_type": "text/html",
+            }
+        ),
+    ),
+    SSEEvent(event_type=SSEEventType.AGENT_RESPONSE_TO_USER, content="Here is your chart"),
+    TurnComplete(full_text="Here is your chart"),
+)
 
 
 async def fake_load_provider_credentials(**kwargs):
@@ -453,7 +444,7 @@ async def test_krishna_memgpt_attaches_canvas_artifact_to_assistant_message(monk
         fake_load_provider_credentials,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.settings.api_base_url",
+        "src.agents.tool_results.settings.api_base_url",
         "https://api.example.com",
     )
 
