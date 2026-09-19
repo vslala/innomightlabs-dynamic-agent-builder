@@ -5,6 +5,7 @@ from src.agents.architectures.krishna_memgpt import KrishnaMemGPTArchitecture
 from src.agents.architectures.krishna_mini import KrishnaMiniArchitecture
 from src.agents.models import Agent
 from src.conversations.models import Conversation
+from src.memory.snapshot import CoreMemorySnapshot
 
 
 class FakeMessageRepository:
@@ -25,6 +26,9 @@ class FakeProviderSettingsRepository:
             encrypted_credentials = "encrypted"
 
         return FakeProviderSettings()
+
+
+EMPTY_MEMORY = CoreMemorySnapshot(block_defs=[], blocks={})
 
 
 class FakeSkillRuntime:
@@ -83,9 +87,7 @@ async def test_krishna_memgpt_forwards_the_agents_thinking_choice_to_the_provide
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
     architecture._get_linked_kb_ids = lambda agent_id: []
-    architecture._ensure_memory_initialized = lambda agent_id, user_id: None
-    architecture._load_core_memory_snapshot = lambda agent_id, user_id: object()
-    architecture._check_capacity_warnings_from_snapshot = lambda snapshot: []
+    architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
     agent = _ollama_agent("enabled")
@@ -128,9 +130,7 @@ async def test_krishna_memgpt_sends_no_think_key_when_the_agent_has_no_preferenc
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
     architecture._get_linked_kb_ids = lambda agent_id: []
-    architecture._ensure_memory_initialized = lambda agent_id, user_id: None
-    architecture._load_core_memory_snapshot = lambda agent_id, user_id: object()
-    architecture._check_capacity_warnings_from_snapshot = lambda snapshot: []
+    architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
     agent = _ollama_agent(None)

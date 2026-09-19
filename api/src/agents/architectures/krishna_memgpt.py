@@ -30,11 +30,7 @@ from src.llm.events import SSEEvent, SSEEventType
 from src.memory import MemoryRepository
 from src.messages.models import Message, MessageCanvasArtifact, Attachment
 from src.messages.repositories import MessageRepository, get_message_repository
-from src.memory.snapshot import (
-    CoreMemoryBlockDefSnapshot,
-    CoreMemoryBlockSnapshot,
-    CoreMemorySnapshot,
-)
+from src.memory.snapshot import CoreMemorySnapshot
 from src.settings.repository import get_provider_settings_repository
 from src.skills.models import AgentSkill
 from src.skills.service import SkillRuntimeService
@@ -147,8 +143,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         except Exception as exc:
             log.warning("Failed to load enabled MCP connectors for agent %s: %s", agent.agent_id, exc)
             state.enabled_mcp_connections = []
-
-        self._ensure_memory_initialized(agent.agent_id, actor_id)
 
         # 2. Save user message (with attachments if any)
         user_msg = Message(
@@ -275,13 +269,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         )
 
 
-    def _ensure_memory_initialized(self, agent_id: str, user_id: str) -> None:
-        """Ensure default memory blocks exist for this agent."""
-        block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
-        if not block_defs:
-            self.memory_repo.initialize_default_blocks(agent_id, user_id)
-            log.info(f"Initialized default memory blocks for agent {agent_id}")
-
     def _build_system_prompt(
         self,
         agent: "Agent",
@@ -321,52 +308,20 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             enabled_skills=state.enabled_skills or None,
             enabled_mcp_connections=state.enabled_mcp_connections or None,
             core_memory=snapshot,
-            capacity_warnings=self._check_capacity_warnings_from_snapshot(snapshot) or None,
+            capacity_warnings=_capacity_warnings(snapshot) or None,
         )
 
     def _load_core_memory_snapshot(self, agent_id: str, user_id: str) -> CoreMemorySnapshot:
-        """Load a consistent core-memory snapshot (single read) for this turn."""
+        """One consistent read of core memory, initialising the blocks if absent."""
         block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
-        memories = self.memory_repo.get_all_core_memories(agent_id, user_id)
+        if not block_defs:
+            self.memory_repo.initialize_default_blocks(agent_id, user_id)
+            log.info("Initialized default memory blocks for agent %s", agent_id)
+            block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
 
-        def_snaps = [
-            CoreMemoryBlockDefSnapshot(
-                block_name=d.block_name,
-                description=d.description,
-                word_limit=d.word_limit,
-            )
-            for d in block_defs
-        ]
-        word_limits = {d.block_name: d.word_limit for d in block_defs}
-
-        block_snaps = {
-            m.block_name: CoreMemoryBlockSnapshot(
-                block_name=m.block_name,
-                lines=list(m.lines or []),
-                word_count=m.word_count,
-                word_limit=word_limits.get(m.block_name, 0),
-            )
-            for m in memories
-        }
-
-        return CoreMemorySnapshot(block_defs=def_snaps, blocks=block_snaps)
-
-    def _check_capacity_warnings_from_snapshot(
-        self,
-        snapshot: CoreMemorySnapshot,
-    ) -> list[MemoryCapacityWarning]:
-        """Blocks the snapshot reports as nearing capacity (no DB reads)."""
-        blocks = (snapshot.blocks.get(d.block_name) for d in snapshot.block_defs)
-        return [
-            MemoryCapacityWarning(
-                block_name=block.block_name,
-                word_count=block.word_count,
-                word_limit=block.word_limit,
-                percent=block.fill_percent,
-            )
-            for block in blocks
-            if block and block.nearing_capacity
-        ]
+        return CoreMemorySnapshot.of(
+            block_defs, self.memory_repo.get_all_core_memories(agent_id, user_id)
+        )
 
     def _get_linked_kb_ids(self, agent_id: str) -> list[str]:
         """Get list of knowledge base IDs linked to this agent."""
@@ -376,6 +331,19 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         except Exception as e:
             log.warning(f"Failed to load linked KBs for agent {agent_id}: {e}")
             return []
+
+
+def _capacity_warnings(snapshot: CoreMemorySnapshot) -> list[MemoryCapacityWarning]:
+    """The prompt-facing shape of the snapshot's own capacity verdict."""
+    return [
+        MemoryCapacityWarning(
+            block_name=block.block_name,
+            word_count=block.word_count,
+            word_limit=block.word_limit,
+            percent=block.fill_percent,
+        )
+        for block in snapshot.nearing_capacity
+    ]
 
 
 def _tool_categories_for(state: AgentTurnState) -> set[ToolCategory]:

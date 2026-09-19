@@ -186,3 +186,43 @@ def test_both_architectures_render_the_same_creator_attribution():
     assert capability not in mini
     assert "Use memory intentionally" in memgpt
     assert "Use memory intentionally" not in mini
+
+
+def test_snapshot_joins_word_limits_from_the_block_definitions():
+    """The limit lives on the definition, the count on the content."""
+
+    class FakeDef:
+        def __init__(self, block_name, description, word_limit):
+            self.block_name = block_name
+            self.description = description
+            self.word_limit = word_limit
+
+    class FakeMemory:
+        def __init__(self, block_name, lines, word_count):
+            self.block_name = block_name
+            self.lines = lines
+            self.word_count = word_count
+
+    snapshot = CoreMemorySnapshot.of(
+        [FakeDef("human", "Facts", 100), FakeDef("persona", "Traits", 50)],
+        [FakeMemory("human", ["a fact"], 95), FakeMemory("persona", None, 0)],
+    )
+
+    assert [d.block_name for d in snapshot.block_defs] == ["human", "persona"]
+    assert snapshot.blocks["human"].word_limit == 100
+    assert snapshot.blocks["human"].lines == ["a fact"]
+    assert snapshot.blocks["persona"].word_limit == 50
+    assert snapshot.blocks["persona"].lines == []
+    assert [b.block_name for b in snapshot.nearing_capacity] == ["human"]
+
+
+def test_a_block_with_no_stored_content_is_not_reported_as_full():
+    class FakeDef:
+        block_name = "human"
+        description = "Facts"
+        word_limit = 100
+
+    snapshot = CoreMemorySnapshot.of([FakeDef()], [])
+
+    assert snapshot.blocks == {}
+    assert snapshot.nearing_capacity == []
