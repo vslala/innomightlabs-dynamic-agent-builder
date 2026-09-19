@@ -69,11 +69,11 @@ def _ollama_agent(thinking_mode) -> Agent:
 async def test_krishna_memgpt_forwards_the_agents_thinking_choice_to_the_provider(monkeypatch):
     recording_provider = RecordingProvider()
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.get_llm_provider",
+        "src.agents.provider_session.get_llm_provider",
         lambda provider_name: recording_provider,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
     )
 
@@ -114,11 +114,11 @@ async def test_krishna_memgpt_forwards_the_agents_thinking_choice_to_the_provide
 async def test_krishna_memgpt_sends_no_think_key_when_the_agent_has_no_preference(monkeypatch):
     recording_provider = RecordingProvider()
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.get_llm_provider",
+        "src.agents.provider_session.get_llm_provider",
         lambda provider_name: recording_provider,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
     )
 
@@ -153,11 +153,11 @@ async def test_krishna_memgpt_sends_no_think_key_when_the_agent_has_no_preferenc
 async def test_krishna_mini_forwards_the_agents_thinking_choice_to_the_provider(monkeypatch):
     recording_provider = RecordingProvider()
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_mini.get_llm_provider",
+        "src.agents.provider_session.get_llm_provider",
         lambda provider_name: recording_provider,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_mini.load_provider_credentials",
+        "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
     )
 

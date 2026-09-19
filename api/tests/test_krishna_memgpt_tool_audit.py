@@ -158,11 +158,11 @@ async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
         fake_run_agentic_tool_loop,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.get_llm_provider",
+        "src.agents.provider_session.get_llm_provider",
         lambda provider_name: object(),
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
     )
 
@@ -241,11 +241,11 @@ async def test_krishna_memgpt_unwraps_call_mcp_tool_for_display(monkeypatch):
         fake_mcp_tool_call_loop,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.get_llm_provider",
+        "src.agents.provider_session.get_llm_provider",
         lambda provider_name: object(),
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
     )
 
@@ -310,11 +310,11 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
         fake_prompt_refresh_loop,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.get_llm_provider",
+        "src.agents.provider_session.get_llm_provider",
         lambda provider_name: object(),
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
     )
 
@@ -374,11 +374,11 @@ async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_fallback(monkey
         fake_empty_tool_turn_loop,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.get_llm_provider",
+        "src.agents.provider_session.get_llm_provider",
         lambda provider_name: object(),
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
     )
 
@@ -445,11 +445,11 @@ async def test_krishna_memgpt_attaches_canvas_artifact_to_assistant_message(monk
         fake_canvas_tool_loop,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.get_llm_provider",
+        "src.agents.provider_session.get_llm_provider",
         lambda provider_name: object(),
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
     )
     monkeypatch.setattr(

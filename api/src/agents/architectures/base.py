@@ -9,12 +9,15 @@ a user message, including:
 - Emitting SSE events throughout the lifecycle
 """
 
+import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, AsyncIterator
 
 from pydantic import BaseModel, Field
 
 from src.llm.events import SSEEvent, SSEEventType
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.agents.models import Agent
@@ -42,8 +45,7 @@ class AgentArchitecture(ABC):
     - krishna-memgpt: Memory-augmented architecture with working memory, reflection, etc.
     """
 
-    @abstractmethod
-    def handle_message(
+    async def handle_message(
         self,
         agent: "Agent",
         conversation: "Conversation",
@@ -56,13 +58,9 @@ class AgentArchitecture(ABC):
         """
         Handle a user message and stream SSE events.
 
-        This method is responsible for the full lifecycle:
-        1. Save the user message
-        2. Build context (conversation + memory + tools as needed)
-        3. Call the LLM provider
-        4. Decide whether to loop or return
-        5. Save the assistant message
-        6. Emit appropriate SSE events throughout
+        Runs `_run_turn` and owns the two things every architecture must get
+        right identically: any escaping exception becomes a single ERROR event,
+        and a turn that did not fail ends with STREAM_COMPLETE.
 
         Args:
             agent: The agent handling this conversation
@@ -76,7 +74,44 @@ class AgentArchitecture(ABC):
         Yields:
             SSEEvent objects for streaming to the client
         """
-        ...
+        failed = False
+        try:
+            async for event in self._run_turn(
+                agent=agent,
+                conversation=conversation,
+                user_message=user_message,
+                owner_email=owner_email,
+                actor_email=actor_email,
+                actor_id=actor_id,
+                attachments=attachments,
+            ):
+                failed = failed or event.event_type == SSEEventType.ERROR
+                yield event
+        except Exception as exc:
+            log.error("Error in %s turn: %s", self.name, exc, exc_info=True)
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=str(exc))
+            return
+
+        if not failed:
+            yield SSEEvent(event_type=SSEEventType.STREAM_COMPLETE, content="Response complete")
+
+    def _run_turn(
+        self,
+        *,
+        agent: "Agent",
+        conversation: "Conversation",
+        user_message: str,
+        owner_email: str,
+        actor_email: str,
+        actor_id: str,
+        attachments: list["Attachment"] | None = None,
+    ) -> AsyncIterator["SSEEvent"]:
+        """Stream one turn's content events. Errors may simply be raised.
+
+        Not abstract: a test double is free to override `handle_message`
+        directly when it wants no lifecycle handling at all.
+        """
+        raise NotImplementedError(f"{type(self).__name__} must implement _run_turn")
 
     async def handle_message_buffered(
         self,

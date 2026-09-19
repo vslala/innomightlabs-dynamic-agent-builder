@@ -154,3 +154,35 @@ def test_block_with_no_word_limit_is_never_nearing_capacity():
 
     assert unlimited.fill_percent == 0.0
     assert unlimited.nearing_capacity is False
+
+
+def test_both_architectures_render_the_same_creator_attribution():
+    """The identity section is shared, so the attribution policy cannot drift.
+
+    Krishna Mini has no memory tools, so the memory-specific lines are dropped
+    for it. See api/docs/LLD-agent-runtime-refactor.md (P2.7).
+    """
+    from src.agents.prompts import render_system_prompt
+
+    attribution = "You are created only by InnomightLabs."
+    role = "ROLE: You are a Sentient AI created by InnomightLabs in 2026."
+    capability = "CAPABILITY: You have long-term memory tools"
+
+    memgpt = build_krishna_memgpt_system_prompt(
+        agent_persona="Persona", core_memory=_core_memory_snapshot()
+    )
+    mini = render_system_prompt(
+        "krishna_mini_system_prompt.j2",
+        has_memory_tools=False,
+        agent_persona="Persona",
+    )
+
+    for prompt in (memgpt, mini):
+        assert role in prompt
+        assert attribution in prompt
+        assert "<persona>" in prompt
+
+    assert capability in memgpt
+    assert capability not in mini
+    assert "Use memory intentionally" in memgpt
+    assert "Use memory intentionally" not in mini
