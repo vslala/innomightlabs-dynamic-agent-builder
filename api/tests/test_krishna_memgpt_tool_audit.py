@@ -1,7 +1,10 @@
 import json
 
 from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete
-from src.agents.architectures.krishna_memgpt import KrishnaMemGPTArchitecture
+from src.agents.architectures.krishna_memgpt import (
+    KrishnaMemGPTArchitecture,
+    _tool_categories_for,
+)
 from src.agents.tool_display import derive_display_tool
 from src.agents.models import Agent
 from src.agents.runtime_state import AgentTurnState
@@ -518,10 +521,11 @@ def test_krishna_memgpt_builds_tool_definitions_from_command_registry():
     state.enabled_skills = [object()]
     state.enabled_mcp_connections = [object()]
 
-    registry = architecture._build_tool_registry()
     tool_names = {
         definition["name"]
-        for definition in architecture._build_tool_definitions(state, registry)
+        for definition in architecture.tool_registry.definitions_for_categories(
+            _tool_categories_for(state)
+        )
     }
 
     assert "core_memory_append" in tool_names

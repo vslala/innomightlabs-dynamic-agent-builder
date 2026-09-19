@@ -1,35 +1,36 @@
-"""Registry for agent tool commands."""
+"""The tools available to an agent this turn, by name."""
 
 from __future__ import annotations
 
 from typing import Any, Iterable
 
-from src.agents.tool_runtime.commands import ToolCommand, ToolCommandCategory
+from src.agents.tool_runtime.specs import BoundTool, ToolCategory
 
 
-class ToolCommandRegistry:
-    def __init__(self, commands: Iterable[ToolCommand] | None = None):
-        self._commands: dict[str, ToolCommand] = {}
-        for command in commands or []:
-            self.register(command)
+class ToolRegistry:
+    def __init__(self, tools: Iterable[BoundTool] = ()):
+        self._tools: dict[str, BoundTool] = {}
+        for tool in tools:
+            self.register(tool)
 
-    def register(self, command: ToolCommand) -> None:
-        if command.name in self._commands:
-            raise ValueError(f"Tool command already registered: {command.name}")
-        self._commands[command.name] = command
+    def register(self, tool: BoundTool) -> None:
+        if tool.name in self._tools:
+            raise ValueError(f"Tool already registered: {tool.name}")
+        self._tools[tool.name] = tool
 
-    def get(self, tool_name: str) -> ToolCommand:
-        command = self._commands.get(tool_name)
-        if not command:
+    def get(self, tool_name: str) -> BoundTool:
+        tool = self._tools.get(tool_name)
+        if not tool:
             raise ValueError(f"Unknown tool: {tool_name}")
-        return command
+        return tool
 
-    def definitions_for_categories(
-        self,
-        categories: set[ToolCommandCategory],
-    ) -> list[dict[str, Any]]:
+    def specs(self) -> list[Any]:
+        return [tool.spec for tool in self._tools.values()]
+
+    def definitions_for_categories(self, categories: set[ToolCategory]) -> list[dict[str, Any]]:
+        """Only the tools the model should be told about this turn."""
         return [
-            command.definition
-            for command in self._commands.values()
-            if command.metadata.category in categories
+            tool.spec.definition
+            for tool in self._tools.values()
+            if tool.spec.category in categories
         ]

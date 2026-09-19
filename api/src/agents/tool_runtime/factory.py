@@ -1,48 +1,43 @@
-"""Factory helpers for default agent tool command registration."""
+"""Binding the declared tool specs to the runtimes that serve them."""
 
 from __future__ import annotations
 
-from src.agents.tool_runtime.commands import (
-    ExecutorToolCommand,
-    ToolExecutor,
-    ToolSpec,
-)
-from src.agents.tool_runtime.executors import (
+from functools import partial
+
+from src.agents.tool_runtime.handlers import (
     MCPRuntime,
-    MCPToolExecutor,
     NativeToolExecutor,
-    NativeToolExecutorAdapter,
     SkillRuntime,
-    SkillToolExecutor,
+    call_mcp_tool,
+    list_mcp_tools,
+    run_native_tool,
+    run_skill_tool,
 )
-from src.agents.tool_runtime.mcp import MCP_TOOL_SPECS
-from src.agents.tool_runtime.registry import ToolCommandRegistry
+from src.agents.tool_runtime.mcp import MCP_CALL_TOOL_SPEC, MCP_LIST_TOOLS_SPEC
+from src.agents.tool_runtime.registry import ToolRegistry
 from src.agents.tool_runtime.skills import SKILL_TOOL_SPECS
+from src.agents.tool_runtime.specs import BoundTool, ToolHandler, ToolSpec
 from src.tools.native.specs import NATIVE_TOOL_SPECS
 
 
-def build_default_tool_command_registry(
+def build_default_tool_registry(
     *,
     skill_runtime: SkillRuntime,
     native_tools: NativeToolExecutor,
     mcp_runtime: MCPRuntime | None = None,
-) -> ToolCommandRegistry:
-    registry = ToolCommandRegistry()
-    native_executor = NativeToolExecutorAdapter(native_tools)
-    skill_executor = SkillToolExecutor(skill_runtime)
-    mcp_executor = MCPToolExecutor(mcp_runtime)
+) -> ToolRegistry:
+    native: ToolHandler = partial(run_native_tool, native_tools)
+    skill: ToolHandler = partial(run_skill_tool, skill_runtime)
 
-    _register_specs(registry, NATIVE_TOOL_SPECS, native_executor)
-    _register_specs(registry, SKILL_TOOL_SPECS, skill_executor)
-    _register_specs(registry, MCP_TOOL_SPECS, mcp_executor)
+    return ToolRegistry(
+        [
+            *_bind(NATIVE_TOOL_SPECS, native),
+            *_bind(SKILL_TOOL_SPECS, skill),
+            BoundTool(MCP_LIST_TOOLS_SPEC, partial(list_mcp_tools, mcp_runtime)),
+            BoundTool(MCP_CALL_TOOL_SPEC, partial(call_mcp_tool, mcp_runtime)),
+        ]
+    )
 
-    return registry
 
-
-def _register_specs(
-    registry: ToolCommandRegistry,
-    specs: list[ToolSpec],
-    executor: ToolExecutor,
-) -> None:
-    for spec in specs:
-        registry.register(ExecutorToolCommand(spec=spec, executor=executor))
+def _bind(specs: list[ToolSpec], handler: ToolHandler) -> list[BoundTool]:
+    return [BoundTool(spec, handler) for spec in specs]

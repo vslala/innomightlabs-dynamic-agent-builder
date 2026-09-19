@@ -21,7 +21,7 @@ from src.agents.loop_context import (
     tool_result_block,
 )
 from src.agents.tool_display import derive_display_tool
-from src.agents.tool_runtime.commands import ToolExecutionOutcome
+from src.agents.tool_runtime import ToolExecutionOutcome
 from src.agents.turn_runtime import AgentTurnRuntime, emit_turn_event, use_turn_runtime
 from src.common import MAX_TOOL_ITERATIONS
 from src.llm.events import SSEEvent, SSEEventType

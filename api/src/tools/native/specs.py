@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-from src.agents.tool_runtime.commands import (
-    ToolCommandCategory,
-    ToolCommandMetadata,
-    ToolSpec,
-)
-from src.agents.tool_runtime.contexts import NativeToolContext
+from src.agents.tool_runtime.specs import ToolCategory, ToolSpec
 from src.tools.native.contracts import (
     ArchivalMemoryInsertInput,
     ArchivalMemorySearchInput,
@@ -33,26 +28,29 @@ from src.tools.native.definitions import (
     WAIT,
 )
 
+def _memory_write(definition: dict, input_model: type) -> ToolSpec:
+    """A core-memory write, which leaves the rendered system prompt stale.
 
-NATIVE = ToolCommandMetadata(category=ToolCommandCategory.NATIVE)
-KNOWLEDGE = ToolCommandMetadata(category=ToolCommandCategory.KNOWLEDGE)
-#: Core-memory writes only. Archival writes are not here on purpose: the system
-#: prompt renders the core-memory snapshot, so only core memory goes stale.
-MEMORY_WRITE = ToolCommandMetadata(
-    category=ToolCommandCategory.NATIVE,
-    mutates_prompt_context=True,
-)
+    Archival writes are not memory writes for this purpose: the prompt renders
+    the core-memory snapshot, so only core memory can go stale.
+    """
+    return ToolSpec(
+        definition,
+        ToolCategory.NATIVE,
+        input_model,
+        mutates_prompt_context=True,
+    )
 
 
 NATIVE_TOOL_SPECS = [
-    ToolSpec(CORE_MEMORY_READ, NATIVE, CoreMemoryReadInput, NativeToolContext),
-    ToolSpec(CORE_MEMORY_APPEND, MEMORY_WRITE, CoreMemoryAppendInput, NativeToolContext),
-    ToolSpec(CORE_MEMORY_REPLACE, MEMORY_WRITE, CoreMemoryReplaceInput, NativeToolContext),
-    ToolSpec(CORE_MEMORY_DELETE, MEMORY_WRITE, CoreMemoryDeleteInput, NativeToolContext),
-    ToolSpec(CORE_MEMORY_LIST_BLOCKS, NATIVE, CoreMemoryListBlocksInput, NativeToolContext),
-    ToolSpec(ARCHIVAL_MEMORY_INSERT, NATIVE, ArchivalMemoryInsertInput, NativeToolContext),
-    ToolSpec(ARCHIVAL_MEMORY_SEARCH, NATIVE, ArchivalMemorySearchInput, NativeToolContext),
-    ToolSpec(RECALL_CONVERSATION, NATIVE, RecallConversationInput, NativeToolContext),
-    ToolSpec(WAIT, NATIVE, WaitInput, NativeToolContext),
-    ToolSpec(KNOWLEDGE_BASE_SEARCH, KNOWLEDGE, KnowledgeBaseSearchInput, NativeToolContext),
+    ToolSpec(CORE_MEMORY_READ, ToolCategory.NATIVE, CoreMemoryReadInput),
+    _memory_write(CORE_MEMORY_APPEND, CoreMemoryAppendInput),
+    _memory_write(CORE_MEMORY_REPLACE, CoreMemoryReplaceInput),
+    _memory_write(CORE_MEMORY_DELETE, CoreMemoryDeleteInput),
+    ToolSpec(CORE_MEMORY_LIST_BLOCKS, ToolCategory.NATIVE, CoreMemoryListBlocksInput),
+    ToolSpec(ARCHIVAL_MEMORY_INSERT, ToolCategory.NATIVE, ArchivalMemoryInsertInput),
+    ToolSpec(ARCHIVAL_MEMORY_SEARCH, ToolCategory.NATIVE, ArchivalMemorySearchInput),
+    ToolSpec(RECALL_CONVERSATION, ToolCategory.NATIVE, RecallConversationInput),
+    ToolSpec(WAIT, ToolCategory.NATIVE, WaitInput),
+    ToolSpec(KNOWLEDGE_BASE_SEARCH, ToolCategory.KNOWLEDGE, KnowledgeBaseSearchInput),
 ]

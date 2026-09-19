@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-from src.agents.tool_runtime.commands import (
-    ToolCommandCategory,
-    ToolCommandMetadata,
-    ToolSpec,
-)
-from src.agents.tool_runtime.contexts import SkillToolContext
 from src.agents.tool_runtime.skill_contracts import (
     CheckToolJobInput,
     ExecuteSkillActionInput,
     LoadSkillInput,
 )
+from src.agents.tool_runtime.specs import ToolCategory, ToolSpec
 
 
 LOAD_SKILL_TOOL = {
@@ -70,28 +65,7 @@ CHECK_TOOL_JOB_TOOL = {
 }
 
 SKILL_TOOL_SPECS = [
-    ToolSpec(
-        LOAD_SKILL_TOOL,
-        ToolCommandMetadata(
-            category=ToolCommandCategory.SKILL,
-        ),
-        LoadSkillInput,
-        SkillToolContext,
-    ),
-    ToolSpec(
-        EXECUTE_SKILL_ACTION_TOOL,
-        ToolCommandMetadata(
-            category=ToolCommandCategory.SKILL,
-        ),
-        ExecuteSkillActionInput,
-        SkillToolContext,
-    ),
-    ToolSpec(
-        CHECK_TOOL_JOB_TOOL,
-        ToolCommandMetadata(
-            category=ToolCommandCategory.SKILL,
-        ),
-        CheckToolJobInput,
-        SkillToolContext,
-    ),
+    ToolSpec(LOAD_SKILL_TOOL, ToolCategory.SKILL, LoadSkillInput),
+    ToolSpec(EXECUTE_SKILL_ACTION_TOOL, ToolCategory.SKILL, ExecuteSkillActionInput),
+    ToolSpec(CHECK_TOOL_JOB_TOOL, ToolCategory.SKILL, CheckToolJobInput),
 ]

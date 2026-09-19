@@ -21,9 +21,9 @@ from src.agents.tool_execution import ToolExecutionRouter
 from src.agents.tool_results import interpret_tool_result
 from src.connectors.mcp.service import MCPConnectorService
 from src.agents.tool_runtime import (
-    ToolCommandCategory,
-    ToolCommandRegistry,
-    build_default_tool_command_registry,
+    ToolCategory,
+    ToolRegistry,
+    build_default_tool_registry,
 )
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
@@ -84,6 +84,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         self.skill_runtime = SkillRuntimeService()
         self.mcp_connector_service = MCPConnectorService()
         self.tool_handler = NativeToolHandler(self.memory_repo, message_repo=self.message_repo)
+        # The spec tables are module constants, so one registry serves every turn.
+        self.tool_registry = build_default_tool_registry(
+            skill_runtime=self.skill_runtime,
+            native_tools=self.tool_handler,
+            mcp_runtime=self.mcp_connector_service,
+        )
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
 
     @property
@@ -206,14 +212,8 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             content="Connecting to AI model...",
         )
 
-        tool_registry = self._build_tool_registry()
-        tools = self._build_tool_definitions(state, tool_registry)
-        tool_router = ToolExecutionRouter(
-            skill_runtime=self.skill_runtime,
-            mcp_runtime=self.mcp_connector_service,
-            native_tools=self.tool_handler,
-            registry=tool_registry,
-        )
+        tools = self.tool_registry.definitions_for_categories(_tool_categories_for(state))
+        tool_router = ToolExecutionRouter(self.tool_registry)
 
         outputs = TurnOutputs()
         audit = ToolCallAuditLog(
@@ -368,29 +368,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             if block and block.nearing_capacity
         ]
 
-    # Capacity warning prompt rendering lives in CapacityWarningsLoader.
-
-    def _build_tool_registry(self) -> ToolCommandRegistry:
-        return build_default_tool_command_registry(
-            skill_runtime=self.skill_runtime,
-            native_tools=self.tool_handler,
-            mcp_runtime=self.mcp_connector_service,
-        )
-
-    def _build_tool_definitions(
-        self,
-        state: AgentTurnState,
-        registry: ToolCommandRegistry,
-    ) -> list[dict[str, Any]]:
-        categories = {ToolCommandCategory.NATIVE}
-        if state.linked_kb_ids:
-            categories.add(ToolCommandCategory.KNOWLEDGE)
-        if state.enabled_skills:
-            categories.add(ToolCommandCategory.SKILL)
-        if state.enabled_mcp_connections:
-            categories.add(ToolCommandCategory.MCP)
-        return registry.definitions_for_categories(categories)
-
     def _get_linked_kb_ids(self, agent_id: str) -> list[str]:
         """Get list of knowledge base IDs linked to this agent."""
         try:
@@ -399,6 +376,16 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         except Exception as e:
             log.warning(f"Failed to load linked KBs for agent {agent_id}: {e}")
             return []
+
+
+def _tool_categories_for(state: AgentTurnState) -> set[ToolCategory]:
+    """Only tell the model about the tool families this agent can actually use."""
+    return {
+        ToolCategory.NATIVE,
+        *([ToolCategory.KNOWLEDGE] if state.linked_kb_ids else []),
+        *([ToolCategory.SKILL] if state.enabled_skills else []),
+        *([ToolCategory.MCP] if state.enabled_mcp_connections else []),
+    }
 
 
 TOOL_TURN_FALLBACK_MESSAGE = (
