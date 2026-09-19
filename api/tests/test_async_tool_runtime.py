@@ -433,3 +433,43 @@ async def test_agentic_loop_does_not_complete_while_async_job_is_active(monkeypa
 
     assert any(event.kind == "tool_call_result" for event in events)
     assert not any(event.kind == "complete" for event in events)
+
+
+async def test_start_skill_action_job_keeps_a_strong_reference_while_running():
+    """Regression: asyncio only weakly references a running task, so a bare
+    create_task(...) whose result nobody keeps can be collected mid-execution.
+    See api/docs/LLD-agent-runtime-refactor.md (P0.2).
+    """
+    import asyncio
+
+    from src.agents.tool_runtime.jobs import service as jobs_service
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class SlowService(jobs_service.ToolJobService):
+        def __init__(self):
+            pass
+
+        async def execute_skill_action_job(self, job_id: str) -> None:
+            started.set()
+            await release.wait()
+
+    job = ToolJob(
+        owner_email="owner@example.com",
+        actor_email="owner@example.com",
+        actor_id="owner@example.com",
+        tool_name="execute_skill_action",
+    )
+
+    jobs_service._running_jobs.clear()
+    SlowService().start_skill_action_job(job)
+    await started.wait()
+
+    assert len(jobs_service._running_jobs) == 1
+
+    release.set()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert jobs_service._running_jobs == set()

@@ -14,6 +14,12 @@ log = logging.getLogger(__name__)
 
 TOOL_JOB_STALE_AFTER_SECONDS = 10 * 60
 
+#: Strong references to in-flight job tasks. asyncio only holds a weak
+#: reference to a running task, so a bare `create_task(...)` whose result
+#: nobody keeps can be garbage-collected mid-execution -- leaving the job row
+#: RUNNING until the stale check fails it ten minutes later.
+_running_jobs: set[asyncio.Task[None]] = set()
+
 
 class ToolJobService:
     def __init__(
@@ -60,7 +66,9 @@ class ToolJobService:
         )
 
     def start_skill_action_job(self, job: ToolJob) -> None:
-        asyncio.create_task(self.execute_skill_action_job(job.job_id))
+        task = asyncio.create_task(self.execute_skill_action_job(job.job_id))
+        _running_jobs.add(task)
+        task.add_done_callback(_running_jobs.discard)
 
     async def execute_skill_action_job(self, job_id: str) -> None:
         job = self.repository.find_by_id(job_id)

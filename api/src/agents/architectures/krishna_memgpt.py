@@ -13,7 +13,6 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
-from src.common import CAPACITY_WARNING_THRESHOLD
 from src.agents.models import MemoryCapacityWarning
 from src.config import settings
 from src.connectors.mcp.service import MCPConnectorService
@@ -31,7 +30,7 @@ from src.llm.credentials import load_provider_credentials
 from src.llm.events import SSEEvent, SSEEventType
 from src.llm.providers import get_llm_provider
 from src.memory import MemoryRepository
-from src.messages.models import Message, MessageCanvasArtifact, Attachment
+from src.messages.models import Message, MessageCanvasArtifact, MessageKind, Attachment
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.memory.snapshot import CoreMemorySnapshot
 from src.settings.repository import get_provider_settings_repository
@@ -319,6 +318,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                                 created_by=actor_email,
                                 role="system",
                                 content=audit.model_dump_json(),
+                                kind=MessageKind.TOOL_AUDIT,
                             )
                         )
 
@@ -533,12 +533,14 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             )
             for d in block_defs
         ]
+        word_limits = {d.block_name: d.word_limit for d in block_defs}
 
         block_snaps = {
             m.block_name: CoreMemoryBlockSnapshot(
                 block_name=m.block_name,
                 lines=list(m.lines or []),
                 word_count=m.word_count,
+                word_limit=word_limits.get(m.block_name, 0),
             )
             for m in memories
         }
@@ -549,23 +551,18 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         self,
         snapshot: CoreMemorySnapshot,
     ) -> list[MemoryCapacityWarning]:
-        """Check capacity warnings from a snapshot (no DB reads)."""
-        warnings: list[MemoryCapacityWarning] = []
-        for d in snapshot.block_defs:
-            b = snapshot.blocks.get(d.block_name)
-            if not b:
-                continue
-            percent = (b.word_count / d.word_limit) * 100 if d.word_limit else 0
-            if percent >= CAPACITY_WARNING_THRESHOLD * 100:
-                warnings.append(
-                    MemoryCapacityWarning(
-                        block_name=d.block_name,
-                        word_count=b.word_count,
-                        word_limit=d.word_limit,
-                        percent=percent,
-                    )
-                )
-        return warnings
+        """Blocks the snapshot reports as nearing capacity (no DB reads)."""
+        blocks = (snapshot.blocks.get(d.block_name) for d in snapshot.block_defs)
+        return [
+            MemoryCapacityWarning(
+                block_name=block.block_name,
+                word_count=block.word_count,
+                word_limit=block.word_limit,
+                percent=block.fill_percent,
+            )
+            for block in blocks
+            if block and block.nearing_capacity
+        ]
 
     # Capacity warning prompt rendering lives in CapacityWarningsLoader.
 

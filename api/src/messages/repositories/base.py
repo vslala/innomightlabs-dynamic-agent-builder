@@ -32,6 +32,14 @@ class MessageRepository(Protocol):
     ) -> Tuple[list[Message], Optional[str], bool]:
         ...
 
+    def find_audit_by_conversation(
+        self,
+        conversation_id: str,
+        limit: int = 20,
+        cursor: Optional[str] = None,
+    ) -> Tuple[list[Message], Optional[str], bool]:
+        ...
+
     def count_by_conversation(self, conversation_id: str) -> int:
         ...
 
