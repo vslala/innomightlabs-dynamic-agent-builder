@@ -8,7 +8,7 @@ import json
 import logging
 from dataclasses import dataclass
 from uuid import uuid4
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional, cast
 
 import httpx
 
@@ -98,10 +98,13 @@ class OpenAIProvider(LLMProvider):
         }
 
     def _convert_messages(self, messages: list[ChatMessage] | list[dict]) -> list[dict[str, Any]]:
+        # `all(isinstance(...))` over the elements does not narrow the
+        # container type for mypy, so the homogeneity this already checks at
+        # runtime has to be asserted with a cast.
         normalized_messages = (
-            messages
+            cast("list[ChatMessage]", messages)
             if all(isinstance(message, ChatMessage) for message in messages)
-            else normalize_messages(messages)
+            else normalize_messages(cast("list[dict[Any, Any]]", messages))
         )
         converted: list[dict[str, Any]] = []
 

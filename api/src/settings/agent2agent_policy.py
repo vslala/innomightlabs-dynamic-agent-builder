@@ -17,11 +17,19 @@ class Agent2AgentPolicyError(ValueError):
 
 
 class Agent2AgentSettingsRequest(BaseModel):
-    allowed_origins: dict[str, str] | list[str] | str = Field(default_factory=dict)
+    """Accepts allowed_origins as a dict, list, or newline/comma-separated string.
 
-    @field_validator("allowed_origins")
+    The field's declared type is the normalized dict[str, str], not the
+    accepted input shape: the before-validator coerces raw input ahead of
+    pydantic's own type check, so callers read a real dict instead of
+    re-narrowing a union every time.
+    """
+
+    allowed_origins: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("allowed_origins", mode="before")
     @classmethod
-    def normalize_allowed_origins(cls, value: dict[str, str] | list[str] | str) -> dict[str, str]:
+    def normalize_allowed_origins(cls, value: Any) -> dict[str, str]:
         return parse_allowed_origins(value)
 
 

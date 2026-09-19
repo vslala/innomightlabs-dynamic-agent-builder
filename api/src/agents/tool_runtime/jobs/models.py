@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -67,7 +67,7 @@ class ToolJob(BaseModel):
         return f"ToolJob#{self.job_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        payload = convert_floats_to_decimals(self.model_dump(mode="json"))
+        payload = cast(dict[str, Any], convert_floats_to_decimals(self.model_dump(mode="json")))
         payload.update(
             {
                 "pk": self.pk,

@@ -109,7 +109,8 @@ async def handle_a2a_jsonrpc(
     """Primary A2A JSON-RPC endpoint for one agent."""
     request_id = body.get("id")
     method = str(body.get("method") or "").strip()
-    params = body.get("params") if isinstance(body.get("params"), dict) else {}
+    params_value = body.get("params")
+    params = params_value if isinstance(params_value, dict) else {}
 
     if body.get("jsonrpc") != JSON_RPC_VERSION:
         return _jsonrpc_error(request_id, -32600, "Invalid JSON-RPC version")

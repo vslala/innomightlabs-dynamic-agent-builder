@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import boto3
@@ -131,7 +131,7 @@ async def _call_runner(
     if response.status_code >= 400:
         raise RuntimeError(f"CLI runner rejected request: HTTP {response.status_code} {_bounded(response.text)}")
 
-    data = response.json()
+    data = cast(dict[str, Any], response.json())
     if not data.get("ok"):
         raise RuntimeError(
             "AWS CLI command failed: "

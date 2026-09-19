@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Literal, Protocol
 
-from src.conversations.models import AutomationConversation
-from src.conversations.repository import ConversationRepository
+from src.conversations.models import AutomationConversation, Conversation
 from src.dream.models import DreamCursor, DreamSettings
 from src.dream.sessions import DreamSession, SessionSegmenter
 from src.messages.repositories.base import MessageRepository
+
+
+class ConversationLister(Protocol):
+    """The one conversation-repository call DreamWindowBuilder needs."""
+
+    def find_all_by_user(self, owner_email: str) -> list["Conversation"]:
+        ...
 
 
 @dataclass(frozen=True)
@@ -26,7 +32,7 @@ class DreamWindowBuilder:
     def __init__(
         self,
         *,
-        conversation_repository: ConversationRepository,
+        conversation_repository: ConversationLister,
         message_repository: MessageRepository,
         segmenter: SessionSegmenter | None = None,
         page_size: int = 200,

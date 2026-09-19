@@ -113,7 +113,7 @@ def _normalize_content_block(block: Any) -> ContentBlock:
         return ToolUseBlock(
             id=str(block.get("id") or block.get("tool_use_id") or ""),
             name=str(block.get("name") or ""),
-            input=block.get("input") if isinstance(block.get("input"), dict) else {},
+            input=block_input if isinstance(block_input := block.get("input"), dict) else {},
             thought_signature=_thought_signature(block),
         )
     if block_type == "tool_result":
@@ -130,7 +130,7 @@ def _normalize_content_block(block: Any) -> ContentBlock:
         return ToolUseBlock(
             id=str(tool_use.get("toolUseId") or tool_use.get("id") or ""),
             name=str(tool_use.get("name") or ""),
-            input=tool_use.get("input") if isinstance(tool_use.get("input"), dict) else {},
+            input=tool_use_input if isinstance(tool_use_input := tool_use.get("input"), dict) else {},
             thought_signature=_thought_signature(tool_use),
         )
 
@@ -145,8 +145,10 @@ def _normalize_content_block(block: Any) -> ContentBlock:
 
 
 def _normalize_role(role: Any) -> MessageRole:
-    if role in {"system", "user", "assistant"}:
-        return role
+    if role == "system":
+        return "system"
+    if role == "assistant":
+        return "assistant"
     return "user"
 
 

@@ -43,6 +43,7 @@ from src.automations.errors import AutomationNotFoundError, AutomationValidation
 from src.automations.repository import AutomationRepository
 from src.automations.smart_values import SmartValueResolver
 from src.automations.validation import (
+    ActionConfigValidator,
     ActionNodeValidationPolicy,
     AutomationGraphValidator,
     ConditionNodeValidationPolicy,
@@ -95,7 +96,7 @@ class AutomationService:
         self.connector_service = connector_service or get_connector_service()
         self.lifecycle_runner = lifecycle_runner or SkillLifecycleRunner(self.skill_registry)
         self.trigger_lifecycle = trigger_lifecycle or AutomationTriggerLifecycleService()
-        action_validators = [
+        action_validators: list[ActionConfigValidator] = [
             InvokeAgentActionValidator(self.agent_repo),
             SkillActionValidator(
                 skill_registry=self.skill_registry,

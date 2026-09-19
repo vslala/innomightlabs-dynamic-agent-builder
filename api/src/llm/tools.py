@@ -80,7 +80,8 @@ def normalize_anthropic_tools(tools: list[dict[Any, Any]] | None) -> list[dict[s
 
 
 def _normalize_tool_definition(tool: Mapping[Any, Any]) -> ToolDefinition | None:
-    custom = tool.get("custom") if isinstance(tool.get("custom"), dict) else {}
+    custom_value = tool.get("custom")
+    custom = custom_value if isinstance(custom_value, dict) else {}
     name = custom.get("name") or tool.get("name")
     if not name:
         return None

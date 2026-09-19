@@ -4,7 +4,16 @@ from typing import Any, cast
 
 from src.agents.models import Agent
 from src.conversations.models import Conversation
-from src.dream.models import DreamAction, DreamActionType, DreamCursor, DreamPlan, DreamRunStatus, DreamSettings
+from src.dream.models import (
+    DreamAction,
+    DreamActionLog,
+    DreamActionType,
+    DreamCursor,
+    DreamPlan,
+    DreamRun,
+    DreamRunStatus,
+    DreamSettings,
+)
 from src.dream.planner import DreamPlanningResult
 from src.dream.service import DreamService
 from src.memory.models import CoreMemory, MemoryBlockDefinition
@@ -19,10 +28,10 @@ class FakeDreamRepository:
     def __init__(self, settings: DreamSettings) -> None:
         self.settings = settings
         self.cursor: DreamCursor | None = None
-        self.runs = []
-        self.logs = []
+        self.runs: list[DreamRun] = []
+        self.logs: list[DreamActionLog] = []
         self.lease_available = True
-        self.released_lease_run_ids = []
+        self.released_lease_run_ids: list[str] = []
 
     def try_acquire_run_lease(self, agent_id, user_id, run_id, lease_seconds):
         return self.lease_available
@@ -43,11 +52,11 @@ class FakeDreamRepository:
         self.cursor = cursor.model_copy(deep=True)
         return cursor
 
-    def save_run(self, run):
+    def save_run(self, run: DreamRun) -> DreamRun:
         self.runs.append(run.model_copy(deep=True))
         return run
 
-    def save_action_log(self, log):
+    def save_action_log(self, log: DreamActionLog) -> DreamActionLog:
         self.logs.append(log)
         return log
 

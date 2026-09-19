@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
@@ -129,7 +129,7 @@ class MarketplaceAutomationTemplate(BaseModel):
         return f"Template#{self.template_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        return _dynamo_value({
+        return cast(dict[str, Any], _dynamo_value({
             "pk": self.pk,
             "sk": self.sk,
             "entity_type": "MarketplaceAutomationTemplate",
@@ -156,7 +156,7 @@ class MarketplaceAutomationTemplate(BaseModel):
             "import_count": self.import_count,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        })
+        }))
 
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "MarketplaceAutomationTemplate":
@@ -306,7 +306,7 @@ class MarketplaceAutomationImportSession(BaseModel):
         self.ttl = int(self.expires_at.timestamp())
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        return _dynamo_value({
+        return cast(dict[str, Any], _dynamo_value({
             "pk": self.pk,
             "sk": self.sk,
             "entity_type": "MarketplaceAutomationImportSession",
@@ -321,7 +321,7 @@ class MarketplaceAutomationImportSession(BaseModel):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "expires_at": self.expires_at.isoformat(),
             "ttl": self.ttl,
-        })
+        }))
 
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "MarketplaceAutomationImportSession":

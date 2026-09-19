@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 import boto3
 
@@ -38,7 +38,7 @@ class ArtifactStorage:
         )
 
     def get_object_body(self, key: str) -> bytes:
-        return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+        return cast(bytes, self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read())
 
     def presign_get_url(
         self,

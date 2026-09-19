@@ -347,7 +347,7 @@ class TestChatTurnEndpoints:
             json={**CONVERSATION_CREATE_REQUEST, "agent_id": agent_id},
             headers=auth_headers,
         )
-        return conversation_response.json()["conversation_id"]
+        return str(conversation_response.json()["conversation_id"])
 
     def test_send_message_response_carries_turn_id_header(
         self, test_client: TestClient, auth_headers: dict, monkeypatch

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from a2a.types import AgentCard
@@ -31,10 +31,11 @@ def validate_agent_card_payload(payload: dict[str, Any]) -> AgentCard:
             f"Missing required fields: {', '.join(sorted(missing_fields))}"
         )
 
-    card = ParseDict(
-        payload,
-        AgentCard(),
-        ignore_unknown_fields=False,
+    # ParseDict's stub returns the loosely-typed protobuf Message base;
+    # it mutates and returns the exact instance passed in.
+    card = cast(
+        AgentCard,
+        ParseDict(payload, AgentCard(), ignore_unknown_fields=False),
     )
 
     if not card.supported_interfaces:

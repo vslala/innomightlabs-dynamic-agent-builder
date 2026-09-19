@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, Protocol
 
 from src.config import settings
 from src.dream.models import DreamRun, DreamRunStatus
@@ -11,8 +11,22 @@ from src.dream.service import DreamService
 from src.scheduler.models import Schedule
 
 
+class DreamRunner(Protocol):
+    """The one DreamService call DreamScheduledExecutor needs."""
+
+    async def dream(
+        self,
+        *,
+        agent_id: str,
+        user_id: str,
+        owner_email: str,
+        mode: Literal["backfill", "daily", "manual"] = "daily",
+    ) -> DreamRun:
+        ...
+
+
 class DreamScheduledExecutor:
-    def __init__(self, service: DreamService | None = None) -> None:
+    def __init__(self, service: DreamRunner | None = None) -> None:
         self.service = service or DreamService()
 
     async def execute(self, schedule: Schedule, scheduled_for: datetime) -> dict[str, Any]:

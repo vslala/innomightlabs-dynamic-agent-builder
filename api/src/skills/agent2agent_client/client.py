@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from a2a.client import ClientCallContext, ClientConfig, ClientFactory
@@ -139,7 +139,7 @@ class A2AHttpClient:
 
 
 def _build_send_message_request(request: SendMessageRequest) -> A2ASdkSendMessageRequest:
-    body = {
+    body: dict[str, Any] = {
         "message": {
             "messageId": str(uuid.uuid4()),
             "role": "ROLE_USER",
@@ -151,7 +151,12 @@ def _build_send_message_request(request: SendMessageRequest) -> A2ASdkSendMessag
         body["message"]["contextId"] = request.context_id
     if request.task_id:
         body["message"]["taskId"] = request.task_id
-    return ParseDict(body, A2ASdkSendMessageRequest(), ignore_unknown_fields=False)
+    # ParseDict's stub returns the loosely-typed protobuf Message base; it
+    # mutates and returns the exact instance passed in.
+    return cast(
+        A2ASdkSendMessageRequest,
+        ParseDict(body, A2ASdkSendMessageRequest(), ignore_unknown_fields=False),
+    )
 
 
 def _parse_agent_card(payload: dict[str, Any]) -> AgentCard:
@@ -159,7 +164,7 @@ def _parse_agent_card(payload: dict[str, Any]) -> AgentCard:
 
 
 def _agent_card_to_dict(card: AgentCard) -> dict[str, Any]:
-    return MessageToDict(card)
+    return cast(dict[str, Any], MessageToDict(card))
 
 
 def _transport_protocols(protocols: list[str] | None) -> list[str]:
