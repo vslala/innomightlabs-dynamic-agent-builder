@@ -10,6 +10,7 @@ import pytest
 
 from src.agents.agentic_loop import AsyncToolJobStillRunningError, run_agentic_tool_loop
 from src.agents.tool_execution import ToolExecutionOutcome
+from src.agents.tool_runtime.contexts import NativeToolContext
 from src.agents.tool_runtime.jobs import ToolJob, ToolJobRepository, ToolJobStatus
 from src.agents.tool_runtime.jobs.service import ToolJobService
 from src.skills.service import SkillRuntimeService
@@ -319,8 +320,14 @@ async def test_wait_tool_defaults_clamps_and_uses_sleep(monkeypatch):
     monkeypatch.setattr("src.tools.native.handlers.asyncio.sleep", fake_sleep)
 
     handler = NativeToolHandler(memory_repo=object(), message_repo=object())
-    default_result = json.loads(await handler.execute("wait", {}, "agent-1"))
-    clamped_result = json.loads(await handler.execute("wait", {"seconds": 999}, "agent-1"))
+    context = NativeToolContext(
+        agent_id="agent-1",
+        user_id="user-1",
+        conversation_id="conversation-1",
+        linked_kb_ids=[],
+    )
+    default_result = json.loads(await handler.execute("wait", {}, context))
+    clamped_result = json.loads(await handler.execute("wait", {"seconds": 999}, context))
 
     assert default_result["waited_seconds"] == 20
     assert clamped_result["waited_seconds"] == 600

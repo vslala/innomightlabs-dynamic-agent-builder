@@ -8,6 +8,7 @@ A simple architecture that:
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, AsyncIterator
 
 from src.llm.conversation_strategy import FixedWindowStrategy
@@ -204,9 +205,6 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         Returns:
             List of message dicts ready for LLM API
         """
-        from datetime import datetime, timezone
-
-        # Get current timestamp
         current_time = datetime.now(timezone.utc)
         timestamp_str = current_time.strftime("%A, %B %d, %Y at %I:%M %p UTC")
 

@@ -26,3 +26,19 @@ def convert_decimals(obj: Any) -> Any:
         return int(obj) if obj % 1 == 0 else float(obj)
     else:
         return obj
+
+
+def convert_floats_to_decimals(obj: Any) -> Any:
+    """Recursively convert floats to Decimal.
+
+    The inverse of `convert_decimals`: DynamoDB rejects Python floats on write,
+    so anything derived from `model_dump(mode="json")` has to be converted back
+    before it can be stored.
+    """
+    if isinstance(obj, float):
+        return Decimal(str(obj))
+    if isinstance(obj, list):
+        return [convert_floats_to_decimals(item) for item in obj]
+    if isinstance(obj, dict):
+        return {key: convert_floats_to_decimals(value) for key, value in obj.items()}
+    return obj

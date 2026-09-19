@@ -85,77 +85,43 @@ class NativeToolHandler:
     ):
         self.memory_repo = memory_repo or MemoryRepository()
         self.message_repo = message_repo or get_message_repository("dynamodb")
-        self._conversation_id: Optional[str] = None
-        self._linked_kb_ids: list[str] = []
-        self._user_id: Optional[str] = None
-
-    def set_conversation_context(self, conversation_id: str) -> None:
-        """Set conversation context for recall_conversation tool."""
-        self._conversation_id = conversation_id
-
-    def set_knowledge_base_context(self, kb_ids: list[str]) -> None:
-        """Set linked knowledge base IDs for knowledge_base_search tool."""
-        self._linked_kb_ids = kb_ids
-
-    def set_user_context(self, user_id: str) -> None:
-        """Set user context for memory scoping."""
-        self._user_id = user_id
 
     async def execute(
         self,
         tool_name: str,
         arguments: dict,
-        context: NativeToolContext | str,
+        context: NativeToolContext,
     ) -> str:
-        """
-        Execute a native tool and return the result string.
+        """Execute a native tool and return the result string for the LLM.
 
-        Args:
-            tool_name: Name of the tool to execute
-            arguments: Tool arguments
-            agent_id: ID of the agent
-
-        Returns:
-            Result string to return to the LLM
+        Stateless by design: everything turn-specific arrives in `context`, so
+        one handler can serve concurrent turns for different users.
         """
         handler = getattr(self, f"_handle_{tool_name}", None)
         if not handler:
             raise ValueError(f"Unknown tool: {tool_name}")
 
-        if isinstance(context, NativeToolContext):
-            agent_id = context.agent_id
-            user_id = context.user_id
-            conversation_id = context.conversation_id
-            linked_kb_ids = context.linked_kb_ids
-        else:
-            agent_id = context
-            user_id = self._user_id
-            conversation_id = self._conversation_id
-            linked_kb_ids = self._linked_kb_ids
-
         if tool_name.startswith(self.MEMORY_TOOL_PREFIXES):
-            if user_id is None:
-                raise ValueError("Missing user context")
-            result: str = await handler(arguments, agent_id, user_id)
+            result: str = await handler(arguments, context.agent_id, context.user_id)
             return result
 
         if tool_name == "recall_conversation":
             result = await self._handle_recall_conversation(
                 arguments,
-                agent_id,
-                conversation_id=conversation_id,
+                context.agent_id,
+                conversation_id=context.conversation_id,
             )
             return result
 
         if tool_name == "knowledge_base_search":
             result = await self._handle_knowledge_base_search(
                 arguments,
-                agent_id,
-                linked_kb_ids=linked_kb_ids,
+                context.agent_id,
+                linked_kb_ids=context.linked_kb_ids,
             )
             return result
 
-        result = await handler(arguments, agent_id)
+        result = await handler(arguments, context.agent_id)
         return result
 
     async def _handle_wait(self, args: dict, agent_id: str) -> str:

@@ -7,6 +7,7 @@ from typing import Any
 
 from src.agents.tool_runtime.jobs.models import ToolJob, ToolJobStatus
 from src.agents.tool_runtime.jobs.repository import ToolJobRepository
+from src.common import as_aware_utc
 from src.skills.registry import SkillRegistry, get_skill_registry
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
 
@@ -126,7 +127,7 @@ class ToolJobService:
             return job
 
         reference_time = job.started_at or job.created_at
-        elapsed_seconds = (datetime.now(timezone.utc) - _as_aware_utc(reference_time)).total_seconds()
+        elapsed_seconds = (datetime.now(timezone.utc) - as_aware_utc(reference_time)).total_seconds()
         if elapsed_seconds <= TOOL_JOB_STALE_AFTER_SECONDS:
             return job
 
@@ -134,9 +135,3 @@ class ToolJobService:
             job.job_id,
             "Async tool job became stale before completion. The background execution may have been interrupted; please retry the action.",
         )
-
-
-def _as_aware_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)

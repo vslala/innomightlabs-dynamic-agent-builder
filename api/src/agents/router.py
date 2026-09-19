@@ -6,6 +6,7 @@ from typing import Annotated, Any, cast
 import logging
 
 import src.form_models as form_models
+from src.config import settings
 from src.agents.image_generation.storage import ConversationMediaStorage
 from src.agents.image_generation.models import GenerateImageRequest, GenerateImageResponse
 from src.agents.image_generation.service import (
@@ -115,8 +116,6 @@ def _agent2agent_sharing_response(
     api_key_repo: ApiKeyRepository,
 ) -> Agent2AgentSharingResponse:
     active_keys = [key for key in api_key_repo.find_all_by_agent(agent.agent_id) if key.is_active]
-    from src.config import settings
-
     base_url = settings.api_base_url.rstrip("/")
     return Agent2AgentSharingResponse(
         agent_id=agent.agent_id,
@@ -245,7 +244,6 @@ async def get_agent(
     agent = repo.find_agent_by_id(agent_id, user_email)
 
     if not agent:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Agent not found")
 
     return agent.to_response()
@@ -347,7 +345,6 @@ async def update_agent(
     agent = repo.find_agent_by_id(agent_id, user_email)
 
     if not agent:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Agent not found")
 
     # Get valid field names from schema

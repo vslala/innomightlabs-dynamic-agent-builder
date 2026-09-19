@@ -19,6 +19,8 @@ from src.connectors.mcp.service import MCPConnectorService
 from src.agents.tool_audit import ToolCallStart, build_tool_call_audit_message
 from src.agents.tool_display import derive_display_tool
 from src.llm.ollama import merge_thinking_override
+from src.agents.agentic_loop import run_agentic_tool_loop
+from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_execution import ToolExecutionRouter
 from src.agents.tool_runtime import (
     ToolCommandCategory,
@@ -32,7 +34,11 @@ from src.llm.providers import get_llm_provider
 from src.memory import MemoryRepository
 from src.messages.models import Message, MessageCanvasArtifact, MessageKind, Attachment
 from src.messages.repositories import MessageRepository, get_message_repository
-from src.memory.snapshot import CoreMemorySnapshot
+from src.memory.snapshot import (
+    CoreMemoryBlockDefSnapshot,
+    CoreMemoryBlockSnapshot,
+    CoreMemorySnapshot,
+)
 from src.settings.repository import get_provider_settings_repository
 from src.skills.models import AgentSkill
 from src.skills.service import SkillRuntimeService
@@ -40,9 +46,7 @@ from src.tools.native import NativeToolHandler
 from src.knowledge.repository import AgentKnowledgeBaseRepository
 
 from .base import AgentArchitecture
-
-if TYPE_CHECKING:
-    from src.agents.runtime_state import AgentTurnState
+from .krishna_memgpt_prompt import build_krishna_memgpt_system_prompt
 
 if TYPE_CHECKING:
     from src.agents.models import Agent
@@ -116,11 +120,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             SSEEvent objects for streaming to the client
         """
         try:
-            from src.agents.runtime_state import AgentTurnState
-
-            self.tool_handler.set_conversation_context(conversation.conversation_id)
-            self.tool_handler.set_user_context(actor_id)
-
             state = AgentTurnState(
                 owner_email=owner_email,
                 actor_email=actor_email,
@@ -134,7 +133,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             )
 
             state.linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
-            self.tool_handler.set_knowledge_base_context(state.linked_kb_ids)
 
             state.enabled_skills = self.skill_runtime.list_enabled(agent.agent_id)
             try:
@@ -207,7 +205,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
             system_prompt = self._build_system_prompt(
                 agent,
-                actor_id,
                 kb_count=kb_count,
                 enabled_skills=state.enabled_skills or None,
                 enabled_mcp_connections=state.enabled_mcp_connections or None,
@@ -239,8 +236,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             )
 
             provider = get_llm_provider(state.provider_name)
-
-            from src.agents.agentic_loop import run_agentic_tool_loop
 
             tool_registry = self._build_tool_registry()
             tools = self._build_tool_definitions(state, tool_registry)
@@ -396,8 +391,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
                     refreshed_prompt = self._build_system_prompt(
                         agent,
-                        actor_id,
-                        kb_count=kb_count,
+                                kb_count=kb_count,
                         enabled_skills=state.enabled_skills or None,
                         enabled_mcp_connections=state.enabled_mcp_connections or None,
                         core_memory=refreshed_snapshot,
@@ -487,7 +481,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
     def _build_system_prompt(
         self,
         agent: "Agent",
-        user_id: str,
         *,
         kb_count: int | None = None,
         enabled_skills: list[AgentSkill] | None = None,
@@ -495,18 +488,9 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         core_memory: CoreMemorySnapshot | None = None,
         capacity_warnings: list[MemoryCapacityWarning] | None = None,
     ) -> str:
-        """Build the system prompt.
-
-        This wrapper keeps the architecture readable by delegating prompt
-        construction to a dedicated module.
-        """
-        from .krishna_memgpt_prompt import build_krishna_memgpt_system_prompt
-
+        """Build the system prompt, rendered from data already loaded this turn."""
         return build_krishna_memgpt_system_prompt(
             agent_persona=agent.agent_persona,
-            memory_repo=self.memory_repo,
-            agent_id=agent.agent_id,
-            user_id=user_id,
             kb_count=kb_count,
             enabled_skills=enabled_skills,
             enabled_mcp_connections=enabled_mcp_connections,
@@ -516,12 +500,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
     def _load_core_memory_snapshot(self, agent_id: str, user_id: str) -> CoreMemorySnapshot:
         """Load a consistent core-memory snapshot (single read) for this turn."""
-        from src.memory.snapshot import (
-            CoreMemoryBlockDefSnapshot,
-            CoreMemoryBlockSnapshot,
-            CoreMemorySnapshot,
-        )
-
         block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
         memories = self.memory_repo.get_all_core_memories(agent_id, user_id)
 
@@ -575,7 +553,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
     def _build_tool_definitions(
         self,
-        state: "AgentTurnState",
+        state: AgentTurnState,
         registry: ToolCommandRegistry,
     ) -> list[dict[str, Any]]:
         categories = {ToolCommandCategory.NATIVE}

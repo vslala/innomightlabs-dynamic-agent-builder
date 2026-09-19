@@ -38,9 +38,6 @@ def _core_memory_snapshot() -> CoreMemorySnapshot:
 def test_krishna_memgpt_prompt_renders_required_sections():
     prompt = build_krishna_memgpt_system_prompt(
         agent_persona="You are a careful backend engineer.",
-        memory_repo=None,
-        agent_id="agent-1",
-        user_id="user-1",
         core_memory=_core_memory_snapshot(),
     )
 
@@ -62,9 +59,6 @@ def test_krishna_memgpt_prompt_renders_required_sections():
 def test_krishna_memgpt_prompt_omits_optional_sections_when_data_absent():
     prompt = build_krishna_memgpt_system_prompt(
         agent_persona="Persona",
-        memory_repo=None,
-        agent_id="agent-1",
-        user_id="user-1",
         core_memory=_core_memory_snapshot(),
         kb_count=0,
         enabled_skills=[],
@@ -78,8 +72,8 @@ def test_krishna_memgpt_prompt_omits_optional_sections_when_data_absent():
 
 def test_krishna_memgpt_prompt_renders_optional_sections_when_data_present():
     skill = AgentSkill(
-        agent_id="agent-1",
         skill_id="google_drive",
+        agent_id="agent-1",
         namespace="google",
         skill_name="Google Drive",
         skill_description="Search Drive files",
@@ -95,9 +89,6 @@ def test_krishna_memgpt_prompt_renders_optional_sections_when_data_present():
 
     prompt = build_krishna_memgpt_system_prompt(
         agent_persona="Persona",
-        memory_repo=None,
-        agent_id="agent-1",
-        user_id="user-1",
         core_memory=_core_memory_snapshot(),
         kb_count=2,
         enabled_skills=[skill],
@@ -137,9 +128,6 @@ def test_capacity_badge_and_warning_section_share_one_threshold():
 
     prompt = build_krishna_memgpt_system_prompt(
         agent_persona="Persona",
-        memory_repo=None,
-        agent_id="agent-1",
-        user_id="user-1",
         core_memory=CoreMemorySnapshot(
             block_defs=[
                 CoreMemoryBlockDefSnapshot(

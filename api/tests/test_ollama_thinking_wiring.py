@@ -27,17 +27,6 @@ class FakeProviderSettingsRepository:
         return FakeProviderSettings()
 
 
-class FakeToolHandler:
-    def set_conversation_context(self, conversation_id):
-        pass
-
-    def set_user_context(self, user_id):
-        pass
-
-    def set_knowledge_base_context(self, kb_ids):
-        pass
-
-
 class FakeSkillRuntime:
     def list_enabled(self, agent_id):
         return []
@@ -91,7 +80,6 @@ async def test_krishna_memgpt_forwards_the_agents_thinking_choice_to_the_provide
     architecture = KrishnaMemGPTArchitecture()
     architecture.message_repo = FakeMessageRepository()
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
-    architecture.tool_handler = FakeToolHandler()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
     architecture._get_linked_kb_ids = lambda agent_id: []
@@ -137,7 +125,6 @@ async def test_krishna_memgpt_sends_no_think_key_when_the_agent_has_no_preferenc
     architecture = KrishnaMemGPTArchitecture()
     architecture.message_repo = FakeMessageRepository()
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
-    architecture.tool_handler = FakeToolHandler()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
     architecture._get_linked_kb_ids = lambda agent_id: []

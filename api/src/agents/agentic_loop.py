@@ -452,19 +452,38 @@ async def _execute_tool_with_runtime_events(
         )
     )
 
+    # A running tool can emit progress events (image previews, lifecycle notes)
+    # through the turn runtime. Race the tool against the next event rather than
+    # polling for one: a 50ms poll woke the shared event loop 20 times a second
+    # for the tool's entire duration -- 12,000 wakeups for a 10-minute job, on
+    # the loop every concurrent turn shares.
+    next_event = asyncio.ensure_future(runtime.next_event())
+
     try:
-        while not tool_task.done():
-            try:
-                event = await asyncio.wait_for(runtime.next_event(), timeout=0.05)
-            except TimeoutError:
-                continue
-            yield AgenticLoopEvent(kind="runtime_event", payload={"event": event})
+        while True:
+            done, _ = await asyncio.wait(
+                {tool_task, next_event}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if next_event in done:
+                yield AgenticLoopEvent(
+                    kind="runtime_event", payload={"event": next_event.result()}
+                )
+                next_event = asyncio.ensure_future(runtime.next_event())
+            if tool_task in done:
+                break
 
         outcome = await tool_task
+        # Cancelling a *done* future discards its result, so hand over anything
+        # already in flight before draining the rest.
+        if next_event.done() and not next_event.cancelled():
+            yield AgenticLoopEvent(
+                kind="runtime_event", payload={"event": next_event.result()}
+            )
         for event in runtime.drain_available():
             yield AgenticLoopEvent(kind="runtime_event", payload={"event": event})
         yield AgenticLoopEvent(kind="tool_execution_complete", payload={"outcome": outcome})
     finally:
+        next_event.cancel()
         if not tool_task.done():
             tool_task.cancel()
 

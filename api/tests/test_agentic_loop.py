@@ -497,3 +497,52 @@ def _context_contains_text(context: list[dict[Any, Any]], expected_text: str) ->
         for content in message.get("content", [])
         if isinstance(content, dict)
     )
+
+
+class BurstThenReturnToolRouter:
+    """Emits several events and returns immediately, with no await in between.
+
+    The tool finishes in the same scheduling pass as its last emit, which is
+    exactly the race where a runtime event can be dropped -- see
+    api/docs/LLD-agent-runtime-refactor.md (P1.4).
+    """
+
+    async def execute(self, *, tool_name, tool_input, tool_use_id, state):
+        for index in range(5):
+            await emit_turn_event(
+                SSEEvent(
+                    event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+                    content=f"step-{index}",
+                )
+            )
+        return ToolExecutionOutcome(result="done", success=True)
+
+
+async def test_agentic_loop_loses_no_runtime_event_emitted_just_before_the_tool_returns():
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=FakeProvider(),
+            context=[],
+            credentials={},
+            tools=[],
+            model="test-model",
+            tool_router=BurstThenReturnToolRouter(),
+            state=object(),
+        )
+    ]
+
+    notes = [
+        event.payload["event"].content
+        for event in events
+        if event.kind == "runtime_event"
+    ]
+    result_index = next(
+        index for index, event in enumerate(events) if event.kind == "tool_call_result"
+    )
+    last_note_index = max(
+        index for index, event in enumerate(events) if event.kind == "runtime_event"
+    )
+
+    assert notes == [f"step-{index}" for index in range(5)]
+    assert last_note_index < result_index

@@ -33,17 +33,6 @@ class FakeProviderSettingsRepository:
         return FakeProviderSettings()
 
 
-class FakeToolHandler:
-    def set_conversation_context(self, conversation_id):
-        pass
-
-    def set_user_context(self, user_id):
-        pass
-
-    def set_knowledge_base_context(self, kb_ids):
-        pass
-
-
 class FakeSkillRuntime:
     def list_enabled(self, agent_id):
         return []
@@ -165,7 +154,7 @@ async def fake_load_provider_credentials(**kwargs):
 
 async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
     monkeypatch.setattr(
-        "src.agents.agentic_loop.run_agentic_tool_loop",
+        "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_run_agentic_tool_loop,
     )
     monkeypatch.setattr(
@@ -181,7 +170,6 @@ async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
     message_repo = FakeMessageRepository()
     architecture.message_repo = message_repo
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
-    architecture.tool_handler = FakeToolHandler()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture._get_linked_kb_ids = lambda agent_id: []
     architecture._ensure_memory_initialized = lambda agent_id, user_id: None
@@ -249,7 +237,7 @@ async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
 
 async def test_krishna_memgpt_unwraps_call_mcp_tool_for_display(monkeypatch):
     monkeypatch.setattr(
-        "src.agents.agentic_loop.run_agentic_tool_loop",
+        "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_mcp_tool_call_loop,
     )
     monkeypatch.setattr(
@@ -264,7 +252,6 @@ async def test_krishna_memgpt_unwraps_call_mcp_tool_for_display(monkeypatch):
     architecture = KrishnaMemGPTArchitecture()
     architecture.message_repo = FakeMessageRepository()
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
-    architecture.tool_handler = FakeToolHandler()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture._get_linked_kb_ids = lambda agent_id: []
     architecture._ensure_memory_initialized = lambda agent_id, user_id: None
@@ -319,7 +306,7 @@ async def test_krishna_memgpt_unwraps_call_mcp_tool_for_display(monkeypatch):
 
 async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
     monkeypatch.setattr(
-        "src.agents.agentic_loop.run_agentic_tool_loop",
+        "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_prompt_refresh_loop,
     )
     monkeypatch.setattr(
@@ -334,7 +321,6 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
     architecture = KrishnaMemGPTArchitecture()
     architecture.message_repo = FakeMessageRepository()
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
-    architecture.tool_handler = FakeToolHandler()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
     architecture._get_linked_kb_ids = lambda agent_id: []
@@ -384,7 +370,7 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
 
 async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_fallback(monkeypatch):
     monkeypatch.setattr(
-        "src.agents.agentic_loop.run_agentic_tool_loop",
+        "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_empty_tool_turn_loop,
     )
     monkeypatch.setattr(
@@ -400,7 +386,6 @@ async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_fallback(monkey
     message_repo = FakeMessageRepository()
     architecture.message_repo = message_repo
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
-    architecture.tool_handler = FakeToolHandler()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture._get_linked_kb_ids = lambda agent_id: []
     architecture._ensure_memory_initialized = lambda agent_id, user_id: None
@@ -456,7 +441,7 @@ async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_fallback(monkey
 
 async def test_krishna_memgpt_attaches_canvas_artifact_to_assistant_message(monkeypatch):
     monkeypatch.setattr(
-        "src.agents.agentic_loop.run_agentic_tool_loop",
+        "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_canvas_tool_loop,
     )
     monkeypatch.setattr(
@@ -476,7 +461,6 @@ async def test_krishna_memgpt_attaches_canvas_artifact_to_assistant_message(monk
     message_repo = FakeMessageRepository()
     architecture.message_repo = message_repo
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
-    architecture.tool_handler = FakeToolHandler()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture._get_linked_kb_ids = lambda agent_id: []
     architecture._ensure_memory_initialized = lambda agent_id, user_id: None
@@ -526,7 +510,6 @@ async def test_krishna_memgpt_attaches_canvas_artifact_to_assistant_message(monk
 
 def test_krishna_memgpt_builds_tool_definitions_from_command_registry():
     architecture = KrishnaMemGPTArchitecture()
-    architecture.tool_handler = FakeToolHandler()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
 
