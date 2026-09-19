@@ -109,7 +109,7 @@ class GeminiProvider(LLMProvider):
             )
         ]
 
-    def _normalize_tools(self, tools: list[dict] | None) -> list[types.Tool] | None:
+    def _normalize_tools(self, tools: list[dict] | None) -> types.ToolListUnion | None:
         declarations: list[types.FunctionDeclaration] = []
         for normalized in normalize_tool_definitions(tools):
             declarations.append(

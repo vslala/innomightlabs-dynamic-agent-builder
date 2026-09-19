@@ -7,6 +7,7 @@ truth for schedules, run records, and duplicate dispatch protection.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 from threading import Lock
 
@@ -14,6 +15,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from src.agents.tool_runtime.jobs.repository import ToolJobRepository
 from src.agents.turns.repository import ConversationTurnRepository
 from src.config import settings
 from src.dream.repository import DreamRepository
@@ -26,6 +28,7 @@ log = logging.getLogger(__name__)
 CRAWL_JOB_REAPER_ID = "internal:stale-crawl-job-reaper"
 DREAM_RUN_REAPER_ID = "internal:stale-dream-run-reaper"
 CHAT_TURN_REAPER_ID = "internal:stale-chat-turn-reaper"
+TOOL_JOB_REAPER_ID = "internal:stale-tool-job-reaper"
 
 
 class SchedulerRuntime:
@@ -37,11 +40,13 @@ class SchedulerRuntime:
         crawl_job_state_service: CrawlJobStateService | None = None,
         dream_repository: DreamRepository | None = None,
         chat_turn_repository: ConversationTurnRepository | None = None,
+        tool_job_repository: ToolJobRepository | None = None,
     ):
         self.repository = repository or SchedulerRepository()
         self.crawl_job_state_service = crawl_job_state_service or CrawlJobStateService()
         self.dream_repository = dream_repository or DreamRepository()
         self.chat_turn_repository = chat_turn_repository or ConversationTurnRepository()
+        self.tool_job_repository = tool_job_repository or ToolJobRepository()
         self.scheduler = AsyncIOScheduler(timezone=timezone.utc)
         self._started = False
 
@@ -50,39 +55,20 @@ class SchedulerRuntime:
             return
         for schedule in self.repository.list_active_schedules():
             self.upsert(schedule)
-        self.scheduler.add_job(
-            self._reap_stale_crawl_jobs,
-            trigger=IntervalTrigger(
-                seconds=settings.crawl_job_reaper_interval_seconds,
-                timezone=timezone.utc,
-            ),
-            id=CRAWL_JOB_REAPER_ID,
-            replace_existing=True,
-            coalesce=True,
-            max_instances=1,
-        )
-        self.scheduler.add_job(
-            self._reap_stale_dream_runs,
-            trigger=IntervalTrigger(
-                seconds=settings.dream_run_reaper_interval_seconds,
-                timezone=timezone.utc,
-            ),
-            id=DREAM_RUN_REAPER_ID,
-            replace_existing=True,
-            coalesce=True,
-            max_instances=1,
-        )
-        self.scheduler.add_job(
-            self._reap_stale_chat_turns,
-            trigger=IntervalTrigger(
-                seconds=settings.chat_turn_reaper_interval_seconds,
-                timezone=timezone.utc,
-            ),
-            id=CHAT_TURN_REAPER_ID,
-            replace_existing=True,
-            coalesce=True,
-            max_instances=1,
-        )
+        for reaper, interval_seconds, reaper_id in (
+            (self._reap_stale_crawl_jobs, settings.crawl_job_reaper_interval_seconds, CRAWL_JOB_REAPER_ID),
+            (self._reap_stale_dream_runs, settings.dream_run_reaper_interval_seconds, DREAM_RUN_REAPER_ID),
+            (self._reap_stale_chat_turns, settings.chat_turn_reaper_interval_seconds, CHAT_TURN_REAPER_ID),
+            (self._reap_stale_tool_jobs, settings.tool_job_reaper_interval_seconds, TOOL_JOB_REAPER_ID),
+        ):
+            self.scheduler.add_job(
+                reaper,
+                trigger=IntervalTrigger(seconds=interval_seconds, timezone=timezone.utc),
+                id=reaper_id,
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1,
+            )
         self.scheduler.start()
         self._started = True
         log.info("Scheduler runtime started")
@@ -131,28 +117,26 @@ class SchedulerRuntime:
         )
 
     async def _reap_stale_crawl_jobs(self) -> None:
-        try:
-            failed_count = self.crawl_job_state_service.fail_stale_jobs()
-            if failed_count:
-                log.warning("Marked %s stale crawl job(s) as failed", failed_count)
-        except Exception:
-            log.exception("Failed to reap stale crawl jobs")
+        self._reap("crawl job", self.crawl_job_state_service.fail_stale_jobs)
 
     async def _reap_stale_dream_runs(self) -> None:
-        try:
-            failed_count = self.dream_repository.fail_stale_runs()
-            if failed_count:
-                log.warning("Marked %s stale dream run(s) as failed", failed_count)
-        except Exception:
-            log.exception("Failed to reap stale dream runs")
+        self._reap("dream run", self.dream_repository.fail_stale_runs)
 
     async def _reap_stale_chat_turns(self) -> None:
+        self._reap("chat turn", self.chat_turn_repository.fail_stale_turns)
+
+    async def _reap_stale_tool_jobs(self) -> None:
+        self._reap("tool job", self.tool_job_repository.fail_stale_jobs)
+
+    @staticmethod
+    def _reap(label: str, fail_stale: Callable[[], int]) -> None:
+        """Never let a reaper's failure stop the scheduler."""
         try:
-            failed_count = self.chat_turn_repository.fail_stale_turns()
+            failed_count = fail_stale()
             if failed_count:
-                log.warning("Marked %s stale chat turn(s) as failed", failed_count)
+                log.warning("Marked %s stale %s(s) as failed", failed_count, label)
         except Exception:
-            log.exception("Failed to reap stale chat turns")
+            log.exception("Failed to reap stale %ss", label)
 
 
 _runtime: SchedulerRuntime | None = None

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from datetime import datetime, timezone
+from typing import cast
 
 import pytest
 
@@ -17,6 +18,7 @@ from src.automation_marketplace.models import (
 )
 from src.automation_marketplace.repository import AutomationMarketplaceRepository
 from src.automation_marketplace.service import AutomationMarketplaceService
+from src.automations.service import AutomationService
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.automations.models import (
@@ -35,10 +37,14 @@ from tests.mock_data import TEST_USER_EMAIL
 
 def _service(repo: AutomationRepository | None = None) -> AutomationMarketplaceService:
     automation_repo = repo or AutomationRepository()
+    # _FakeAutomationService implements the handful of AutomationService
+    # methods this test exercises, not its full surface; the constructor's
+    # AutomationService type is asserted rather than replaced with a Protocol
+    # that would have to mirror that whole surface for no other consumer.
     return AutomationMarketplaceService(
         repository=AutomationMarketplaceRepository(),
         automation_repository=automation_repo,
-        automation_service=_FakeAutomationService(automation_repo),
+        automation_service=cast(AutomationService, _FakeAutomationService(automation_repo)),
     )
 
 

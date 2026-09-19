@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 
+from src.common import as_aware_utc
 from src.automations.models import AutomationRun, AutomationRunStatus
 from src.automations.repository import AutomationRepository
 
@@ -73,7 +74,7 @@ class AutomationRunStateService:
         if run.status not in {AutomationRunStatus.PENDING, AutomationRunStatus.RUNNING}:
             return False
         reference_time = run.last_heartbeat_at or run.started_at or run.created_at
-        elapsed_seconds = (_as_aware_utc(now or _utcnow()) - _as_aware_utc(reference_time)).total_seconds()
+        elapsed_seconds = (as_aware_utc(now or _utcnow()) - as_aware_utc(reference_time)).total_seconds()
         timeout_seconds = run.heartbeat_timeout_seconds or AUTOMATION_RUN_DEFAULT_HEARTBEAT_TIMEOUT_SECONDS
         return elapsed_seconds > timeout_seconds
 
@@ -92,9 +93,3 @@ class AutomationRunStateService:
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _as_aware_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)

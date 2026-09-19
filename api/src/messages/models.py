@@ -4,6 +4,7 @@ Message models for the messages module.
 
 import os
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -21,6 +22,28 @@ ALLOWED_EXTENSIONS = {
 MAX_FILE_SIZE = 100 * 1024  # 100KB per file
 MAX_TOTAL_SIZE = 250 * 1024  # 250KB total
 MAX_FILES = 5
+
+CHAT_SORT_KEY_PREFIX = "MESSAGE#"
+AUDIT_SORT_KEY_PREFIX = "AUDIT#"
+
+
+class MessageKind(str, Enum):
+    """Which sort-key partition a row lives in.
+
+    Tool-call audit rows are written on every tool call and can reach
+    MAX_TOOL_RESULT_CHARS each, but nothing reads them on the conversation
+    path: the LLM context filters them out and so does the message list. Giving
+    them their own prefix keeps them out of both queries entirely -- see
+    api/docs/LLD-agent-runtime-refactor.md (P0.1) for the truncation bug this
+    fixes.
+    """
+
+    CHAT = "chat"
+    TOOL_AUDIT = "tool_audit"
+
+    @property
+    def sort_key_prefix(self) -> str:
+        return AUDIT_SORT_KEY_PREFIX if self is MessageKind.TOOL_AUDIT else CHAT_SORT_KEY_PREFIX
 
 
 class Attachment(BaseModel):
@@ -129,6 +152,7 @@ class Message(BaseModel):
     attachments: list[Attachment] = Field(default_factory=list)
     images: list[MessageImage] = Field(default_factory=list)
     canvases: list[MessageCanvasArtifact] = Field(default_factory=list)
+    kind: MessageKind = MessageKind.CHAT
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -138,8 +162,8 @@ class Message(BaseModel):
 
     @property
     def sk(self) -> str:
-        """Sort key: MESSAGE#{timestamp}#{message_id} - chronological ordering within conversation."""
-        return f"MESSAGE#{self.created_at.isoformat()}#{self.message_id}"
+        """Sort key: {prefix}#{timestamp}#{message_id} - chronological within the conversation."""
+        return f"{self.kind.sort_key_prefix}{self.created_at.isoformat()}#{self.message_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
         """Convert to DynamoDB item format."""
@@ -152,6 +176,7 @@ class Message(BaseModel):
             "role": self.role,
             "content": self.content,
             "created_at": self.created_at.isoformat(),
+            "kind": self.kind.value,
             "entity_type": "Message",
         }
         if self.attachments:
@@ -189,6 +214,8 @@ class Message(BaseModel):
             attachments=attachments,
             images=images,
             canvases=canvases,
+            # Rows written before the AUDIT# split have no `kind`.
+            kind=MessageKind(item.get("kind", MessageKind.CHAT.value)),
             created_at=datetime.fromisoformat(item["created_at"]),
         )
 

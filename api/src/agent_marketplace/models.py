@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
@@ -295,4 +295,7 @@ def slugify(value: str) -> str:
 def agent_to_response(agent: AgentResponse | Any) -> dict[str, Any]:
     if isinstance(agent, AgentResponse):
         return agent.model_dump(mode="json")
-    return agent.to_response().model_dump(mode="json")
+    # `agent` here is anything with a `to_response()` -> BaseModel-like method
+    # (e.g. the Agent domain model); that duck-typed contract isn't expressible
+    # as a static type, so the dict result is asserted with a cast.
+    return cast(dict[str, Any], agent.to_response().model_dump(mode="json"))

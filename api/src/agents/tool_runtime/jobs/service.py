@@ -5,14 +5,23 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from src.agents.tool_runtime.jobs.models import ToolJob, ToolJobStatus
+from src.agents.tool_runtime.jobs.models import (
+    TOOL_JOB_STALE_AFTER_SECONDS,
+    ToolJob,
+    ToolJobStatus,
+)
 from src.agents.tool_runtime.jobs.repository import ToolJobRepository
+from src.common import as_aware_utc
 from src.skills.registry import SkillRegistry, get_skill_registry
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
 
 log = logging.getLogger(__name__)
 
-TOOL_JOB_STALE_AFTER_SECONDS = 10 * 60
+#: Strong references to in-flight job tasks. asyncio only holds a weak
+#: reference to a running task, so a bare `create_task(...)` whose result
+#: nobody keeps can be garbage-collected mid-execution -- leaving the job row
+#: RUNNING until the stale check fails it ten minutes later.
+_running_jobs: set[asyncio.Task[None]] = set()
 
 
 class ToolJobService:
@@ -60,7 +69,9 @@ class ToolJobService:
         )
 
     def start_skill_action_job(self, job: ToolJob) -> None:
-        asyncio.create_task(self.execute_skill_action_job(job.job_id))
+        task = asyncio.create_task(self.execute_skill_action_job(job.job_id))
+        _running_jobs.add(task)
+        task.add_done_callback(_running_jobs.discard)
 
     async def execute_skill_action_job(self, job_id: str) -> None:
         job = self.repository.find_by_id(job_id)
@@ -118,7 +129,7 @@ class ToolJobService:
             return job
 
         reference_time = job.started_at or job.created_at
-        elapsed_seconds = (datetime.now(timezone.utc) - _as_aware_utc(reference_time)).total_seconds()
+        elapsed_seconds = (datetime.now(timezone.utc) - as_aware_utc(reference_time)).total_seconds()
         if elapsed_seconds <= TOOL_JOB_STALE_AFTER_SECONDS:
             return job
 
@@ -126,9 +137,3 @@ class ToolJobService:
             job.job_id,
             "Async tool job became stale before completion. The background execution may have been interrupted; please retry the action.",
         )
-
-
-def _as_aware_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)

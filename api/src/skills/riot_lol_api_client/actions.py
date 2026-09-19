@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ValidationError
 
@@ -307,11 +307,14 @@ def _client(config: RiotLolConfig) -> RiotLolClient:
 async def _resolve_account(client: RiotLolClient, request: PlayerLookup, routing_region: str) -> dict[str, Any]:
     if request.puuid:
         return {"puuid": request.puuid, "gameName": request.game_name, "tagLine": request.tag_line}
-    return await client.get_routing_json(
-        routing_region,
-        (
-            "/riot/account/v1/accounts/by-riot-id/"
-            f"{path_segment(request.game_name or '')}/{path_segment(request.tag_line or '')}"
+    return cast(
+        dict[str, Any],
+        await client.get_routing_json(
+            routing_region,
+            (
+                "/riot/account/v1/accounts/by-riot-id/"
+                f"{path_segment(request.game_name or '')}/{path_segment(request.tag_line or '')}"
+            ),
         ),
     )
 
@@ -332,9 +335,12 @@ async def _resolve_optional_puuid(client: RiotLolClient, request: MatchRequest, 
 
 
 async def _get_summoner(client: RiotLolClient, platform_region: str, puuid: str) -> dict[str, Any]:
-    return await client.get_platform_json(
-        platform_region,
-        f"/lol/summoner/v4/summoners/by-puuid/{path_segment(puuid)}",
+    return cast(
+        dict[str, Any],
+        await client.get_platform_json(
+            platform_region,
+            f"/lol/summoner/v4/summoners/by-puuid/{path_segment(puuid)}",
+        ),
     )
 
 
@@ -358,9 +364,12 @@ async def _get_match_ids(
 
 
 async def _get_match(client: RiotLolClient, routing_region: str, match_id: str) -> dict[str, Any]:
-    return await client.get_routing_json(
-        routing_region,
-        f"/lol/match/v5/matches/{path_segment(match_id)}",
+    return cast(
+        dict[str, Any],
+        await client.get_routing_json(
+            routing_region,
+            f"/lol/match/v5/matches/{path_segment(match_id)}",
+        ),
     )
 
 

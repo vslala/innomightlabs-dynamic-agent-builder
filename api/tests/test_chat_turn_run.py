@@ -156,7 +156,9 @@ async def test_reattach_replays_from_zero_then_follows_live(dynamodb_table, monk
     first_pass: list[SSEEventType] = []
     async for _sequence, event in transcript.follow(after_sequence=0):
         first_pass.append(event.event_type)
-        if len(first_pass) == 4:  # 2 lifecycle notices, USER_MESSAGE_SAVED, first text chunk
+        # Everything the architecture emits before it pauses: USER_MESSAGE_SAVED
+        # and the first text chunk.
+        if len(first_pass) == 2:
             break
 
     architecture.resume.set()
@@ -167,7 +169,7 @@ async def test_reattach_replays_from_zero_then_follows_live(dynamodb_table, monk
 
     await asyncio.wait_for(transcript.task, timeout=2)
 
-    assert replay[:4] == first_pass
+    assert replay[: len(first_pass)] == first_pass
     assert replay[-1] == SSEEventType.STREAM_COMPLETE
     assert len(replay) > len(first_pass)
 
@@ -343,3 +345,73 @@ async def test_transcript_is_forgotten_after_grace_window_while_follower_keeps_s
 
     events = [event async for _sequence, event in transcript.follow()]
     assert events[-1].event_type == SSEEventType.STREAM_COMPLETE
+
+
+async def test_conversation_is_touched_even_when_the_turn_fails(dynamodb_table, monkeypatch):
+    """The user sent a message either way, so the sidebar timestamp must move.
+
+    The touch used to sit on the success path only. See
+    api/docs/LLD-agent-runtime-refactor.md (P2.3).
+    """
+    _patch_architecture(monkeypatch, FailingArchitecture())
+    agent = _agent()
+    conversation = _seeded_conversation(agent)
+    before = ConversationRepository().find_by_id(conversation.conversation_id, OWNER)
+    assert before is not None and before.updated_at is None
+
+    turn = start_turn(
+        agent=agent,
+        conversation=conversation,
+        user_message="hi",
+        attachments=None,
+        owner_email=OWNER,
+        actor_email=OWNER,
+        actor_id=OWNER,
+    )
+    transcript = live_transcript(turn.turn_id)
+    assert transcript is not None
+    await asyncio.wait_for(transcript.task, timeout=2)
+
+    saved_turn = ConversationTurnRepository().find_by_id(turn.turn_id)
+    assert saved_turn is not None
+    assert saved_turn.status == ConversationTurnStatus.FAILED
+
+    after = ConversationRepository().find_by_id(conversation.conversation_id, OWNER)
+    assert after is not None
+    assert after.updated_at is not None
+
+
+async def test_turn_does_not_clobber_a_rename_made_while_it_was_running(
+    dynamodb_table, monkeypatch
+):
+    """The turn holds a Conversation loaded before it started; writing that whole
+    object back at the end used to undo a concurrent rename."""
+    architecture = ControllableArchitecture()
+    _patch_architecture(monkeypatch, architecture)
+    agent = _agent()
+    conversation = _seeded_conversation(agent)
+
+    turn = start_turn(
+        agent=agent,
+        conversation=conversation,
+        user_message="hi",
+        attachments=None,
+        owner_email=OWNER,
+        actor_email=OWNER,
+        actor_id=OWNER,
+    )
+
+    repo = ConversationRepository()
+    renamed = repo.find_by_id(conversation.conversation_id, OWNER)
+    assert renamed is not None
+    renamed.title = "Renamed mid-turn"
+    repo.save(renamed)
+
+    architecture.resume.set()
+    transcript = live_transcript(turn.turn_id)
+    assert transcript is not None
+    await asyncio.wait_for(transcript.task, timeout=2)
+
+    final = repo.find_by_id(conversation.conversation_id, OWNER)
+    assert final is not None
+    assert final.title == "Renamed mid-turn"

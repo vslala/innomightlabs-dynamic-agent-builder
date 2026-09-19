@@ -100,19 +100,27 @@ class A2ADiscoveryService:
             limit=limit,
             cursor=_decode_cursor(cursor),
         )
-        return A2AAgentListResponse(
-            items=[self._summary(agent) for agent in page.items],
-            next_cursor=_encode_cursor(page.cursor),
+        return A2AAgentListResponse.model_validate(
+            {
+                "items": [self._summary(agent) for agent in page.items],
+                "next_cursor": _encode_cursor(page.cursor),
+            }
         )
 
     def _summary(self, agent: Agent) -> A2AAgentSummary:
+        # A2AAgentSummary declares camelCase aliases for its wire format but
+        # accepts either name at runtime (populate_by_name=True); mypy has no
+        # plugin here to know that, so construct via model_validate rather
+        # than a keyword call it would otherwise misjudge against the alias.
         agent_card = self._agent_card(agent)
-        return A2AAgentSummary(
-            agent_id=agent.agent_id,
-            name=agent_card.name,
-            description=agent_card.description,
-            agent_card_url=self._agent_card_url(agent.agent_id),
-            agent_card=agent_card,
+        return A2AAgentSummary.model_validate(
+            {
+                "agent_id": agent.agent_id,
+                "name": agent_card.name,
+                "description": agent_card.description,
+                "agent_card_url": self._agent_card_url(agent.agent_id),
+                "agent_card": agent_card,
+            }
         )
 
     def _security_schemes(self) -> dict[str, A2ASecurityScheme]:

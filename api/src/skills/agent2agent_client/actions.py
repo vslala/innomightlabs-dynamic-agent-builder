@@ -109,10 +109,18 @@ async def send_message(arguments: dict[str, Any], config: dict[str, Any], contex
             agent_name=agent_ref.name,
         ).model_dump(mode="json", exclude_none=True)
 
+    if isinstance(oauth_result, dict):
+        headers = oauth_result
+    else:
+        # oauth_result is only falsy when the `not oauth_result` branch above
+        # ran, which is the only place `credential` is assigned away from None.
+        assert credential is not None, "credential must be resolved when oauth_result is empty"
+        headers = credential.headers
+
     payload = await http_client.send_message(
         agent_card=raw_card,
         request=request,
-        headers=oauth_result if isinstance(oauth_result, dict) else credential.headers,
+        headers=headers,
         preferred_protocols=preferred_protocols,
     )
     task = payload.get("task") if isinstance(payload.get("task"), dict) else None

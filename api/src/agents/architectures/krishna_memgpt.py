@@ -8,28 +8,25 @@ An architecture with memory capabilities:
 - Agentic loop for tool execution
 """
 
-import json
 import logging
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, AsyncIterator
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, AsyncIterator, Iterator
 
-from src.common import CAPACITY_WARNING_THRESHOLD
+from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete, run_agentic_tool_loop
 from src.agents.models import MemoryCapacityWarning
-from src.config import settings
-from src.connectors.mcp.service import MCPConnectorService
-from src.agents.tool_audit import ToolCallStart, build_tool_call_audit_message
-from src.agents.tool_display import derive_display_tool
-from src.llm.ollama import merge_thinking_override
+from src.agents.provider_session import open_provider_session
+from src.agents.runtime_state import AgentTurnState
+from src.agents.tool_audit import ToolCallAuditLog
 from src.agents.tool_execution import ToolExecutionRouter
+from src.agents.tool_results import interpret_tool_result
+from src.connectors.mcp.service import MCPConnectorService
 from src.agents.tool_runtime import (
-    ToolCommandCategory,
-    ToolCommandRegistry,
-    build_default_tool_command_registry,
+    ToolCategory,
+    ToolRegistry,
+    build_default_tool_registry,
 )
 from src.llm.conversation_strategy import FixedWindowStrategy
-from src.llm.credentials import load_provider_credentials
 from src.llm.events import SSEEvent, SSEEventType
-from src.llm.providers import get_llm_provider
 from src.memory import MemoryRepository
 from src.messages.models import Message, MessageCanvasArtifact, Attachment
 from src.messages.repositories import MessageRepository, get_message_repository
@@ -41,9 +38,7 @@ from src.tools.native import NativeToolHandler
 from src.knowledge.repository import AgentKnowledgeBaseRepository
 
 from .base import AgentArchitecture
-
-if TYPE_CHECKING:
-    from src.agents.runtime_state import AgentTurnState
+from .krishna_memgpt_prompt import build_krishna_memgpt_system_prompt
 
 if TYPE_CHECKING:
     from src.agents.models import Agent
@@ -78,7 +73,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         Args:
             max_context_words: Maximum words to include in conversation context
         """
-        self.max_context_words = max_context_words
         self.message_repo = message_repository or get_message_repository("dynamodb")
         self.memory_repo = MemoryRepository()
         self.provider_settings_repo = get_provider_settings_repository()
@@ -86,14 +80,21 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         self.skill_runtime = SkillRuntimeService()
         self.mcp_connector_service = MCPConnectorService()
         self.tool_handler = NativeToolHandler(self.memory_repo, message_repo=self.message_repo)
+        # The spec tables are module constants, so one registry serves every turn.
+        self.tool_registry = build_default_tool_registry(
+            skill_runtime=self.skill_runtime,
+            native_tools=self.tool_handler,
+            mcp_runtime=self.mcp_connector_service,
+        )
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
 
     @property
     def name(self) -> str:
         return "krishna-memgpt"
 
-    async def handle_message(
+    async def _run_turn(
         self,
+        *,
         agent: "Agent",
         conversation: "Conversation",
         user_message: str,
@@ -117,378 +118,160 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         Yields:
             SSEEvent objects for streaming to the client
         """
+        state = AgentTurnState(
+            owner_email=owner_email,
+            actor_email=actor_email,
+            actor_id=actor_id,
+            conversation_id=conversation.conversation_id,
+            agent_id=agent.agent_id,
+            provider_name=agent.agent_provider,
+            model_name=agent.agent_model or "",
+            user_message=user_message,
+            attachments=attachments or [],
+        )
+
+        state.linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
+
+        state.enabled_skills = self.skill_runtime.list_enabled(agent.agent_id)
         try:
-            from src.agents.runtime_state import AgentTurnState
-
-            self.tool_handler.set_conversation_context(conversation.conversation_id)
-            self.tool_handler.set_user_context(actor_id)
-
-            state = AgentTurnState(
+            state.enabled_mcp_connections = self.mcp_connector_service.list_agent_connections(
                 owner_email=owner_email,
-                actor_email=actor_email,
-                actor_id=actor_id,
-                conversation_id=conversation.conversation_id,
                 agent_id=agent.agent_id,
-                provider_name=agent.agent_provider,
-                model_name=agent.agent_model or "",
-                user_message=user_message,
-                attachments=attachments or [],
+                enabled_only=True,
+                verify_agent=False,
             )
+        except Exception as exc:
+            log.warning("Failed to load enabled MCP connectors for agent %s: %s", agent.agent_id, exc)
+            state.enabled_mcp_connections = []
 
-            state.linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
-            self.tool_handler.set_knowledge_base_context(state.linked_kb_ids)
+        # 2. Save user message (with attachments if any)
+        user_msg = Message(
+            conversation_id=state.conversation_id,
+            created_by=state.actor_email,
+            role="user",
+            content=state.user_message,
+            attachments=state.attachments,
+        )
+        self.message_repo.save(user_msg)
+        state.user_message_id = user_msg.message_id
 
-            state.enabled_skills = self.skill_runtime.list_enabled(agent.agent_id)
-            try:
-                state.enabled_mcp_connections = self.mcp_connector_service.list_agent_connections(
-                    owner_email=owner_email,
-                    agent_id=agent.agent_id,
-                    enabled_only=True,
-                    verify_agent=False,
-                )
-            except Exception as exc:
-                log.warning("Failed to load enabled MCP connectors for agent %s: %s", agent.agent_id, exc)
-                state.enabled_mcp_connections = []
+        yield SSEEvent(
+            event_type=SSEEventType.USER_MESSAGE_SAVED,
+            content="User message saved",
+            message_id=user_msg.message_id,
+        )
 
-            self._ensure_memory_initialized(agent.agent_id, actor_id)
+        # 3. Look up provider settings
+        yield SSEEvent(
+            event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+            content="Loading provider configuration...",
+        )
 
-            # 2. Save user message (with attachments if any)
-            user_msg = Message(
-                conversation_id=state.conversation_id,
-                created_by=state.actor_email,
-                role="user",
-                content=state.user_message,
-                attachments=state.attachments,
+        session = await open_provider_session(
+            agent,
+            owner_email=state.owner_email,
+            provider_settings_repo=self.provider_settings_repo,
+        )
+        state.credentials = session.credentials
+
+        # 4. Load core memory and build system prompt
+        yield SSEEvent(
+            event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+            content="Loading memory...",
+        )
+
+        kb_count = len(state.linked_kb_ids) if state.linked_kb_ids else None
+        system_prompt = self._build_memory_prompt(agent, actor_id, kb_count, state)
+
+        # 5. Build conversation context
+        yield SSEEvent(
+            event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+            content="Building conversation context...",
+        )
+
+        all_messages = self.message_repo.find_by_conversation(
+            conversation.conversation_id
+        )
+        context: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+        # Pass session_timeout_minutes to filter messages by time gap
+        context.extend(
+            self.conversation_strategy.build_context(
+                all_messages,
+                session_timeout_minutes=agent.session_timeout_minutes,
             )
-            self.message_repo.save(user_msg)
-            state.user_message_id = user_msg.message_id
+        )
 
-            yield SSEEvent(
-                event_type=SSEEventType.USER_MESSAGE_SAVED,
-                content="User message saved",
-                message_id=user_msg.message_id,
-            )
+        yield SSEEvent(
+            event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+            content="Connecting to AI model...",
+        )
 
-            # 3. Look up provider settings
-            yield SSEEvent(
-                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                content="Loading provider configuration...",
-            )
+        tools = self.tool_registry.definitions_for_categories(_tool_categories_for(state))
+        tool_router = ToolExecutionRouter(self.tool_registry)
 
-            provider_settings = self.provider_settings_repo.find_by_provider(
-                state.owner_email, state.provider_name
-            )
-            if not provider_settings:
-                yield SSEEvent(
-                    event_type=SSEEventType.ERROR,
-                    content=f"Provider '{state.provider_name}' is not configured. "
-                            "Please configure it in Settings > Provider Configuration.",
-                )
+        outputs = TurnOutputs()
+        audit = ToolCallAuditLog(
+            message_repo=self.message_repo,
+            conversation_id=conversation.conversation_id,
+            actor_email=actor_email,
+        )
+
+        async for item in run_agentic_tool_loop(
+            provider=session.provider,
+            context=context,
+            credentials=state.credentials or {},
+            tools=tools,
+            model=state.model_name,
+            tool_router=tool_router,
+            state=state,
+        ):
+            if isinstance(item, TurnComplete):
+                outputs.full_text = item.full_text
+                continue
+
+            if isinstance(item, PromptRefreshNeeded):
+                # Tools changed core memory, so the next call must not see the
+                # snapshot rendered from before they ran.
+                context[0]["content"] = self._build_memory_prompt(agent, actor_id, kb_count, state)
+                continue
+
+            yield item
+            for event in outputs.absorb(item):
+                yield event
+
+            audit.observe(item)
+            if item.event_type == SSEEventType.ERROR:
                 return
 
-            state.credentials = await load_provider_credentials(
-                provider_name=state.provider_name,
-                provider_settings=provider_settings,
-                provider_settings_repo=self.provider_settings_repo,
-            )
-            if state.provider_name == "Ollama":
-                state.credentials = merge_thinking_override(
-                    state.credentials, thinking_mode=agent.agent_ollama_thinking
-                )
+        assistant_text = outputs.assistant_text
+        if not assistant_text.strip():
+            return
 
-            # 4. Load core memory and build system prompt
+        # Substituted text has not been streamed yet; the model's own has.
+        if not outputs.full_text.strip():
             yield SSEEvent(
-                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                content="Loading memory...",
+                event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
+                content=assistant_text,
             )
 
-            kb_count = len(state.linked_kb_ids) if state.linked_kb_ids else None
+        assistant_msg = Message(
+            conversation_id=conversation.conversation_id,
+            created_by=actor_email,
+            role="assistant",
+            content=assistant_text,
+            canvases=outputs.canvases,
+        )
+        self.message_repo.save(assistant_msg)
+        yield SSEEvent(
+            event_type=SSEEventType.ASSISTANT_MESSAGE_SAVED,
+            content="Assistant message saved",
+            message_id=assistant_msg.message_id,
+        )
 
-            core_memory_snapshot = self._load_core_memory_snapshot(agent.agent_id, actor_id)
-            capacity_warnings = self._check_capacity_warnings_from_snapshot(core_memory_snapshot)
-
-            system_prompt = self._build_system_prompt(
-                agent,
-                actor_id,
-                kb_count=kb_count,
-                enabled_skills=state.enabled_skills or None,
-                enabled_mcp_connections=state.enabled_mcp_connections or None,
-                core_memory=core_memory_snapshot,
-                capacity_warnings=capacity_warnings or None,
-            )
-
-            # 5. Build conversation context
-            yield SSEEvent(
-                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                content="Building conversation context...",
-            )
-
-            all_messages = self.message_repo.find_by_conversation(
-                conversation.conversation_id
-            )
-            context: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
-            # Pass session_timeout_minutes to filter messages by time gap
-            context.extend(
-                self.conversation_strategy.build_context(
-                    all_messages,
-                    session_timeout_minutes=agent.session_timeout_minutes,
-                )
-            )
-
-            yield SSEEvent(
-                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                content="Connecting to AI model...",
-            )
-
-            provider = get_llm_provider(state.provider_name)
-
-            from src.agents.agentic_loop import run_agentic_tool_loop
-
-            tool_registry = self._build_tool_registry()
-            state.tools = self._build_tool_definitions(state, tool_registry)
-            tool_router = ToolExecutionRouter(
-                skill_runtime=self.skill_runtime,
-                mcp_runtime=self.mcp_connector_service,
-                native_tools=self.tool_handler,
-                registry=tool_registry,
-            )
-
-            full_response = ""
-            fallback_assistant_response: str | None = None
-            had_tool_call = False
-            emitted_terminal_runtime_response = False
-            tool_call_sequence = 0
-            tool_call_starts: dict[str, ToolCallStart] = {}
-            canvas_artifacts: list[MessageCanvasArtifact] = []
-            async for loop_event in run_agentic_tool_loop(
-                provider=provider,
-                context=context,
-                credentials=state.credentials or {},
-                tools=state.tools,
-                model=state.model_name,
-                tool_router=tool_router,
-                state=state,
-            ):
-                if loop_event.kind == "text":
-                    yield SSEEvent(
-                        event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
-                        content=loop_event.payload["content"],
-                    )
-
-                elif loop_event.kind == "tool_call_start":
-                    had_tool_call = True
-                    tool_call_sequence += 1
-                    tool_call_id = loop_event.payload["tool_call_id"]
-                    tool_call_starts[tool_call_id] = ToolCallStart(
-                        sequence=tool_call_sequence,
-                        tool_name=loop_event.payload["tool_name"],
-                        tool_args=loop_event.payload["tool_args"],
-                        started_at=datetime.now(timezone.utc),
-                    )
-
-                    display_tool_name, display_tool_args = derive_display_tool(
-                        loop_event.payload["tool_name"], loop_event.payload["tool_args"]
-                    )
-                    yield SSEEvent(
-                        event_type=SSEEventType.TOOL_CALL_START,
-                        content=f"Calling {loop_event.payload['tool_name']}...",
-                        tool_name=loop_event.payload["tool_name"],
-                        tool_args=loop_event.payload["tool_args"],
-                        display_tool_name=display_tool_name,
-                        display_tool_args=display_tool_args,
-                    )
-
-                elif loop_event.kind == "tool_call_result":
-                    tool_call_id = loop_event.payload["tool_call_id"]
-                    result = loop_event.payload["result"]
-                    start = tool_call_starts.get(tool_call_id)
-
-                    if start:
-                        audit = build_tool_call_audit_message(
-                            tool_call_id=tool_call_id,
-                            sequence=start.sequence,
-                            tool_name=start.tool_name,
-                            tool_args=start.tool_args,
-                            result=result,
-                            success=loop_event.payload["success"],
-                            started_at=start.started_at,
-                        )
-
-                        self.message_repo.save(
-                            Message(
-                                conversation_id=conversation.conversation_id,
-                                created_by=actor_email,
-                                role="system",
-                                content=audit.model_dump_json(),
-                            )
-                        )
-
-                    # If a skill returns a UI payload, emit an explicit UI event.
-                    # (The widget should render forms only when it receives UI_FORM_RENDER.)
-                    try:
-                        parsed = json.loads(result) if isinstance(result, str) else None
-                    except Exception:
-                        parsed = None
-
-                    if isinstance(parsed, dict) and parsed.get("type") == "ui_form_render":
-                        form = parsed.get("form") if isinstance(parsed.get("form"), dict) else None
-                        submit_label = parsed.get("submit_label") if isinstance(parsed.get("submit_label"), str) else None
-
-                        # Attempt to extract identifiers for analytics/readability.
-                        form_label = None
-                        form_id = None
-                        if form:
-                            form_label = form.get("form_name") if isinstance(form.get("form_name"), str) else None
-                            form_id = form.get("form_id") if isinstance(form.get("form_id"), str) else None
-
-                        yield SSEEvent(
-                            event_type=SSEEventType.UI_FORM_RENDER,
-                            content=form_label or "Form",
-                            form=form,
-                            submit_label=submit_label,
-                            form_id=form_id,
-                            form_label=form_label,
-                        )
-
-                    if isinstance(parsed, dict) and parsed.get("type") == "canvas_artifact" and parsed.get("ok"):
-                        canvas = MessageCanvasArtifact(
-                            artifact_id=parsed["artifact_id"],
-                            title=parsed.get("title", "Canvas"),
-                            mime_type=parsed.get("mime_type", "text/html"),
-                            caption=parsed.get("caption"),
-                        )
-                        canvas_artifacts.append(canvas)
-                        yield SSEEvent(
-                            event_type=SSEEventType.CANVAS_ARTIFACT_READY,
-                            content=canvas.title,
-                            canvas_artifact_id=canvas.artifact_id,
-                            canvas_title=canvas.title,
-                            canvas_caption=canvas.caption,
-                            canvas_mime_type=canvas.mime_type,
-                            canvas_content_url=(
-                                f"{settings.api_base_url.rstrip('/')}/artifacts/{canvas.artifact_id}/content"
-                            ),
-                        )
-
-                    if isinstance(parsed, dict):
-                        fallback_assistant_response = (
-                            fallback_assistant_response
-                            or _auth_required_credential_message(parsed)
-                        )
-
-                    # Always emit a tool result for the timeline.
-                    result_display_name, result_display_args = derive_display_tool(
-                        loop_event.payload["tool_name"], start.tool_args if start else None
-                    )
-                    yield SSEEvent(
-                        event_type=SSEEventType.TOOL_CALL_RESULT,
-                        content=result,
-                        tool_name=loop_event.payload["tool_name"],
-                        success=loop_event.payload["success"],
-                        display_tool_name=result_display_name,
-                        display_tool_args=result_display_args,
-                    )
-
-                elif loop_event.kind == "prompt_refresh_needed":
-                    # Core memory was mutated by tools; rebuild system prompt so the model
-                    # sees the updated memory context on the next iteration.
-                    refreshed_snapshot = self._load_core_memory_snapshot(agent.agent_id, actor_id)
-                    refreshed_warnings = self._check_capacity_warnings_from_snapshot(refreshed_snapshot)
-
-                    refreshed_prompt = self._build_system_prompt(
-                        agent,
-                        actor_id,
-                        kb_count=kb_count,
-                        enabled_skills=state.enabled_skills or None,
-                        enabled_mcp_connections=state.enabled_mcp_connections or None,
-                        core_memory=refreshed_snapshot,
-                        capacity_warnings=refreshed_warnings or None,
-                    )
-
-                    # Replace the system prompt in-place.
-                    if context and context[0].get("role") == "system":
-                        context[0]["content"] = refreshed_prompt
-
-                elif loop_event.kind == "runtime_event":
-                    runtime_event = loop_event.payload["event"]
-                    if runtime_event.event_type == SSEEventType.IMAGE_GENERATION_COMPLETE:
-                        emitted_terminal_runtime_response = True
-                    yield runtime_event
-
-                elif loop_event.kind == "token_usage":
-                    yield SSEEvent(
-                        event_type=SSEEventType.TOKEN_USAGE_UPDATE,
-                        content="",
-                        llm_model=loop_event.payload["llm_model"],
-                        prompt_tokens=loop_event.payload["prompt_tokens"],
-                        completion_tokens=loop_event.payload["completion_tokens"],
-                        total_tokens=loop_event.payload["total_tokens"],
-                        call_count=loop_event.payload["call_count"],
-                    )
-
-                elif loop_event.kind == "complete":
-                    full_response = loop_event.payload["full_text"]
-
-                elif loop_event.kind == "failed":
-                    yield SSEEvent(
-                        event_type=SSEEventType.ERROR,
-                        content=loop_event.payload.get("message", "Agent run failed"),
-                    )
-                    return
-
-            # 8. Save assistant message (text response only)
-            if not full_response.strip() and fallback_assistant_response:
-                full_response = fallback_assistant_response
-                yield SSEEvent(
-                    event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
-                    content=fallback_assistant_response,
-                )
-            elif not full_response.strip() and had_tool_call and not emitted_terminal_runtime_response:
-                full_response = _tool_turn_fallback_message()
-                yield SSEEvent(
-                    event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
-                    content=full_response,
-                )
-
-            if full_response.strip():
-                assistant_msg = Message(
-                    conversation_id=conversation.conversation_id,
-                    created_by=actor_email,
-                    role="assistant",
-                    content=full_response,
-                    canvases=canvas_artifacts,
-                )
-                self.message_repo.save(assistant_msg)
-
-                yield SSEEvent(
-                    event_type=SSEEventType.ASSISTANT_MESSAGE_SAVED,
-                    content="Assistant message saved",
-                    message_id=assistant_msg.message_id,
-                )
-
-            yield SSEEvent(
-                event_type=SSEEventType.STREAM_COMPLETE,
-                content="Response complete",
-            )
-
-        except Exception as e:
-            log.error(f"Error in KrishnaMemGPT handle_message: {e}", exc_info=True)
-            yield SSEEvent(
-                event_type=SSEEventType.ERROR,
-                content=str(e),
-            )
-
-    def _ensure_memory_initialized(self, agent_id: str, user_id: str) -> None:
-        """Ensure default memory blocks exist for this agent."""
-        block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
-        if not block_defs:
-            self.memory_repo.initialize_default_blocks(agent_id, user_id)
-            log.info(f"Initialized default memory blocks for agent {agent_id}")
 
     def _build_system_prompt(
         self,
         agent: "Agent",
-        user_id: str,
         *,
         kb_count: int | None = None,
         enabled_skills: list[AgentSkill] | None = None,
@@ -496,18 +279,9 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         core_memory: CoreMemorySnapshot | None = None,
         capacity_warnings: list[MemoryCapacityWarning] | None = None,
     ) -> str:
-        """Build the system prompt.
-
-        This wrapper keeps the architecture readable by delegating prompt
-        construction to a dedicated module.
-        """
-        from .krishna_memgpt_prompt import build_krishna_memgpt_system_prompt
-
+        """Build the system prompt, rendered from data already loaded this turn."""
         return build_krishna_memgpt_system_prompt(
             agent_persona=agent.agent_persona,
-            memory_repo=self.memory_repo,
-            agent_id=agent.agent_id,
-            user_id=user_id,
             kb_count=kb_count,
             enabled_skills=enabled_skills,
             enabled_mcp_connections=enabled_mcp_connections,
@@ -515,106 +289,39 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             capacity_warnings=capacity_warnings,
         )
 
-    def _load_core_memory_snapshot(self, agent_id: str, user_id: str) -> CoreMemorySnapshot:
-        """Load a consistent core-memory snapshot (single read) for this turn."""
-        from src.memory.snapshot import (
-            CoreMemoryBlockDefSnapshot,
-            CoreMemoryBlockSnapshot,
-            CoreMemorySnapshot,
-        )
-
-        block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
-        memories = self.memory_repo.get_all_core_memories(agent_id, user_id)
-
-        def_snaps = [
-            CoreMemoryBlockDefSnapshot(
-                block_name=d.block_name,
-                description=d.description,
-                word_limit=d.word_limit,
-            )
-            for d in block_defs
-        ]
-
-        block_snaps = {
-            m.block_name: CoreMemoryBlockSnapshot(
-                block_name=m.block_name,
-                lines=list(m.lines or []),
-                word_count=m.word_count,
-            )
-            for m in memories
-        }
-
-        return CoreMemorySnapshot(block_defs=def_snaps, blocks=block_snaps)
-
-    def _check_capacity_warnings_from_snapshot(
+    def _build_memory_prompt(
         self,
-        snapshot: CoreMemorySnapshot,
-    ) -> list[MemoryCapacityWarning]:
-        """Check capacity warnings from a snapshot (no DB reads)."""
-        warnings: list[MemoryCapacityWarning] = []
-        for d in snapshot.block_defs:
-            b = snapshot.blocks.get(d.block_name)
-            if not b:
-                continue
-            percent = (b.word_count / d.word_limit) * 100 if d.word_limit else 0
-            if percent >= CAPACITY_WARNING_THRESHOLD * 100:
-                warnings.append(
-                    MemoryCapacityWarning(
-                        block_name=d.block_name,
-                        word_count=b.word_count,
-                        word_limit=d.word_limit,
-                        percent=percent,
-                    )
-                )
-        return warnings
-
-    # Capacity warning prompt rendering lives in CapacityWarningsLoader.
-
-    def _build_tool_registry(self) -> ToolCommandRegistry:
-        return build_default_tool_command_registry(
-            skill_runtime=self.skill_runtime,
-            native_tools=self.tool_handler,
-            mcp_runtime=self.mcp_connector_service,
-        )
-
-    def _build_tool_definitions(
-        self,
-        state: "AgentTurnState",
-        registry: ToolCommandRegistry,
-    ) -> list[dict[str, Any]]:
-        categories = {ToolCommandCategory.NATIVE}
-        if state.linked_kb_ids:
-            categories.add(ToolCommandCategory.KNOWLEDGE)
-        if state.enabled_skills:
-            categories.add(ToolCommandCategory.SKILL)
-        if state.enabled_mcp_connections:
-            categories.add(ToolCommandCategory.MCP)
-        return registry.definitions_for_categories(categories)
-
-    def _format_content_with_attachments(
-        self, content: str, attachments: list[Attachment]
+        agent: "Agent",
+        actor_id: str,
+        kb_count: int | None,
+        state: AgentTurnState,
     ) -> str:
+        """Render the system prompt from a fresh core-memory snapshot.
+
+        Used for the first render and for every refresh after a memory write,
+        so the two can never drift apart.
         """
-        Format message content with attachments for LLM context.
+        snapshot = self._load_core_memory_snapshot(agent.agent_id, actor_id)
+        return self._build_system_prompt(
+            agent,
+            kb_count=kb_count,
+            enabled_skills=state.enabled_skills or None,
+            enabled_mcp_connections=state.enabled_mcp_connections or None,
+            core_memory=snapshot,
+            capacity_warnings=_capacity_warnings(snapshot) or None,
+        )
 
-        Args:
-            content: The message text content
-            attachments: List of file attachments
+    def _load_core_memory_snapshot(self, agent_id: str, user_id: str) -> CoreMemorySnapshot:
+        """One consistent read of core memory, initialising the blocks if absent."""
+        block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
+        if not block_defs:
+            self.memory_repo.initialize_default_blocks(agent_id, user_id)
+            log.info("Initialized default memory blocks for agent %s", agent_id)
+            block_defs = self.memory_repo.get_block_definitions(agent_id, user_id)
 
-        Returns:
-            Formatted content with attachments prepended
-        """
-        if not attachments:
-            return content
-
-        attachment_sections = []
-        for att in attachments:
-            attachment_sections.append(
-                f'<attached_file name="{att.filename}">\n{att.content}\n</attached_file>'
-            )
-
-        attachments_text = "\n\n".join(attachment_sections)
-        return f"{attachments_text}\n\n{content}"
+        return CoreMemorySnapshot.of(
+            block_defs, self.memory_repo.get_all_core_memories(agent_id, user_id)
+        )
 
     def _get_linked_kb_ids(self, agent_id: str) -> list[str]:
         """Get list of knowledge base IDs linked to this agent."""
@@ -626,23 +333,69 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             return []
 
 
-def _auth_required_credential_message(payload: dict[str, Any]) -> str | None:
-    if payload.get("auth_required") is not True:
-        return None
-    setup_url = payload.get("credential_setup_url")
-    if not isinstance(setup_url, str) or not setup_url.strip():
-        return None
-    agent_name = payload.get("agent_name")
-    label = str(agent_name).strip() if isinstance(agent_name, str) and agent_name.strip() else "the remote agent"
-    return (
-        f"{label} requires credentials before I can continue. "
-        f"Add the credential here: {setup_url.strip()} "
-        "Then retry the request."
-    )
+def _capacity_warnings(snapshot: CoreMemorySnapshot) -> list[MemoryCapacityWarning]:
+    """The prompt-facing shape of the snapshot's own capacity verdict."""
+    return [
+        MemoryCapacityWarning(
+            block_name=block.block_name,
+            word_count=block.word_count,
+            word_limit=block.word_limit,
+            percent=block.fill_percent,
+        )
+        for block in snapshot.nearing_capacity
+    ]
 
 
-def _tool_turn_fallback_message() -> str:
-    return (
-        "The tools finished running, but I could not produce a final response from their results. "
-        "Please ask me to continue or retry the request."
-    )
+def _tool_categories_for(state: AgentTurnState) -> set[ToolCategory]:
+    """Only tell the model about the tool families this agent can actually use."""
+    return {
+        ToolCategory.NATIVE,
+        *([ToolCategory.KNOWLEDGE] if state.linked_kb_ids else []),
+        *([ToolCategory.SKILL] if state.enabled_skills else []),
+        *([ToolCategory.MCP] if state.enabled_mcp_connections else []),
+    }
+
+
+TOOL_TURN_FALLBACK_MESSAGE = (
+    "The tools finished running, but I could not produce a final response from their results. "
+    "Please ask me to continue or retry the request."
+)
+
+
+@dataclass
+class TurnOutputs:
+    """What the architecture accumulates while the loop streams."""
+
+    full_text: str = ""
+    canvases: list[MessageCanvasArtifact] = field(default_factory=list)
+    #: Wording to use when the model itself produced no text.
+    fallback_text: str | None = None
+    had_tool_call: bool = False
+    #: A tool already answered the user on its own -- a generated image, say --
+    #: so silence from the model is not a failure.
+    answered_without_text: bool = False
+
+    def absorb(self, event: SSEEvent) -> Iterator[SSEEvent]:
+        """Take what this event contributes, yielding any events it implies."""
+        if event.event_type == SSEEventType.TOOL_CALL_START:
+            self.had_tool_call = True
+        elif event.event_type == SSEEventType.IMAGE_GENERATION_COMPLETE:
+            self.answered_without_text = True
+        elif event.event_type == SSEEventType.TOOL_CALL_RESULT:
+            for interpreted in interpret_tool_result(event.content):
+                if interpreted.canvas:
+                    self.canvases.append(interpreted.canvas)
+                self.fallback_text = self.fallback_text or interpreted.fallback_text
+                if interpreted.event:
+                    yield interpreted.event
+
+    @property
+    def assistant_text(self) -> str:
+        """What to persist as the assistant's reply, substituting if it said nothing."""
+        if self.full_text.strip():
+            return self.full_text
+        if self.fallback_text:
+            return self.fallback_text
+        if self.had_tool_call and not self.answered_without_text:
+            return TOOL_TURN_FALLBACK_MESSAGE
+        return ""

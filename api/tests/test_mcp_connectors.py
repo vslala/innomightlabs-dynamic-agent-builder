@@ -6,10 +6,12 @@ from typing import Any
 
 import pytest
 import httpx
+from pydantic import HttpUrl
 
 from src.agents.models import Agent
 from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_execution import ToolExecutionRouter
+from src.agents.tool_runtime import NativeToolContext, build_default_tool_registry
 from src.connectors.mcp.client import MCP_SESSION_HEADER, StreamableHTTPMCPClient
 from src.connectors.mcp.models import (
     AgentMCPConnection,
@@ -155,8 +157,8 @@ class FakeSkillRuntime:
 
 
 class FakeNativeTools:
-    async def execute(self, tool_name: str, tool_input: dict[str, Any], agent_id: str) -> str:
-        return f"native:{tool_name}:{agent_id}:{tool_input}"
+    async def execute(self, tool_name: str, tool_input: dict[str, Any], context: NativeToolContext) -> str:
+        return f"native:{tool_name}:{context.agent_id}:{tool_input}"
 
 
 def make_agent() -> Agent:
@@ -308,8 +310,8 @@ async def test_exchange_code_for_tokens_accepts_json_response(monkeypatch: pytes
 
     tokens = await exchange_code_for_tokens(
         provider=MCPOAuthProviderConfig(
-            authorization_url="https://github.com/login/oauth/authorize",
-            token_url="https://github.com/login/oauth/access_token",
+            authorization_url=HttpUrl("https://github.com/login/oauth/authorize"),
+            token_url=HttpUrl("https://github.com/login/oauth/access_token"),
             client_id="client-id",
             client_secret="client-secret",
             resource_url="https://api.githubcopilot.com/mcp/",
@@ -340,8 +342,8 @@ async def test_exchange_code_for_tokens_accepts_form_encoded_response(monkeypatc
 
     tokens = await exchange_code_for_tokens(
         provider=MCPOAuthProviderConfig(
-            authorization_url="https://github.com/login/oauth/authorize",
-            token_url="https://github.com/login/oauth/access_token",
+            authorization_url=HttpUrl("https://github.com/login/oauth/authorize"),
+            token_url=HttpUrl("https://github.com/login/oauth/access_token"),
             client_id="client-id",
             client_secret="client-secret",
             resource_url="https://api.githubcopilot.com/mcp/",
@@ -580,9 +582,11 @@ async def test_tool_execution_router_dispatches_mcp_tools() -> None:
         enabled=True,
     )
     router = ToolExecutionRouter(
-        skill_runtime=FakeSkillRuntime(),
-        native_tools=FakeNativeTools(),
-        mcp_runtime=service,
+        build_default_tool_registry(
+            skill_runtime=FakeSkillRuntime(),
+            native_tools=FakeNativeTools(),
+            mcp_runtime=service,
+        )
     )
     state = AgentTurnState(
         owner_email="owner@example.com",

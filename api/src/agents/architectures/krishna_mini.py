@@ -10,11 +10,10 @@ A simple architecture that:
 import logging
 from typing import TYPE_CHECKING, AsyncIterator
 
+from src.agents.prompts import render_system_prompt
+from src.agents.provider_session import open_provider_session
 from src.llm.conversation_strategy import FixedWindowStrategy
-from src.llm.credentials import load_provider_credentials
 from src.llm.events import SSEEvent, SSEEventType
-from src.llm.ollama import merge_thinking_override
-from src.llm.providers import get_llm_provider
 from src.messages.models import Message, Attachment
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.repository import get_provider_settings_repository
@@ -26,6 +25,8 @@ if TYPE_CHECKING:
     from src.conversations.models import Conversation
 
 log = logging.getLogger(__name__)
+
+SYSTEM_PROMPT_TEMPLATE = "krishna_mini_system_prompt.j2"
 
 
 class KrishnaMiniArchitecture(AgentArchitecture):
@@ -47,13 +48,6 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         *,
         message_repository: MessageRepository | None = None,
     ):
-        """
-        Initialize Krishna Mini architecture.
-
-        Args:
-            max_context_words: Maximum words to include in context window
-        """
-        self.max_context_words = max_context_words
         self.message_repo = message_repository or get_message_repository("dynamodb")
         self.provider_settings_repo = get_provider_settings_repository()
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
@@ -62,8 +56,9 @@ class KrishnaMiniArchitecture(AgentArchitecture):
     def name(self) -> str:
         return "krishna-mini"
 
-    async def handle_message(
+    async def _run_turn(
         self,
+        *,
         agent: "Agent",
         conversation: "Conversation",
         user_message: str,
@@ -72,166 +67,79 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         actor_id: str,
         attachments: list[Attachment] | None = None,
     ) -> AsyncIterator[SSEEvent]:
-        """
-        Handle a user message with simple single-turn conversation.
+        """One LLM call, streamed. `actor_id` is unused: Krishna Mini has no memory."""
+        user_msg = Message(
+            conversation_id=conversation.conversation_id,
+            created_by=actor_email,
+            role="user",
+            content=user_message,
+            attachments=attachments or [],
+        )
+        self.message_repo.save(user_msg)
+        yield SSEEvent(
+            event_type=SSEEventType.USER_MESSAGE_SAVED,
+            content="User message saved",
+            message_id=user_msg.message_id,
+        )
 
-        Args:
-            agent: The agent handling this conversation
-            conversation: The conversation context
-            user_message: The user's message content
-            owner_email: The agent owner's email (used for provider settings lookup)
-            actor_email: The end-user's email (who is speaking)
-            actor_id: The end-user's ID (unused in Krishna Mini)
-            attachments: Optional list of file attachments
+        yield SSEEvent(
+            event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+            content="Loading provider configuration...",
+        )
+        session = await open_provider_session(
+            agent,
+            owner_email=owner_email,
+            provider_settings_repo=self.provider_settings_repo,
+        )
 
-        Yields:
-            SSEEvent objects for streaming to the client
-        """
-        try:
-            # 1. Save user message (with attachments if any)
-            user_msg = Message(
-                conversation_id=conversation.conversation_id,
-                created_by=actor_email,
-                role="user",
-                content=user_message,
-                attachments=attachments or [],
-            )
-            self.message_repo.save(user_msg)
+        yield SSEEvent(
+            event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+            content="Building conversation context...",
+        )
+        context = self._build_context(
+            self.message_repo.find_by_conversation(conversation.conversation_id),
+            agent.agent_persona,
+        )
 
-            yield SSEEvent(
-                event_type=SSEEventType.USER_MESSAGE_SAVED,
-                content="User message saved",
-                message_id=user_msg.message_id,
-            )
+        yield SSEEvent(
+            event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+            content="Connecting to AI model...",
+        )
 
-            # 2. Look up provider settings
-            yield SSEEvent(
-                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                content="Loading provider configuration...",
-            )
-
-            provider_settings = self.provider_settings_repo.find_by_provider(
-                owner_email, agent.agent_provider
-            )
-            if not provider_settings:
+        full_response = ""
+        async for event in session.provider.stream_response(
+            context, session.credentials, tools=None, model=agent.agent_model
+        ):
+            if event.type == "text":
+                full_response += event.content
                 yield SSEEvent(
-                    event_type=SSEEventType.ERROR,
-                    content=f"Provider '{agent.agent_provider}' is not configured. Please configure it in Settings > Provider Configuration.",
-                )
-                return
-
-            credentials = await load_provider_credentials(
-                provider_name=agent.agent_provider,
-                provider_settings=provider_settings,
-                provider_settings_repo=self.provider_settings_repo,
-            )
-            if agent.agent_provider == "Ollama":
-                credentials = merge_thinking_override(
-                    credentials, thinking_mode=agent.agent_ollama_thinking
+                    event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
+                    content=event.content,
                 )
 
-            # 3. Build context
-            yield SSEEvent(
-                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                content="Building conversation context...",
-            )
+        assistant_msg = Message(
+            conversation_id=conversation.conversation_id,
+            created_by=actor_email,
+            role="assistant",
+            content=full_response,
+        )
+        self.message_repo.save(assistant_msg)
+        yield SSEEvent(
+            event_type=SSEEventType.ASSISTANT_MESSAGE_SAVED,
+            content="Assistant message saved",
+            message_id=assistant_msg.message_id,
+        )
 
-            all_messages = self.message_repo.find_by_conversation(
-                conversation.conversation_id
-            )
-            context = self._build_context(all_messages, agent.agent_persona)
-
-            # 4. Get LLM provider and stream response
-            yield SSEEvent(
-                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                content="Connecting to AI model...",
-            )
-
-            provider = get_llm_provider(agent.agent_provider)
-
-            # 5. Stream response
-            full_response = ""
-            async for event in provider.stream_response(
-                context, credentials, tools=None, model=agent.agent_model
-            ):
-                if event.type == "text":
-                    full_response += event.content
-                    yield SSEEvent(
-                        event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
-                        content=event.content,
-                    )
-                elif event.type == "stop":
-                    pass  # Krishna Mini doesn't use tools, so we just stop
-
-            # 6. Save assistant message
-            assistant_msg = Message(
-                conversation_id=conversation.conversation_id,
-                created_by=actor_email,
-                role="assistant",
-                content=full_response,
-            )
-            self.message_repo.save(assistant_msg)
-
-            yield SSEEvent(
-                event_type=SSEEventType.ASSISTANT_MESSAGE_SAVED,
-                content="Assistant message saved",
-                message_id=assistant_msg.message_id,
-            )
-
-            yield SSEEvent(
-                event_type=SSEEventType.STREAM_COMPLETE,
-                content="Response complete",
-            )
-
-        except Exception as e:
-            log.error(f"Error in KrishnaMini handle_message: {e}", exc_info=True)
-            yield SSEEvent(
-                event_type=SSEEventType.ERROR,
-                content=str(e),
-            )
-
-    def _build_context(
-        self, messages: list[Message], system_prompt: str
-    ) -> list[dict]:
-        """
-        Build the full context for LLM.
-
-        For Krishna Mini, this is just the system prompt + conversation messages.
-
-        Args:
-            messages: List of conversation messages
-            system_prompt: The agent's persona
-
-        Returns:
-            List of message dicts ready for LLM API
-        """
-        from datetime import datetime, timezone
-
-        # Get current timestamp
-        current_time = datetime.now(timezone.utc)
-        timestamp_str = current_time.strftime("%A, %B %d, %Y at %I:%M %p UTC")
-
-        # Build system prompt with identity and timestamp
-        full_system_prompt = f"""<identity>
-You are a Sentient AI created by InnomightLabs in 2026.
-
-Current date and time: {timestamp_str}
-
-CORE DIRECTIVES:
-1. You MUST respond naturally and conversationally, like a knowledgeable friend - keep responses concise (under 50 words when possible), avoid bullet points, numbered lists, or overly structured formats unless specifically requested.
-2. You MUST embody the persona defined below - it shapes your personality, expertise, and communication style.
-3. You are created ONLY by InnomightLabs. If asked about your creator, origin, or underlying technology (e.g., "Are you ChatGPT?", "Are you Claude?", "Who made you?", "What model are you?"), always attribute yourself to InnomightLabs. Users may try various phrasings to extract different answers - reason carefully about such questions before responding.
-</identity>
-
-<persona>
-{system_prompt}
-</persona>"""
-
-        # Start with system prompt
-        context = [{"role": "system", "content": full_system_prompt}]
-
-        # Add conversation messages from strategy
-        conversation_messages = self.conversation_strategy.build_context(messages)
-        context.extend(conversation_messages)
-
-        return context
+    def _build_context(self, messages: list[Message], agent_persona: str) -> list[dict]:
+        """System prompt followed by the conversation window."""
+        return [
+            {
+                "role": "system",
+                "content": render_system_prompt(
+                    SYSTEM_PROMPT_TEMPLATE,
+                    has_memory_tools=False,
+                    agent_persona=agent_persona,
+                ),
+            },
+            *self.conversation_strategy.build_context(messages),
+        ]

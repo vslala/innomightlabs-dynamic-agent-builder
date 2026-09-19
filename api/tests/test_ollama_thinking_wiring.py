@@ -5,6 +5,7 @@ from src.agents.architectures.krishna_memgpt import KrishnaMemGPTArchitecture
 from src.agents.architectures.krishna_mini import KrishnaMiniArchitecture
 from src.agents.models import Agent
 from src.conversations.models import Conversation
+from src.memory.snapshot import CoreMemorySnapshot
 
 
 class FakeMessageRepository:
@@ -27,15 +28,7 @@ class FakeProviderSettingsRepository:
         return FakeProviderSettings()
 
 
-class FakeToolHandler:
-    def set_conversation_context(self, conversation_id):
-        pass
-
-    def set_user_context(self, user_id):
-        pass
-
-    def set_knowledge_base_context(self, kb_ids):
-        pass
+EMPTY_MEMORY = CoreMemorySnapshot(block_defs=[], blocks={})
 
 
 class FakeSkillRuntime:
@@ -80,24 +73,21 @@ def _ollama_agent(thinking_mode) -> Agent:
 async def test_krishna_memgpt_forwards_the_agents_thinking_choice_to_the_provider(monkeypatch):
     recording_provider = RecordingProvider()
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.get_llm_provider",
+        "src.agents.provider_session.get_llm_provider",
         lambda provider_name: recording_provider,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
     )
 
     architecture = KrishnaMemGPTArchitecture()
     architecture.message_repo = FakeMessageRepository()
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
-    architecture.tool_handler = FakeToolHandler()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
     architecture._get_linked_kb_ids = lambda agent_id: []
-    architecture._ensure_memory_initialized = lambda agent_id, user_id: None
-    architecture._load_core_memory_snapshot = lambda agent_id, user_id: object()
-    architecture._check_capacity_warnings_from_snapshot = lambda snapshot: []
+    architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
     agent = _ollama_agent("enabled")
@@ -126,24 +116,21 @@ async def test_krishna_memgpt_forwards_the_agents_thinking_choice_to_the_provide
 async def test_krishna_memgpt_sends_no_think_key_when_the_agent_has_no_preference(monkeypatch):
     recording_provider = RecordingProvider()
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.get_llm_provider",
+        "src.agents.provider_session.get_llm_provider",
         lambda provider_name: recording_provider,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_memgpt.load_provider_credentials",
+        "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
     )
 
     architecture = KrishnaMemGPTArchitecture()
     architecture.message_repo = FakeMessageRepository()
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
-    architecture.tool_handler = FakeToolHandler()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
     architecture._get_linked_kb_ids = lambda agent_id: []
-    architecture._ensure_memory_initialized = lambda agent_id, user_id: None
-    architecture._load_core_memory_snapshot = lambda agent_id, user_id: object()
-    architecture._check_capacity_warnings_from_snapshot = lambda snapshot: []
+    architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
     agent = _ollama_agent(None)
@@ -166,11 +153,11 @@ async def test_krishna_memgpt_sends_no_think_key_when_the_agent_has_no_preferenc
 async def test_krishna_mini_forwards_the_agents_thinking_choice_to_the_provider(monkeypatch):
     recording_provider = RecordingProvider()
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_mini.get_llm_provider",
+        "src.agents.provider_session.get_llm_provider",
         lambda provider_name: recording_provider,
     )
     monkeypatch.setattr(
-        "src.agents.architectures.krishna_mini.load_provider_credentials",
+        "src.agents.provider_session.load_provider_credentials",
         fake_load_provider_credentials,
     )
 

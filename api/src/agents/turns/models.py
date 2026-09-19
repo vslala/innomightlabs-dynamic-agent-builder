@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from src.common import as_aware_utc
 from src.utils.dynamodb import convert_decimals
 
 CHAT_TURN_TTL_DAYS = 7
@@ -86,7 +87,7 @@ class ConversationTurn(BaseModel):
             return False
         reference = self.last_heartbeat_at or self.started_at or self.created_at
         checked_at = now or datetime.now(timezone.utc)
-        return (checked_at - _as_aware_utc(reference)) > timedelta(seconds=stale_after_seconds)
+        return (checked_at - as_aware_utc(reference)) > timedelta(seconds=stale_after_seconds)
 
     def to_dynamo_item(self) -> dict[str, Any]:
         payload = self.model_dump(mode="json")
@@ -116,9 +117,3 @@ class ConversationTurn(BaseModel):
             status=self.status,
             created_at=self.created_at,
         )
-
-
-def _as_aware_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)

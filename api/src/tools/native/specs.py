@@ -2,13 +2,7 @@
 
 from __future__ import annotations
 
-from src.agents.tool_runtime.commands import (
-    ToolCommandCategory,
-    ToolCommandMetadata,
-    ToolIdempotency,
-    ToolSpec,
-)
-from src.agents.tool_runtime.contexts import NativeToolContext
+from src.agents.tool_runtime.specs import ToolCategory, ToolSpec
 from src.tools.native.contracts import (
     ArchivalMemoryInsertInput,
     ArchivalMemorySearchInput,
@@ -34,37 +28,29 @@ from src.tools.native.definitions import (
     WAIT,
 )
 
+def _memory_write(definition: dict, input_model: type) -> ToolSpec:
+    """A core-memory write, which leaves the rendered system prompt stale.
 
-READ_ONLY_NATIVE = ToolCommandMetadata(
-    category=ToolCommandCategory.NATIVE,
-    idempotency=ToolIdempotency.READ_ONLY,
-    allow_parallel=True,
-)
-READ_ONLY_KNOWLEDGE = ToolCommandMetadata(
-    category=ToolCommandCategory.KNOWLEDGE,
-    idempotency=ToolIdempotency.READ_ONLY,
-    allow_parallel=True,
-)
-IDEMPOTENT_MEMORY_WRITE = ToolCommandMetadata(
-    category=ToolCommandCategory.NATIVE,
-    idempotency=ToolIdempotency.IDEMPOTENT_WRITE,
-    mutates_prompt_context=True,
-)
-IDEMPOTENT_NATIVE_WRITE = ToolCommandMetadata(
-    category=ToolCommandCategory.NATIVE,
-    idempotency=ToolIdempotency.IDEMPOTENT_WRITE,
-)
+    Archival writes are not memory writes for this purpose: the prompt renders
+    the core-memory snapshot, so only core memory can go stale.
+    """
+    return ToolSpec(
+        definition,
+        ToolCategory.NATIVE,
+        input_model,
+        mutates_prompt_context=True,
+    )
 
 
 NATIVE_TOOL_SPECS = [
-    ToolSpec(CORE_MEMORY_READ, READ_ONLY_NATIVE, CoreMemoryReadInput, NativeToolContext),
-    ToolSpec(CORE_MEMORY_APPEND, IDEMPOTENT_MEMORY_WRITE, CoreMemoryAppendInput, NativeToolContext),
-    ToolSpec(CORE_MEMORY_REPLACE, IDEMPOTENT_MEMORY_WRITE, CoreMemoryReplaceInput, NativeToolContext),
-    ToolSpec(CORE_MEMORY_DELETE, IDEMPOTENT_MEMORY_WRITE, CoreMemoryDeleteInput, NativeToolContext),
-    ToolSpec(CORE_MEMORY_LIST_BLOCKS, READ_ONLY_NATIVE, CoreMemoryListBlocksInput, NativeToolContext),
-    ToolSpec(ARCHIVAL_MEMORY_INSERT, IDEMPOTENT_NATIVE_WRITE, ArchivalMemoryInsertInput, NativeToolContext),
-    ToolSpec(ARCHIVAL_MEMORY_SEARCH, READ_ONLY_NATIVE, ArchivalMemorySearchInput, NativeToolContext),
-    ToolSpec(RECALL_CONVERSATION, READ_ONLY_NATIVE, RecallConversationInput, NativeToolContext),
-    ToolSpec(WAIT, READ_ONLY_NATIVE, WaitInput, NativeToolContext),
-    ToolSpec(KNOWLEDGE_BASE_SEARCH, READ_ONLY_KNOWLEDGE, KnowledgeBaseSearchInput, NativeToolContext),
+    ToolSpec(CORE_MEMORY_READ, ToolCategory.NATIVE, CoreMemoryReadInput),
+    _memory_write(CORE_MEMORY_APPEND, CoreMemoryAppendInput),
+    _memory_write(CORE_MEMORY_REPLACE, CoreMemoryReplaceInput),
+    _memory_write(CORE_MEMORY_DELETE, CoreMemoryDeleteInput),
+    ToolSpec(CORE_MEMORY_LIST_BLOCKS, ToolCategory.NATIVE, CoreMemoryListBlocksInput),
+    ToolSpec(ARCHIVAL_MEMORY_INSERT, ToolCategory.NATIVE, ArchivalMemoryInsertInput),
+    ToolSpec(ARCHIVAL_MEMORY_SEARCH, ToolCategory.NATIVE, ArchivalMemorySearchInput),
+    ToolSpec(RECALL_CONVERSATION, ToolCategory.NATIVE, RecallConversationInput),
+    ToolSpec(WAIT, ToolCategory.NATIVE, WaitInput),
+    ToolSpec(KNOWLEDGE_BASE_SEARCH, ToolCategory.KNOWLEDGE, KnowledgeBaseSearchInput),
 ]

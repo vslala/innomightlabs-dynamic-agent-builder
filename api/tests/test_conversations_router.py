@@ -259,10 +259,10 @@ class TestConversationsRouter:
         assert data["has_more"] is False
         assert data["next_cursor"] is None
 
-    def test_get_messages_can_include_system_messages(
+    def test_tool_audit_rows_are_excluded_from_messages_and_served_separately(
         self, test_client: TestClient, auth_headers: dict
     ):
-        from src.messages.models import Message
+        from src.messages.models import Message, MessageKind
         from src.messages.repositories import get_message_repository
 
         request_data = {**CONVERSATION_CREATE_REQUEST, "agent_id": self.agent_id}
@@ -286,19 +286,26 @@ class TestConversationsRouter:
                 conversation_id=conversation_id,
                 role="system",
                 content='{"type":"tool_call_audit"}',
+                kind=MessageKind.TOOL_AUDIT,
                 created_at=now + timedelta(seconds=1),
             )
         )
 
-        response = test_client.get(
-            f"/conversations/{conversation_id}/messages?limit=10&include_system=true",
+        messages = test_client.get(
+            f"/conversations/{conversation_id}/messages?limit=10",
             headers=auth_headers,
         )
+        assert messages.status_code == 200
+        assert [item["content"] for item in messages.json()["items"]] == ["Hello"]
 
-        assert response.status_code == 200
-        roles = [item["role"] for item in response.json()["items"]]
-        assert roles == ["system", "user"]
-        assert response.json()["items"][0]["content"] == '{"type":"tool_call_audit"}'
+        audit = test_client.get(
+            f"/conversations/{conversation_id}/tool-audit?limit=10",
+            headers=auth_headers,
+        )
+        assert audit.status_code == 200
+        assert [item["content"] for item in audit.json()["items"]] == [
+            '{"type":"tool_call_audit"}'
+        ]
 
     def test_update_conversation(self, test_client: TestClient, auth_headers: dict):
         """Test updating a conversation."""

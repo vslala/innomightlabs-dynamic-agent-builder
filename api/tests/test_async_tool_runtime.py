@@ -8,8 +8,14 @@ from typing import Any
 
 import pytest
 
-from src.agents.agentic_loop import AsyncToolJobStillRunningError, run_agentic_tool_loop
+from src.agents.agentic_loop import (
+    AsyncToolJobStillRunningError,
+    TurnComplete,
+    run_agentic_tool_loop,
+)
 from src.agents.tool_execution import ToolExecutionOutcome
+from src.llm.events import SSEEventType
+from src.agents.tool_runtime.contexts import NativeToolContext
 from src.agents.tool_runtime.jobs import ToolJob, ToolJobRepository, ToolJobStatus
 from src.agents.tool_runtime.jobs.service import ToolJobService
 from src.skills.service import SkillRuntimeService
@@ -50,144 +56,53 @@ class AsyncStartProvider:
         yield FakeProviderEvent(type="stop")
 
 
-class AsyncStartRouter:
+class RecordingAsyncRouter:
+    """Starts an async job, then reports `statuses` on successive polls.
+
+    The last status is repeated if the loop polls more times than there are
+    entries, so a "never finishes" router is just `["running"] * n`.
+    """
+
+    def __init__(
+        self,
+        *,
+        statuses: list[str],
+        progress_message: str | None = None,
+        synchronous_result: str | None = None,
+    ):
+        self.statuses = statuses
+        self.progress_message = progress_message
+        self.synchronous_result = synchronous_result
+        self.calls: list[dict[str, Any]] = []
+        self._polls = 0
+
     async def execute(self, *, tool_name, tool_input, tool_use_id, state):
-        if tool_name == "wait":
-            return ToolExecutionOutcome(
-                result=json.dumps({"ok": True, "waited_seconds": 20, "message": "Wait complete."}),
-                success=True,
-            )
+        self.calls.append(
+            {"tool_name": tool_name, "tool_input": tool_input, "tool_use_id": tool_use_id}
+        )
+
         if tool_name == "check_tool_job":
-            return ToolExecutionOutcome(
-                result=json.dumps(
-                    {
-                        "ok": True,
-                        "async": True,
-                        "job_id": tool_input["job_id"],
-                        "status": "succeeded",
-                        "result": {"ok": True},
-                    }
-                ),
-                success=True,
-            )
+            index = min(self._polls, len(self.statuses) - 1)
+            self._polls += 1
+            payload = {
+                "ok": True,
+                "async": True,
+                "job_id": tool_input["job_id"],
+                "status": self.statuses[index],
+            }
+            if self.progress_message:
+                payload["progress_message"] = self.progress_message
+            return ToolExecutionOutcome(result=json.dumps(payload), success=True)
+
+        if self.synchronous_result is not None:
+            return ToolExecutionOutcome(result=self.synchronous_result, success=True)
+
         return ToolExecutionOutcome(
             result=json.dumps(
-                {
-                    "ok": True,
-                    "async": True,
-                    "job_id": "tooljob_test",
-                    "status": "queued",
-                    "check_tool": "check_tool_job",
-                    "wait_tool": "wait",
-                }
+                {"ok": True, "async": True, "job_id": "tooljob_test", "status": "queued"}
             ),
             success=True,
         )
-
-
-class AsyncWaitThenFinishProvider:
-    def __init__(self):
-        self.contexts: list[list[dict[Any, Any]]] = []
-        self.calls = 0
-
-    async def stream_response(self, context, credentials, tools, model):
-        self.calls += 1
-        self.contexts.append(list(context))
-        if self.calls == 1:
-            yield FakeProviderEvent(
-                type="tool_use",
-                tool_name="execute_skill_action",
-                tool_input={"skill_id": "demo", "action": "run", "arguments": {}, "async": True},
-                tool_use_id="tooluse_start",
-            )
-            yield FakeProviderEvent(type="stop")
-            return
-        if self.calls == 2:
-            yield FakeProviderEvent(type="text", content="Report generation is running - I'll check shortly.")
-            yield FakeProviderEvent(
-                type="tool_use",
-                tool_name="wait",
-                tool_input={"seconds": 5, "reason": "waiting for async job"},
-                tool_use_id="tooluse_wait",
-            )
-            yield FakeProviderEvent(type="stop")
-            return
-
-        yield FakeProviderEvent(type="text", content="The job is still running.")
-        yield FakeProviderEvent(type="stop")
-
-
-class AsyncWaitRouter:
-    def __init__(self):
-        self.calls: list[dict[str, Any]] = []
-
-    async def execute(self, *, tool_name, tool_input, tool_use_id, state):
-        self.calls.append({"tool_name": tool_name, "tool_input": tool_input, "tool_use_id": tool_use_id})
-        if tool_name == "execute_skill_action":
-            return ToolExecutionOutcome(
-                result=json.dumps(
-                    {
-                        "ok": True,
-                        "async": True,
-                        "job_id": "tooljob_wait_case",
-                        "status": "queued",
-                    }
-                ),
-                success=True,
-            )
-        if tool_name == "wait":
-            return ToolExecutionOutcome(
-                result=json.dumps({"ok": True, "waited_seconds": 5, "message": "Wait complete."}),
-                success=True,
-            )
-        if tool_name == "check_tool_job":
-            return ToolExecutionOutcome(
-                result=json.dumps(
-                    {
-                        "ok": True,
-                        "async": True,
-                        "job_id": tool_input["job_id"],
-                        "status": "succeeded",
-                        "result": {"ok": True, "done": True},
-                    }
-                ),
-                success=True,
-            )
-        raise AssertionError(f"Unexpected tool {tool_name}")
-
-
-class AlwaysRunningAsyncRouter:
-    async def execute(self, *, tool_name, tool_input, tool_use_id, state):
-        if tool_name == "execute_skill_action":
-            return ToolExecutionOutcome(
-                result=json.dumps(
-                    {
-                        "ok": True,
-                        "async": True,
-                        "job_id": "tooljob_always_running",
-                        "status": "queued",
-                    }
-                ),
-                success=True,
-            )
-        if tool_name == "wait":
-            return ToolExecutionOutcome(
-                result=json.dumps({"ok": True, "waited_seconds": 20, "message": "Wait complete."}),
-                success=True,
-            )
-        if tool_name == "check_tool_job":
-            return ToolExecutionOutcome(
-                result=json.dumps(
-                    {
-                        "ok": True,
-                        "async": True,
-                        "job_id": tool_input["job_id"],
-                        "status": "running",
-                    }
-                ),
-                success=True,
-            )
-        raise AssertionError(f"Unexpected tool {tool_name}")
 
 
 def test_tool_job_repository_persists_status_and_ttl(dynamodb_table):
@@ -319,42 +234,33 @@ async def test_wait_tool_defaults_clamps_and_uses_sleep(monkeypatch):
     monkeypatch.setattr("src.tools.native.handlers.asyncio.sleep", fake_sleep)
 
     handler = NativeToolHandler(memory_repo=object(), message_repo=object())
-    default_result = json.loads(await handler.execute("wait", {}, "agent-1"))
-    clamped_result = json.loads(await handler.execute("wait", {"seconds": 999}, "agent-1"))
+    context = NativeToolContext(
+        agent_id="agent-1",
+        user_id="user-1",
+        conversation_id="conversation-1",
+        linked_kb_ids=[],
+    )
+    default_result = json.loads(await handler.execute("wait", {}, context))
+    clamped_result = json.loads(await handler.execute("wait", {"seconds": 999}, context))
 
     assert default_result["waited_seconds"] == 20
     assert clamped_result["waited_seconds"] == 600
     assert sleeps == [20, 600]
 
 
-async def test_agentic_loop_injects_async_job_followup_instruction():
+async def test_the_loop_settles_an_async_job_itself_and_shows_only_the_real_tool_call(
+    monkeypatch,
+):
+    """The model asks for one tool and sees one terminal result.
+
+    It used to be driven through a synthetic wait/check cycle, which cost extra
+    LLM round trips and put tool calls the user never caused into the
+    timeline. See api/docs/LLD-agent-runtime-refactor.md (P1.2).
+    """
+    monkeypatch.setattr("src.agents.agentic_loop.ASYNC_JOB_POLL_SECONDS", 0)
     provider = AsyncStartProvider()
-    events = [
-        event
-        async for event in run_agentic_tool_loop(
-            provider=provider,
-            context=[],
-            credentials={},
-            tools=[],
-            model="test-model",
-            tool_router=AsyncStartRouter(),
-            state=object(),
-        )
-    ]
+    router = RecordingAsyncRouter(statuses=["running", "succeeded"])
 
-    second_context = provider.contexts[1]
-    synthetic = second_context[-1]["content"][0]["text"]
-
-    assert "Do not finish the conversation" in synthetic
-    assert "wait" in synthetic
-    assert "check_tool_job" in synthetic
-    assert "tooljob_test" in synthetic
-    assert any(event.kind == "complete" for event in events)
-
-
-async def test_agentic_loop_auto_checks_async_job_after_wait():
-    provider = AsyncWaitThenFinishProvider()
-    router = AsyncWaitRouter()
     events = [
         event
         async for event in run_agentic_tool_loop(
@@ -368,68 +274,135 @@ async def test_agentic_loop_auto_checks_async_job_after_wait():
         )
     ]
 
+    # The loop polled check_tool_job; the model was never asked to.
     assert [call["tool_name"] for call in router.calls] == [
         "execute_skill_action",
-        "wait",
+        "check_tool_job",
         "check_tool_job",
     ]
-    assert router.calls[-1]["tool_input"] == {"job_id": "tooljob_wait_case"}
-    assert any(
-        event.kind == "tool_call_start" and event.payload["tool_name"] == "check_tool_job"
+
+    started = [e for e in events if getattr(e, "event_type", None) == SSEEventType.TOOL_CALL_START]
+    results = [e for e in events if getattr(e, "event_type", None) == SSEEventType.TOOL_CALL_RESULT]
+    assert [e.tool_name for e in started] == ["execute_skill_action"]
+    assert [e.tool_name for e in results] == ["execute_skill_action"]
+
+    # The result the model receives is the job's terminal payload, not "queued".
+    assert json.loads(results[0].content)["status"] == "succeeded"
+    assert any(isinstance(event, TurnComplete) for event in events)
+
+    # One follow-up call after the tool settled, not one per poll.
+    assert provider.calls == 2
+
+
+async def test_waiting_on_a_job_reports_progress_to_the_client(monkeypatch):
+    monkeypatch.setattr("src.agents.agentic_loop.ASYNC_JOB_POLL_SECONDS", 0)
+    router = RecordingAsyncRouter(
+        statuses=["running", "running", "succeeded"],
+        progress_message="Rendering page 2 of 9...",
+    )
+
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=AsyncStartProvider(),
+            context=[],
+            credentials={},
+            tools=[],
+            model="test-model",
+            tool_router=router,
+            state=object(),
+        )
+    ]
+
+    notices = [
+        event.content
         for event in events
-    )
-    third_context = provider.contexts[2]
-    assert any(
-        item.get("role") == "user"
-        and "succeeded" in json.dumps(item)
-        for item in third_context
-    )
-    assert any(event.kind == "complete" for event in events)
-
-
-async def test_async_job_self_check_ignores_normal_iteration_limit(monkeypatch):
-    monkeypatch.setattr("src.agents.agentic_loop.MAX_TOOL_ITERATIONS", 1)
-    provider = AsyncWaitThenFinishProvider()
-    router = AsyncWaitRouter()
-
-    events = [
-        event
-        async for event in run_agentic_tool_loop(
-            provider=provider,
-            context=[],
-            credentials={},
-            tools=[],
-            model="test-model",
-            tool_router=router,
-            state=object(),
-        )
+        if getattr(event, "event_type", None) == SSEEventType.LIFECYCLE_NOTIFICATION
     ]
-
-    assert [call["tool_name"] for call in router.calls] == [
-        "execute_skill_action",
-        "wait",
-        "check_tool_job",
-    ]
-    assert provider.calls == 3
-    assert any(event.kind == "complete" for event in events)
+    assert notices == ["Rendering page 2 of 9...", "Rendering page 2 of 9..."]
 
 
-async def test_agentic_loop_does_not_complete_while_async_job_is_active(monkeypatch):
+async def test_the_turn_fails_if_a_job_outlives_the_in_turn_budget(monkeypatch):
+    monkeypatch.setattr("src.agents.agentic_loop.ASYNC_JOB_POLL_SECONDS", 0)
     monkeypatch.setattr("src.agents.agentic_loop.ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS", 0)
-    provider = AsyncWaitThenFinishProvider()
     events = []
 
     with pytest.raises(AsyncToolJobStillRunningError):
         async for event in run_agentic_tool_loop(
-            provider=provider,
+            provider=AsyncStartProvider(),
             context=[],
             credentials={},
             tools=[],
             model="test-model",
-            tool_router=AlwaysRunningAsyncRouter(),
+            tool_router=RecordingAsyncRouter(statuses=["running"] * 50),
             state=object(),
         ):
             events.append(event)
 
-    assert any(event.kind == "tool_call_result" for event in events)
-    assert not any(event.kind == "complete" for event in events)
+    # No tool result is reported, because there is no honest one to report.
+    assert not any(
+        getattr(e, "event_type", None) == SSEEventType.TOOL_CALL_RESULT for e in events
+    )
+    assert not any(isinstance(event, TurnComplete) for event in events)
+
+
+async def test_a_synchronous_tool_result_is_passed_straight_through(monkeypatch):
+    """A result with no async job must not be polled or altered."""
+    monkeypatch.setattr("src.agents.agentic_loop.ASYNC_JOB_POLL_SECONDS", 0)
+    router = RecordingAsyncRouter(statuses=[], synchronous_result="done immediately")
+
+    events = [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=AsyncStartProvider(),
+            context=[],
+            credentials={},
+            tools=[],
+            model="test-model",
+            tool_router=router,
+            state=object(),
+        )
+    ]
+
+    assert [call["tool_name"] for call in router.calls] == ["execute_skill_action"]
+    results = [e for e in events if getattr(e, "event_type", None) == SSEEventType.TOOL_CALL_RESULT]
+    assert results[0].content == "done immediately"
+
+async def test_start_skill_action_job_keeps_a_strong_reference_while_running():
+    """Regression: asyncio only weakly references a running task, so a bare
+    create_task(...) whose result nobody keeps can be collected mid-execution.
+    See api/docs/LLD-agent-runtime-refactor.md (P0.2).
+    """
+    import asyncio
+
+    from src.agents.tool_runtime.jobs import service as jobs_service
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class SlowService(jobs_service.ToolJobService):
+        def __init__(self):
+            pass
+
+        async def execute_skill_action_job(self, job_id: str) -> None:
+            started.set()
+            await release.wait()
+
+    job = ToolJob(
+        owner_email="owner@example.com",
+        actor_email="owner@example.com",
+        actor_id="owner@example.com",
+        tool_name="execute_skill_action",
+    )
+
+    jobs_service._running_jobs.clear()
+    SlowService().start_skill_action_job(job)
+    await started.wait()
+
+    assert len(jobs_service._running_jobs) == 1
+
+    release.set()
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert jobs_service._running_jobs == set()

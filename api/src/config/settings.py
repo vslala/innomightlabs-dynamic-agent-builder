@@ -99,6 +99,7 @@ class Settings:
     chat_turn_heartbeat_interval_seconds: int = 30
     chat_turn_stale_timeout_seconds: int = 5 * 60
     chat_turn_reaper_interval_seconds: int = 5 * 60
+    tool_job_reaper_interval_seconds: int = 5 * 60
     chat_turn_transcript_grace_seconds: int = 120
     mcp_oauth_redirect_uri: str = ""
     cli_runner_base_url: str = ""

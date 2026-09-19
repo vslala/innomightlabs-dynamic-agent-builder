@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any
 
 import httpx
 import pytest
@@ -336,8 +337,8 @@ class _FakeRiotClient:
         self.match_ids = match_ids or []
         self.matches = matches or {}
         self.error = error
-        self.match_id_calls = []
-        self.match_calls = []
+        self.match_id_calls: list[dict[str, Any]] = []
+        self.match_calls: list[str] = []
 
     async def get_account_by_riot_id(self, **kwargs):
         if self.error:

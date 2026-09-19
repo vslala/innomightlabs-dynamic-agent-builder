@@ -1,14 +1,23 @@
+"""Recognising an async tool job in a tool result.
+
+The supervisor that used to drive a synthetic wait/check cycle is gone -- the
+loop now waits for the job itself. See
+api/docs/LLD-agent-runtime-refactor.md (P1.2).
+"""
+
 from __future__ import annotations
 
 import json
 
-from src.agents.async_jobs import AsyncJobSupervisor, extract_async_job_status
+from src.agents.async_jobs import extract_async_job_status
 
 
 def test_extract_async_job_status_ignores_non_async_payloads():
     assert extract_async_job_status("not json") is None
     assert extract_async_job_status(json.dumps({"ok": True})) is None
     assert extract_async_job_status(json.dumps(["not", "a", "dict"])) is None
+    assert extract_async_job_status(json.dumps({"async": True, "status": "queued"})) is None
+    assert extract_async_job_status(json.dumps({"async": True, "job_id": "j1"})) is None
 
 
 def test_extract_async_job_status_returns_named_job_status():
@@ -29,41 +38,26 @@ def test_extract_async_job_status_returns_named_job_status():
     assert status.payload["result"] == {"ok": True}
 
 
-def test_supervisor_tracks_running_jobs_and_builds_synthetic_events():
-    supervisor = AsyncJobSupervisor(max_wait_seconds=600)
+def test_pending_covers_exactly_the_non_terminal_statuses():
+    def status_for(status: str):
+        parsed = extract_async_job_status(
+            json.dumps({"async": True, "job_id": "j1", "status": status})
+        )
+        assert parsed is not None
+        return parsed
 
-    tracked = supervisor.track_tool_result(
-        json.dumps({"async": True, "job_id": "tooljob_1", "status": "running"})
-    )
-    wait_event = supervisor.next_wait_event()
-    check_events = supervisor.check_events_after_wait()
-
-    assert tracked is not None
-    assert tracked.job_id == "tooljob_1"
-    assert supervisor.has_active_jobs is True
-    assert supervisor.deadline_at is not None
-    assert wait_event.tool_name == "wait"
-    assert wait_event.tool_use_id == "auto_wait_1"
-    assert check_events[0].tool_name == "check_tool_job"
-    assert check_events[0].tool_input == {"job_id": "tooljob_1"}
-    assert check_events[0].tool_use_id == "auto_check_tooljob_1_1"
+    assert status_for("queued").pending is True
+    assert status_for("running").pending is True
+    assert status_for("succeeded").pending is False
+    assert status_for("failed").pending is False
 
 
-def test_supervisor_removes_terminal_jobs_only():
-    supervisor = AsyncJobSupervisor(max_wait_seconds=600)
-    supervisor.track_tool_result(
-        json.dumps({"async": True, "job_id": "tooljob_1", "status": "queued"})
-    )
+def test_progress_message_is_reported_only_when_it_says_something():
+    def message_for(payload: dict):
+        parsed = extract_async_job_status(json.dumps({"async": True, "job_id": "j1", **payload}))
+        assert parsed is not None
+        return parsed.progress_message
 
-    still_active = supervisor.mark_checked(
-        "tooljob_1",
-        json.dumps({"async": True, "job_id": "tooljob_1", "status": "running"}),
-    )
-    completed = supervisor.mark_checked(
-        "tooljob_1",
-        json.dumps({"async": True, "job_id": "tooljob_1", "status": "succeeded"}),
-    )
-
-    assert still_active is False
-    assert completed is True
-    assert supervisor.has_active_jobs is False
+    assert message_for({"status": "running", "progress_message": "Page 2 of 9"}) == "Page 2 of 9"
+    assert message_for({"status": "running", "progress_message": "   "}) is None
+    assert message_for({"status": "running"}) is None

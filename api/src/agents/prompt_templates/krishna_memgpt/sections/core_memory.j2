@@ -4,7 +4,7 @@ ANCHOR_MEMORY_SCOPE: Core memory is for compact, stable facts. Do not treat empt
 
 {% for block_def in core_memory.block_defs %}
 {% set block = core_memory.blocks.get(block_def.block_name) %}
-BLOCK={{ block_def.block_name }} | DESCRIPTION={{ block_def.description }}{% if block %} | CAPACITY={{ block.word_count }}/{{ block_def.word_limit }} words{% if block_def.word_limit and ((block.word_count / block_def.word_limit) >= 0.8) %} | STATUS=NEARING_CAPACITY{% endif %}{% endif %}
+BLOCK={{ block_def.block_name }} | DESCRIPTION={{ block_def.description }}{% if block %} | CAPACITY={{ block.word_count }}/{{ block_def.word_limit }} words{% if block.nearing_capacity %} | STATUS=NEARING_CAPACITY{% endif %}{% endif %}
 {% if block and block.lines %}
 {% for line in block.lines %}
 {{ loop.index }}: {{ line }}

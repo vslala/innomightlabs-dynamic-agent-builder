@@ -1,7 +1,7 @@
-"""Tool execution routing for agent architectures.
+"""Tool execution policy: timeouts, error shape, and prompt staleness.
 
-The public router contract remains stable for the agentic loop, while concrete
-tool behavior is isolated behind command objects registered by tool name.
+The registry knows how to run a tool. This decides what happens when it takes
+too long or raises, and notices when a tool has invalidated the system prompt.
 """
 
 from __future__ import annotations
@@ -11,34 +11,14 @@ import logging
 from typing import Any
 
 from src.agents.runtime_state import AgentTurnState
-from src.agents.tool_runtime import (
-    ToolCommandRegistry,
-    ToolCommandRequest,
-    ToolExecutionOutcome,
-    build_default_tool_command_registry,
-)
-from src.agents.tool_runtime.contexts import build_tool_context_resolver
-from src.agents.tool_runtime.executors import MCPRuntime, NativeToolExecutor, SkillRuntime
+from src.agents.tool_runtime import ToolExecutionOutcome, ToolRegistry
 
 log = logging.getLogger(__name__)
 
 
 class ToolExecutionRouter:
-    """Execute tool calls through registered tool commands."""
-
-    def __init__(
-        self,
-        *,
-        skill_runtime: SkillRuntime,
-        native_tools: NativeToolExecutor,
-        mcp_runtime: MCPRuntime | None = None,
-        registry: ToolCommandRegistry | None = None,
-    ):
-        self._registry = registry or build_default_tool_command_registry(
-            skill_runtime=skill_runtime,
-            native_tools=native_tools,
-            mcp_runtime=mcp_runtime,
-        )
+    def __init__(self, registry: ToolRegistry):
+        self._registry = registry
 
     async def execute(
         self,
@@ -48,40 +28,28 @@ class ToolExecutionRouter:
         tool_use_id: str,
         state: AgentTurnState,
     ) -> ToolExecutionOutcome:
+        """Never raises: a failure is a result the model gets to read and react to."""
         try:
-            command = self._registry.get(tool_name)
-            request = ToolCommandRequest(
-                tool_name=tool_name,
-                tool_input=tool_input,
-                tool_use_id=tool_use_id,
-                state=state,
-                context_resolver=build_tool_context_resolver(state),
-            )
-            execution = command.execute(request)
-            if command.metadata.timeout_seconds:
-                outcome = await asyncio.wait_for(
-                    execution,
-                    timeout=command.metadata.timeout_seconds,
-                )
+            tool = self._registry.get(tool_name)
+            run = tool.run(tool_input, state)
+            if tool.spec.timeout_seconds:
+                result = await asyncio.wait_for(run, timeout=tool.spec.timeout_seconds)
             else:
-                outcome = await execution
+                result = await run
 
-            if command.metadata.mutates_prompt_context and outcome.success:
+            if tool.spec.mutates_prompt_context:
                 state.prompt_dirty = True
-            return outcome
+            return ToolExecutionOutcome(result=result, success=True)
 
         except TimeoutError:
             log.warning(
-                "Tool execution timed out: tool=%s tool_use_id=%s",
-                tool_name,
-                tool_use_id,
+                "Tool execution timed out: tool=%s tool_use_id=%s", tool_name, tool_use_id
             )
             return ToolExecutionOutcome(
                 result=f"Error: Tool '{tool_name}' timed out before completing.",
                 success=False,
             )
         except Exception as e:
-            # Preserve legacy behavior for the model/UI while centralizing logs.
             log.error(
                 "Tool execution error: tool=%s tool_use_id=%s err=%s",
                 tool_name,

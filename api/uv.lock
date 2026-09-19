@@ -106,6 +106,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "stripe" },
+    { name = "types-pyyaml" },
     { name = "uvicorn" },
 ]
 
@@ -157,6 +158,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.22" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "stripe", specifier = "==14.2.0" },
+    { name = "types-pyyaml", specifier = ">=6.0.12" },
     { name = "uvicorn", specifier = ">=0.40.0" },
 ]
 provides-extras = ["dev"]
@@ -1894,6 +1896,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/18/9f/9be587f2243ea7837ad83aad248ff4d8f9a880ac5a84544e9661e5840a22/types_awscrt-0.31.0.tar.gz", hash = "sha256:aa8b42148af0847be14e2b8ea3637a3518ffab038f8d3be7083950f3ce87d3ff", size = 17817, upload-time = "2026-01-12T06:42:37.711Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4c/8d/87ac494b5165e7650b2bc92ee3325c1339a47323489beeda32dffc9a1334/types_awscrt-0.31.0-py3-none-any.whl", hash = "sha256:009cfe5b9af8c75e8304243490e20a5229e7a56203f1d41481f5522233453f51", size = 42509, upload-time = "2026-01-12T06:42:36.187Z" },
+]
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20260906"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/90/6e/abec85b9013db5b934b0280a6dd104904d84f7bcbaab2e2f3def87ac7463/types_pyyaml-6.0.12.20260906.tar.gz", hash = "sha256:f59c1cc05010b833d2d72287bbaa72610106b28d42d89a907313117faba85212", size = 18649, upload-time = "2026-09-06T06:35:35.362Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/15/c0/fc0644b7ddcfb969e95845837143cb5173ddd6e06ee4ba5fc493cd9329b7/types_pyyaml-6.0.12.20260906-py3-none-any.whl", hash = "sha256:bca893ff0d51df5c9053137d5d0e6ccd36e939a196356f1d5c16372422f5137b", size = 21282, upload-time = "2026-09-06T06:35:34.372Z" },
 ]
 
 [[package]]

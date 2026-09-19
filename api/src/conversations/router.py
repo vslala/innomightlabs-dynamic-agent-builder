@@ -53,15 +53,15 @@ def find_visible_messages_newest_first(
     *,
     limit: int,
     cursor: Optional[str],
-    include_system: bool,
 ) -> tuple[list[Message], Optional[str], bool]:
-    if include_system:
-        return message_repository.find_by_conversation_newest_first(
-            conversation_id=conversation_id,
-            limit=limit,
-            cursor=cursor,
-        )
+    """A full page of chat messages, newest first.
 
+    Tool-call audit rows are written on the AUDIT# prefix and so never appear
+    in this query. The paging loop below exists only for rows written before
+    that split, which are still `role="system"` under MESSAGE#; without it a
+    tool-heavy stretch of an old conversation could return an empty page while
+    reporting has_more. It collapses to one iteration for everything newer.
+    """
     visible_messages: list[Message] = []
     next_cursor = cursor
     has_more = True
@@ -163,7 +163,6 @@ async def get_messages(
     conversation_id: str,
     limit: int = Query(default=20, ge=1, le=100, description="Number of messages per page"),
     cursor: Optional[str] = Query(default=None, description="Pagination cursor for older messages"),
-    include_system: bool = Query(default=False, description="Include system audit messages"),
 ):
     """
     Get messages for a conversation.
@@ -185,11 +184,42 @@ async def get_messages(
         conversation_id=conversation_id,
         limit=limit,
         cursor=cursor,
-        include_system=include_system,
     )
 
     return Paginated[MessageResponse](
         items=[message_response_factory.to_response(m) for m in visible_messages],
+        next_cursor=next_cursor,
+        has_more=has_more,
+    )
+
+
+@router.get("/{conversation_id}/tool-audit", response_model=Paginated[MessageResponse])
+async def get_tool_audit(
+    request: Request,
+    conversation_id: str,
+    limit: int = Query(default=20, ge=1, le=100, description="Audit rows per page"),
+    cursor: Optional[str] = Query(default=None, description="Pagination cursor for older rows"),
+):
+    """The conversation's tool-call audit trail, newest first.
+
+    Each row's `content` is a serialized ToolCallAuditMessage. Kept out of
+    `/messages` because nothing renders it -- this is for inspecting what an
+    agent actually called and what came back.
+    """
+    user_email = get_user_email(request)
+
+    conversation = conversation_repository.find_by_id(conversation_id, user_email)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    audit_rows, next_cursor, has_more = message_repository.find_audit_by_conversation(
+        conversation_id=conversation_id,
+        limit=limit,
+        cursor=cursor,
+    )
+
+    return Paginated[MessageResponse](
+        items=[message_response_factory.to_response(row) for row in audit_rows],
         next_cursor=next_cursor,
         has_more=has_more,
     )

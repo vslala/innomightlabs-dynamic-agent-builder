@@ -9,7 +9,7 @@ from tests.mock_data import AGENT_CREATE_REQUEST, AGENT_CREATE_REQUEST_2, TEST_U
 def _create_agent(test_client: TestClient, auth_headers: dict, request: dict | None = None) -> str:
     response = test_client.post("/agents", json=request or AGENT_CREATE_REQUEST, headers=auth_headers)
     assert response.status_code == 201
-    return response.json()["agent_id"]
+    return str(response.json()["agent_id"])
 
 
 class TestDefaultAgentSettingsRouter:
@@ -48,10 +48,10 @@ class TestDefaultAgentSettingsRouter:
     ):
         # Two agents for the same user, inserted directly to bypass the per-user agent-creation rate limit.
         first_agent_id = agent_repository.save(
-            Agent(created_by=TEST_USER_EMAIL, **AGENT_CREATE_REQUEST)
+            Agent.model_validate({**AGENT_CREATE_REQUEST, "created_by": TEST_USER_EMAIL})
         ).agent_id
         second_agent_id = agent_repository.save(
-            Agent(created_by=TEST_USER_EMAIL, **AGENT_CREATE_REQUEST_2)
+            Agent.model_validate({**AGENT_CREATE_REQUEST_2, "created_by": TEST_USER_EMAIL})
         ).agent_id
 
         test_client.put("/settings/default-agent", json={"agent_id": first_agent_id}, headers=auth_headers)

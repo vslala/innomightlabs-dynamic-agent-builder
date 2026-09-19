@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from src.utils.dynamodb import convert_decimals
+from src.utils.dynamodb import convert_decimals, convert_floats_to_decimals
 
 TOOL_JOB_TTL_DAYS = 7
+TOOL_JOB_STALE_AFTER_SECONDS = 10 * 60
 
 
 class ToolJobStatus(str, Enum):
@@ -66,7 +67,7 @@ class ToolJob(BaseModel):
         return f"ToolJob#{self.job_id}"
 
     def to_dynamo_item(self) -> dict[str, Any]:
-        payload = _convert_floats_to_decimals(self.model_dump(mode="json"))
+        payload = cast(dict[str, Any], convert_floats_to_decimals(self.model_dump(mode="json")))
         payload.update(
             {
                 "pk": self.pk,
@@ -114,15 +115,3 @@ class ToolJob(BaseModel):
             "check_tool": "check_tool_job",
             "wait_tool": "wait",
         }
-
-
-def _convert_floats_to_decimals(value: Any) -> Any:
-    from decimal import Decimal
-
-    if isinstance(value, float):
-        return Decimal(str(value))
-    if isinstance(value, list):
-        return [_convert_floats_to_decimals(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _convert_floats_to_decimals(item) for key, item in value.items()}
-    return value

@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-from src.agents.tool_runtime.commands import (
-    ToolCommandCategory,
-    ToolCommandMetadata,
-    ToolIdempotency,
-    ToolSpec,
-)
-from src.agents.tool_runtime.contexts import SkillToolContext
 from src.agents.tool_runtime.skill_contracts import (
     CheckToolJobInput,
     ExecuteSkillActionInput,
     LoadSkillInput,
 )
+from src.agents.tool_runtime.specs import ToolCategory, ToolSpec
 
 
 LOAD_SKILL_TOOL = {
@@ -71,32 +65,7 @@ CHECK_TOOL_JOB_TOOL = {
 }
 
 SKILL_TOOL_SPECS = [
-    ToolSpec(
-        LOAD_SKILL_TOOL,
-        ToolCommandMetadata(
-            category=ToolCommandCategory.SKILL,
-            idempotency=ToolIdempotency.READ_ONLY,
-            allow_parallel=True,
-        ),
-        LoadSkillInput,
-        SkillToolContext,
-    ),
-    ToolSpec(
-        EXECUTE_SKILL_ACTION_TOOL,
-        ToolCommandMetadata(
-            category=ToolCommandCategory.SKILL,
-            idempotency=ToolIdempotency.NON_IDEMPOTENT_WRITE,
-        ),
-        ExecuteSkillActionInput,
-        SkillToolContext,
-    ),
-    ToolSpec(
-        CHECK_TOOL_JOB_TOOL,
-        ToolCommandMetadata(
-            category=ToolCommandCategory.SKILL,
-            idempotency=ToolIdempotency.READ_ONLY,
-        ),
-        CheckToolJobInput,
-        SkillToolContext,
-    ),
+    ToolSpec(LOAD_SKILL_TOOL, ToolCategory.SKILL, LoadSkillInput),
+    ToolSpec(EXECUTE_SKILL_ACTION_TOOL, ToolCategory.SKILL, ExecuteSkillActionInput),
+    ToolSpec(CHECK_TOOL_JOB_TOOL, ToolCategory.SKILL, CheckToolJobInput),
 ]

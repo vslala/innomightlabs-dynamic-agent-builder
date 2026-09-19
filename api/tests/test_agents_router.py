@@ -347,7 +347,7 @@ class TestChatTurnEndpoints:
             json={**CONVERSATION_CREATE_REQUEST, "agent_id": agent_id},
             headers=auth_headers,
         )
-        return conversation_response.json()["conversation_id"]
+        return str(conversation_response.json()["conversation_id"])
 
     def test_send_message_response_carries_turn_id_header(
         self, test_client: TestClient, auth_headers: dict, monkeypatch
@@ -367,6 +367,48 @@ class TestChatTurnEndpoints:
             assert response.headers.get("X-Turn-Id")
             for _ in response.iter_lines():
                 break
+
+    def test_send_message_404s_on_an_unknown_target_like_its_sibling_endpoints(
+        self, test_client: TestClient, auth_headers: dict
+    ):
+        """send-message used to answer 200 with an in-stream ERROR event here,
+        while /turns/active, /turns/{id}/events and /turns/{id}/stop all 404 on
+        the same mismatch. See api/docs/LLD-agent-runtime-refactor.md (P4)."""
+        from src.conversations.models import Conversation
+        from src.conversations.repository import ConversationRepository
+
+        agent_id, _ = self._create_agent_and_conversation(
+            test_client, auth_headers, agent_name="Router 404 Agent"
+        )
+        foreign = Conversation(
+            title="Belongs to another agent",
+            agent_id="some-other-agent",
+            created_by=TEST_USER_EMAIL,
+        )
+        ConversationRepository().save(foreign)
+
+        unknown_agent = test_client.post(
+            f"/agents/does-not-exist/{foreign.conversation_id}/send-message",
+            json={"content": "Hello"},
+            headers=auth_headers,
+        )
+        unknown_conversation = test_client.post(
+            f"/agents/{agent_id}/does-not-exist/send-message",
+            json={"content": "Hello"},
+            headers=auth_headers,
+        )
+        wrong_agent = test_client.post(
+            f"/agents/{agent_id}/{foreign.conversation_id}/send-message",
+            json={"content": "Hello"},
+            headers=auth_headers,
+        )
+
+        assert unknown_agent.status_code == 404
+        assert unknown_agent.json()["detail"] == "Agent not found"
+        assert unknown_conversation.status_code == 404
+        assert unknown_conversation.json()["detail"] == "Conversation not found"
+        assert wrong_agent.status_code == 404
+        assert wrong_agent.json()["detail"] == "Conversation does not belong to this agent"
 
     def test_send_message_conflicts_with_running_turn(self, test_client: TestClient, auth_headers: dict):
         agent_id, conversation_id = self._create_agent_and_conversation(test_client, auth_headers)

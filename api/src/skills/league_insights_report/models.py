@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 ROUTING_REGIONS = {"americas", "asia", "europe", "sea"}
 REPORT_SCOPES = {"single_match", "multi_match"}
@@ -32,15 +32,39 @@ class LeagueReportConfig(BaseModel):
 
 
 class GenerateMatchReportRequest(BaseModel):
+    """Report request from a skill action call.
+
+    The LLM caller may send match_ids/match_count/queue as either their native
+    type or a numeric/comma-separated string, so those three fields coerce
+    their raw input in a `mode="before"` validator. The field's declared type
+    is the coerced type, not the accepted input shape, so downstream code
+    reads a real list[str]/int/int|None instead of re-narrowing a lie.
+    """
+
     game_name: str
     tag_line: str
     report_scope: str = "single_match"
     match_id: str | None = None
-    match_ids: list[str] | str = Field(default_factory=list)
-    match_count: int | str = DEFAULT_MATCH_COUNT
+    match_ids: list[str] = Field(default_factory=list)
+    match_count: int = DEFAULT_MATCH_COUNT
     routing_region: str | None = None
-    queue: int | str | None = None
+    queue: int | None = None
     report_title: str | None = None
+
+    @field_validator("match_ids", mode="before")
+    @classmethod
+    def _coerce_match_ids(cls, value: Any) -> list[str]:
+        return _normalize_match_ids(value)
+
+    @field_validator("match_count", mode="before")
+    @classmethod
+    def _coerce_match_count(cls, value: Any) -> int:
+        return _clamped_int(value, DEFAULT_MATCH_COUNT, 1, MAX_MATCH_COUNT)
+
+    @field_validator("queue", mode="before")
+    @classmethod
+    def _coerce_queue(cls, value: Any) -> int | None:
+        return _optional_int(value)
 
     @model_validator(mode="after")
     def normalize(self) -> "GenerateMatchReportRequest":
@@ -48,9 +72,6 @@ class GenerateMatchReportRequest(BaseModel):
         self.tag_line = self.tag_line.strip().lstrip("#")
         self.report_scope = self.report_scope.strip().lower()
         self.match_id = self.match_id.strip() if self.match_id else None
-        self.match_ids = _normalize_match_ids(self.match_ids)
-        self.match_count = _clamped_int(self.match_count, DEFAULT_MATCH_COUNT, 1, MAX_MATCH_COUNT)
-        self.queue = _optional_int(self.queue)
         self.routing_region = self.routing_region.strip().lower() if self.routing_region else None
         self.report_title = self.report_title.strip() if self.report_title else None
         if not self.game_name:
@@ -74,7 +95,7 @@ class GenerateMatchReportRequest(BaseModel):
         return "multi_match" if self.report_scope == "multi_match" else "single_match"
 
 
-def _normalize_match_ids(value: list[str] | str) -> list[str]:
+def _normalize_match_ids(value: Any) -> list[str]:
     raw_items = value.split(",") if isinstance(value, str) else value
     return [str(item).strip() for item in raw_items if str(item).strip()]
 

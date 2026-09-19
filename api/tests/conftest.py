@@ -31,8 +31,12 @@ from tests.mock_data import (
 @pytest.fixture
 def mock_aws_context():
     """Create a mocked AWS context for all tests."""
+    from src.db import reset_dynamodb_connections
+
+    reset_dynamodb_connections()
     with mock_aws():
         yield
+    reset_dynamodb_connections()
 
 
 @pytest.fixture

@@ -349,26 +349,28 @@ def graph_for_automation(service, automation_id: str):
 
 
 def save_request(nodes, edges) -> SaveAutomationGraphRequest:
-    return SaveAutomationGraphRequest(
-        nodes=[
-            {
-                "node_id": node.node_id,
-                "type": node.type,
-                "name": node.name,
-                "position": node.position,
-                "config": node.config,
-            }
-            for node in nodes
-        ],
-        edges=[
-            {
-                "edge_id": edge.edge_id,
-                "source_node_id": edge.source_node_id,
-                "target_node_id": edge.target_node_id,
-                "label": edge.label,
-            }
-            for edge in edges
-        ],
+    return SaveAutomationGraphRequest.model_validate(
+        {
+            "nodes": [
+                {
+                    "node_id": node.node_id,
+                    "type": node.type,
+                    "name": node.name,
+                    "position": node.position,
+                    "config": node.config,
+                }
+                for node in nodes
+            ],
+            "edges": [
+                {
+                    "edge_id": edge.edge_id,
+                    "source_node_id": edge.source_node_id,
+                    "target_node_id": edge.target_node_id,
+                    "label": edge.label,
+                }
+                for edge in edges
+            ],
+        }
     )
 
 

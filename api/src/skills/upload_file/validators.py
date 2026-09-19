@@ -27,7 +27,7 @@ class NoopArtifactValidator:
 
 
 class ArtifactValidatorRegistry:
-    def __init__(self):
+    def __init__(self) -> None:
         self._noop = NoopArtifactValidator()
         self._validators: dict[str, ArtifactContentValidator] = {
             "html_report": HtmlArtifactValidator(),

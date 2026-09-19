@@ -68,7 +68,8 @@ def match_summary(match: dict[str, Any], *, puuid: str | None = None) -> dict[st
     info = _info(match)
     participants = _participants(info)
     player = _participant_for_puuid(participants, puuid)
-    teams = info.get("teams") if isinstance(info.get("teams"), list) else []
+    teams_value = info.get("teams")
+    teams = teams_value if isinstance(teams_value, list) else []
     return {
         "match_id": _metadata(match).get("matchId"),
         "game_creation": _millis_to_iso(info.get("gameCreation")),
@@ -95,7 +96,8 @@ def match_detail_summary(match: dict[str, Any], *, puuid: str | None = None) -> 
 
 
 def participant_summary(participant: dict[str, Any]) -> dict[str, Any]:
-    challenges = participant.get("challenges") if isinstance(participant.get("challenges"), dict) else {}
+    challenges_value = participant.get("challenges")
+    challenges = challenges_value if isinstance(challenges_value, dict) else {}
     return {
         "puuid": participant.get("puuid"),
         "riot_id": _riot_id(participant.get("riotIdGameName"), participant.get("riotIdTagline")),
@@ -121,7 +123,8 @@ def participant_summary(participant: dict[str, Any]) -> dict[str, Any]:
 
 
 def team_summary(team: dict[str, Any]) -> dict[str, Any]:
-    objectives = team.get("objectives") if isinstance(team.get("objectives"), dict) else {}
+    objectives_value = team.get("objectives")
+    objectives = objectives_value if isinstance(objectives_value, dict) else {}
     return {
         "team_id": team.get("teamId"),
         "win": team.get("win"),
@@ -142,8 +145,10 @@ def team_summary(team: dict[str, Any]) -> dict[str, Any]:
 
 
 def timeline_summary(timeline: dict[str, Any], *, max_events: int) -> dict[str, Any]:
-    info = timeline.get("info") if isinstance(timeline.get("info"), dict) else {}
-    frames = info.get("frames") if isinstance(info.get("frames"), list) else []
+    info_value = timeline.get("info")
+    info = info_value if isinstance(info_value, dict) else {}
+    frames_value = info.get("frames")
+    frames = frames_value if isinstance(frames_value, list) else []
     events = [event_summary(event) for frame in frames for event in _frame_events(frame)]
     key_events = [event for event in events if event.get("type") in KEY_TIMELINE_EVENTS]
     return {

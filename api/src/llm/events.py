@@ -52,7 +52,9 @@ class SSEEvent(BaseModel):
     content: str
     message_id: Optional[str] = None
 
-    # Tool call event fields (for memGPT timeline)
+    # Tool call event fields (for memGPT timeline). tool_call_id correlates a
+    # TOOL_CALL_START with its TOOL_CALL_RESULT.
+    tool_call_id: Optional[str] = None
     tool_name: Optional[str] = None
     tool_args: Optional[dict] = None
     success: Optional[bool] = None
