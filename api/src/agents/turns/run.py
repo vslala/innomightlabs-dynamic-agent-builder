@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from src.agents.architectures import get_agent_architecture
 from src.agents.turns.models import ConversationTurn, ConversationTurnStatus
 from src.agents.turns.repository import ConversationTurnRepository
-from src.agents.turns.transcript import forget_transcript, live_transcript, open_transcript
+from src.agents.turns.transcript import TurnTranscript, forget_transcript, live_transcript, open_transcript
 from src.config import settings
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
@@ -26,6 +27,21 @@ if TYPE_CHECKING:
     from src.messages.models import Attachment
 
 log = logging.getLogger(__name__)
+
+_STOPPED_BY_USER = "Stopped by the user"
+
+
+@dataclass(frozen=True)
+class TurnRequest:
+    """Everything a detached turn needs, all of it resolved before it starts."""
+
+    agent: "Agent"
+    conversation: "Conversation"
+    user_message: str
+    attachments: list["Attachment"] | None
+    owner_email: str
+    actor_email: str
+    actor_id: str
 
 
 def start_turn(
@@ -54,13 +70,15 @@ def start_turn(
         _drive_turn(
             turn=turn,
             transcript=transcript,
-            agent=agent,
-            conversation=conversation,
-            user_message=user_message,
-            attachments=attachments,
-            owner_email=owner_email,
-            actor_email=actor_email,
-            actor_id=actor_id,
+            request=TurnRequest(
+                agent=agent,
+                conversation=conversation,
+                user_message=user_message,
+                attachments=attachments,
+                owner_email=owner_email,
+                actor_email=actor_email,
+                actor_id=actor_id,
+            ),
         )
     )
     return turn
@@ -73,50 +91,30 @@ def stop_turn(turn: ConversationTurn) -> None:
         transcript.task.cancel()
         return
     ConversationTurnRepository().finish(
-        turn, ConversationTurnStatus.CANCELLED, error="Stopped by the user"
+        turn, ConversationTurnStatus.CANCELLED, error=_STOPPED_BY_USER
     )
 
 
 async def _drive_turn(
     *,
     turn: ConversationTurn,
-    transcript,
-    agent: "Agent",
-    conversation: "Conversation",
-    user_message: str,
-    attachments: list["Attachment"] | None,
-    owner_email: str,
-    actor_email: str,
-    actor_id: str,
+    transcript: TurnTranscript,
+    request: TurnRequest,
 ) -> None:
     turn_repo = ConversationTurnRepository()
-    conversation_repo = ConversationRepository()
     heartbeat_task = asyncio.create_task(_keep_heartbeat(turn, turn_repo))
     failed_error: str | None = None
 
     try:
-        transcript.record(
-            SSEEvent(
-                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                content="Loading agent information...",
-            )
-        )
-        transcript.record(
-            SSEEvent(
-                event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-                content="Validating conversation...",
-            )
-        )
-
-        architecture = get_agent_architecture(agent.agent_architecture)
+        architecture = get_agent_architecture(request.agent.agent_architecture)
         async for event in architecture.handle_message(  # pyright: ignore[reportGeneralTypeIssues]
-            agent=agent,
-            conversation=conversation,
-            user_message=user_message,
-            owner_email=owner_email,
-            actor_email=actor_email,
-            actor_id=actor_id,
-            attachments=attachments,
+            agent=request.agent,
+            conversation=request.conversation,
+            user_message=request.user_message,
+            owner_email=request.owner_email,
+            actor_email=request.actor_email,
+            actor_id=request.actor_id,
+            attachments=request.attachments,
         ):
             transcript.record(event)
             if event.event_type == SSEEventType.USER_MESSAGE_SAVED:
@@ -126,33 +124,39 @@ async def _drive_turn(
             elif event.event_type == SSEEventType.ERROR:
                 failed_error = event.content
 
-        conversation_repo.save(conversation)
-
-        if failed_error is not None:
-            turn_repo.finish(
-                turn,
-                ConversationTurnStatus.FAILED,
-                error=failed_error,
-                assistant_message_id=turn.assistant_message_id,
-            )
-        else:
-            turn_repo.finish(
-                turn,
-                ConversationTurnStatus.SUCCEEDED,
-                assistant_message_id=turn.assistant_message_id,
-            )
+        turn_repo.finish(
+            turn,
+            ConversationTurnStatus.FAILED if failed_error else ConversationTurnStatus.SUCCEEDED,
+            error=failed_error,
+            assistant_message_id=turn.assistant_message_id,
+        )
     except asyncio.CancelledError:
-        turn_repo.finish(turn, ConversationTurnStatus.CANCELLED, error="Stopped by the user")
+        turn_repo.finish(turn, ConversationTurnStatus.CANCELLED, error=_STOPPED_BY_USER)
         raise
     except Exception as exc:
         log.error("Chat turn %s failed: %s", turn.turn_id, exc, exc_info=True)
         transcript.record(SSEEvent(event_type=SSEEventType.ERROR, content=str(exc)))
         turn_repo.finish(turn, ConversationTurnStatus.FAILED, error=str(exc))
     finally:
+        # The user sent a message either way, so the conversation counts as
+        # active on every outcome -- including the ones that used to skip this.
+        _touch_conversation(request.conversation)
         heartbeat_task.cancel()
         transcript.finish()
         asyncio.get_running_loop().call_later(
             settings.chat_turn_transcript_grace_seconds, forget_transcript, turn.turn_id
+        )
+
+
+def _touch_conversation(conversation: "Conversation") -> None:
+    """Best-effort: a failed sidebar timestamp must not fail the turn."""
+    try:
+        ConversationRepository().touch(conversation)
+    except Exception:
+        log.warning(
+            "Failed to bump updated_at for conversation %s",
+            conversation.conversation_id,
+            exc_info=True,
         )
 
 

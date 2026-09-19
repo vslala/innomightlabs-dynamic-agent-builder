@@ -5,15 +5,17 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from src.agents.tool_runtime.jobs.models import ToolJob, ToolJobStatus
+from src.agents.tool_runtime.jobs.models import (
+    TOOL_JOB_STALE_AFTER_SECONDS,
+    ToolJob,
+    ToolJobStatus,
+)
 from src.agents.tool_runtime.jobs.repository import ToolJobRepository
 from src.common import as_aware_utc
 from src.skills.registry import SkillRegistry, get_skill_registry
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
 
 log = logging.getLogger(__name__)
-
-TOOL_JOB_STALE_AFTER_SECONDS = 10 * 60
 
 #: Strong references to in-flight job tasks. asyncio only holds a weak
 #: reference to a running task, so a bare `create_task(...)` whose result

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from src.utils.dynamodb import convert_decimals, convert_floats_to_decimals
 
 TOOL_JOB_TTL_DAYS = 7
+TOOL_JOB_STALE_AFTER_SECONDS = 10 * 60
 
 
 class ToolJobStatus(str, Enum):

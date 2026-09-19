@@ -65,6 +65,21 @@ class ConversationRepository:
         log.info(f"Saved conversation {conversation.conversation_id} for user {conversation.created_by}")
         return conversation
 
+    def touch(self, conversation: Conversation) -> None:
+        """Bump `updated_at` only, so the conversation sorts to the top of the list.
+
+        `save()` would work, but it costs a read plus a full-item write and
+        would clobber any field changed since this Conversation was loaded --
+        renaming a conversation mid-turn used to be undone when the turn ended.
+        """
+        updated_at = datetime.now(timezone.utc)
+        self.table.update_item(
+            Key={"pk": conversation.pk, "sk": conversation.sk},
+            UpdateExpression="SET updated_at = :updated_at",
+            ExpressionAttributeValues={":updated_at": updated_at.isoformat()},
+        )
+        conversation.updated_at = updated_at
+
     def find_by_id(self, conversation_id: str, created_by: str) -> Optional[Conversation]:
         """
         Find a conversation by ID and creator email.
