@@ -389,14 +389,18 @@ Architectures are rebuilt per turn too: `get_agent_architecture` (`architectures
 constructs the factory dict *inside* the function and returns a new instance every call, so the whole
 object graph above is rebuilt for each message.
 
-**Fix, in order of payoff:**
-1. `@lru_cache` `get_dynamodb_resource` / `get_dynamodb_client`, keyed on the (endpoint, region) it
-   already derives from settings. One line each.
-2. Hoist the `factories` dict in `architectures/factory.py` to module scope and memoize the
-   architecture instances — **only after P1.6 removes their mutable per-turn state**, which is what
-   currently makes them unsafe to share.
-3. `@lru_cache` the leaf `get_*_repository()` factories (`messages/repositories/factory.py:15`,
-   `settings/repository.py:120`).
+**Done: connection caching only.** `get_dynamodb_resource` / `get_dynamodb_client` now cache per
+thread (`threading.local`, not a global or `lru_cache`, because boto3 *resources* are not documented
+thread-safe and `agentic_loop` records token usage under `asyncio.to_thread`). Tests reset the cache
+per `mock_aws` context. The full suite got ~8% faster as a side effect.
+
+**Deliberately not done**, after measuring: memoizing the architecture instances and the leaf
+repository factories. Once connections are pooled, constructing
+`KrishnaMemGPTArchitecture` costs **2.4 ms** warm — irrelevant next to an LLM turn. Sharing one
+instance would mean its repositories hold a `Table` bound to whichever thread built it, plus another
+reset hook to stop instances leaking across test `mock_aws` contexts. That is real coupling bought
+for 2.4 ms, so it fails the complexity budget. `get_message_repository("in_memory")` must stay
+uncached regardless: it is stateful, and two callers already rely on getting a fresh one.
 
 > **Thread-safety caveat — read before doing this.** `boto3` *clients* are documented thread-safe;
 > *resources* are not. `agentic_loop.py:205` already calls `asyncio.to_thread(usage_service.record_usage, ...)`,
