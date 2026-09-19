@@ -407,34 +407,12 @@ final class InnomightTextGenerationModel extends AbstractApiBasedModel implement
 		}
 
 		if ( isset( $image['url'] ) && is_string( $image['url'] ) && '' !== trim( $image['url'] ) ) {
-			$url = trim( $image['url'] );
-			if ( $this->should_return_inline_image() ) {
-				$inline_file = $this->remote_image_to_inline_file( $url, $mime_type );
-				if ( null !== $inline_file ) {
-					return $inline_file;
-				}
-			}
-
-			return new File( $url, $mime_type );
+			return $this->remote_image_to_inline_file( trim( $image['url'] ), $mime_type );
 		}
 
 		return null;
 	}
 
-	/**
-	 * Check whether the caller requested inline image data.
-	 *
-	 * @return bool Whether inline output was requested.
-	 */
-	private function should_return_inline_image(): bool {
-		$config = $this->getConfig();
-		if ( ! method_exists( $config, 'getOutputFileType' ) ) {
-			return false;
-		}
-
-		$output_file_type = $config->getOutputFileType();
-		return null !== $output_file_type && method_exists( $output_file_type, 'isInline' ) && $output_file_type->isInline();
-	}
 
 	/**
 	 * Download a remote image and convert it to an inline AI Client file.
