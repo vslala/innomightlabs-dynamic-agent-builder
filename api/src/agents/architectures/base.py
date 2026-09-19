@@ -43,7 +43,7 @@ class AgentArchitecture(ABC):
     """
 
     @abstractmethod
-    async def handle_message(
+    def handle_message(
         self,
         agent: "Agent",
         conversation: "Conversation",
@@ -76,12 +76,7 @@ class AgentArchitecture(ABC):
         Yields:
             SSEEvent objects for streaming to the client
         """
-        if False:
-            yield SSEEvent(
-                event_type=SSEEventType.ERROR,
-                content="abstract method placeholder",
-            )
-        raise NotImplementedError
+        ...
 
     async def handle_message_buffered(
         self,

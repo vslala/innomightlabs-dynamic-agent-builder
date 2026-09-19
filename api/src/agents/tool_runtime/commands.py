@@ -19,23 +19,11 @@ class ToolCommandCategory(str, Enum):
     MCP = "mcp"
 
 
-class ToolIdempotency(str, Enum):
-    READ_ONLY = "read_only"
-    IDEMPOTENT_WRITE = "idempotent_write"
-    NON_IDEMPOTENT_WRITE = "non_idempotent_write"
-
-
 @dataclass(frozen=True)
 class ToolCommandMetadata:
     category: ToolCommandCategory
-    idempotency: ToolIdempotency
     mutates_prompt_context: bool = False
     timeout_seconds: float | None = None
-    allow_parallel: bool = False
-
-
-class ToolTextOutput(BaseModel):
-    result: str
 
 
 @dataclass(frozen=True)
@@ -46,7 +34,6 @@ class ToolSpec:
     metadata: ToolCommandMetadata
     input_model: type[BaseModel] | None = None
     context_type: type[Any] | None = None
-    output_model: type[BaseModel] | None = ToolTextOutput
 
     @property
     def name(self) -> str:
@@ -101,18 +88,6 @@ class ToolCommand(Protocol):
     def metadata(self) -> ToolCommandMetadata:
         ...
 
-    @property
-    def input_model(self) -> type[BaseModel] | None:
-        ...
-
-    @property
-    def context_type(self) -> type[Any] | None:
-        ...
-
-    @property
-    def output_model(self) -> type[BaseModel] | None:
-        ...
-
     async def execute(self, request: ToolCommandRequest) -> ToolExecutionOutcome:
         ...
 
@@ -141,18 +116,6 @@ class ExecutorToolCommand:
     def metadata(self) -> ToolCommandMetadata:
         return self._spec.metadata
 
-    @property
-    def input_model(self) -> type[BaseModel] | None:
-        return self._spec.input_model
-
-    @property
-    def context_type(self) -> type[Any] | None:
-        return self._spec.context_type
-
-    @property
-    def output_model(self) -> type[BaseModel] | None:
-        return self._spec.output_model
-
     async def execute(self, request: ToolCommandRequest) -> ToolExecutionOutcome:
         tool_input = request.tool_input
         if self._spec.input_model is not None:
@@ -173,7 +136,4 @@ class ExecutorToolCommand:
             request.state,
             context=context,
         )
-        if self._spec.output_model is not None:
-            output = self._spec.output_model.model_validate({"result": result})
-            result = str(output.result)
         return ToolExecutionOutcome(result=result, success=True)

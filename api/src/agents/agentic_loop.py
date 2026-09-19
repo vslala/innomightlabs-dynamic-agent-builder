@@ -96,11 +96,6 @@ class AgenticLoopEvent:
     payload: dict[str, Any]
 
 
-@dataclass(frozen=True)
-class AgenticLoopResult:
-    full_text: str
-
-
 async def run_agentic_tool_loop(
     *,
     provider: LLMProvider,

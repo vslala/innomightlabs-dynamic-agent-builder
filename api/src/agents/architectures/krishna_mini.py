@@ -53,7 +53,6 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         Args:
             max_context_words: Maximum words to include in context window
         """
-        self.max_context_words = max_context_words
         self.message_repo = message_repository or get_message_repository("dynamodb")
         self.provider_settings_repo = get_provider_settings_repository()
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)

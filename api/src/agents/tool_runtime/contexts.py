@@ -16,16 +16,6 @@ class MissingToolContextError(ValueError):
 
 
 @dataclass(frozen=True)
-class ToolExecutionContext:
-    owner_email: str
-    actor_email: str
-    actor_id: str
-    agent_id: str
-    conversation_id: str
-    user_message_id: str | None = None
-
-
-@dataclass(frozen=True)
 class NativeToolContext:
     agent_id: str
     user_id: str
@@ -65,17 +55,6 @@ class ToolContextResolver:
 
 def build_tool_context_resolver(state: AgentTurnState) -> ToolContextResolver:
     resolver = ToolContextResolver()
-    resolver.register(
-        ToolExecutionContext,
-        lambda: ToolExecutionContext(
-            owner_email=state.owner_email,
-            actor_email=state.actor_email,
-            actor_id=state.actor_id,
-            agent_id=state.agent_id,
-            conversation_id=state.conversation_id,
-            user_message_id=state.user_message_id,
-        ),
-    )
     resolver.register(
         NativeToolContext,
         lambda: NativeToolContext(

@@ -12,9 +12,11 @@ from src.agents.tool_runtime import (
     ToolCommandRequest,
     ToolExecutionOutcome,
     ToolCommandCategory,
-    ToolIdempotency,
 )
 from src.agents.tool_runtime.contexts import NativeToolContext
+from src.agents.tool_runtime.mcp import MCP_TOOL_SPECS
+from src.agents.tool_runtime.skills import SKILL_TOOL_SPECS
+from src.tools.native.specs import NATIVE_TOOL_SPECS
 
 
 class FakeSkillRuntime:
@@ -118,7 +120,6 @@ class SlowCommand:
     definition = {"name": "slow_tool", "parameters": {"type": "object"}}
     metadata = ToolCommandMetadata(
         category=ToolCommandCategory.NATIVE,
-        idempotency=ToolIdempotency.READ_ONLY,
         timeout_seconds=0.01,
     )
 
@@ -132,7 +133,6 @@ class FailedMemoryWriteCommand:
     definition = {"name": "failed_memory_write", "parameters": {"type": "object"}}
     metadata = ToolCommandMetadata(
         category=ToolCommandCategory.NATIVE,
-        idempotency=ToolIdempotency.IDEMPOTENT_WRITE,
         mutates_prompt_context=True,
     )
 
@@ -186,17 +186,11 @@ async def test_router_delegates_skill_tools_through_command_adapter():
 
 
 def test_default_tool_specs_declare_input_and_context_contracts():
-    router = ToolExecutionRouter(
-        skill_runtime=FakeSkillRuntime(),
-        native_tools=FakeNativeTools(),
-        mcp_runtime=FakeMCPRuntime(),
-    )
-    commands = router._registry.commands()
+    specs = [*NATIVE_TOOL_SPECS, *SKILL_TOOL_SPECS, *MCP_TOOL_SPECS]
 
-    assert commands
-    assert all(command.input_model is not None for command in commands)
-    assert all(command.context_type is not None for command in commands)
-    assert all(command.output_model is not None for command in commands)
+    assert specs
+    assert all(spec.input_model is not None for spec in specs)
+    assert all(spec.context_type is not None for spec in specs)
 
 
 async def test_router_marks_prompt_dirty_from_command_metadata_for_memory_writes():

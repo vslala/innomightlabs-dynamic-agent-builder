@@ -5,7 +5,6 @@ from __future__ import annotations
 from src.agents.tool_runtime.commands import (
     ToolCommandCategory,
     ToolCommandMetadata,
-    ToolIdempotency,
     ToolSpec,
 )
 from src.agents.tool_runtime.contexts import SkillToolContext
@@ -75,8 +74,6 @@ SKILL_TOOL_SPECS = [
         LOAD_SKILL_TOOL,
         ToolCommandMetadata(
             category=ToolCommandCategory.SKILL,
-            idempotency=ToolIdempotency.READ_ONLY,
-            allow_parallel=True,
         ),
         LoadSkillInput,
         SkillToolContext,
@@ -85,7 +82,6 @@ SKILL_TOOL_SPECS = [
         EXECUTE_SKILL_ACTION_TOOL,
         ToolCommandMetadata(
             category=ToolCommandCategory.SKILL,
-            idempotency=ToolIdempotency.NON_IDEMPOTENT_WRITE,
         ),
         ExecuteSkillActionInput,
         SkillToolContext,
@@ -94,7 +90,6 @@ SKILL_TOOL_SPECS = [
         CHECK_TOOL_JOB_TOOL,
         ToolCommandMetadata(
             category=ToolCommandCategory.SKILL,
-            idempotency=ToolIdempotency.READ_ONLY,
         ),
         CheckToolJobInput,
         SkillToolContext,

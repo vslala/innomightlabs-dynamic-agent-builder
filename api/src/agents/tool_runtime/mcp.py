@@ -5,7 +5,6 @@ from __future__ import annotations
 from src.agents.tool_runtime.commands import (
     ToolCommandCategory,
     ToolCommandMetadata,
-    ToolIdempotency,
     ToolSpec,
 )
 from src.agents.tool_runtime.contexts import MCPToolContext
@@ -18,8 +17,6 @@ MCP_TOOL_SPECS = [
         MCP_LIST_TOOLS,
         ToolCommandMetadata(
             category=ToolCommandCategory.MCP,
-            idempotency=ToolIdempotency.READ_ONLY,
-            allow_parallel=True,
         ),
         ListMCPToolsInput,
         MCPToolContext,
@@ -28,7 +25,6 @@ MCP_TOOL_SPECS = [
         MCP_CALL_TOOL,
         ToolCommandMetadata(
             category=ToolCommandCategory.MCP,
-            idempotency=ToolIdempotency.NON_IDEMPOTENT_WRITE,
         ),
         CallMCPToolInput,
         MCPToolContext,

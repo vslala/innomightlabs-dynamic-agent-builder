@@ -78,7 +78,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         Args:
             max_context_words: Maximum words to include in conversation context
         """
-        self.max_context_words = max_context_words
         self.message_repo = message_repository or get_message_repository("dynamodb")
         self.memory_repo = MemoryRepository()
         self.provider_settings_repo = get_provider_settings_repository()
@@ -245,7 +244,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             from src.agents.agentic_loop import run_agentic_tool_loop
 
             tool_registry = self._build_tool_registry()
-            state.tools = self._build_tool_definitions(state, tool_registry)
+            tools = self._build_tool_definitions(state, tool_registry)
             tool_router = ToolExecutionRouter(
                 skill_runtime=self.skill_runtime,
                 mcp_runtime=self.mcp_connector_service,
@@ -264,7 +263,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
                 provider=provider,
                 context=context,
                 credentials=state.credentials or {},
-                tools=state.tools,
+                tools=tools,
                 model=state.model_name,
                 tool_router=tool_router,
                 state=state,
@@ -590,31 +589,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         if state.enabled_mcp_connections:
             categories.add(ToolCommandCategory.MCP)
         return registry.definitions_for_categories(categories)
-
-    def _format_content_with_attachments(
-        self, content: str, attachments: list[Attachment]
-    ) -> str:
-        """
-        Format message content with attachments for LLM context.
-
-        Args:
-            content: The message text content
-            attachments: List of file attachments
-
-        Returns:
-            Formatted content with attachments prepended
-        """
-        if not attachments:
-            return content
-
-        attachment_sections = []
-        for att in attachments:
-            attachment_sections.append(
-                f'<attached_file name="{att.filename}">\n{att.content}\n</attached_file>'
-            )
-
-        attachments_text = "\n\n".join(attachment_sections)
-        return f"{attachments_text}\n\n{content}"
 
     def _get_linked_kb_ids(self, agent_id: str) -> list[str]:
         """Get list of knowledge base IDs linked to this agent."""
