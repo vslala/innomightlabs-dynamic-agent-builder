@@ -417,6 +417,23 @@ export function ConversationDetail() {
     finish: () => void;
   }
 
+  // Fetches a message the backend already confirmed saving but that never
+  // rendered live (an SSE event was dropped somewhere between the server and
+  // this tab). Keeps the live view from permanently diverging from what a
+  // page refresh would show.
+  const recoverMissingAssistantMessage = async (conversationId: string, messageId: string) => {
+    try {
+      const page = await conversationApiService.getMessages(conversationId, 5);
+      const recovered = page.items.find((m) => m.message_id === messageId);
+      if (!recovered) return;
+      setMessages((prev) =>
+        prev.some((m) => m.message_id === messageId) ? prev : [...prev, recovered]
+      );
+    } catch (err) {
+      console.error("Failed to recover a saved assistant message the stream did not deliver:", err);
+    }
+  };
+
   // Applies one SSE event to chat UI state. Shared by a fresh send and by
   // reattaching to a turn still running server-side, so the two render
   // identically — see api/docs/LLD-async-chat-turns.md.
@@ -540,9 +557,13 @@ export function ConversationDetail() {
         break;
 
       case SSEEventType.ASSISTANT_MESSAGE_SAVED:
-        // Add assistant message to list using ref value
+        // The backend confirms the message is persisted regardless of what we
+        // managed to render live, so this is authoritative independent of the
+        // branch below — see the STREAM_COMPLETE case, which used to treat a
+        // dropped event here as "the agent never finished".
+        assistantMessageSavedRef.current = true;
         if (streamingContentRef.current) {
-          assistantMessageSavedRef.current = true;
+          // Add assistant message to list using ref value
           const assistantMessageId = event.message_id || `assistant-${Date.now()}`;
           setMessages((prev) =>
             prev.some((m) => m.message_id === assistantMessageId)
@@ -561,6 +582,14 @@ export function ConversationDetail() {
                   },
                 ]
           );
+        } else if (event.message_id) {
+          // We have nothing accumulated to render, yet the backend says a
+          // message was saved -- almost always because an earlier event (often
+          // this message's own streamed text) never reached the client even
+          // though it was written. Recover what was actually persisted rather
+          // than silently dropping a message the user would otherwise only
+          // see after a manual refresh.
+          void recoverMissingAssistantMessage(ctx.conversationId, event.message_id);
         }
         pendingCanvasArtifactsRef.current = [];
         break;

@@ -294,6 +294,22 @@ class ChatService {
     let buffer = "";
     let lastSequence = 0;
 
+    const consumeBlock = (block: string) => {
+      for (const line of block.split("\n")) {
+        if (line.startsWith("id: ")) {
+          lastSequence = Number(line.slice(4)) || lastSequence;
+        } else if (line.startsWith("data: ")) {
+          try {
+            const jsonStr = line.slice(6);
+            const event: SSEEvent = JSON.parse(jsonStr);
+            onEvent(event);
+          } catch (e) {
+            console.error("Failed to parse SSE event:", e, line);
+          }
+        }
+      }
+    };
+
     while (true) {
       const { done, value } = await reader.read();
 
@@ -307,20 +323,19 @@ class ChatService {
       buffer = blocks.pop() || "";
 
       for (const block of blocks) {
-        for (const line of block.split("\n")) {
-          if (line.startsWith("id: ")) {
-            lastSequence = Number(line.slice(4)) || lastSequence;
-          } else if (line.startsWith("data: ")) {
-            try {
-              const jsonStr = line.slice(6);
-              const event: SSEEvent = JSON.parse(jsonStr);
-              onEvent(event);
-            } catch (e) {
-              console.error("Failed to parse SSE event:", e, line);
-            }
-          }
-        }
+        consumeBlock(block);
       }
+    }
+
+    // The stream can end (server closes the connection right after its last
+    // write) before the final event's trailing blank-line separator arrives
+    // as its own chunk. A well-formed final block is still parseable on its
+    // own, so consume whatever is left instead of silently discarding it --
+    // this is the one gap that let the turn's last event (often
+    // ASSISTANT_MESSAGE_SAVED) vanish from the live view while remaining
+    // correctly persisted server-side.
+    if (buffer.trim()) {
+      consumeBlock(buffer);
     }
 
     return lastSequence;
