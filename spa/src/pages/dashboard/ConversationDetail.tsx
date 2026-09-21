@@ -616,6 +616,7 @@ export function ConversationDetail() {
           const activity: ToolActivity = {
             id: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             timestamp: new Date(),
+            tool_call_id: event.tool_call_id,
             tool_name: event.tool_name,
             status: "running",
             content: event.content,
@@ -629,17 +630,28 @@ export function ConversationDetail() {
 
       case SSEEventType.TOOL_CALL_RESULT:
         if (event.tool_name) {
-          setToolActivities((prev) =>
-            prev.map((activity) =>
-              activity.tool_name === event.tool_name && activity.status === "running"
-                ? {
-                    ...activity,
-                    status: event.success ? "success" : "error",
-                    content: event.content,
-                  }
+          setToolActivities((prev) => {
+            // Match by tool_call_id first: tool_name alone isn't unique when
+            // the same tool is called more than once in a turn, which used to
+            // let a result pair with the wrong still-running call. Fall back
+            // to the old name+running heuristic only if either side lacks an
+            // id (e.g. a transcript replayed across a deploy boundary).
+            const byId = event.tool_call_id
+              ? prev.findIndex((activity) => activity.tool_call_id === event.tool_call_id)
+              : -1;
+            const matchIndex =
+              byId >= 0
+                ? byId
+                : prev.findIndex(
+                    (activity) => activity.tool_name === event.tool_name && activity.status === "running"
+                  );
+            if (matchIndex < 0) return prev;
+            return prev.map((activity, index) =>
+              index === matchIndex
+                ? { ...activity, status: event.success ? "success" : "error", content: event.content }
                 : activity
-            )
-          );
+            );
+          });
         }
         break;
 

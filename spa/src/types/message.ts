@@ -135,7 +135,10 @@ export interface SSEEvent {
   submit_label?: string;
   form_id?: string;
   form_label?: string;
-  // Tool call event fields
+  // Tool call event fields. tool_call_id correlates a TOOL_CALL_START with
+  // its TOOL_CALL_RESULT -- tool_name alone isn't unique when the same tool
+  // is called more than once in a turn.
+  tool_call_id?: string;
   tool_name?: string;
   tool_args?: Record<string, unknown>;
   success?: boolean;
@@ -172,6 +175,8 @@ export interface SSEEvent {
 export interface ToolActivity {
   id: string;
   timestamp: Date;
+  /** Correlates with the TOOL_CALL_RESULT for this same call; absent on events from before this field existed. */
+  tool_call_id?: string;
   tool_name: string;
   status: "running" | "success" | "error";
   content: string;
