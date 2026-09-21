@@ -631,6 +631,11 @@ Do not mix:
 
 Write succinct commit messages that describe the change.
 
+A commit message is one line, in the imperative mood ("Fix the race in X",
+not "Fixed the race" or "This fixes the race"). Do not add a body, a
+bullet-point breakdown, or an attribution/co-author line unless the user
+explicitly asks for one on that commit.
+
 Do not use destructive Git commands unless explicitly required and understood.
 
 Never discard user changes.
