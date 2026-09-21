@@ -2,6 +2,8 @@
 
 FastAPI backend for building dynamic AI agents with long-term memory capabilities.
 
+Product plans, architecture, and Low Level Designs (LLDs) are maintained in the [InnomightLabs Engineering Handbook wiki](https://github.com/vslala/innomightlabs-dynamic-agent-builder/wiki). Keep API-local contribution contracts and operational instructions with the code they govern.
+
 ## Table of Contents
 
 - [Development Philosophy](#development-philosophy)

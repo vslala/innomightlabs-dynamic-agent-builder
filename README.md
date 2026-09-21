@@ -6,6 +6,10 @@ Build and deploy AI agents with long-term memory, custom tools, and scalable inf
 - Terraform infrastructure + scripts for repeatable deployments.
 - An embeddable widget for chat experiences.
 
+## Architecture and Design Documentation
+
+Product plans, architecture, and Low Level Designs (LLDs) are maintained in the [InnomightLabs Engineering Handbook wiki](https://github.com/vslala/innomightlabs-dynamic-agent-builder/wiki). Code-local contribution guides and operational instructions remain alongside their implementation.
+
 The landing page highlights the core product:
 - **Long-term memory**: agents remember context across sessions.
 - **Custom tools & integrations**: connect agents to external APIs.

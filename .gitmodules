@@ -1,0 +1,3 @@
+[submodule "wiki"]
+	path = wiki
+	url = git@github.com:vslala/innomightlabs-dynamic-agent-builder.wiki.git
