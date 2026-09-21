@@ -61,12 +61,25 @@ The user installs the skill on an agent and provides one or more trusted discove
 
 The LLM sees generic actions, not one tool per remote agent:
 
-```text
-Agent
-  -> load_skill(agent2agent_client)
-  -> execute_skill_action(discover_agents, { keyword: "gmail" })
-  -> execute_skill_action(send_message, { agent_ref: "...", message: "..." })
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant Skill as agent2agent_client skill
+    participant Registry as Trusted registry
+    participant Remote as Selected remote agent
+
+    Agent->>Skill: load_skill()
+    Agent->>Skill: discover_agents(keyword: "gmail")
+    Skill->>Registry: query matching agents
+    Registry-->>Skill: matching agent references
+    Skill-->>Agent: candidates
+    Agent->>Skill: send_message(agent_ref, task)
+    Skill->>Remote: A2A SendMessage JSON-RPC
+    Remote-->>Skill: delegated response
+    Skill-->>Agent: bounded result
 ```
+
+*The skill mediates trusted discovery and delegation; the reasoning agent selects the remote agent and task.*
 
 The skill handles:
 

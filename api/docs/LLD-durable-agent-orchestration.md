@@ -126,16 +126,16 @@ api/src/agents/
 
 The main simplification is a single owner for the invocation lifecycle:
 
-```text
-Route / Scheduler / Automation / Widget
-        |
-        v
-AgentRunService.create_run(...)
-        |
-        +--> interactive caller attaches to persisted event stream
-        |
-        +--> background worker calls AgentRunEngine.execute(run_id)
+```mermaid
+flowchart TD
+    Routes[Route, scheduler, automation, or widget] -->|create invocation| Service[AgentRunService.create_run]
+    Service -->|persisted run and event stream| Interactive[Interactive caller]
+    Service -->|run identifier| Worker[Background worker]
+    Worker -->|execute run| Engine[AgentRunEngine.execute]
+    Engine -->|persist events and terminal state| Service
 ```
+
+*Every invocation begins at one lifecycle owner; interactive consumers attach to persisted events while workers execute the run.*
 
 `KrishnaMiniArchitecture` and `KrishnaMemGPTArchitecture` should become strategies that describe how to prepare a turn, not classes that own message persistence, provider streaming, event conversion, and final run status.
 

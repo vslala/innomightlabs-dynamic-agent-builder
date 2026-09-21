@@ -314,19 +314,25 @@ This gives users control:
 
 ## Graph Edges
 
-Outer graph:
+```mermaid
+flowchart LR
+    Search[Search emails] --> Foreach[Foreach emails]
+    Foreach -->|all iterations complete| Summary[Generate summary]
+    Summary --> Done[Done]
+    Foreach -->|error| Failure[Failure final]
 
-```text
-Search emails -> Foreach emails -> Generate summary -> Done
-                          |
-                          error -> Failure final
+    subgraph Body[Foreach body scope]
+        Start[Body start] --> Classify[Classify email]
+        Classify --> Decision{Condition}
+        Decision -->|delete| Delete[Delete]
+        Decision -->|skip| Skip[Skip]
+        Delete --> BodyDone[Body done]
+        Skip --> BodyDone
+    end
+    Foreach -. executes once per item .-> Start
 ```
 
-Foreach body scope:
-
-```text
-Body Start -> Classify email -> Condition -> Delete / Skip -> Body Done
-```
+*Solid edges are the outer workflow; the nested body is evaluated once per foreach item and uses scoped nodes.*
 
 Persist body edges normally as `AutomationEdge`, but source and target nodes both have `parent_node_id=<foreach_node_id>`.
 

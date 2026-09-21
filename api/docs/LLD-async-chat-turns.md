@@ -165,13 +165,16 @@ A turn is `running` the moment the row exists, so there is no `pending` state; `
 
 It is constructed at `agentic_loop.py:131`, drained by the loop itself at `agentic_loop.py:444-474`, and closed by `use_turn_runtime`. Merging the two would give one class two contradictory modes — `drain_available()` removes while replay must retain — which adds concepts rather than removing them. Leave it unchanged. The layering stays a one-way pipeline:
 
+```mermaid
+flowchart LR
+    Tool[Tool code] -->|emit_turn_event| Runtime[AgentTurnRuntime]
+    Runtime -->|runtime events| Loop[Agentic loop]
+    Loop -->|SSEEvent| Architecture[Agent architecture]
+    Architecture -->|record event| Transcript[TurnTranscript]
+    Transcript -->|follow after sequence| Streams[POST and tail SSE streams]
 ```
-tool code --emit_turn_event--> AgentTurnRuntime --> agentic loop --> architecture (SSEEvent)
-                                                                          |
-                                                             TurnTranscript.record()
-                                                                          |
-                                                    follow() --> POST stream / tail stream
-```
+
+*Events move in one direction toward the replayable transcript; HTTP streams only follow that transcript.*
 
 ## Data Model
 

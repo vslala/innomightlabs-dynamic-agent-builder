@@ -51,35 +51,35 @@ Give agents a general-purpose way to author a self-contained, interactive HTML/C
 
 ## Architecture Overview
 
+```mermaid
+sequenceDiagram
+    participant Agent as Agent tool loop
+    participant Skill as html_canvas skill
+    participant Artifacts as ArtifactService
+    participant Runtime as Agent runtime
+    participant SPA as ConversationDetail
+    participant Renderer as ChatStreamRenderer
+    participant Panel as Canvas side panel
+
+    Agent->>Skill: render_canvas(title, caption, html)
+    Skill->>Skill: reject external http(s)/ws(s) resources
+    Skill->>Artifacts: create canvas artifact (text/html)
+    Artifacts-->>Skill: artifact metadata and content URL
+    Skill-->>Agent: canvas_artifact tool result
+    Agent->>Runtime: CANVAS_ARTIFACT_READY
+    Runtime->>Runtime: accumulate MessageCanvasArtifact ref
+    Runtime->>SPA: ASSISTANT_MESSAGE_SAVED with canvas ref
+    SPA->>SPA: attach canvas to synthetic message
+    SPA->>Renderer: renderCanvases(message.canvases)
+    Renderer->>Artifacts: authenticated lazy HTML fetch
+    Artifacts-->>Renderer: sandboxed HTML
+    Renderer-->>SPA: expand selected canvas
+    SPA->>Panel: open full-height canvas
+    Panel->>Artifacts: authenticated HTML fetch
+    Artifacts-->>Panel: sandboxed HTML
 ```
-Agent turn (krishna_memgpt tool loop)
-  -> agent calls html_canvas.render_canvas(title, caption?, html)
-       -> skill: reject if html references any http(s)/ws(s) external resource
-       -> skill: ArtifactService.create_artifact(artifact_type="canvas", mime_type="text/html", body=html)
-       -> skill returns {"ok": true, "type": "canvas_artifact", "artifact_id", "title", "caption", "mime_type", "view_url"}
-  <- krishna_memgpt.py detects type == "canvas_artifact" in the tool_call_result JSON
-       -> emits SSEEventType.CANVAS_ARTIFACT_READY (artifact_id, title, caption, content_url, mime_type)
-       -> accumulates a MessageCanvasArtifact ref for this turn
-  <- turn ends -> assistant Message saved with canvases=[accumulated refs]  (mirrors how `images` attaches today)
-  <- SSEEventType.ASSISTANT_MESSAGE_SAVED
 
-SPA (ConversationDetail.tsx)
-  - CANVAS_ARTIFACT_READY  -> push into pendingCanvasArtifactsRef (mirrors streamingContentRef accumulation)
-  - ASSISTANT_MESSAGE_SAVED -> synthetic Message gets `canvases: pendingCanvasArtifactsRef.current`; reset ref
-  - reload path (GET messages) -> MessageResponseFactory already enriches Message.canvases -> MessageResponse.canvases
-
-ChatStreamRenderer.tsx
-  - renderCanvases(msg.canvases) -> InlineCanvasCard per artifact
-      -> lazy: only fetches once scrolled near view (IntersectionObserver)
-      -> constrained preview height; useArtifactHtml(content_url) hook does the authenticated fetch
-      -> <iframe sandbox="allow-scripts" srcDoc={html} referrerPolicy="no-referrer" />
-      -> expand icon -> onExpandCanvas(canvas) bubbled up to ConversationDetail
-
-ConversationDetail.tsx (new layout state)
-  - expandedCanvas: MessageCanvasArtifact | null
-  - when set: page switches to a two-column flex row (conversation column shrinks, CanvasSidePanel takes the freed width)
-  - CanvasSidePanel re-fetches via the same useArtifactHtml(content_url) hook, renders full-height, has its own close + "open full page" (-> /dashboard/artifacts/{id}) affordances
-```
+*Artifact HTML is validated before storage and is fetched through the authenticated application path before rendering in a sandboxed iframe.*
 
 ## Backend Changes
 

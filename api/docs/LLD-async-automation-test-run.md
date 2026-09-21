@@ -382,9 +382,17 @@ curl 'https://api.innomightlabs.com/automations/{automation_id}/runs/{run_id}' \
 
 Expected status progression:
 
-```text
-pending/running -> succeeded or failed
+```mermaid
+stateDiagram-v2
+    [*] --> pending: test run accepted
+    pending --> running: background executor starts
+    running --> succeeded: all execution completes
+    running --> failed: execution records an error
+    succeeded --> [*]
+    failed --> [*]
 ```
+
+*The API returns while the run is pending; polling observes the terminal outcome.*
 
 ## Non-Goals
 

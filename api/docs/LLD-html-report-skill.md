@@ -279,12 +279,14 @@ The returned artifact URL should open in the user's browser. For V1 it can be a 
 ## Automation Behavior
 An automation can wire:
 
-```text
-REST Template: fetch Riot match data
--> optional analysis/summarization step
--> HTML Report: generate
--> Send Email or notification with artifact URL
+```mermaid
+flowchart LR
+    REST[REST Template fetches Riot match data] --> Analysis[Optional analysis or summarization]
+    Analysis --> Report[HTML Report generates artifact]
+    Report --> Delivery[Email or notification with artifact URL]
 ```
+
+*The analysis stage is optional; report generation and delivery use the prior step’s structured output.*
 
 For Riot:
 

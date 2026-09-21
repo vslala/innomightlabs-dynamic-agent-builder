@@ -10,14 +10,18 @@ Create a generic CLI execution service that runs approved infrastructure CLIs, s
 
 The core idea is feasible and directionally good: official CLIs reduce SDK wrapper maintenance, keep behavior aligned with provider tooling, and let new infrastructure capabilities be added mostly through command policy and container image updates. The unsafe version of this idea is "agent passes an arbitrary shell command to a container." The maintainable version is a brokered command runner:
 
-```text
-Agent / Automation
-  -> execute_skill_action(cli_executor.run_aws)
-  -> api/src/skills/cli_executor/actions.py
-  -> private Railway service: infra-cli-runner
-  -> approved executable + approved argv + scoped env credentials
-  -> bounded stdout/stderr/result JSON
+```mermaid
+flowchart LR
+    Caller[Agent or automation] -->|execute_skill_action cli_executor.run_aws| Action[CLI executor action]
+    Action -->|validated command request| Runner[Private infra-cli-runner service]
+    Runner -->|approved executable and argv| CLI[Provider CLI]
+    Runner -->|scoped environment credentials| CLI
+    CLI -->|bounded stdout stderr and result JSON| Runner
+    Runner -->|shaped result and audit metadata| Action
+    Action -->|skill action result| Caller
 ```
+
+*The API owns validation and result shaping; the private runner isolates approved CLI process execution.*
 
 The agent still experiences this as a normal skill action. The API owns command policy, credential lookup, audit metadata, and result shaping. The runner service owns process execution isolation and installed CLI versions.
 

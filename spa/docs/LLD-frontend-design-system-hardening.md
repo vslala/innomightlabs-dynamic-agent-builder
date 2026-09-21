@@ -79,13 +79,15 @@ This makes every new page responsible for spacing correctness, which defeats the
 
 Use a layered design system.
 
-```text
-Design tokens
-  -> Primitive components
-    -> Layout components
-      -> Domain/page components
-        -> Pages
+```mermaid
+flowchart TD
+    Tokens[Design tokens] --> Primitives[Primitive components]
+    Primitives --> Layout[Layout components]
+    Layout --> Domain[Domain and page components]
+    Domain --> Pages[Pages]
 ```
+
+*Each layer consumes the layer above it, keeping visual tokens and layout concerns out of page-level composition.*
 
 Rules:
 

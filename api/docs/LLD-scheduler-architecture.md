@@ -18,28 +18,20 @@ This keeps Phase 1 simple for the current Railway deployment: no EventBridge bri
 
 ## High-Level Shape
 
-```text
-Agent / SPA / Automation
-        |
-        v
-SchedulerService
-        |
-        +--> SchedulerRepository     DynamoDB source of truth
-        |
-        +--> SchedulerBackend        interface
-               |
-               +--> InAppSchedulerBackend
-                        |
-                        v
-                  SchedulerRuntime
-                        |
-                        v
-                  SchedulerDispatcher
-                        |
-                        +--> AgentScheduledMessageExecutor      Phase 2
-                        |
-                        +--> AutomationScheduledRunExecutor     Phase 3
+```mermaid
+flowchart TD
+    Callers[Agent, SPA, or automation] -->|create, update, pause, resume| Service[SchedulerService]
+    Service -->|persist schedules| Repository[SchedulerRepository]
+    Repository --> DynamoDB[(DynamoDB source of truth)]
+    Service -->|backend operations| Backend[SchedulerBackend interface]
+    Backend --> InApp[InAppSchedulerBackend]
+    InApp --> Runtime[SchedulerRuntime]
+    Runtime --> Dispatcher[SchedulerDispatcher]
+    Dispatcher -->|Phase 2| AgentExecutor[AgentScheduledMessageExecutor]
+    Dispatcher -->|Phase 3| AutomationExecutor[AutomationScheduledRunExecutor]
 ```
+
+*DynamoDB owns schedule state; the in-app runtime only registers and dispatches persisted schedules in the active API process.*
 
 `SchedulerService` does not know APScheduler. It persists the schedule and tells a backend to upsert/pause/resume/delete. `InAppSchedulerBackend` syncs that schedule into the process-local `SchedulerRuntime`.
 
