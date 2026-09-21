@@ -8,7 +8,7 @@ Build and deploy AI agents with long-term memory, custom tools, and scalable inf
 
 ## Architecture and Design Documentation
 
-Product plans, architecture, and Low Level Designs (LLDs) are maintained in the [InnomightLabs Engineering Handbook wiki](https://github.com/vslala/innomightlabs-dynamic-agent-builder/wiki). Code-local contribution guides and operational instructions remain alongside their implementation.
+Product plans, architecture, and Low Level Designs (LLDs) are maintained both beside the implementation (`api/docs/`, `spa/docs/`, and `docs/`) and in the curated [InnomightLabs Engineering Handbook wiki](https://github.com/vslala/innomightlabs-dynamic-agent-builder/wiki). Keep the paired local and wiki pages aligned when a design changes.
 
 The landing page highlights the core product:
 - **Long-term memory**: agents remember context across sessions.

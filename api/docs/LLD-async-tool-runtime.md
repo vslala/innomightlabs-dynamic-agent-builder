@@ -487,7 +487,7 @@ The agent should not receive a queued/running payload as the final tool result. 
 sequenceDiagram
     autonumber
     participant UI as Browser SSE
-    participant Loop as Agentic Loop
+    participant AgentLoop as Agentic Loop
     participant LLM as Agent Model
     participant Router as Tool Router
     participant Skills as Skill Runtime
@@ -495,45 +495,45 @@ sequenceDiagram
     participant Store as DynamoDB
     participant Worker as Job Executor
 
-    UI->>Loop: User message opens SSE stream
-    Loop->>LLM: Stream context + tools
-    LLM-->>Loop: tool_use execute_skill_action(async=true)
-    Loop->>Router: Execute tool call
+    UI->>AgentLoop: User message opens SSE stream
+    AgentLoop->>LLM: Stream context + tools
+    LLM-->>AgentLoop: tool_use execute_skill_action(async=true)
+    AgentLoop->>Router: Execute tool call
     Router->>Skills: handle_tool_call(...)
     Skills->>Jobs: create_skill_action_job(...)
     Jobs->>Store: Persist queued ToolJob with 7-day TTL
     Jobs-->>Worker: Start background execution
     Worker->>Store: Mark job running
     Worker->>Skills: Execute original skill action
-    Skills-->>Loop: Async start control payload(job_id, status=queued)
-    Loop->>Loop: Append synthetic wait/check instruction
-    Loop->>LLM: Continue same agentic turn
+    Skills-->>AgentLoop: Async start control payload(job_id, status=queued)
+    AgentLoop->>AgentLoop: Append synthetic wait/check instruction
+    AgentLoop->>LLM: Continue same agentic turn
     LLM-->>UI: Optional progress text
-    LLM-->>Loop: tool_use wait(seconds)
-    Loop->>Router: Execute wait
-    Router-->>Loop: Wait complete
-    Loop->>LLM: Continue same turn
-    LLM-->>Loop: tool_use check_tool_job(job_id)
-    Loop->>Router: Execute check_tool_job
+    LLM-->>AgentLoop: tool_use wait(seconds)
+    AgentLoop->>Router: Execute wait
+    Router-->>AgentLoop: Wait complete
+    AgentLoop->>LLM: Continue same turn
+    LLM-->>AgentLoop: tool_use check_tool_job(job_id)
+    AgentLoop->>Router: Execute check_tool_job
     Router->>Jobs: check_job(...)
     Jobs->>Store: Read ToolJob
     alt Job still running
-        Jobs-->>Loop: status=running
-        Loop->>LLM: Continue same turn with running status
+        Jobs-->>AgentLoop: status=running
+        AgentLoop->>LLM: Continue same turn with running status
         LLM-->>UI: Optional progress update
-        LLM-->>Loop: tool_use wait(seconds)
+        LLM-->>AgentLoop: tool_use wait(seconds)
     else Job succeeded
         Worker->>Store: Mark job succeeded with exact skill result
-        Jobs-->>Loop: status=succeeded + result
-        Loop->>LLM: Final effective tool result
+        Jobs-->>AgentLoop: status=succeeded + result
+        AgentLoop->>LLM: Final effective tool result
         LLM-->>UI: Final answer with skill result
-        Loop-->>UI: SSE stream completes
+        AgentLoop-->>UI: SSE stream completes
     else Job failed
         Worker->>Store: Mark job failed with human-readable error
-        Jobs-->>Loop: status=failed + error
-        Loop->>LLM: Final failed tool result
+        Jobs-->>AgentLoop: status=failed + error
+        AgentLoop->>LLM: Final failed tool result
         LLM-->>UI: Explain failure
-        Loop-->>UI: SSE stream completes
+        AgentLoop-->>UI: SSE stream completes
     end
 ```
 

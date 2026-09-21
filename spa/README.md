@@ -2,7 +2,7 @@
 
 React and TypeScript frontend for the InnomightLabs dashboard, landing site, and supporting user experiences.
 
-Product plans, architecture, and Low Level Designs (LLDs) are maintained in the [InnomightLabs Engineering Handbook wiki](https://github.com/vslala/innomightlabs-dynamic-agent-builder/wiki). Keep SPA-local development instructions and component-level contracts with the code they govern.
+SPA LLDs remain in [`spa/docs/`](docs/) and are mirrored in the curated [InnomightLabs Engineering Handbook wiki](https://github.com/vslala/innomightlabs-dynamic-agent-builder/wiki). Update both copies when an SPA design changes; keep development instructions and component-level contracts with the code they govern.
 
 ## Vite baseline
 
