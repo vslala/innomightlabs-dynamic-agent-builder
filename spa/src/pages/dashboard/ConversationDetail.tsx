@@ -509,6 +509,7 @@ export function ConversationDetail() {
 
           assistantMessageSavedRef.current = true;
           const imageMessageId = event.message_id || `assistant-image-${Date.now()}`;
+          const previewDataUrl = latestImagePreviewDataUrlRef.current;
           setMessages((prev) =>
             prev.some((m) => m.message_id === imageMessageId)
               ? prev
@@ -522,7 +523,7 @@ export function ConversationDetail() {
                     images: completedImages.map((image) => ({
                       image_id: image.image_id,
                       url: image.url,
-                      preview_data_url: latestImagePreviewDataUrlRef.current,
+                      preview_data_url: previewDataUrl,
                       filename: image.filename,
                       mime_type: image.mime_type,
                       size_bytes: image.size_bytes,
@@ -563,8 +564,13 @@ export function ConversationDetail() {
         // dropped event here as "the agent never finished".
         assistantMessageSavedRef.current = true;
         if (streamingContentRef.current) {
-          // Add assistant message to list using ref value
+          // Snapshot the refs now: React runs the updater later, after
+          // STREAM_COMPLETE (often in the same chunk) has already cleared them.
           const assistantMessageId = event.message_id || `assistant-${Date.now()}`;
+          const content = streamingContentRef.current;
+          const canvases = pendingCanvasArtifactsRef.current.length
+            ? pendingCanvasArtifactsRef.current
+            : undefined;
           setMessages((prev) =>
             prev.some((m) => m.message_id === assistantMessageId)
               ? prev
@@ -574,10 +580,8 @@ export function ConversationDetail() {
                     message_id: assistantMessageId,
                     conversation_id: ctx.conversationId,
                     role: "assistant",
-                    content: streamingContentRef.current,
-                    canvases: pendingCanvasArtifactsRef.current.length
-                      ? pendingCanvasArtifactsRef.current
-                      : undefined,
+                    content,
+                    canvases,
                     created_at: new Date().toISOString(),
                   },
                 ]
