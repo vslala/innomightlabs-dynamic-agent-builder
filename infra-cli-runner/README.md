@@ -8,8 +8,39 @@ The service intentionally exposes only:
 - `POST /v1/commands`
 - `POST /v1/python/executions`
 - `POST /v1/filesystem/actions`
+- `GET /v1/mcp/packages`, `PUT|GET|DELETE /v1/mcp/servers/{server_id}`, `POST /v1/mcp/servers/{server_id}/mcp`
 
 Requests must use bearer auth with `CLI_RUNNER_SHARED_TOKEN`. The runner never accepts shell command strings.
+
+## Hosted stdio MCP servers
+
+The runner hosts stdio MCP servers as long-lived processes and exposes each one through a stateless Streamable HTTP
+façade, so the API talks to them with its ordinary MCP client. It only runs packages baked into the image:
+
+```
+mcp_packages/<key>/
+  package.toml       entrypoint = "<console script>"   (optional: args = [...])
+  requirements.txt   pinned, reviewed install (a git dependency pins a commit, never a branch)
+```
+
+The `mcp-packages` build stage installs each package into `/opt/mcp/<key>`; `git` exists only in that stage. Adding or
+upgrading a package is a code review plus a redeploy. Nothing is installed at runtime.
+
+- `PUT /v1/mcp/servers/{server_id}` with `{spec: {package, args, env, files}, wait_seconds}` is idempotent: it keeps a
+  running server whose spec fingerprint matches, drains and restarts it when the spec changes (for example rotated
+  credentials), and starts it when missing (after a redeploy, idle reap, or crash).
+- `files` maps an env name to file content. Each file is written `0600` under the server's private `secrets/`
+  directory, the env var holds its path, and the directory is removed when the server stops.
+- The façade answers `initialize` from the child's cached handshake (a stdio process accepts one), remaps request ids
+  so concurrent callers cannot collide, and refuses server-to-client requests with `-32601`.
+- Servers idle for 15 minutes are stopped; at 8 running servers the least recently used idle one is evicted.
+
+The process pool lives in memory, so **run this service as one replica with one worker** (the `CMD` sets no
+`--workers`). All hosted servers share the `runner` uid, which is why only reviewed, baked packages may run.
+
+On Apple Silicon machines whose CPU reports SME (M4-class), the arm64 `cryptography` wheel used by some Python MCP
+packages crashes with an illegal instruction inside Docker. Build or run the image with `--platform linux/amd64`
+locally if a hosted server exits with code `-4`; Railway builds for amd64.
 
 ## Python executions
 
@@ -56,3 +87,5 @@ Run tests:
 ```bash
 uv run python -m unittest discover -s tests -v
 ```
+
+`tests/test_mcp_servers.py` drives a real stdio process (`tests/fake_mcp_server.py`) through the pool and façade.
