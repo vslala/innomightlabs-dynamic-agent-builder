@@ -16,6 +16,7 @@ class MCPAuthType(str, Enum):
 
 class MCPTransport(str, Enum):
     STREAMABLE_HTTP = "streamable_http"
+    STDIO = "stdio"
 
 
 class MCPAuthHeader(BaseModel):
@@ -138,6 +139,8 @@ class MCPConnectionUpdateRequest(BaseModel):
     api_key: Optional[MCPApiKeyAuthConfig] = None
     oauth: Optional[MCPOAuthProviderConfig] = None
     enabled: Optional[bool] = None
+    # Catalog installs only: preset input values. Blank secret values keep the stored ones.
+    inputs: Optional[dict[str, str]] = None
 
     @model_validator(mode="after")
     def validate_not_empty(self) -> "MCPConnectionUpdateRequest":
@@ -148,9 +151,14 @@ class MCPConnectionUpdateRequest(BaseModel):
             and self.api_key is None
             and self.oauth is None
             and self.enabled is None
+            and self.inputs is None
         ):
             raise ValueError("At least one field must be provided")
         return self
+
+    def changes_connection_config(self) -> bool:
+        """Fields a catalog install cannot change, because its preset owns them."""
+        return any(value is not None for value in (self.server_url, self.auth_type, self.api_key, self.oauth))
 
 
 class MCPConnectionResponse(BaseModel):
@@ -163,6 +171,34 @@ class MCPConnectionResponse(BaseModel):
     enabled: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
+    provider_key: Optional[str] = None
+    setup_state: Literal["needs_input", "needs_sign_in", "ready"] = "ready"
+    # Catalog installs only: non-secret input values, for the settings form.
+    inputs: dict[str, str] = Field(default_factory=dict)
+
+
+class MCPProviderResponse(BaseModel):
+    key: str
+    display_name: str
+    description: str
+    icon: str
+    docs_url: str
+    transport: MCPTransport
+    has_inputs: bool
+    has_sign_in: bool
+    installed_count: int = 0
+
+
+class MCPProviderInstallRequest(BaseModel):
+    inputs: dict[str, str] = Field(default_factory=dict)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    return_to: str = Field(min_length=1)
+
+
+class MCPProviderInstallResponse(BaseModel):
+    connection: MCPConnectionResponse
+    # Present when the preset signs in with OAuth: the SPA redirects here straight away.
+    authorize_url: Optional[str] = None
 
 
 class MCPOAuthStartRequest(BaseModel):
@@ -234,6 +270,8 @@ class MCPConnection(BaseModel):
     enabled: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
+    # Set for catalog installs; None for connectors the user configured by hand.
+    provider_key: Optional[str] = None
 
     @property
     def pk(self) -> str:
@@ -258,6 +296,7 @@ class MCPConnection(BaseModel):
             "enabled": self.enabled,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "provider_key": self.provider_key,
         }
 
     @classmethod
@@ -273,6 +312,7 @@ class MCPConnection(BaseModel):
             enabled=bool(item.get("enabled", True)),
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
+            provider_key=item.get("provider_key") or None,
         )
 
     def to_response(self) -> MCPConnectionResponse:

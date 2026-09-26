@@ -18,6 +18,9 @@ from src.connectors.mcp.models import (
     MCPOAuthAuthConfig,
     MCPOAuthCredentials,
     MCPOAuthProviderConfig,
+    MCPProviderInstallRequest,
+    MCPProviderInstallResponse,
+    MCPProviderResponse,
 )
 from src.connectors.mcp.oauth import (
     MCPOAuthError,
@@ -32,10 +35,14 @@ from src.connectors.mcp.oauth import (
     generate_code_challenge,
     refresh_access_token,
 )
+from src.connectors.mcp.providers import PROVIDERS, get_provider
+from src.connectors.mcp.providers.base import DiscoveredOAuth, MCPProvider, ProviderInstall
+from src.connectors.mcp.providers.resolver import ProviderInstallSecrets, ProviderResolver
 from src.connectors.mcp.repository import MCPConnectionRepository, get_mcp_connection_repository
 from src.connectors.mcp.resolved import HttpTarget, OAuthBinding
 from src.connectors.mcp.resolvers import ConnectionResolver, CustomResolver
 from src.crypto import encrypt
+from src.form_models import Form
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +61,7 @@ class MCPConnectorService:
         self.agent_repository = agent_repository or AgentRepository()
         self.client = client or StreamableHTTPMCPClient()
         self.custom = CustomResolver()
+        self.providers = ProviderResolver()
 
     def create_connection(
         self,
@@ -90,6 +98,10 @@ class MCPConnectorService:
         request: MCPConnectionUpdateRequest,
     ) -> MCPConnectionResponse:
         connection = self._require_connection(owner_email, mcp_id)
+        if connection.provider_key:
+            return self._update_provider_install(connection, request)
+        if request.inputs is not None:
+            raise ValueError("inputs can only be updated on catalog connectors")
         existing_auth_type = connection.auth_type
         if request.name is not None:
             connection.name = request.name.strip()
@@ -141,6 +153,141 @@ class MCPConnectorService:
 
     def get_connection(self, owner_email: str, mcp_id: str) -> MCPConnectionResponse:
         return self._connection_response(self._require_connection(owner_email, mcp_id))
+
+    def list_providers(self, owner_email: str) -> list[MCPProviderResponse]:
+        installed: dict[str, int] = {}
+        for connection in self.repository.list_connections(owner_email):
+            if connection.provider_key:
+                installed[connection.provider_key] = installed.get(connection.provider_key, 0) + 1
+        return [
+            MCPProviderResponse(
+                key=provider.key,
+                display_name=provider.display_name,
+                description=provider.description,
+                icon=provider.icon,
+                docs_url=provider.docs_url,
+                transport=provider.transport,
+                has_inputs=bool(provider.inputs),
+                has_sign_in=provider.oauth is not None,
+                installed_count=installed.get(provider.key, 0),
+            )
+            for provider in PROVIDERS.values()
+        ]
+
+    def provider_install_form(self, key: str) -> Form:
+        provider = get_provider(key)
+        return Form(
+            form_name="install",
+            submit_path=f"/connectors/mcp/providers/{provider.key}/install",
+            form_inputs=list(provider.inputs),
+        )
+
+    def connection_settings_form(self, owner_email: str, mcp_id: str) -> Form:
+        connection = self._require_connection(owner_email, mcp_id)
+        provider = get_provider(connection.provider_key)
+        values = self._public_inputs(connection, provider)
+        return Form(
+            form_name="settings",
+            submit_path=f"/connectors/mcp/{mcp_id}",
+            form_inputs=[
+                field.model_copy(update={"value": values.get(field.name, field.value)})
+                if field.name in values
+                else field
+                for field in provider.inputs
+            ],
+        )
+
+    async def install_provider(
+        self,
+        owner_email: str,
+        key: str,
+        request: MCPProviderInstallRequest,
+    ) -> MCPProviderInstallResponse:
+        provider = get_provider(key)
+        secrets = ProviderInstallSecrets(inputs=provider.validated_inputs(request.inputs))
+        if isinstance(provider.oauth, DiscoveredOAuth):
+            discovered = await discover_oauth_provider(
+                provider.oauth.server_url,
+                register_client=provider.oauth.register_client,
+            )
+            if provider.oauth.register_client and not discovered.registered_client:
+                raise ValueError(f"{provider.display_name} did not register an OAuth client. Try again later.")
+            config = discovered.model_dump(
+                include={
+                    "authorization_url",
+                    "token_url",
+                    "client_id",
+                    "client_secret",
+                    "scope",
+                    "resource_url",
+                    "client_registration",
+                }
+            )
+            if not provider.oauth.register_client:
+                # Without registration the client is the user's own; the resolver re-applies it from inputs on
+                # every use, so later edits to the client take effect.
+                install = ProviderInstall(inputs=secrets.inputs)
+                config.update(client_id=install.oauth_client_id, client_secret=install.oauth_client_secret)
+            secrets.oauth_provider = MCPOAuthProviderConfig.model_validate(config)
+
+        connection = self.repository.save_connection(
+            MCPConnection(
+                owner_email=owner_email,
+                name=(request.name or provider.display_name).strip(),
+                server_url="",
+                transport=provider.transport,
+                auth_type=provider.auth_type(),
+                encrypted_auth_config=secrets.encrypted(),
+                provider_key=provider.key,
+            )
+        )
+        log.info(
+            "Installed MCP provider provider=%s mcp_id=%s owner=%s",
+            provider.key,
+            connection.mcp_id,
+            owner_email,
+        )
+        authorize_url = (
+            self.start_oauth(owner_email=owner_email, mcp_id=connection.mcp_id, return_to=request.return_to)
+            if provider.oauth is not None
+            else None
+        )
+        return MCPProviderInstallResponse(
+            connection=self._connection_response(connection),
+            authorize_url=authorize_url,
+        )
+
+    def _update_provider_install(
+        self,
+        connection: MCPConnection,
+        request: MCPConnectionUpdateRequest,
+    ) -> MCPConnectionResponse:
+        if request.changes_connection_config():
+            raise ValueError("Catalog connectors are configured by their provider; only name, inputs and enabled can change")
+        provider = get_provider(connection.provider_key)
+        if request.name is not None:
+            connection.name = request.name.strip()
+        if request.enabled is not None:
+            connection.enabled = request.enabled
+        if request.inputs is not None:
+            secrets = ProviderInstallSecrets.of(connection)
+            submitted = dict(request.inputs)
+            for name in provider.secret_input_names():
+                if not submitted.get(name, "").strip() and secrets.inputs.get(name):
+                    submitted[name] = secrets.inputs[name]
+            secrets.inputs = provider.validated_inputs(submitted)
+            connection.encrypted_auth_config = secrets.encrypted()
+        saved = self.repository.save_connection(connection)
+        log.info("Updated MCP provider install mcp_id=%s provider=%s", saved.mcp_id, provider.key)
+        return self._connection_response(saved)
+
+    def _public_inputs(self, connection: MCPConnection, provider: MCPProvider) -> dict[str, str]:
+        secret_names = provider.secret_input_names()
+        return {
+            name: value
+            for name, value in ProviderInstallSecrets.of(connection).inputs.items()
+            if name not in secret_names
+        }
 
     async def discover_oauth(self, server_url: str) -> MCPOAuthDiscoveryResponse:
         log.info("Discovering MCP OAuth metadata server_url=%s", server_url)
@@ -398,7 +545,7 @@ class MCPConnectorService:
             except ValueError:
                 oauth_connected = False
 
-        return MCPConnectionResponse(
+        response = MCPConnectionResponse(
             mcp_id=connection.mcp_id,
             name=connection.name,
             server_url=connection.server_url,
@@ -408,7 +555,13 @@ class MCPConnectorService:
             enabled=connection.enabled,
             created_at=connection.created_at,
             updated_at=connection.updated_at,
+            provider_key=connection.provider_key,
         )
+        if connection.provider_key and connection.provider_key in PROVIDERS:
+            provider = PROVIDERS[connection.provider_key]
+            response.setup_state = self.providers.setup_state(connection)
+            response.inputs = self._public_inputs(connection, provider)
+        return response
 
     def _require_connection(self, owner_email: str, mcp_id: str) -> MCPConnection:
         connection = self.repository.find_connection(owner_email, mcp_id)
@@ -448,7 +601,7 @@ class MCPConnectorService:
         raise ValueError(f"Unsupported MCP authentication type: {auth_type}")
 
     def _resolver(self, connection: MCPConnection) -> ConnectionResolver:
-        return self.custom
+        return self.providers if connection.provider_key else self.custom
 
     def _oauth_binding(self, connection: MCPConnection) -> OAuthBinding:
         oauth = self._resolver(connection).resolve(connection).oauth

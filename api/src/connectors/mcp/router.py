@@ -17,9 +17,13 @@ from src.connectors.mcp.models import (
     MCPOAuthDiscoveryResponse,
     MCPOAuthStartRequest,
     MCPOAuthStartResponse,
+    MCPProviderInstallRequest,
+    MCPProviderInstallResponse,
+    MCPProviderResponse,
 )
 from src.connectors.mcp.oauth import decode_state_session
 from src.connectors.mcp.service import MCPConnectorService, get_mcp_connector_service
+from src.form_models import Form
 
 security = HTTPBearer()
 
@@ -68,6 +72,55 @@ async def create_mcp_connection(
         return service.create_connection(_user_email(request), body)
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+# Registered before /connectors/mcp/{mcp_id} so "providers" is not read as a connector id.
+@router.get("/connectors/mcp/providers", response_model=list[MCPProviderResponse])
+async def list_mcp_providers(
+    request: Request,
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> list[MCPProviderResponse]:
+    return service.list_providers(_user_email(request))
+
+
+@router.get("/connectors/mcp/providers/{key}/forms/install", response_model=Form)
+async def get_mcp_provider_install_form(
+    key: str,
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> Form:
+    try:
+        return service.provider_install_form(key)
+    except ValueError as error:
+        raise _not_found_from_value_error(error) from error
+
+
+@router.post(
+    "/connectors/mcp/providers/{key}/install",
+    response_model=MCPProviderInstallResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def install_mcp_provider(
+    request: Request,
+    key: str,
+    body: MCPProviderInstallRequest,
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> MCPProviderInstallResponse:
+    try:
+        return await service.install_provider(_user_email(request), key, body)
+    except ValueError as error:
+        raise _not_found_from_value_error(error) from error
+
+
+@router.get("/connectors/mcp/{mcp_id}/forms/settings", response_model=Form)
+async def get_mcp_connection_settings_form(
+    request: Request,
+    mcp_id: str,
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> Form:
+    try:
+        return service.connection_settings_form(_user_email(request), mcp_id)
+    except ValueError as error:
+        raise _not_found_from_value_error(error) from error
 
 
 @router.get("/connectors/mcp/{mcp_id}", response_model=MCPConnectionResponse)
