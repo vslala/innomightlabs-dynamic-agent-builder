@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from src.connectors.mcp.providers import atlassian, canva, github
+from src.connectors.mcp.providers import atlassian, canva, github, google_ads
 from src.connectors.mcp.providers.base import MCPProvider
 
 PROVIDERS: dict[str, MCPProvider] = {
     provider.key: provider
-    for provider in (atlassian.PROVIDER, github.PROVIDER, canva.PROVIDER)
+    for provider in (google_ads.PROVIDER, atlassian.PROVIDER, github.PROVIDER, canva.PROVIDER)
 }
 
 

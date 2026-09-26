@@ -20,6 +20,8 @@ from src.connectors.mcp.models import (
     MCPProviderInstallRequest,
     MCPProviderInstallResponse,
     MCPProviderResponse,
+    MCPRuntimeStatusResponse,
+    MCPStdioPackageResponse,
 )
 from src.connectors.mcp.oauth import decode_state_session
 from src.connectors.mcp.service import MCPConnectorService, get_mcp_connector_service
@@ -111,6 +113,40 @@ async def install_mcp_provider(
         raise _not_found_from_value_error(error) from error
 
 
+@router.get("/connectors/mcp/stdio/packages", response_model=list[MCPStdioPackageResponse])
+async def list_mcp_stdio_packages(
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> list[MCPStdioPackageResponse]:
+    try:
+        return await service.list_stdio_packages()
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
+
+
+@router.get("/connectors/mcp/{mcp_id}/runtime", response_model=MCPRuntimeStatusResponse)
+async def get_mcp_runtime(
+    request: Request,
+    mcp_id: str,
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> MCPRuntimeStatusResponse:
+    try:
+        return await service.runtime_status(_user_email(request), mcp_id)
+    except ValueError as error:
+        raise _not_found_from_value_error(error) from error
+
+
+@router.post("/connectors/mcp/{mcp_id}/runtime/restart", response_model=MCPRuntimeStatusResponse)
+async def restart_mcp_runtime(
+    request: Request,
+    mcp_id: str,
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> MCPRuntimeStatusResponse:
+    try:
+        return await service.restart_runtime(_user_email(request), mcp_id)
+    except ValueError as error:
+        raise _not_found_from_value_error(error) from error
+
+
 @router.get("/connectors/mcp/{mcp_id}/forms/settings", response_model=Form)
 async def get_mcp_connection_settings_form(
     request: Request,
@@ -143,7 +179,7 @@ async def update_mcp_connection(
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPConnectionResponse:
     try:
-        return service.update_connection(_user_email(request), mcp_id, body)
+        return await service.update_connection(_user_email(request), mcp_id, body)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 
@@ -155,7 +191,7 @@ async def delete_mcp_connection(
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> None:
     try:
-        service.delete_connection(_user_email(request), mcp_id)
+        await service.delete_connection(_user_email(request), mcp_id)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 

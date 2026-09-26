@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
+
+if TYPE_CHECKING:
+    from src.connectors.mcp.delivery import OAuthDelivery
+    from src.connectors.mcp.resolved import StdioTarget
+
+ENV_NAME_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
 
 
 class MCPAuthType(str, Enum):
@@ -115,21 +121,157 @@ class MCPOAuthAuthConfig(BaseModel):
     credentials: Optional[MCPOAuthCredentials] = None
 
 
+class MCPStdioEnvVar(BaseModel):
+    name: str = Field(pattern=ENV_NAME_PATTERN, max_length=128)
+    value: str = ""  # blank on update keeps the stored value
+    kind: Literal["value", "file"] = "value"  # file: the sidecar writes the value to a 0600 file, env holds its path
+    secret: bool = False  # secret values are never returned
+
+
+class MCPStdioTargetConfig(BaseModel):
+    """A hosted stdio server: a package baked into the sidecar image, its args, and its env."""
+
+    package: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
+    args: list[str] = Field(default_factory=list, max_length=64)
+    env: list[MCPStdioEnvVar] = Field(default_factory=list, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_unique_env(self) -> "MCPStdioTargetConfig":
+        seen: set[str] = set()
+        for var in self.env:
+            if var.name.upper() in seen:
+                raise ValueError(f"Duplicate environment variable: {var.name}")
+            seen.add(var.name.upper())
+        return self
+
+    def has_secrets(self) -> bool:
+        return any(var.secret for var in self.env)
+
+    def missing_values(self) -> list[str]:
+        return [var.name for var in self.env if not var.value]
+
+    def keeping_values_from(self, previous: "MCPStdioTargetConfig") -> "MCPStdioTargetConfig":
+        stored = {var.name: var for var in previous.env}
+        return self.model_copy(
+            update={
+                "env": [
+                    var.model_copy(update={"value": stored[var.name].value})
+                    if not var.value and var.name in stored
+                    else var
+                    for var in self.env
+                ]
+            }
+        )
+
+    def to_target(self) -> "StdioTarget":
+        from src.connectors.mcp.resolved import StdioTarget
+
+        return StdioTarget(
+            package=self.package,
+            args=tuple(self.args),
+            env={var.name: var.value for var in self.env if var.kind == "value"},
+            files={var.name: var.value for var in self.env if var.kind == "file"},
+        )
+
+    def summary(self) -> "MCPStdioSummary":
+        return MCPStdioSummary(
+            package=self.package,
+            args=self.args,
+            env=[
+                MCPStdioEnvSummary(
+                    name=var.name,
+                    kind=var.kind,
+                    secret=var.secret,
+                    value=None if var.secret or var.kind == "file" else var.value,
+                )
+                for var in self.env
+            ],
+        )
+
+
+class MCPOAuthDeliveryConfig(BaseModel):
+    """How a stdio server receives its OAuth credential."""
+
+    kind: Literal["access_token_env", "google_authorized_user_file"]
+    env_name: str = Field(pattern=ENV_NAME_PATTERN, max_length=128)
+
+    def strategy(self) -> "OAuthDelivery":
+        from src.connectors.mcp.delivery import stdio_oauth_delivery
+
+        return stdio_oauth_delivery(self.kind, self.env_name)
+
+
+class MCPStdioEnvSummary(BaseModel):
+    name: str
+    kind: Literal["value", "file"]
+    secret: bool
+    value: Optional[str] = None
+
+
+class MCPStdioSummary(BaseModel):
+    package: str
+    args: list[str]
+    env: list[MCPStdioEnvSummary]
+
+
 class MCPConnectionCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    server_url: HttpUrl
+    transport: MCPTransport = MCPTransport.STREAMABLE_HTTP
+    server_url: Optional[HttpUrl] = None
     auth_type: MCPAuthType = MCPAuthType.API_KEY
     api_key: Optional[MCPApiKeyAuthConfig] = None
     oauth: Optional[MCPOAuthProviderConfig] = None
+    stdio: Optional[MCPStdioTargetConfig] = None
+    oauth_delivery: Optional[MCPOAuthDeliveryConfig] = None
     enabled: bool = True
 
     @model_validator(mode="after")
     def validate_auth_config(self) -> "MCPConnectionCreateRequest":
+        if self.transport == MCPTransport.STDIO:
+            return self._validate_stdio()
+        if self.server_url is None:
+            raise ValueError("server_url is required for remote MCP servers")
+        if self.stdio is not None or self.oauth_delivery is not None:
+            raise ValueError("stdio and oauth_delivery apply only to stdio MCP servers")
         if self.auth_type == MCPAuthType.API_KEY and self.api_key is None:
             raise ValueError("api_key is required for API key MCP authentication")
         if self.auth_type == MCPAuthType.OAUTH and self.oauth is None:
             raise ValueError("oauth is required for OAuth MCP authentication")
         return self
+
+    def _validate_stdio(self) -> "MCPConnectionCreateRequest":
+        if self.stdio is None:
+            raise ValueError("stdio is required for stdio MCP servers")
+        if self.server_url is not None or self.api_key is not None:
+            raise ValueError("stdio MCP servers take credentials through env, not server_url or api_key headers")
+        missing = self.stdio.missing_values()
+        if missing:
+            raise ValueError(f"Environment variables need values: {', '.join(missing)}")
+        if "auth_type" not in self.model_fields_set:
+            # The request default is for remote servers; stdio auth follows from what was supplied.
+            if self.oauth is not None:
+                self.auth_type = MCPAuthType.OAUTH
+            else:
+                self.auth_type = MCPAuthType.API_KEY if self.stdio.has_secrets() else MCPAuthType.NONE
+        validate_stdio_auth(self.auth_type, self.stdio, self.oauth, self.oauth_delivery)
+        return self
+
+
+def validate_stdio_auth(
+    auth_type: MCPAuthType,
+    stdio: MCPStdioTargetConfig,
+    oauth: Optional[MCPOAuthProviderConfig],
+    oauth_delivery: Optional[MCPOAuthDeliveryConfig],
+) -> None:
+    if auth_type == MCPAuthType.API_KEY and not stdio.has_secrets():
+        raise ValueError("Mark at least one environment variable as secret for credential authentication")
+    if auth_type == MCPAuthType.OAUTH:
+        if oauth is None or oauth_delivery is None:
+            raise ValueError("oauth and oauth_delivery are required for OAuth stdio MCP servers")
+        if oauth_delivery.env_name.upper() in {var.name.upper() for var in stdio.env}:
+            raise ValueError(f"{oauth_delivery.env_name} is set by sign-in; remove it from the environment")
+    elif oauth is not None or oauth_delivery is not None:
+        raise ValueError("oauth and oauth_delivery apply only to OAuth authentication")
 
 
 class MCPConnectionUpdateRequest(BaseModel):
@@ -139,6 +281,8 @@ class MCPConnectionUpdateRequest(BaseModel):
     api_key: Optional[MCPApiKeyAuthConfig] = None
     oauth: Optional[MCPOAuthProviderConfig] = None
     enabled: Optional[bool] = None
+    stdio: Optional[MCPStdioTargetConfig] = None
+    oauth_delivery: Optional[MCPOAuthDeliveryConfig] = None
     # Catalog installs only: preset input values. Blank secret values keep the stored ones.
     inputs: Optional[dict[str, str]] = None
 
@@ -151,6 +295,8 @@ class MCPConnectionUpdateRequest(BaseModel):
             and self.api_key is None
             and self.oauth is None
             and self.enabled is None
+            and self.stdio is None
+            and self.oauth_delivery is None
             and self.inputs is None
         ):
             raise ValueError("At least one field must be provided")
@@ -158,7 +304,10 @@ class MCPConnectionUpdateRequest(BaseModel):
 
     def changes_connection_config(self) -> bool:
         """Fields a catalog install cannot change, because its preset owns them."""
-        return any(value is not None for value in (self.server_url, self.auth_type, self.api_key, self.oauth))
+        return any(
+            value is not None
+            for value in (self.server_url, self.auth_type, self.api_key, self.oauth, self.stdio, self.oauth_delivery)
+        )
 
 
 class MCPConnectionResponse(BaseModel):
@@ -175,6 +324,38 @@ class MCPConnectionResponse(BaseModel):
     setup_state: Literal["needs_input", "needs_sign_in", "ready"] = "ready"
     # Catalog installs only: non-secret input values, for the settings form.
     inputs: dict[str, str] = Field(default_factory=dict)
+    stdio: Optional[MCPStdioSummary] = None
+    oauth_delivery: Optional[MCPOAuthDeliveryConfig] = None
+
+
+class MCPStdioStoredConfig(BaseModel):
+    """The encrypted config of a custom stdio connection."""
+
+    target: MCPStdioTargetConfig
+    oauth: Optional[MCPOAuthAuthConfig] = None
+    oauth_delivery: Optional[MCPOAuthDeliveryConfig] = None
+
+
+class MCPRuntimeStatusResponse(BaseModel):
+    state: Literal["starting", "running", "failed", "stopped"]
+    package: str = ""
+    started_at: Optional[datetime] = None
+    last_used_at: Optional[datetime] = None
+    exit_code: Optional[int] = None
+    error: Optional[str] = None
+    stderr_tail: str = ""
+    server_info: Optional[dict[str, Any]] = None
+
+    def failure_message(self) -> str:
+        if self.state == "starting":
+            return "The MCP server is still starting. Try again in a moment."
+        return self.error or f"The MCP server is {self.state}"
+
+
+class MCPStdioPackageResponse(BaseModel):
+    key: str
+    entrypoint: str
+    installed: bool
 
 
 class MCPProviderResponse(BaseModel):

@@ -4,7 +4,7 @@ import logging
 from typing import Any, Optional
 
 from src.agents.repository import AgentRepository
-from src.connectors.mcp.client import MCPClientError, StreamableHTTPMCPClient
+from src.connectors.mcp.client import MCPClientError, StreamableHTTPMCPClient, _sanitize_response_text
 from src.connectors.mcp.models import (
     AgentMCPConnection,
     AgentMCPConnectionResponse,
@@ -21,6 +21,11 @@ from src.connectors.mcp.models import (
     MCPProviderInstallRequest,
     MCPProviderInstallResponse,
     MCPProviderResponse,
+    MCPRuntimeStatusResponse,
+    MCPStdioPackageResponse,
+    MCPStdioStoredConfig,
+    MCPTransport,
+    validate_stdio_auth,
 )
 from src.connectors.mcp.oauth import (
     MCPOAuthError,
@@ -39,12 +44,16 @@ from src.connectors.mcp.providers import PROVIDERS, get_provider
 from src.connectors.mcp.providers.base import DiscoveredOAuth, MCPProvider, ProviderInstall
 from src.connectors.mcp.providers.resolver import ProviderInstallSecrets, ProviderResolver
 from src.connectors.mcp.repository import MCPConnectionRepository, get_mcp_connection_repository
-from src.connectors.mcp.resolved import HttpTarget, OAuthBinding
+from src.connectors.mcp.resolved import HttpTarget, MCPTarget, OAuthBinding, StdioTarget
 from src.connectors.mcp.resolvers import ConnectionResolver, CustomResolver
+from src.connectors.mcp.sidecar import StdioMCPSidecarClient
 from src.crypto import encrypt
 from src.form_models import Form
 
 log = logging.getLogger(__name__)
+
+# How long a tool call waits for a hosted server that is still starting (the sidecar allows up to 60).
+RUNTIME_START_WAIT_SECONDS = 45
 
 
 class MCPConnectorService:
@@ -56,10 +65,12 @@ class MCPConnectorService:
         repository: Optional[MCPConnectionRepository] = None,
         agent_repository: Optional[AgentRepository] = None,
         client: Optional[StreamableHTTPMCPClient] = None,
+        sidecar: Optional[StdioMCPSidecarClient] = None,
     ):
         self.repository = repository or get_mcp_connection_repository()
         self.agent_repository = agent_repository or AgentRepository()
         self.client = client or StreamableHTTPMCPClient()
+        self.sidecar = sidecar or StdioMCPSidecarClient()
         self.custom = CustomResolver()
         self.providers = ProviderResolver()
 
@@ -68,6 +79,8 @@ class MCPConnectorService:
         owner_email: str,
         request: MCPConnectionCreateRequest,
     ) -> MCPConnectionResponse:
+        if request.transport == MCPTransport.STDIO:
+            return self._create_stdio_connection(owner_email, request)
         connection = MCPConnection(
             owner_email=owner_email,
             name=request.name.strip(),
@@ -91,7 +104,7 @@ class MCPConnectorService:
         )
         return self._connection_response(saved)
 
-    def update_connection(
+    async def update_connection(
         self,
         owner_email: str,
         mcp_id: str,
@@ -99,9 +112,24 @@ class MCPConnectorService:
     ) -> MCPConnectionResponse:
         connection = self._require_connection(owner_email, mcp_id)
         if connection.provider_key:
-            return self._update_provider_install(connection, request)
+            response = self._update_provider_install(connection, request)
+        elif connection.transport == MCPTransport.STDIO:
+            response = self._update_stdio_connection(connection, request)
+        else:
+            response = self._update_http_connection(connection, request)
+        if request.enabled is False:
+            await self._release(connection)
+        return response
+
+    def _update_http_connection(
+        self,
+        connection: MCPConnection,
+        request: MCPConnectionUpdateRequest,
+    ) -> MCPConnectionResponse:
         if request.inputs is not None:
             raise ValueError("inputs can only be updated on catalog connectors")
+        if request.stdio is not None or request.oauth_delivery is not None:
+            raise ValueError("stdio and oauth_delivery apply only to stdio MCP servers")
         existing_auth_type = connection.auth_type
         if request.name is not None:
             connection.name = request.name.strip()
@@ -139,7 +167,7 @@ class MCPConnectorService:
         log.info(
             "Updated MCP connection mcp_id=%s owner=%s auth_type=%s enabled=%s",
             saved.mcp_id,
-            owner_email,
+            saved.owner_email,
             saved.auth_type.value,
             saved.enabled,
         )
@@ -304,9 +332,32 @@ class MCPConnectorService:
         log.info("Discovering OAuth authorization server issuer_url=%s", issuer_url)
         return await discover_authorization_server(issuer_url)
 
-    def delete_connection(self, owner_email: str, mcp_id: str) -> None:
-        self._require_connection(owner_email, mcp_id)
+    async def delete_connection(self, owner_email: str, mcp_id: str) -> None:
+        connection = self._require_connection(owner_email, mcp_id)
         self.repository.delete_connection(owner_email, mcp_id)
+        await self._release(connection)
+
+    async def list_stdio_packages(self) -> list[MCPStdioPackageResponse]:
+        return await self.sidecar.packages()
+
+    async def runtime_status(self, owner_email: str, mcp_id: str) -> MCPRuntimeStatusResponse:
+        connection = self._require_stdio_connection(owner_email, mcp_id)
+        status = await self.sidecar.status(connection.mcp_id)
+        if status is None:
+            return MCPRuntimeStatusResponse(state="stopped")
+        return self._public_status(status)
+
+    async def restart_runtime(self, owner_email: str, mcp_id: str) -> MCPRuntimeStatusResponse:
+        connection = self._require_stdio_connection(owner_email, mcp_id)
+        if not connection.enabled:
+            raise ValueError("Enable the MCP connector before starting it")
+        target = await self._prepared_target(connection)
+        if not isinstance(target, StdioTarget):
+            raise ValueError("MCP connector is not a stdio server")
+        await self.sidecar.delete(connection.mcp_id)
+        status = await self.sidecar.ensure(connection.mcp_id, target, wait_seconds=0)
+        log.info("Restarted hosted MCP server mcp_id=%s state=%s", connection.mcp_id, status.state)
+        return self._public_status(status)
 
     def enable_for_agent(
         self,
@@ -561,6 +612,10 @@ class MCPConnectorService:
             provider = PROVIDERS[connection.provider_key]
             response.setup_state = self.providers.setup_state(connection)
             response.inputs = self._public_inputs(connection, provider)
+        elif connection.transport == MCPTransport.STDIO:
+            stored = self.custom.stdio_config(connection)
+            response.stdio = stored.target.summary()
+            response.oauth_delivery = stored.oauth_delivery
         return response
 
     def _require_connection(self, owner_email: str, mcp_id: str) -> MCPConnection:
@@ -609,19 +664,121 @@ class MCPConnectorService:
             raise ValueError("MCP connector is not configured for OAuth")
         return oauth
 
-    async def _session(self, connection: MCPConnection) -> tuple[MCPConnection, dict[str, str]]:
-        """Resolve a connection, apply fresh OAuth credentials, and return the client's target and headers."""
+    async def _prepared_target(self, connection: MCPConnection) -> MCPTarget:
+        """Resolve a connection and apply fresh OAuth credentials through its delivery."""
         resolved = self._resolver(connection).resolve(connection)
-        target = resolved.target
-        if resolved.oauth:
-            credentials = await self._fresh_credentials(connection, resolved.oauth)
-            target = resolved.oauth.delivery.apply(target, resolved.oauth.auth.provider, credentials)
+        if resolved.oauth is None:
+            return resolved.target
+        credentials = await self._fresh_credentials(connection, resolved.oauth)
+        return resolved.oauth.delivery.apply(resolved.target, resolved.oauth.auth.provider, credentials)
 
-        match target:
+    async def _session(self, connection: MCPConnection) -> tuple[MCPConnection, dict[str, str]]:
+        """Return the connection copy and headers the Streamable HTTP client should use."""
+        # The client addresses servers by connection.server_url and logs mcp_id/name, so it gets a copy
+        # pointing at the real endpoint: the remote server, or the sidecar's façade for a hosted one.
+        match await self._prepared_target(connection):
             case HttpTarget(url=url, headers=headers):
-                # The client addresses servers by connection.server_url and logs mcp_id/name.
                 return connection.model_copy(update={"server_url": url}), headers
+            case StdioTarget() as stdio:
+                status = await self.sidecar.ensure(
+                    connection.mcp_id, stdio, wait_seconds=RUNTIME_START_WAIT_SECONDS
+                )
+                if status.state != "running":
+                    raise MCPClientError(status.failure_message())
+                return (
+                    connection.model_copy(update={"server_url": self.sidecar.endpoint_url(connection.mcp_id)}),
+                    self.sidecar.auth_headers(),
+                )
         raise ValueError(f"Unsupported MCP target for connector {connection.mcp_id}")
+
+    async def _release(self, connection: MCPConnection) -> None:
+        """Stop a hosted server's process. Remote servers have nothing to release."""
+        if connection.transport != MCPTransport.STDIO:
+            return
+        try:
+            await self.sidecar.delete(connection.mcp_id)
+        except MCPClientError:
+            log.warning("Failed to stop hosted MCP server mcp_id=%s", connection.mcp_id, exc_info=True)
+
+    def _require_stdio_connection(self, owner_email: str, mcp_id: str) -> MCPConnection:
+        connection = self._require_connection(owner_email, mcp_id)
+        if connection.transport != MCPTransport.STDIO:
+            raise ValueError("Only hosted stdio MCP connectors have a runtime")
+        return connection
+
+    def _public_status(self, status: MCPRuntimeStatusResponse) -> MCPRuntimeStatusResponse:
+        # Servers may print credentials on stderr; redact the patterns the HTTP client already redacts.
+        return status.model_copy(update={"stderr_tail": _sanitize_response_text_keeping_lines(status.stderr_tail)})
+
+    def _create_stdio_connection(
+        self,
+        owner_email: str,
+        request: MCPConnectionCreateRequest,
+    ) -> MCPConnectionResponse:
+        assert request.stdio is not None
+        oauth = (
+            MCPOAuthAuthConfig(provider=request.oauth)
+            if request.auth_type == MCPAuthType.OAUTH and request.oauth is not None
+            else None
+        )
+        stored = MCPStdioStoredConfig(target=request.stdio, oauth=oauth, oauth_delivery=request.oauth_delivery)
+        connection = self.repository.save_connection(
+            MCPConnection(
+                owner_email=owner_email,
+                name=request.name.strip(),
+                server_url="",
+                transport=MCPTransport.STDIO,
+                auth_type=request.auth_type,
+                encrypted_auth_config=encrypt(stored.model_dump_json()),
+                enabled=request.enabled,
+            )
+        )
+        log.info(
+            "Created stdio MCP connection mcp_id=%s owner=%s package=%s auth_type=%s",
+            connection.mcp_id,
+            owner_email,
+            request.stdio.package,
+            connection.auth_type.value,
+        )
+        return self._connection_response(connection)
+
+    def _update_stdio_connection(
+        self,
+        connection: MCPConnection,
+        request: MCPConnectionUpdateRequest,
+    ) -> MCPConnectionResponse:
+        if request.inputs is not None:
+            raise ValueError("inputs can only be updated on catalog connectors")
+        if request.server_url is not None or request.api_key is not None:
+            raise ValueError("stdio MCP servers take credentials through env, not server_url or api_key headers")
+        stored = self.custom.stdio_config(connection)
+        target = request.stdio.keeping_values_from(stored.target) if request.stdio else stored.target
+        missing = target.missing_values()
+        if missing:
+            raise ValueError(f"Environment variables need values: {', '.join(missing)}")
+        auth_type = request.auth_type or connection.auth_type
+        provider = request.oauth or (stored.oauth.provider if stored.oauth else None)
+        delivery = request.oauth_delivery or stored.oauth_delivery
+        if auth_type != MCPAuthType.OAUTH:
+            provider, delivery = None, None
+        validate_stdio_auth(auth_type, target, provider, delivery)
+
+        credentials = stored.oauth.credentials if stored.oauth and request.oauth is None else None
+        if stored.oauth and request.oauth is not None and stored.oauth.provider.client_id == request.oauth.client_id:
+            # Same client: keep the user signed in while endpoints or scopes are corrected.
+            credentials = stored.oauth.credentials
+        oauth = MCPOAuthAuthConfig(provider=provider, credentials=credentials) if provider else None
+        connection.encrypted_auth_config = encrypt(
+            MCPStdioStoredConfig(target=target, oauth=oauth, oauth_delivery=delivery).model_dump_json()
+        )
+        connection.auth_type = auth_type
+        if request.name is not None:
+            connection.name = request.name.strip()
+        if request.enabled is not None:
+            connection.enabled = request.enabled
+        saved = self.repository.save_connection(connection)
+        log.info("Updated stdio MCP connection mcp_id=%s auth_type=%s", saved.mcp_id, saved.auth_type.value)
+        return self._connection_response(saved)
 
     async def _fresh_credentials(self, connection: MCPConnection, oauth: OAuthBinding) -> MCPOAuthCredentials:
         credentials = oauth.auth.credentials
@@ -668,3 +825,7 @@ class MCPConnectorService:
 
 def get_mcp_connector_service() -> MCPConnectorService:
     return MCPConnectorService()
+
+
+def _sanitize_response_text_keeping_lines(text: str) -> str:
+    return "\n".join(_sanitize_response_text(line) for line in text.splitlines())

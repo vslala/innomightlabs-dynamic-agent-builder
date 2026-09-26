@@ -276,7 +276,7 @@ async def test_settings_update_keeps_blank_secrets() -> None:
     )
     mcp_id = installed.connection.mcp_id
 
-    service.update_connection(
+    await service.update_connection(
         OWNER,
         mcp_id,
         MCPConnectionUpdateRequest(
@@ -301,21 +301,22 @@ async def test_catalog_installs_reject_connection_config_changes() -> None:
     )
 
     with pytest.raises(ValueError, match="configured by their provider"):
-        service.update_connection(
+        await service.update_connection(
             OWNER,
             installed.connection.mcp_id,
             MCPConnectionUpdateRequest.model_validate({"server_url": "https://evil.example/mcp"}),
         )
 
 
-def test_custom_connections_reject_inputs() -> None:
+@pytest.mark.asyncio
+async def test_custom_connections_reject_inputs() -> None:
     service, repository, _client = _service()
     connection = repository.save_connection(
         MCPConnection(owner_email=OWNER, name="Custom", server_url="https://mcp.example", encrypted_auth_config="x")
     )
 
     with pytest.raises(ValueError, match="catalog connectors"):
-        service.update_connection(OWNER, connection.mcp_id, MCPConnectionUpdateRequest(inputs={"a": "b"}))
+        await service.update_connection(OWNER, connection.mcp_id, MCPConnectionUpdateRequest(inputs={"a": "b"}))
 
 
 @pytest.mark.asyncio
