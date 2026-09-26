@@ -1,3 +1,23 @@
+# Hosted stdio MCP servers: one venv per mcp_packages/<key>, built here so git and network installs
+# never exist at runtime. Both stages share the base image, so each venv's interpreter path stays valid.
+FROM python:3.13-slim AS mcp-packages
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY mcp_packages /src/mcp_packages
+
+RUN set -eux; \
+  mkdir -p /opt/mcp; \
+  for dir in /src/mcp_packages/*/; do \
+    key="$(basename "$dir")"; \
+    uv venv "/opt/mcp/$key" --python /usr/local/bin/python3.13 --no-python-downloads --no-config --quiet; \
+    uv pip install --python "/opt/mcp/$key/bin/python" --requirements "$dir/requirements.txt" --no-config --quiet; \
+  done
+
 FROM python:3.13-slim
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -25,6 +45,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY main.py ./
 COPY src ./src
+COPY mcp_packages ./mcp_packages
+COPY --from=mcp-packages /opt/mcp /opt/mcp
 
 RUN useradd --system --home-dir /tmp/infra-cli-runner --shell /usr/sbin/nologin runner \
   && mkdir -p /tmp/infra-cli-runner \

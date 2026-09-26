@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import os
+import re
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from packaging.requirements import InvalidRequirement, Requirement
-from pydantic import BaseModel, Field, StringConstraints, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 
 DEFAULT_TIMEOUT_SECONDS = 30
@@ -30,6 +33,19 @@ FORBIDDEN_ARG_FRAGMENTS = ("$(", "`", "\x00")
 FORBIDDEN_ARG_VALUES = {"|", "||", "&", "&&", ";", ">", ">>", "<", "<<", "2>", "2>>"}
 
 
+def validate_argv_items(argv: list[str]) -> list[str]:
+    for arg in argv:
+        if not arg:
+            raise ValueError("argv entries must be non-empty strings")
+        if len(arg.encode("utf-8")) > MAX_ARG_BYTES:
+            raise ValueError("argv entry is too large")
+        if arg in FORBIDDEN_ARG_VALUES:
+            raise ValueError(f"shell control token is not allowed in argv: {arg}")
+        if any(fragment in arg for fragment in FORBIDDEN_ARG_FRAGMENTS):
+            raise ValueError("shell substitution syntax is not allowed in argv")
+    return argv
+
+
 class CommandRequest(BaseModel):
     request_id: str = Field(min_length=1, max_length=128)
     tool: Literal["aws"]
@@ -42,16 +58,7 @@ class CommandRequest(BaseModel):
     @field_validator("argv")
     @classmethod
     def validate_argv(cls, argv: list[str]) -> list[str]:
-        for arg in argv:
-            if not arg:
-                raise ValueError("argv entries must be non-empty strings")
-            if len(arg.encode("utf-8")) > MAX_ARG_BYTES:
-                raise ValueError("argv entry is too large")
-            if arg in FORBIDDEN_ARG_VALUES:
-                raise ValueError(f"shell control token is not allowed in argv: {arg}")
-            if any(fragment in arg for fragment in FORBIDDEN_ARG_FRAGMENTS):
-                raise ValueError("shell substitution syntax is not allowed in argv")
-        return argv
+        return validate_argv_items(argv)
 
     @field_validator("env")
     @classmethod
@@ -220,3 +227,92 @@ class FileSystemActionResponse(BaseModel):
     error_code: str | None = None
     message: str | None = None
     next_cursor: str | None = None
+
+
+MAX_HOSTED_MCP_FILE_BYTES = 64 * 1024
+MAX_HOSTED_MCP_ENV_ITEMS = 64
+MAX_HOSTED_MCP_WAIT_SECONDS = 60
+ENV_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Names that change how the process or its interpreter loads, or that belong to the runner itself.
+# The runner sets HOME, TMPDIR, PATH, and XDG_* per server.
+RESERVED_ENV_NAMES = {"PATH", "HOME", "TMPDIR", "SHELL", "USER", "PWD"}
+RESERVED_ENV_PREFIXES = ("LD_", "DYLD_", "PYTHON", "NODE_", "XDG_", "CLI_RUNNER_", "INFRA_CLI_RUNNER_")
+
+
+def _validate_env_name(name: str) -> str:
+    if not ENV_NAME_PATTERN.match(name):
+        raise ValueError(f"invalid environment variable name: {name}")
+    upper = name.upper()
+    if upper in RESERVED_ENV_NAMES or upper.startswith(RESERVED_ENV_PREFIXES):
+        raise ValueError(f"environment variable is reserved: {name}")
+    return name
+
+
+class HostedMCPServerSpec(BaseModel):
+    """What a hosted stdio MCP server runs: a baked package, its args, env, and credential files."""
+
+    package: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
+    args: list[str] = Field(default_factory=list, max_length=MAX_ARGV_ITEMS)
+    env: dict[str, str] = Field(default_factory=dict, max_length=MAX_HOSTED_MCP_ENV_ITEMS)
+    # env name -> file content. Each file is written 0600 and the env var is set to its path.
+    files: dict[str, str] = Field(default_factory=dict, max_length=MAX_HOSTED_MCP_ENV_ITEMS)
+
+    @field_validator("args")
+    @classmethod
+    def validate_args(cls, args: list[str]) -> list[str]:
+        return validate_argv_items(args)
+
+    @field_validator("env")
+    @classmethod
+    def validate_env(cls, env: dict[str, str]) -> dict[str, str]:
+        for name, value in env.items():
+            _validate_env_name(name)
+            if len(value.encode("utf-8")) > MAX_ENV_VALUE_BYTES or "\x00" in value:
+                raise ValueError(f"environment variable value is invalid: {name}")
+        return env
+
+    @field_validator("files")
+    @classmethod
+    def validate_files(cls, files: dict[str, str]) -> dict[str, str]:
+        for name, content in files.items():
+            _validate_env_name(name)
+            if len(content.encode("utf-8")) > MAX_HOSTED_MCP_FILE_BYTES:
+                raise ValueError(f"credential file is too large: {name}")
+        return files
+
+    @model_validator(mode="after")
+    def validate_no_overlap(self) -> "HostedMCPServerSpec":
+        overlap = set(self.env) & set(self.files)
+        if overlap:
+            raise ValueError(f"environment variables set twice: {', '.join(sorted(overlap))}")
+        return self
+
+    def fingerprint(self) -> str:
+        return hashlib.sha256(self.model_dump_json().encode("utf-8")).hexdigest()
+
+
+class EnsureHostedMCPServerRequest(BaseModel):
+    spec: HostedMCPServerSpec
+    # 0 returns at once (the Connectors page polls); otherwise wait until running or failed.
+    wait_seconds: int = Field(default=0, ge=0, le=MAX_HOSTED_MCP_WAIT_SECONDS)
+
+
+HostedMCPServerState = Literal["starting", "running", "failed", "stopped"]
+
+
+class HostedMCPServerStatus(BaseModel):
+    server_id: str
+    package: str
+    state: HostedMCPServerState
+    started_at: datetime | None = None
+    last_used_at: datetime | None = None
+    exit_code: int | None = None
+    error: str | None = None
+    stderr_tail: str = ""
+    server_info: dict[str, Any] | None = None
+
+
+class HostedMCPPackage(BaseModel):
+    key: str
+    entrypoint: str
+    installed: bool

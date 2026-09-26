@@ -1,0 +1,2 @@
+# v0.0.4, reviewed 2026-09-26. Bump the commit deliberately; never track a branch.
+google-ads-mcp @ git+https://github.com/googleads/google-ads-mcp.git@d7f5e8ff2aa726a6f32f626c985673d61b64fb9c
