@@ -15,7 +15,9 @@ OPTIONAL_ENV = {
 
 
 def _target(install: ProviderInstall) -> StdioTarget:
-    env = {"GOOGLE_ADS_DEVELOPER_TOKEN": install.inputs["developer_token"]}
+    # No developer token: Google sunset them on 2026-09-09. API access now follows the Google Cloud project that owns
+    # the OAuth client, and the server only sends a token when one is set.
+    env: dict[str, str] = {}
     for input_name, env_name in OPTIONAL_ENV.items():
         if install.inputs.get(input_name):
             env[env_name] = install.inputs[input_name]
@@ -45,7 +47,6 @@ PROVIDER = MCPProvider(
     transport=MCPTransport.STDIO,
     inputs=(
         *oauth_client_inputs("your Google Cloud project (Web application type, Google Ads API enabled)"),
-        FormInput(input_type=FormInputType.PASSWORD, name="developer_token", label="Developer token"),
         FormInput(
             input_type=FormInputType.TEXT,
             name="login_customer_id",

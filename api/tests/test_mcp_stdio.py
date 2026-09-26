@@ -427,7 +427,6 @@ async def test_google_ads_preset_hands_the_server_an_authorized_user_file(
             inputs={
                 "oauth_client_id": "gcp-client",
                 "oauth_client_secret": "gcp-secret",
-                "developer_token": "dev-token",
                 "login_customer_id": "999",
             },
             return_to=RETURN_TO,
@@ -449,7 +448,7 @@ async def test_google_ads_preset_hands_the_server_an_authorized_user_file(
 
     spec = sidecar.ensured[-1]["spec"]
     assert spec["package"] == "google_ads"
-    assert spec["env"] == {"GOOGLE_ADS_DEVELOPER_TOKEN": "dev-token", "GOOGLE_ADS_LOGIN_CUSTOMER_ID": "999"}
+    assert spec["env"] == {"GOOGLE_ADS_LOGIN_CUSTOMER_ID": "999"}
     assert json.loads(spec["files"]["GOOGLE_APPLICATION_CREDENTIALS"]) == {
         "type": "authorized_user",
         "client_id": "gcp-client",
