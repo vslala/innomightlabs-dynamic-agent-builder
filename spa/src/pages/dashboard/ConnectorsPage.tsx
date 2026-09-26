@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
   CheckCircle,
   Edit,
@@ -7,11 +7,11 @@ import {
   HardDrive,
   KeyRound,
   Mail,
-  Minus,
   Plug,
   Plus,
   RefreshCw,
   Server,
+  Settings2,
   Trash2,
 } from "lucide-react";
 
@@ -22,22 +22,18 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Checkbox,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   ErrorState,
-  Input,
-  Label,
   LoadingState,
   StatusBadge,
 } from "../../components/ui";
 import { connectorApiService } from "../../services/connectors";
-import type { ConnectorStatus, MCPConnection } from "../../types/connectors";
-import type { MCPAuthType } from "../../types/connectors";
+import type { ConnectorStatus, MCPConnection, MCPProvider, MCPSetupState } from "../../types/connectors";
+import { CustomMCPDialog } from "./connectors/CustomMCPDialog";
+import { IconBox, ProviderIcon } from "./connectors/connectorUi";
+import { returnToConnectors } from "./connectors/connectorUrls";
+import { MCPProviderCatalog } from "./connectors/MCPProviderCatalog";
+import { MCPRuntimeStatus } from "./connectors/MCPRuntimeStatus";
+import { SchemaFormDialog } from "./connectors/SchemaFormDialog";
 
 type ConnectorSection = "google" | "mcp";
 
@@ -52,38 +48,10 @@ const connectorNavItems: ConnectorNavItem[] = [
   { id: "mcp", label: "MCP", icon: Server },
 ];
 
-interface MCPFormState {
-  name: string;
-  serverUrl: string;
-  authType: MCPAuthType;
-  headers: MCPHeaderRow[];
-  authorizationUrl: string;
-  tokenUrl: string;
-  clientId: string;
-  clientSecret: string;
-  scope: string;
-  resourceUrl: string;
-  enabled: boolean;
-}
-
-interface MCPHeaderRow {
-  id: string;
-  name: string;
-  value: string;
-}
-
-const emptyMCPForm: MCPFormState = {
-  name: "",
-  serverUrl: "",
-  authType: "api_key",
-  headers: [{ id: "header-1", name: "Authorization", value: "" }],
-  authorizationUrl: "",
-  tokenUrl: "",
-  clientId: "",
-  clientSecret: "",
-  scope: "",
-  resourceUrl: "",
-  enabled: true,
+const SETUP_BADGES: Record<MCPSetupState, { status: "active" | "warning" | "info"; label: string }> = {
+  ready: { status: "active", label: "Ready" },
+  needs_sign_in: { status: "info", label: "Sign in" },
+  needs_input: { status: "warning", label: "Needs setup" },
 };
 
 function connectorIcon(icon: string) {
@@ -101,42 +69,72 @@ function formatDate(value: string): string {
 }
 
 export function ConnectorsPage() {
-  const [activeSection, setActiveSection] = useState<ConnectorSection>("google");
+  const [activeSection, setActiveSection] = useState<ConnectorSection>(() =>
+    new URLSearchParams(window.location.search).has("mcp_oauth") ? "mcp" : "google"
+  );
   const [connectors, setConnectors] = useState<ConnectorStatus[]>([]);
   const [mcpConnections, setMCPConnections] = useState<MCPConnection[]>([]);
+  const [providers, setProviders] = useState<MCPProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectingId, setConnectingId] = useState<string | null>(null);
-  const [savingMCP, setSavingMCP] = useState(false);
-  const [fetchingMCPOAuthDetails, setFetchingMCPOAuthDetails] = useState(false);
   const [startingMCPOAuthId, setStartingMCPOAuthId] = useState<string | null>(null);
   const [deletingMCPId, setDeletingMCPId] = useState<string | null>(null);
-  const [editingMCP, setEditingMCP] = useState<MCPConnection | null>(null);
-  const [mcpDialogOpen, setMCPDialogOpen] = useState(false);
-  const [mcpForm, setMCPForm] = useState<MCPFormState>(emptyMCPForm);
+  // null: closed; { editing: null }: creating; { editing }: editing that connection.
+  const [customDialog, setCustomDialog] = useState<{ editing: MCPConnection | null } | null>(null);
+  const [settingsFor, setSettingsFor] = useState<MCPConnection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mcpError, setMCPError] = useState<string | null>(null);
+  const [mcpNotice, setMCPNotice] = useState<string | null>(null);
+  // Bumped after a runtime (re)start elsewhere on the page so runtime badges refetch their status.
+  const [runtimeVersion, setRuntimeVersion] = useState(0);
 
   const loadConnectors = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [googleData, mcpData] = await Promise.all([
+      const [googleData, mcpData, providerData] = await Promise.all([
         connectorApiService.listConnectors(),
         connectorApiService.listMCPConnections(),
+        connectorApiService.listMCPProviders(),
       ]);
       setConnectors(googleData);
       setMCPConnections(mcpData);
+      setProviders(providerData);
+      return mcpData;
     } catch (err) {
       console.error("Error loading connectors:", err);
       setError("Failed to load connectors. Please try again.");
+      return [];
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadConnectors();
+    void (async () => {
+      const loaded = await loadConnectors();
+      await handleOAuthReturn(loaded);
+    })();
+    // Runs once on mount; the OAuth return parameters are read from the URL a single time.
   }, []);
+
+  const handleOAuthReturn = async (loaded: MCPConnection[]) => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get("mcp_oauth");
+    if (!outcome) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    if (outcome !== "success") {
+      setMCPError(`Sign-in did not complete: ${params.get("reason") ?? "unknown error"}`);
+      return;
+    }
+    const connection = loaded.find((item) => item.mcp_id === params.get("mcp_id"));
+    setMCPNotice(connection ? `${connection.name} is connected.` : "Sign-in complete.");
+    // Hosted servers read credentials at start, so start one now with the new sign-in.
+    if (connection?.transport === "stdio") {
+      await connectorApiService.restartMCPRuntime(connection.mcp_id).catch(() => undefined);
+      setRuntimeVersion((version) => version + 1);
+    }
+  };
 
   const connectedGoogleCount = useMemo(
     () => connectors.filter((connector) => connector.connected).length,
@@ -147,8 +145,7 @@ export function ConnectorsPage() {
     setConnectingId(connector.connector_id);
     setError(null);
     try {
-      const returnTo = `${window.location.origin}/dashboard/connectors`;
-      const response = await connectorApiService.startConnector(connector.connect_path, { return_to: returnTo });
+      const response = await connectorApiService.startConnector(connector.connect_path, { return_to: returnToConnectors() });
       window.location.href = response.authorize_url;
     } catch (err) {
       console.error("Error starting connector OAuth:", err);
@@ -157,171 +154,16 @@ export function ConnectorsPage() {
     }
   };
 
-  const openCreateMCPDialog = () => {
-    setEditingMCP(null);
-    setMCPForm(emptyMCPForm);
-    setMCPError(null);
-    setMCPDialogOpen(true);
-  };
-
-  const openEditMCPDialog = (connection: MCPConnection) => {
-    setEditingMCP(connection);
-    setMCPForm({
-      name: connection.name,
-      serverUrl: connection.server_url,
-      authType: connection.auth_type,
-      headers: [{ id: "header-1", name: "Authorization", value: "" }],
-      authorizationUrl: "",
-      tokenUrl: "",
-      clientId: "",
-      clientSecret: "",
-      scope: "",
-      resourceUrl: "",
-      enabled: connection.enabled,
-    });
-    setMCPError(null);
-    setMCPDialogOpen(true);
-  };
-
-  const closeMCPDialog = () => {
-    if (savingMCP) return;
-    setMCPDialogOpen(false);
-    setEditingMCP(null);
-    setMCPForm(emptyMCPForm);
-    setMCPError(null);
-  };
-
-  const handleMCPSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSavingMCP(true);
-    setMCPError(null);
-    try {
-      const name = mcpForm.name.trim();
-      const serverUrl = mcpForm.serverUrl.trim();
-      const authHeaderRows = mcpForm.headers
-        .map((header) => ({ name: header.name.trim(), value: header.value.trim() }))
-        .filter((header) => header.name || header.value);
-      const shouldUpdateHeaders = !editingMCP || authHeaderRows.some((header) => header.value);
-      const oauthConfig = {
-        authorization_url: mcpForm.authorizationUrl.trim(),
-        token_url: mcpForm.tokenUrl.trim(),
-        client_id: mcpForm.clientId.trim(),
-        client_secret: mcpForm.clientSecret.trim(),
-        scope: mcpForm.scope.trim(),
-        resource_url: mcpForm.resourceUrl.trim(),
-      };
-      const shouldUpdateOAuth =
-        !editingMCP ||
-        editingMCP.auth_type !== "oauth" ||
-        Boolean(
-          oauthConfig.authorization_url ||
-            oauthConfig.token_url ||
-            oauthConfig.client_id ||
-            oauthConfig.client_secret ||
-            oauthConfig.scope ||
-            oauthConfig.resource_url
-        );
-
-      if (!name || !serverUrl) {
-        setMCPError("Name and server URL are required.");
-        return;
-      }
-      if (mcpForm.authType === "api_key") {
-        if (shouldUpdateHeaders && authHeaderRows.some((header) => !header.name || !header.value)) {
-          setMCPError("Each auth header must include both key and value.");
-          return;
-        }
-        if (shouldUpdateHeaders && authHeaderRows.length === 0) {
-          setMCPError("At least one auth header is required for a new MCP connector.");
-          return;
-        }
-      }
-      if (mcpForm.authType === "oauth" && shouldUpdateOAuth) {
-        if (!oauthConfig.authorization_url || !oauthConfig.token_url || !oauthConfig.client_id) {
-          setMCPError("Authorization URL, token URL, and client ID are required for OAuth MCP connectors.");
-          return;
-        }
-      }
-
-      if (editingMCP) {
-        await connectorApiService.updateMCPConnection(editingMCP.mcp_id, {
-          name,
-          server_url: serverUrl,
-          enabled: mcpForm.enabled,
-          ...(mcpForm.authType === "api_key" && shouldUpdateHeaders
-            ? {
-                auth_type: "api_key",
-                api_key: { headers: authHeaderRows },
-              }
-            : {}),
-          ...(mcpForm.authType === "oauth" && shouldUpdateOAuth
-            ? {
-                auth_type: "oauth",
-                oauth: oauthConfig,
-              }
-            : {}),
-        });
-      } else {
-        await connectorApiService.createMCPConnection({
-          name,
-          server_url: serverUrl,
-          auth_type: mcpForm.authType,
-          enabled: mcpForm.enabled,
-          ...(mcpForm.authType === "api_key"
-            ? { api_key: { headers: authHeaderRows } }
-            : { oauth: oauthConfig }),
-        });
-      }
-
-      closeMCPDialog();
-      await loadConnectors();
-      setActiveSection("mcp");
-    } catch (err) {
-      console.error("Error saving MCP connector:", err);
-      setMCPError(err instanceof Error ? err.message : "Failed to save MCP connector.");
-    } finally {
-      setSavingMCP(false);
-    }
-  };
-
-  const fetchMCPOAuthDetails = async () => {
-    const serverUrl = mcpForm.serverUrl.trim();
-    if (!serverUrl) {
-      setMCPError("Enter the MCP server URL before fetching OAuth details.");
-      return;
-    }
-
-    setFetchingMCPOAuthDetails(true);
-    setMCPError(null);
-    try {
-      const details = await connectorApiService.discoverMCPOAuth({ server_url: serverUrl });
-      setMCPForm((current) => ({
-        ...current,
-        authType: "oauth",
-        authorizationUrl: details.authorization_url,
-        tokenUrl: details.token_url,
-        clientId: details.client_id,
-        clientSecret: details.client_secret,
-        scope: details.scope,
-        resourceUrl: details.resource_url,
-      }));
-      if (!details.client_id) {
-        setMCPError("OAuth endpoints were found. This server did not auto-register a client, so enter the client ID manually.");
-      }
-    } catch (err) {
-      console.error("Error fetching MCP OAuth details:", err);
-      setMCPError(err instanceof Error ? err.message : "Failed to fetch MCP OAuth details.");
-    } finally {
-      setFetchingMCPOAuthDetails(false);
-    }
+  const reloadMCP = async () => {
+    await loadConnectors();
+    setActiveSection("mcp");
   };
 
   const startMCPOAuth = async (connection: MCPConnection) => {
     setStartingMCPOAuthId(connection.mcp_id);
     setMCPError(null);
     try {
-      const returnTo = `${window.location.origin}/dashboard/connectors`;
-      const response = await connectorApiService.startMCPOAuth(connection.mcp_id, { return_to: returnTo });
+      const response = await connectorApiService.startMCPOAuth(connection.mcp_id, { return_to: returnToConnectors() });
       window.location.href = response.authorize_url;
     } catch (err) {
       console.error("Error starting MCP OAuth:", err);
@@ -339,6 +181,7 @@ export function ConnectorsPage() {
     try {
       await connectorApiService.deleteMCPConnection(connection.mcp_id);
       setMCPConnections((current) => current.filter((item) => item.mcp_id !== connection.mcp_id));
+      setProviders(await connectorApiService.listMCPProviders());
     } catch (err) {
       console.error("Error deleting MCP connector:", err);
       setMCPError(err instanceof Error ? err.message : "Failed to delete MCP connector.");
@@ -346,6 +189,9 @@ export function ConnectorsPage() {
       setDeletingMCPId(null);
     }
   };
+
+  const providerFor = (connection: MCPConnection) =>
+    providers.find((provider) => provider.key === connection.provider_key) ?? null;
 
   if (loading) return <LoadingState />;
   if (error && connectors.length === 0 && mcpConnections.length === 0) {
@@ -366,15 +212,16 @@ export function ConnectorsPage() {
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
-          <Button onClick={openCreateMCPDialog}>
+          <Button onClick={() => setCustomDialog({ editing: null })}>
             <Plus className="h-4 w-4" />
-            Add MCP
+            Custom MCP
           </Button>
         </div>
       </div>
 
       {error && <div style={{ color: "var(--error)", fontSize: "0.875rem" }}>{error}</div>}
       {mcpError && <div style={{ color: "var(--error)", fontSize: "0.875rem" }}>{mcpError}</div>}
+      {mcpNotice && <div style={{ color: "var(--success, var(--text-primary))", fontSize: "0.875rem" }}>{mcpNotice}</div>}
 
       <div
         style={{
@@ -438,343 +285,179 @@ export function ConnectorsPage() {
               </div>
             </>
           ) : (
-            <>
-              <SectionHeader
-                icon={<Server className="h-5 w-5" />}
-                title="MCP connectors"
-                description="Configure Streamable HTTP MCP servers here, then enable them per agent from the agent settings."
-              />
-              {mcpConnections.length === 0 ? (
-                <Card>
-                  <CardContent style={{ padding: "3rem", textAlign: "center" }}>
-                    <div style={{ display: "grid", placeItems: "center", gap: "1rem" }}>
-                      <IconBox size="3rem">
-                        <Server className="h-6 w-6" />
-                      </IconBox>
-                      <div>
-                        <h2 style={{ color: "var(--text-primary)", fontSize: "1.125rem", fontWeight: 600 }}>
-                          No MCP connectors yet
-                        </h2>
-                        <p style={{ color: "var(--text-muted)", marginTop: "0.375rem" }}>
-                          Add a Streamable HTTP MCP endpoint to make its tools available to your agents.
-                        </p>
+            <div style={{ display: "grid", gap: "2rem" }}>
+              <section>
+                <SectionHeader
+                  icon={<Plug className="h-5 w-5" />}
+                  title="MCP providers"
+                  description="Ready-made connectors configured by InnoMight Labs. Install one and supply only your own credentials."
+                />
+                <MCPProviderCatalog providers={providers} onInstalled={reloadMCP} onError={setMCPError} />
+              </section>
+
+              <section>
+                <SectionHeader
+                  icon={<Server className="h-5 w-5" />}
+                  title="Your MCP connectors"
+                  description="Installed providers and custom servers. Enable them per agent from the agent settings."
+                />
+                {mcpConnections.length === 0 ? (
+                  <Card>
+                    <CardContent style={{ padding: "3rem", textAlign: "center" }}>
+                      <div style={{ display: "grid", placeItems: "center", gap: "1rem" }}>
+                        <IconBox size="3rem">
+                          <Server className="h-6 w-6" />
+                        </IconBox>
+                        <div>
+                          <h2 style={{ color: "var(--text-primary)", fontSize: "1.125rem", fontWeight: 600 }}>
+                            No MCP connectors yet
+                          </h2>
+                          <p style={{ color: "var(--text-muted)", marginTop: "0.375rem" }}>
+                            Install a provider above, or add a custom remote or hosted MCP server.
+                          </p>
+                        </div>
+                        <Button onClick={() => setCustomDialog({ editing: null })}>
+                          <Plus className="h-4 w-4" />
+                          Add custom MCP server
+                        </Button>
                       </div>
-                      <Button onClick={openCreateMCPDialog}>
-                        <Plus className="h-4 w-4" />
-                        Add MCP connector
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))", gap: "1rem" }}>
-                  {mcpConnections.map((connection) => (
-                    <Card key={connection.mcp_id}>
-                      <CardHeader>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0 }}>
-                            <IconBox>
-                              <Server className="h-5 w-5" />
-                            </IconBox>
-                            <div style={{ minWidth: 0 }}>
-                              <CardTitle>{connection.name}</CardTitle>
-                              <CardDescription style={{ overflowWrap: "anywhere" }}>{connection.server_url}</CardDescription>
-                            </div>
-                          </div>
-                          <StatusBadge
-                            status={connection.enabled ? "active" : "inactive"}
-                            label={connection.enabled ? "Enabled" : "Disabled"}
-                          />
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                          <div style={{ display: "grid", gap: "0.5rem", color: "var(--text-muted)", fontSize: "0.875rem" }}>
-                            <span>ID: {connection.mcp_id}</span>
-                            <span>Transport: Streamable HTTP</span>
-                            <span>
-                              Auth: {connection.auth_type === "oauth" ? "OAuth" : "API key"}
-                              {connection.auth_type === "oauth"
-                                ? connection.oauth_connected
-                                  ? " connected"
-                                  : " not connected"
-                                : ""}
-                            </span>
-                            <span>Created: {formatDate(connection.created_at)}</span>
-                          </div>
-                          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                            {connection.auth_type === "oauth" && (
-                              <Button
-                                variant={connection.oauth_connected ? "outline" : "default"}
-                                onClick={() => void startMCPOAuth(connection)}
-                                disabled={startingMCPOAuthId === connection.mcp_id}
-                              >
-                                <KeyRound className="h-4 w-4" />
-                                {startingMCPOAuthId === connection.mcp_id
-                                  ? "Opening..."
-                                  : connection.oauth_connected
-                                    ? "Reconnect OAuth"
-                                    : "Connect OAuth"}
-                              </Button>
-                            )}
-                            <Button variant="outline" onClick={() => openEditMCPDialog(connection)}>
-                              <Edit className="h-4 w-4" />
-                              Edit
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => void deleteMCPConnection(connection)}
-                              disabled={deletingMCPId === connection.mcp_id}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              {deletingMCPId === connection.mcp_id ? "Deleting..." : "Delete"}
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))", gap: "1rem" }}>
+                    {mcpConnections.map((connection) => (
+                      <MCPConnectionCard
+                        key={`${connection.mcp_id}-${runtimeVersion}`}
+                        connection={connection}
+                        provider={providerFor(connection)}
+                        signingIn={startingMCPOAuthId === connection.mcp_id}
+                        deleting={deletingMCPId === connection.mcp_id}
+                        onSignIn={() => void startMCPOAuth(connection)}
+                        onEdit={() =>
+                          connection.provider_key ? setSettingsFor(connection) : setCustomDialog({ editing: connection })
+                        }
+                        onDelete={() => void deleteMCPConnection(connection)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
           )}
         </main>
       </div>
 
-      <Dialog open={mcpDialogOpen} onOpenChange={(open) => (open ? setMCPDialogOpen(true) : closeMCPDialog())}>
-        <DialogContent style={{ maxWidth: "36rem" }}>
-          <DialogHeader>
-            <DialogTitle>{editingMCP ? "Edit MCP connector" : "Add MCP connector"}</DialogTitle>
-            <DialogDescription>
-              Configure a Streamable HTTP MCP server with API-key or OAuth authentication.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={(event) => void handleMCPSubmit(event)} style={{ display: "grid", gap: "1rem" }}>
-            <Field label="Name" htmlFor="mcp-name">
-              <Input
-                id="mcp-name"
-                value={mcpForm.name}
-                placeholder="Ahrefs SEO"
-                onChange={(event) => setMCPForm((current) => ({ ...current, name: event.target.value }))}
-                required
-              />
-            </Field>
-            <Field label="Server URL" htmlFor="mcp-server-url">
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "0.75rem" }}>
-                <Input
-                  id="mcp-server-url"
-                  value={mcpForm.serverUrl}
-                  placeholder="https://example.com/mcp"
-                  onChange={(event) => setMCPForm((current) => ({ ...current, serverUrl: event.target.value }))}
-                  required
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void fetchMCPOAuthDetails()}
-                  disabled={fetchingMCPOAuthDetails || !mcpForm.serverUrl.trim()}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  {fetchingMCPOAuthDetails ? "Fetching..." : "Fetch auth"}
-                </Button>
-              </div>
-            </Field>
-            <div style={{ display: "grid", gap: "0.75rem" }}>
-              <Label>Authentication</Label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                <Button
-                  type="button"
-                  variant={mcpForm.authType === "api_key" ? "default" : "outline"}
-                  onClick={() => setMCPForm((current) => ({ ...current, authType: "api_key" }))}
-                >
-                  <KeyRound className="h-4 w-4" />
-                  API key
-                </Button>
-                <Button
-                  type="button"
-                  variant={mcpForm.authType === "oauth" ? "default" : "outline"}
-                  onClick={() => setMCPForm((current) => ({ ...current, authType: "oauth" }))}
-                >
-                  <Globe className="h-4 w-4" />
-                  OAuth
-                </Button>
-              </div>
-            </div>
-            {mcpForm.authType === "api_key" ? (
-              <div style={{ display: "grid", gap: "0.75rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
-                <Label>Auth headers</Label>
-                <Button type="button" variant="outline" size="sm" onClick={() => setMCPForm(addHeaderRow)}>
-                  <Plus className="h-4 w-4" />
-                  Add header
-                </Button>
-              </div>
-              {mcpForm.headers.map((header, index) => (
-                <div
-                  key={header.id}
-                  style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.4fr) auto", gap: "0.75rem" }}
-                >
-                  <Input
-                    value={header.name}
-                    placeholder="Authorization"
-                    aria-label={`Header ${index + 1} key`}
-                    onChange={(event) => setMCPForm((current) => updateHeaderRow(current, header.id, "name", event.target.value))}
-                  />
-                  <Input
-                    type="password"
-                    value={header.value}
-                    placeholder={editingMCP ? "Leave blank to keep existing headers" : "Bearer ..."}
-                    aria-label={`Header ${index + 1} value`}
-                    onChange={(event) => setMCPForm((current) => updateHeaderRow(current, header.id, "value", event.target.value))}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setMCPForm((current) => removeHeaderRow(current, header.id))}
-                    disabled={mcpForm.headers.length === 1}
-                    aria-label={`Remove header ${index + 1}`}
-                  >
-                    <Minus className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-              {editingMCP && (
-                <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem" }}>
-                  Leave all header values blank to keep the current stored headers.
-                </p>
-              )}
-            </div>
-            ) : (
-              <div style={{ display: "grid", gap: "0.875rem" }}>
-                <Field label="Authorization URL" htmlFor="mcp-oauth-authorization-url">
-                  <Input
-                    id="mcp-oauth-authorization-url"
-                    value={mcpForm.authorizationUrl}
-                    placeholder={editingMCP ? "Leave blank to keep existing URL" : "https://provider.example/oauth/authorize"}
-                    onChange={(event) => setMCPForm((current) => ({ ...current, authorizationUrl: event.target.value }))}
-                    required={!editingMCP || editingMCP.auth_type !== "oauth"}
-                  />
-                </Field>
-                <Field label="Token URL" htmlFor="mcp-oauth-token-url">
-                  <Input
-                    id="mcp-oauth-token-url"
-                    value={mcpForm.tokenUrl}
-                    placeholder={editingMCP ? "Leave blank to keep existing URL" : "https://provider.example/oauth/token"}
-                    onChange={(event) => setMCPForm((current) => ({ ...current, tokenUrl: event.target.value }))}
-                    required={!editingMCP || editingMCP.auth_type !== "oauth"}
-                  />
-                </Field>
-                <Field label="Client ID" htmlFor="mcp-oauth-client-id">
-                  <Input
-                    id="mcp-oauth-client-id"
-                    value={mcpForm.clientId}
-                    placeholder={editingMCP ? "Leave blank to keep existing client ID" : "OAuth client ID"}
-                    onChange={(event) => setMCPForm((current) => ({ ...current, clientId: event.target.value }))}
-                    required={!editingMCP || editingMCP.auth_type !== "oauth"}
-                  />
-                </Field>
-                <Field label="Client secret" htmlFor="mcp-oauth-client-secret">
-                  <Input
-                    id="mcp-oauth-client-secret"
-                    type="password"
-                    value={mcpForm.clientSecret}
-                    placeholder={editingMCP ? "Leave blank to keep existing client secret" : "Optional OAuth client secret"}
-                    onChange={(event) => setMCPForm((current) => ({ ...current, clientSecret: event.target.value }))}
-                  />
-                </Field>
-                <Field label="Scopes" htmlFor="mcp-oauth-scope">
-                  <Input
-                    id="mcp-oauth-scope"
-                    value={mcpForm.scope}
-                    placeholder="read write"
-                    onChange={(event) => setMCPForm((current) => ({ ...current, scope: event.target.value }))}
-                  />
-                </Field>
-                <Field label="Resource URL" htmlFor="mcp-oauth-resource-url">
-                  <Input
-                    id="mcp-oauth-resource-url"
-                    value={mcpForm.resourceUrl}
-                    placeholder="Defaults to the canonical MCP server URL"
-                    onChange={(event) => setMCPForm((current) => ({ ...current, resourceUrl: event.target.value }))}
-                  />
-                </Field>
-                {editingMCP && editingMCP.auth_type === "oauth" && (
-                  <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem" }}>
-                    Leave OAuth fields blank to keep the current stored provider config.
-                  </p>
-                )}
-              </div>
-            )}
-            <label
-              style={{
-                display: "flex",
-                gap: "0.75rem",
-                alignItems: "center",
-                padding: "0.875rem",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: "0.5rem",
-                background: "rgba(255,255,255,0.03)",
-              }}
-            >
-              <Checkbox
-                checked={mcpForm.enabled}
-                onChange={(event) => setMCPForm((current) => ({ ...current, enabled: event.target.checked }))}
-              />
-              <span style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>Enabled</span>
-                <span style={{ color: "var(--text-muted)", fontSize: "0.8125rem" }}>
-                  Disabled MCPs stay configured but cannot be enabled by agents.
-                </span>
-              </span>
-            </label>
-            {mcpError && <div style={{ color: "var(--error)", fontSize: "0.875rem" }}>{mcpError}</div>}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={closeMCPDialog} disabled={savingMCP}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={savingMCP}>
-                <KeyRound className="h-4 w-4" />
-                {savingMCP ? "Saving..." : editingMCP ? "Save connector" : "Create connector"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {customDialog && (
+        <CustomMCPDialog
+          key={customDialog.editing?.mcp_id ?? "new"}
+          editing={customDialog.editing}
+          onClose={() => setCustomDialog(null)}
+          onSaved={async () => {
+            setCustomDialog(null);
+            await reloadMCP();
+          }}
+        />
+      )}
+
+      {settingsFor && (
+        <SchemaFormDialog
+          key={settingsFor.mcp_id}
+          title={`${settingsFor.name} settings`}
+          description="Secret fields are blank; leave them blank to keep the stored values."
+          submitLabel="Save settings"
+          loadSchema={() => connectorApiService.getMCPConnectionSettingsForm(settingsFor.mcp_id)}
+          onSubmit={async (inputs) => {
+            await connectorApiService.updateMCPConnection(settingsFor.mcp_id, { inputs });
+            setSettingsFor(null);
+            await reloadMCP();
+          }}
+          onClose={() => setSettingsFor(null)}
+        />
+      )}
     </div>
   );
 }
 
-function addHeaderRow(current: MCPFormState): MCPFormState {
-  return {
-    ...current,
-    headers: [
-      ...current.headers,
-      { id: `header-${Date.now()}-${current.headers.length}`, name: "", value: "" },
-    ],
-  };
-}
+function MCPConnectionCard({
+  connection,
+  provider,
+  signingIn,
+  deleting,
+  onSignIn,
+  onEdit,
+  onDelete,
+}: {
+  connection: MCPConnection;
+  provider: MCPProvider | null;
+  signingIn: boolean;
+  deleting: boolean;
+  onSignIn: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const isStdio = connection.transport === "stdio";
+  const setup = connection.provider_key ? SETUP_BADGES[connection.setup_state] : null;
+  const description = provider
+    ? provider.display_name
+    : isStdio && connection.stdio
+      ? [connection.stdio.package, ...connection.stdio.args].join(" ")
+      : connection.server_url;
+  const authLabel = { none: "None", api_key: isStdio ? "Environment" : "API key", oauth: "OAuth" }[connection.auth_type];
 
-function updateHeaderRow(
-  current: MCPFormState,
-  id: string,
-  field: "name" | "value",
-  value: string
-): MCPFormState {
-  return {
-    ...current,
-    headers: current.headers.map((header) =>
-      header.id === id ? { ...header, [field]: value } : header
-    ),
-  };
-}
-
-function removeHeaderRow(current: MCPFormState, id: string): MCPFormState {
-  if (current.headers.length <= 1) return current;
-  return {
-    ...current,
-    headers: current.headers.filter((header) => header.id !== id),
-  };
+  return (
+    <Card>
+      <CardHeader>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0 }}>
+            <IconBox>{provider ? <ProviderIcon icon={provider.icon} /> : <Server className="h-5 w-5" />}</IconBox>
+            <div style={{ minWidth: 0 }}>
+              <CardTitle>{connection.name}</CardTitle>
+              <CardDescription style={{ overflowWrap: "anywhere" }}>{description}</CardDescription>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {setup && <StatusBadge status={setup.status} label={setup.label} />}
+            <StatusBadge status={connection.enabled ? "active" : "inactive"} label={connection.enabled ? "Enabled" : "Disabled"} />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={{ display: "grid", gap: "0.5rem", color: "var(--text-muted)", fontSize: "0.875rem" }}>
+            <span>ID: {connection.mcp_id}</span>
+            <span>Transport: {isStdio ? "Hosted (stdio)" : "Streamable HTTP"}</span>
+            <span>
+              Auth: {authLabel}
+              {connection.auth_type === "oauth" ? (connection.oauth_connected ? " connected" : " not connected") : ""}
+            </span>
+            <span>Created: {formatDate(connection.created_at)}</span>
+          </div>
+          {isStdio && (
+            <MCPRuntimeStatus
+              mcpId={connection.mcp_id}
+              canStart={connection.enabled && connection.setup_state === "ready" && (connection.auth_type !== "oauth" || connection.oauth_connected)}
+            />
+          )}
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            {connection.auth_type === "oauth" && (
+              <Button variant={connection.oauth_connected ? "outline" : "default"} onClick={onSignIn} disabled={signingIn}>
+                <KeyRound className="h-4 w-4" />
+                {signingIn ? "Opening..." : connection.oauth_connected ? "Sign in again" : "Sign in"}
+              </Button>
+            )}
+            <Button variant="outline" onClick={onEdit}>
+              {connection.provider_key ? <Settings2 className="h-4 w-4" /> : <Edit className="h-4 w-4" />}
+              {connection.provider_key ? "Settings" : "Edit"}
+            </Button>
+            <Button variant="outline" onClick={onDelete} disabled={deleting}>
+              <Trash2 className="h-4 w-4" />
+              {deleting ? "Deleting..." : connection.provider_key ? "Uninstall" : "Delete"}
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function ConnectorSideNav({
@@ -835,25 +518,6 @@ function ConnectorSideNav({
   );
 }
 
-function IconBox({ children, size = "2.5rem" }: { children: ReactNode; size?: string }) {
-  return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: "0.5rem",
-        display: "grid",
-        placeItems: "center",
-        background: "rgba(255,255,255,0.06)",
-        color: "var(--text-primary)",
-        flexShrink: 0,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
 function SectionHeader({
   icon,
   title,
@@ -870,15 +534,6 @@ function SectionHeader({
         <h2 style={{ color: "var(--text-primary)", fontSize: "1.125rem", fontWeight: 700 }}>{title}</h2>
         <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginTop: "0.25rem" }}>{description}</p>
       </div>
-    </div>
-  );
-}
-
-function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
-  return (
-    <div style={{ display: "grid", gap: "0.5rem" }}>
-      <Label htmlFor={htmlFor}>{label}</Label>
-      {children}
     </div>
   );
 }

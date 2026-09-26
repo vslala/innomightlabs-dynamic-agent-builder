@@ -8,9 +8,15 @@ import type {
   MCPConnection,
   MCPOAuthDiscoveryRequest,
   MCPOAuthDiscoveryResponse,
+  MCPProvider,
+  MCPProviderInstallRequest,
+  MCPProviderInstallResponse,
+  MCPRuntimeStatus,
+  MCPStdioPackage,
   UpdateAgentMCPConnectionRequest,
   UpdateMCPConnectionRequest,
 } from "../../types/connectors";
+import type { FormSchema } from "../../types/form";
 
 class ConnectorApiService {
   async listConnectors(): Promise<ConnectorStatus[]> {
@@ -43,6 +49,34 @@ class ConnectorApiService {
 
   async discoverMCPOAuth(payload: MCPOAuthDiscoveryRequest): Promise<MCPOAuthDiscoveryResponse> {
     return httpClient.post<MCPOAuthDiscoveryResponse>("/connectors/mcp/oauth/discover", payload);
+  }
+
+  async listMCPProviders(): Promise<MCPProvider[]> {
+    return httpClient.get<MCPProvider[]>("/connectors/mcp/providers");
+  }
+
+  async getMCPProviderInstallForm(key: string): Promise<FormSchema> {
+    return httpClient.get<FormSchema>(`/connectors/mcp/providers/${key}/forms/install`);
+  }
+
+  async installMCPProvider(key: string, payload: MCPProviderInstallRequest): Promise<MCPProviderInstallResponse> {
+    return httpClient.post<MCPProviderInstallResponse>(`/connectors/mcp/providers/${key}/install`, payload);
+  }
+
+  async getMCPConnectionSettingsForm(mcpId: string): Promise<FormSchema> {
+    return httpClient.get<FormSchema>(`/connectors/mcp/${mcpId}/forms/settings`);
+  }
+
+  async listMCPStdioPackages(): Promise<MCPStdioPackage[]> {
+    return httpClient.get<MCPStdioPackage[]>("/connectors/mcp/stdio/packages");
+  }
+
+  async getMCPRuntime(mcpId: string): Promise<MCPRuntimeStatus> {
+    return httpClient.get<MCPRuntimeStatus>(`/connectors/mcp/${mcpId}/runtime`);
+  }
+
+  async restartMCPRuntime(mcpId: string): Promise<MCPRuntimeStatus> {
+    return httpClient.post<MCPRuntimeStatus>(`/connectors/mcp/${mcpId}/runtime/restart`, {});
   }
 
   async listAgentMCPConnections(agentId: string): Promise<AgentMCPConnection[]> {
