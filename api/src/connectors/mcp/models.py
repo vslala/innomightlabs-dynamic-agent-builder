@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 
 class MCPAuthType(str, Enum):
+    NONE = "none"
     API_KEY = "api_key"
     OAUTH = "oauth"
 
@@ -79,6 +80,10 @@ class MCPOAuthProviderConfig(BaseModel):
     client_secret: str = ""
     scope: str = ""
     resource_url: str = ""
+    # Where the stored client came from: typed in by the user, or issued by dynamic client registration.
+    client_registration: Literal["manual", "dynamic"] = "manual"
+    # Extra authorize-URL parameters some providers need, e.g. Google's access_type=offline.
+    authorization_params: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("client_id", "client_secret", "scope", "resource_url")
     @classmethod
@@ -89,11 +94,17 @@ class MCPOAuthProviderConfig(BaseModel):
 class MCPOAuthCredentials(BaseModel):
     access_token: str
     refresh_token: Optional[str] = None
-    expires_at: datetime
+    # None when the provider issued a token without an expiry (e.g. GitHub OAuth App tokens).
+    expires_at: Optional[datetime] = None
     token_type: str = "Bearer"
     scope: str = ""
 
+    def is_expired(self) -> bool:
+        return self.expires_at is not None and self.expires_at <= datetime.now(timezone.utc)
+
     def is_expiring_soon(self, refresh_buffer_seconds: int = 60) -> bool:
+        if self.expires_at is None:
+            return False
         now = datetime.now(timezone.utc)
         return (self.expires_at - now).total_seconds() <= refresh_buffer_seconds
 
@@ -163,7 +174,16 @@ class MCPOAuthStartResponse(BaseModel):
 
 
 class MCPOAuthDiscoveryRequest(BaseModel):
-    server_url: HttpUrl
+    """Remote MCP servers are discovered from their URL; stdio servers from their provider's issuer URL."""
+
+    server_url: Optional[HttpUrl] = None
+    issuer_url: Optional[HttpUrl] = None
+
+    @model_validator(mode="after")
+    def validate_one_source(self) -> "MCPOAuthDiscoveryRequest":
+        if (self.server_url is None) == (self.issuer_url is None):
+            raise ValueError("Provide exactly one of server_url or issuer_url")
+        return self
 
 
 class MCPOAuthDiscoveryResponse(BaseModel):
@@ -176,6 +196,7 @@ class MCPOAuthDiscoveryResponse(BaseModel):
     authorization_server: str
     registration_endpoint: Optional[str] = None
     registered_client: bool = False
+    client_registration: Literal["manual", "dynamic"] = "manual"
 
 
 class AgentMCPConnectionResponse(BaseModel):

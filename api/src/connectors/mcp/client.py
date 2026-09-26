@@ -14,6 +14,7 @@ from src.connectors.mcp.models import MCPConnection
 MCP_PROTOCOL_VERSION = "2025-06-18"
 MCP_SESSION_HEADER = "Mcp-Session-Id"
 MAX_LOGGED_RESPONSE_CHARS = 10000
+MAX_TOOL_LIST_PAGES = 20
 TOKEN_REDACTION_PATTERNS = [
     re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE),
     re.compile(r'("(?:access_token|refresh_token|client_secret)"\s*:\s*")[^"]+(")', re.IGNORECASE),
@@ -45,17 +46,33 @@ class StreamableHTTPMCPClient:
         auth_headers: dict[str, str],
     ) -> dict[str, Any]:
         session = await self._initialize_session(connection=connection, auth_headers=auth_headers)
-        response = await self._rpc(
-            connection=connection,
-            auth_headers=auth_headers,
-            session=session,
-            method="tools/list",
-            params={},
-        )
-        result = response.get("result")
-        if not isinstance(result, dict):
-            raise MCPClientError("MCP tools/list returned an invalid result")
-        return result
+        tools: list[Any] = []
+        cursor: str | None = None
+        for _ in range(MAX_TOOL_LIST_PAGES):
+            response = await self._rpc(
+                connection=connection,
+                auth_headers=auth_headers,
+                session=session,
+                method="tools/list",
+                params={"cursor": cursor} if cursor else {},
+            )
+            result = response.get("result")
+            if not isinstance(result, dict):
+                raise MCPClientError("MCP tools/list returned an invalid result")
+            page = result.get("tools")
+            if isinstance(page, list):
+                tools.extend(page)
+            cursor = result.get("nextCursor") or None
+            if not cursor:
+                break
+        else:
+            log.warning(
+                "MCP tools/list stopped after %s pages mcp_id=%s name=%s",
+                MAX_TOOL_LIST_PAGES,
+                connection.mcp_id,
+                connection.name,
+            )
+        return {"tools": tools}
 
     async def call_tool(
         self,

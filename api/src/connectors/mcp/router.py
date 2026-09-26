@@ -113,6 +113,8 @@ async def discover_mcp_oauth(
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPOAuthDiscoveryResponse:
     try:
+        if body.issuer_url is not None:
+            return await service.discover_oauth_issuer(str(body.issuer_url))
         return await service.discover_oauth(str(body.server_url))
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error

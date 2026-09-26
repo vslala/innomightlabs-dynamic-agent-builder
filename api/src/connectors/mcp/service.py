@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.agents.repository import AgentRepository
@@ -27,6 +25,7 @@ from src.connectors.mcp.oauth import (
     build_credentials,
     canonical_resource_url,
     create_state_session,
+    discover_authorization_server,
     discover_oauth_provider,
     encode_state_session,
     exchange_code_for_tokens,
@@ -34,7 +33,9 @@ from src.connectors.mcp.oauth import (
     refresh_access_token,
 )
 from src.connectors.mcp.repository import MCPConnectionRepository, get_mcp_connection_repository
-from src.crypto import decrypt, encrypt
+from src.connectors.mcp.resolved import HttpTarget, OAuthBinding
+from src.connectors.mcp.resolvers import ConnectionResolver, CustomResolver
+from src.crypto import encrypt
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ class MCPConnectorService:
         self.repository = repository or get_mcp_connection_repository()
         self.agent_repository = agent_repository or AgentRepository()
         self.client = client or StreamableHTTPMCPClient()
+        self.custom = CustomResolver()
 
     def create_connection(
         self,
@@ -112,9 +114,14 @@ class MCPConnectorService:
                 auth_type=connection.auth_type,
                 server_url=connection.server_url,
                 oauth=request.oauth,
-                previous=self._decrypt_oauth_auth(connection)
+                previous=self.custom.oauth_auth(connection)
                 if existing_auth_type == MCPAuthType.OAUTH
                 else None,
+            )
+        if request.auth_type == MCPAuthType.NONE:
+            connection.encrypted_auth_config = self._encrypt_auth_config(
+                auth_type=MCPAuthType.NONE,
+                server_url=connection.server_url,
             )
         saved = self.repository.save_connection(connection)
         log.info(
@@ -145,6 +152,10 @@ class MCPConnectorService:
             discovered.registered_client,
         )
         return discovered
+
+    async def discover_oauth_issuer(self, issuer_url: str) -> MCPOAuthDiscoveryResponse:
+        log.info("Discovering OAuth authorization server issuer_url=%s", issuer_url)
+        return await discover_authorization_server(issuer_url)
 
     def delete_connection(self, owner_email: str, mcp_id: str) -> None:
         self._require_connection(owner_email, mcp_id)
@@ -228,8 +239,8 @@ class MCPConnectorService:
         results: list[dict[str, Any]] = []
         for connection in connections:
             try:
-                auth_headers = await self._auth_headers_for_connection(connection)
-                tools_result = await self.client.list_tools(connection, auth_headers)
+                target, headers = await self._session(connection)
+                tools_result = await self.client.list_tools(target, headers)
                 log.info(
                     "Listed MCP tools mcp_id=%s agent_id=%s tool_count=%s",
                     connection.mcp_id,
@@ -275,11 +286,11 @@ class MCPConnectorService:
         if not connections:
             raise ValueError(f"MCP connector '{mcp_id}' is not enabled for this agent")
         connection = connections[0]
-        auth_headers = await self._auth_headers_for_connection(connection)
+        target, headers = await self._session(connection)
         try:
             result = await self.client.call_tool(
-                connection,
-                auth_headers,
+                target,
+                headers,
                 tool_name=tool_name,
                 arguments=arguments,
             )
@@ -302,21 +313,18 @@ class MCPConnectorService:
 
     def start_oauth(self, *, owner_email: str, mcp_id: str, return_to: str) -> str:
         connection = self._require_connection(owner_email, mcp_id)
-        if connection.auth_type != MCPAuthType.OAUTH:
-            raise ValueError("MCP connector is not configured for OAuth")
-
-        auth = self._decrypt_oauth_auth(connection)
+        oauth = self._oauth_binding(connection)
         log.info(
             "Starting MCP OAuth mcp_id=%s owner=%s resource_url=%s token_url=%s",
             mcp_id,
             owner_email,
-            auth.provider.resource_url,
-            auth.provider.token_url,
+            oauth.auth.provider.resource_url,
+            oauth.auth.provider.token_url,
         )
         session = create_state_session(user_email=owner_email, mcp_id=mcp_id, return_to=return_to)
         state = encode_state_session(session)
         return build_authorization_url(
-            provider=auth.provider,
+            provider=oauth.auth.provider,
             state=state,
             code_challenge=generate_code_challenge(session.code_verifier),
         )
@@ -330,26 +338,21 @@ class MCPConnectorService:
         code_verifier: str,
     ) -> MCPConnectionResponse:
         connection = self._require_connection(owner_email, mcp_id)
-        if connection.auth_type != MCPAuthType.OAUTH:
-            raise ValueError("MCP connector is not configured for OAuth")
-
-        auth = self._decrypt_oauth_auth(connection)
+        oauth = self._oauth_binding(connection)
         tokens = await exchange_code_for_tokens(
-            provider=auth.provider,
+            provider=oauth.auth.provider,
             code=code,
             code_verifier=code_verifier,
         )
-        credentials = build_credentials(tokens, default_scope=auth.provider.scope)
+        credentials = build_credentials(tokens, default_scope=oauth.auth.provider.scope)
         log.info(
             "Completed MCP OAuth mcp_id=%s owner=%s expires_at=%s has_refresh_token=%s",
             mcp_id,
             owner_email,
-            credentials.expires_at.isoformat(),
+            credentials.expires_at.isoformat() if credentials.expires_at else "never",
             bool(credentials.refresh_token),
         )
-        connection.encrypted_auth_config = self._encrypt_oauth_auth(
-            MCPOAuthAuthConfig(provider=auth.provider, credentials=credentials)
-        )
+        connection.encrypted_auth_config = self._resolver(connection).store_oauth_credentials(connection, credentials)
         saved = self.repository.save_connection(connection)
         return self._connection_response(saved)
 
@@ -391,7 +394,7 @@ class MCPConnectorService:
         oauth_connected = False
         if connection.auth_type == MCPAuthType.OAUTH:
             try:
-                oauth_connected = self._decrypt_oauth_auth(connection).credentials is not None
+                oauth_connected = self._oauth_binding(connection).auth.credentials is not None
             except ValueError:
                 oauth_connected = False
 
@@ -422,6 +425,9 @@ class MCPConnectorService:
         oauth: Optional[MCPOAuthProviderConfig] = None,
         previous: Optional[MCPOAuthAuthConfig] = None,
     ) -> str:
+        if auth_type == MCPAuthType.NONE:
+            return encrypt("{}")
+
         if auth_type == MCPAuthType.API_KEY:
             if api_key is None:
                 raise ValueError("api_key is required for API key MCP authentication")
@@ -432,89 +438,79 @@ class MCPConnectorService:
                 raise ValueError("oauth is required for OAuth MCP authentication")
             if not oauth.resource_url:
                 oauth = oauth.model_copy(update={"resource_url": canonical_resource_url(server_url)})
-            return self._encrypt_oauth_auth(
-                MCPOAuthAuthConfig(provider=oauth, credentials=previous.credentials if previous else None)
+            return encrypt(
+                MCPOAuthAuthConfig(
+                    provider=oauth,
+                    credentials=previous.credentials if previous else None,
+                ).model_dump_json()
             )
 
         raise ValueError(f"Unsupported MCP authentication type: {auth_type}")
 
-    def _encrypt_oauth_auth(self, auth: MCPOAuthAuthConfig) -> str:
-        return encrypt(auth.model_dump_json())
+    def _resolver(self, connection: MCPConnection) -> ConnectionResolver:
+        return self.custom
 
-    def _decrypt_api_key_auth(self, connection: MCPConnection) -> MCPApiKeyAuthConfig:
-        if connection.auth_type != MCPAuthType.API_KEY:
-            raise ValueError("MCP connector is not configured for API key authentication")
-        return MCPApiKeyAuthConfig.model_validate(json.loads(decrypt(connection.encrypted_auth_config)))
-
-    def _decrypt_oauth_auth(self, connection: MCPConnection) -> MCPOAuthAuthConfig:
-        if connection.auth_type != MCPAuthType.OAUTH:
+    def _oauth_binding(self, connection: MCPConnection) -> OAuthBinding:
+        oauth = self._resolver(connection).resolve(connection).oauth
+        if oauth is None:
             raise ValueError("MCP connector is not configured for OAuth")
-        return MCPOAuthAuthConfig.model_validate(json.loads(decrypt(connection.encrypted_auth_config)))
+        return oauth
 
-    async def _auth_headers_for_connection(self, connection: MCPConnection) -> dict[str, str]:
-        if connection.auth_type == MCPAuthType.API_KEY:
-            auth = self._decrypt_api_key_auth(connection)
-            return {header.name: header.value for header in auth.headers}
+    async def _session(self, connection: MCPConnection) -> tuple[MCPConnection, dict[str, str]]:
+        """Resolve a connection, apply fresh OAuth credentials, and return the client's target and headers."""
+        resolved = self._resolver(connection).resolve(connection)
+        target = resolved.target
+        if resolved.oauth:
+            credentials = await self._fresh_credentials(connection, resolved.oauth)
+            target = resolved.oauth.delivery.apply(target, resolved.oauth.auth.provider, credentials)
 
-        if connection.auth_type == MCPAuthType.OAUTH:
-            credentials = await self._ensure_valid_oauth_credentials(connection)
-            return {"Authorization": f"{_normalize_token_type(credentials.token_type)} {credentials.access_token}"}
+        match target:
+            case HttpTarget(url=url, headers=headers):
+                # The client addresses servers by connection.server_url and logs mcp_id/name.
+                return connection.model_copy(update={"server_url": url}), headers
+        raise ValueError(f"Unsupported MCP target for connector {connection.mcp_id}")
 
-        raise ValueError(f"Unsupported MCP authentication type: {connection.auth_type}")
-
-    async def _ensure_valid_oauth_credentials(self, connection: MCPConnection) -> MCPOAuthCredentials:
-        auth = self._decrypt_oauth_auth(connection)
-        if not auth.credentials:
+    async def _fresh_credentials(self, connection: MCPConnection, oauth: OAuthBinding) -> MCPOAuthCredentials:
+        credentials = oauth.auth.credentials
+        if not credentials:
             log.warning("MCP OAuth credentials missing mcp_id=%s", connection.mcp_id)
             raise ValueError("MCP OAuth connector has not been connected yet")
 
-        if not auth.credentials.refresh_token:
-            if auth.credentials.expires_at <= datetime.now(timezone.utc):
+        if not credentials.refresh_token:
+            if credentials.is_expired():
                 log.warning(
                     "MCP OAuth credentials expired without refresh token mcp_id=%s expires_at=%s",
                     connection.mcp_id,
-                    auth.credentials.expires_at.isoformat(),
+                    credentials.expires_at.isoformat() if credentials.expires_at else "never",
                 )
                 raise ValueError("MCP OAuth connector credentials expired. Reconnect the connector.")
-            return auth.credentials
+            return credentials
 
-        if not auth.credentials.is_expiring_soon():
-            return auth.credentials
+        if not credentials.is_expiring_soon(oauth.delivery.refresh_buffer_seconds):
+            return credentials
 
+        provider = oauth.auth.provider
         try:
             log.info(
                 "Refreshing MCP OAuth token mcp_id=%s expires_at=%s",
                 connection.mcp_id,
-                auth.credentials.expires_at.isoformat(),
+                credentials.expires_at.isoformat() if credentials.expires_at else "never",
             )
-            tokens = await refresh_access_token(
-                provider=auth.provider,
-                refresh_token=auth.credentials.refresh_token,
-            )
-            credentials = build_credentials(
-                tokens,
-                previous=auth.credentials,
-                default_scope=auth.provider.scope,
-            )
+            tokens = await refresh_access_token(provider=provider, refresh_token=credentials.refresh_token)
+            refreshed = build_credentials(tokens, previous=credentials, default_scope=provider.scope)
         except MCPOAuthError:
             log.exception("Failed to refresh MCP OAuth token for connector %s", connection.mcp_id)
             raise
 
-        connection.encrypted_auth_config = self._encrypt_oauth_auth(
-            MCPOAuthAuthConfig(provider=auth.provider, credentials=credentials)
-        )
+        connection.encrypted_auth_config = self._resolver(connection).store_oauth_credentials(connection, refreshed)
         self.repository.save_connection(connection)
         log.info(
             "Refreshed MCP OAuth token mcp_id=%s expires_at=%s has_refresh_token=%s",
             connection.mcp_id,
-            credentials.expires_at.isoformat(),
-            bool(credentials.refresh_token),
+            refreshed.expires_at.isoformat() if refreshed.expires_at else "never",
+            bool(refreshed.refresh_token),
         )
-        return credentials
-
-
-def _normalize_token_type(token_type: str) -> str:
-    return "Bearer" if token_type.strip().lower() == "bearer" else token_type.strip()
+        return refreshed
 
 
 def get_mcp_connector_service() -> MCPConnectorService:

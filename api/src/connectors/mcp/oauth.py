@@ -86,7 +86,8 @@ def build_authorization_url(
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
         "state": state,
-        "resource": provider.resource_url,
+        **_resource_param(provider),
+        **provider.authorization_params,
     }
     if provider.scope:
         params["scope"] = provider.scope
@@ -105,7 +106,7 @@ async def exchange_code_for_tokens(
         "redirect_uri": settings.mcp_oauth_redirect_uri,
         "client_id": provider.client_id,
         "code_verifier": code_verifier,
-        "resource": provider.resource_url,
+        **_resource_param(provider),
     }
     if provider.client_secret:
         data["client_secret"] = provider.client_secret
@@ -122,7 +123,7 @@ async def refresh_access_token(
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
         "client_id": provider.client_id,
-        "resource": provider.resource_url,
+        **_resource_param(provider),
     }
     if provider.client_secret:
         data["client_secret"] = provider.client_secret
@@ -130,7 +131,14 @@ async def refresh_access_token(
     return await _post_token(str(provider.token_url), data)
 
 
-async def discover_oauth_provider(server_url: str) -> MCPOAuthDiscoveryResponse:
+def _resource_param(provider: MCPOAuthProviderConfig) -> dict[str, str]:
+    # RFC 8707 resource indicator. Remote MCP servers always have one; stdio servers have no URL, and
+    # authorization servers such as Google's do not accept an empty or foreign resource.
+    return {"resource": provider.resource_url} if provider.resource_url else {}
+
+
+async def discover_oauth_provider(server_url: str, *, register_client: bool = True) -> MCPOAuthDiscoveryResponse:
+    """Discover OAuth for a remote MCP server: RFC 9728 resource metadata, then its authorization server."""
     resource_url = canonical_resource_url(server_url)
     challenge = await _fetch_oauth_challenge(resource_url)
     resource_metadata = await _fetch_first_json(_protected_resource_metadata_urls(resource_url, challenge))
@@ -142,17 +150,43 @@ async def discover_oauth_provider(server_url: str) -> MCPOAuthDiscoveryResponse:
     if not authorization_server:
         raise MCPOAuthError("MCP protected resource metadata returned an empty authorization server")
 
+    scope = challenge.get("scope", "")
+    if not scope:
+        scope = _joined_scopes(resource_metadata.get("scopes_supported"))
+    return await discover_authorization_server(
+        authorization_server,
+        scope_hint=scope,
+        resource_url=resource_url,
+        register_client=register_client,
+    )
+
+
+async def discover_authorization_server(
+    issuer_url: str,
+    *,
+    scope_hint: str = "",
+    resource_url: str = "",
+    register_client: bool = True,
+) -> MCPOAuthDiscoveryResponse:
+    """Discover OAuth from an authorization server's RFC 8414 metadata.
+
+    Remote MCP servers reach this through their resource metadata. Stdio servers have no URL of their own,
+    so their connectors start here with the provider's issuer URL.
+    """
+    authorization_server = issuer_url.strip()
+    if not authorization_server:
+        raise MCPOAuthError("OAuth issuer URL is required")
+
     auth_metadata = await _fetch_first_json(authorization_server_metadata_urls(authorization_server))
     authorization_endpoint = str(auth_metadata.get("authorization_endpoint") or "").strip()
     token_endpoint = str(auth_metadata.get("token_endpoint") or "").strip()
     if not authorization_endpoint or not token_endpoint:
         raise MCPOAuthError("OAuth authorization server metadata missing authorization_endpoint or token_endpoint")
 
-    scope = challenge.get("scope", "")
-    if not scope:
-        scopes = resource_metadata.get("scopes_supported")
-        scope = " ".join(str(item).strip() for item in scopes if str(item).strip()) if isinstance(scopes, list) else ""
-    registration_endpoint = auth_metadata.get("registration_endpoint")
+    # Scopes come from the resource (remote MCP) or the caller. An authorization server's scopes_supported
+    # lists everything it can issue, which is not what a connector should request.
+    scope = scope_hint
+    registration_endpoint = auth_metadata.get("registration_endpoint") if register_client else None
     token_endpoint_auth_methods = auth_metadata.get("token_endpoint_auth_methods_supported")
     registered = (
         await _register_client(
@@ -180,6 +214,7 @@ async def discover_oauth_provider(server_url: str) -> MCPOAuthDiscoveryResponse:
         authorization_server=authorization_server,
         registration_endpoint=str(registration_endpoint) if registration_endpoint else None,
         registered_client=bool(registered.get("client_id")),
+        client_registration="dynamic" if registered.get("client_id") else "manual",
     )
 
 
@@ -398,8 +433,7 @@ def build_credentials(
         raise MCPOAuthError("MCP OAuth token response missing access_token")
 
     refresh_token = tokens.get("refresh_token") or (previous.refresh_token if previous else None)
-    expires_in = int(tokens.get("expires_in") or 3600)
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+    expires_at = _token_expiry(tokens.get("expires_in"), has_refresh_token=bool(refresh_token))
 
     return MCPOAuthCredentials(
         access_token=access_token,
@@ -408,6 +442,22 @@ def build_credentials(
         token_type=str(tokens.get("token_type") or (previous.token_type if previous else "Bearer")),
         scope=str(tokens.get("scope") or (previous.scope if previous else default_scope)),
     )
+
+
+def _token_expiry(expires_in: Any, *, has_refresh_token: bool) -> Optional[datetime]:
+    if expires_in:
+        return datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+    if not has_refresh_token:
+        # No expiry and nothing to refresh with: the provider issued a long-lived token (e.g. GitHub OAuth Apps).
+        return None
+    # A refresh token without an expiry: assume an hour so the token is still refreshed proactively.
+    return datetime.now(timezone.utc) + timedelta(seconds=3600)
+
+
+def _joined_scopes(scopes: Any) -> str:
+    if not isinstance(scopes, list):
+        return ""
+    return " ".join(str(item).strip() for item in scopes if str(item).strip())
 
 
 def _parse_auth_params(value: str) -> dict[str, str]:
