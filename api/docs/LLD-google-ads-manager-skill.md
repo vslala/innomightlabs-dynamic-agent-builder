@@ -5,8 +5,8 @@
 | Status | ✅ Implemented on `feature/google-ads-manager-skill`, pending live testing against a Google Ads account |
 | Owner | InnomightLabs API |
 | Last reviewed | 2026-09-26 |
-| Scope | [`api/src/skills/`](../src/skills/) (platform), [`api/src/agents/tool_runtime/`](../src/agents/tool_runtime/), new `api/src/skills/google_ads/` |
-| Depends on | [Unified skill automation actions](LLD-unified-skill-automation-actions.md), [Gmail skill actions](LLD-google-mail-skill-actions.md) (OAuth pattern) |
+| Scope | [`api/src/skills/`](https://github.com/vslala/innomightlabs-dynamic-agent-builder/tree/main/api/src/skills) (platform), [`api/src/agents/tool_runtime/`](https://github.com/vslala/innomightlabs-dynamic-agent-builder/tree/main/api/src/agents/tool_runtime), new `api/src/skills/google_ads/` |
+| Depends on | [Unified skill automation actions](LLD-unified-skill-automation-actions), [Gmail skill actions](LLD-google-mail-skill-actions) (OAuth pattern) |
 
 > **Summary:** A `google_ads` skill that lets an agent run Google Ads accounts for SEO experts and site managers:
 > structure, reporting, and changes to campaigns, budgets, keywords, ads, and recommendations. It has 29 actions,
@@ -42,38 +42,38 @@ once a skill (or an MCP server) has hundreds.
 
 The runtime already does two levels of progressive disclosure:
 
-1. **System prompt**: [`krishna_memgpt/sections/skills.j2`](../src/agents/prompt_templates/krishna_memgpt/sections/skills.j2)
+1. **System prompt**: [`krishna_memgpt/sections/skills.j2`](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/agents/prompt_templates/krishna_memgpt/sections/skills.j2)
    lists each installed skill as one line: id, name, description.
-   (`SkillRuntimeService.build_system_prompt_addendum`, [service.py:342](../src/skills/service.py), renders a similar
+   (`SkillRuntimeService.build_system_prompt_addendum`, [service.py:342](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/service.py), renders a similar
    block, but only `tests/test_skills.py:687` calls it. It's dead in production, but it is also the only code that renders install "Use when" usage context into a
    prompt; `skills.j2` does not. Left in place: fixing that gap is a separate change.)
 2. **`load_skill`**: `handle_tool_call` → `_build_loaded_skill_runtime_payload`
-   ([service.py:511](../src/skills/service.py)) returns the skill `system_prompt` and **every** action with its full
+   ([service.py:511](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/service.py)) returns the skill `system_prompt` and **every** action with its full
    `input_schema`.
-3. **`execute_skill_action`** runs `SkillRegistry.execute_action` ([registry.py:128](../src/skills/registry.py)), which
+3. **`execute_skill_action`** runs `SkillRegistry.execute_action` ([registry.py:128](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/registry.py)), which
    only checks that required fields are present, then calls the handler.
 
-The tool definitions are in [tool_runtime/skills.py](../src/agents/tool_runtime/skills.py), and the input contracts
-are in [skill_contracts.py](../src/agents/tool_runtime/skill_contracts.py) (`LoadSkillInput` has only `skill_id`).
+The tool definitions are in [tool_runtime/skills.py](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/agents/tool_runtime/skills.py), and the input contracts
+are in [skill_contracts.py](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/agents/tool_runtime/skill_contracts.py) (`LoadSkillInput` has only `skill_id`).
 
 Step 2 is what breaks at 29 actions. At roughly 300–500 tokens per schema, one `load_skill` would inject 8–13k tokens.
 
 **Tool results only live for one turn.** Each turn, `KrishnaMemGPTArchitecture._run_turn` rebuilds the context
-([krishna_memgpt.py:190](../src/agents/architectures/krishna_memgpt.py)) from the system prompt plus saved messages.
+([krishna_memgpt.py:190](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/agents/architectures/krishna_memgpt.py)) from the system prompt plus saved messages.
 `FixedWindowStrategy.build_context` keeps only `user` and `assistant` roles
-([conversation_strategy.py:91](../src/llm/conversation_strategy.py)). Tool calls and results go to `AUDIT#` rows
-([tool_audit.py](../src/agents/tool_audit.py)), which stay out of context. So whatever `load_skill` returned is gone on
+([conversation_strategy.py:91](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/llm/conversation_strategy.py)). Tool calls and results go to `AUDIT#` rows
+([tool_audit.py](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/agents/tool_audit.py)), which stay out of context. So whatever `load_skill` returned is gone on
 the next user message, and an agent working one account across several turns reloads the same schemas each turn.
 §4.6 addresses this.
 
 Other readers of `manifest.actions` must keep working unchanged: the catalog `action_names`
-([service.py:68](../src/skills/service.py)), the automation action catalog
-([automations/service.py:768](../src/automations/service.py)), automation validation
-([automations/validation.py:198](../src/automations/validation.py)), and lifecycle hooks
-([lifecycle.py:140](../src/skills/lifecycle.py)). Disclosure only affects what the **agent** sees, so none of them
+([service.py:68](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/service.py)), the automation action catalog
+([automations/service.py:768](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/automations/service.py)), automation validation
+([automations/validation.py:198](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/automations/validation.py)), and lifecycle hooks
+([lifecycle.py:140](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/lifecycle.py)). Disclosure only affects what the **agent** sees, so none of them
 change.
 
-Google Ads today: an MCP preset ([connectors/mcp/providers/google_ads.py](../src/connectors/mcp/providers/google_ads.py))
+Google Ads today: an MCP preset ([connectors/mcp/providers/google_ads.py](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/connectors/mcp/providers/google_ads.py))
 runs `googleads/google-ads-mcp`. That server is read-only (GAQL search and account listing), and the user brings
 their own OAuth client. The skill adds writes and curated workflows. The MCP preset stays for users who just want
 raw GAQL.
@@ -255,14 +255,14 @@ can't see the earlier load (§2), and the preview-first rules in the prompt must
 
 ### 4.4 Self-correcting errors
 
-In `SkillRegistry.execute_action` ([registry.py:128](../src/skills/registry.py)), when the action is unknown or a
+In `SkillRegistry.execute_action` ([registry.py:128](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/registry.py)), when the action is unknown or a
 required argument is missing, append the action's schema (or the top three search suggestions) to the `ValueError`
 message. An agent that skipped the schema load then recovers in one retry instead of two. This works for eager skills
 too.
 
 ### 4.5 Prompt copy
 
-Add to the `Skill rules` in [`skills.j2`](../src/agents/prompt_templates/krishna_memgpt/sections/skills.j2):
+Add to the `Skill rules` in [`skills.j2`](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/agents/prompt_templates/krishna_memgpt/sections/skills.j2):
 
 ```text
 - Call load_skill(skill_id) before execute_skill_action unless the action is listed under "Loaded actions" below.
@@ -284,7 +284,7 @@ Four design choices keep this simple and correct:
    pinned action. It carries the safety rules.
 2. **Derive the list. Don't store an LRU.** The audit trail already records every tool call with its arguments, newest
    first: `MessageRepository.find_audit_by_conversation(conversation_id, limit=20)`
-   ([dynamodb.py:96](../src/messages/repositories/dynamodb.py)). Walk it, keep successful `execute_skill_action` calls
+   ([dynamodb.py:96](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/messages/repositories/dynamodb.py)). Walk it, keep successful `execute_skill_action` calls
    and `load_skill` calls with `actions=`, dedupe, and take the first `RECENT_ACTION_LIMIT = 5`. There's no new table,
    no second copy of state to drift, and nothing to invalidate. It works the same across async turns and workers. It
    costs one extra DynamoDB query per turn. (That query's docstring says "Inspection only". Update it, since it now
@@ -310,7 +310,7 @@ def recent_actions(self, audit: list[Message], enabled_skills: list[AgentSkill])
 ```
 
 Wiring: `_run_turn` now builds the conversation history *before* the system prompt, then fills
-`state.recent_skill_actions` from it ([krishna_memgpt.py](../src/agents/architectures/krishna_memgpt.py)).
+`state.recent_skill_actions` from it ([krishna_memgpt.py](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/agents/architectures/krishna_memgpt.py)).
 It skips the audit query entirely for agents with no skills. `_build_memory_prompt` passes it to
 `build_krishna_memgpt_system_prompt`, and `skills.j2` renders it at the end of the skills section:
 
@@ -410,15 +410,15 @@ and `describe_fields` lets the agent find field names without us documenting the
 action when you see the agent building the same `mutate` over and over.
 
 **Every action is available to automations.** None set `automation.enabled: false`, so each one shows up in the
-automation action catalog ([automations/service.py:768](../src/automations/service.py)). Each needs an `action_form`,
-as [SKILL_MANIFEST.md](../src/skills/SKILL_MANIFEST.md) requires, so users never edit raw JSON for simple inputs:
+automation action catalog ([automations/service.py:768](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/automations/service.py)). Each needs an `action_form`,
+as [SKILL_MANIFEST.md](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/SKILL_MANIFEST.md) requires, so users never edit raw JSON for simple inputs:
 
 - Scalars (ids, names, amounts, status, date range, level) use `text` or `select` fields with `smart_values: "true"`.
   That lets a rule like "if CPA > 40, pause `{{ input.campaign_id }}`" feed values in from earlier nodes.
 - Lists and nested inputs (keyword lists, ad groups in `create_search_campaign`, RSA headlines, raw `mutate`
   operations) use a `text_area` that takes JSON, also with smart values. Request models accept either the parsed value
   (from an agent) or a JSON string (from a form), using a `field_validator(mode="before")` that calls `json.loads`.
-  That's the `rest_template` precedent ([rest_template/models.py:49](../src/skills/rest_template/models.py)).
+  That's the `rest_template` precedent ([rest_template/models.py:49](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/rest_template/models.py)).
 - `mode` and `confirmation_token` are left out of every `action_form`. Automation runs apply directly (§5.4).
 
 ### 5.3 Install form (skill config)
@@ -483,7 +483,7 @@ CODE_PHILOSOPHY says to guard money, and these actions spend it. Four server-sid
 
    **Automation runs apply directly.** The user authored the node and its inputs, and no one is present to confirm.
    A run is recognised by `automation_run_id` in the action context, which the runner sets
-   ([automations/runner.py:449](../src/automations/runner.py)). Don't use "no `conversation_id`": automation runs
+   ([automations/runner.py:449](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/automations/runner.py)). Don't use "no `conversation_id`": automation runs
    pass one too. In a run, `mode` and the token are ignored, and the handler sends the real mutate. Google validates
    the operations in that call anyway, so a separate preview adds nothing. Rules 2–4 below still apply, and
    `access=read_only` still blocks every write, so an automation can never go past the installer's limits.
@@ -518,7 +518,7 @@ Tool results fill the context for the rest of the turn, so they cost as much as 
   "not given" for every action.
 - Long reports use the existing `async: true` job path. No new mechanism.
 - Google errors map to `RuntimeError` with the first `GoogleAdsFailure` error code and message only, the bounded
-  preview rule in [CONTRIBUTION.md](../src/skills/CONTRIBUTION.md).
+  preview rule in [CONTRIBUTION.md](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/CONTRIBUTION.md).
 
 ### 5.6 Shape of an action
 
@@ -534,7 +534,7 @@ async def add_negative_keywords(arguments, config, context):
     return await ads.change(request, customer_id, batch, summary)  # preview, apply, or automation apply
 ```
 
-`GoogleAdsClient` ([client.py](../src/skills/google_ads/client.py)) loads the `GoogleAds` provider settings for
+`GoogleAdsClient` ([client.py](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/google_ads/client.py)) loads the `GoogleAds` provider settings for
 `owner_email`. It refreshes the token when it's expiring, and once more on a 401. It sends only `Authorization`
 (plus `login-customer-id` for manager access).
 
@@ -561,10 +561,10 @@ a simpler call path than stdio MCP.
 
 **OAuth only.** The skill authenticates with the user's Google OAuth access token and nothing else. No developer
 token: there's no setting, no install field, and no `developer-token` header. Google is sunsetting developer tokens,
-and the MCP preset already dropped them ([google_ads.py:19](../src/connectors/mcp/providers/google_ads.py)).
+and the MCP preset already dropped them ([google_ads.py:19](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/connectors/mcp/providers/google_ads.py)).
 
-The flow is the Gmail and Drive pattern exactly ([google_mail/oauth.py](../src/skills/google_mail/oauth.py),
-[auth/router.py:100](../src/auth/router.py)). It uses the platform's Google OAuth client (`settings.google_client_id`
+The flow is the Gmail and Drive pattern exactly ([google_mail/oauth.py](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/google_mail/oauth.py),
+[auth/router.py:100](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/auth/router.py)). It uses the platform's Google OAuth client (`settings.google_client_id`
 / `google_client_secret`), so the user clicks *Connect*, consents, and is done. There's no GCP console setup and no
 client of their own.
 
@@ -600,8 +600,8 @@ name.*
   `google_ads_oauth_scopes = "https://www.googleapis.com/auth/adwords"`, `is_google_ads_oauth_configured()`, and
   `google_ads_api_version = "v25"`.
 - `SKILL_OAUTH_PROVIDERS["GoogleAds"]` → `/auth/google-ads/start`
-  ([oauth_providers.py](../src/skills/oauth_providers.py)).
-- `CONNECTORS["google_ads"]` ([connectors/service.py:10](../src/connectors/service.py)).
+  ([oauth_providers.py](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/skills/oauth_providers.py)).
+- `CONNECTORS["google_ads"]` ([connectors/service.py:10](https://github.com/vslala/innomightlabs-dynamic-agent-builder/blob/main/api/src/connectors/service.py)).
 - A `"google_ads"` entry in `_google_skill_oauth_flows()`, plus `/auth/google-ads/start` and `/callback` routes.
 - Manifest: `requires_oauth: true`, `oauth_provider_name: GoogleAds`, and
   `connectors: [{connector_id: google_ads, required: true}]`.
