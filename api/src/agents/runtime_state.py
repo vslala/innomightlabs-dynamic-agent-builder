@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from src.messages.models import Attachment
-from src.skills.models import AgentSkill
+from src.skills.models import AgentSkill, LoadedSkillRuntimeResponse
 
 if TYPE_CHECKING:
     from src.connectors.mcp.models import AgentMCPConnectionResponse
@@ -36,6 +36,8 @@ class AgentTurnState:
     # Enrichment (populated during preflight)
     linked_kb_ids: list[str] = field(default_factory=list)
     enabled_skills: list[AgentSkill] = field(default_factory=list)
+    #: Skill actions used recently in this conversation, whose schemas stay in the prompt.
+    recent_skill_actions: list[LoadedSkillRuntimeResponse] = field(default_factory=list)
     enabled_mcp_connections: list["AgentMCPConnectionResponse"] = field(default_factory=list)
 
     # Provider runtime

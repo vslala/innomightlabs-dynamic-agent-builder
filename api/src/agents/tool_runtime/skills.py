@@ -12,13 +12,27 @@ from src.agents.tool_runtime.specs import ToolCategory, ToolSpec
 
 LOAD_SKILL_TOOL = {
     "name": "load_skill",
-    "description": "Load full instructions and action contracts for an installed skill by skill_id.",
+    "description": (
+        "Load an installed skill's instructions and action contracts. "
+        "Large skills return an action_index of names and summaries instead of schemas; "
+        "then pass `actions` with the names you need, or `query` to search, to get their full schemas."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
             "skill_id": {"type": "string", "description": "Installed skill id to load"},
+            "actions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Action names to load full schemas for.",
+            },
+            "query": {
+                "type": "string",
+                "description": "Words describing the task, e.g. 'negative keywords'. Returns the matching actions.",
+            },
         },
         "required": ["skill_id"],
+        "additionalProperties": False,
     },
 }
 

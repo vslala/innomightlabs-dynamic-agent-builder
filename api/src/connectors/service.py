@@ -22,6 +22,13 @@ CONNECTORS: dict[str, ConnectorDefinition] = {
         connect_path="/auth/google-mail/start",
         icon="mail",
     ),
+    "google_ads": ConnectorDefinition(
+        connector_id="google_ads",
+        provider_name="GoogleAds",
+        display_name="Google Ads",
+        connect_path="/auth/google-ads/start",
+        icon="megaphone",
+    ),
 }
 
 PROVIDER_TO_CONNECTOR_ID = {

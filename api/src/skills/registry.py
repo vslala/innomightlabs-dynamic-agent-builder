@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import json
 import logging
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
@@ -10,7 +11,8 @@ import yaml  # type: ignore[import-untyped,unused-ignore]
 
 import src.form_models as form_models
 from src.form_validation import validate_form_value
-from src.skills.models import LoadedSkill, SkillManifest
+from src.skills.disclosure import SUGGESTION_LIMIT, search_actions
+from src.skills.models import LoadedSkill, SkillActionManifest, SkillManifest
 
 log = logging.getLogger(__name__)
 
@@ -137,22 +139,22 @@ class SkillRegistry:
         if not loaded:
             raise ValueError(f"Unknown skill: {skill_id}")
 
-        action = next(
-            (
-                a
-                for a in loaded.manifest.actions
-                if a.name == action_name or action_name in a.aliases
-            ),
-            None,
-        )
+        action = loaded.manifest.find_action(action_name)
         if not action:
-            raise ValueError(f"Skill '{skill_id}' has no action '{action_name}'")
+            suggestions = [
+                a.name for a in search_actions(loaded.manifest, action_name.replace("_", " "), SUGGESTION_LIMIT)
+            ]
+            hint = f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
+            raise ValueError(f"Skill '{skill_id}' has no action '{action_name}'.{hint}")
 
-        # Lightweight required-field check from JSON schema
+        # Lightweight required-field check from JSON schema. The schema rides along in the
+        # error so an agent that skipped load_skill can correct itself in one retry.
         required_fields = action.input_schema.get("required", [])
         for field_name in required_fields:
             if field_name not in arguments:
-                raise ValueError(f"Missing required action argument: {field_name}")
+                raise ValueError(
+                    f"Missing required action argument: {field_name}. {_schema_hint(action)}"
+                )
 
         func = self._resolve_handler(loaded.folder_name, action.handler)
         result = func(arguments=arguments, config=config, context=context)
@@ -182,6 +184,10 @@ class SkillRegistry:
         if not callable(func):
             raise ValueError(f"Invalid action handler: {handler}")
         return cast(Callable[..., Any], func)
+
+
+def _schema_hint(action: SkillActionManifest) -> str:
+    return f"Schema for '{action.name}': {json.dumps(action.input_schema, ensure_ascii=True)}"
 
 
 _registry_singleton: Optional[SkillRegistry] = None

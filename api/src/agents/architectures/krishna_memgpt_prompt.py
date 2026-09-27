@@ -6,7 +6,7 @@ from src.agents.models import MemoryCapacityWarning
 from src.agents.prompts import render_system_prompt
 from src.connectors.mcp.models import AgentMCPConnectionResponse
 from src.memory.snapshot import CoreMemorySnapshot
-from src.skills.models import AgentSkill
+from src.skills.models import AgentSkill, LoadedSkillRuntimeResponse
 
 SYSTEM_PROMPT_TEMPLATE = "krishna_memgpt_system_prompt.j2"
 
@@ -16,6 +16,7 @@ def build_krishna_memgpt_system_prompt(
     agent_persona: str,
     kb_count: int | None = None,
     enabled_skills: list[AgentSkill] | None = None,
+    recent_skill_actions: list[LoadedSkillRuntimeResponse] | None = None,
     enabled_mcp_connections: list[AgentMCPConnectionResponse] | None = None,
     core_memory: CoreMemorySnapshot | None = None,
     capacity_warnings: list[MemoryCapacityWarning] | None = None,
@@ -27,6 +28,7 @@ def build_krishna_memgpt_system_prompt(
         core_memory=core_memory,
         kb_count=kb_count or 0,
         enabled_skills=enabled_skills or [],
+        recent_skill_actions=recent_skill_actions or [],
         enabled_mcp_connections=enabled_mcp_connections or [],
         capacity_warnings=capacity_warnings or [],
     )

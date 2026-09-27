@@ -35,6 +35,7 @@ PUBLIC_PATHS = {
     "/auth/callback/cognito",
     "/auth/google-drive/callback",
     "/auth/google-mail/callback",
+    "/auth/google-ads/callback",
     "/skills/agent2agent_client/oauth/callback",
     "/connectors/mcp/oauth/callback",
     "/auth/cognito",

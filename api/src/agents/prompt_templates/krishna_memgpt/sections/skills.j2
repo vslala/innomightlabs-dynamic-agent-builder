@@ -7,7 +7,24 @@ Enabled skills ({{ enabled_skills|length }}):
 {% endfor %}
 
 Skill rules:
+- Call load_skill(skill_id) before execute_skill_action unless the action is listed under "Loaded actions" below.
+- If load_skill returns an action_index, call load_skill(skill_id, actions=[...]) for the actions you will use, or load_skill(skill_id, query="...") to search.
 - If required inputs are missing, ask one concise clarification instead of guessing.
 - If a skill action fails, read the error and retry only when you can correct a concrete input. Otherwise explain the issue.
 - Never fabricate a skill result.
+{% if recent_skill_actions %}
+
+Loaded actions (recently used here; their schemas are below, so call execute_skill_action directly):
+{% for skill in recent_skill_actions %}
+<loaded_skill id="{{ skill.skill_id }}">
+{% if skill.prompt %}
+{{ skill.prompt }}
+{% endif %}
+{% for action in skill.actions %}
+- {{ action.name }}: {{ action.description }}
+  schema: {{ action.input_schema | tojson }}
+{% endfor %}
+</loaded_skill>
+{% endfor %}
+{% endif %}
 </skills>

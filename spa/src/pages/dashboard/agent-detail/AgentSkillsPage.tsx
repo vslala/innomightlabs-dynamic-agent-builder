@@ -230,6 +230,7 @@ export function AgentSkillsPage() {
         params.delete("skill_oauth");
         params.delete("google_drive_oauth");
         params.delete("google_mail_oauth");
+        params.delete("google_ads_oauth");
         params.delete("agent_id");
         params.delete("skill_id");
         params.delete("reason");

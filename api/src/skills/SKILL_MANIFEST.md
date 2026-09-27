@@ -258,6 +258,28 @@ Set top-level `automation.enabled: false` when the whole skill should never appe
 
 Use action-level `automation.enabled: false` when only specific actions should be hidden from automations.
 
+### `action_disclosure`
+
+Optional, `eager` (default) or `on_demand`. Controls what `load_skill` shows the agent.
+
+- `eager`: every action with its full `input_schema`. Right for skills with a handful of actions.
+- `on_demand`: an `action_index` of action names and one-line summaries, grouped by action `group`, with no schemas.
+  The agent then loads the schemas it needs with `load_skill(skill_id, actions=[...])`, or searches with
+  `load_skill(skill_id, query="...")`.
+
+Example from `google_ads` (29 actions):
+
+```yaml
+action_disclosure: on_demand
+```
+
+Use `on_demand` once a skill's schemas would cost thousands of tokens on every load. The index summary is the first
+sentence of each action `description`, capped at 90 characters, so make that sentence say what the action does.
+Disclosure affects only what the agent sees. The catalog, automations, and lifecycle hooks still read every action.
+
+Whatever the mode, the schemas of the five skill actions a conversation used most recently are rendered into each
+turn's system prompt, so the agent does not reload them every turn.
+
 ### `api_router`
 
 Optional string. Skill-owned FastAPI router reference mounted under `/skills/{skill_id}`.
@@ -394,6 +416,20 @@ aliases: [search_messages, search_email, search_emails]
 ```
 
 Use aliases for agent ergonomics and backwards compatibility. Keep `name` stable as the canonical action id.
+
+### `group`
+
+Optional string, default `general`. Groups the action in the on-demand action index.
+
+Example from `google_ads`:
+
+```yaml
+- name: add_negative_keywords
+  group: keywords
+```
+
+Only matters for `action_disclosure: on_demand` skills. Use a small set of domain nouns (`campaigns`, `keywords`,
+`reporting`).
 
 ### `description`
 

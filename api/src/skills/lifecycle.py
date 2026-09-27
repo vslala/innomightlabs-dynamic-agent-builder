@@ -134,11 +134,4 @@ class SkillLifecycleRunner:
         loaded: LoadedSkill,
         action_name: str,
     ) -> SkillActionManifest | None:
-        return next(
-            (
-                action
-                for action in loaded.manifest.actions
-                if action.name == action_name or action_name in action.aliases
-            ),
-            None,
-        )
+        return loaded.manifest.find_action(action_name)

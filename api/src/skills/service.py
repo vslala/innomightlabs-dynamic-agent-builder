@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from typing import Any, Optional
 
+from pydantic import ValidationError
+
 import src.form_models as form_models
+from src.agents.tool_audit import ToolCallAuditMessage
 from src.agents.tool_runtime.jobs import ToolJobService
+from src.messages.models import Message
 from src.connectors.service import ConnectorService, connector_id_for_provider, get_connector_service
 from src.form_options import FormOptionsContext, hydrate_form_options, validate_form_options
+from src.skills.disclosure import DisclosureRequest, disclose
 from src.skills.identity import installed_skill_id_for
 from src.skills.lifecycle import SkillLifecycleRunner
 from src.settings.agent2agent_policy import Agent2AgentPolicy, Agent2AgentPolicyError
@@ -15,9 +21,11 @@ from src.skills.models import (
     AgentSkill,
     InstalledSkillResponse,
     LoadedSkillRuntimeAction,
+    LoadedSkillRuntimeActionSummary,
     LoadedSkillRuntimeResponse,
     SkillCatalogItemResponse,
     SkillConnectorDependency,
+    SkillActionManifest,
     SkillManifest,
 )
 from src.skills.oauth_providers import get_skill_oauth_provider
@@ -322,6 +330,10 @@ class SkillRuntimeService:
     _USAGE_CONTEXT_LABEL_ATTR = "usage_context_label"
     _USAGE_CONTEXT_MAX_CHARS_ATTR = "usage_context_max_chars"
     _DEFAULT_USAGE_CONTEXT_MAX_CHARS = 600
+    #: How many recently used skill actions keep their schemas in the system prompt.
+    RECENT_ACTION_LIMIT = 5
+    #: How many audit rows (newest first) to look through for them.
+    RECENT_AUDIT_WINDOW = 20
 
     def __init__(
         self,
@@ -391,8 +403,19 @@ class SkillRuntimeService:
             if not loaded:
                 raise ValueError(f"Skill '{installed.skill_id}' is not available")
 
-            payload = self._build_loaded_skill_runtime_payload(installed, loaded.manifest)
-            return json.dumps(payload.model_dump(mode="json", by_alias=True), ensure_ascii=True)
+            payload = self._build_loaded_skill_runtime_payload(
+                installed,
+                loaded.manifest,
+                DisclosureRequest(
+                    manifest=loaded.manifest,
+                    actions=tool_input.get("actions") or None,
+                    query=tool_input.get("query") or None,
+                ),
+            )
+            return json.dumps(
+                payload.model_dump(mode="json", by_alias=True, exclude_defaults=True),
+                ensure_ascii=True,
+            )
 
         if tool_name == "check_tool_job":
             job_id = str(tool_input.get("job_id", "")).strip()
@@ -462,6 +485,60 @@ class SkillRuntimeService:
 
         raise ValueError(f"Unknown skill runtime tool: {tool_name}")
 
+    def recent_actions(
+        self,
+        audit: list[Message],
+        enabled_skills: list[AgentSkill],
+    ) -> list[LoadedSkillRuntimeResponse]:
+        """The skill actions this conversation used most recently, grouped by skill.
+
+        Tool results live for one turn only, so without this the agent reloads the
+        same schemas every turn. The audit trail says which actions were used; the
+        schemas come from today's manifests, so uninstalled skills and renamed
+        actions drop out on their own.
+        """
+        installed = {skill.installed_skill_id or skill.skill_id: skill for skill in enabled_skills}
+        picked: dict[str, tuple[AgentSkill, SkillManifest, list[SkillActionManifest]]] = {}
+        count = 0
+        for installed_skill_id, action_name in _skill_actions_used(audit):
+            skill = installed.get(installed_skill_id) or self._only_install_of(installed, installed_skill_id)
+            loaded = self.skill_service.registry.get(skill.skill_id) if skill else None
+            action = loaded.manifest.find_action(action_name) if loaded else None
+            if skill is None or loaded is None or action is None:
+                continue
+            _, _, actions = picked.setdefault(
+                skill.installed_skill_id or skill.skill_id, (skill, loaded.manifest, [])
+            )
+            if action in actions:
+                continue
+            actions.append(action)
+            count += 1
+            if count == self.RECENT_ACTION_LIMIT:
+                break
+
+        recent = [
+            LoadedSkillRuntimeResponse(
+                skill_id=installed_skill_id,
+                prompt=self._build_loaded_skill_prompt(skill, manifest),
+                actions=[
+                    LoadedSkillRuntimeAction(
+                        name=action.name,
+                        description=action.description,
+                        input_schema=action.input_schema,
+                    )
+                    for action in actions
+                ],
+            )
+            for installed_skill_id, (skill, manifest, actions) in picked.items()
+        ]
+        return recent
+
+    @staticmethod
+    def _only_install_of(installed: dict[str, AgentSkill], skill_id: str) -> AgentSkill | None:
+        """The install a base skill id refers to, when there is exactly one (as _resolve_installed_skill)."""
+        matches = [skill for skill in installed.values() if skill.skill_id == skill_id]
+        return matches[0] if len(matches) == 1 else None
+
     def _resolve_installed_skill(self, agent_id: str, requested_id: str) -> AgentSkill | None:
         installed = self.repository.find_by_id(agent_id, requested_id)
         if installed:
@@ -512,10 +589,11 @@ class SkillRuntimeService:
         self,
         installed: AgentSkill,
         manifest: SkillManifest,
+        request: DisclosureRequest,
     ) -> LoadedSkillRuntimeResponse:
-        installed_skill_id = installed.installed_skill_id or installed.skill_id
+        disclosed = disclose(request)
         return LoadedSkillRuntimeResponse(
-            skill_id=installed_skill_id,
+            skill_id=installed.installed_skill_id or installed.skill_id,
             prompt=self._build_loaded_skill_prompt(installed, manifest),
             actions=[
                 LoadedSkillRuntimeAction(
@@ -523,8 +601,18 @@ class SkillRuntimeService:
                     description=action.description,
                     input_schema=action.input_schema,
                 )
-                for action in manifest.actions
+                for action in disclosed.actions
             ],
+            action_index=(
+                {
+                    group: [LoadedSkillRuntimeActionSummary(name=name, summary=summary) for name, summary in entries]
+                    for group, entries in disclosed.index.items()
+                }
+                if disclosed.index is not None
+                else None
+            ),
+            unknown_actions=disclosed.unknown,
+            suggestions=disclosed.suggestions,
         )
 
     def _build_loaded_skill_prompt(self, installed: AgentSkill, manifest: SkillManifest) -> str:
@@ -566,6 +654,28 @@ class SkillRuntimeService:
         except ValueError:
             return default
         return parsed if parsed > 0 else default
+
+
+def _skill_actions_used(audit: list[Message]) -> Iterator[tuple[str, str]]:
+    """(skill id, action name) for each successful skill action call or schema load, newest first."""
+    for message in audit:
+        try:
+            call = ToolCallAuditMessage.model_validate_json(message.content)
+        except ValidationError:
+            continue
+        if not call.success:
+            continue
+        skill_id = str(call.tool_args.get("skill_id") or "").strip()
+        if not skill_id:
+            continue
+        if call.tool_name == "execute_skill_action":
+            action = str(call.tool_args.get("action") or "").strip()
+            if action:
+                yield skill_id, action
+        elif call.tool_name == "load_skill":
+            for action in call.tool_args.get("actions") or []:
+                if isinstance(action, str) and action.strip():
+                    yield skill_id, action.strip()
 
 
 def get_skill_service() -> SkillService:

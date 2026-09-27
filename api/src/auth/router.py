@@ -36,6 +36,15 @@ from .google_drive_oauth import (
     encode_state_session as encode_google_drive_state_session,
     save_credentials as save_google_drive_credentials,
 )
+from src.skills.google_ads.oauth import (
+    GoogleAdsOAuthError,
+    build_authorization_url as build_google_ads_authorization_url,
+    build_credentials_from_auth_code as build_google_ads_credentials_from_auth_code,
+    create_state_session as create_google_ads_state_session,
+    decode_state_session as decode_google_ads_state_session,
+    encode_state_session as encode_google_ads_state_session,
+    save_credentials as save_google_ads_credentials,
+)
 from src.skills.google_mail.oauth import (
     GoogleMailOAuthError,
     build_authorization_url as build_google_mail_authorization_url,
@@ -60,6 +69,7 @@ agent_repository = AgentRepository()
 OPENAI_PKCE_TTL_SECONDS = 600
 GOOGLE_DRIVE_OAUTH_TTL_SECONDS = 600
 GOOGLE_MAIL_OAUTH_TTL_SECONDS = 600
+GOOGLE_ADS_OAUTH_TTL_SECONDS = 600
 
 
 class OpenAIStartResponse(BaseModel):
@@ -128,6 +138,21 @@ def _google_skill_oauth_flows() -> dict[str, GoogleSkillOAuthFlow]:
             build_credentials_from_auth_code=build_google_mail_credentials_from_auth_code,
             save_credentials=save_google_mail_credentials,
             error_type=GoogleMailOAuthError,
+        ),
+        "google_ads": GoogleSkillOAuthFlow(
+            skill_id="google_ads",
+            provider_name="GoogleAds",
+            display_name="Google Ads",
+            callback_status_param="google_ads_oauth",
+            ttl_seconds=GOOGLE_ADS_OAUTH_TTL_SECONDS,
+            is_configured=settings.is_google_ads_oauth_configured,
+            create_state_session=create_google_ads_state_session,
+            encode_state_session=encode_google_ads_state_session,
+            decode_state_session=decode_google_ads_state_session,
+            build_authorization_url=build_google_ads_authorization_url,
+            build_credentials_from_auth_code=build_google_ads_credentials_from_auth_code,
+            save_credentials=save_google_ads_credentials,
+            error_type=GoogleAdsOAuthError,
         ),
     }
 
@@ -414,6 +439,32 @@ async def google_mail_oauth_callback(
 ):
     return await _google_skill_oauth_callback(
         flow=_google_skill_oauth_flows()["google_mail"],
+        code=code,
+        error=error,
+        state=state,
+    )
+
+
+@router.post("/google-ads/start", response_model=SkillOAuthStartResponse)
+async def start_google_ads_oauth(
+    request: Request,
+    body: SkillOAuthStartRequest,
+) -> SkillOAuthStartResponse:
+    return await _start_google_skill_oauth(
+        request=request,
+        body=body,
+        flow=_google_skill_oauth_flows()["google_ads"],
+    )
+
+
+@router.get("/google-ads/callback")
+async def google_ads_oauth_callback(
+    code: str = Query(None),
+    error: str = Query(None),
+    state: str = Query(None),
+):
+    return await _google_skill_oauth_callback(
+        flow=_google_skill_oauth_flows()["google_ads"],
         code=code,
         error=error,
         state=state,

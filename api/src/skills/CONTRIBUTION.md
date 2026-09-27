@@ -77,6 +77,8 @@ Optional top-level fields:
 - `requires_oauth`: set to `true` when the skill needs provider OAuth before install.
 - `oauth_provider_name`: provider key used to find OAuth metadata and stored credentials.
 - `api_router`: skill-owned FastAPI router path, for example `router:router`.
+- `action_disclosure`: `on_demand` for skills with many actions, so `load_skill` returns an index and the agent loads
+  schemas by name or search. See [SKILL_MANIFEST.md](./SKILL_MANIFEST.md#action_disclosure).
 
 Action handlers use `module:function` syntax. Relative handlers resolve inside the skill folder, so `actions:search` resolves to `src.skills.<skill_folder>.actions.search`.
 

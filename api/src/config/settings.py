@@ -117,6 +117,10 @@ class Settings:
     google_drive_oauth_scopes: str = "https://www.googleapis.com/auth/drive"
     google_mail_redirect_uri: str = ""
     google_mail_oauth_scopes: str = "https://www.googleapis.com/auth/gmail.modify"
+    google_ads_redirect_uri: str = ""
+    google_ads_oauth_scopes: str = "https://www.googleapis.com/auth/adwords"
+    # Minor releases (v25.1, v25.2, ...) keep the major-version REST path.
+    google_ads_api_version: str = "v25"
     openai_oauth_client_id: str = ""
     openai_oauth_scopes: str = "openid profile email offline_access"
     openai_models: list[str] = field(default_factory=lambda: DEFAULT_OPENAI_MODELS.copy())
@@ -280,6 +284,15 @@ class Settings:
             and self.google_mail_oauth_scopes
         )
 
+    def is_google_ads_oauth_configured(self) -> bool:
+        """Check if Google Ads OAuth is fully configured without raising an error."""
+        return bool(
+            self.google_client_id
+            and self.google_client_secret
+            and self.google_ads_redirect_uri
+            and self.google_ads_oauth_scopes
+        )
+
     def is_openai_oauth_configured(self) -> bool:
         """Check if OpenAI OAuth is configured."""
         return bool(self.openai_oauth_client_id)
@@ -425,6 +438,12 @@ class Settings:
                 "GOOGLE_MAIL_OAUTH_SCOPES",
                 "https://www.googleapis.com/auth/gmail.modify",
             ),
+            google_ads_redirect_uri=os.getenv("GOOGLE_ADS_REDIRECT_URI", f"{api_base_url}/auth/google-ads/callback"),
+            google_ads_oauth_scopes=os.getenv(
+                "GOOGLE_ADS_OAUTH_SCOPES",
+                "https://www.googleapis.com/auth/adwords",
+            ),
+            google_ads_api_version=os.getenv("GOOGLE_ADS_API_VERSION", "v25"),
             openai_oauth_client_id=openai_oauth_client_id,
             openai_oauth_scopes=os.getenv("OPENAI_OAUTH_SCOPES", "openid profile email offline_access"),
             openai_models=parse_env_list(

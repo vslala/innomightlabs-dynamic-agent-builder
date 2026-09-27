@@ -7,6 +7,7 @@ import {
   HardDrive,
   KeyRound,
   Mail,
+  Megaphone,
   Plug,
   Plus,
   RefreshCw,
@@ -57,6 +58,7 @@ const SETUP_BADGES: Record<MCPSetupState, { status: "active" | "warning" | "info
 function connectorIcon(icon: string) {
   if (icon === "mail") return <Mail className="h-5 w-5" />;
   if (icon === "hard_drive") return <HardDrive className="h-5 w-5" />;
+  if (icon === "megaphone") return <Megaphone className="h-5 w-5" />;
   return <Plug className="h-5 w-5" />;
 }
 

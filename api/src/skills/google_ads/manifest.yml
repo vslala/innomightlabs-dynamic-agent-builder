@@ -1,0 +1,1296 @@
+id: google_ads
+namespace: integrations.google
+name: Google Ads
+description: Monitor and manage Google Ads campaigns, keywords, ads, budgets, and recommendations.
+requires_oauth: true
+oauth_provider_name: GoogleAds
+connectors:
+  - connector_id: google_ads
+    required: true
+# ~30 actions: load_skill shows an index, and schemas load by name or search.
+action_disclosure: on_demand
+system_prompt: |
+  Use this skill to report on and manage the user's Google Ads accounts.
+
+  Getting around:
+  - If you do not know the account, call list_accounts. Ids are 10 digits; dashes are fine.
+  - Find ids with list_campaigns, list_ad_groups, list_keywords, and list_ads before changing anything.
+  - For anything the curated actions do not cover, read with query (GAQL) and look up field names with describe_fields.
+  - Money is in the account currency (e.g. daily_budget: 25 means 25.00), never micros.
+
+  Changes spend the user's money, so every write works in two steps:
+  1. Call the action with mode=preview (the default). Google validates it and you get a summary and a confirmation_token.
+  2. Show the summary to the user in plain words and ask them to confirm.
+  3. Only after they clearly agree, call the same action with the same arguments plus mode=apply and the confirmation_token.
+  Never apply without the user's agreement in this conversation, and never change arguments between preview and apply.
+
+  Other rules:
+  - New campaigns are created PAUSED unless the user explicitly asks for start_enabled=true.
+  - Budgets above the skill's daily budget cap are rejected; tell the user to raise the cap in the skill settings.
+  - Prefer pausing over removing. Removal cannot be undone.
+  - Typical optimisation loop: get_performance -> get_search_terms (without_conversions=true) -> add_negative_keywords.
+
+  Example usages:
+  - Last 30 days by campaign:
+    action=get_performance
+    arguments={"level":"campaign","date_range":"LAST_30_DAYS"}
+  - Wasted spend in search terms:
+    action=get_search_terms
+    arguments={"campaign_id":"123456789","without_conversions":true,"min_clicks":3}
+  - Preview negatives, then apply after the user agrees:
+    action=add_negative_keywords
+    arguments={"campaign_id":"123456789","keywords":[{"text":"free","match_type":"BROAD"}]}
+    action=add_negative_keywords
+    arguments={"campaign_id":"123456789","keywords":[{"text":"free","match_type":"BROAD"}],"mode":"apply","confirmation_token":"<token from preview>"}
+form:
+  - input_type: text
+    name: customer_id
+    label: Default Google Ads account ID
+    attr:
+      optional: "true"
+      placeholder: "123-456-7890"
+      help_text: "The account actions use when none is given. Leave blank to always choose one."
+      expose_to_runtime: "true"
+      usage_context_label: "Default account"
+  - input_type: text
+    name: login_customer_id
+    label: Manager account ID
+    attr:
+      optional: "true"
+      placeholder: "123-456-7890"
+      help_text: "Only when you reach accounts through a manager (MCC) account."
+  - input_type: select
+    name: access
+    label: Access
+    value: read_only
+    options:
+      - value: read_only
+        label: Read only (reports and lists)
+      - value: read_write
+        label: Read and write (changes need a budget cap)
+  - input_type: text
+    name: max_daily_budget
+    label: Maximum daily budget per campaign
+    attr:
+      optional: "true"
+      placeholder: "50"
+      help_text: "In the account currency. Required for read and write access; larger budgets are rejected."
+      expose_to_runtime: "true"
+      usage_context_label: "Daily budget cap"
+  - input_type: select
+    name: allow_advanced_mutate
+    label: Allow raw mutate operations
+    value: "false"
+    options:
+      - value: "false"
+        label: "No"
+      - value: "true"
+        label: Yes (advanced, any Google Ads change)
+
+# Shared schema properties and form inputs, reused below with YAML aliases.
+x-schema:
+  account: &account
+    customer_id:
+      type: string
+      description: Google Ads account id (10 digits). Defaults to the skill's default account.
+  write: &write
+    customer_id:
+      type: string
+      description: Google Ads account id (10 digits). Defaults to the skill's default account.
+    mode:
+      type: string
+      enum: [preview, apply]
+      description: preview (default) validates and returns a confirmation_token; apply makes the change.
+    confirmation_token:
+      type: string
+      description: The token from this exact change's preview. Required with mode=apply.
+  window: &window
+    customer_id:
+      type: string
+      description: Google Ads account id (10 digits). Defaults to the skill's default account.
+    date_range:
+      type: string
+      enum: [TODAY, YESTERDAY, LAST_7_DAYS, LAST_14_DAYS, LAST_30_DAYS, THIS_MONTH, LAST_MONTH]
+      description: Reporting window. Ignored when start_date and end_date are given.
+    start_date:
+      type: string
+      description: YYYY-MM-DD, with end_date, for a custom window.
+    end_date:
+      type: string
+      description: YYYY-MM-DD, with start_date.
+    limit:
+      type: integer
+      description: Maximum rows (default 25, max 200).
+x-form:
+  customer_id: &customer_id_input
+    input_type: text
+    name: customer_id
+    label: Account ID
+    attr:
+      optional: "true"
+      placeholder: "Default account"
+      smart_values: "true"
+  date_range: &date_range_input
+    input_type: select
+    name: date_range
+    label: Date range
+    value: LAST_30_DAYS
+    values: [TODAY, YESTERDAY, LAST_7_DAYS, LAST_14_DAYS, LAST_30_DAYS, THIS_MONTH, LAST_MONTH]
+  limit: &limit_input
+    input_type: text
+    name: limit
+    label: Maximum rows
+    attr:
+      optional: "true"
+      placeholder: "25"
+      smart_values: "true"
+  campaign_id: &campaign_id_input
+    input_type: text
+    name: campaign_id
+    label: Campaign ID
+    attr:
+      smart_values: "true"
+  optional_campaign_id: &optional_campaign_id_input
+    input_type: text
+    name: campaign_id
+    label: Campaign ID
+    attr:
+      optional: "true"
+      smart_values: "true"
+  ad_group_id: &ad_group_id_input
+    input_type: text
+    name: ad_group_id
+    label: Ad group ID
+    attr:
+      smart_values: "true"
+  optional_ad_group_id: &optional_ad_group_id_input
+    input_type: text
+    name: ad_group_id
+    label: Ad group ID
+    attr:
+      optional: "true"
+      smart_values: "true"
+  include_removed: &include_removed_input
+    input_type: select
+    name: include_removed
+    label: Include removed
+    value: "false"
+    values: ["false", "true"]
+
+actions:
+  # --- accounts ---------------------------------------------------------------------------------
+  - name: list_accounts
+    group: accounts
+    description: >-
+      List the Google Ads accounts this connection can reach, with name and currency.
+      Shows whether each is a manager; pass manager_id to list the client accounts under a manager account.
+    input_schema:
+      type: object
+      properties:
+        manager_id:
+          type: string
+          description: A manager account id, to list the accounts under it.
+    action_form:
+      form_name: List Google Ads accounts
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: manager_id
+          label: Manager account ID
+          attr:
+            optional: "true"
+            smart_values: "true"
+    handler: accounts:list_accounts
+
+  - name: query
+    aliases: [gaql, search]
+    group: accounts
+    description: >-
+      Run any read-only GAQL SELECT query and get compact rows. Use for data the other actions do not cover;
+      rows are capped by limit (default 50, max 200) and money fields come back in currency units.
+    input_schema:
+      type: object
+      required: [query]
+      properties:
+        <<: *account
+        query:
+          type: string
+          description: "GAQL, e.g. SELECT campaign.name, metrics.clicks FROM campaign WHERE segments.date DURING LAST_7_DAYS"
+        limit:
+          type: integer
+          description: Maximum rows (default 50, max 200). A smaller LIMIT in the query is kept.
+    action_form:
+      form_name: Google Ads query
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text_area
+          name: query
+          label: GAQL query
+          attr:
+            rows: "6"
+            placeholder: "SELECT campaign.name, metrics.clicks FROM campaign WHERE segments.date DURING LAST_7_DAYS"
+            smart_values: "true"
+        - *limit_input
+    handler: accounts:query
+
+  - name: describe_fields
+    group: accounts
+    description: >-
+      Look up GAQL field names for a resource before writing a query.
+      Resources include campaign, ad_group and keyword_view.
+      Returns each field's type and whether it can be selected, filtered, and sorted.
+    input_schema:
+      type: object
+      required: [resource]
+      properties:
+        resource:
+          type: string
+          description: GAQL resource, e.g. campaign, ad_group_criterion, search_term_view.
+        contains:
+          type: string
+          description: Only fields whose name contains this, e.g. bidding.
+        limit:
+          type: integer
+          description: Maximum fields (default 60).
+    action_form:
+      form_name: Describe Google Ads fields
+      submit_path: ""
+      form_inputs:
+        - input_type: text
+          name: resource
+          label: Resource
+          attr:
+            placeholder: campaign
+        - input_type: text
+          name: contains
+          label: Name contains
+          attr:
+            optional: "true"
+    handler: accounts:describe_fields
+
+  # --- reporting --------------------------------------------------------------------------------
+  - name: get_performance
+    aliases: [get_report, performance]
+    group: reporting
+    description: >-
+      Performance report by account, campaign, ad group, ad, or keyword over a date range.
+      Metrics: clicks, impressions, ctr, average_cpc, cost, conversions, conversions_value, cost_per_conversion,
+      conversion_rate, all_conversions, search_impression_share.
+    input_schema:
+      type: object
+      properties:
+        <<: *window
+        level:
+          type: string
+          enum: [account, campaign, ad_group, ad, keyword]
+          description: What each row is (default campaign).
+        metrics:
+          type: array
+          items: {type: string}
+          description: Metric names (default clicks, impressions, ctr, cost, conversions, cost_per_conversion).
+        campaign_id:
+          type: string
+          description: Only this campaign.
+        ad_group_id:
+          type: string
+          description: Only this ad group (ad_group, ad, and keyword levels).
+        order_by:
+          type: string
+          description: A requested metric to sort by, highest first (default cost).
+        include_paused:
+          type: boolean
+          description: Include paused items (default true). Removed items are always excluded.
+    action_form:
+      form_name: Google Ads performance
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: select
+          name: level
+          label: Level
+          value: campaign
+          values: [account, campaign, ad_group, ad, keyword]
+        - *date_range_input
+        - input_type: text
+          name: metrics
+          label: Metrics (JSON list)
+          attr:
+            optional: "true"
+            placeholder: '["clicks","cost","conversions"]'
+        - *optional_campaign_id_input
+        - *optional_ad_group_id_input
+        - *limit_input
+    handler: reporting:get_performance
+
+  - name: get_search_terms
+    aliases: [search_terms]
+    group: reporting
+    description: >-
+      Search terms that triggered ads, with clicks, cost and conversions, most expensive first.
+      Use without_conversions=true to find negative-keyword candidates.
+    input_schema:
+      type: object
+      properties:
+        <<: *window
+        campaign_id:
+          type: string
+          description: Only this campaign.
+        ad_group_id:
+          type: string
+          description: Only this ad group.
+        min_clicks:
+          type: integer
+          description: Only terms with at least this many clicks.
+        without_conversions:
+          type: boolean
+          description: Only terms with zero conversions.
+    action_form:
+      form_name: Google Ads search terms
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *date_range_input
+        - *optional_campaign_id_input
+        - *optional_ad_group_id_input
+        - input_type: text
+          name: min_clicks
+          label: Minimum clicks
+          attr:
+            optional: "true"
+            smart_values: "true"
+        - input_type: select
+          name: without_conversions
+          label: Only terms without conversions
+          value: "false"
+          values: ["false", "true"]
+        - *limit_input
+    handler: reporting:get_search_terms
+
+  - name: get_change_history
+    aliases: [change_history]
+    group: reporting
+    description: >-
+      Recent changes to the account: who changed what, and when, newest first.
+      Also shows which tool made each change.
+      Covers up to the last 30 days.
+    input_schema:
+      type: object
+      properties:
+        <<: *account
+        days:
+          type: integer
+          description: How many days back (default 7, max 30).
+        limit:
+          type: integer
+          description: Maximum changes (default 50, max 200).
+    action_form:
+      form_name: Google Ads change history
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text
+          name: days
+          label: Days back
+          attr:
+            optional: "true"
+            placeholder: "7"
+        - *limit_input
+    handler: reporting:get_change_history
+
+  # --- campaigns --------------------------------------------------------------------------------
+  - name: list_campaigns
+    group: campaigns
+    description: >-
+      List campaigns with id, status, channel, bidding strategy, and daily budget.
+      Use it to find campaign ids.
+    input_schema:
+      type: object
+      properties:
+        <<: *account
+        include_removed:
+          type: boolean
+          description: Include removed campaigns (default false).
+        limit:
+          type: integer
+          description: Maximum campaigns (default 50, max 200).
+    action_form:
+      form_name: List Google Ads campaigns
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *include_removed_input
+        - *limit_input
+    handler: campaigns:list_campaigns
+
+  - name: create_search_campaign
+    aliases: [create_campaign]
+    group: campaigns
+    description: >-
+      Create a Search campaign with its budget, and optionally ad groups, keywords and ads.
+      Everything is created in one atomic change.
+      Created PAUSED unless start_enabled=true. Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [name, daily_budget]
+      properties:
+        <<: *write
+        name:
+          type: string
+          description: Campaign name (unique in the account).
+        daily_budget:
+          type: number
+          description: Average daily budget in the account currency.
+        bidding_strategy:
+          type: string
+          enum: [manual_cpc, maximize_clicks, maximize_conversions]
+          description: Default maximize_clicks.
+        max_cpc:
+          type: number
+          description: Maximum cost per click cap for maximize_clicks, in the account currency.
+        location_ids:
+          type: array
+          items: {type: integer}
+          description: Geo target constant ids, e.g. 2840 (United States), 2826 (United Kingdom). Empty targets everywhere.
+        language_ids:
+          type: array
+          items: {type: integer}
+          description: Language constant ids, e.g. 1000 (English). Empty targets all languages.
+        include_search_partners:
+          type: boolean
+          description: Also show on Google search partner sites (default false).
+        ad_groups:
+          type: array
+          description: Ad groups to create inside the campaign.
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: {type: string}
+              max_cpc: {type: number, description: Default max CPC for the ad group's keywords (manual_cpc).}
+              keywords:
+                type: array
+                items:
+                  type: object
+                  required: [text]
+                  properties:
+                    text: {type: string}
+                    match_type: {type: string, enum: [EXACT, PHRASE, BROAD]}
+                    max_cpc: {type: number}
+              ads:
+                type: array
+                description: Responsive search ads (see create_responsive_search_ad for limits).
+                items:
+                  type: object
+                  required: [headlines, descriptions, final_url]
+                  properties:
+                    headlines: {type: array, items: {type: string}}
+                    descriptions: {type: array, items: {type: string}}
+                    final_url: {type: string}
+                    path1: {type: string}
+                    path2: {type: string}
+        start_enabled:
+          type: boolean
+          description: Start serving immediately (default false, created PAUSED). Only when the user asks.
+        contains_eu_political_advertising:
+          type: boolean
+          description: True only if the campaign is EU political advertising (default false).
+    action_form:
+      form_name: Create Google Ads Search campaign
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text
+          name: name
+          label: Campaign name
+          attr:
+            smart_values: "true"
+        - input_type: text
+          name: daily_budget
+          label: Daily budget
+          attr:
+            smart_values: "true"
+        - input_type: select
+          name: bidding_strategy
+          label: Bidding
+          value: maximize_clicks
+          values: [manual_cpc, maximize_clicks, maximize_conversions]
+        - input_type: text
+          name: location_ids
+          label: Location ids (JSON list)
+          attr:
+            optional: "true"
+            placeholder: "[2840]"
+        - input_type: text
+          name: language_ids
+          label: Language ids (JSON list)
+          attr:
+            optional: "true"
+            placeholder: "[1000]"
+        - input_type: text_area
+          name: ad_groups
+          label: Ad groups (JSON)
+          attr:
+            optional: "true"
+            rows: "8"
+            placeholder: '[{"name":"Shoes","keywords":[{"text":"running shoes","match_type":"PHRASE"}]}]'
+            smart_values: "true"
+        - input_type: select
+          name: start_enabled
+          label: Start serving immediately
+          value: "false"
+          values: ["false", "true"]
+    handler: campaigns:create_search_campaign
+
+  - name: update_campaign
+    group: campaigns
+    description: >-
+      Rename a campaign or turn search partners on or off. For other campaign settings use mutate.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [campaign_id]
+      properties:
+        <<: *write
+        campaign_id:
+          type: string
+          description: Campaign id.
+        name:
+          type: string
+          description: New name.
+        include_search_partners:
+          type: boolean
+          description: Show on Google search partner sites.
+    action_form:
+      form_name: Update Google Ads campaign
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *campaign_id_input
+        - input_type: text
+          name: name
+          label: New name
+          attr:
+            optional: "true"
+            smart_values: "true"
+    handler: campaigns:update_campaign
+
+  - name: pause_campaigns
+    aliases: [pause_campaign]
+    group: campaigns
+    description: >-
+      Pause one or more campaigns so they stop serving and spending. Reversible with enable_campaigns.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [campaign_ids]
+      properties:
+        <<: *write
+        campaign_ids:
+          type: array
+          items: {type: string}
+          description: Campaign ids to pause.
+    action_form:
+      form_name: Pause Google Ads campaigns
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text
+          name: campaign_ids
+          label: Campaign ids (one id, or a JSON list)
+          attr:
+            smart_values: "true"
+    handler: campaigns:pause_campaigns
+
+  - name: enable_campaigns
+    aliases: [enable_campaign, resume_campaign]
+    group: campaigns
+    description: >-
+      Enable one or more campaigns so they start serving and spending.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [campaign_ids]
+      properties:
+        <<: *write
+        campaign_ids:
+          type: array
+          items: {type: string}
+          description: Campaign ids to enable.
+    action_form:
+      form_name: Enable Google Ads campaigns
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text
+          name: campaign_ids
+          label: Campaign ids (one id, or a JSON list)
+          attr:
+            smart_values: "true"
+    handler: campaigns:enable_campaigns
+
+  - name: update_budget
+    aliases: [set_budget]
+    group: campaigns
+    description: >-
+      Change a campaign's average daily budget, up to the skill's budget cap. Warns when the budget is shared.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [campaign_id, daily_budget]
+      properties:
+        <<: *write
+        campaign_id:
+          type: string
+          description: Campaign id.
+        daily_budget:
+          type: number
+          description: New average daily budget in the account currency.
+    action_form:
+      form_name: Update Google Ads budget
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *campaign_id_input
+        - input_type: text
+          name: daily_budget
+          label: Daily budget
+          attr:
+            smart_values: "true"
+    handler: campaigns:update_budget
+
+  - name: remove_campaign
+    group: campaigns
+    description: >-
+      Permanently remove a campaign. This cannot be undone; prefer pause_campaigns unless the user wants it gone.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [campaign_id]
+      properties:
+        <<: *write
+        campaign_id:
+          type: string
+          description: Campaign id.
+    action_form:
+      form_name: Remove Google Ads campaign
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *campaign_id_input
+    handler: campaigns:remove_campaign
+
+  # --- ad groups --------------------------------------------------------------------------------
+  - name: list_ad_groups
+    group: ad_groups
+    description: >-
+      List ad groups with id, campaign, status, and default max CPC. Use it to find ad group ids.
+    input_schema:
+      type: object
+      properties:
+        <<: *account
+        campaign_id:
+          type: string
+          description: Only this campaign.
+        include_removed:
+          type: boolean
+          description: Include removed ad groups (default false).
+        limit:
+          type: integer
+          description: Maximum ad groups (default 50, max 200).
+    action_form:
+      form_name: List Google Ads ad groups
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *optional_campaign_id_input
+        - *include_removed_input
+        - *limit_input
+    handler: ad_groups:list_ad_groups
+
+  - name: create_ad_group
+    group: ad_groups
+    description: >-
+      Create an ad group in a campaign, optionally with keywords and responsive search ads.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [campaign_id, name]
+      properties:
+        <<: *write
+        campaign_id:
+          type: string
+          description: Campaign id.
+        name:
+          type: string
+          description: Ad group name.
+        status:
+          type: string
+          enum: [ENABLED, PAUSED]
+          description: Default ENABLED.
+        max_cpc:
+          type: number
+          description: Default max CPC for the ad group's keywords, in the account currency.
+        keywords:
+          type: array
+          items:
+            type: object
+            required: [text]
+            properties:
+              text: {type: string}
+              match_type: {type: string, enum: [EXACT, PHRASE, BROAD]}
+              max_cpc: {type: number}
+        ads:
+          type: array
+          description: Responsive search ads (see create_responsive_search_ad for limits).
+          items:
+            type: object
+            required: [headlines, descriptions, final_url]
+            properties:
+              headlines: {type: array, items: {type: string}}
+              descriptions: {type: array, items: {type: string}}
+              final_url: {type: string}
+    action_form:
+      form_name: Create Google Ads ad group
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *campaign_id_input
+        - input_type: text
+          name: name
+          label: Ad group name
+          attr:
+            smart_values: "true"
+        - input_type: text
+          name: max_cpc
+          label: Default max CPC
+          attr:
+            optional: "true"
+        - input_type: text_area
+          name: keywords
+          label: Keywords (JSON)
+          attr:
+            optional: "true"
+            rows: "5"
+            placeholder: '[{"text":"running shoes","match_type":"PHRASE"}]'
+            smart_values: "true"
+    handler: ad_groups:create_ad_group
+
+  - name: update_ad_group
+    group: ad_groups
+    description: >-
+      Rename an ad group, pause or enable it, or change its default max CPC.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [ad_group_id]
+      properties:
+        <<: *write
+        ad_group_id:
+          type: string
+          description: Ad group id.
+        name:
+          type: string
+          description: New name.
+        status:
+          type: string
+          enum: [ENABLED, PAUSED]
+        max_cpc:
+          type: number
+          description: New default max CPC in the account currency.
+    action_form:
+      form_name: Update Google Ads ad group
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *ad_group_id_input
+        - input_type: select
+          name: status
+          label: Status
+          attr:
+            optional: "true"
+          values: [ENABLED, PAUSED]
+        - input_type: text
+          name: max_cpc
+          label: Default max CPC
+          attr:
+            optional: "true"
+            smart_values: "true"
+    handler: ad_groups:update_ad_group
+
+  # --- keywords ---------------------------------------------------------------------------------
+  - name: list_keywords
+    group: keywords
+    description: >-
+      List keywords with ad group, match type, status, max CPC, and quality score. Use it to find criterion ids.
+    input_schema:
+      type: object
+      properties:
+        <<: *account
+        campaign_id:
+          type: string
+          description: Only this campaign.
+        ad_group_id:
+          type: string
+          description: Only this ad group.
+        include_removed:
+          type: boolean
+          description: Include removed keywords (default false).
+        limit:
+          type: integer
+          description: Maximum keywords (default 50, max 200).
+    action_form:
+      form_name: List Google Ads keywords
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *optional_campaign_id_input
+        - *optional_ad_group_id_input
+        - *limit_input
+    handler: keywords:list_keywords
+
+  - name: add_keywords
+    group: keywords
+    description: >-
+      Add keywords to an ad group, with match type and optional max CPC.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [ad_group_id, keywords]
+      properties:
+        <<: *write
+        ad_group_id:
+          type: string
+          description: Ad group id.
+        keywords:
+          type: array
+          description: Keywords to add.
+          items:
+            type: object
+            required: [text]
+            properties:
+              text: {type: string, description: "Up to 80 characters and 10 words."}
+              match_type: {type: string, enum: [EXACT, PHRASE, BROAD], description: Default PHRASE.}
+              max_cpc: {type: number, description: In the account currency.}
+    action_form:
+      form_name: Add Google Ads keywords
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *ad_group_id_input
+        - input_type: text_area
+          name: keywords
+          label: Keywords (JSON)
+          attr:
+            rows: "5"
+            placeholder: '[{"text":"running shoes","match_type":"PHRASE"}]'
+            smart_values: "true"
+    handler: keywords:add_keywords
+
+  - name: update_keywords
+    aliases: [pause_keywords, set_keyword_bids]
+    group: keywords
+    description: >-
+      Pause or enable keywords, or change their max CPC bids.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [keywords]
+      properties:
+        <<: *write
+        keywords:
+          type: array
+          description: Keywords to change (ids from list_keywords).
+          items:
+            type: object
+            required: [ad_group_id, criterion_id]
+            properties:
+              ad_group_id: {type: string}
+              criterion_id: {type: string}
+              status: {type: string, enum: [ENABLED, PAUSED]}
+              max_cpc: {type: number, description: In the account currency.}
+    action_form:
+      form_name: Update Google Ads keywords
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text_area
+          name: keywords
+          label: Keyword changes (JSON)
+          attr:
+            rows: "5"
+            placeholder: '[{"ad_group_id":"1","criterion_id":"2","status":"PAUSED"}]'
+            smart_values: "true"
+    handler: keywords:update_keywords
+
+  - name: remove_keywords
+    group: keywords
+    description: >-
+      Permanently remove keywords. Prefer update_keywords with status PAUSED, which is reversible.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [keywords]
+      properties:
+        <<: *write
+        keywords:
+          type: array
+          description: Keywords to remove (ids from list_keywords).
+          items:
+            type: object
+            required: [ad_group_id, criterion_id]
+            properties:
+              ad_group_id: {type: string}
+              criterion_id: {type: string}
+    action_form:
+      form_name: Remove Google Ads keywords
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text_area
+          name: keywords
+          label: Keywords (JSON)
+          attr:
+            rows: "5"
+            placeholder: '[{"ad_group_id":"1","criterion_id":"2"}]'
+            smart_values: "true"
+    handler: keywords:remove_keywords
+
+  - name: add_negative_keywords
+    aliases: [add_negatives]
+    group: keywords
+    description: >-
+      Add negative keywords to a campaign or an ad group so ads stop showing for those searches.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [keywords]
+      properties:
+        <<: *write
+        campaign_id:
+          type: string
+          description: Add at campaign level (give this or ad_group_id).
+        ad_group_id:
+          type: string
+          description: Add at ad group level (give this or campaign_id).
+        keywords:
+          type: array
+          description: Negative keywords.
+          items:
+            type: object
+            required: [text]
+            properties:
+              text: {type: string}
+              match_type: {type: string, enum: [EXACT, PHRASE, BROAD], description: Default EXACT.}
+    action_form:
+      form_name: Add Google Ads negative keywords
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *optional_campaign_id_input
+        - *optional_ad_group_id_input
+        - input_type: text_area
+          name: keywords
+          label: Negative keywords (JSON)
+          attr:
+            rows: "5"
+            placeholder: '[{"text":"free","match_type":"BROAD"}]'
+            smart_values: "true"
+    handler: keywords:add_negative_keywords
+
+  - name: generate_keyword_ideas
+    aliases: [keyword_ideas, keyword_research]
+    group: keywords
+    description: >-
+      Keyword ideas from seed keywords or a page URL, with monthly searches and competition.
+      Also returns the top-of-page bid range. Good for SEO and new ad groups.
+    input_schema:
+      type: object
+      properties:
+        <<: *account
+        keywords:
+          type: array
+          items: {type: string}
+          description: Seed keywords.
+        url:
+          type: string
+          description: A page to take ideas from.
+        location_ids:
+          type: array
+          items: {type: integer}
+          description: Geo target constant ids, e.g. 2840 (United States). Empty means worldwide.
+        language_id:
+          type: integer
+          description: Language constant id (default 1000, English).
+        limit:
+          type: integer
+          description: Maximum ideas (default 25, max 100).
+    action_form:
+      form_name: Google Ads keyword ideas
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text
+          name: keywords
+          label: Seed keywords (JSON list)
+          attr:
+            optional: "true"
+            placeholder: '["running shoes"]'
+            smart_values: "true"
+        - input_type: text
+          name: url
+          label: Page URL
+          attr:
+            optional: "true"
+            smart_values: "true"
+        - *limit_input
+    handler: reporting:generate_keyword_ideas
+
+  # --- ads --------------------------------------------------------------------------------------
+  - name: list_ads
+    group: ads
+    description: >-
+      List ads with status, approval status, final URLs, headlines and descriptions.
+    input_schema:
+      type: object
+      properties:
+        <<: *account
+        campaign_id:
+          type: string
+          description: Only this campaign.
+        ad_group_id:
+          type: string
+          description: Only this ad group.
+        include_removed:
+          type: boolean
+          description: Include removed ads (default false).
+        limit:
+          type: integer
+          description: Maximum ads (default 50, max 200).
+    action_form:
+      form_name: List Google Ads ads
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *optional_campaign_id_input
+        - *optional_ad_group_id_input
+        - *limit_input
+    handler: ads:list_ads
+
+  - name: create_responsive_search_ad
+    aliases: [create_ad, create_ads]
+    group: ads
+    description: >-
+      Create a responsive search ad with 3-15 headlines and 2-4 descriptions.
+      Headlines are limited to 30 characters and descriptions to 90.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [ad_group_id, headlines, descriptions, final_url]
+      properties:
+        <<: *write
+        ad_group_id:
+          type: string
+          description: Ad group id.
+        headlines:
+          type: array
+          items: {type: string}
+          description: 3 to 15 headlines, 30 characters max each.
+        descriptions:
+          type: array
+          items: {type: string}
+          description: 2 to 4 descriptions, 90 characters max each.
+        final_url:
+          type: string
+          description: Landing page URL.
+        path1:
+          type: string
+          description: Display URL path part, 15 characters max.
+        path2:
+          type: string
+          description: Second display URL path part, 15 characters max.
+        status:
+          type: string
+          enum: [ENABLED, PAUSED]
+          description: Default ENABLED.
+    action_form:
+      form_name: Create Google Ads responsive search ad
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *ad_group_id_input
+        - input_type: text_area
+          name: headlines
+          label: Headlines (JSON list)
+          attr:
+            rows: "4"
+            placeholder: '["Fast Running Shoes","Free Delivery","Shop the Sale"]'
+            smart_values: "true"
+        - input_type: text_area
+          name: descriptions
+          label: Descriptions (JSON list)
+          attr:
+            rows: "3"
+            placeholder: '["Lightweight shoes for every run.","Order today, delivered tomorrow."]'
+            smart_values: "true"
+        - input_type: text
+          name: final_url
+          label: Landing page URL
+          attr:
+            smart_values: "true"
+    handler: ads:create_responsive_search_ad
+
+  - name: set_ad_status
+    aliases: [pause_ads, enable_ads]
+    group: ads
+    description: >-
+      Pause or enable ads. Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [ads, status]
+      properties:
+        <<: *write
+        ads:
+          type: array
+          description: Ads to change (ids from list_ads).
+          items:
+            type: object
+            required: [ad_group_id, ad_id]
+            properties:
+              ad_group_id: {type: string}
+              ad_id: {type: string}
+        status:
+          type: string
+          enum: [ENABLED, PAUSED]
+    action_form:
+      form_name: Set Google Ads ad status
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text_area
+          name: ads
+          label: Ads (JSON)
+          attr:
+            rows: "4"
+            placeholder: '[{"ad_group_id":"1","ad_id":"2"}]'
+            smart_values: "true"
+        - input_type: select
+          name: status
+          label: Status
+          value: PAUSED
+          values: [ENABLED, PAUSED]
+    handler: ads:set_ad_status
+
+  # --- recommendations --------------------------------------------------------------------------
+  - name: list_recommendations
+    group: recommendations
+    description: >-
+      Google's optimisation recommendations, with type, campaign, and estimated impact.
+      Returns resource names for apply_recommendations and dismiss_recommendations.
+    input_schema:
+      type: object
+      properties:
+        <<: *account
+        types:
+          type: array
+          items: {type: string}
+          description: Only these types, e.g. KEYWORD, CAMPAIGN_BUDGET, RESPONSIVE_SEARCH_AD.
+        campaign_id:
+          type: string
+          description: Only this campaign.
+        limit:
+          type: integer
+          description: Maximum recommendations (default 25, max 100).
+    action_form:
+      form_name: List Google Ads recommendations
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - *optional_campaign_id_input
+        - *limit_input
+    handler: recommendations:list_recommendations
+
+  - name: apply_recommendations
+    group: recommendations
+    description: >-
+      Apply Google recommendations by resource name, changing the account as each describes.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [resource_names]
+      properties:
+        <<: *write
+        resource_names:
+          type: array
+          items: {type: string}
+          description: Recommendation resource names from list_recommendations.
+    action_form:
+      form_name: Apply Google Ads recommendations
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text_area
+          name: resource_names
+          label: Recommendation resource names (JSON list)
+          attr:
+            rows: "3"
+            smart_values: "true"
+    handler: recommendations:apply_recommendations
+
+  - name: dismiss_recommendations
+    group: recommendations
+    description: >-
+      Dismiss Google recommendations by resource name so they stop appearing.
+      Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [resource_names]
+      properties:
+        <<: *write
+        resource_names:
+          type: array
+          items: {type: string}
+          description: Recommendation resource names from list_recommendations.
+    action_form:
+      form_name: Dismiss Google Ads recommendations
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text_area
+          name: resource_names
+          label: Recommendation resource names (JSON list)
+          attr:
+            rows: "3"
+            smart_values: "true"
+    handler: recommendations:dismiss_recommendations
+
+  # --- advanced ---------------------------------------------------------------------------------
+  - name: mutate
+    aliases: [raw_mutate]
+    group: advanced
+    description: >-
+      Send raw googleAds:mutate operations (REST JSON) for changes no other action covers. Needs raw mutate allowed
+      in the skill settings. Two steps: preview, then apply with the confirmation_token.
+    input_schema:
+      type: object
+      required: [operations]
+      properties:
+        <<: *write
+        operations:
+          type: array
+          items: {type: object}
+          description: >-
+            MutateOperation objects, e.g. {"campaignOperation":{"update":{"resourceName":"customers/1234567890/campaigns/1",
+            "status":"PAUSED"},"updateMask":"status"}}. Use describe_fields to find field names.
+    action_form:
+      form_name: Google Ads raw mutate
+      submit_path: ""
+      form_inputs:
+        - *customer_id_input
+        - input_type: text_area
+          name: operations
+          label: Mutate operations (JSON list)
+          attr:
+            rows: "10"
+            smart_values: "true"
+    handler: mutate:mutate

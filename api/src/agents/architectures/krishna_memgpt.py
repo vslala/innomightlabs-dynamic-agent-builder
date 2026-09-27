@@ -32,7 +32,7 @@ from src.messages.models import Message, MessageCanvasArtifact, Attachment
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.memory.snapshot import CoreMemorySnapshot
 from src.settings.repository import get_provider_settings_repository
-from src.skills.models import AgentSkill
+from src.skills.models import AgentSkill, LoadedSkillRuntimeResponse
 from src.skills.service import SkillRuntimeService
 from src.tools.native import NativeToolHandler
 from src.knowledge.repository import AgentKnowledgeBaseRepository
@@ -174,16 +174,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         )
         state.credentials = session.credentials
 
-        # 4. Load core memory and build system prompt
-        yield SSEEvent(
-            event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
-            content="Loading memory...",
-        )
-
-        kb_count = len(state.linked_kb_ids) if state.linked_kb_ids else None
-        system_prompt = self._build_memory_prompt(agent, actor_id, kb_count, state)
-
-        # 5. Build conversation context
+        # 4. Build conversation context (first: the system prompt depends on it)
         yield SSEEvent(
             event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
             content="Building conversation context...",
@@ -192,14 +183,21 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         all_messages = self.message_repo.find_by_conversation(
             conversation.conversation_id
         )
-        context: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
         # Pass session_timeout_minutes to filter messages by time gap
-        context.extend(
-            self.conversation_strategy.build_context(
-                all_messages,
-                session_timeout_minutes=agent.session_timeout_minutes,
-            )
+        history = self.conversation_strategy.build_context(
+            all_messages,
+            session_timeout_minutes=agent.session_timeout_minutes,
         )
+        state.recent_skill_actions = self._recent_skill_actions(state, history)
+
+        # 5. Load core memory and build system prompt
+        yield SSEEvent(
+            event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
+            content="Loading memory...",
+        )
+        kb_count = len(state.linked_kb_ids) if state.linked_kb_ids else None
+        system_prompt = self._build_memory_prompt(agent, actor_id, kb_count, state)
+        context: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}, *history]
 
         yield SSEEvent(
             event_type=SSEEventType.LIFECYCLE_NOTIFICATION,
@@ -275,6 +273,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         *,
         kb_count: int | None = None,
         enabled_skills: list[AgentSkill] | None = None,
+        recent_skill_actions: list[LoadedSkillRuntimeResponse] | None = None,
         enabled_mcp_connections: list[Any] | None = None,
         core_memory: CoreMemorySnapshot | None = None,
         capacity_warnings: list[MemoryCapacityWarning] | None = None,
@@ -284,6 +283,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             agent_persona=agent.agent_persona,
             kb_count=kb_count,
             enabled_skills=enabled_skills,
+            recent_skill_actions=recent_skill_actions,
             enabled_mcp_connections=enabled_mcp_connections,
             core_memory=core_memory,
             capacity_warnings=capacity_warnings,
@@ -306,10 +306,29 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             agent,
             kb_count=kb_count,
             enabled_skills=state.enabled_skills or None,
+            recent_skill_actions=state.recent_skill_actions or None,
             enabled_mcp_connections=state.enabled_mcp_connections or None,
             core_memory=snapshot,
             capacity_warnings=_capacity_warnings(snapshot) or None,
         )
+
+    def _recent_skill_actions(
+        self,
+        state: AgentTurnState,
+        history: list[dict[str, Any]],
+    ) -> list[LoadedSkillRuntimeResponse]:
+        """Schemas of recently used skill actions, so the agent need not reload them.
+
+        A history holding only this turn's message is a fresh session (new, or reset by
+        the session timeout), which starts without them.
+        """
+        if not state.enabled_skills or len(history) <= 1:
+            return []
+        audit, _, _ = self.message_repo.find_audit_by_conversation(
+            state.conversation_id,
+            limit=self.skill_runtime.RECENT_AUDIT_WINDOW,
+        )
+        return self.skill_runtime.recent_actions(audit, state.enabled_skills)
 
     def _load_core_memory_snapshot(self, agent_id: str, user_id: str) -> CoreMemorySnapshot:
         """One consistent read of core memory, initialising the blocks if absent."""

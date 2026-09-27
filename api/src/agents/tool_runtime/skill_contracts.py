@@ -8,7 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class LoadSkillInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     skill_id: str
+    actions: list[str] | None = None
+    query: str | None = None
 
 
 class ExecuteSkillActionInput(BaseModel):

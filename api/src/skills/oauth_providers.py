@@ -18,6 +18,10 @@ SKILL_OAUTH_PROVIDERS: dict[str, SkillOAuthProvider] = {
         provider_name="GoogleMail",
         start_path="/auth/google-mail/start",
     ),
+    "GoogleAds": SkillOAuthProvider(
+        provider_name="GoogleAds",
+        start_path="/auth/google-ads/start",
+    ),
 }
 
 

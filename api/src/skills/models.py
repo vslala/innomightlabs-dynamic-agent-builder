@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, model_validator
@@ -42,15 +43,29 @@ class SkillActionAutomationConfig(BaseModel):
     enabled: bool = True
 
 
+class ActionDisclosureMode(str, Enum):
+    """How much of a skill's action catalog load_skill shows the agent up front."""
+
+    #: Every action with its full schema. Right for small skills.
+    EAGER = "eager"
+    #: An index of names and summaries; schemas load by name or by search.
+    ON_DEMAND = "on_demand"
+
+
 class SkillActionManifest(BaseModel):
     name: str
     aliases: list[str] = Field(default_factory=list)
+    #: Groups the action in the on-demand action index, e.g. "campaigns" or "reporting".
+    group: str = "general"
     description: str
     input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
     action_form: Optional[form_models.Form] = None
     automation: SkillActionAutomationConfig = Field(default_factory=SkillActionAutomationConfig)
     lifecycle: SkillLifecycleManifest = Field(default_factory=SkillLifecycleManifest)
     handler: str
+
+    def answers_to(self, name: str) -> bool:
+        return self.name == name or name in self.aliases
 
 
 class SkillManifest(BaseModel):
@@ -72,8 +87,13 @@ class SkillManifest(BaseModel):
     connectors: list[SkillConnectorDependency] = Field(default_factory=list)
     automation: SkillAutomationConfig = Field(default_factory=SkillAutomationConfig)
     lifecycle: SkillLifecycleManifest = Field(default_factory=SkillLifecycleManifest)
+    action_disclosure: ActionDisclosureMode = ActionDisclosureMode.EAGER
     actions: list[SkillActionManifest] = Field(default_factory=list)
     form: list[form_models.FormInput] = Field(default_factory=list)
+
+    def find_action(self, name: str) -> Optional[SkillActionManifest]:
+        """The action with this name or alias."""
+        return next((action for action in self.actions if action.answers_to(name)), None)
 
 
 @dataclass
@@ -119,10 +139,21 @@ class LoadedSkillRuntimeAction(BaseModel):
     input_schema: dict[str, Any] = Field(default_factory=dict, serialization_alias="schema")
 
 
+class LoadedSkillRuntimeActionSummary(BaseModel):
+    name: str
+    summary: str
+
+
 class LoadedSkillRuntimeResponse(BaseModel):
     skill_id: str
     prompt: str
     actions: list[LoadedSkillRuntimeAction] = Field(default_factory=list)
+    #: On-demand skills: action names and summaries by group, instead of schemas.
+    action_index: Optional[dict[str, list[LoadedSkillRuntimeActionSummary]]] = None
+    #: Requested action names the skill does not have.
+    unknown_actions: list[str] = Field(default_factory=list)
+    #: Closest matches, offered when a requested name was unknown or a search found nothing exact.
+    suggestions: list[str] = Field(default_factory=list)
 
 
 class AgentSkill(BaseModel):
