@@ -16,6 +16,12 @@ variable "environment" {
   default     = "prod"
 }
 
+variable "auth_app_urls" {
+  description = "JSON object of other apps sharing this login, as {name: frontend base URL}"
+  type        = string
+  default     = ""
+}
+
 variable "frontend_url" {
   description = "Frontend URL for OAuth redirects"
   type        = string

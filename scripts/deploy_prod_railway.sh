@@ -194,6 +194,7 @@ set_railway_var "DYNAMODB_TABLE" "$(get_var_default 'DYNAMODB_TABLE' "${project_
 set_railway_var "AWS_REGION_NAME" "$aws_region"
 set_railway_var "AWS_DEFAULT_REGION" "$aws_region"
 set_railway_var "FRONTEND_URL" "$(get_var 'FRONTEND_URL')"
+set_railway_var "AUTH_APP_URLS" "$(get_var 'AUTH_APP_URLS')"
 set_railway_var "API_BASE_URL" "$api_base_url"
 set_railway_var "JWT_SECRET" "$(get_var 'JWT_SECRET')"
 set_railway_var "LOG_LEVEL" "$(get_var_default 'LOG_LEVEL' 'INFO')"

@@ -159,6 +159,9 @@ class Settings:
     stripe_price_pro_monthly: str = ""
     stripe_price_pro_annual: str = ""
 
+    # Other products that share this login, as {app name: frontend base URL}
+    auth_app_urls: dict[str, str] = field(default_factory=dict)
+
     # Cognito Hosted UI (optional; for native email/password)
     cognito_domain: str = ""
     cognito_client_id: str = ""
@@ -366,6 +369,15 @@ class Settings:
 
             return [part.strip() for part in text.split(",") if part.strip()]
 
+        def parse_env_json_map(name: str) -> dict[str, str]:
+            raw = os.getenv(name, "").strip()
+            if not raw:
+                return {}
+            parsed = json.loads(raw)
+            if not isinstance(parsed, dict):
+                raise ValueError(f"{name} must be a JSON object of name to URL")
+            return {str(key): str(url).rstrip("/") for key, url in parsed.items()}
+
         def parse_env_email_list(name: str, default: list[str]) -> list[str]:
             values = parse_env_list(name, default)
             normalized = [value.strip().lower() for value in values if value and value.strip()]
@@ -487,6 +499,7 @@ class Settings:
             stripe_price_starter_annual=os.getenv("STRIPE_PRICE_STARTER_ANNUAL", ""),
             stripe_price_pro_monthly=os.getenv("STRIPE_PRICE_PRO_MONTHLY", ""),
             stripe_price_pro_annual=os.getenv("STRIPE_PRICE_PRO_ANNUAL", ""),
+            auth_app_urls=parse_env_json_map("AUTH_APP_URLS"),
             # Cognito Hosted UI
             cognito_domain=os.getenv("COGNITO_DOMAIN", ""),
             cognito_client_id=os.getenv("COGNITO_CLIENT_ID", ""),

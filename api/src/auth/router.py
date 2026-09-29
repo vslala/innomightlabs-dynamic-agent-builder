@@ -54,6 +54,7 @@ from src.skills.google_mail.oauth import (
     encode_state_session as encode_google_mail_state_session,
     save_credentials as save_google_mail_credentials,
 )
+from .apps import DEFAULT_APP, app_from_state, create_state, frontend_url_for
 from .jwt_utils import create_access_token, get_current_user
 from ..email import send_welcome_email_safe
 
@@ -195,24 +196,23 @@ def _get_provider(provider_name: str) -> OAuthProvider:
     raise HTTPException(status_code=404, detail="Unknown auth provider")
 
 
-def _redirect_auth_error(error: str) -> RedirectResponse:
-    frontend_error_url = f"{settings.frontend_url}/login?error={error}"
-    return RedirectResponse(url=frontend_error_url)
+def _redirect_auth_error(error: str, app: str = DEFAULT_APP) -> RedirectResponse:
+    return RedirectResponse(url=f"{frontend_url_for(app)}/login?error={error}")
 
 
 @router.get("/google")
-async def login_with_google():
+async def login_with_google(app: str = DEFAULT_APP):
     """Redirect user to Google OAuth consent screen."""
     provider = _get_provider("google")
-    authorization_url, _state = provider.get_authorization_url()
+    authorization_url, _state = provider.get_authorization_url(state=create_state(app))
     return RedirectResponse(url=authorization_url)
 
 
 @router.get("/cognito")
-async def login_with_cognito():
+async def login_with_cognito(app: str = DEFAULT_APP):
     """Redirect user to Cognito Hosted UI."""
     provider = _get_provider("cognito")
-    authorization_url, _state = provider.get_authorization_url()
+    authorization_url, _state = provider.get_authorization_url(state=create_state(app))
     return RedirectResponse(url=authorization_url)
 
 
@@ -478,8 +478,9 @@ async def _oauth_callback(
     state: str = Query(None),
 ):
     """Handle OAuth callback from an external provider."""
+    app = app_from_state(state)
     if error:
-        return _redirect_auth_error(error)
+        return _redirect_auth_error(error, app)
 
     if not code:
         raise HTTPException(status_code=400, detail="Missing authorization code")
@@ -515,8 +516,8 @@ async def _oauth_callback(
         )
         user = user_repository.create_or_update(user)
 
-        # Send welcome email for new users
-        if is_new_user:
+        # The welcome email is InnomightLabs-branded, so other apps send their own
+        if is_new_user and app == DEFAULT_APP:
             await send_welcome_email_safe(email)
 
         # Generate JWT token for our app
@@ -524,13 +525,13 @@ async def _oauth_callback(
 
         # Redirect to frontend with token
         redirect_params = urlencode({"token": jwt_token})
-        redirect_url = f"{settings.frontend_url}/login-success?{redirect_params}"
+        redirect_url = f"{frontend_url_for(app)}/login-success?{redirect_params}"
 
         return RedirectResponse(url=redirect_url)
 
     except Exception as e:
         log.error(f"OAuth callback error ({provider_name}): {e}", exc_info=True)
-        return _redirect_auth_error("auth_failed")
+        return _redirect_auth_error("auth_failed", app)
 
 
 @router.get("/callback")

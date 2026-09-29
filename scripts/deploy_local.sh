@@ -87,6 +87,7 @@ fi
 export ENVIRONMENT="$(get_var_default 'ENVIRONMENT' 'local')"
 export LOG_LEVEL="$(get_var_default 'LOG_LEVEL' 'DEBUG')"
 export FRONTEND_URL="$(get_var_default 'FRONTEND_URL' "http://localhost:${LOCAL_SPA_PORT:-5173}")"
+export AUTH_APP_URLS="$(get_var_default 'AUTH_APP_URLS' '{"bidsignal":"http://localhost:3000"}')"
 export API_DOMAIN="$api_domain"
 export API_BASE_URL="$api_base_url"
 export VITE_API_BASE_URL="$api_base_url"
