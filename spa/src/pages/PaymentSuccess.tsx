@@ -18,7 +18,27 @@ type SubscriptionStatusResponse = {
   is_active: boolean;
 };
 
+declare global {
+  interface Window {
+    gtag?: (...args: unknown[]) => void;
+  }
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Fire the Google Ads "Subscribe" conversion once per checkout session.
+// transaction_id lets Google dedupe; the sessionStorage flag avoids re-firing on refresh.
+const trackSubscribeConversion = (sessionId: string) => {
+  const key = `gads_conversion_${sessionId}`;
+  if (sessionStorage.getItem(key)) {
+    return;
+  }
+  sessionStorage.setItem(key, '1');
+  window.gtag?.('event', 'conversion', {
+    send_to: 'AW-880600478/SYbjCNTo-4odEJ7L86MD',
+    transaction_id: sessionId,
+  });
+};
 
 export function PaymentSuccess() {
   const [status, setStatus] = useState('Confirming payment...');
@@ -61,6 +81,7 @@ export function PaymentSuccess() {
           return;
         }
         authService.setToken(session.token);
+        trackSubscribeConversion(sessionId);
         setEmail(session.email);
         setStatus('Syncing your subscription...');
 
