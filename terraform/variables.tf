@@ -22,6 +22,13 @@ variable "auth_app_urls" {
   default     = ""
 }
 
+variable "auth_app_secrets" {
+  description = "JSON object of secrets for apps sharing this login, as {name: secret}"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "frontend_url" {
   description = "Frontend URL for OAuth redirects"
   type        = string

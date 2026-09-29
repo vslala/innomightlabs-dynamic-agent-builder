@@ -5,6 +5,7 @@ locals {
     AWS_REGION_NAME      = var.aws_region
     FRONTEND_URL         = var.frontend_url
     AUTH_APP_URLS        = var.auth_app_urls
+    AUTH_APP_SECRETS     = var.auth_app_secrets
     API_BASE_URL         = var.api_domain != "" ? "https://${var.api_domain}" : aws_apigatewayv2_api.api.api_endpoint
     GOOGLE_CLIENT_ID     = var.google_client_id
     GOOGLE_CLIENT_SECRET = var.google_client_secret

@@ -10,12 +10,12 @@ from ..users import User, UserRepository
 security = HTTPBearer()
 
 
-def create_access_token(user: User) -> str:
+def create_access_token(user: User, lifetime: timedelta | None = None) -> str:
     payload = {
         "sub": user.email,
         "name": user.name,
         "picture": user.picture,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=settings.jwt_expiration_hours),
+        "exp": datetime.now(timezone.utc) + (lifetime or timedelta(hours=settings.jwt_expiration_hours)),
         "iat": datetime.now(timezone.utc),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)

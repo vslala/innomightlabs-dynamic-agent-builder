@@ -54,6 +54,7 @@ from src.skills.google_mail.oauth import (
     encode_state_session as encode_google_mail_state_session,
     save_credentials as save_google_mail_credentials,
 )
+from .app_tokens import create_login_code
 from .apps import DEFAULT_APP, app_from_state, create_state, frontend_url_for
 from .jwt_utils import create_access_token, get_current_user
 from ..email import send_welcome_email_safe
@@ -519,6 +520,11 @@ async def _oauth_callback(
         # The welcome email is InnomightLabs-branded, so other apps send their own
         if is_new_user and app == DEFAULT_APP:
             await send_welcome_email_safe(email)
+
+        # Other apps redeem a one-time code from their backend; the token never touches the browser URL
+        if app != DEFAULT_APP:
+            code = create_login_code(user.email, app)
+            return RedirectResponse(url=f"{frontend_url_for(app)}/login-success?{urlencode({'code': code})}")
 
         # Generate JWT token for our app
         jwt_token = create_access_token(user)

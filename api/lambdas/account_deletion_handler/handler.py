@@ -93,6 +93,11 @@ class AccountDeletionHandler:
             f"User#{user_email}", "ProviderSettings#"
         )
 
+        # 9b. Delete refresh tokens issued to other apps that share this login
+        counts["refresh_tokens"] = self._delete_items_by_pattern(
+            f"User#{user_email}", "RefreshToken#"
+        )
+
         # 10. Delete Subscriptions
         counts["subscriptions"] = self._delete_items_by_pattern(
             f"User#{user_email}", "Subscription#"

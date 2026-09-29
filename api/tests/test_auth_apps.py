@@ -81,7 +81,7 @@ def test_callback_redirects_to_the_app_the_login_started_from(
 
     location = urlparse(response.headers["location"])
     assert f"{location.scheme}://{location.netloc}{location.path}" == f"{BIDSIGNAL_URL}/login-success"
-    assert parse_qs(location.query)["token"]
+    assert parse_qs(location.query).keys() == {"code"}
     assert signed_in_as_new_user == []
 
 

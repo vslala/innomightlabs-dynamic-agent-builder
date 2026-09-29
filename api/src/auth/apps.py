@@ -18,7 +18,7 @@ STATE_TTL = timedelta(minutes=10)
 def frontend_url_for(app: str) -> str:
     if app == DEFAULT_APP:
         return settings.frontend_url
-    return settings.auth_app_urls[app]
+    return settings.auth_app_urls[app].rstrip("/")
 
 
 def create_state(app: str) -> str:

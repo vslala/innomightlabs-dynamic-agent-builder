@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
 from src.auth import auth_router, middleware
+from src.auth.app_router import router as auth_app_router
 from src.rate_limits.middleware import RateLimitMiddleware
 from src.agents.router import router as agent_router
 from src.apikeys.router import router as apikeys_router
@@ -141,6 +142,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(auth_router)
+    app.include_router(auth_app_router)
     app.include_router(router=a2a_router)
     app.include_router(router=agent_router)
     app.include_router(router=apikeys_router)

@@ -159,8 +159,12 @@ class Settings:
     stripe_price_pro_monthly: str = ""
     stripe_price_pro_annual: str = ""
 
-    # Other products that share this login, as {app name: frontend base URL}
+    # Other products that share this login. Each is a registered client: it has a frontend base URL
+    # ({app name: URL}) and a secret ({app name: secret}) for the token endpoints its backend calls.
     auth_app_urls: dict[str, str] = field(default_factory=dict)
+    auth_app_secrets: dict[str, str] = field(default_factory=dict)
+    auth_app_access_token_minutes: int = 60
+    auth_refresh_token_days: int = 30
 
     # Cognito Hosted UI (optional; for native email/password)
     cognito_domain: str = ""
@@ -375,8 +379,8 @@ class Settings:
                 return {}
             parsed = json.loads(raw)
             if not isinstance(parsed, dict):
-                raise ValueError(f"{name} must be a JSON object of name to URL")
-            return {str(key): str(url).rstrip("/") for key, url in parsed.items()}
+                raise ValueError(f"{name} must be a JSON object of app name to value")
+            return {str(key): str(value) for key, value in parsed.items()}
 
         def parse_env_email_list(name: str, default: list[str]) -> list[str]:
             values = parse_env_list(name, default)
@@ -500,6 +504,9 @@ class Settings:
             stripe_price_pro_monthly=os.getenv("STRIPE_PRICE_PRO_MONTHLY", ""),
             stripe_price_pro_annual=os.getenv("STRIPE_PRICE_PRO_ANNUAL", ""),
             auth_app_urls=parse_env_json_map("AUTH_APP_URLS"),
+            auth_app_secrets=parse_env_json_map("AUTH_APP_SECRETS"),
+            auth_app_access_token_minutes=int(os.getenv("AUTH_APP_ACCESS_TOKEN_MINUTES", "60")),
+            auth_refresh_token_days=int(os.getenv("AUTH_REFRESH_TOKEN_DAYS", "30")),
             # Cognito Hosted UI
             cognito_domain=os.getenv("COGNITO_DOMAIN", ""),
             cognito_client_id=os.getenv("COGNITO_CLIENT_ID", ""),
