@@ -102,6 +102,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         actor_email: str,
         actor_id: str,
         attachments: list[Attachment] | None = None,
+        api_key_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """
         Handle a user message with memory-augmented conversation.
@@ -114,6 +115,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             actor_email: The end-user's email (who is speaking)
             actor_id: The end-user's ID (for memory scoping)
             attachments: Optional list of file attachments
+            api_key_id: The public API secret key the turn runs under, if any
 
         Yields:
             SSEEvent objects for streaming to the client
@@ -128,6 +130,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             model_name=agent.agent_model or "",
             user_message=user_message,
             attachments=attachments or [],
+            api_key_id=api_key_id,
         )
 
         state.linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)

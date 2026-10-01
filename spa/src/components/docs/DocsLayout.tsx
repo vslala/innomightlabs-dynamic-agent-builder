@@ -47,6 +47,7 @@ export function DocsLayout({ children, navItems, title, description }: DocsLayou
   const docsNavLinks = [
     { path: '/docs/quick-start', label: 'Quick Start' },
     { path: '/docs/agent-to-agent', label: 'Agent2Agent' },
+    { path: '/docs/public-api', label: 'Public API' },
     { path: '/docs/faq', label: 'FAQ' },
   ];
 

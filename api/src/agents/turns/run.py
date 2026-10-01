@@ -42,6 +42,7 @@ class TurnRequest:
     owner_email: str
     actor_email: str
     actor_id: str
+    api_key_id: str | None = None
 
 
 def start_turn(
@@ -53,6 +54,7 @@ def start_turn(
     owner_email: str,
     actor_email: str,
     actor_id: str,
+    api_key_id: str | None = None,
 ) -> ConversationTurn:
     now = datetime.now(timezone.utc)
     turn = ConversationTurn(
@@ -78,6 +80,7 @@ def start_turn(
                 owner_email=owner_email,
                 actor_email=actor_email,
                 actor_id=actor_id,
+                api_key_id=api_key_id,
             ),
         )
     )
@@ -115,6 +118,7 @@ async def _drive_turn(
             actor_email=request.actor_email,
             actor_id=request.actor_id,
             attachments=request.attachments,
+            api_key_id=request.api_key_id,
         ):
             transcript.record(event)
             if event.event_type == SSEEventType.USER_MESSAGE_SAVED:

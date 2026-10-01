@@ -40,6 +40,46 @@ def test_increment_usage_accumulates_across_day_month_year_buckets(dynamodb_tabl
         assert record.call_count == 2
 
 
+
+def test_increment_usage_with_api_key_also_counts_under_the_key(dynamodb_table):
+    repo = TokenUsageRepository()
+    occurred_at = _dt("2026-03-15")
+
+    returned = repo.increment_usage(
+        agent_id="agent-1",
+        llm_model="claude-sonnet-4-5",
+        prompt_tokens=10,
+        completion_tokens=5,
+        api_key_id="key-1",
+        occurred_at=occurred_at,
+    )
+    repo.increment_usage(
+        agent_id="agent-1",
+        llm_model="claude-sonnet-4-5",
+        prompt_tokens=100,
+        completion_tokens=50,
+        occurred_at=occurred_at,
+    )
+
+    buckets = (
+        (TokenUsagePeriod.DAY, "2026-03-15"),
+        (TokenUsagePeriod.MONTH, "2026-03"),
+        (TokenUsagePeriod.YEAR, "2026"),
+    )
+    for period, key in buckets:
+        agent_records = repo.get_usage_range(agent_id="agent-1", period=period, from_key=key, to_key=key)
+        key_records = repo.get_usage_range(
+            agent_id="agent-1", period=period, from_key=key, to_key=key, api_key_id="key-1"
+        )
+        assert [record.total_tokens for record in agent_records] == [165]
+        assert [record.total_tokens for record in key_records] == [15]
+
+    # The returned record is still the agent's day bucket, as before.
+    assert returned.period == TokenUsagePeriod.DAY
+    assert returned.total_tokens == 15
+    assert returned.agent_id == "agent-1"
+
+
 def test_increment_usage_keeps_independent_items_per_model(dynamodb_table):
     repo = TokenUsageRepository()
     occurred_at = _dt("2026-03-15")

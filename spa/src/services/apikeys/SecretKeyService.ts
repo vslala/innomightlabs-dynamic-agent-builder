@@ -3,6 +3,11 @@
  */
 
 import { httpClient } from "../http/client";
+import {
+  buildTokenUsageQuery,
+  type TokenUsageQueryParams,
+  type TokenUsageTimeseriesResponse,
+} from "../tokenUsage";
 
 export interface SecretKeyResponse {
   key_id: string;
@@ -47,6 +52,16 @@ class SecretKeyService {
     data: UpdateSecretKeyRequest
   ): Promise<SecretKeyResponse> {
     return httpClient.patch<SecretKeyResponse>(`/agents/${agentId}/secret-keys/${keyId}`, data);
+  }
+
+  async getSecretKeyUsage(
+    agentId: string,
+    keyId: string,
+    params: TokenUsageQueryParams
+  ): Promise<TokenUsageTimeseriesResponse> {
+    return httpClient.get<TokenUsageTimeseriesResponse>(
+      `/agents/${agentId}/secret-keys/${keyId}/usage?${buildTokenUsageQuery(params)}`
+    );
   }
 
   async deleteSecretKey(agentId: string, keyId: string): Promise<void> {

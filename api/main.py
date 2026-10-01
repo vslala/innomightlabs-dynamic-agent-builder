@@ -13,6 +13,7 @@ from src.rate_limits.middleware import RateLimitMiddleware
 from src.agents.router import router as agent_router
 from src.apikeys.router import router as apikeys_router
 from src.public_api.keys_router import router as secret_keys_router
+from src.public_api.router import router as public_api_router
 from src.conversations.router import router as conversation_router
 from src.settings.router import router as settings_router
 from src.memory.router import router as memory_router
@@ -148,6 +149,7 @@ def create_app() -> FastAPI:
     app.include_router(router=agent_router)
     app.include_router(router=apikeys_router)
     app.include_router(router=secret_keys_router)
+    app.include_router(router=public_api_router)
     app.include_router(router=conversation_router)
     app.include_router(router=settings_router)
     app.include_router(router=memory_router)

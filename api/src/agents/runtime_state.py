@@ -32,6 +32,8 @@ class AgentTurnState:
     user_message: str
     user_message_id: str | None = None
     attachments: list[Attachment] = field(default_factory=list)
+    #: Public API secret key this turn runs under; token usage is also counted against it.
+    api_key_id: str | None = None
 
     # Enrichment (populated during preflight)
     linked_kb_ids: list[str] = field(default_factory=list)

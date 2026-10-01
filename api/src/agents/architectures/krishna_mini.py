@@ -66,8 +66,10 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         actor_email: str,
         actor_id: str,
         attachments: list[Attachment] | None = None,
+        api_key_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
-        """One LLM call, streamed. `actor_id` is unused: Krishna Mini has no memory."""
+        """One LLM call, streamed. `actor_id` is unused: Krishna Mini has no memory, and it
+        records no token usage, so `api_key_id` is unused too."""
         user_msg = Message(
             conversation_id=conversation.conversation_id,
             created_by=actor_email,

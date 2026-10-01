@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 
 import { AlertBanner } from "../../../components/ui/alert";
@@ -17,8 +18,31 @@ interface SecretKeysCardProps {
   agentId: string;
 }
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+/** Total tokens each key has used since the start of this UTC month. Keys whose usage failed to load are left out. */
+async function loadTokensThisMonth(agentId: string, keys: SecretKeyResponse[]): Promise<Record<string, number>> {
+  const now = new Date();
+  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const to = now.toISOString();
+
+  const entries = await Promise.all(
+    keys.map(async (key) => {
+      try {
+        const usage = await secretKeyService.getSecretKeyUsage(agentId, key.key_id, { period: "month", from, to });
+        return [[key.key_id, usage.series.reduce((sum, point) => sum + point.total_tokens, 0)] as const];
+      } catch (err) {
+        console.error(`Error loading usage for API key ${key.key_id}:`, err);
+        return [];
+      }
+    })
+  );
+  return Object.fromEntries(entries.flat());
+}
+
 export function SecretKeysCard({ agentId }: SecretKeysCardProps) {
   const [keys, setKeys] = useState<SecretKeyResponse[]>([]);
+  const [tokensThisMonth, setTokensThisMonth] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -38,7 +62,10 @@ export function SecretKeysCard({ agentId }: SecretKeysCardProps) {
       setLoading(true);
       try {
         const loaded = await secretKeyService.listSecretKeys(agentId);
-        if (!cancelled) setKeys(loaded);
+        if (cancelled) return;
+        setKeys(loaded);
+        const tokens = await loadTokensThisMonth(agentId, loaded);
+        if (!cancelled) setTokensThisMonth(tokens);
       } catch (err) {
         console.error("Error loading secret keys:", err);
       } finally {
@@ -68,6 +95,7 @@ export function SecretKeysCard({ agentId }: SecretKeysCardProps) {
     try {
       const { secret, ...created } = await secretKeyService.createSecretKey(agentId, { name: newKeyName.trim() });
       setKeys((prev) => [created, ...prev]);
+      setTokensThisMonth((prev) => ({ ...prev, [created.key_id]: 0 }));
       setRevealedSecret(secret);
     } catch (err: unknown) {
       setCreateError(err instanceof Error ? err.message : "Failed to create API key");
@@ -161,6 +189,9 @@ export function SecretKeysCard({ agentId }: SecretKeysCardProps) {
                     </code>
                     <div className={styles.keyMeta}>
                       <span>{key.request_count.toLocaleString()} requests</span>
+                      {tokensThisMonth[key.key_id] !== undefined && (
+                        <span>{tokensThisMonth[key.key_id].toLocaleString()} tokens this month</span>
+                      )}
                       {key.last_used_at && <span>Last used: {new Date(key.last_used_at).toLocaleDateString()}</span>}
                       <span>Created: {new Date(key.created_at).toLocaleDateString()}</span>
                     </div>
@@ -187,6 +218,22 @@ export function SecretKeysCard({ agentId }: SecretKeysCardProps) {
                 </li>
               ))}
             </ul>
+          )}
+
+          {keys.length > 0 && (
+            <div className={styles.example}>
+              <p className={styles.exampleTitle}>Try it</p>
+              <p className={styles.exampleHint}>
+                Start a conversation with this agent from your server. See the{" "}
+                <Link to="/docs/public-api">Public API docs</Link> for sending messages and streaming replies.
+              </p>
+              <pre className={styles.exampleCode}>
+{`curl -X POST ${API_BASE_URL}/v1/agents/${agentId}/conversations \\
+  -H "Authorization: Bearer $INNOMIGHT_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"title": "Hello from my server"}'`}
+              </pre>
+            </div>
           )}
         </CardContent>
       </Card>

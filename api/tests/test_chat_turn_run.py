@@ -37,7 +37,7 @@ class FixedArchitecture(AgentArchitecture):
     concurrent turns never mix up which response belongs to which conversation."""
 
     async def handle_message(
-        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None
+        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None, api_key_id=None
     ) -> AsyncIterator[SSEEvent]:
         yield SSEEvent(
             event_type=SSEEventType.USER_MESSAGE_SAVED,
@@ -68,7 +68,7 @@ class ControllableArchitecture(AgentArchitecture):
         self.resume = asyncio.Event()
 
     async def handle_message(
-        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None
+        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None, api_key_id=None
     ) -> AsyncIterator[SSEEvent]:
         yield SSEEvent(event_type=SSEEventType.USER_MESSAGE_SAVED, content="saved", message_id="user-1")
         yield SSEEvent(event_type=SSEEventType.AGENT_RESPONSE_TO_USER, content="hello ")
@@ -86,7 +86,7 @@ class ControllableArchitecture(AgentArchitecture):
 
 class FailingArchitecture(AgentArchitecture):
     async def handle_message(
-        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None
+        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None, api_key_id=None
     ) -> AsyncIterator[SSEEvent]:
         yield SSEEvent(event_type=SSEEventType.USER_MESSAGE_SAVED, content="saved", message_id="user-1")
         yield SSEEvent(event_type=SSEEventType.ERROR, content="the model provider is unavailable")

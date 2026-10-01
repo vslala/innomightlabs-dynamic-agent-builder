@@ -16,6 +16,7 @@ class FakeArchitecture(AgentArchitecture):
         actor_email: str,
         actor_id: str,
         attachments=None,
+        api_key_id=None,
     ) -> AsyncIterator[SSEEvent]:
         yield SSEEvent(
             event_type=SSEEventType.USER_MESSAGE_SAVED,
@@ -93,6 +94,7 @@ class FailingArchitecture(AgentArchitecture):
         actor_email: str,
         actor_id: str,
         attachments=None,
+        api_key_id=None,
     ) -> AsyncIterator[SSEEvent]:
         yield SSEEvent(
             event_type=SSEEventType.ERROR,

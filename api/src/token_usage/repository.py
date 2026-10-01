@@ -6,6 +6,11 @@ from ..db import get_dynamodb_resource
 from .models import TokenUsagePeriod, TokenUsageRecord, format_period_key
 
 
+def usage_partition(*, agent_id: str, api_key_id: Optional[str] = None) -> str:
+    """Usage buckets live under the agent, or under a public API secret key."""
+    return f"SecretKey#{api_key_id}" if api_key_id else f"Agent#{agent_id}"
+
+
 class TokenUsageRepository:
     def __init__(self) -> None:
         self.dynamodb = get_dynamodb_resource()
@@ -18,9 +23,13 @@ class TokenUsageRepository:
         llm_model: str,
         prompt_tokens: int,
         completion_tokens: int,
+        api_key_id: Optional[str] = None,
         occurred_at: Optional[datetime] = None,
     ) -> TokenUsageRecord:
         """Increment the day/month/year buckets for one LLM call.
+
+        With `api_key_id`, the same buckets are also incremented under that
+        secret key's own partition, so usage can be read back per key.
 
         Three plain update_item calls (not TransactWriteItems): the three
         buckets are independent counters where a missed increment self-heals
@@ -31,24 +40,32 @@ class TokenUsageRepository:
         use to push a live update back to the client.
         """
         moment = occurred_at or datetime.now(timezone.utc)
+        agent_pk = usage_partition(agent_id=agent_id)
+        partitions = [agent_pk]
+        if api_key_id:
+            partitions.append(usage_partition(agent_id=agent_id, api_key_id=api_key_id))
+
         day_record: Optional[TokenUsageRecord] = None
-        for period in (TokenUsagePeriod.DAY, TokenUsagePeriod.MONTH, TokenUsagePeriod.YEAR):
-            record = self._increment_bucket(
-                agent_id=agent_id,
-                period=period,
-                period_key=format_period_key(period, moment),
-                llm_model=llm_model,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-            )
-            if period == TokenUsagePeriod.DAY:
-                day_record = record
+        for pk in partitions:
+            for period in (TokenUsagePeriod.DAY, TokenUsagePeriod.MONTH, TokenUsagePeriod.YEAR):
+                record = self._increment_bucket(
+                    pk=pk,
+                    agent_id=agent_id,
+                    period=period,
+                    period_key=format_period_key(period, moment),
+                    llm_model=llm_model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                )
+                if pk == agent_pk and period == TokenUsagePeriod.DAY:
+                    day_record = record
         assert day_record is not None
         return day_record
 
     def _increment_bucket(
         self,
         *,
+        pk: str,
         agent_id: str,
         period: TokenUsagePeriod,
         period_key: str,
@@ -58,7 +75,6 @@ class TokenUsageRepository:
     ) -> TokenUsageRecord:
         total_tokens = prompt_tokens + completion_tokens
         now = datetime.now(timezone.utc).isoformat()
-        pk = f"Agent#{agent_id}"
         sk = f"TokenUsage#{period.value}#{period_key}#{llm_model}"
         response = self.table.update_item(
             Key={"pk": pk, "sk": sk},
@@ -100,13 +116,14 @@ class TokenUsageRepository:
         from_key: str,
         to_key: str,
         llm_model: Optional[str] = None,
+        api_key_id: Optional[str] = None,
     ) -> list[TokenUsageRecord]:
         """One bounded Query (pk + sk BETWEEN) returning all models' buckets
         for the requested period/date range; the per-model split is a
         FilterExpression on that single result set, not a separate physical
         layout per model.
         """
-        pk = f"Agent#{agent_id}"
+        pk = usage_partition(agent_id=agent_id, api_key_id=api_key_id)
         sk_prefix = f"TokenUsage#{period.value}#"
         # High sentinel character so the upper bound envelops every llm_model
         # suffix for `to_key` (sk = TokenUsage#{period}#{period_key}#{llm_model}).

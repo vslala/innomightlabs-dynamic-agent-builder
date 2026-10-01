@@ -316,7 +316,7 @@ class _FastArchitecture:
     """A minimal architecture double: completes a turn in a handful of events."""
 
     async def handle_message(
-        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None
+        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None, api_key_id=None
     ):
         yield SSEEvent(event_type=SSEEventType.USER_MESSAGE_SAVED, content="saved", message_id="user-1")
         yield SSEEvent(event_type=SSEEventType.AGENT_RESPONSE_TO_USER, content="hi")

@@ -35,6 +35,20 @@ class AgentInvocationResult(BaseModel):
     success: bool = True
     error: str | None = None
 
+    def add(self, event: SSEEvent) -> None:
+        """Fold one streamed event into the buffered result."""
+        self.events.append(event)
+
+        if event.event_type == SSEEventType.AGENT_RESPONSE_TO_USER:
+            self.response_text += event.content
+        elif event.event_type == SSEEventType.USER_MESSAGE_SAVED:
+            self.user_message_id = event.message_id
+        elif event.event_type == SSEEventType.ASSISTANT_MESSAGE_SAVED:
+            self.assistant_message_id = event.message_id
+        elif event.event_type == SSEEventType.ERROR:
+            self.success = False
+            self.error = event.content
+
 
 class AgentArchitecture(ABC):
     """
@@ -54,6 +68,7 @@ class AgentArchitecture(ABC):
         actor_email: str,
         actor_id: str,
         attachments: list["Attachment"] | None = None,
+        api_key_id: str | None = None,
     ) -> AsyncIterator["SSEEvent"]:
         """
         Handle a user message and stream SSE events.
@@ -70,6 +85,7 @@ class AgentArchitecture(ABC):
             actor_email: The end-user's email (who is speaking)
             actor_id: The end-user's ID (used for memory scoping)
             attachments: Optional list of file attachments
+            api_key_id: The public API secret key the turn runs under, if any (usage attribution)
 
         Yields:
             SSEEvent objects for streaming to the client
@@ -84,6 +100,7 @@ class AgentArchitecture(ABC):
                 actor_email=actor_email,
                 actor_id=actor_id,
                 attachments=attachments,
+                api_key_id=api_key_id,
             ):
                 failed = failed or event.event_type == SSEEventType.ERROR
                 yield event
@@ -105,6 +122,7 @@ class AgentArchitecture(ABC):
         actor_email: str,
         actor_id: str,
         attachments: list["Attachment"] | None = None,
+        api_key_id: str | None = None,
     ) -> AsyncIterator["SSEEvent"]:
         """Stream one turn's content events. Errors may simply be raised.
 
@@ -122,6 +140,7 @@ class AgentArchitecture(ABC):
         actor_email: str,
         actor_id: str,
         attachments: list["Attachment"] | None = None,
+        api_key_id: str | None = None,
     ) -> AgentInvocationResult:
         """
         Handle a user message and return a buffered invocation result.
@@ -140,18 +159,9 @@ class AgentArchitecture(ABC):
             actor_email=actor_email,
             actor_id=actor_id,
             attachments=attachments,
+            api_key_id=api_key_id,
         ):
-            result.events.append(event)
-
-            if event.event_type == SSEEventType.AGENT_RESPONSE_TO_USER:
-                result.response_text += event.content
-            elif event.event_type == SSEEventType.USER_MESSAGE_SAVED:
-                result.user_message_id = event.message_id
-            elif event.event_type == SSEEventType.ASSISTANT_MESSAGE_SAVED:
-                result.assistant_message_id = event.message_id
-            elif event.event_type == SSEEventType.ERROR:
-                result.success = False
-                result.error = event.content
+            result.add(event)
 
         return result
 

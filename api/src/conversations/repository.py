@@ -12,7 +12,7 @@ from ..db import get_dynamodb_resource
 from boto3.dynamodb.conditions import Key
 
 from src.config import settings
-from src.conversations.models import AutomationConversation, Conversation
+from src.conversations.models import ApiConversation, AutomationConversation, Conversation
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +44,9 @@ class ConversationRepository:
             or item.get("entity_type") == "AutomationConversation"
         ):
             return AutomationConversation.from_dynamo_item(item)
+
+        if item.get("entity_type") == "ApiConversation":
+            return ApiConversation.from_dynamo_item(item)
 
         return Conversation.from_dynamo_item(item)
 

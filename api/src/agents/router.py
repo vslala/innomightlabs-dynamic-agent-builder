@@ -32,6 +32,7 @@ from src.agents.turns.transcript import TurnTranscript
 from src.a2a.models import A2ATaskListResponse, A2ATaskResponse
 from src.a2a.repository import A2ATaskRepository
 from src.apikeys.repository import ApiKeyRepository
+from src.common.sse import sse_response
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.crypto import encrypt_secret_fields
@@ -454,14 +455,6 @@ def resolve_chat_turn(
     return ChatTurnTarget(agent=target.agent, conversation=target.conversation, turn=turn)
 
 
-def _sse_response(events) -> StreamingResponse:
-    return StreamingResponse(
-        events,
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
-
-
 async def _stream_transcript(transcript: TurnTranscript, *, after_sequence: int):
     async for sequence, event in transcript.follow(after_sequence=after_sequence):
         yield f"id: {sequence}\n{event.to_sse()}"
@@ -517,7 +510,7 @@ async def send_message(
     )
     transcript = cast(TurnTranscript, live_transcript(turn.turn_id))
 
-    response = _sse_response(_stream_transcript(transcript, after_sequence=0))
+    response = sse_response(_stream_transcript(transcript, after_sequence=0))
     response.headers["X-Turn-Id"] = turn.turn_id
     return response
 
@@ -550,7 +543,7 @@ async def stream_turn_events(
     if transcript is None:
         raise HTTPException(status_code=410, detail="This response is no longer available.")
 
-    return _sse_response(_stream_transcript(transcript, after_sequence=after_sequence))
+    return sse_response(_stream_transcript(transcript, after_sequence=after_sequence))
 
 
 @router.post("/{agent_id}/{conversation_id}/turns/{turn_id}/stop", status_code=204)

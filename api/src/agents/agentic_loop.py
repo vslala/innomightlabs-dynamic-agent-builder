@@ -109,6 +109,7 @@ class TokenUsageRecorder(Protocol):
         llm_model: str,
         prompt_tokens: int,
         completion_tokens: int,
+        api_key_id: Optional[str] = None,
     ) -> "TokenUsageRecord":
         ...
 
@@ -278,6 +279,7 @@ async def _record_token_usage(
             llm_model=state.model_name,
             prompt_tokens=usage_event.prompt_tokens,
             completion_tokens=usage_event.completion_tokens,
+            api_key_id=getattr(state, "api_key_id", None),
         )
     except Exception:
         log.exception("Failed to record token usage for agent turn")

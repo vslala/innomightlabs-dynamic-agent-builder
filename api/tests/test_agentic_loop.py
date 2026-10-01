@@ -66,7 +66,7 @@ class FakeTokenUsageService:
         self.calls: list[dict[str, Any]] = []
         self._totals: dict[str, dict[str, int]] = {}
 
-    def record_usage(self, *, owner_email, agent_id, llm_model, prompt_tokens, completion_tokens):
+    def record_usage(self, *, owner_email, agent_id, llm_model, prompt_tokens, completion_tokens, api_key_id=None):
         self.calls.append(
             {
                 "owner_email": owner_email,

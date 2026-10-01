@@ -60,6 +60,7 @@ ANALYTICS_AGENT_PATH_PREFIX = "/analytics/agents/"
 DOWNLOADS_PLUGINS_PATH_PREFIX = "/downloads/plugins"
 A2A_PATH_PREFIX = "/a2a/"
 A2A_WELL_KNOWN_PATH_PREFIX = "/.well-known/agents/"
+PUBLIC_API_PATH_PREFIX = "/v1/"
 
 
 def decode_token_without_verification(token: str) -> Optional[dict[str, Any]]:
@@ -139,6 +140,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Skip auth for A2A routes (handled by A2A auth dependencies where needed)
         if request.url.path.startswith(A2A_PATH_PREFIX):
+            return await call_next(request)
+
+        # Skip auth for the public API (secret keys, checked by require_secret_key)
+        if request.url.path.startswith(PUBLIC_API_PATH_PREFIX):
             return await call_next(request)
 
         # Skip auth for OPTIONS (CORS preflight)

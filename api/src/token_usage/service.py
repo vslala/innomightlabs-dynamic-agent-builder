@@ -41,6 +41,7 @@ class TokenUsageService:
         llm_model: str,
         prompt_tokens: int,
         completion_tokens: int,
+        api_key_id: Optional[str] = None,
     ) -> TokenUsageRecord:
         """Record usage for one LLM call.
 
@@ -56,6 +57,7 @@ class TokenUsageService:
             llm_model=llm_model,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            api_key_id=api_key_id,
         )
 
     def get_usage(
@@ -67,8 +69,11 @@ class TokenUsageService:
         from_at: Optional[datetime],
         to_at: Optional[datetime],
         llm_model: Optional[str] = None,
+        api_key_id: Optional[str] = None,
     ) -> TokenUsageTimeseriesResponse:
-        """Fetch a token usage time series for one agent.
+        """Fetch a token usage time series for one agent, or for one of its
+        public API secret keys when `api_key_id` is given (the caller must have
+        confirmed that key belongs to the agent).
 
         Must check agent ownership via AgentRepository.find_agent_by_id --
         this data is keyed by agent_id alone and doesn't get scoping "for
@@ -88,6 +93,7 @@ class TokenUsageService:
             from_key=from_key,
             to_key=to_key,
             llm_model=llm_model,
+            api_key_id=api_key_id,
         )
 
         series = [

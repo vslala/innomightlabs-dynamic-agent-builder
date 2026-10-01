@@ -32,7 +32,7 @@ export interface TokenUsageTimeseriesResponse {
   series: TokenUsagePoint[];
 }
 
-function buildQuery(params: TokenUsageQueryParams): string {
+export function buildTokenUsageQuery(params: TokenUsageQueryParams): string {
   const searchParams = new URLSearchParams();
   searchParams.set("period", params.period);
   if (params.from) searchParams.set("from", params.from);
@@ -47,7 +47,7 @@ class TokenUsageApiService {
     params: TokenUsageQueryParams
   ): Promise<TokenUsageTimeseriesResponse> {
     return httpClient.get<TokenUsageTimeseriesResponse>(
-      `/analytics/agents/${agentId}/token-usage?${buildQuery(params)}`
+      `/analytics/agents/${agentId}/token-usage?${buildTokenUsageQuery(params)}`
     );
   }
 }

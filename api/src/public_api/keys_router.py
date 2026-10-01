@@ -1,8 +1,9 @@
 """Dashboard management of an agent's secret keys for the public /v1 API."""
 
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPBearer
 
 from src.agents.repository import AgentRepository
@@ -15,6 +16,8 @@ from src.public_api.keys import (
     SecretKeyResponse,
     UpdateSecretKeyRequest,
 )
+from src.token_usage.models import TokenUsagePeriod, TokenUsageTimeseriesResponse
+from src.token_usage.service import TokenUsageService
 
 router = APIRouter(
     prefix="/agents/{agent_id}/secret-keys",
@@ -25,6 +28,10 @@ router = APIRouter(
 
 def get_secret_key_repository() -> SecretKeyRepository:
     return SecretKeyRepository()
+
+
+def get_token_usage_service() -> TokenUsageService:
+    return TokenUsageService()
 
 
 def require_agent_owner(
@@ -86,6 +93,32 @@ async def update_secret_key(
     if not key:
         raise HTTPException(status_code=404, detail="Secret key not found")
     return key.to_response()
+
+
+@router.get("/{key_id}/usage", response_model=TokenUsageTimeseriesResponse)
+async def get_secret_key_usage(
+    agent_id: str,
+    key_id: str,
+    period: TokenUsagePeriod,
+    owner_email: Annotated[str, Depends(require_agent_owner)],
+    repo: Annotated[SecretKeyRepository, Depends(get_secret_key_repository)],
+    service: Annotated[TokenUsageService, Depends(get_token_usage_service)],
+    llm_model: Optional[str] = Query(default=None),
+    from_at: Annotated[Optional[datetime], Query(alias="from")] = None,
+    to_at: Annotated[Optional[datetime], Query(alias="to")] = None,
+) -> TokenUsageTimeseriesResponse:
+    """Token usage of calls made with this key, in the same shape as agent token usage."""
+    if not repo.find_by_id(agent_id, key_id):
+        raise HTTPException(status_code=404, detail="Secret key not found")
+    return service.get_usage(
+        owner_email=owner_email,
+        agent_id=agent_id,
+        period=period,
+        from_at=from_at,
+        to_at=to_at,
+        llm_model=llm_model,
+        api_key_id=key_id,
+    )
 
 
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)

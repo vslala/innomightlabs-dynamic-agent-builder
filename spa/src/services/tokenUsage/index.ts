@@ -1,5 +1,6 @@
 export {
   tokenUsageApiService,
+  buildTokenUsageQuery,
   type TokenUsagePeriod,
   type TokenUsageQueryParams,
   type TokenUsagePoint,

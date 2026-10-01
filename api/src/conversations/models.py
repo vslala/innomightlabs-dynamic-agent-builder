@@ -164,3 +164,65 @@ class AutomationConversation(Conversation):
             automation_id=item["automation_id"],
             automation_run_id=item["automation_run_id"],
         )
+
+
+class ApiConversation(Conversation):
+    """Conversation created through the public /v1 API with a secret key.
+
+    Stored under the key's own pseudo-owner partition rather than the agent
+    owner's, so a busy integration never floods the owner's dashboard list and
+    one key can never load another key's conversations.
+    """
+
+    api_key_id: str
+    end_user_id: Optional[str] = None
+
+    @staticmethod
+    def owner_for(api_key_id: str) -> str:
+        """The `created_by` every conversation of this key is stored under."""
+        return f"secret-key:{api_key_id}"
+
+    @classmethod
+    def start(
+        cls, *, api_key_id: str, agent_id: str, title: str, end_user_id: Optional[str] = None
+    ) -> "ApiConversation":
+        return cls(
+            api_key_id=api_key_id,
+            agent_id=agent_id,
+            title=title,
+            end_user_id=end_user_id,
+            created_by=cls.owner_for(api_key_id),
+        )
+
+    @property
+    def actor_id(self) -> str:
+        """Memory scope: per key, or per end user of that key when one is given."""
+        owner = self.owner_for(self.api_key_id)
+        return f"{owner}:{self.end_user_id}" if self.end_user_id else owner
+
+    def to_dynamo_item(self) -> dict[str, Any]:
+        item = super().to_dynamo_item()
+        item.update(
+            {
+                "entity_type": "ApiConversation",
+                "api_key_id": self.api_key_id,
+                "end_user_id": self.end_user_id,
+            }
+        )
+        return item
+
+    @classmethod
+    def from_dynamo_item(cls, item: dict[str, Any]) -> "ApiConversation":
+        return cls(
+            conversation_id=item["conversation_id"],
+            title=item["title"],
+            description=item.get("description"),
+            agent_id=item["agent_id"],
+            created_by=item["created_by"],
+            created_at=datetime.fromisoformat(item["created_at"]),
+            updated_at=(
+                datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None
+            ),
+            api_key_id=item["api_key_id"],
+            end_user_id=item.get("end_user_id"),
+        )
