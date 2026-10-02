@@ -1,0 +1,15 @@
+# Home hosting platform app (see vslala/home-hosting). The deploy agent builds this file from main
+# after the pipeline's tests pass; the gateway routes the app's hostname to the labelled service.
+services:
+  web:
+    build: ./www
+    restart: unless-stopped
+    expose: ["80"]
+    labels:
+      hosting.http.port: "80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

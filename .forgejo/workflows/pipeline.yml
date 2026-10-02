@@ -1,0 +1,37 @@
+name: Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "www/**"
+      - "compose.yaml"
+      - ".forgejo/workflows/pipeline.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: hosting-ci
+    container: node:24-alpine
+    steps:
+      - name: Install git for checkout
+        run: apk add --no-cache git
+      - uses: actions/checkout@v4
+      - name: Type-check and build
+        working-directory: www
+        run: |
+          yarn install --frozen-lockfile
+          yarn build
+
+  deploy:
+    needs: [test]
+    runs-on: hosting-ci
+    steps:
+      - name: Deploy
+        env:
+          TOKEN: ${{ secrets.HOSTING_DEPLOY_TOKEN }}
+        run: |
+          wget -qO- --post-data='' \
+            --header="Authorization: Bearer ${TOKEN}" \
+            "http://host.containers.internal:8765/v1/deploy/www?sha=${{ github.sha }}" | tee deploy.log
+          tail -n 1 deploy.log | grep -qx 'RESULT: success'
