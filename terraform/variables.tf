@@ -114,6 +114,12 @@ variable "widget_cdn_domain" {
   default     = ""
 }
 
+variable "spa_domain" {
+  description = "Custom domain for the S3/CloudFront-hosted SPA (e.g., engram.innomightlabs.com). Empty skips SPA hosting."
+  type        = string
+  default     = ""
+}
+
 variable "downloads_artifacts_bucket" {
   description = "S3 bucket for downloadable plugin artifacts"
   type        = string

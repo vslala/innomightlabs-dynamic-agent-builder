@@ -80,6 +80,34 @@ output "widget_cert_validation_record" {
 }
 
 # =============================================================================
+# SPA Hosting Outputs
+# =============================================================================
+
+output "spa_url" {
+  description = "URL of the S3/CloudFront-hosted SPA (if configured)"
+  value       = var.spa_domain != "" ? "https://${var.spa_domain}" : null
+}
+
+output "spa_cloudfront_domain" {
+  description = "Target for the SPA CNAME record (add this to Cloudflare, DNS only)"
+  value       = var.spa_domain != "" ? aws_cloudfront_distribution.spa[0].domain_name : null
+}
+
+output "spa_bucket" {
+  description = "S3 bucket holding the SPA build"
+  value       = var.spa_domain != "" ? aws_s3_bucket.spa[0].id : null
+}
+
+output "spa_cert_validation_record" {
+  description = "DNS record to add in Cloudflare (DNS only) for SPA certificate validation"
+  value = var.spa_domain != "" ? {
+    name  = tolist(aws_acm_certificate.spa[0].domain_validation_options)[0].resource_record_name
+    type  = tolist(aws_acm_certificate.spa[0].domain_validation_options)[0].resource_record_type
+    value = tolist(aws_acm_certificate.spa[0].domain_validation_options)[0].resource_record_value
+  } : null
+}
+
+# =============================================================================
 # API Custom Domain Outputs
 # =============================================================================
 
