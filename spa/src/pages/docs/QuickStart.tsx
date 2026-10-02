@@ -8,6 +8,7 @@ const navItems = [
   { id: 'add-knowledge-base', label: 'Add Knowledge Base', href: '#add-knowledge-base' },
   { id: 'test-dashboard', label: 'Test in Dashboard', href: '#test-dashboard' },
   { id: 'embed-widget', label: 'Embed Widget', href: '#embed-widget' },
+  { id: 'embedded-widget', label: 'Embedded Widget (iframe)', href: '#embedded-widget' },
 ];
 
 export function QuickStart() {
@@ -486,6 +487,143 @@ InnomightChat.destroy();`}
             Monitor conversations from your dashboard, and don't forget to check the
             <strong> Conversations</strong> page to see what visitors are asking.
           </p>
+        </div>
+      </section>
+
+      <hr />
+
+      <section id="embedded-widget">
+        <h2>Embedded Widget (iframe)</h2>
+        <p>
+          The embedded widget uses the same widget API key as the classic widget, but runs the chat
+          inside its own frame. Your site's CSS can't change how it looks, its code can't read the
+          visitor's sign-in, and it only loads the chat once a visitor is about to use it.
+        </p>
+
+        <div className={styles.codeExample}>
+          <div className={styles.codeHeader}>Embedded Widget Code</div>
+          <pre>
+{`<script
+  src="https://cdn.innomightlabs.com/embed.js"
+  data-api-key="your-api-key-here"
+  data-theme="auto"
+  data-greeting="Hi! How can I help you today?"
+  async></script>`}
+          </pre>
+        </div>
+
+        <h3>Options</h3>
+        <div className={styles.optionsTable}>
+          <div className={styles.optionRow}>
+            <code>data-mode</code>
+            <span><code>floating</code> (a chat button in the corner, the default), <code>inline</code> (fills a container on your page), or <code>none</code> (no chat of its own; only the page sections below)</span>
+          </div>
+          <div className={styles.optionRow}>
+            <code>data-target</code>
+            <span>For <code>inline</code>: a CSS selector for the container, e.g. <code>#chat</code>. Give the container a height.</span>
+          </div>
+          <div className={styles.optionRow}>
+            <code>data-position</code>
+            <span><code>bottom-right</code> (default) or <code>bottom-left</code></span>
+          </div>
+          <div className={styles.optionRow}>
+            <code>data-theme</code>
+            <span><code>auto</code> (follows the visitor's system setting, the default), <code>light</code> or <code>dark</code></span>
+          </div>
+          <div className={styles.optionRow}>
+            <code>data-primary-color</code>
+            <span>Any CSS color for the button, avatar and your visitors' messages, e.g. <code>#6d5dfc</code></span>
+          </div>
+          <div className={styles.optionRow}>
+            <code>data-greeting</code>
+            <span>The first message visitors see</span>
+          </div>
+          <div className={styles.optionRow}>
+            <code>data-placeholder</code>
+            <span>Placeholder text for the message box</span>
+          </div>
+          <div className={styles.optionRow}>
+            <code>data-prompt</code>
+            <span>A message sent for the visitor as soon as the chat is first seen, so the agent answers right away. Put the details the agent needs in it.</span>
+          </div>
+          <div className={styles.optionRow}>
+            <code>data-prompt-label</code>
+            <span>A short question shown in the visitor's bubble instead of the full prompt</span>
+          </div>
+          <div className={styles.optionRow}>
+            <code>data-auto-prompt</code>
+            <span><code>true</code> (default) sends the prompt as soon as the chat is seen; <code>false</code> shows it as a suggestion the visitor clicks to ask</span>
+          </div>
+          <div className={styles.optionRow}>
+            <code>data-launcher-label</code>
+            <span>Accessible label for the chat button (default "Chat with us")</span>
+          </div>
+        </div>
+
+        <div className={styles.codeExample}>
+          <div className={styles.codeHeader}>Inline Example</div>
+          <pre>
+{`<div id="chat" style="height: 600px"></div>
+<script
+  src="https://cdn.innomightlabs.com/embed.js"
+  data-api-key="your-api-key-here"
+  data-mode="inline"
+  data-target="#chat"
+  async></script>`}
+          </pre>
+        </div>
+
+        <h3>A Chat in Each Section</h3>
+        <p>
+          Mark any element with <code>data-innomight-chat</code> and the same script fills it with its
+          own chat. Each one uses your key and colours. You can give it its own{' '}
+          <code>data-prompt</code>, <code>data-prompt-label</code>, <code>data-greeting</code>,{' '}
+          <code>data-placeholder</code>, <code>data-theme</code> and{' '}
+          <code>data-primary-color</code>.
+        </p>
+        <p>
+          A section's prompt is sent once, when the visitor first scrolls the chat into view, so
+          sections nobody reaches don't use any messages. Add <code>data-auto-prompt="false"</code>{' '}
+          to show it as a one-click suggestion instead. Each prompt keeps its own conversation, so
+          returning visitors pick up where they left off instead of being asked again. Visitors who
+          aren't signed in see the question and get the answer as soon as they sign in.
+        </p>
+        <div className={styles.codeExample}>
+          <div className={styles.codeHeader}>Section Chat Example</div>
+          <pre>
+{`<section>
+  <h2>Our subscriptions</h2>
+  <div
+    data-innomight-chat
+    data-prompt-label="Which plan fits me?"
+    data-prompt="I'm on the subscriptions page. Plans: Solo (£10.50/month), Duo (£19.50/month) and Office (£38 every two weeks). Summarise them and help me choose."
+    style="height: 560px"></div>
+</section>
+
+<!-- Once per page. data-mode="none" skips the corner button if you only want section chats. -->
+<script
+  src="https://cdn.innomightlabs.com/embed.js"
+  data-api-key="your-api-key-here"
+  async></script>`}
+          </pre>
+        </div>
+
+        <h3>Control It From Your Page</h3>
+        <div className={styles.codeExample}>
+          <div className={styles.codeHeader}>Embedded Widget API</div>
+          <pre>
+{`InnomightEmbed.open();
+InnomightEmbed.close();
+InnomightEmbed.toggle();
+
+// Run code when the chat is ready, opened or closed
+InnomightEmbed.on('ready', () => console.log('Chat ready'));`}
+          </pre>
+        </div>
+
+        <div className={styles.tipBox}>
+          <strong>Allowed origins:</strong> if your widget key lists allowed origins, only those sites
+          can show the embedded widget. Browsers refuse to display it anywhere else.
         </div>
       </section>
 

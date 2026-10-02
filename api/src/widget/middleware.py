@@ -84,9 +84,13 @@ class WidgetAuthMiddleware(BaseHTTPMiddleware):
                 detail="API key is disabled",
             )
 
-        # Check origin if allowed_origins is set
+        # Check origin if allowed_origins is set. Same-origin requests come from
+        # the embeddable widget's iframe, whose placement is already restricted
+        # by its frame-ancestors policy; browsers set Sec-Fetch-Site and page
+        # scripts cannot forge it.
         origin = request.headers.get("Origin")
-        if not api_key.is_origin_allowed(origin):
+        same_origin = request.headers.get("Sec-Fetch-Site") == "same-origin"
+        if not (same_origin or api_key.is_origin_allowed(origin)):
             log.warning(
                 f"Origin '{origin}' not allowed for API key {api_key.key_id}"
             )

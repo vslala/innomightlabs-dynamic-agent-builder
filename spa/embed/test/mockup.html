@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Northwind Coffee · Freshly roasted, delivered</title>
+    <style>
+      :root {
+        --ink: #2b1d14;
+        --muted: #7a6656;
+        --cream: #fbf6ef;
+        --latte: #efe3d3;
+        --accent: #b5562b;
+      }
+      * { box-sizing: border-box; margin: 0; }
+      body { font: 16px/1.6 "Georgia", serif; color: var(--ink); background: var(--cream); }
+      a { color: inherit; }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+      header { border-bottom: 1px solid var(--latte); }
+      header .wrap { display: flex; align-items: center; justify-content: space-between; height: 72px; }
+      .logo { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+      .logo span { color: var(--accent); }
+      nav { display: flex; gap: 28px; font: 15px system-ui, sans-serif; color: var(--muted); }
+      nav a { text-decoration: none; }
+
+      .hero { padding: 88px 0 72px; display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center; }
+      .eyebrow { font: 600 13px system-ui, sans-serif; letter-spacing: 2px; text-transform: uppercase; color: var(--accent); }
+      h1 { font-size: 52px; line-height: 1.1; margin: 12px 0 20px; }
+      .lead { font-size: 19px; color: var(--muted); max-width: 520px; }
+      .cta { display: inline-block; margin-top: 32px; padding: 14px 28px; border-radius: 999px; background: var(--ink); color: var(--cream); font: 600 15px system-ui, sans-serif; text-decoration: none; }
+      .hero-art { aspect-ratio: 1; border-radius: 32px; background:
+        radial-gradient(circle at 30% 30%, #d9a066 0 18%, transparent 19%),
+        radial-gradient(circle at 65% 60%, #8b4a2b 0 26%, transparent 27%),
+        linear-gradient(135deg, #e9d3b8, #c99a6e); box-shadow: 0 30px 60px rgba(43, 29, 20, 0.18); }
+
+      .products { padding: 24px 0 96px; }
+      .products h2 { font-size: 30px; margin-bottom: 24px; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+      .card { background: #fff; border: 1px solid var(--latte); border-radius: 20px; padding: 24px; }
+      .swatch { height: 140px; border-radius: 14px; margin-bottom: 16px; }
+      .card h3 { font-size: 20px; }
+      .card p { color: var(--muted); font: 14px/1.6 system-ui, sans-serif; margin: 6px 0 14px; }
+      .price { font: 700 16px system-ui, sans-serif; }
+
+      .ask { padding: 72px 0; border-top: 1px solid var(--latte); display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 48px; align-items: center; }
+      .ask h2 { font-size: 34px; line-height: 1.15; margin: 10px 0 16px; }
+      .ask p { color: var(--muted); font-size: 17px; }
+      .ask ul { margin: 18px 0 0; padding-left: 20px; color: var(--muted); font: 15px/1.9 system-ui, sans-serif; }
+      .section-chat { height: 560px; border-radius: 20px; box-shadow: 0 24px 60px rgba(43, 29, 20, 0.14); }
+      .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 20px; }
+      .plan { background: #fff; border: 1px solid var(--latte); border-radius: 14px; padding: 14px; font: 14px/1.5 system-ui, sans-serif; }
+      .plan strong { display: block; font-size: 15px; color: var(--ink); }
+
+      footer { border-top: 1px solid var(--latte); padding: 32px 0; font: 14px system-ui, sans-serif; color: var(--muted); }
+
+      @media (max-width: 760px) {
+        .hero { grid-template-columns: 1fr; padding-top: 48px; }
+        h1 { font-size: 38px; }
+        .grid { grid-template-columns: 1fr; }
+        .ask { grid-template-columns: 1fr; }
+        .plans { grid-template-columns: 1fr; }
+        nav { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <div class="logo">Northwind <span>Coffee</span></div>
+        <nav>
+          <a href="#">Shop</a>
+          <a href="#">Subscriptions</a>
+          <a href="#">Our farms</a>
+          <a href="#">Contact</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="hero">
+        <div>
+          <div class="eyebrow">Roasted this week</div>
+          <h1>Small-batch coffee, at your door every month.</h1>
+          <p class="lead">
+            Single-origin beans from farms we know by name, roasted to order and shipped within
+            48 hours. Questions about grind, brewing or your order? Ask our assistant.
+          </p>
+          <a class="cta" href="#" onclick="InnomightEmbed?.open(); return false;">Ask the assistant</a>
+        </div>
+        <div class="hero-art" aria-hidden="true"></div>
+      </section>
+
+      <section class="products">
+        <h2>This month's roasts</h2>
+        <div class="grid">
+          <article class="card">
+            <div class="swatch" style="background: linear-gradient(135deg, #c98b5a, #7a3f22)"></div>
+            <h3>Huila, Colombia</h3>
+            <p>Red apple, panela and milk chocolate. A forgiving everyday cup.</p>
+            <div class="price">£11.50 · 250g</div>
+          </article>
+          <article class="card">
+            <div class="swatch" style="background: linear-gradient(135deg, #e0b07a, #a35a2c)"></div>
+            <h3>Yirgacheffe, Ethiopia</h3>
+            <p>Jasmine, bergamot and stone fruit. Bright and tea-like as a pour-over.</p>
+            <div class="price">£13.00 · 250g</div>
+          </article>
+          <article class="card">
+            <div class="swatch" style="background: linear-gradient(135deg, #8d5a3b, #3b2216)"></div>
+            <h3>House Espresso</h3>
+            <p>Dark cocoa, hazelnut and caramel. Built for milk drinks.</p>
+            <div class="price">£10.50 · 250g</div>
+          </article>
+        </div>
+      </section>
+
+      <!-- A section chat: answers about this section the moment it scrolls into view. -->
+      <section class="ask">
+        <div>
+          <div class="eyebrow">Not sure where to start?</div>
+          <h2>Find the roast that suits how you brew.</h2>
+          <p>Tell our assistant how you make coffee at home and it will match you to this month's roasts.</p>
+          <ul>
+            <li>Huila, Colombia: red apple, panela, milk chocolate</li>
+            <li>Yirgacheffe, Ethiopia: jasmine, bergamot, stone fruit</li>
+            <li>House Espresso: dark cocoa, hazelnut, caramel</li>
+          </ul>
+        </div>
+        <div
+          class="section-chat"
+          data-innomight-chat
+          data-greeting="Hi! I know this month's roasts inside out."
+          data-prompt-label="Which of this month's roasts should I try?"
+          data-prompt="I'm on Northwind Coffee's website looking at this month's roasts: Huila, Colombia (red apple, panela and milk chocolate; a forgiving everyday cup; £11.50 per 250g), Yirgacheffe, Ethiopia (jasmine, bergamot and stone fruit; bright and tea-like, best as a pour-over; £13.00 per 250g) and House Espresso (dark cocoa, hazelnut and caramel; built for milk drinks; £10.50 per 250g). In a few short lines, help me pick one: say which suits which brewing method, then ask me one question about how I make my coffee."
+        ></div>
+      </section>
+
+      <!--
+        A second section chat with its own prompt and conversation. data-auto-prompt="false" offers
+        the question as a one-click suggestion instead of sending it when the chat scrolls into view.
+      -->
+      <section class="ask">
+        <div
+          class="section-chat"
+          data-innomight-chat
+          data-auto-prompt="false"
+          data-theme="dark"
+          data-greeting="Questions about subscriptions? Ask away."
+          data-prompt-label="Which subscription fits me?"
+          data-prompt="I'm on Northwind Coffee's subscriptions page. The plans are: Solo (250g every month, £10.50, pause or skip anytime), Duo (2 x 250g every month, £19.50, free delivery) and Office (1kg every two weeks, £38, free delivery and a grinder after three months). In a few short lines, summarise the plans and tell me which fits a household that drinks about four cups a day."
+        ></div>
+        <div>
+          <div class="eyebrow">Subscriptions</div>
+          <h2>Never run out. Skip or pause whenever you like.</h2>
+          <p>Choose how much coffee you get and how often. Every bag is roasted to order.</p>
+          <div class="plans">
+            <div class="plan"><strong>Solo</strong>250g monthly<br />£10.50</div>
+            <div class="plan"><strong>Duo</strong>2 × 250g monthly<br />£19.50</div>
+            <div class="plan"><strong>Office</strong>1kg fortnightly<br />£38</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">© 2026 Northwind Coffee · A demo page for the InnomightLabs embeddable widget.</div>
+    </footer>
+
+    <!--
+      The customer's snippet. Two attributes differ from the production snippet so it runs locally:
+      `src` points at the local build (yarn preview:embed) and `data-api-url` at the local API.
+      In production both default to cdn.innomightlabs.com and api.innomightlabs.com.
+      The same script also fills every [data-innomight-chat] section above.
+    -->
+    <script
+      src="http://localhost:4174/embed.js"
+      data-api-key="pk_live_49da3c8319679a2d6637cabee9d5c06b"
+      data-api-url="http://localhost:1455"
+      data-primary-color="#b5562b"
+      data-greeting="Hi! I can help with our roasts, brewing tips or your subscription. What would you like to know?"
+      data-launcher-label="Ask Northwind"
+      async></script>
+  </body>
+</html>

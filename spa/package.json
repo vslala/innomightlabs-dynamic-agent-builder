@@ -10,6 +10,8 @@
     "design:audit": "node scripts/design-audit.mjs",
     "lint": "eslint .",
     "test": "vitest run",
+    "build:embed": "vite build -c embed/vite.app.config.ts && vite build -c embed/vite.loader.config.ts",
+    "preview:embed": "vite preview -c embed/vite.app.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {

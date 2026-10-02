@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Embed test page</title>
+    <style>
+      body { font: 16px/1.6 system-ui, sans-serif; max-width: 720px; margin: 48px auto; padding: 0 16px; color: #172b4d; }
+      code { background: #f1f2f4; padding: 2px 6px; border-radius: 4px; }
+      #chat { height: 600px; margin-top: 24px; }
+    </style>
+  </head>
+  <body>
+    <h1>Embed test page</h1>
+    <p>
+      Pretends to be a customer's site. Serve this folder (<code>python3 -m http.server 5500</code> from
+      <code>spa/embed</code>), run <code>yarn build:embed &amp;&amp; yarn preview:embed</code>, start the API with
+      <code>WIDGET_CDN_URL=http://localhost:4174</code>, then open
+      <code>/test/?key=pk_live_…</code>. Add <code>&amp;mode=inline</code> for inline mode or
+      <code>&amp;api=…</code> for another API.
+    </p>
+    <div id="chat"></div>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const script = document.createElement("script");
+      script.src = "../dist/embed.js";
+      script.async = true;
+      script.dataset.apiKey = params.get("key") || "";
+      script.dataset.apiUrl = params.get("api") || "http://localhost:8000";
+      script.dataset.mode = params.get("mode") || "floating";
+      script.dataset.target = "#chat";
+      script.dataset.theme = params.get("theme") || "auto";
+      if (params.get("color")) script.dataset.primaryColor = params.get("color");
+      document.head.appendChild(script);
+    </script>
+  </body>
+</html>

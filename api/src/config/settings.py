@@ -58,6 +58,10 @@ class Settings:
     jwt_algorithm: str = "HS256"
     jwt_expiration_hours: int = 24 * 7
 
+    # Static widget assets (widget.js, embed.js, embed/app.*). Point at a local
+    # server (e.g. `yarn preview:embed` -> http://localhost:4174) to develop the embed.
+    widget_cdn_url: str = "https://cdn.innomightlabs.com"
+
     # Background job dispatch
     async_job_backend: str = "local"
     async_job_lambda_name: str = ""
@@ -402,6 +406,7 @@ class Settings:
             dynamodb_endpoint=os.getenv("DYNAMODB_ENDPOINT"),
             frontend_url=os.getenv("FRONTEND_URL", "http://localhost:5173" if environment == "dev" else ""),
             api_base_url=api_base_url,
+            widget_cdn_url=os.getenv("WIDGET_CDN_URL", "https://cdn.innomightlabs.com").rstrip("/"),
             jwt_secret=os.getenv("JWT_SECRET", "dev-secret-change-in-production" if environment == "dev" else ""),
             async_job_backend=os.getenv(
                 "ASYNC_JOB_BACKEND",

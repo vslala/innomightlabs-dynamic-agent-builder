@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Embed test: plain iframe</title>
+    <style>
+      body { font: 16px/1.6 system-ui, sans-serif; max-width: 960px; margin: 40px auto; padding: 0 16px; color: #172b4d; }
+      code { background: #f1f2f4; padding: 2px 6px; border-radius: 4px; }
+      .row { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 24px; }
+      iframe { width: 400px; height: 640px; border: 0; border-radius: 16px; box-shadow: 0 12px 40px rgba(9, 30, 66, 0.18); }
+    </style>
+  </head>
+  <body>
+    <h1>The chat iframe, without embed.js</h1>
+    <p>
+      Each frame below is just <code>&lt;iframe src="{api}/embed/{widget key}#{config}"&gt;</code>. The
+      <code>#…</code> part is optional URL-encoded JSON: here <code>{"mode":"inline"}</code> (no close
+      button) and <code>{"mode":"inline","theme":"dark","primaryColor":"#b5562b"}</code>.
+    </p>
+
+    <div class="row">
+      <iframe
+        title="Chat (light)"
+        src="http://localhost:1455/embed/pk_live_49da3c8319679a2d6637cabee9d5c06b#%7B%22mode%22%3A%22inline%22%2C%22theme%22%3A%22light%22%7D"
+        allow="clipboard-write"></iframe>
+      <iframe
+        title="Chat (dark)"
+        src="http://localhost:1455/embed/pk_live_49da3c8319679a2d6637cabee9d5c06b#%7B%22mode%22%3A%22inline%22%2C%22theme%22%3A%22dark%22%2C%22primaryColor%22%3A%22%23b5562b%22%7D"
+        allow="clipboard-write"></iframe>
+    </div>
+  </body>
+</html>

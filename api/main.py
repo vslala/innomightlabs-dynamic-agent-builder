@@ -14,6 +14,7 @@ from src.agents.router import router as agent_router
 from src.apikeys.router import router as apikeys_router
 from src.public_api.keys_router import router as secret_keys_router
 from src.public_api.router import router as public_api_router
+from src.embed import embed_router
 from src.conversations.router import router as conversation_router
 from src.settings.router import router as settings_router
 from src.memory.router import router as memory_router
@@ -158,6 +159,7 @@ def create_app() -> FastAPI:
     app.include_router(router=knowledge_router)
     app.include_router(router=agent_kb_router)
     app.include_router(router=widget_router)
+    app.include_router(router=embed_router)
     app.include_router(router=stripe_payments_router)
     app.include_router(router=users_router)
     app.include_router(router=contact_router)

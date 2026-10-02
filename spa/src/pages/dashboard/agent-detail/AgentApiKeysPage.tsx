@@ -9,6 +9,7 @@ import { Label } from "../../../components/ui/label";
 import { Textarea } from "../../../components/ui/textarea";
 import { apiKeyService, type ApiKeyResponse } from "../../../services/apikeys";
 import { SecretKeysCard } from "./SecretKeysCard";
+import { WidgetSnippets } from "./WidgetSnippets";
 import { useAgentDetailContext } from "./types";
 import styles from "./AgentApiKeysPage.module.css";
 
@@ -191,35 +192,7 @@ export function AgentApiKeysPage() {
               </div>
             )}
 
-            {apiKeys.length > 0 && (
-              <div style={{ marginTop: "1.5rem", paddingTop: "1rem", borderTop: "1px solid var(--border-subtle)" }}>
-                <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)", marginBottom: "0.5rem" }}>
-                  Integration Code
-                </p>
-                <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
-                  Add this snippet to your website to embed the chat widget:
-                </p>
-                <div style={{ fontFamily: "monospace", fontSize: "0.75rem", backgroundColor: "var(--bg-tertiary)", padding: "0.75rem", borderRadius: "0.375rem", overflowX: "auto" }}>
-                  <pre style={{ margin: 0, color: "var(--text-secondary)" }}>
-{`<script>
-  (function () {
-    var script = document.createElement('script');
-    var widgetVersion = Math.floor(Date.now() / 300000);
-    script.src = 'https://cdn.innomightlabs.com/widget.js?v=' + widgetVersion;
-    script.async = true;
-    script.onload = function () {
-      InnomightChat.init({
-        apiKey: '${apiKeys[0]?.public_key || "YOUR_API_KEY"}',
-        position: 'bottom-right'
-      });
-    };
-    document.head.appendChild(script);
-  })();
-</script>`}
-                  </pre>
-                </div>
-              </div>
-            )}
+            {apiKeys.length > 0 && <WidgetSnippets publicKey={apiKeys[0].public_key} />}
           </CardContent>
         </Card>
 

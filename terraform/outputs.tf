@@ -59,6 +59,11 @@ output "widget_embed_url" {
   value       = var.widget_cdn_domain != "" ? "https://${var.widget_cdn_domain}/widget.js" : "https://${aws_cloudfront_distribution.widget.domain_name}/widget.js"
 }
 
+output "embed_loader_url" {
+  description = "URL of the embeddable iframe widget loader (embed.js)"
+  value       = var.widget_cdn_domain != "" ? "https://${var.widget_cdn_domain}/embed.js" : "https://${aws_cloudfront_distribution.widget.domain_name}/embed.js"
+}
+
 output "widget_custom_domain" {
   description = "Custom domain for widget CDN (if configured)"
   value       = var.widget_cdn_domain != "" ? var.widget_cdn_domain : null

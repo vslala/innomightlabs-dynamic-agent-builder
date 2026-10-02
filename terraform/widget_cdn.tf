@@ -210,11 +210,15 @@ resource "null_resource" "widget_build_upload" {
       yarn build
 
       echo "Uploading widget to S3..."
+      # The embeddable widget (embed.js, embed/*) shares this bucket and is
+      # deployed by embed_build_upload; excluding it keeps --delete off it.
       aws s3 sync dist/ s3://${aws_s3_bucket.widget.id}/ \
         --delete \
         --cache-control "public, max-age=31536000, immutable" \
         --exclude "*.html" \
-        --exclude "widget.js"
+        --exclude "widget.js" \
+        --exclude "embed.js" \
+        --exclude "embed/*"
 
       # widget.js is an unversioned public URL, so keep browser cache short.
       aws s3 cp dist/widget.js s3://${aws_s3_bucket.widget.id}/widget.js \
@@ -233,6 +237,63 @@ resource "null_resource" "widget_build_upload" {
         --paths "/*"
 
       echo "Widget deployed successfully!"
+    EOT
+  }
+
+  depends_on = [
+    aws_s3_bucket.widget,
+    aws_cloudfront_distribution.widget,
+  ]
+}
+
+# Build and upload the embeddable iframe widget: the embed.js loader at the
+# bucket root, and the chat app at embed/app.js + embed/app.css. The API's
+# /embed/{public_key} shell references the app from this CDN.
+resource "null_resource" "embed_build_upload" {
+  triggers = {
+    embed_src_hash = sha256(join("", [
+      for file in concat(
+        [for file in fileset("${path.module}/../spa/embed", "{app,loader,shared}/**/*") : "embed/${file}"],
+        [
+          "embed/vite.app.config.ts",
+          "embed/vite.loader.config.ts",
+          "src/styles/tokens.css",
+          "src/components/chat/submittedFormParser.ts",
+          "packages/chat-stream-renderer/src/index.tsx",
+        ]
+      ) : filesha256("${path.module}/../spa/${file}")
+    ]))
+    embed_build_hash = sha256(join("", [
+      filesha256("${path.module}/../spa/package.json"),
+      filesha256("${path.module}/../spa/yarn.lock"),
+    ]))
+    bucket_id = aws_s3_bucket.widget.id
+  }
+
+  provisioner "local-exec" {
+    working_dir = "${path.module}/../spa"
+    command     = <<-EOT
+      echo "Installing SPA dependencies for the embed build..."
+      yarn install --frozen-lockfile || yarn install
+
+      echo "Building embeddable widget..."
+      EMBED_API_URL="${var.api_domain != "" ? "https://${var.api_domain}" : aws_apigatewayv2_api.api.api_endpoint}" yarn build:embed
+
+      # Unversioned public URLs, so keep browser caches short (same policy as widget.js).
+      echo "Uploading embeddable widget to S3..."
+      aws s3 cp embed/dist/embed.js s3://${aws_s3_bucket.widget.id}/embed.js \
+        --cache-control "public, max-age=300, must-revalidate" \
+        --content-type "application/javascript"
+      aws s3 sync embed/dist/embed/ s3://${aws_s3_bucket.widget.id}/embed/ \
+        --delete \
+        --cache-control "public, max-age=300, must-revalidate"
+
+      echo "Invalidating CloudFront cache..."
+      aws cloudfront create-invalidation \
+        --distribution-id ${aws_cloudfront_distribution.widget.id} \
+        --paths "/embed.js" "/embed/*"
+
+      echo "Embeddable widget deployed successfully!"
     EOT
   }
 
