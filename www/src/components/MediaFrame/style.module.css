@@ -1,0 +1,139 @@
+.frame {
+  padding: clamp(var(--space-4), 3vw, var(--space-10));
+  border-radius: var(--radius-xl);
+  background: var(--gradient-brand);
+}
+
+.teal {
+  background: linear-gradient(135deg, #1d9aaa 0%, var(--brand-blue) 60%, var(--brand-cyan) 100%);
+}
+
+.window {
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: 0 24px 60px -20px rgba(9, 30, 66, 0.55);
+}
+
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+}
+
+.dots {
+  display: flex;
+  gap: 6px;
+}
+
+.dots i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-border-strong);
+}
+
+.address {
+  flex: 1;
+  max-width: 18rem;
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-subtlest);
+}
+
+.video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000000;
+}
+
+.screen {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  aspect-ratio: 16 / 10;
+}
+
+.sidebar {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-3);
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+}
+
+.sidebar i {
+  width: 1.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: clamp(var(--space-4), 3vw, var(--space-8));
+  min-width: 0;
+}
+
+.screenTitle {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+}
+
+.screenTagline {
+  max-width: 28rem;
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: var(--space-3);
+  margin-top: auto;
+}
+
+.card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-raised);
+  font-size: var(--text-xs);
+}
+
+.card i {
+  height: 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-sunken);
+}
+
+.card i:last-child {
+  width: 60%;
+}
+
+.caption {
+  margin-top: var(--space-3);
+  color: #ffffff;
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+/* On small screens the illustration keeps only the headline so it stays legible. */
+@media (max-width: 39.99rem) {
+  .cards {
+    display: none;
+  }
+}

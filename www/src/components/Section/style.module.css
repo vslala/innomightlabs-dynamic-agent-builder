@@ -1,0 +1,77 @@
+.section {
+  padding-block: var(--space-section);
+}
+
+.default {
+  background: var(--color-bg);
+}
+
+.subtle {
+  background: var(--color-bg-subtle);
+}
+
+.inverse {
+  background: var(--gradient-inverse);
+  color: var(--color-inverse-text);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin-bottom: var(--space-10);
+}
+
+.header:last-child {
+  margin-bottom: 0;
+}
+
+.center {
+  align-items: center;
+  text-align: center;
+}
+
+.heading {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 44rem;
+}
+
+.eyebrow {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-brand);
+}
+
+.inverse .eyebrow {
+  color: var(--brand-cyan);
+}
+
+.title {
+  font-size: var(--text-3xl);
+}
+
+.intro {
+  font-size: var(--text-lg);
+  color: var(--color-text-subtle);
+}
+
+.inverse .intro {
+  color: var(--color-inverse-text-subtle);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+@media (min-width: 64rem) {
+  .start {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+}

@@ -1,10 +1,10 @@
 {
-  "name": "innomightlabs-www",
+  "name": "innomight-www",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite-react-ssg dev",
+    "dev": "vite-react-ssg dev --port 3001",
     "build": "tsc -b && vite-react-ssg build",
     "preview": "vite preview"
   },
@@ -15,11 +15,10 @@
     "vite-react-ssg": "^0.9.2"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.18",
+    "@types/node": "^24.10.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.1.1",
-    "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
     "vite": "^7.2.4"
   }

@@ -2,8 +2,20 @@
 <html lang="en-GB">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0c66e4" />
+    <script>
+      // Apply the saved or system theme before first paint so prerendered pages never flash.
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('theme')
+          var dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+          document.documentElement.dataset.theme = saved || (dark ? 'dark' : 'light')
+        } catch (e) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

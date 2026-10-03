@@ -1,0 +1,30 @@
+.overview {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 48rem;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-subtlest);
+}
+
+.overviewTitle {
+  font-size: var(--text-3xl);
+}
+
+.description {
+  display: grid;
+  gap: var(--space-4);
+  font-size: var(--text-lg);
+  color: var(--color-text-subtle);
+}
+
+.audience {
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-brand-subtle);
+}

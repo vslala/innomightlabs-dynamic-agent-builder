@@ -1,0 +1,50 @@
+.hero {
+  padding-block: var(--space-16) var(--space-section);
+  background: var(--gradient-hero);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.inner {
+  display: grid;
+  gap: var(--space-10);
+  align-items: center;
+}
+
+.text {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 46rem;
+}
+
+.eyebrow {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-brand);
+}
+
+.title {
+  font-size: var(--text-display);
+  letter-spacing: -0.03em;
+}
+
+.intro {
+  font-size: var(--text-xl);
+  line-height: var(--leading-snug);
+  color: var(--color-text-subtle);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+@media (min-width: 64rem) {
+  .withAside {
+    grid-template-columns: 1.15fr 1fr;
+    gap: var(--space-16);
+  }
+}

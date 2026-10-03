@@ -1,0 +1,16 @@
+.credentials:not(:empty) {
+  margin-top: var(--space-10);
+}
+
+.callout {
+  margin-top: var(--space-12);
+  padding: var(--space-6);
+  border-left: 4px solid var(--color-accent-teal);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-teal-subtle);
+  font-size: var(--text-lg);
+}
+
+.callout strong {
+  color: var(--color-text);
+}

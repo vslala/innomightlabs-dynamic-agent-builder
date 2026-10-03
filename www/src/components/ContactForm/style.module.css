@@ -1,0 +1,119 @@
+.form {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.row {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.optional {
+  font-weight: var(--weight-regular);
+  color: var(--color-text-subtlest);
+}
+
+.input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-2) var(--space-3);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  /* 16px stops iOS zooming into fields on focus. */
+  font-size: var(--text-md);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.input:hover {
+  border-color: var(--color-border-strong);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-focus);
+}
+
+.input::placeholder {
+  color: var(--color-text-subtlest);
+}
+
+.message {
+  resize: vertical;
+  min-height: 9rem;
+  line-height: var(--leading-body);
+}
+
+.honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.error {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.privacy {
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
+}
+
+.sent {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-10) var(--space-4);
+  text-align: center;
+  color: var(--color-text-subtle);
+}
+
+.sentIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+}
+
+.sentTitle {
+  font-size: var(--text-2xl);
+  color: var(--color-text);
+}
+
+@media (min-width: 40rem) {
+  .row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .footer {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}

@@ -1,0 +1,50 @@
+.story {
+  display: grid;
+  gap: var(--space-12);
+}
+
+/* The story opens with its own heading, so the usual top margin isn't needed. */
+.story h2:first-child {
+  margin-top: 0;
+}
+
+.facts {
+  display: grid;
+  align-self: start;
+  margin: 0;
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-subtle);
+}
+
+.fact {
+  display: grid;
+  gap: var(--space-1);
+  padding-block: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.fact:last-child {
+  border-bottom: 0;
+}
+
+.fact dt {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-subtlest);
+}
+
+.fact dd {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+}
+
+@media (min-width: 64rem) {
+  .story {
+    grid-template-columns: 1.6fr 1fr;
+    gap: var(--space-16);
+  }
+}

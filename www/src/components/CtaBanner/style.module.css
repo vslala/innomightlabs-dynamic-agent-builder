@@ -1,0 +1,52 @@
+.banner {
+  padding-block: var(--space-section);
+  background: var(--gradient-inverse);
+  color: var(--color-inverse-text);
+}
+
+.inner {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.text {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 40rem;
+}
+
+.title {
+  font-size: var(--text-3xl);
+}
+
+.body {
+  font-size: var(--text-lg);
+  color: var(--color-inverse-text-subtle);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.email {
+  color: var(--color-inverse-text-subtle);
+  font-size: var(--text-sm);
+}
+
+.email:hover {
+  color: var(--color-inverse-text);
+}
+
+@media (min-width: 64rem) {
+  .inner {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+  }
+
+  .actions {
+    align-items: flex-end;
+  }
+}

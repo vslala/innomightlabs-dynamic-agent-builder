@@ -1,0 +1,29 @@
+.toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-subtle);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.toggle:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.sun {
+  display: none;
+}
+
+:global([data-theme='dark']) .sun {
+  display: block;
+}
+
+:global([data-theme='dark']) .moon {
+  display: none;
+}

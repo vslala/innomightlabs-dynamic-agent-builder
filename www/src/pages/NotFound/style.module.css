@@ -1,0 +1,34 @@
+.page {
+  padding-block: var(--space-section);
+  background: var(--gradient-hero);
+}
+
+.inner {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  text-align: center;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  color: var(--color-brand);
+}
+
+.title {
+  font-size: var(--text-3xl);
+}
+
+.body {
+  font-size: var(--text-lg);
+  color: var(--color-text-subtle);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}

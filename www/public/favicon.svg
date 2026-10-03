@@ -1,11 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#667eea"/>
-      <stop offset="50%" style="stop-color:#764ba2"/>
-      <stop offset="100%" style="stop-color:#f093fb"/>
+    <linearGradient id="im-ribbon" x1="6" y1="50" x2="58" y2="12" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E64CFF"/>
+      <stop offset="0.42" stop-color="#7047FF"/>
+      <stop offset="0.72" stop-color="#2F6BFF"/>
+      <stop offset="1" stop-color="#3CD3FF"/>
+    </linearGradient>
+    <linearGradient id="im-fold" x1="10" y1="50" x2="48" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8A2BFF"/>
+      <stop offset="1" stop-color="#1D36D6"/>
     </linearGradient>
   </defs>
-  <rect width="100" height="100" rx="20" fill="url(#grad)"/>
-  <text x="50" y="65" font-family="Arial, sans-serif" font-size="50" font-weight="bold" fill="white" text-anchor="middle">IM</text>
+  <g transform="rotate(-32 32 32)">
+    <path fill="url(#im-ribbon)" fill-rule="evenodd"
+      d="M3.5 32a28.5 21 0 1 0 57 0a28.5 21 0 1 0 -57 0Z M20 30.5a14.5 10 0 1 0 29 0a14.5 10 0 1 0 -29 0Z"/>
+    <path fill="url(#im-fold)" fill-opacity="0.92" fill-rule="evenodd"
+      d="M9 35a22.5 15.5 0 1 0 45 0a22.5 15.5 0 1 0 -45 0Z M20 30.5a14.5 10 0 1 0 29 0a14.5 10 0 1 0 -29 0Z"/>
+  </g>
 </svg>

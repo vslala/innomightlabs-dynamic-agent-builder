@@ -1,69 +1,44 @@
-/* Design tokens shared by the SPA and the embeddable chat widget (spa/embed). */
+/*
+ * Design tokens.
+ *
+ * Components only ever use the semantic tokens (--color-*, --shadow-*, --gradient-*). A theme is
+ * one [data-theme] block that assigns them, so adding a theme means adding one block here and an
+ * entry in src/hooks/useTheme.ts — no component changes.
+ *
+ * Breakpoints (custom properties can't be used in media queries, so these are the convention):
+ *   40rem  small tablets and large phones in landscape
+ *   64rem  laptops and up — desktop navigation appears here
+ */
 
 :root {
-  --gradient-start: #579dff;
-  --gradient-start-rgb: 87, 157, 255;
-  --gradient-mid: #388bff;
-  --gradient-end: #0c66e4;
-  --text-primary: #f7f8f9;
-  --text-secondary: #b6c2cf;
-  --text-muted: #8590a2;
-  --text-inverse: #ffffff;
-  --bg-dark: #101214;
-  --bg-primary: #101214;
-  --bg-card: #1d2125;
-  --bg-card-hover: #22272b;
-  --bg-secondary: #22272b;
-  --bg-tertiary: #2c333a;
-  --bg-sidebar: #0c0f12;
-  --nav-active-text: #ffffff;
-  --nav-active-bg: var(--surface-subtle);
-  --nav-hover-bg: rgba(182, 194, 207, 0.1);
-  --button-primary-bg: #0c66e4;
-  --button-primary-bg-hover: #1d7afc;
-  --shadow-soft: rgba(9, 30, 66, 0.42);
-  --code-bg: #0c0f12;
-  --code-text: #dcdfe4;
-  --json-bg: #07100f;
-  --json-border: #315c8f;
-  --json-key: #9cc9ff;
-  --json-string: #8ef0b1;
-  --json-literal: #f5cd47;
-  --json-null: #c6b6f2;
-  --json-brace: #dcdfe4;
-  --json-toggle: #579dff;
-  --canvas-grid: rgba(182, 194, 207, 0.18);
-  --popover-bg: #1d2125;
-  --border-subtle: #38414a;
-  --accent-cyan: #37b4c3;
-  --accent-pink: #f87168;
-  --accent-purple: #9f8fef;
-  --accent-blue-bg: rgba(var(--gradient-start-rgb), 0.16);
-  --accent-green-bg: var(--success-bg);
-  --accent-orange: #f5cd47;
-  --accent-orange-bg: rgba(245, 205, 71, 0.14);
-  --accent-magenta: #f797d2;
-  --accent-magenta-bg: rgba(247, 151, 210, 0.14);
-  --success: #4bce97;
-  --success-bg: rgba(75, 206, 151, 0.14);
-  --warning: #f5cd47;
-  --warning-bg: rgba(245, 205, 71, 0.14);
-  --danger: #f87168;
-  --danger-bg: rgba(248, 113, 104, 0.14);
-  --surface-page: var(--bg-dark);
-  --surface-panel: var(--bg-card);
-  --surface-panel-hover: var(--bg-card-hover);
-  --surface-control: var(--bg-secondary);
-  --surface-control-hover: var(--bg-tertiary);
-  --surface-subtle: rgba(182, 194, 207, 0.08);
-  --surface-selected: rgba(var(--gradient-start-rgb), 0.16);
-  --surface-popover: var(--popover-bg);
-  --border-default: var(--border-subtle);
-  --border-strong: rgba(255, 255, 255, 0.18);
-  --border-input: #454f59;
-  --link-color: var(--gradient-start);
-  --icon-subtle-bg: rgba(182, 194, 207, 0.12);
-  --space-0: 0;
+  /* Brand palette, taken from the Innomight ribbon mark. */
+  --brand-magenta: #e64cff;
+  --brand-violet: #7047ff;
+  --brand-blue: #2f6bff;
+  --brand-cyan: #3cd3ff;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: clamp(1.25rem, 1.15rem + 0.4vw, 1.5rem);
+  --text-2xl: clamp(1.5rem, 1.3rem + 0.9vw, 2rem);
+  --text-3xl: clamp(1.875rem, 1.5rem + 1.6vw, 2.75rem);
+  --text-display: clamp(2.375rem, 1.6rem + 3.4vw, 4.25rem);
+
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-body: 1.6;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -73,86 +48,145 @@
   --space-8: 2rem;
   --space-10: 2.5rem;
   --space-12: 3rem;
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
-  --control-height-sm: 2.5rem;
-  --control-height-md: 2.75rem;
-  --control-height-lg: 3rem;
-  --control-padding-x-sm: 1rem;
-  --control-padding-x-md: 1.5rem;
-  --control-padding-x-lg: 2rem;
-  --page-gap: var(--space-8);
-  --section-gap: var(--space-6);
-  --card-padding: var(--space-6);
-  --card-padding-lg: var(--space-8);
-  --dialog-padding: var(--space-8);
-  --form-gap: var(--space-5);
-  --field-gap: var(--space-2);
+  --space-16: 4rem;
+  --space-section: clamp(3.5rem, 2.5rem + 4vw, 6.5rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  --container-max: 76rem;
+  --container-narrow: 48rem;
+  --container-gutter: clamp(1rem, 0.5rem + 2.5vw, 2rem);
+  --header-height: 4rem;
+
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  --z-header: 50;
+  --z-overlay: 60;
 }
 
-:root[data-theme="light"] {
-  --gradient-start: #0c66e4;
-  --gradient-start-rgb: 12, 102, 228;
-  --gradient-mid: #0055cc;
-  --gradient-end: #388bff;
-  --text-primary: #091e42;
-  --text-secondary: #253858;
-  --text-muted: #44546f;
-  --text-inverse: #ffffff;
-  --bg-dark: #f7f8fa;
-  --bg-primary: #f7f8fa;
-  --bg-card: #ffffff;
-  --bg-card-hover: #fafbfc;
-  --bg-secondary: #f7f8fa;
-  --bg-tertiary: #eef2f7;
-  --bg-sidebar: #ffffff;
-  --nav-active-text: #0c66e4;
-  --nav-active-bg: #f3f6fb;
-  --nav-hover-bg: #f3f6fb;
-  --button-primary-bg: #0c66e4;
-  --button-primary-bg-hover: #0055cc;
-  --shadow-soft: rgba(9, 30, 66, 0.14);
-  --code-bg: #f7f8fa;
-  --code-text: #172b4d;
-  --json-bg: #f8fafc;
-  --json-border: #b6c2cf;
-  --json-key: #0c66e4;
-  --json-string: #216e4e;
-  --json-literal: #974f0c;
-  --json-null: #5e4db2;
-  --json-brace: #44546f;
-  --json-toggle: #0c66e4;
-  --canvas-grid: rgba(9, 30, 66, 0.18);
-  --popover-bg: #ffffff;
-  --border-subtle: #c7d1db;
-  --accent-cyan: #008da6;
-  --accent-pink: #c9372c;
-  --accent-purple: #5e4db2;
-  --accent-blue-bg: #e9f2ff;
-  --accent-green-bg: var(--success-bg);
-  --accent-orange: #974f0c;
-  --accent-orange-bg: #fff3eb;
-  --accent-magenta: #943d73;
-  --accent-magenta-bg: #ffecf8;
-  --success: #216e4e;
-  --success-bg: #dcfff1;
-  --warning: #974f0c;
-  --warning-bg: #fff7d6;
-  --danger: #c9372c;
-  --danger-bg: #ffedeb;
-  --surface-page: var(--bg-dark);
-  --surface-panel: var(--bg-card);
-  --surface-panel-hover: var(--bg-card-hover);
-  --surface-control: #ffffff;
-  --surface-control-hover: #f7f8fa;
-  --surface-subtle: #f8fafc;
-  --surface-selected: #e9f2ff;
-  --surface-popover: var(--popover-bg);
-  --border-default: var(--border-subtle);
-  --border-strong: #b6c2cf;
-  --border-input: #b6c2cf;
-  --link-color: #0052cc;
-  --icon-subtle-bg: #eef2f7;
+/* Light is the default, so pages also look right before the theme script runs or without JS. */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f7f8f9;
+  --color-bg-sunken: #f1f2f4;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f7f8f9;
+
+  --color-text: #172b4d;
+  --color-text-subtle: #44546f;
+  --color-text-subtlest: #626f86;
+  --color-text-on-brand: #ffffff;
+
+  --color-border: #dcdfe4;
+  --color-border-strong: #b3b9c4;
+
+  --color-brand: #0c66e4;
+  --color-brand-hover: #0055cc;
+  --color-brand-pressed: #09326c;
+  --color-brand-subtle: #e9f2ff;
+  --color-link: #0c66e4;
+  --color-focus: #388bff;
+
+  --color-success: #216e4e;
+  --color-success-subtle: #dcfff1;
+  --color-warning: #7f5f01;
+  --color-warning-subtle: #fff7d6;
+  --color-danger: #ae2e24;
+  --color-danger-subtle: #ffeceb;
+  --color-discovery: #5e4db2;
+  --color-discovery-subtle: #f3f0ff;
+
+  /* Accent pairs colour-code services and products, like Atlassian's product tiles. */
+  --color-accent-blue: #1d7afc;
+  --color-accent-blue-subtle: #e9f2ff;
+  --color-accent-purple: #8270db;
+  --color-accent-purple-subtle: #f3f0ff;
+  --color-accent-teal: #1d9aaa;
+  --color-accent-teal-subtle: #e7f9ff;
+  --color-accent-magenta: #cd519d;
+  --color-accent-magenta-subtle: #ffecf8;
+
+  /* Inverse bands (hero, call to action) stay dark in every theme. */
+  --color-inverse-bg: #0b1533;
+  --color-inverse-surface: #14224a;
+  --color-inverse-text: #ffffff;
+  --color-inverse-text-subtle: #b8c4e0;
+  --color-inverse-border: rgba(184, 196, 224, 0.2);
+
+  --gradient-brand: linear-gradient(120deg, var(--brand-magenta) 0%, var(--brand-violet) 38%, var(--brand-blue) 70%, var(--brand-cyan) 100%);
+  --gradient-hero: radial-gradient(60rem 30rem at 85% 10%, #e9f2ff 0%, transparent 60%),
+    radial-gradient(40rem 26rem at 0% 100%, #f3f0ff 0%, transparent 60%), var(--color-bg);
+  --gradient-inverse: radial-gradient(50rem 24rem at 100% 0%, rgba(47, 107, 255, 0.45), transparent 60%),
+    radial-gradient(40rem 22rem at 0% 100%, rgba(230, 76, 255, 0.3), transparent 60%), var(--color-inverse-bg);
+
+  --shadow-raised: 0 1px 1px rgba(9, 30, 66, 0.25), 0 0 1px rgba(9, 30, 66, 0.31);
+  --shadow-card-hover: 0 8px 24px -6px rgba(9, 30, 66, 0.2), 0 0 1px rgba(9, 30, 66, 0.31);
+  --shadow-overlay: 0 12px 32px -4px rgba(9, 30, 66, 0.22), 0 0 1px rgba(9, 30, 66, 0.31);
+  --header-bg: rgba(255, 255, 255, 0.92);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-bg: #101214;
+  --color-bg-subtle: #161a1d;
+  --color-bg-sunken: #0c0e10;
+  --color-surface: #1d2125;
+  --color-surface-hover: #22272b;
+
+  --color-text: #dee4ea;
+  --color-text-subtle: #b6c2cf;
+  --color-text-subtlest: #8c9bab;
+  --color-text-on-brand: #101214;
+
+  --color-border: #38414a;
+  --color-border-strong: #596773;
+
+  --color-brand: #579dff;
+  --color-brand-hover: #85b8ff;
+  --color-brand-pressed: #cce0ff;
+  --color-brand-subtle: #092957;
+  --color-link: #579dff;
+  --color-focus: #85b8ff;
+
+  --color-success: #7ee2b8;
+  --color-success-subtle: #164b35;
+  --color-warning: #f5cd47;
+  --color-warning-subtle: #533f04;
+  --color-danger: #fd9891;
+  --color-danger-subtle: #5d1f1a;
+  --color-discovery: #b8acf6;
+  --color-discovery-subtle: #352c63;
+
+  --color-accent-blue: #579dff;
+  --color-accent-blue-subtle: #092957;
+  --color-accent-purple: #9f8fef;
+  --color-accent-purple-subtle: #2b2273;
+  --color-accent-teal: #6cc3e0;
+  --color-accent-teal-subtle: #164555;
+  --color-accent-magenta: #f797d2;
+  --color-accent-magenta-subtle: #50253f;
+
+  --color-inverse-bg: #0a1024;
+  --color-inverse-surface: #131c38;
+  --color-inverse-text: #ffffff;
+  --color-inverse-text-subtle: #b8c4e0;
+  --color-inverse-border: rgba(184, 196, 224, 0.16);
+
+  --gradient-hero: radial-gradient(60rem 30rem at 85% 10%, rgba(47, 107, 255, 0.22) 0%, transparent 60%),
+    radial-gradient(40rem 26rem at 0% 100%, rgba(112, 71, 255, 0.18) 0%, transparent 60%), var(--color-bg);
+
+  --shadow-raised: 0 1px 1px rgba(3, 4, 4, 0.5), 0 0 1px rgba(3, 4, 4, 0.5);
+  --shadow-card-hover: 0 8px 24px -6px rgba(3, 4, 4, 0.7), 0 0 0 1px #38414a;
+  --shadow-overlay: 0 12px 32px -4px rgba(3, 4, 4, 0.6), 0 0 0 1px #38414a;
+  --header-bg: rgba(16, 18, 20, 0.9);
 }

@@ -1,0 +1,107 @@
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(28rem 12rem at 100% 0%, var(--accent-glow), transparent 70%),
+    var(--color-surface);
+  transition:
+    box-shadow var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard);
+}
+
+.card:hover {
+  border-color: transparent;
+  box-shadow: var(--shadow-card-hover);
+}
+
+.purple {
+  --accent-glow: var(--color-accent-purple-subtle);
+}
+
+.teal {
+  --accent-glow: var(--color-accent-teal-subtle);
+}
+
+.blue {
+  --accent-glow: var(--color-accent-blue-subtle);
+}
+
+.magenta {
+  --accent-glow: var(--color-accent-magenta-subtle);
+}
+
+.top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.category {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-subtlest);
+}
+
+.name {
+  font-size: var(--text-2xl);
+}
+
+.link {
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+/* The whole card is clickable through the title link, keeping one link per card for screen readers. */
+.link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.link:focus-visible {
+  outline: none;
+}
+
+.link:focus-visible::after {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.summary {
+  flex: 1;
+  color: var(--color-text-subtle);
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+
+.more {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--weight-semibold);
+  color: var(--color-link);
+}
+
+.host {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-subtlest);
+}
