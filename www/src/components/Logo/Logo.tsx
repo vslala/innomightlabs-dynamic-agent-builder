@@ -1,63 +1,65 @@
-import { useId } from 'react'
+import markOnDark from '@/assets/brand/mark-white.png'
+import markOnLight from '@/assets/brand/mark-navy.png'
+import wordmarkOnDark from '@/assets/brand/wordmark-white.png'
+import wordmarkOnLight from '@/assets/brand/wordmark-slate.png'
 import { site } from '@/content/site'
 import styles from './style.module.css'
+
+interface ArtworkProps {
+  onLight: string
+  onDark: string
+  width: number
+  height: number
+  alt: string
+  tone: 'themed' | 'inverse'
+  className?: string
+}
+
+// Both variants are in the HTML and CSS shows the one for the page's data-theme, so prerendered
+// pages show the right logo before React hydrates. Inverse logos sit on bands that are always dark.
+function Artwork({ onLight, onDark, width, height, alt, tone, className }: ArtworkProps) {
+  if (tone === 'inverse') {
+    return <img className={className} src={onDark} width={width} height={height} alt={alt} />
+  }
+  return (
+    <>
+      <img className={`${styles.onLight} ${className ?? ''}`} src={onLight} width={width} height={height} alt={alt} />
+      <img className={`${styles.onDark} ${className ?? ''}`} src={onDark} width={width} height={height} alt={alt} />
+    </>
+  )
+}
+
+interface LogoProps {
+  tone?: 'themed' | 'inverse'
+}
+
+// The Innomight wordmark. Its proportions come from src/assets/brand/wordmark-*.png.
+export function Logo({ tone = 'themed' }: LogoProps) {
+  return (
+    <span className={styles.logo}>
+      <Artwork
+        onLight={wordmarkOnLight}
+        onDark={wordmarkOnDark}
+        width={124}
+        height={32}
+        alt={site.name}
+        tone={tone}
+        className={styles.wordmark}
+      />
+    </span>
+  )
+}
 
 interface LogoMarkProps {
   size?: number
   className?: string
 }
 
-// The Innomight ribbon: one continuous loop with a fold, echoing the InnomightLabs mark.
-// public/favicon.svg is the same drawing; keep the two in step.
+// The circle-and-triangle mark on its own.
 export function LogoMark({ size = 32, className }: LogoMarkProps) {
-  // Gradient ids must be unique per instance, since the mark appears in both header and footer.
-  const id = useId()
-  const ribbon = `${id}-ribbon`
-  const fold = `${id}-fold`
-
   return (
-    <svg className={className} width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
-      <defs>
-        <linearGradient id={ribbon} x1="6" y1="50" x2="58" y2="12" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#e64cff" />
-          <stop offset="0.42" stopColor="#7047ff" />
-          <stop offset="0.72" stopColor="#2f6bff" />
-          <stop offset="1" stopColor="#3cd3ff" />
-        </linearGradient>
-        <linearGradient id={fold} x1="10" y1="50" x2="48" y2="22" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#8a2bff" />
-          <stop offset="1" stopColor="#1d36d6" />
-        </linearGradient>
-      </defs>
-      <g transform="rotate(-32 32 32)">
-        <path
-          fill={`url(#${ribbon})`}
-          fillRule="evenodd"
-          d="M3.5 32a28.5 21 0 1 0 57 0a28.5 21 0 1 0 -57 0Z M20 30.5a14.5 10 0 1 0 29 0a14.5 10 0 1 0 -29 0Z"
-        />
-        <path
-          fill={`url(#${fold})`}
-          fillOpacity="0.92"
-          fillRule="evenodd"
-          d="M9 35a22.5 15.5 0 1 0 45 0a22.5 15.5 0 1 0 -45 0Z M20 30.5a14.5 10 0 1 0 29 0a14.5 10 0 1 0 -29 0Z"
-        />
-      </g>
-    </svg>
-  )
-}
-
-interface LogoProps {
-  tone?: 'default' | 'inverse'
-}
-
-export function Logo({ tone = 'default' }: LogoProps) {
-  return (
-    <span className={`${styles.logo} ${styles[tone]}`}>
-      <LogoMark size={30} />
-      <span className={styles.wordmark}>
-        {site.name}
-        <span className={styles.labs}>Labs</span>
-      </span>
+    <span className={`${styles.mark} ${className ?? ''}`}>
+      <Artwork onLight={markOnLight} onDark={markOnDark} width={size} height={size} alt="" tone="themed" />
     </span>
   )
 }

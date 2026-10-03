@@ -17,8 +17,11 @@
 
 .mark {
   position: relative;
-  width: min(260px, 60vw);
-  height: auto;
+  width: min(240px, 56vw);
+}
+
+.mark img {
+  width: 100%;
 }
 
 .card {

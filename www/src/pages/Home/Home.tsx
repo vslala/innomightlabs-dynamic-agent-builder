@@ -34,7 +34,7 @@ export function Home() {
           name: site.legalName,
           alternateName: site.name,
           url: site.url,
-          logo: `${site.url}/favicon.svg`,
+          logo: `${site.url}/logo.png`,
           email: site.email,
           description: site.description,
           areaServed: 'GB',
