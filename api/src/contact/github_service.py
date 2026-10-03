@@ -10,7 +10,9 @@ log = logging.getLogger(__name__)
 
 GITHUB_API_URL = "https://api.github.com"
 REPO_OWNER = "vslala"
-REPO_NAME = "innomightlabs-dynamic-agent-builder"
+# Product feedback is public; agency enquiries carry personal and commercial details, so they stay private.
+FEEDBACK_REPO = "innomightlabs-dynamic-agent-builder"
+ENQUIRIES_REPO = "innomightlabs-enquiries"
 
 
 class GitHubService:
@@ -27,6 +29,7 @@ class GitHubService:
         title: str,
         body: str,
         labels: List[str],
+        repo: str = FEEDBACK_REPO,
     ) -> dict:
         """
         Create a GitHub issue.
@@ -35,6 +38,7 @@ class GitHubService:
             title: Issue title
             body: Issue body (markdown supported)
             labels: List of label names
+            repo: Repository under REPO_OWNER to create the issue in
 
         Returns:
             GitHub issue response dict
@@ -45,7 +49,7 @@ class GitHubService:
         if not self.token:
             raise ValueError("GitHub token not configured")
 
-        url = f"{GITHUB_API_URL}/repos/{REPO_OWNER}/{REPO_NAME}/issues"
+        url = f"{GITHUB_API_URL}/repos/{REPO_OWNER}/{repo}/issues"
         headers = {
             "Authorization": f"token {self.token}",
             "Accept": "application/vnd.github.v3+json",

@@ -46,8 +46,9 @@ export function Privacy() {
 
             <h2>Who we share it with</h2>
             <p>
-              We use trusted service providers to run this website and deliver email, including Amazon Web Services for
-              hosting and Mailjet for email delivery. They process data only on our instructions.
+              We use trusted service providers to run this website and handle enquiries: Amazon Web Services for hosting,
+              GitHub to keep a private record of each enquiry and Mailjet to send you a confirmation email. They process
+              data only on our instructions.
             </p>
 
             <h2>How long we keep it</h2>

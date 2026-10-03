@@ -37,5 +37,6 @@ Components read semantic tokens such as `--color-surface` and never hard-code th
 - **Add a theme**: add a `[data-theme='name']` block to `src/styles/tokens.css` and the name to `themes`
   in `src/hooks/useTheme.ts`.
 
-The contact form posts to `POST /contact/enquiry` on the API (`api/src/contact/router.py`), which emails
-the enquiry to `ENQUIRY_INBOX`. The API base URL comes from `.env.development` / `.env.production`.
+The contact form posts to `POST /contact/enquiry` on the API (`api/src/contact/router.py`), which records
+the enquiry as an issue in the private `vslala/innomightlabs-enquiries` repo (labelled `enquiry` plus its
+topic) and emails the sender a confirmation through Mailjet. The API base URL comes from `.env.development` / `.env.production`.
