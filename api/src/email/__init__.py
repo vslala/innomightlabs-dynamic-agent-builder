@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 Client = import_module("mailjet_rest").Client
 
 
-def send_email(to_email: str, subject: str, body: str) -> bool:
+def send_email(to_email: str, subject: str, body: str, reply_to: str | None = None) -> bool:
     """
     Send a simple plain text email via Mailjet.
 
@@ -24,6 +24,7 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         to_email: Recipient email address
         subject: Email subject
         body: Plain text email body
+        reply_to: Optional address that replies should go to instead of the sender
 
     Returns:
         True if sent successfully, False otherwise
@@ -34,16 +35,16 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
             version="v3.1",
         )
 
-        data = {
-            "Messages": [
-                {
-                    "From": {"Email": "noreply@innomightlabs.com", "Name": "InnomightLabs"},
-                    "To": [{"Email": to_email}],
-                    "Subject": subject,
-                    "TextPart": body,
-                }
-            ]
+        message: dict[str, object] = {
+            "From": {"Email": "noreply@innomightlabs.com", "Name": "InnomightLabs"},
+            "To": [{"Email": to_email}],
+            "Subject": subject,
+            "TextPart": body,
         }
+        if reply_to:
+            message["ReplyTo"] = {"Email": reply_to}
+
+        data = {"Messages": [message]}
 
         result = client.send.create(data=data)
 

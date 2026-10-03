@@ -51,6 +51,7 @@ PUBLIC_PATHS = {
     "/payments/stripe/webhook",
     "/payments/stripe/pricing",
     "/contact/submit",
+    "/contact/enquiry",
     "/.well-known/agent-card.json",
 }
 

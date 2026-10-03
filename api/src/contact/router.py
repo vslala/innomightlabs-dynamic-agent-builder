@@ -1,14 +1,20 @@
 """Contact form router for user submissions."""
 import logging
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 
+from src.email import send_email
 from .rate_limiter import check_rate_limit, record_submission
 from .github_service import GitHubService, format_contact_issue_body, get_labels_for_type
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/contact", tags=["contact"])
+
+# Agency enquiries from the innomight.com contact form land in this inbox.
+ENQUIRY_INBOX = "hello@innomight.com"
 
 
 class ContactSubmission(BaseModel):
@@ -109,3 +115,70 @@ async def submit_contact_form(
             status_code=500,
             detail="Failed to submit contact form. Please try again later."
         )
+
+
+class Enquiry(BaseModel):
+    """A new-business enquiry from the innomight.com contact form."""
+
+    name: str = Field(..., min_length=2, max_length=120)
+    email: EmailStr
+    organisation: str = Field("", max_length=160)
+    topic: Literal["project", "public-sector", "product", "partnership", "other"]
+    message: str = Field(..., min_length=20, max_length=5000)
+    # Honeypot: hidden from people by the form, so only bots fill it in.
+    website: str = ""
+
+    @property
+    def is_spam(self) -> bool:
+        return bool(self.website.strip())
+
+    @property
+    def subject(self) -> str:
+        return f"New {self.topic} enquiry from {self.name}"
+
+    @property
+    def body(self) -> str:
+        return (
+            f"Name: {self.name}\n"
+            f"Email: {self.email}\n"
+            f"Organisation: {self.organisation or '-'}\n"
+            f"Topic: {self.topic}\n\n"
+            f"{self.message}\n"
+        )
+
+
+class EnquiryResponse(BaseModel):
+    message: str
+
+
+@router.post("/enquiry", response_model=EnquiryResponse)
+def submit_enquiry(enquiry: Enquiry, request: Request) -> EnquiryResponse:
+    """
+    Email a contact-form enquiry to the Innomight inbox, replying straight to the sender.
+
+    Shares the contact rate limit: one submission per 5 minutes per IP address.
+    """
+    thanks = EnquiryResponse(message="Thanks for getting in touch. We'll reply within two working days.")
+
+    # Bots get the same response as people so they can't tell they were filtered.
+    if enquiry.is_spam:
+        log.info("Dropped contact enquiry that filled the honeypot field")
+        return thanks
+
+    client_ip = request.client.host if request.client else "unknown"
+    is_allowed, seconds_remaining = check_rate_limit(client_ip, window_seconds=300)
+    if not is_allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"You've already sent us a message. Please wait {seconds_remaining} seconds before sending another.",
+        )
+
+    if not send_email(ENQUIRY_INBOX, enquiry.subject, enquiry.body, reply_to=enquiry.email):
+        raise HTTPException(
+            status_code=502,
+            detail=f"We couldn't send your message just now. Please email us at {ENQUIRY_INBOX}.",
+        )
+
+    record_submission(client_ip, window_seconds=300)
+    log.info(f"✓ Contact enquiry sent: topic={enquiry.topic}")
+    return thanks
