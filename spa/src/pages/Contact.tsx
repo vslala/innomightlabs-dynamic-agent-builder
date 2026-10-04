@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Send, CheckCircle, AlertCircle } from 'lucide-react';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
@@ -24,13 +25,18 @@ interface ContactFormData {
 interface SubmissionResponse {
   success: boolean;
   message: string;
-  issue_number?: number;
-  issue_url?: string;
 }
 
+const CONTACT_TYPES = ['sales', 'support', 'feedback', 'bug-report', 'feature-request'];
+
 export function Contact() {
+  // Links such as the Enterprise plan's "Contact Sales" preselect a type with ?type=.
+  const [searchParams] = useSearchParams();
+  const requestedType = searchParams.get('type');
+  const initialType = requestedType && CONTACT_TYPES.includes(requestedType) ? requestedType : 'support';
+
   const [formData, setFormData] = useState<ContactFormData>({
-    type: 'support',
+    type: initialType,
     subject: '',
     email: '',
     description: '',
@@ -61,7 +67,7 @@ export function Contact() {
 
       // Reset form
       setFormData({
-        type: 'support',
+        type: initialType,
         subject: '',
         email: '',
         description: '',
@@ -184,6 +190,7 @@ export function Contact() {
                     <SelectValue placeholder="Select a request type" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="sales">Sales / Enterprise</SelectItem>
                     <SelectItem value="support">Support Question</SelectItem>
                     <SelectItem value="feedback">Product Feedback</SelectItem>
                     <SelectItem value="bug-report">Bug Report</SelectItem>

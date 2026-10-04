@@ -111,7 +111,7 @@
       "description": "Dedicated support and limitless scale for large teams.",
       "cta": {
         "label": "Contact Sales",
-        "href": "/#waitlist"
+        "href": "/contact?type=sales"
       },
       "highlighted": false,
       "features": [

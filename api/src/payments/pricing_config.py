@@ -37,8 +37,13 @@ class PricingConfig(BaseModel):
     updated_at: Optional[str] = None
 
 
+#: Environments that share another's pricing instead of keeping their own copy.
+_PRICING_ENV_ALIASES = {"local": "dev"}
+
+
 def _config_path() -> Path:
     env = os.getenv("ENVIRONMENT", "dev")
+    env = _PRICING_ENV_ALIASES.get(env, env)
     return Path(__file__).with_name(f"{env}_pricing_config.json")
 
 

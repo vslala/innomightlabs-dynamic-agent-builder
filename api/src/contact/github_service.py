@@ -10,8 +10,7 @@ log = logging.getLogger(__name__)
 
 GITHUB_API_URL = "https://api.github.com"
 REPO_OWNER = "vslala"
-# Product feedback is public; agency enquiries carry personal and commercial details, so they stay private.
-FEEDBACK_REPO = "innomightlabs-dynamic-agent-builder"
+# Every contact form enquiry carries personal details, so they all go to a private repo.
 ENQUIRIES_REPO = "innomightlabs-enquiries"
 
 
@@ -29,7 +28,7 @@ class GitHubService:
         title: str,
         body: str,
         labels: List[str],
-        repo: str = FEEDBACK_REPO,
+        repo: str = ENQUIRIES_REPO,
     ) -> dict:
         """
         Create a GitHub issue.
@@ -70,50 +69,3 @@ class GitHubService:
             log.info(f"✓ Created GitHub issue #{issue_data['number']}: {title}")
             return cast(dict[Any, Any], issue_data)
 
-
-def format_contact_issue_body(
-    email: str,
-    submission_type: str,
-    description: str,
-) -> str:
-    """
-    Format contact form submission as GitHub issue body.
-
-    Args:
-        email: Submitter's email
-        submission_type: Type of submission (feedback, support, bug-report, feature-request)
-        description: User's description
-
-    Returns:
-        Formatted markdown string
-    """
-    return f"""**From:** {email}
-**Type:** {submission_type}
-
----
-
-{description}
-
----
-*Submitted via contact form*
-"""
-
-
-def get_labels_for_type(submission_type: str) -> List[str]:
-    """
-    Get GitHub labels based on submission type.
-
-    Args:
-        submission_type: One of: feedback, support, bug-report, feature-request
-
-    Returns:
-        List of label names
-    """
-    type_label_map = {
-        "feedback": ["feedback", "user-submitted"],
-        "support": ["support", "user-submitted"],
-        "bug-report": ["bug-report", "user-submitted"],
-        "feature-request": ["feature-request", "user-submitted"],
-    }
-
-    return type_label_map.get(submission_type, ["user-submitted"])

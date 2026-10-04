@@ -1,120 +1,221 @@
-"""Contact form router for user submissions."""
+"""Contact forms of innomightlabs.com and innomight.com.
+
+Both record every enquiry the same way: an issue in the private enquiries repo labelled with the
+site it came from and its category, an email to that site's inbox, and a confirmation to the sender.
+"""
 import logging
-from typing import Literal
+from dataclasses import dataclass
+from typing import Literal, Protocol
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 
 from src.email import send_email
+from src.email.message import EmailLink, MessageEmail
 from .rate_limiter import check_rate_limit, record_submission
-from .github_service import ENQUIRIES_REPO, GitHubService, format_contact_issue_body, get_labels_for_type
+from .github_service import GitHubService
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/contact", tags=["contact"])
 
-# Where people can email us directly, and where replies to enquiry confirmations go.
-ENQUIRY_INBOX = "hello@innomight.com"
+
+@dataclass(frozen=True)
+class ContactSite:
+    """A site with a contact form, and where its enquiries go."""
+
+    #: GitHub label naming the site an enquiry came from.
+    label: str
+    name: str
+    #: Notified of every enquiry, and where replies to confirmations go.
+    inbox: str
+    url: str
 
 
-class ContactSubmission(BaseModel):
-    """Contact form submission model."""
+INNOMIGHTLABS = ContactSite("innomightlabs", "InnomightLabs", "hello@innomightlabs.com", "https://innomightlabs.com")
+INNOMIGHT = ContactSite("innomight", "Innomight Labs", "hello@innomight.com", "https://innomight.com")
 
-    type: str = Field(
-        ...,
-        description="Submission type: feedback, support, bug-report, or feature-request"
-    )
-    subject: str = Field(..., min_length=5, max_length=200, description="Subject/title")
-    email: EmailStr = Field(..., description="Submitter's email address")
-    description: str = Field(..., min_length=20, max_length=5000, description="Detailed description")
+
+class ContactEnquiry(Protocol):
+    """What the shared pipeline needs from either form."""
+
+    email: str
+
+    @property
+    def category(self) -> str: ...
+
+    @property
+    def category_name(self) -> str: ...
+
+    @property
+    def greeting_name(self) -> str: ...
+
+    @property
+    def message(self) -> str: ...
+
+    @property
+    def issue_title(self) -> str: ...
+
+    @property
+    def issue_body(self) -> str: ...
+
+    @property
+    def details(self) -> list[tuple[str, str]]: ...
 
 
 class ContactResponse(BaseModel):
-    """Response after successful contact form submission."""
-
-    success: bool
+    success: bool = True
     message: str
-    issue_number: int
-    issue_url: str
 
 
-@router.post("/submit", response_model=ContactResponse)
-async def submit_contact_form(
-    submission: ContactSubmission,
-    request: Request,
-) -> ContactResponse:
+async def record_enquiry(enquiry: ContactEnquiry, site: ContactSite, request: Request) -> ContactResponse:
+    """Record the enquiry as an issue, tell the site's inbox, and confirm to the sender.
+
+    One submission per 5 minutes per IP address, across both forms.
     """
-    Submit contact form and create GitHub issue.
-
-    Rate limited to 1 submission per 5 minutes per IP address.
-    """
-    # Get client IP
     client_ip = request.client.host if request.client else "unknown"
-
-    # Check rate limit
     is_allowed, seconds_remaining = check_rate_limit(client_ip, window_seconds=300)
     if not is_allowed:
         raise HTTPException(
             status_code=429,
-            detail=f"Rate limit exceeded. Please wait {seconds_remaining} seconds before submitting again."
+            detail=f"You've already sent us a message. Please wait {seconds_remaining} seconds before sending another.",
         )
 
-    # Validate submission type
-    valid_types = ["feedback", "support", "bug-report", "feature-request"]
-    if submission.type not in valid_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid submission type. Must be one of: {', '.join(valid_types)}"
-        )
-
+    # The issue is the record of the enquiry, so failing to create it fails the submission.
     try:
-        # Format issue body
-        issue_body = format_contact_issue_body(
-            email=submission.email,
-            submission_type=submission.type,
-            description=submission.description,
+        issue = await GitHubService().create_issue(
+            title=enquiry.issue_title,
+            body=f"{enquiry.issue_body}\n---\n*Submitted via the {site.url.removeprefix('https://')} contact form*\n",
+            labels=[site.label, enquiry.category],
         )
-
-        # Get labels
-        labels = get_labels_for_type(submission.type)
-
-        # Create GitHub issue
-        github_service = GitHubService()
-        issue_data = await github_service.create_issue(
-            title=submission.subject,
-            body=issue_body,
-            labels=labels,
-        )
-
-        # Record submission for rate limiting
-        record_submission(client_ip, window_seconds=300)
-
-        log.info(
-            f"✓ Contact form submitted: type={submission.type}, "
-            f"email={submission.email}, issue=#{issue_data['number']}"
-        )
-
-        return ContactResponse(
-            success=True,
-            message="Thank you for your submission! We'll get back to you soon.",
-            issue_number=issue_data["number"],
-            issue_url=issue_data["html_url"],
-        )
-
-    except ValueError as e:
-        # GitHub token not configured
-        log.error(f"GitHub token not configured: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Contact form is not properly configured. Please try again later."
-        )
-
     except Exception as e:
-        log.error(f"✗ Error submitting contact form: {e}", exc_info=True)
+        log.error(f"✗ Error recording {site.label} enquiry: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail="Failed to submit contact form. Please try again later."
+            status_code=502,
+            detail=f"We couldn't send your message just now. Please email us at {site.inbox}.",
         )
+
+    record_submission(client_ip, window_seconds=300)
+    log.info(f"✓ Enquiry recorded: site={site.label}, category={enquiry.category}, issue=#{issue['number']}")
+
+    # The issue already holds the enquiry, so neither email failing is fatal.
+    notification = _notification(enquiry, site, issue["html_url"])
+    if not send_email(
+        site.inbox,
+        f"New enquiry ({enquiry.category}): {enquiry.issue_title}",
+        notification.text(),
+        reply_to=enquiry.email,
+        sender_name=f"{site.name} contact form",
+        html=notification.html(),
+    ):
+        log.warning(f"Failed to notify {site.inbox} of issue #{issue['number']}")
+
+    confirmation = _confirmation(enquiry, site)
+    if not send_email(
+        enquiry.email,
+        "We've received your message",
+        confirmation.text(),
+        reply_to=site.inbox,
+        sender_name=site.name,
+        html=confirmation.html(),
+    ):
+        log.warning(f"Failed to send enquiry confirmation for issue #{issue['number']}")
+
+    return ContactResponse(message="Thanks for getting in touch. We'll reply within two working days.")
+
+
+def _notification(enquiry: ContactEnquiry, site: ContactSite, issue_url: str) -> MessageEmail:
+    return MessageEmail(
+        preheader=enquiry.message[:120],
+        heading=enquiry.issue_title,
+        paragraphs=[f"A new enquiry about {enquiry.category_name} came in through the {site.name} contact form."],
+        details=[("Site", site.url.removeprefix("https://")), *enquiry.details],
+        quote=enquiry.message,
+        closing=["Reply to this email to answer them directly."],
+        action=EmailLink("Open the issue", issue_url),
+        footer=_footer(site),
+    )
+
+
+def _confirmation(enquiry: ContactEnquiry, site: ContactSite) -> MessageEmail:
+    return MessageEmail(
+        preheader="We'll reply within two working days.",
+        heading="We've received your message",
+        paragraphs=[
+            f"Hi {enquiry.greeting_name},",
+            f"Thanks for getting in touch with {site.name}. We've received your message about "
+            f"{enquiry.category_name} and will reply within two working days.",
+            "For your reference, here is what you sent:",
+        ],
+        quote=enquiry.message,
+        closing=["If you need to add anything, just reply to this email."],
+        sign_off=site.name,
+        footer=_footer(site),
+    )
+
+
+def _footer(site: ContactSite) -> EmailLink:
+    return EmailLink(site.name, site.url)
+
+
+ContactCategory = Literal["sales", "support", "feedback", "bug-report", "feature-request"]
+
+CONTACT_CATEGORY_NAMES: dict[ContactCategory, str] = {
+    "sales": "sales and enterprise plans",
+    "support": "getting support",
+    "feedback": "feedback on InnomightLabs",
+    "bug-report": "a bug in InnomightLabs",
+    "feature-request": "a feature request",
+}
+
+
+class ContactSubmission(BaseModel):
+    """A message from the innomightlabs.com contact form."""
+
+    type: ContactCategory
+    subject: str = Field(..., min_length=5, max_length=200)
+    email: EmailStr
+    description: str = Field(..., min_length=20, max_length=5000)
+
+    @property
+    def category(self) -> str:
+        return self.type
+
+    @property
+    def category_name(self) -> str:
+        return CONTACT_CATEGORY_NAMES[self.type]
+
+    @property
+    def greeting_name(self) -> str:
+        return "there"
+
+    @property
+    def message(self) -> str:
+        return self.description
+
+    @property
+    def issue_title(self) -> str:
+        return self.subject
+
+    @property
+    def details(self) -> list[tuple[str, str]]:
+        return [("From", self.email), ("Category", self.type)]
+
+    @property
+    def issue_body(self) -> str:
+        return f"""**From:** {self.email}
+**Category:** {self.type}
+
+---
+
+{self.description}
+"""
+
+
+@router.post("/submit", response_model=ContactResponse)
+async def submit_contact_form(submission: ContactSubmission, request: Request) -> ContactResponse:
+    """Record an innomightlabs.com contact form message."""
+    return await record_enquiry(submission, INNOMIGHTLABS, request)
 
 
 EnquiryTopic = Literal["project", "public-sector", "product", "partnership", "other"]
@@ -144,99 +245,47 @@ class Enquiry(BaseModel):
         return bool(self.website.strip())
 
     @property
+    def category(self) -> str:
+        return self.topic
+
+    @property
+    def category_name(self) -> str:
+        return ENQUIRY_TOPIC_NAMES[self.topic]
+
+    @property
+    def greeting_name(self) -> str:
+        return self.name
+
+    @property
     def issue_title(self) -> str:
         organisation = f" ({self.organisation})" if self.organisation else ""
         return f"Enquiry from {self.name}{organisation}"
 
     @property
+    def details(self) -> list[tuple[str, str]]:
+        return [
+            ("From", f"{self.name} <{self.email}>"),
+            ("Organisation", self.organisation or "-"),
+            ("Topic", self.topic),
+        ]
+
+    @property
     def issue_body(self) -> str:
         return f"""**From:** {self.name} <{self.email}>
 **Organisation:** {self.organisation or "-"}
-**Topic:** {ENQUIRY_TOPIC_NAMES[self.topic]}
+**Topic:** {self.category_name}
 
 ---
 
 {self.message}
-
----
-*Submitted via the innomight.com contact form*
-"""
-
-    @property
-    def issue_labels(self) -> list[str]:
-        return ["enquiry", self.topic]
-
-    @property
-    def confirmation_body(self) -> str:
-        return f"""Hi {self.name},
-
-Thanks for getting in touch with Innomight Labs. We've received your message about {ENQUIRY_TOPIC_NAMES[self.topic]} and will reply within two working days.
-
-For your reference, here is what you sent:
-
-{self.message}
-
-If you need to add anything, just reply to this email.
-
-Innomight Labs
-https://innomight.com
 """
 
 
-class EnquiryResponse(BaseModel):
-    message: str
-
-
-@router.post("/enquiry", response_model=EnquiryResponse)
-async def submit_enquiry(enquiry: Enquiry, request: Request) -> EnquiryResponse:
-    """
-    Record a contact-form enquiry as an issue in the private enquiries repo, then email the
-    sender a confirmation.
-
-    Shares the contact rate limit: one submission per 5 minutes per IP address.
-    """
-    thanks = EnquiryResponse(message="Thanks for getting in touch. We'll reply within two working days.")
-
+@router.post("/enquiry", response_model=ContactResponse)
+async def submit_enquiry(enquiry: Enquiry, request: Request) -> ContactResponse:
+    """Record an innomight.com contact form enquiry."""
     # Bots get the same response as people so they can't tell they were filtered.
     if enquiry.is_spam:
         log.info("Dropped contact enquiry that filled the honeypot field")
-        return thanks
-
-    client_ip = request.client.host if request.client else "unknown"
-    is_allowed, seconds_remaining = check_rate_limit(client_ip, window_seconds=300)
-    if not is_allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=f"You've already sent us a message. Please wait {seconds_remaining} seconds before sending another.",
-        )
-
-    # The issue is the record of the enquiry, so failing to create it fails the submission.
-    try:
-        issue = await GitHubService().create_issue(
-            title=enquiry.issue_title,
-            body=enquiry.issue_body,
-            labels=enquiry.issue_labels,
-            repo=ENQUIRIES_REPO,
-        )
-    except Exception as e:
-        log.error(f"✗ Error recording contact enquiry: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=502,
-            detail=f"We couldn't send your message just now. Please email us at {ENQUIRY_INBOX}.",
-        )
-
-    record_submission(client_ip, window_seconds=300)
-    log.info(f"✓ Contact enquiry recorded: topic={enquiry.topic}, issue=#{issue['number']}")
-
-    # The confirmation is a courtesy: the enquiry is already recorded, so a failed email isn't fatal.
-    confirmed = send_email(
-        enquiry.email,
-        "We've received your message",
-        enquiry.confirmation_body,
-        reply_to=ENQUIRY_INBOX,
-        sender_name="Innomight Labs",
-    )
-    if not confirmed:
-        log.warning(f"Failed to send enquiry confirmation for issue #{issue['number']}")
-
-    return thanks
+        return ContactResponse(message="Thanks for getting in touch. We'll reply within two working days.")
+    return await record_enquiry(enquiry, INNOMIGHT, request)

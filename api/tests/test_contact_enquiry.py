@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from src.contact.github_service import ENQUIRIES_REPO
-from src.contact.router import ENQUIRY_INBOX
+from src.contact.github_service import ENQUIRIES_REPO, GitHubService
+from src.contact.router import INNOMIGHT, INNOMIGHTLABS
 
 
 def valid_enquiry(**overrides: str) -> dict[str, str]:
@@ -31,28 +31,92 @@ def external_services(issue_error: Exception | None = None, email_sent: bool = T
         yield create_issue, send_email
 
 
-def test_enquiry_becomes_a_labelled_issue_in_the_private_repo(test_client: TestClient):
+def valid_submission(**overrides: str) -> dict[str, str]:
+    return {
+        "type": "sales",
+        "subject": "Enterprise plan for 200 seats",
+        "email": "grace@example.com",
+        "description": "We would like to roll InnomightLabs out across our support team.",
+        **overrides,
+    }
+
+
+def test_issues_go_to_the_private_enquiries_repo_by_default():
+    assert GitHubService.create_issue.__defaults__ == (ENQUIRIES_REPO,)
+
+
+def test_enquiry_becomes_a_labelled_issue(test_client: TestClient):
     with external_services() as (create_issue, _):
         response = test_client.post("/contact/enquiry", json=valid_enquiry())
 
     assert response.status_code == 200
     issue = create_issue.call_args.kwargs
-    assert issue["repo"] == ENQUIRIES_REPO
+    assert "repo" not in issue
     assert issue["title"] == "Enquiry from Ada Lovelace (Analytical Engines Ltd)"
-    assert issue["labels"] == ["enquiry", "public-sector"]
+    assert issue["labels"] == ["innomight", "public-sector"]
     assert "Ada Lovelace <ada@example.com>" in issue["body"]
     assert "would like a delivery partner" in issue["body"]
 
 
-def test_sender_gets_a_confirmation_email(test_client: TestClient):
+def test_innomight_inbox_is_notified_and_sender_confirmed(test_client: TestClient):
     with external_services() as (_, send_email):
         test_client.post("/contact/enquiry", json=valid_enquiry())
 
-    to_email, subject, body = send_email.call_args.args
-    assert to_email == "ada@example.com"
-    assert subject == "We've received your message"
-    assert "a public-sector tender or contract" in body
-    assert send_email.call_args.kwargs["reply_to"] == ENQUIRY_INBOX
+    notification, confirmation = send_email.call_args_list
+    assert notification.args[0] == INNOMIGHT.inbox == "hello@innomight.com"
+    assert notification.args[1] == "New enquiry (public-sector): Enquiry from Ada Lovelace (Analytical Engines Ltd)"
+    assert "https://github.com/x/y/issues/7" in notification.args[2]
+    assert notification.kwargs["reply_to"] == "ada@example.com"
+    assert confirmation.args[0] == "ada@example.com"
+    assert confirmation.args[1] == "We've received your message"
+    assert "a public-sector tender or contract" in confirmation.args[2]
+    assert confirmation.kwargs["reply_to"] == INNOMIGHT.inbox
+
+
+def test_contact_form_message_becomes_a_labelled_issue(test_client: TestClient):
+    with external_services() as (create_issue, _):
+        response = test_client.post("/contact/submit", json=valid_submission())
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True, "message": "Thanks for getting in touch. We'll reply within two working days."}
+    issue = create_issue.call_args.kwargs
+    assert "repo" not in issue
+    assert issue["title"] == "Enterprise plan for 200 seats"
+    assert issue["labels"] == ["innomightlabs", "sales"]
+    assert "grace@example.com" in issue["body"]
+    assert "innomightlabs.com contact form" in issue["body"]
+
+
+def test_innomightlabs_inbox_is_notified_and_sender_confirmed(test_client: TestClient):
+    with external_services() as (_, send_email):
+        test_client.post("/contact/submit", json=valid_submission())
+
+    notification, confirmation = send_email.call_args_list
+    assert notification.args[0] == INNOMIGHTLABS.inbox == "hello@innomightlabs.com"
+    assert notification.args[1] == "New enquiry (sales): Enterprise plan for 200 seats"
+    assert notification.kwargs["reply_to"] == "grace@example.com"
+    assert confirmation.args[0] == "grace@example.com"
+    assert "Thanks for getting in touch with InnomightLabs" in confirmation.args[2]
+    assert "roll InnomightLabs out" in confirmation.args[2]
+    assert confirmation.kwargs["reply_to"] == INNOMIGHTLABS.inbox
+
+
+def test_contact_form_rejects_an_unknown_category(test_client: TestClient):
+    with external_services() as (create_issue, _):
+        response = test_client.post("/contact/submit", json=valid_submission(type="spam"))
+
+    assert response.status_code == 422
+    create_issue.assert_not_called()
+
+
+def test_both_forms_share_one_rate_limit(test_client: TestClient):
+    with external_services() as (create_issue, _):
+        first = test_client.post("/contact/submit", json=valid_submission())
+        second = test_client.post("/contact/enquiry", json=valid_enquiry())
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert create_issue.call_count == 1
 
 
 def test_failed_confirmation_email_still_accepts_the_enquiry(test_client: TestClient):
@@ -98,6 +162,39 @@ def test_failed_issue_reports_error_without_confirming_or_consuming_rate_limit(t
         retry = test_client.post("/contact/enquiry", json=valid_enquiry())
 
     assert failed.status_code == 502
-    assert ENQUIRY_INBOX in failed.json()["detail"]
+    assert INNOMIGHT.inbox in failed.json()["detail"]
     send_email.assert_not_called()
     assert retry.status_code == 200
+
+
+def test_both_emails_use_the_house_layout_with_the_innomight_logo(test_client: TestClient):
+    from src.email.message import INNOMIGHT_WORDMARK_URL
+
+    with external_services() as (_, send_email):
+        test_client.post("/contact/submit", json=valid_submission())
+
+    for sent in send_email.call_args_list:
+        html = sent.kwargs["html"]
+        assert INNOMIGHT_WORDMARK_URL in html
+        assert "roll InnomightLabs out across our support team" in html
+        assert "part of" in html
+    assert "Open the issue" in send_email.call_args_list[0].kwargs["html"]
+
+
+def test_a_senders_words_are_escaped_in_the_html(test_client: TestClient):
+    attack = "<script>alert(1)</script> and a <a href='https://evil.example'>link</a>, then more words."
+
+    with external_services() as (_, send_email):
+        test_client.post("/contact/submit", json=valid_submission(description=attack))
+
+    for sent in send_email.call_args_list:
+        assert "<script>" not in sent.kwargs["html"]
+        assert "&lt;script&gt;" in sent.kwargs["html"]
+        assert "href='https://evil.example'" not in sent.kwargs["html"]
+
+
+def test_innomight_emails_do_not_call_innomight_its_own_parent(test_client: TestClient):
+    with external_services() as (_, send_email):
+        test_client.post("/contact/enquiry", json=valid_enquiry())
+
+    assert "part of" not in send_email.call_args_list[1].kwargs["html"]

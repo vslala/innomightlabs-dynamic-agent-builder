@@ -22,6 +22,7 @@ def send_email(
     body: str,
     reply_to: str | None = None,
     sender_name: str = "InnomightLabs",
+    html: str | None = None,
 ) -> bool:
     """
     Send a simple plain text email via Mailjet.
@@ -32,6 +33,7 @@ def send_email(
         body: Plain text email body
         reply_to: Optional address that replies should go to instead of the sender
         sender_name: Display name shown as the sender
+        html: Optional HTML part; `body` stays as the plain-text part
 
     Returns:
         True if sent successfully, False otherwise
@@ -50,6 +52,8 @@ def send_email(
         }
         if reply_to:
             message["ReplyTo"] = {"Email": reply_to}
+        if html:
+            message["HTMLPart"] = html
 
         data = {"Messages": [message]}
 
