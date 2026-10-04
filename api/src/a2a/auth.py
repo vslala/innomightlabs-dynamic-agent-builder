@@ -94,7 +94,8 @@ def _authenticate_a2a_client(
             headers=BEARER_CHALLENGE,
         )
 
-    api_key = api_key_repo.find_by_public_key(credential)
+    # The key's A2A client secret, never its public key: that one is embedded in web pages.
+    api_key = api_key_repo.find_by_a2a_secret(credential)
     if not api_key or not api_key.is_active or api_key.agent_id != agent_id:
         raise HTTPException(
             status_code=401,

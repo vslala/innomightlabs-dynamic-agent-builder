@@ -11,11 +11,23 @@ from src.llm.events import SSEEvent, SSEEventType
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.config.settings import DEFAULT_OPENAI_MODELS
+from src.public_api.keys import SecretKeyRepository
 from tests.mock_data import (
     TEST_USER_EMAIL,
+    TEST_USER_EMAIL_2,
     AGENT_CREATE_REQUEST,
     CONVERSATION_CREATE_REQUEST,
 )
+
+
+def _headers_for(email: str) -> dict[str, str]:
+    from datetime import datetime, timedelta, timezone
+
+    import jwt
+
+    now = datetime.now(timezone.utc)
+    token = jwt.encode({"aud": "owner", "sub": email, "iat": now, "exp": now + timedelta(hours=1)}, "test-secret")
+    return {"Authorization": f"Bearer {token}"}
 
 
 class TestAgentsRouter:
@@ -305,18 +317,33 @@ class TestAgentsRouter:
         get_response = test_client.get(f"/agents/{agent_id}", headers=auth_headers)
         assert get_response.status_code == 404
 
-    def test_delete_agent_idempotent(self, test_client: TestClient, auth_headers: dict):
-        """Test deleting a non-existent agent still returns success (idempotent)."""
-        response = test_client.delete("/agents/non-existent-id", headers=auth_headers)
+    def test_deleting_an_agent_you_do_not_own_touches_nothing(
+        self, test_client: TestClient, auth_headers: dict, monkeypatch
+    ):
+        wiped: list[str] = []
+        monkeypatch.setattr(
+            "src.agents.router.ConversationMediaStorage",
+            lambda: type("Storage", (), {"delete_agent_prefix": lambda self, agent_id: wiped.append(agent_id)})(),
+        )
+        agent_id = test_client.post("/agents", json=AGENT_CREATE_REQUEST, headers=auth_headers).json()["agent_id"]
+        test_client.post(f"/agents/{agent_id}/secret-keys", json={"name": "server"}, headers=auth_headers)
 
-        assert response.status_code == 204
+        other = _headers_for(TEST_USER_EMAIL_2)
+        assert test_client.delete(f"/agents/{agent_id}", headers=other).status_code == 404
+        assert test_client.delete("/agents/non-existent-id", headers=auth_headers).status_code == 404
+        assert wiped == []
+        assert len(test_client.get(f"/agents/{agent_id}/secret-keys", headers=auth_headers).json()) == 1
+
+        assert test_client.delete(f"/agents/{agent_id}", headers=auth_headers).status_code == 204
+        assert wiped == [agent_id]
+        assert SecretKeyRepository().find_all_by_agent(agent_id) == []
 
 
 class _FastArchitecture:
     """A minimal architecture double: completes a turn in a handful of events."""
 
     async def handle_message(
-        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None, api_key_id=None
+        self, agent, conversation, user_message, owner_email, actor_email, actor_id, actor_kind, attachments=None, api_key_id=None
     ):
         yield SSEEvent(event_type=SSEEventType.USER_MESSAGE_SAVED, content="saved", message_id="user-1")
         yield SSEEvent(event_type=SSEEventType.AGENT_RESPONSE_TO_USER, content="hi")

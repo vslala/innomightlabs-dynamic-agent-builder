@@ -1,5 +1,6 @@
 id: rest_template
 namespace: core.http
+owner_only: true
 name: REST Template
 description: Send flexible GET and POST HTTP requests to external APIs.
 system_prompt: |
@@ -7,10 +8,23 @@ system_prompt: |
   Use get for read-only requests and post for requests that create, submit, or trigger work.
   Put every header in headers as key/value pairs.
   Prefer json_body for JSON payloads. Use text_body only when the endpoint expects raw text.
-  Do not invent Authorization headers or API keys. If the user tells you to use a secret placeholder such as {{ api_token }},
-  pass that placeholder exactly; the runtime replaces it from environment variables before sending the request.
+  Do not invent Authorization headers or API keys. Secrets are set by the agent's owner in this skill's settings and
+  are used through placeholders such as {{ api_token }}. Pass a placeholder exactly as written; the runtime fills in the
+  value before sending the request and removes it from the result. You cannot list or read the secrets themselves.
   By default the result includes only ok, status_code, and body_preview. Set include_full_response=true only when headers,
   content type, parsed JSON, elapsed time, or other metadata are required.
+form:
+  - input_type: key_value
+    name: secrets
+    label: Secrets
+    attr:
+      optional: "true"
+      secret: "true"
+      help_text: "Use a secret in a request as {{ name }}. The agent never sees the value."
+      key_placeholder: "api_token"
+      value_placeholder: "Secret value"
+      empty_text: "No secrets configured."
+      add_label: "Add secret"
 actions:
   - name: get
     aliases: [http_get, send_get]

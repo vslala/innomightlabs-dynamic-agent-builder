@@ -11,6 +11,7 @@ from src.agents.runtime_state import AgentTurnState
 from src.agents.turn_runtime import emit_turn_event
 from src.agents.tool_execution import ToolExecutionOutcome
 from src.llm.events import SSEEvent, SSEEventType
+from src.skills.models import ActorKind
 
 
 def _type(item):
@@ -96,6 +97,7 @@ def _turn_state() -> AgentTurnState:
         owner_email="owner@example.com",
         actor_email="actor@example.com",
         actor_id="actor-1",
+        actor_kind=ActorKind.OWNER,
         conversation_id="conversation-1",
         agent_id="agent-1",
         provider_name="Anthropic",

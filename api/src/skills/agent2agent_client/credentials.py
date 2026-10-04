@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
 from src.skills.agent2agent_client.models import A2AAuthResult, A2ARegistryConfig
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -67,10 +70,11 @@ class A2ACredentialResolver:
                         scopes=oauth_flow.scopes,
                     )
                 except Exception as exc:
+                    log.warning("OAuth token exchange failed for a remote A2A agent: %s", exc, exc_info=True)
                     return ResolvedCredential(
                         result=A2AAuthResult.REQUIRED,
                         headers={},
-                        message=f"OAuth token exchange failed for this remote agent: {str(exc)[:300]}",
+                        message="OAuth token exchange failed for this remote agent. Check its client credentials.",
                     )
                 access_token = str(token.get("access_token") or "").strip()
                 token_type = str(token.get("token_type") or "Bearer").strip()

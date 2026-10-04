@@ -15,6 +15,13 @@ export interface ApiKeyResponse {
   created_at: string;
   last_used_at: string | null;
   request_count: number;
+  has_a2a_secret: boolean;
+}
+
+// An A2A client secret, shown once
+export interface A2ASecretResponse {
+  client_id: string;
+  client_secret: string;
 }
 
 // Request to create a new API key
@@ -65,6 +72,13 @@ class ApiKeyService {
       `/agents/${agentId}/api-keys/${keyId}`,
       data
     );
+  }
+
+  /**
+   * Issue (or rotate) the key's A2A client secret; any earlier one stops working
+   */
+  async issueA2ASecret(agentId: string, keyId: string): Promise<A2ASecretResponse> {
+    return httpClient.post<A2ASecretResponse>(`/agents/${agentId}/api-keys/${keyId}/a2a-secret`);
   }
 
   /**

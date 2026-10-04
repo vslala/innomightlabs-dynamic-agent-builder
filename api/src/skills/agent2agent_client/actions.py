@@ -281,10 +281,8 @@ def _remote_oauth_authorization_url(
     if not provider:
         return None
 
-    return_to = str(context.get("return_to") or "")
-    if not return_to:
-        agent_id = str(context.get("agent_id") or "").strip()
-        return_to = f"{settings.frontend_url.rstrip('/')}/dashboard/agents/{agent_id}/skills"
+    agent_id = str(context.get("agent_id") or "").strip()
+    return_to = f"{settings.frontend_url.rstrip('/')}/dashboard/agents/{agent_id}/skills"
     session = create_state_session(
         user_email=str(context.get("owner_email") or ""),
         agent_id=str(context.get("agent_id") or ""),

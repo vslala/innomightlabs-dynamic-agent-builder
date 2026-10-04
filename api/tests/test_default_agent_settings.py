@@ -84,6 +84,7 @@ class TestDefaultAgentSettingsRouter:
 
         other_user_token = jwt.encode(
             {
+                "aud": "owner",
                 "sub": TEST_USER_EMAIL_2,
                 "name": "Other User",
                 "exp": datetime.now(timezone.utc) + timedelta(hours=1),

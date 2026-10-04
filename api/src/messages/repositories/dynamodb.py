@@ -4,8 +4,6 @@ DynamoDB-backed repository for Message entities.
 
 from __future__ import annotations
 
-import base64
-import json
 import logging
 from datetime import datetime
 from typing import Any, Optional, Tuple
@@ -14,6 +12,7 @@ from boto3.dynamodb.conditions import Key
 
 from src.config import settings
 from src.db import get_dynamodb_resource
+from src.common.pagination import decode_cursor, encode_cursor
 from src.messages.models import (
     AUDIT_SORT_KEY_PREFIX,
     CHAT_SORT_KEY_PREFIX,
@@ -167,7 +166,7 @@ class DynamoDBMessageRepository:
         if newest_first:
             params["ScanIndexForward"] = False
 
-        start_key = _decode_cursor(cursor)
+        start_key = decode_cursor(cursor)
         if start_key:
             params["ExclusiveStartKey"] = start_key
 
@@ -179,24 +178,6 @@ class DynamoDBMessageRepository:
             f"Found {len(messages)} messages for conversation {conversation_id} "
             f"(prefix={prefix}, limit={limit}, has_more={last_key is not None})"
         )
-        return messages, _encode_cursor(last_key), last_key is not None
+        return messages, encode_cursor(last_key), last_key is not None
 
 
-def _decode_cursor(cursor: Optional[str]) -> Optional[dict[str, Any]]:
-    if not cursor:
-        return None
-    try:
-        decoded = json.loads(base64.b64decode(cursor).decode("utf-8"))
-    except Exception:
-        log.warning(f"Invalid cursor: {cursor}")
-        return None
-    if not isinstance(decoded, dict):
-        log.warning(f"Invalid cursor: {cursor}")
-        return None
-    return decoded
-
-
-def _encode_cursor(last_key: Optional[dict[str, Any]]) -> Optional[str]:
-    if not last_key:
-        return None
-    return base64.b64encode(json.dumps(last_key).encode("utf-8")).decode("utf-8")

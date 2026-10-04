@@ -14,6 +14,7 @@ from src.settings.repository import ProviderSettingsRepository
 from src.skills.google_mail.models import GoogleMailCredentials
 from src.skills.google_mail.oauth import GoogleMailOAuthState, encode_state_session
 from tests.mock_data import TEST_USER_EMAIL
+from tests.oauth_handoff import handoff_result
 
 
 def _create_agent_for_user(user_email: str) -> Agent:
@@ -99,8 +100,7 @@ class TestGoogleMailOAuth:
         )
 
         assert response.status_code in {302, 307}
-        location = response.headers["location"]
-        params = parse_qs(urlparse(location).query)
+        params = handoff_result(test_client, response)
         assert params["skill_oauth"] == ["success"]
         assert params["google_mail_oauth"] == ["success"]
         assert params["agent_id"] == ["agent-1"]
@@ -123,7 +123,6 @@ class TestGoogleMailOAuth:
         )
 
         assert response.status_code in {302, 307}
-        location = response.headers["location"]
-        params = parse_qs(urlparse(location).query)
+        params = handoff_result(test_client, response)
         assert params["skill_oauth"] == ["error"]
         assert params["google_mail_oauth"] == ["error"]

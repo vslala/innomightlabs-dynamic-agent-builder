@@ -28,6 +28,7 @@ from src.public_api.models import (
     V1SendMessageRequest,
     V1SendMessageResponse,
 )
+from src.skills.models import ActorKind
 
 router = APIRouter(prefix="/v1/agents/{agent_id}", tags=["public-api"])
 
@@ -140,6 +141,7 @@ async def send_message(body: V1SendMessageRequest, target: Target):
         owner_email=owner_email,
         actor_email=owner_email,
         actor_id=conversation.actor_id,
+        actor_kind=ActorKind.API,
         api_key_id=target.caller.key.key_id,
     )
     transcript = cast(TurnTranscript, live_transcript(turn.turn_id))

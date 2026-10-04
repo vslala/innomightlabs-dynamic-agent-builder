@@ -6,6 +6,7 @@ import json
 from typing import Any, Protocol
 
 from src.agents.runtime_state import AgentTurnState
+from src.skills.models import ActorKind
 from src.agents.tool_runtime.contexts import (
     MCPToolContext,
     NativeToolContext,
@@ -23,6 +24,7 @@ class SkillRuntime(Protocol):
         owner_email: str,
         actor_email: str,
         actor_id: str,
+        actor_kind: ActorKind,
         conversation_id: str,
         user_message_id: str | None = None,
     ) -> str:
@@ -86,6 +88,7 @@ async def run_skill_tool(
         owner_email=context.owner_email,
         actor_email=context.actor_email,
         actor_id=context.actor_id,
+        actor_kind=context.actor_kind,
         conversation_id=context.conversation_id,
         user_message_id=context.user_message_id,
     )
@@ -98,7 +101,7 @@ async def list_mcp_tools(
     state: AgentTurnState,
 ) -> str:
     del tool_name
-    context = MCPToolContext.of(state)
+    context = _owner_mcp_context(state)
     result = await _required(mcp_runtime).list_runtime_tools(
         owner_email=context.owner_email,
         agent_id=context.agent_id,
@@ -114,7 +117,7 @@ async def call_mcp_tool(
     state: AgentTurnState,
 ) -> str:
     del tool_name
-    context = MCPToolContext.of(state)
+    context = _owner_mcp_context(state)
     # mcp_id, tool_name and arguments are all required by CallMCPToolInput,
     # which has already validated this input.
     result = await _required(mcp_runtime).call_runtime_tool(
@@ -125,6 +128,14 @@ async def call_mcp_tool(
         arguments=tool_input["arguments"],
     )
     return _json_result(result)
+
+
+def _owner_mcp_context(state: AgentTurnState) -> MCPToolContext:
+    """MCP tools run on the owner's connections; nobody else is offered them, and a stray call is refused."""
+    context = MCPToolContext.of(state)
+    if context.actor_kind != ActorKind.OWNER:
+        raise ValueError("MCP tools are not available in this conversation")
+    return context
 
 
 def _required(mcp_runtime: MCPRuntime | None) -> MCPRuntime:

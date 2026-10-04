@@ -14,6 +14,7 @@ from src.settings.repository import ProviderSettingsRepository
 from src.skills.google_ads.models import GoogleAdsCredentials
 from src.skills.google_ads.oauth import GoogleAdsOAuthState, encode_state_session
 from tests.mock_data import TEST_USER_EMAIL
+from tests.oauth_handoff import handoff_result
 
 
 def _create_agent_for_user(user_email: str) -> Agent:
@@ -87,7 +88,7 @@ class TestGoogleAdsOAuth:
         )
 
         assert response.status_code in {302, 307}
-        params = parse_qs(urlparse(response.headers["location"]).query)
+        params = handoff_result(test_client, response)
         assert params["skill_oauth"] == ["success"]
         assert params["google_ads_oauth"] == ["success"]
         assert params["skill_id"] == ["google_ads"]
@@ -105,7 +106,7 @@ class TestGoogleAdsOAuth:
             params={"code": "test-code", "state": "bad-state"},
             follow_redirects=False,
         )
-        params = parse_qs(urlparse(response.headers["location"]).query)
+        params = handoff_result(test_client, response)
         assert params["skill_oauth"] == ["error"]
         assert params["google_ads_oauth"] == ["error"]
 

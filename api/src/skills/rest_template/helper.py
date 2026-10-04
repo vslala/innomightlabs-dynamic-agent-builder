@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -31,14 +30,51 @@ def normalize_string_map(value: Any, field_name: str) -> dict[str, str]:
     }
 
 
-def expand_env_placeholders(value: Any) -> Any:
-    if isinstance(value, str):
-        return PLACEHOLDER_RE.sub(_environment_value, value)
-    if isinstance(value, list):
-        return [expand_env_placeholders(item) for item in value]
-    if isinstance(value, dict):
-        return {key: expand_env_placeholders(item) for key, item in value.items()}
-    return value
+class AgentSecrets:
+    """The secrets the agent's owner configured on this install, for `{{ name }}` placeholders.
+
+    The model writes the placeholders but never sees the values. Every value that went
+    into a request is scrubbed from whatever comes back, so an endpoint that echoes its
+    request cannot hand it to the model.
+    """
+
+    def __init__(self, secrets: dict[str, str]):
+        self._secrets = secrets
+        self.used: set[str] = set()
+
+    def expand(self, value: Any) -> Any:
+        if isinstance(value, str):
+            return PLACEHOLDER_RE.sub(self._value_for, value)
+        if isinstance(value, list):
+            return [self.expand(item) for item in value]
+        if isinstance(value, dict):
+            return {key: self.expand(item) for key, item in value.items()}
+        return value
+
+    def scrub(self, value: Any) -> Any:
+        if isinstance(value, str):
+            for secret in sorted(self.used, key=len, reverse=True):
+                value = value.replace(secret, REDACTED)
+            return value
+        if isinstance(value, list):
+            return [self.scrub(item) for item in value]
+        if isinstance(value, dict):
+            return {key: self.scrub(item) for key, item in value.items()}
+        return value
+
+    def carried_by(self, header_value: str) -> bool:
+        return any(secret in header_value for secret in self.used)
+
+    def _value_for(self, match: re.Match[str]) -> str:
+        name = match.group(1)
+        value = self._secrets.get(name)
+        if not value:
+            raise ValueError(
+                f"{{{{ {name} }}}} is not one of this skill's configured secrets. "
+                "Secrets are set by the agent's owner in the skill settings."
+            )
+        self.used.add(value)
+        return value
 
 
 def body_preview(text: str, max_chars: int) -> tuple[str, bool]:
@@ -114,9 +150,3 @@ def transport_error_response(message: str) -> dict[str, Any]:
         "error": message,
     }
 
-
-def _environment_value(match: re.Match[str]) -> str:
-    name = match.group(1)
-    if name not in os.environ:
-        raise ValueError(f"Missing environment variable for REST Template placeholder: {name}")
-    return os.environ[name]

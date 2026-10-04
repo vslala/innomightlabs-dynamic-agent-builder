@@ -12,6 +12,7 @@ from typing import Any
 from ..config import settings
 from ..agents.repository import AgentRepository
 from ..users import User, UserRepository
+from ..users.models import UserStatus
 from ..settings.models import ProviderSettings, ProviderSettingsResponse
 from ..settings.repository import ProviderSettingsRepository
 from .oauth_providers import CognitoOAuthProvider, GoogleOAuthProvider, OAuthProvider
@@ -54,9 +55,18 @@ from src.skills.google_mail.oauth import (
     encode_state_session as encode_google_mail_state_session,
     save_credentials as save_google_mail_credentials,
 )
-from .app_tokens import create_login_code
-from .apps import DEFAULT_APP, app_from_state, create_state, frontend_url_for
-from .jwt_utils import create_access_token, get_current_user
+from .oauth_handoff import handoff_redirect, safe_return_to
+from .app_tokens import create_login_code, redeem_login_code as redeem_app_login_code
+from .apps import (
+    DEFAULT_APP,
+    NONCE_COOKIE,
+    app_from_state,
+    create_state,
+    forget_nonce,
+    frontend_url_for,
+    remember_nonce,
+)
+from .jwt_utils import create_access_token, get_user_for_any_app
 from ..email import send_welcome_email_safe
 
 import logging
@@ -198,23 +208,50 @@ def _get_provider(provider_name: str) -> OAuthProvider:
 
 
 def _redirect_auth_error(error: str, app: str = DEFAULT_APP) -> RedirectResponse:
-    return RedirectResponse(url=f"{frontend_url_for(app)}/login?error={error}")
+    return forget_nonce(RedirectResponse(url=f"{frontend_url_for(app)}/login?{urlencode({'error': error})}"))
+
+
+def _start_login(provider_name: str, app: str) -> RedirectResponse:
+    provider = _get_provider(provider_name)
+    login = create_state(app)
+    authorization_url, _state = provider.get_authorization_url(state=login.state)
+    return remember_nonce(RedirectResponse(url=authorization_url), login.nonce)
 
 
 @router.get("/google")
 async def login_with_google(app: str = DEFAULT_APP):
     """Redirect user to Google OAuth consent screen."""
-    provider = _get_provider("google")
-    authorization_url, _state = provider.get_authorization_url(state=create_state(app))
-    return RedirectResponse(url=authorization_url)
+    return _start_login("google", app)
 
 
 @router.get("/cognito")
 async def login_with_cognito(app: str = DEFAULT_APP):
     """Redirect user to Cognito Hosted UI."""
-    provider = _get_provider("cognito")
-    authorization_url, _state = provider.get_authorization_url(state=create_state(app))
-    return RedirectResponse(url=authorization_url)
+    return _start_login("cognito", app)
+
+
+class LoginCodeRequest(BaseModel):
+    code: str
+
+
+class LoginSessionResponse(BaseModel):
+    token: str
+
+
+@router.post("/session", response_model=LoginSessionResponse)
+async def redeem_login_code(body: LoginCodeRequest) -> LoginSessionResponse:
+    """Trade the one-time code from /login-success for a session token, so the token never sits in a URL."""
+    email = redeem_app_login_code(body.code, DEFAULT_APP)
+    user = user_repository.get_by_email(email) if email else None
+    if not user or user.status in (UserStatus.INACTIVE.value, UserStatus.PENDING_DELETION.value):
+        raise HTTPException(status_code=401, detail="Invalid or expired login code")
+    return LoginSessionResponse(token=create_access_token(user))
+
+
+def _email_verified(user_info: dict[str, Any]) -> bool:
+    """Google says verified_email, Cognito says email_verified (sometimes as a string)."""
+    value = user_info.get("email_verified", user_info.get("verified_email"))
+    return value is True or str(value).lower() == "true"
 
 
 @router.post("/openai/start", response_model=OpenAIStartResponse)
@@ -320,56 +357,68 @@ async def _start_google_skill_oauth(
     agent = agent_repository.find_agent_by_id(body.agent_id, user_email)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    return _google_skill_authorize(flow, user_email=user_email, agent_id=body.agent_id, return_to=body.return_to)
 
+
+def _google_skill_authorize(
+    flow: GoogleSkillOAuthFlow, *, user_email: str, agent_id: str, return_to: str
+) -> SkillOAuthStartResponse:
+    try:
+        return_to = safe_return_to(return_to)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     session = flow.create_state_session(
         user_email=user_email,
-        agent_id=body.agent_id,
-        skill_id=body.skill_id,
-        return_to=body.return_to,
+        agent_id=agent_id,
+        skill_id=flow.skill_id,
+        return_to=return_to,
         ttl_seconds=flow.ttl_seconds,
     )
-    state = flow.encode_state_session(session)
-    authorize_url = flow.build_authorization_url(state=state)
-    return SkillOAuthStartResponse(authorize_url=authorize_url)
+    return SkillOAuthStartResponse(authorize_url=flow.build_authorization_url(state=flow.encode_state_session(session)))
 
 
 async def _google_skill_oauth_callback(
     *,
     flow: GoogleSkillOAuthFlow,
-    code: str = Query(None),
-    error: str = Query(None),
-    state: str = Query(None),
+    code: str | None,
+    error: str | None,
+    state: str | None,
 ) -> RedirectResponse:
+    """Hand the result to the SPA; it completes the connection as the signed-in user (see oauth_handoff)."""
     session = flow.decode_state_session(state)
-    fallback_return_to = f"{settings.frontend_url}/dashboard/agents"
+    return handoff_redirect(
+        _handoff_return_to(session.return_to if session else None, f"{settings.frontend_url}/dashboard/agents"),
+        flow=flow.skill_id,
+        state=state,
+        code=code,
+        error=error,
+    )
+
+
+def _handoff_return_to(return_to: str | None, fallback: str) -> str:
+    try:
+        return safe_return_to(return_to or fallback)
+    except ValueError:
+        return fallback
+
+
+async def complete_google_skill_oauth(
+    flow: GoogleSkillOAuthFlow, *, state: str | None, code: str | None, error: str | None, user_email: str
+) -> dict[str, str]:
+    """Store the credentials, if the signed-in user started this flow. Returns the page's result parameters."""
+    session = flow.decode_state_session(state)
     status_param = flow.callback_status_param
+    if not session or session.user_email != user_email:
+        return {"skill_oauth": "error", status_param: "error", "reason": "invalid_state"}
 
-    if not session:
-        params = urlencode({"skill_oauth": "error", status_param: "error", "reason": "invalid_state"})
-        return RedirectResponse(url=f"{fallback_return_to}?{params}")
-
-    query_params = {
-        "skill_oauth": "error" if error else "success",
-        status_param: "error" if error else "success",
-        "agent_id": session.agent_id,
-        "skill_id": session.skill_id,
-    }
-
+    result = {"skill_oauth": "success", status_param: "success", "agent_id": session.agent_id, "skill_id": session.skill_id}
+    failure = {**result, "skill_oauth": "error", status_param: "error"}
     if session.is_expired():
-        query_params["skill_oauth"] = "error"
-        query_params[status_param] = "error"
-        query_params["reason"] = "expired"
-        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
-
+        return {**failure, "reason": "expired"}
     if error:
-        query_params["reason"] = error
-        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
-
+        return {**failure, "reason": "cancelled"}
     if not code:
-        query_params["skill_oauth"] = "error"
-        query_params[status_param] = "error"
-        query_params["reason"] = "missing_code"
-        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
+        return {**failure, "reason": "missing_code"}
 
     try:
         credentials = await flow.build_credentials_from_auth_code(code)
@@ -380,18 +429,10 @@ async def _google_skill_oauth_callback(
             auth_type="oauth",
         )
         flow.save_credentials(provider_settings, provider_settings_repository, credentials)
-        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
-    except flow.error_type as e:
-        query_params["skill_oauth"] = "error"
-        query_params[status_param] = "error"
-        query_params["reason"] = str(e)
-        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
+        return result
     except Exception as e:
-        log.error("Unexpected %s OAuth callback error: %s", flow.display_name, e, exc_info=True)
-        query_params["skill_oauth"] = "error"
-        query_params[status_param] = "error"
-        query_params["reason"] = "callback_failed"
-        return RedirectResponse(url=f"{session.return_to}?{urlencode(query_params)}")
+        log.error("%s OAuth completion failed: %s", flow.display_name, e, exc_info=True)
+        return {**failure, "reason": "callback_failed"}
 
 
 @router.post("/google-drive/start", response_model=SkillOAuthStartResponse)
@@ -474,12 +515,16 @@ async def google_ads_oauth_callback(
 
 async def _oauth_callback(
     provider_name: str,
-    code: str = Query(None),
-    error: str = Query(None),
-    state: str = Query(None),
+    *,
+    code: str | None,
+    error: str | None,
+    state: str | None,
+    nonce: str | None,
 ):
     """Handle OAuth callback from an external provider."""
-    app = app_from_state(state)
+    app = app_from_state(state, nonce)
+    if app is None:
+        return _redirect_auth_error("auth_failed")
     if error:
         return _redirect_auth_error(error, app)
 
@@ -503,6 +548,9 @@ async def _oauth_callback(
 
         if not email:
             raise HTTPException(status_code=400, detail="Failed to get user email")
+        # Accounts are matched by email, so an unverified one could claim someone else's.
+        if not _email_verified(user_info):
+            return _redirect_auth_error("email_not_verified", app)
 
         # Check if user exists (for welcome email)
         existing_user = user_repository.get_by_email(email)
@@ -521,19 +569,12 @@ async def _oauth_callback(
         if is_new_user and app == DEFAULT_APP:
             await send_welcome_email_safe(email)
 
-        # Other apps redeem a one-time code from their backend; the token never touches the browser URL
-        if app != DEFAULT_APP:
-            code = create_login_code(user.email, app)
-            return RedirectResponse(url=f"{frontend_url_for(app)}/login-success?{urlencode({'code': code})}")
-
-        # Generate JWT token for our app
-        jwt_token = create_access_token(user)
-
-        # Redirect to frontend with token
-        redirect_params = urlencode({"token": jwt_token})
-        redirect_url = f"{frontend_url_for(app)}/login-success?{redirect_params}"
-
-        return RedirectResponse(url=redirect_url)
+        # Every app redeems a one-time code (our SPA at /auth/session, other apps' backends at
+        # /auth/token); the token never touches the browser URL.
+        login_code = create_login_code(user.email, app)
+        return forget_nonce(
+            RedirectResponse(url=f"{frontend_url_for(app)}/login-success?{urlencode({'code': login_code})}")
+        )
 
     except Exception as e:
         log.error(f"OAuth callback error ({provider_name}): {e}", exc_info=True)
@@ -542,7 +583,7 @@ async def _oauth_callback(
 
 @router.get("/callback")
 async def oauth_callback(
-    _request: Request,
+    request: Request,
     code: str = Query(None),
     error: str = Query(None),
     state: str = Query(None),
@@ -551,32 +592,40 @@ async def oauth_callback(
     state_session = _extract_openai_state_session(state)
     if state_session:
         return _manual_openai_callback_page()
-    return await _oauth_callback("google", code=code, error=error, state=state)
+    return await _oauth_callback(
+        "google", code=code, error=error, state=state, nonce=request.cookies.get(NONCE_COOKIE)
+    )
 
 
 @router.get("/callback/google")
 async def oauth_callback_google(
+    request: Request,
     code: str = Query(None),
     error: str = Query(None),
     state: str = Query(None),
 ):
     """Handle OAuth callback from Google."""
-    return await _oauth_callback("google", code=code, error=error, state=state)
+    return await _oauth_callback(
+        "google", code=code, error=error, state=state, nonce=request.cookies.get(NONCE_COOKIE)
+    )
 
 
 @router.get("/callback/cognito")
 async def oauth_callback_cognito(
+    request: Request,
     code: str = Query(None),
     error: str = Query(None),
     state: str = Query(None),
 ):
     """Handle OAuth callback from Cognito."""
-    return await _oauth_callback("cognito", code=code, error=error, state=state)
+    return await _oauth_callback(
+        "cognito", code=code, error=error, state=state, nonce=request.cookies.get(NONCE_COOKIE)
+    )
 
 
 @router.get("/me")
 async def get_current_user_info(
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_user_for_any_app),
 ):
     """Get current authenticated user info."""
     return {

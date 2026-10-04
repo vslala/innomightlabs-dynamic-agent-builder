@@ -26,6 +26,8 @@ export function AgentApiKeysPage() {
   const [isDeletingKey, setIsDeletingKey] = useState(false);
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
   const [visibleKeyId, setVisibleKeyId] = useState<string | null>(null);
+  const [revealedA2ASecret, setRevealedA2ASecret] = useState<{ keyId: string; secret: string } | null>(null);
+  const [issuingA2AKeyId, setIssuingA2AKeyId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +93,22 @@ export function AgentApiKeysPage() {
       console.error("Error deleting API key:", err);
     } finally {
       setIsDeletingKey(false);
+    }
+  };
+
+  const handleIssueA2ASecret = async (key: ApiKeyResponse) => {
+    if (key.has_a2a_secret && !window.confirm("Rotate the A2A client secret? A2A callers using the current one will stop working.")) {
+      return;
+    }
+    setIssuingA2AKeyId(key.key_id);
+    try {
+      const issued = await apiKeyService.issueA2ASecret(agent.agent_id, key.key_id);
+      setRevealedA2ASecret({ keyId: key.key_id, secret: issued.client_secret });
+      setApiKeys((prev) => prev.map((item) => (item.key_id === key.key_id ? { ...item, has_a2a_secret: true } : item)));
+    } catch (err) {
+      console.error("Error issuing A2A secret:", err);
+    } finally {
+      setIssuingA2AKeyId(null);
     }
   };
 
@@ -182,6 +200,26 @@ export function AgentApiKeysPage() {
                           {key.last_used_at && <span>Last used: {new Date(key.last_used_at).toLocaleDateString()}</span>}
                           <span>Created: {new Date(key.created_at).toLocaleDateString()}</span>
                         </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                          <span>A2A client secret: {key.has_a2a_secret ? "set" : "none"}</span>
+                          <Button variant="ghost" size="sm" disabled={issuingA2AKeyId === key.key_id} onClick={() => void handleIssueA2ASecret(key)}>
+                            {key.has_a2a_secret ? "Rotate" : "Generate"}
+                          </Button>
+                        </div>
+                        {revealedA2ASecret?.keyId === key.key_id && (
+                          <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                            <p style={{ marginBottom: "0.25rem" }}>
+                              Copy it now: it won't be shown again. Use it as the A2A Bearer token, or as the OAuth client secret with client id <code>{key.key_id}</code>.
+                            </p>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontFamily: "monospace", fontSize: "0.8125rem", backgroundColor: "var(--bg-tertiary)", padding: "0.5rem 0.75rem", borderRadius: "0.375rem" }}>
+                              <code style={{ color: "var(--text-secondary)", flex: 1, wordBreak: "break-all" }}>{revealedA2ASecret.secret}</code>
+                              <Button variant="ghost" size="icon" style={{ height: "1.5rem", width: "1.5rem" }} onClick={() => handleCopyKey(`a2a:${key.key_id}`, revealedA2ASecret.secret)}>
+                                {copiedKeyId === `a2a:${key.key_id}` ? <Check style={{ height: "0.875rem", width: "0.875rem", color: "#10b981" }} /> : <Copy style={{ height: "0.875rem", width: "0.875rem" }} />}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <Button variant="ghost" size="icon" style={{ color: "#f87171", height: "2rem", width: "2rem" }} onClick={() => setDeletingKey(key.key_id)}>
                         <Trash2 style={{ height: "0.875rem", width: "0.875rem" }} />

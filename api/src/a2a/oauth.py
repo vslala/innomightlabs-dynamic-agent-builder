@@ -134,7 +134,7 @@ def validate_client_credentials(
     credentials: A2AOAuthClientCredentials,
     api_key_repo: ApiKeyRepository,
 ) -> AgentApiKey:
-    api_key = api_key_repo.find_by_public_key(credentials.client_secret)
+    api_key = api_key_repo.find_by_a2a_secret(credentials.client_secret)
     if not api_key or not api_key.is_active or api_key.key_id != credentials.client_id:
         raise _oauth_error("invalid_client", "Invalid OAuth client credentials", status_code=401)
     _normalize_requested_scopes(credentials.scope)

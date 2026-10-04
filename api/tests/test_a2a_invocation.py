@@ -51,7 +51,7 @@ def _create_enabled_agent_with_key(test_client: TestClient, auth_headers: dict) 
         headers=auth_headers,
     )
     assert key_response.status_code == 201
-    api_key = key_response.json()["public_key"]
+    api_key = _a2a_secret(test_client, auth_headers, agent_id, key_response.json()["key_id"])
 
     sharing_response = test_client.put(
         f"/agents/{agent_id}/a2a-sharing",
@@ -62,10 +62,18 @@ def _create_enabled_agent_with_key(test_client: TestClient, auth_headers: dict) 
     return agent_id, api_key
 
 
-def _key_id_for_public_key(test_client: TestClient, auth_headers: dict, agent_id: str, public_key: str) -> str:
+def _a2a_secret(test_client: TestClient, auth_headers: dict, agent_id: str, key_id: str) -> str:
+    response = test_client.post(f"/agents/{agent_id}/api-keys/{key_id}/a2a-secret", headers=auth_headers)
+    assert response.status_code == 201
+    assert response.json()["client_id"] == key_id
+    return str(response.json()["client_secret"])
+
+
+def _key_id_for_public_key(test_client: TestClient, auth_headers: dict, agent_id: str, a2a_secret: str) -> str:
+    """The id of the agent's one key, whose A2A secret the test holds."""
     response = test_client.get(f"/agents/{agent_id}/api-keys", headers=auth_headers)
     assert response.status_code == 200
-    key = next(item for item in response.json() if item["public_key"] == public_key)
+    (key,) = [item for item in response.json() if item["has_a2a_secret"]]
     return str(key["key_id"])
 
 
@@ -326,7 +334,7 @@ def test_task_lookup_is_scoped_to_authenticated_api_key(
         headers=auth_headers,
     )
     assert second_key_response.status_code == 201
-    second_api_key = second_key_response.json()["public_key"]
+    second_api_key = _a2a_secret(test_client, auth_headers, agent_id, second_key_response.json()["key_id"])
 
     send_response = test_client.post(
         f"/a2a/agents/{agent_id}/message:send",
@@ -413,3 +421,33 @@ def test_cancel_returns_unsupported_operation(
 
     assert response.status_code == 501
     assert response.json()["code"] == "UNSUPPORTED_OPERATION"
+
+
+def test_the_public_widget_key_is_not_an_a2a_credential(test_client: TestClient, auth_headers: dict):
+    agent_id, _secret = _create_enabled_agent_with_key(test_client, auth_headers)
+    (key,) = test_client.get(f"/agents/{agent_id}/api-keys", headers=auth_headers).json()
+
+    as_bearer = test_client.post(
+        f"/a2a/agents/{agent_id}/message:send",
+        json=_message_payload(),
+        headers={"Authorization": f"Bearer {key['public_key']}"},
+    )
+    as_client_secret = test_client.post(
+        "/a2a/oauth/token",
+        data={"grant_type": "client_credentials", "client_id": key["key_id"], "client_secret": key["public_key"]},
+    )
+
+    assert as_bearer.status_code == 401
+    assert as_client_secret.status_code == 401
+
+
+def test_rotating_the_a2a_secret_retires_the_old_one(test_client: TestClient, auth_headers: dict):
+    agent_id, old_secret = _create_enabled_agent_with_key(test_client, auth_headers)
+    key_id = _key_id_for_public_key(test_client, auth_headers, agent_id, old_secret)
+    new_secret = _a2a_secret(test_client, auth_headers, agent_id, key_id)
+
+    def tasks(secret: str) -> int:
+        return test_client.get(f"/a2a/agents/{agent_id}/tasks", headers={"Authorization": f"Bearer {secret}"}).status_code
+
+    assert tasks(old_secret) == 401
+    assert tasks(new_secret) == 200

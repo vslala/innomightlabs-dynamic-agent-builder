@@ -15,9 +15,17 @@ from typing import TYPE_CHECKING, AsyncIterator
 
 from pydantic import BaseModel, Field
 
+from src.exceptions import client_error_message
+from src.skills.models import ActorKind
 from src.llm.events import SSEEvent, SSEEventType
 
 log = logging.getLogger(__name__)
+
+
+def turn_error_message(exc: Exception, actor_kind: ActorKind) -> str:
+    """The owner sees what went wrong with their own agent (a provider rejecting their key, say).
+    Everyone else sees only that it failed, unless the error was written for them."""
+    return str(exc) if actor_kind == ActorKind.OWNER else client_error_message(exc)
 
 if TYPE_CHECKING:
     from src.agents.models import Agent
@@ -67,6 +75,7 @@ class AgentArchitecture(ABC):
         owner_email: str,
         actor_email: str,
         actor_id: str,
+        actor_kind: "ActorKind",
         attachments: list["Attachment"] | None = None,
         api_key_id: str | None = None,
     ) -> AsyncIterator["SSEEvent"]:
@@ -84,6 +93,7 @@ class AgentArchitecture(ABC):
             owner_email: The agent owner's email (tenant context; used for provider settings lookup)
             actor_email: The end-user's email (who is speaking)
             actor_id: The end-user's ID (used for memory scoping)
+            actor_kind: Who the end-user is to the agent; decides which tools they get
             attachments: Optional list of file attachments
             api_key_id: The public API secret key the turn runs under, if any (usage attribution)
 
@@ -99,6 +109,7 @@ class AgentArchitecture(ABC):
                 owner_email=owner_email,
                 actor_email=actor_email,
                 actor_id=actor_id,
+                actor_kind=actor_kind,
                 attachments=attachments,
                 api_key_id=api_key_id,
             ):
@@ -106,7 +117,7 @@ class AgentArchitecture(ABC):
                 yield event
         except Exception as exc:
             log.error("Error in %s turn: %s", self.name, exc, exc_info=True)
-            yield SSEEvent(event_type=SSEEventType.ERROR, content=str(exc))
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=turn_error_message(exc, actor_kind))
             return
 
         if not failed:
@@ -121,6 +132,7 @@ class AgentArchitecture(ABC):
         owner_email: str,
         actor_email: str,
         actor_id: str,
+        actor_kind: "ActorKind",
         attachments: list["Attachment"] | None = None,
         api_key_id: str | None = None,
     ) -> AsyncIterator["SSEEvent"]:
@@ -139,6 +151,7 @@ class AgentArchitecture(ABC):
         owner_email: str,
         actor_email: str,
         actor_id: str,
+        actor_kind: "ActorKind",
         attachments: list["Attachment"] | None = None,
         api_key_id: str | None = None,
     ) -> AgentInvocationResult:
@@ -158,6 +171,7 @@ class AgentArchitecture(ABC):
             owner_email=owner_email,
             actor_email=actor_email,
             actor_id=actor_id,
+            actor_kind=actor_kind,
             attachments=attachments,
             api_key_id=api_key_id,
         ):

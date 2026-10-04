@@ -24,6 +24,7 @@ from src.skills.models import AgentSkill
 from src.skills.registry import SkillRegistry
 from src.skills.repository import AgentSkillRepository
 from src.skills.service import SkillRuntimeService, SkillService
+from src.skills.models import ActorKind
 
 OWNER = "owner@example.com"
 
@@ -180,6 +181,7 @@ def _load(runtime: SkillRuntimeService, **tool_input) -> dict:
                 owner_email=OWNER,
                 actor_email=OWNER,
                 actor_id=OWNER,
+                actor_kind=ActorKind.OWNER,
                 conversation_id="conversation-1",
             )
         )
@@ -328,7 +330,7 @@ def test_turn_prompt_carries_the_schema_of_an_action_used_last_turn(registry, dy
     architecture = KrishnaMemGPTArchitecture(message_repository=InMemoryMessageRepository())
     architecture.provider_settings_repo = _FakeProviderSettingsRepository()
     architecture.skill_runtime = _runtime(registry, "big_skill", agent_id=agent.agent_id)
-    architecture._get_linked_kb_ids = lambda agent_id: []
+    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: CoreMemorySnapshot(block_defs=[], blocks={})
     conversation = Conversation(title="Ads", agent_id=agent.agent_id, created_by=OWNER)
 
@@ -340,6 +342,7 @@ def test_turn_prompt_carries_the_schema_of_an_action_used_last_turn(registry, dy
             owner_email=OWNER,
             actor_email=OWNER,
             actor_id=OWNER,
+            actor_kind=ActorKind.OWNER,
             attachments=[],
         ):
             pass

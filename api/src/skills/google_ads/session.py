@@ -90,7 +90,9 @@ class AdsSession:
         return await self.client.mutate(customer_id, operations, validate_only=validate_only)
 
     def _token_scope(self) -> str:
-        return str(self.context.get("installed_skill_id") or self.context.get("skill_id") or "google_ads")
+        """The install and the person who saw the preview: nobody else can apply it."""
+        install = str(self.context.get("installed_skill_id") or self.context.get("skill_id") or "google_ads")
+        return f"{install}|{self.context.get('actor_id') or ''}"
 
 
 def _results(response: dict[str, Any]) -> list[str]:

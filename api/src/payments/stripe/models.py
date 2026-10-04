@@ -30,8 +30,7 @@ class CheckoutRequest(BaseModel):
 class CheckoutResponse(BaseModel):
     url: str
 
-class SessionAuthResponse(BaseModel):
-    token: str
+class CheckoutSessionResponse(BaseModel):
     email: str
     subscription_status: Optional[str] = None
 

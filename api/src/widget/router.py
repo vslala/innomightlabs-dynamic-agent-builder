@@ -9,13 +9,14 @@ Provides endpoints for:
 
 import logging
 import hashlib
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Optional, cast
 from urllib.parse import urlencode
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from src.agents.architectures import get_agent_architecture
@@ -28,9 +29,12 @@ from src.agents.image_generation.service import (
 from src.agents.repository import AgentRepository
 from src.apikeys.models import AgentApiKey
 from src.auth.google_oauth import GoogleOAuth
+from src.auth.jwt_utils import WIDGET_VISITOR_AUDIENCE
 from src.config import settings
+from src.skills.models import ActorKind
 from src.llm.events import SSEEvent, SSEEventType
 from src.messages.repositories import MessageRepository, get_message_repository
+from src.widget import sessions as widget_sessions
 from src.widget.middleware import get_api_key_from_request
 from src.widget.models import (
     CreateWidgetConversationRequest,
@@ -46,6 +50,7 @@ from src.widget.models import (
     WidgetVisitor,
 )
 from src.widget.repository import WidgetConversationRepository
+from src.exceptions import GENERIC_ERROR_MESSAGE
 
 log = logging.getLogger(__name__)
 
@@ -143,6 +148,7 @@ def get_wordpress_ai_conversation(
 def create_visitor_token(visitor: WidgetVisitor, agent_id: str) -> str:
     """Create a JWT token for a widget visitor."""
     payload = {
+        "aud": WIDGET_VISITOR_AUDIENCE,
         "sub": visitor.visitor_id,
         "email": visitor.email,
         "name": visitor.name,
@@ -159,7 +165,7 @@ def decode_visitor_token(token: str) -> dict[str, Any]:
     """Decode and validate a visitor JWT token."""
     try:
         payload = jwt.decode(
-            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm], audience=WIDGET_VISITOR_AUDIENCE
         )
         if payload.get("type") != "widget_visitor":
             raise HTTPException(status_code=401, detail="Invalid token type")
@@ -226,39 +232,47 @@ async def get_widget_config(
 
 @router.get("/auth/google")
 async def widget_oauth_start(
-    request: Request,
     api_key: str = Query(..., description="Public API key (pk_live_xxx)"),
-    redirect_uri: Optional[str] = Query(None, description="URI to redirect after auth"),
+    redirect_uri: Optional[str] = Query(None, description="The IDE extension's URI handler; omit for the popup"),
+    opener_origin: Optional[str] = Query(None, description="Origin of the page that opened the popup"),
 ):
     """
-    Start OAuth flow for widget visitor.
+    Start a visitor's Google sign-in.
 
-    Requires api_key query parameter (since this is a redirect flow, not AJAX).
-    Redirects to Google OAuth consent screen.
+    The popup posts a one-time code to the window that opened it: the embed iframe (the API's own
+    origin) by default, or a page on one of the key's allowed origins. The IDE extension instead
+    gets the code at its own URI handler. Nothing else is a valid destination.
     """
-    # Validate API key from query parameter
     from src.apikeys.repository import ApiKeyRepository
-    api_key_repo = ApiKeyRepository()
-    api_key_obj = api_key_repo.find_by_public_key(api_key)
 
-    if not api_key_obj:
+    api_key_obj = ApiKeyRepository().find_by_public_key(api_key)
+    if not api_key_obj or not api_key_obj.is_active:
         raise HTTPException(status_code=401, detail="Invalid API key")
+    if redirect_uri and not widget_sessions.is_allowed_redirect_uri(redirect_uri):
+        raise HTTPException(status_code=400, detail="redirect_uri is not allowed")
+    origin = opener_origin or widget_sessions.api_origin()
+    if origin != widget_sessions.api_origin() and not (
+        api_key_obj.allowed_origins and origin in api_key_obj.allowed_origins
+    ):
+        raise HTTPException(status_code=400, detail="opener_origin must be one of this key's allowed origins")
 
-    if not api_key_obj.is_active:
-        raise HTTPException(status_code=401, detail="API key is disabled")
-
-    # Store state with API key info for callback
-    # redirect_uri here is the final destination after OAuth (callback-page)
-    state = f"{api_key_obj.public_key}|{redirect_uri or ''}"
-
-    # This must match the URI registered in Google OAuth console.
-    widget_callback_url = get_widget_oauth_callback_url()
-
-    authorization_url, _ = google_oauth.get_authorization_url(
-        state=state,
-        redirect_uri=widget_callback_url
+    state, nonce = widget_sessions.create_state(
+        widget_sessions.SignInState(public_key=api_key_obj.public_key, redirect_uri=redirect_uri, opener_origin=origin)
     )
-    return RedirectResponse(url=authorization_url)
+    authorization_url, _ = google_oauth.get_authorization_url(
+        state=state, redirect_uri=get_widget_oauth_callback_url()
+    )
+    response = RedirectResponse(url=authorization_url)
+    response.set_cookie(
+        widget_sessions.NONCE_COOKIE,
+        nonce,
+        max_age=int(widget_sessions.STATE_TTL.total_seconds()),
+        path=widget_sessions.NONCE_COOKIE_PATH,
+        httponly=True,
+        secure=settings.api_base_url.startswith("https://"),
+        samesite="lax",
+    )
+    return response
 
 
 @router.get("/auth/callback")
@@ -268,92 +282,57 @@ async def widget_oauth_callback(
     error: str = Query(None),
     state: str = Query(None),
 ):
-    """
-    Handle OAuth callback for widget visitors.
-
-    Exchanges code for tokens and creates visitor JWT.
-    """
-    if error:
-        return {"error": error}
-
-    if not code:
-        raise HTTPException(status_code=400, detail="Missing authorization code")
-
-    # Parse state to get API key and final redirect URI
-    api_key_str = ""
-    redirect_uri = ""
-    if state:
-        parts = state.split("|", 1)
-        api_key_str = parts[0]
-        redirect_uri = parts[1] if len(parts) > 1 else ""
-
-    # Validate API key
+    """Finish a visitor's Google sign-in started in this browser, and hand over a one-time code."""
     from src.apikeys.repository import ApiKeyRepository
-    api_key_repo = ApiKeyRepository()
-    api_key = api_key_repo.find_by_public_key(api_key_str)
 
+    sign_in = widget_sessions.read_state(state, request.cookies.get(widget_sessions.NONCE_COOKIE))
+    if sign_in is None:
+        return _sign_in_page(None, error="Sign-in expired or was started in another browser. Please try again.")
+    if error or not code:
+        return _sign_in_result(sign_in, error="Sign-in was cancelled.")
+
+    api_key = ApiKeyRepository().find_by_public_key(sign_in.public_key)
     if not api_key or not api_key.is_active:
-        raise HTTPException(status_code=401, detail="Invalid or inactive API key")
+        return _sign_in_result(sign_in, error="This chat is no longer available.")
 
     try:
-        # Google requires redirect_uri to match the authorization request exactly.
         widget_callback_url = get_widget_oauth_callback_url()
-
-        # Exchange code for tokens
         tokens = await google_oauth.exchange_code_for_tokens(code, redirect_uri=widget_callback_url)
         access_token = tokens.get("access_token")
-        refresh_token = tokens.get("refresh_token")
-
         if not access_token:
-            raise HTTPException(status_code=400, detail="Failed to get access token")
-
-        # Get user info from Google
+            raise ValueError("Google returned no access token")
         user_info = await google_oauth.get_user_info(access_token)
-
-        email = user_info.get("email")
-        google_id = user_info.get("id") or user_info.get("sub")
-        name = user_info.get("name")
-        picture = user_info.get("picture")
-
-        if not email:
-            raise HTTPException(status_code=400, detail="Failed to get user email")
-
-        # Create visitor object
-        visitor = WidgetVisitor(
-            visitor_id=google_id or email,
-            email=email,
-            name=name,
-            picture=picture,
-        )
-
-        # Create visitor JWT
-        visitor_token = create_visitor_token(visitor, api_key.agent_id)
-
-        # If redirect_uri provided, redirect with token
-        if redirect_uri:
-            params = urlencode({
-                "token": visitor_token,
-                "refresh_token": refresh_token or "",
-                "visitor_id": visitor.visitor_id,
-                "email": visitor.email,
-                "name": visitor.name or "",
-                "picture": visitor.picture or "",
-            })
-            return RedirectResponse(url=f"{redirect_uri}?{params}")
-
-        # Otherwise return token in response
-        return WidgetTokenResponse(
-            access_token=visitor_token,
-            refresh_token=refresh_token,
-            expires_in=WIDGET_JWT_EXPIRATION_HOURS * 3600,
-            visitor=visitor,
-        )
-
-    except HTTPException:
-        raise
     except Exception as e:
         log.error(f"Widget OAuth error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Authentication failed")
+        return _sign_in_result(sign_in, error="Sign-in failed. Please try again.")
+
+    email = user_info.get("email")
+    if not email or user_info.get("verified_email") is not True:
+        return _sign_in_result(sign_in, error="Your Google account has no verified email address.")
+
+    visitor = WidgetVisitor(
+        visitor_id=user_info.get("id") or user_info.get("sub") or email,
+        email=email,
+        name=user_info.get("name"),
+        picture=user_info.get("picture"),
+    )
+    return _sign_in_result(sign_in, code=widget_sessions.create_login_code(api_key.agent_id, visitor))
+
+
+class WidgetCodeRequest(BaseModel):
+    code: str
+
+
+@router.post("/auth/token", response_model=WidgetTokenResponse)
+async def redeem_widget_login_code(
+    body: WidgetCodeRequest,
+    api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
+) -> WidgetTokenResponse:
+    """Trade the one-time code from sign-in for a visitor session on this key's agent."""
+    session = widget_sessions.redeem_login_code(body.code.strip(), api_key.agent_id)
+    if session is None:
+        raise HTTPException(status_code=401, detail="Sign-in expired. Please sign in again.")
+    return _token_response(session)
 
 
 @router.post("/auth/refresh", response_model=WidgetTokenResponse)
@@ -362,56 +341,58 @@ async def refresh_widget_token(
     api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
 ) -> WidgetTokenResponse:
     """
-    Refresh a widget visitor JWT using the visitor's Google refresh token.
-
-    Requires X-API-Key header. The new widget JWT is scoped to the API key's agent.
+    Trade a visitor refresh token for a new session. The refresh token rotates: the one sent
+    stops working. It is only good for the agent it was issued for.
     """
-    refresh_token = body.refresh_token.strip()
-    if not refresh_token:
-        raise HTTPException(status_code=400, detail="Missing refresh token")
-
-    try:
-        tokens = await google_oauth.refresh_access_token(refresh_token)
-        google_access_token = tokens.get("access_token")
-        if not google_access_token:
-            raise HTTPException(status_code=400, detail="Failed to refresh access token")
-
-        user_info = await google_oauth.get_user_info(google_access_token)
-        email = user_info.get("email")
-        google_id = user_info.get("id") or user_info.get("sub")
-        name = user_info.get("name")
-        picture = user_info.get("picture")
-
-        if not email:
-            raise HTTPException(status_code=400, detail="Failed to get user email")
-
-        visitor = WidgetVisitor(
-            visitor_id=google_id or email,
-            email=email,
-            name=name,
-            picture=picture,
-        )
-        visitor_token = create_visitor_token(visitor, api_key.agent_id)
-
-        return WidgetTokenResponse(
-            access_token=visitor_token,
-            refresh_token=tokens.get("refresh_token") or refresh_token,
-            expires_in=WIDGET_JWT_EXPIRATION_HOURS * 3600,
-            visitor=visitor,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.warning(f"Widget token refresh failed: {e}", exc_info=True)
+    session = widget_sessions.rotate_refresh_token(body.refresh_token.strip(), api_key.agent_id)
+    if session is None:
         raise HTTPException(status_code=401, detail="Token refresh failed")
+    return _token_response(session)
+
+
+@router.post("/auth/revoke", status_code=204)
+async def revoke_widget_token(
+    body: WidgetRefreshTokenRequest,
+    api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
+) -> None:
+    """Sign out: the refresh token stops working."""
+    del api_key
+    widget_sessions.revoke_refresh_token(body.refresh_token.strip())
+
+
+def _token_response(session: widget_sessions.VisitorSession) -> WidgetTokenResponse:
+    return WidgetTokenResponse(
+        access_token=create_visitor_token(session.visitor, session.agent_id),
+        refresh_token=session.refresh_token,
+        expires_in=WIDGET_JWT_EXPIRATION_HOURS * 3600,
+        visitor=session.visitor,
+    )
+
+
+def _sign_in_result(
+    sign_in: widget_sessions.SignInState, *, code: str | None = None, error: str | None = None
+) -> Response:
+    response: Response
+    if sign_in.redirect_uri:
+        response = RedirectResponse(url=f"{sign_in.redirect_uri}?{urlencode({'code': code} if code else {'error': error})}")
+    else:
+        response = _sign_in_page(sign_in.opener_origin, code=code, error=error)
+    response.delete_cookie(widget_sessions.NONCE_COOKIE, path=widget_sessions.NONCE_COOKIE_PATH)
+    return response
+
+
+def _sign_in_page(opener_origin: str | None, *, code: str | None = None, error: str | None = None) -> HTMLResponse:
+    """The popup's last page: posts the code to its opener, on that opener's origin only, then closes."""
+    message = json.dumps({"type": "innomight-oauth-callback", "code": code} if code else None)
+    script_data = json.dumps({"message": message, "origin": opener_origin, "error": error}).replace("</", "<\\/")
+    return HTMLResponse(content=OAUTH_CALLBACK_HTML.replace("__SIGN_IN__", script_data))
 
 
 # OAuth callback page HTML served by the backend
 OAUTH_CALLBACK_HTML = """<!DOCTYPE html>
 <html>
 <head>
-  <title>Authenticating...</title>
+  <title>Signing in...</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -443,53 +424,20 @@ OAUTH_CALLBACK_HTML = """<!DOCTYPE html>
   </div>
   <script>
     (function() {
-      var params = new URLSearchParams(window.location.search);
-      var token = params.get('token');
-      var refreshToken = params.get('refresh_token');
-      var visitorId = params.get('visitor_id');
-      var email = params.get('email');
-      var name = params.get('name');
-      var picture = params.get('picture');
-      var error = params.get('error');
-
-      if (error) {
-        document.querySelector('p').textContent = 'Authentication failed: ' + error;
+      var signIn = __SIGN_IN__;
+      if (signIn.error || !signIn.message) {
+        document.querySelector('.spinner').remove();
+        document.querySelector('p').textContent = signIn.error || 'Sign-in failed.';
         return;
       }
-
-      if (token && visitorId && email) {
-        if (window.opener) {
-          window.opener.postMessage({
-            type: 'innomight-oauth-callback',
-            token: token,
-            refreshToken: refreshToken,
-            visitor: {
-              visitorId: visitorId,
-              email: email,
-              name: name || email.split('@')[0],
-              picture: picture || null
-            }
-          }, '*');
-        }
-        setTimeout(function() { window.close(); }, 500);
-      } else {
-        document.querySelector('p').textContent = 'Missing authentication data';
+      if (window.opener) {
+        window.opener.postMessage(JSON.parse(signIn.message), signIn.origin);
       }
+      setTimeout(function() { window.close(); }, 500);
     })();
   </script>
 </body>
 </html>"""
-
-
-@router.get("/auth/callback-page", response_class=HTMLResponse)
-async def oauth_callback_page():
-    """
-    Serve the OAuth callback HTML page.
-
-    This page receives the OAuth redirect, extracts the token from URL params,
-    and posts it back to the parent window via postMessage.
-    """
-    return HTMLResponse(content=OAUTH_CALLBACK_HTML)
 
 
 @router.post("/generate-text", response_model=WidgetGenerateTextResponse)
@@ -524,6 +472,8 @@ async def generate_text(
         owner_email=api_key.created_by,
         actor_email=api_key.created_by,
         actor_id=api_key.created_by,
+        # Only the public widget key stands behind this caller.
+        actor_kind=ActorKind.VISITOR,
         attachments=[],
     )
 
@@ -649,7 +599,7 @@ async def generate_image_stream(
             yield SSEEvent(event_type=SSEEventType.ERROR, content=str(e)).to_sse()
         except Exception as e:
             log.error("Error in widget generate_image_stream: %s", e, exc_info=True)
-            yield SSEEvent(event_type=SSEEventType.ERROR, content=str(e)).to_sse()
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=GENERIC_ERROR_MESSAGE).to_sse()
 
     return StreamingResponse(
         event_stream(),
@@ -798,6 +748,7 @@ async def send_message(
                 owner_email=api_key.created_by,
                 actor_email=visitor.email,
                 actor_id=visitor.visitor_id,
+                actor_kind=ActorKind.VISITOR,
                 attachments=[],  # Widget doesn't support attachments yet
             ):
                 yield event.to_sse()
@@ -807,10 +758,7 @@ async def send_message(
 
         except Exception as e:
             log.error(f"Error in widget message stream: {e}", exc_info=True)
-            yield SSEEvent(
-                event_type=SSEEventType.ERROR,
-                content=str(e)
-            ).to_sse()
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=GENERIC_ERROR_MESSAGE).to_sse()
 
     return StreamingResponse(
         event_stream(),

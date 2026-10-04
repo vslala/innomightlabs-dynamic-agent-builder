@@ -1,5 +1,6 @@
 id: python_code_execution
 namespace: development.python
+owner_only: true
 name: Python Code Execution
 description: Execute a Python script with optional requirements in a temporary uv environment.
 system_prompt: |

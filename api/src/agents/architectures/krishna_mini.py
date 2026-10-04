@@ -17,6 +17,7 @@ from src.llm.events import SSEEvent, SSEEventType
 from src.messages.models import Message, Attachment
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.repository import get_provider_settings_repository
+from src.skills.models import ActorKind
 
 from .base import AgentArchitecture
 
@@ -65,11 +66,13 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         owner_email: str,
         actor_email: str,
         actor_id: str,
+        actor_kind: ActorKind,
         attachments: list[Attachment] | None = None,
         api_key_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """One LLM call, streamed. `actor_id` is unused: Krishna Mini has no memory, and it
-        records no token usage, so `api_key_id` is unused too."""
+        records no token usage, so `api_key_id` is unused too. It has no tools, so `actor_kind`
+        is unused as well."""
         user_msg = Message(
             conversation_id=conversation.conversation_id,
             created_by=actor_email,

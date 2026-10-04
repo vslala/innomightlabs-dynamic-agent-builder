@@ -13,6 +13,7 @@ from boto3.dynamodb.conditions import Key
 
 from src.config import settings
 from src.conversations.models import ApiConversation, AutomationConversation, Conversation
+from src.common.pagination import InvalidCursor
 
 log = logging.getLogger(__name__)
 
@@ -161,14 +162,7 @@ class ConversationRepository:
         conversations.sort(key=lambda c: c.updated_at or c.created_at, reverse=True)
 
         # Apply cursor-based pagination (cursor is the offset index)
-        offset = 0
-        if cursor:
-            try:
-                cursor_data = json.loads(base64.b64decode(cursor).decode("utf-8"))
-                offset = cursor_data.get("offset", 0)
-            except Exception:
-                log.warning(f"Invalid cursor: {cursor}")
-                offset = 0
+        offset = _decode_offset(cursor)
 
         # Get paginated slice
         paginated = conversations[offset : offset + limit]
@@ -215,3 +209,16 @@ class ConversationRepository:
     def exists(self, conversation_id: str, created_by: str) -> bool:
         """Check if a conversation exists."""
         return self.find_by_id(conversation_id, created_by) is not None
+
+
+def _decode_offset(cursor: Optional[str]) -> int:
+    """This listing pages by offset; its cursor is {"offset": n}."""
+    if not cursor:
+        return 0
+    try:
+        offset = json.loads(base64.b64decode(cursor, validate=True).decode("utf-8")).get("offset")
+    except (ValueError, UnicodeDecodeError, AttributeError) as exc:
+        raise InvalidCursor("Invalid pagination cursor") from exc
+    if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+        raise InvalidCursor("Invalid pagination cursor")
+    return offset

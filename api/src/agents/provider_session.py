@@ -14,12 +14,13 @@ from src.llm.credentials import load_provider_credentials
 from src.llm.ollama import merge_thinking_override
 from src.llm.providers import get_llm_provider
 from src.settings.repository import ProviderSettingsRepository
+from src.exceptions import UserFacingError
 
 if TYPE_CHECKING:
     from src.agents.models import Agent
 
 
-class ProviderNotConfigured(Exception):
+class ProviderNotConfigured(UserFacingError):
     """The agent names a provider the owner has not set up."""
 
     def __init__(self, provider_name: str):

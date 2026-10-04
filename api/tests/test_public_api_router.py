@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.llm.events import SSEEvent, SSEEventType
+from src.skills.models import ActorKind
 from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL
 
 
@@ -112,6 +113,14 @@ class TestAuthentication:
         test_client.patch(
             f"/agents/{api.agent_id}/secret-keys/{api.key['key_id']}", json={"is_active": False}, headers=auth_headers
         )
+
+        assert test_client.get(api.base, headers=api.headers).status_code == 401
+
+    def test_a_deactivated_owners_keys_stop_working(self, test_client: TestClient, api):
+        from src.users import UserRepository
+        from tests.mock_data import TEST_USER_EMAIL
+
+        UserRepository().mark_inactive(TEST_USER_EMAIL)
 
         assert test_client.get(api.base, headers=api.headers).status_code == 401
 
@@ -266,6 +275,7 @@ class TestSendMessage:
         )
 
         assert architecture.calls[0]["actor_id"] == f"secret-key:{api.key['key_id']}:customer-42"
+        assert architecture.calls[0]["actor_kind"] == ActorKind.API
 
     def test_conflicts_with_running_turn(self, test_client: TestClient, api):
         from src.agents.turns import ConversationTurnRepository

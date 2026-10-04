@@ -27,6 +27,7 @@ from src.connectors.mcp.models import (
     MCPTransport,
     validate_stdio_auth,
 )
+from src.auth.oauth_handoff import safe_return_to
 from src.connectors.mcp.oauth import (
     MCPOAuthError,
     build_authorization_url,
@@ -519,7 +520,7 @@ class MCPConnectorService:
             oauth.auth.provider.resource_url,
             oauth.auth.provider.token_url,
         )
-        session = create_state_session(user_email=owner_email, mcp_id=mcp_id, return_to=return_to)
+        session = create_state_session(user_email=owner_email, mcp_id=mcp_id, return_to=safe_return_to(return_to))
         state = encode_state_session(session)
         return build_authorization_url(
             provider=oauth.auth.provider,

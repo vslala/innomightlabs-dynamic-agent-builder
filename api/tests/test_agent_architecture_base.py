@@ -4,6 +4,7 @@ from src.agents.architectures.base import AgentArchitecture
 from src.agents.models import Agent
 from src.conversations.models import Conversation
 from src.llm.events import SSEEvent, SSEEventType
+from src.skills.models import ActorKind
 
 
 class FakeArchitecture(AgentArchitecture):
@@ -15,6 +16,7 @@ class FakeArchitecture(AgentArchitecture):
         owner_email: str,
         actor_email: str,
         actor_id: str,
+        actor_kind: ActorKind,
         attachments=None,
         api_key_id=None,
     ) -> AsyncIterator[SSEEvent]:
@@ -68,6 +70,7 @@ async def test_handle_message_buffered_extracts_common_invocation_fields():
         owner_email="owner@example.com",
         actor_email="owner@example.com",
         actor_id="owner@example.com",
+        actor_kind=ActorKind.OWNER,
     )
 
     assert result.success is True
@@ -93,6 +96,7 @@ class FailingArchitecture(AgentArchitecture):
         owner_email: str,
         actor_email: str,
         actor_id: str,
+        actor_kind: ActorKind,
         attachments=None,
         api_key_id=None,
     ) -> AsyncIterator[SSEEvent]:
@@ -128,6 +132,7 @@ async def test_handle_message_buffered_marks_error_events_as_failed():
         owner_email="owner@example.com",
         actor_email="owner@example.com",
         actor_id="owner@example.com",
+        actor_kind=ActorKind.OWNER,
     )
 
     assert result.success is False

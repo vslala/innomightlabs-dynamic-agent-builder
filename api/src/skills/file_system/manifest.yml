@@ -1,5 +1,6 @@
 id: file_system
 namespace: development.filesystem
+owner_only: true
 name: File System
 description: Safely inspect and manage files in the agent's private sidecar workspace.
 system_prompt: |

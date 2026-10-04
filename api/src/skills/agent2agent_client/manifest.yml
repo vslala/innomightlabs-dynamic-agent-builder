@@ -1,5 +1,6 @@
 id: agent2agent_client
 namespace: core.agent2agent
+owner_only: true
 name: Agent2Agent Client
 description: Discover and message A2A-compatible agents from configured registries.
 repeatable: true

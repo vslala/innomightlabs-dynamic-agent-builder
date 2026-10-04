@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
-from src.auth.router import SkillOAuthStartResponse, _google_skill_oauth_flows
+from src.auth.router import SkillOAuthStartResponse, _google_skill_authorize, _google_skill_oauth_flows
 from src.connectors.models import ConnectorStatus
 from src.connectors.service import ConnectorService, get_connector_service
 
@@ -55,12 +55,4 @@ async def start_connector_oauth(
     if not flow.is_configured():
         raise HTTPException(status_code=500, detail=f"{flow.display_name} OAuth is not configured")
 
-    session = flow.create_state_session(
-        user_email=str(user_email),
-        agent_id="",
-        skill_id=flow.skill_id,
-        return_to=body.return_to,
-        ttl_seconds=flow.ttl_seconds,
-    )
-    state = flow.encode_state_session(session)
-    return SkillOAuthStartResponse(authorize_url=flow.build_authorization_url(state=state))
+    return _google_skill_authorize(flow, user_email=str(user_email), agent_id="", return_to=body.return_to)

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { httpClient } from '../services/http';
 import { pricingService } from '../services/pricing';
 import { Button } from '../components/ui/button';
 import styles from './LoginSuccess.module.css';
@@ -23,60 +24,74 @@ export function LoginSuccess() {
   const [loading, setLoading] = useState(true);
   const [redirectMessage, setRedirectMessage] = useState('Redirecting you to your dashboard...');
 
-  useEffect(() => {
-    const token = searchParams.get('token');
+  // The code works once; StrictMode runs effects twice in development.
+  const redeemed = useRef(false);
 
-    if (!token) {
+  useEffect(() => {
+    const code = searchParams.get('code');
+
+    if (!code) {
       navigate('/');
       return;
     }
+    if (redeemed.current) {
+      return;
+    }
+    redeemed.current = true;
+    // Keep the code out of history and out of what analytics tags read from the URL.
+    window.history.replaceState(null, '', window.location.pathname);
 
-    // Store token in localStorage
-    localStorage.setItem('auth_token', token);
+    const signIn = async () => {
+      const { token } = await httpClient.post<{ token: string }>('/auth/session', { code }, { skipAuth: true });
+      localStorage.setItem('auth_token', token);
+      return token;
+    };
 
-    // Decode JWT to get user info (basic decode, not verification)
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const userInfo = {
-        email: payload.sub,
-        name: payload.name,
-        picture: payload.picture,
-      };
-      setUserInfo(userInfo);
+    signIn().then((token) => {
+      // Decode JWT to get user info (basic decode, not verification)
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const userInfo = {
+          email: payload.sub,
+          name: payload.name,
+          picture: payload.picture,
+        };
+        setUserInfo(userInfo);
 
-      // Check for pending checkout
-      const pendingCheckoutStr = sessionStorage.getItem('pendingCheckout');
-      if (pendingCheckoutStr) {
-        const pendingCheckout: PendingCheckout = JSON.parse(pendingCheckoutStr);
+        // Check for pending checkout
+        const pendingCheckoutStr = sessionStorage.getItem('pendingCheckout');
+        if (pendingCheckoutStr) {
+          const pendingCheckout: PendingCheckout = JSON.parse(pendingCheckoutStr);
 
-        // Check if checkout is still valid (within 10 minutes)
-        const tenMinutes = 10 * 60 * 1000;
-        if (Date.now() - pendingCheckout.timestamp < tenMinutes) {
-          // Update message to reflect checkout flow
-          setRedirectMessage('Completing your checkout...');
+          // Check if checkout is still valid (within 10 minutes)
+          const tenMinutes = 10 * 60 * 1000;
+          if (Date.now() - pendingCheckout.timestamp < tenMinutes) {
+            // Update message to reflect checkout flow
+            setRedirectMessage('Completing your checkout...');
 
-          // Clear the pending checkout
-          sessionStorage.removeItem('pendingCheckout');
+            // Clear the pending checkout
+            sessionStorage.removeItem('pendingCheckout');
 
-          // Complete the checkout flow
-          completeCheckout(pendingCheckout.planKey, pendingCheckout.billingCycle, userInfo.email);
-          return;
-        } else {
-          // Checkout expired, clear it
-          sessionStorage.removeItem('pendingCheckout');
+            // Complete the checkout flow
+            completeCheckout(pendingCheckout.planKey, pendingCheckout.billingCycle, userInfo.email);
+            return;
+          } else {
+            // Checkout expired, clear it
+            sessionStorage.removeItem('pendingCheckout');
+          }
         }
+
+        // No pending checkout, redirect to dashboard after short delay
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 1500);
+      } catch {
+        console.error('Failed to decode token');
+        navigate('/');
       }
 
-      // No pending checkout, redirect to dashboard after short delay
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 1500);
-    } catch {
-      console.error('Failed to decode token');
-      navigate('/');
-    }
-
-    setLoading(false);
+      setLoading(false);
+    }).catch(() => navigate('/login?error=auth_failed'));
   }, [searchParams, navigate]);
 
   const completeCheckout = async (planKey: string, billingCycle: string, email: string) => {

@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.auth import app_tokens
-from src.auth.apps import create_state
+from src.auth.apps import NONCE_COOKIE, create_state
 from src.users import UserRepository
 from src.users.models import UserStatus
 
@@ -27,14 +27,16 @@ class SignsIn:
         return {"access_token": "access"}
 
     async def get_user_info(self, access_token: str):
-        return {"email": EMAIL, "name": "New User"}
+        return {"email": EMAIL, "name": "New User", "verified_email": True}
 
 
 def login_code(test_client: TestClient, monkeypatch) -> str:
     """A code obtained the real way: through the OAuth callback."""
     monkeypatch.setattr("src.auth.router._get_provider", lambda _name: SignsIn())
     monkeypatch.setattr("src.auth.router.send_welcome_email_safe", lambda _email: _done())
-    response = test_client.get(f"/auth/callback/google?code=abc&state={create_state('bidsignal')}", follow_redirects=False)
+    login = create_state("bidsignal")
+    test_client.cookies.set(NONCE_COOKIE, login.nonce)
+    response = test_client.get(f"/auth/callback/google?code=abc&state={login.state}", follow_redirects=False)
     return parse_qs(urlparse(response.headers["location"]).query)["code"][0]
 
 
@@ -54,7 +56,7 @@ def test_a_login_code_is_exchanged_for_short_lived_tokens(test_client: TestClien
     response = exchange(test_client, login_code(test_client, monkeypatch))
 
     body = response.json()
-    claims = jwt.decode(body["access_token"], "test-secret", algorithms=["HS256"])
+    claims = jwt.decode(body["access_token"], "test-secret", algorithms=["HS256"], audience="app:bidsignal")
     assert response.status_code == 200
     assert body["email"] == claims["sub"] == EMAIL
     assert body["expires_in"] == 3600
@@ -191,3 +193,13 @@ def test_account_deletion_removes_refresh_tokens(dynamodb_table, monkeypatch):
     assert app_tokens.repository.get_refresh_token(EMAIL, "bidsignal") is None
     assert app_tokens.repository.get_refresh_token(EMAIL, "other") is None
     assert app_tokens.repository.get_refresh_token("someone.else@example.com", "bidsignal") is not None
+
+
+def test_an_app_token_reads_auth_me_and_nothing_else(test_client: TestClient, monkeypatch):
+    access_token = exchange(test_client, login_code(test_client, monkeypatch)).json()["access_token"]
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    me = test_client.get("/auth/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["email"] == EMAIL
+    assert test_client.get("/agents", headers=headers).status_code == 401

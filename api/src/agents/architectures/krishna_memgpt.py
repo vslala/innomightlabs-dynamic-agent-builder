@@ -32,10 +32,10 @@ from src.messages.models import Message, MessageCanvasArtifact, Attachment
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.memory.snapshot import CoreMemorySnapshot
 from src.settings.repository import get_provider_settings_repository
-from src.skills.models import AgentSkill, LoadedSkillRuntimeResponse
+from src.skills.models import ActorKind, AgentSkill, LoadedSkillRuntimeResponse
 from src.skills.service import SkillRuntimeService
 from src.tools.native import NativeToolHandler
-from src.knowledge.repository import AgentKnowledgeBaseRepository
+from src.knowledge.repository import AgentKnowledgeBaseRepository, KnowledgeBaseRepository
 
 from .base import AgentArchitecture
 from .krishna_memgpt_prompt import build_krishna_memgpt_system_prompt
@@ -77,6 +77,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         self.memory_repo = MemoryRepository()
         self.provider_settings_repo = get_provider_settings_repository()
         self.agent_kb_repo = AgentKnowledgeBaseRepository()
+        self.kb_repo = KnowledgeBaseRepository()
         self.skill_runtime = SkillRuntimeService()
         self.mcp_connector_service = MCPConnectorService()
         self.tool_handler = NativeToolHandler(self.memory_repo, message_repo=self.message_repo)
@@ -101,6 +102,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         owner_email: str,
         actor_email: str,
         actor_id: str,
+        actor_kind: ActorKind,
         attachments: list[Attachment] | None = None,
         api_key_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
@@ -114,6 +116,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             owner_email: The agent owner's email (used for provider settings lookup)
             actor_email: The end-user's email (who is speaking)
             actor_id: The end-user's ID (for memory scoping)
+            actor_kind: Who the end-user is to the agent; decides which skills and MCP tools they get
             attachments: Optional list of file attachments
             api_key_id: The public API secret key the turn runs under, if any
 
@@ -124,6 +127,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             owner_email=owner_email,
             actor_email=actor_email,
             actor_id=actor_id,
+            actor_kind=actor_kind,
             conversation_id=conversation.conversation_id,
             agent_id=agent.agent_id,
             provider_name=agent.agent_provider,
@@ -133,19 +137,10 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             api_key_id=api_key_id,
         )
 
-        state.linked_kb_ids = self._get_linked_kb_ids(agent.agent_id)
+        state.linked_kb_ids = self._get_linked_kb_ids(agent.agent_id, owner_email)
 
-        state.enabled_skills = self.skill_runtime.list_enabled(agent.agent_id)
-        try:
-            state.enabled_mcp_connections = self.mcp_connector_service.list_agent_connections(
-                owner_email=owner_email,
-                agent_id=agent.agent_id,
-                enabled_only=True,
-                verify_agent=False,
-            )
-        except Exception as exc:
-            log.warning("Failed to load enabled MCP connectors for agent %s: %s", agent.agent_id, exc)
-            state.enabled_mcp_connections = []
+        state.enabled_skills = self.skill_runtime.list_usable(agent.agent_id, actor_kind)
+        state.enabled_mcp_connections = self._mcp_connections_for(state)
 
         # 2. Save user message (with attachments if any)
         user_msg = Message(
@@ -345,11 +340,26 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             block_defs, self.memory_repo.get_all_core_memories(agent_id, user_id)
         )
 
-    def _get_linked_kb_ids(self, agent_id: str) -> list[str]:
-        """Get list of knowledge base IDs linked to this agent."""
+    def _mcp_connections_for(self, state: AgentTurnState) -> list[Any]:
+        """MCP servers act with the owner's own connections, so only the owner gets them."""
+        if state.actor_kind != ActorKind.OWNER:
+            return []
+        try:
+            return self.mcp_connector_service.list_agent_connections(
+                owner_email=state.owner_email,
+                agent_id=state.agent_id,
+                enabled_only=True,
+                verify_agent=False,
+            )
+        except Exception as exc:
+            log.warning("Failed to load enabled MCP connectors for agent %s: %s", state.agent_id, exc)
+            return []
+
+    def _get_linked_kb_ids(self, agent_id: str, owner_email: str) -> list[str]:
+        """The linked knowledge bases the agent's owner owns. A link to anyone else's is never searched."""
         try:
             links = self.agent_kb_repo.find_kbs_for_agent(agent_id)
-            return [link.kb_id for link in links]
+            return [link.kb_id for link in links if self.kb_repo.find_by_id(link.kb_id, owner_email)]
         except Exception as e:
             log.warning(f"Failed to load linked KBs for agent {agent_id}: {e}")
             return []

@@ -117,6 +117,7 @@ async def update_installed_skill(
             installed_skill_id=skill_id,
             enabled=body.enabled,
             raw_config=body.config,
+            available_to=body.available_to,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

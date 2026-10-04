@@ -139,6 +139,7 @@ class TestSecretKeysRouter:
     def _other_user_headers(self) -> dict:
         token = jwt.encode(
             {
+                "aud": "owner",
                 "sub": "someone-else@example.com",
                 "exp": datetime.now(timezone.utc) + timedelta(hours=1),
                 "iat": datetime.now(timezone.utc),

@@ -12,6 +12,7 @@ from src.automations.runner import AutomationRunner
 from src.automations.service import AutomationService
 from src.conversations.repository import ConversationRepository
 from src.scheduler.models import Schedule
+from src.skills.models import ActorKind
 
 
 class ScheduleTargetExecutor(Protocol):
@@ -65,6 +66,8 @@ class AgentScheduledMessageExecutor:
             owner_email=schedule.owner_email,
             actor_email=actor_email,
             actor_id=actor_id,
+            # A schedule someone else set up on the owner's agent must not wake it with the owner's tools.
+            actor_kind=ActorKind.OWNER if actor_email == schedule.owner_email else ActorKind.VISITOR,
         )
         if not result.success:
             raise RuntimeError(result.error or "Scheduled agent invocation failed")

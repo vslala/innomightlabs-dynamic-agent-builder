@@ -17,6 +17,7 @@ from src.skills.agent2agent_client.models import (
     SendMessageRequest,
     normalize_protocol_binding,
 )
+from src.common import outbound
 
 
 class A2AHttpClient:
@@ -29,7 +30,7 @@ class A2AHttpClient:
         *,
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=True) as client:
+        async with outbound.async_client(timeout=self.timeout_seconds) as client:
             response = await client.get(url, headers=self._headers(headers))
         response.raise_for_status()
         payload = response.json()
@@ -58,7 +59,7 @@ class A2AHttpClient:
         data = {"grant_type": "client_credentials"}
         if scopes:
             data["scope"] = " ".join(scopes)
-        async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True) as client:
+        async with outbound.async_client(timeout=timeout_seconds) as client:
             response = await client.post(
                 token_url,
                 data=data,
@@ -90,9 +91,8 @@ class A2AHttpClient:
         protocol_bindings = _transport_protocols(preferred_protocols)
 
         try:
-            async with httpx.AsyncClient(
+            async with outbound.async_client(
                 timeout=request.timeout_seconds,
-                follow_redirects=True,
                 headers=self._headers(headers),
             ) as client:
                 sdk_client = ClientFactory(

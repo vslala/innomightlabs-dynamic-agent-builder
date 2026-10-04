@@ -18,6 +18,7 @@ from src.skills.lifecycle import SkillLifecycleRunner
 from src.settings.agent2agent_policy import Agent2AgentPolicy, Agent2AgentPolicyError
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import (
+    ActorKind,
     AgentSkill,
     InstalledSkillResponse,
     LoadedSkillRuntimeAction,
@@ -29,7 +30,7 @@ from src.skills.models import (
     SkillManifest,
 )
 from src.skills.oauth_providers import get_skill_oauth_provider
-from src.skills.registry import SkillRegistry, get_skill_registry
+from src.skills.registry import SkillRegistry, get_skill_registry, is_secret_input
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
 
 
@@ -136,6 +137,7 @@ class SkillService:
         plain_config = {k: v for k, v in normalized.items() if k not in secret_fields}
         secret_config = {k: v for k, v in normalized.items() if k in secret_fields}
         installed_skill_id = installed_skill_id_for(loaded.manifest, normalized)
+        existing = self.repository.find_by_id(agent_id, installed_skill_id)
 
         return self.repository.upsert_with_config(
             agent_id=agent_id,
@@ -149,6 +151,7 @@ class SkillService:
             plain_config=plain_config,
             secret_config=secret_config,
             secret_fields=sorted(secret_fields),
+            available_to=existing.available_to if existing else None,
         )
 
     def validate_install_config(
@@ -191,6 +194,8 @@ class SkillService:
             secret_fields=item.secret_fields,
             requires_oauth=requires_oauth,
             oauth_provider_name=oauth_provider_name,
+            available_to=item.available_to,
+            owner_only=loaded.manifest.runs_only_for_owner if loaded else True,
         )
 
     def uninstall(
@@ -229,6 +234,7 @@ class SkillService:
         installed_skill_id: str,
         enabled: bool | None,
         raw_config: dict[str, Any] | None,
+        available_to: list[ActorKind] | None = None,
     ) -> AgentSkill:
         existing = self.repository.find_by_id(agent_id, installed_skill_id)
         if not existing:
@@ -239,6 +245,9 @@ class SkillService:
             raise ValueError("Skill not available")
 
         final_enabled = existing.enabled if enabled is None else enabled
+        final_available_to = existing.available_to if available_to is None else available_to
+        if loaded.manifest.runs_only_for_owner and set(final_available_to) != {ActorKind.OWNER}:
+            raise ValueError(f"{loaded.manifest.name} uses your own accounts or credentials, so only you can use it")
         plain_config = dict(existing.config)
         secret_config: dict[str, Any] = {}
 
@@ -281,6 +290,7 @@ class SkillService:
             plain_config=plain_config,
             secret_config=secret_config,
             secret_fields=secret_field_list,
+            available_to=sorted({ActorKind.OWNER, *final_available_to}, key=list(ActorKind).index),
         )
 
     def _validate_skill_policy(
@@ -351,6 +361,21 @@ class SkillRuntimeService:
     def list_enabled(self, agent_id: str) -> list[AgentSkill]:
         return [s for s in self.repository.list_by_agent(agent_id) if s.enabled]
 
+    def list_usable(self, agent_id: str, actor_kind: ActorKind) -> list[AgentSkill]:
+        """The enabled skills this actor may use; the model is never told about the rest."""
+        return [skill for skill in self.list_enabled(agent_id) if self._usable_by(skill, actor_kind)]
+
+    def _usable_by(self, skill: AgentSkill, actor_kind: ActorKind) -> bool:
+        loaded = self.skill_service.registry.get(skill.skill_id)
+        return loaded is not None and skill.usable_by(actor_kind, loaded.manifest)
+
+    def _resolve_usable_skill(self, agent_id: str, requested_id: str, actor_kind: ActorKind) -> AgentSkill:
+        installed = self._resolve_installed_skill(agent_id, requested_id)
+        # One message for both cases, so a non-owner learns nothing about skills they can't use.
+        if not installed or not installed.enabled or not self._usable_by(installed, actor_kind):
+            raise ValueError(f"Skill '{requested_id}' is not installed/enabled for this agent")
+        return installed
+
     def build_system_prompt_addendum(self, enabled_skills: list[AgentSkill]) -> str:
         if not enabled_skills:
             return ""
@@ -387,6 +412,7 @@ class SkillRuntimeService:
         owner_email: str,
         actor_email: str,
         actor_id: str,
+        actor_kind: ActorKind,
         conversation_id: str,
         user_message_id: str | None = None,
     ) -> str:
@@ -395,9 +421,7 @@ class SkillRuntimeService:
             if not installed_skill_id:
                 raise ValueError("Missing required argument: skill_id")
 
-            installed = self._resolve_installed_skill(agent_id, installed_skill_id)
-            if not installed or not installed.enabled:
-                raise ValueError(f"Skill '{installed_skill_id}' is not installed/enabled for this agent")
+            installed = self._resolve_usable_skill(agent_id, installed_skill_id, actor_kind)
 
             loaded = self.skill_service.registry.get(installed.skill_id)
             if not loaded:
@@ -440,9 +464,7 @@ class SkillRuntimeService:
             if not installed_skill_id or not action_name:
                 raise ValueError("Missing required arguments: skill_id and action")
 
-            installed = self._resolve_installed_skill(agent_id, installed_skill_id)
-            if not installed or not installed.enabled:
-                raise ValueError(f"Skill '{installed_skill_id}' is not installed/enabled for this agent")
+            installed = self._resolve_usable_skill(agent_id, installed_skill_id, actor_kind)
 
             context = {
                 "agent_id": agent_id,
@@ -451,6 +473,7 @@ class SkillRuntimeService:
                 "owner_email": owner_email,
                 "actor_email": actor_email,
                 "actor_id": actor_id,
+                "actor_kind": actor_kind.value,
                 "conversation_id": conversation_id,
                 "user_message_id": user_message_id,
             }
@@ -566,7 +589,7 @@ class SkillRuntimeService:
         summary: list[dict[str, str]] = []
         for input_def in loaded.manifest.form:
             attr = input_def.attr or {}
-            if attr.get("secret", "false").lower() == "true":
+            if is_secret_input(input_def):
                 continue
             if attr.get(self._EXPOSE_TO_RUNTIME_ATTR, "false").lower() != "true":
                 continue

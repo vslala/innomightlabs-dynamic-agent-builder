@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 from typing import Any
 
+from tests.oauth_handoff import handoff_result
 import pytest
 import httpx
 
@@ -785,7 +786,7 @@ def test_agent2agent_oauth_callback_stores_access_and_refresh_tokens(test_client
     )
 
     assert response.status_code == 307
-    assert "a2a_oauth=success" in response.headers["location"]
+    assert handoff_result(test_client, response, "owner@example.com")["a2a_oauth"] == ["success"]
     record = A2ARemoteOAuthRepository().find(
         owner_email="owner@example.com",
         installed_skill_id="agent2agent_client:test",

@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from pydantic import ValidationError
 
+from src.common import outbound
 from src.skills.rest_template.helper import (
+    AgentSecrets,
     body_preview,
     compact_response,
     content_type,
-    expand_env_placeholders,
     full_response,
+    normalize_string_map,
     parse_body_json,
     redact_url,
     transport_error_response,
@@ -20,33 +22,46 @@ from src.skills.rest_template.models import RestPostRequest, RestRequest
 
 
 async def get(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    del config, context
-    return await _send_request("GET", _validate_get(arguments))
+    del context
+    secrets = _secrets(config)
+    return cast(dict[str, Any], secrets.scrub(await _send_request("GET", _validate(RestRequest, "GET", arguments, secrets), secrets)))
 
 
 async def post(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    del config, context
-    return await _send_request("POST", _validate_post(arguments))
+    del context
+    secrets = _secrets(config)
+    return cast(dict[str, Any], secrets.scrub(await _send_request("POST", _validate(RestPostRequest, "POST", arguments, secrets), secrets)))
 
 
-def _validate_get(arguments: dict[str, Any]) -> RestRequest:
+def _secrets(config: dict[str, Any]) -> AgentSecrets:
+    return AgentSecrets(normalize_string_map(config.get("secrets"), "secrets"))
+
+
+def _validate(
+    model: type[RestRequest], method: str, arguments: dict[str, Any], secrets: AgentSecrets
+) -> RestRequest:
     try:
-        return RestRequest.model_validate(expand_env_placeholders(arguments))
+        return model.model_validate(secrets.expand(arguments))
     except ValidationError as exc:
-        raise ValueError(f"Invalid REST Template GET arguments: {exc}") from exc
+        raise ValueError(secrets.scrub(f"Invalid REST Template {method} arguments: {exc}")) from exc
 
 
-def _validate_post(arguments: dict[str, Any]) -> RestPostRequest:
-    try:
-        return RestPostRequest.model_validate(expand_env_placeholders(arguments))
-    except ValidationError as exc:
-        raise ValueError(f"Invalid REST Template POST arguments: {exc}") from exc
-
-
-async def _send_request(method: str, request: RestRequest | RestPostRequest) -> dict[str, Any]:
+async def _send_request(method: str, request: RestRequest, secrets: AgentSecrets) -> dict[str, Any]:
     started = time.perf_counter()
+    origin = httpx.URL(request.url).copy_with(path="/", query=None, fragment=None)
+
+    async def drop_secret_headers_across_origins(outgoing: httpx.Request) -> None:
+        # httpx strips only Authorization when a redirect leaves the origin.
+        if outgoing.url.copy_with(path="/", query=None, fragment=None) == origin:
+            return
+        for name in [name for name, value in outgoing.headers.items() if secrets.carried_by(value)]:
+            del outgoing.headers[name]
+
     try:
-        async with httpx.AsyncClient(timeout=request.timeout_seconds, follow_redirects=True) as client:
+        async with outbound.async_client(
+            timeout=request.timeout_seconds,
+            event_hooks={"request": [drop_secret_headers_across_origins]},
+        ) as client:
             response = await client.request(method, request.url, **_request_kwargs(request))
     except httpx.TimeoutException:
         return transport_error_response(
@@ -71,7 +86,7 @@ async def _send_request(method: str, request: RestRequest | RestPostRequest) -> 
     )
 
 
-def _request_kwargs(request: RestRequest | RestPostRequest) -> dict[str, Any]:
+def _request_kwargs(request: RestRequest) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "params": request.query,
         "headers": request.headers,

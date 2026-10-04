@@ -17,7 +17,7 @@ from src.payments.stripe.models import (
     PricingFaq,
     PricingResponse,
     PricingTier,
-    SessionAuthResponse,
+    CheckoutSessionResponse,
     SubscriptionMetadata,
     SubscriptionStatusResponse,
 )
@@ -33,7 +33,6 @@ from ...email import (
     send_subscription_cancelled_email_safe,
 )
 from ..subscriptions.repository import WebhookEventRepository
-from ...auth.jwt_utils import create_access_token
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/payments/stripe", tags=["payments"])
@@ -355,43 +354,27 @@ async def create_checkout_session(payload: CheckoutRequest, request: Request):
     response = await stripe.post("/checkout/sessions", session_data)
     return CheckoutResponse(url=response["url"])
 
-@router.get("/session/{session_id}", response_model=SessionAuthResponse)
-async def exchange_session_for_auth(session_id: str):
-    """Exchange Stripe session ID for JWT token after successful payment."""
+@router.get("/session/{session_id}", response_model=CheckoutSessionResponse)
+async def get_checkout_session(session_id: str, request: Request):
+    """The signed-in user's own paid checkout. The session id sits in the success URL, browser
+    history and analytics tags, so it is never a credential."""
+    user_email: str = request.state.user_email
     stripe = StripeClient()
-    
-    # Fetch and validate session
+
     try:
         session = await stripe.get(f"/checkout/sessions/{session_id}")
     except HTTPException:
         raise HTTPException(404, "Session not found or expired")
-    
+
+    # Checkout always sets customer_email to the signed-in user (see create_checkout_session).
+    if str(session.get("customer_email") or "").lower() != user_email.lower():
+        raise HTTPException(404, "Session not found or expired")
     if session.get("payment_status") != "paid":
         raise HTTPException(400, f"Payment not completed. Status: {session.get('payment_status')}")
-    
-    # Get customer email
-    customer_email = session.get("customer_details", {}).get("email")
-    if not customer_email and (customer_id := session.get("customer")):
-        customer = await stripe.get(f"/customers/{customer_id}")
-        customer_email = customer.get("email")
-    
-    if not customer_email:
-        raise HTTPException(400, "No email found in session")
-    
-    # Create/get user
-    ensure_user_exists(customer_email, customer_id=session.get("customer"))
-    user = UserRepository().get_by_email(customer_email)
-    
-    if not user:
-        raise HTTPException(500, "Failed to create user")
-    
-    # Generate JWT and check subscription
-    jwt_token = create_access_token(user)
-    subscription = SubscriptionRepository().get_active_for_user(customer_email)
-    
-    return SessionAuthResponse(
-        token=jwt_token,
-        email=customer_email,
+
+    subscription = SubscriptionRepository().get_active_for_user(user_email)
+    return CheckoutSessionResponse(
+        email=user_email,
         subscription_status=subscription.status if subscription else None,
     )
 
@@ -574,7 +557,7 @@ async def handle_webhook(request: Request):
         # Log error but don't mark as processed - Stripe will retry
         log.error(f"✗ Failed to process webhook event {event_id} ({event_type}): {e}", exc_info=True)
         # Re-raise so Stripe knows to retry
-        raise HTTPException(500, f"Webhook processing failed: {str(e)}")
+        raise HTTPException(500, "Webhook processing failed")
 
 # ============================================================================
 # Webhook Event Handlers

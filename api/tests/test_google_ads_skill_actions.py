@@ -284,6 +284,17 @@ def test_a_token_is_bound_to_the_installed_skill_and_expires(google, monkeypatch
         run(campaigns.pause_campaigns, {"campaign_ids": ["11"], "mode": "apply", "confirmation_token": preview["confirmation_token"]})
 
 
+def test_a_token_is_bound_to_whoever_saw_the_preview(google):
+    preview = run(campaigns.pause_campaigns, {"campaign_ids": ["11"]}, READ_WRITE, {**AGENT_CONTEXT, "actor_id": "alice"})
+    with pytest.raises(ValueError, match="differ"):
+        run(
+            campaigns.pause_campaigns,
+            {"campaign_ids": ["11"], "mode": "apply", "confirmation_token": preview["confirmation_token"]},
+            READ_WRITE,
+            {**AGENT_CONTEXT, "actor_id": "mallory"},
+        )
+
+
 def test_automation_runs_apply_directly(google):
     result = run(campaigns.pause_campaigns, {"campaign_ids": "11"}, READ_WRITE, AUTOMATION_CONTEXT)
     assert result["status"] == "applied"

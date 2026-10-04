@@ -9,6 +9,7 @@ from src.conversations.repository import ConversationRepository
 from src.llm.events import recorded_events
 from src.messages.repositories import get_message_repository
 from src.skills.agent_invocation.models import InvokeAgentRequest
+from src.skills.models import ActorKind
 
 
 async def invoke(
@@ -17,7 +18,7 @@ async def invoke(
     context: dict[str, Any],
 ) -> dict[str, Any]:
     request = InvokeAgentRequest.model_validate(arguments)
-    target_agent_id = request.agent_id or str(config.get("target_agent_id") or "").strip()
+    target_agent_id = _target_agent_id(request, config, context)
     if not target_agent_id:
         raise ValueError("Missing target agent configuration")
     owner_email = str(context.get("owner_email") or "").strip()
@@ -48,6 +49,7 @@ async def invoke(
         owner_email=owner_email,
         actor_email=actor_email,
         actor_id=actor_id,
+        actor_kind=ActorKind(context.get("actor_kind") or ActorKind.OWNER),
     )
 
     if not invocation.success:
@@ -65,3 +67,11 @@ async def invoke(
             if value
         },
     }
+
+
+def _target_agent_id(request: InvokeAgentRequest, config: dict[str, Any], context: dict[str, Any]) -> str:
+    """An automation step names its agent in the owner's own workflow. In a chat the model writes
+    the arguments, so the agent the skill was installed for is the only one it can reach."""
+    if context.get("orchestrator_type") == "automation" and request.agent_id:
+        return request.agent_id
+    return str(config.get("target_agent_id") or "").strip()

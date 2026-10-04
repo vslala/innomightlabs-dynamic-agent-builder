@@ -1,5 +1,6 @@
 id: scheduler
 namespace: core.productivity
+owner_only: true
 name: Scheduler
 description: Schedule this agent to wake up later in the current conversation.
 system_prompt: |

@@ -4,6 +4,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
+from src.common import outbound
 
 
 class RiotLolApiError(Exception):
@@ -47,7 +48,7 @@ class RiotLolClient:
             response = await self.http_client.get(url, params=params, headers=self._headers())
             return self._parse_response(response)
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=True) as client:
+        async with outbound.async_client(timeout=self.timeout_seconds) as client:
             response = await client.get(url, params=params, headers=self._headers())
             return self._parse_response(response)
 

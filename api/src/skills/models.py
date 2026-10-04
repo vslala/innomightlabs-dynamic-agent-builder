@@ -10,6 +10,17 @@ from pydantic import BaseModel, Field, model_validator
 import src.form_models as form_models
 
 
+class ActorKind(str, Enum):
+    """Who is speaking in a turn. Tools run with the owner's credentials, so this decides which ones they get."""
+
+    OWNER = "owner"
+    #: A /v1 secret key.
+    API = "api"
+    A2A = "a2a"
+    #: A widget or embed visitor.
+    VISITOR = "visitor"
+
+
 class SkillConnectorDependency(BaseModel):
     connector_id: str
     required: bool = True
@@ -90,6 +101,14 @@ class SkillManifest(BaseModel):
     action_disclosure: ActionDisclosureMode = ActionDisclosureMode.EAGER
     actions: list[SkillActionManifest] = Field(default_factory=list)
     form: list[form_models.FormInput] = Field(default_factory=list)
+    #: The skill acts with the owner's own access (their machine, accounts or agents), so it
+    #: never runs for anyone else, whatever the owner chooses.
+    owner_only: bool = False
+
+    @property
+    def runs_only_for_owner(self) -> bool:
+        """OAuth- and connector-backed skills reach the owner's accounts, so they are owner-only too."""
+        return self.owner_only or self.requires_oauth or bool(self.connectors)
 
     def find_action(self, name: str) -> Optional[SkillActionManifest]:
         """The action with this name or alias."""
@@ -131,6 +150,9 @@ class InstalledSkillResponse(BaseModel):
     secret_fields: list[str] = Field(default_factory=list)
     requires_oauth: bool = False
     oauth_provider_name: Optional[str] = None
+    available_to: list[ActorKind] = Field(default_factory=lambda: [ActorKind.OWNER])
+    #: When true the owner cannot offer the skill to anyone else.
+    owner_only: bool = False
 
 
 class LoadedSkillRuntimeAction(BaseModel):
@@ -168,8 +190,15 @@ class AgentSkill(BaseModel):
     encrypted_secrets: str = ""
     secret_fields: list[str] = Field(default_factory=list)
     installed_by: str
+    #: Who besides the owner may use this install. The owner always may.
+    available_to: list[ActorKind] = Field(default_factory=lambda: [ActorKind.OWNER])
     installed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
+
+    def usable_by(self, actor_kind: ActorKind, manifest: SkillManifest) -> bool:
+        if actor_kind == ActorKind.OWNER:
+            return True
+        return not manifest.runs_only_for_owner and actor_kind in self.available_to
 
     @property
     def pk(self) -> str:
@@ -195,6 +224,7 @@ class AgentSkill(BaseModel):
             "encrypted_secrets": self.encrypted_secrets,
             "secret_fields": self.secret_fields,
             "installed_by": self.installed_by,
+            "available_to": [kind.value for kind in self.available_to],
             "installed_at": self.installed_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -214,6 +244,7 @@ class AgentSkill(BaseModel):
             encrypted_secrets=item.get("encrypted_secrets", ""),
             secret_fields=item.get("secret_fields", []) or [],
             installed_by=item.get("installed_by", ""),
+            available_to=item.get("available_to") or [ActorKind.OWNER],
             installed_at=datetime.fromisoformat(item["installed_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
         )
@@ -226,9 +257,10 @@ class InstallSkillRequest(BaseModel):
 class UpdateInstalledSkillRequest(BaseModel):
     enabled: Optional[bool] = None
     config: Optional[dict[str, Any]] = None
+    available_to: Optional[list[ActorKind]] = None
 
     @model_validator(mode="after")
     def validate_not_empty(self) -> "UpdateInstalledSkillRequest":
-        if self.enabled is None and self.config is None:
-            raise ValueError("At least one of 'enabled' or 'config' must be provided")
+        if self.enabled is None and self.config is None and self.available_to is None:
+            raise ValueError("At least one of 'enabled', 'config' or 'available_to' must be provided")
         return self

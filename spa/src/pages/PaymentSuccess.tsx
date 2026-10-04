@@ -2,11 +2,9 @@ import { useEffect, useState } from 'react';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { httpClient } from '../services/http';
-import { authService } from '../services/auth';
 import styles from './PaymentResult.module.css';
 
-type SessionAuthResponse = {
-  token: string;
+type CheckoutSessionResponse = {
   email: string;
   subscription_status?: string | null;
 };
@@ -73,14 +71,10 @@ export function PaymentSuccess() {
 
     const confirmPayment = async () => {
       try {
-        const session = await httpClient.get<SessionAuthResponse>(
-          `/payments/stripe/session/${sessionId}`,
-          { skipAuth: true }
-        );
+        const session = await httpClient.get<CheckoutSessionResponse>(`/payments/stripe/session/${sessionId}`);
         if (!active) {
           return;
         }
-        authService.setToken(session.token);
         trackSubscribeConversion(sessionId);
         setEmail(session.email);
         setStatus('Syncing your subscription...');

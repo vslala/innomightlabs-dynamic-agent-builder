@@ -94,25 +94,23 @@ export class WidgetApi {
     yield* readSSE<StreamEvent>(response.body);
   }
 
-  /** Trade the visitor's refresh token for a fresh session. */
+  /** Trade the visitor's refresh token for a fresh session. The refresh token rotates. */
   static async refresh(publicKey: string, refreshToken: string): Promise<Session> {
-    const response = await fetch("/widget/auth/refresh", {
+    return sessionFrom(await authPost(publicKey, "/widget/auth/refresh", { refresh_token: refreshToken }));
+  }
+
+  /** Trade the one-time code from the sign-in popup for a session. */
+  static async redeem(publicKey: string, code: string): Promise<Session> {
+    return sessionFrom(await authPost(publicKey, "/widget/auth/token", { code }));
+  }
+
+  /** Sign out on the server too, so the refresh token stops working. */
+  static async revoke(publicKey: string, refreshToken: string): Promise<void> {
+    await fetch("/widget/auth/revoke", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-Key": publicKey },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
-    if (!response.ok) throw new SignedOutError("Your sign-in has expired.");
-    const body = (await response.json()) as TokenResponse;
-    return {
-      token: body.access_token,
-      refreshToken: body.refresh_token ?? refreshToken,
-      visitor: {
-        visitorId: body.visitor.visitor_id,
-        email: body.visitor.email,
-        name: body.visitor.name,
-        picture: body.visitor.picture,
-      },
-    };
   }
 
   private async json<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -136,6 +134,29 @@ export class WidgetApi {
   }
 }
 
+async function authPost(publicKey: string, path: string, body: object): Promise<TokenResponse> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": publicKey },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new SignedOutError("Your sign-in has expired.");
+  return (await response.json()) as TokenResponse;
+}
+
+function sessionFrom(body: TokenResponse): Session {
+  return {
+    token: body.access_token,
+    refreshToken: body.refresh_token,
+    visitor: {
+      visitorId: body.visitor.visitor_id,
+      email: body.visitor.email,
+      name: body.visitor.name,
+      picture: body.visitor.picture,
+    },
+  };
+}
+
 async function errorDetail(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
@@ -146,18 +167,15 @@ async function errorDetail(response: Response): Promise<string> {
   return `Something went wrong (${response.status}). Please try again.`;
 }
 
-/** Message the API's /widget/auth/callback-page posts back to the window that opened the sign-in popup. */
+/** Message the sign-in popup's last page posts back to the window that opened it. */
 interface OAuthCallbackMessage {
   type: "innomight-oauth-callback";
-  token: string;
-  refreshToken?: string | null;
-  visitor: { visitorId: string; email: string; name?: string | null; picture?: string | null };
+  code: string;
 }
 
 /** Sign in with Google in a popup. Resolves with the new session, or rejects if the popup is blocked or closed. */
 export function signInWithPopup(publicKey: string): Promise<Session> {
-  const redirectUri = `${window.location.origin}/widget/auth/callback-page`;
-  const url = `/widget/auth/google?api_key=${encodeURIComponent(publicKey)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  const url = `/widget/auth/google?api_key=${encodeURIComponent(publicKey)}`;
   const popup = window.open(url, "innomight-embed-signin", "popup=1,width=480,height=640");
 
   return new Promise((resolve, reject) => {
@@ -174,10 +192,11 @@ export function signInWithPopup(publicKey: string): Promise<Session> {
     const onMessage = (event: MessageEvent) => {
       // The callback page is served by the API, i.e. from this iframe's own origin.
       if (event.origin !== window.location.origin) return;
+      if (event.source !== popup) return;
       const data = event.data as Partial<OAuthCallbackMessage> | null;
-      if (data?.type !== "innomight-oauth-callback" || !data.token || !data.visitor) return;
+      if (data?.type !== "innomight-oauth-callback" || !data.code) return;
       cleanup();
-      resolve({ token: data.token, refreshToken: data.refreshToken, visitor: data.visitor });
+      WidgetApi.redeem(publicKey, data.code).then(resolve, reject);
     };
 
     const closedPoll = window.setInterval(() => {

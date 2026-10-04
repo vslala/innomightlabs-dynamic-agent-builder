@@ -38,6 +38,7 @@ from src.llm.events import recorded_events
 from src.connectors.service import ConnectorService, get_connector_service
 from src.skills.service import SkillService
 from src.skills.service import get_skill_service
+from src.skills.models import ActorKind
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -349,6 +350,7 @@ class AutomationRunner:
                 owner_email=user_email,
                 actor_email=user_email,
                 actor_id=user_email,
+                actor_kind=ActorKind.OWNER,
             ),
             heartbeat=lambda: self.run_state.heartbeat(run, current_node_id=node.node_id),
         )

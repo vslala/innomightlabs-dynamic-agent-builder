@@ -1,5 +1,6 @@
 id: agent_invocation
 namespace: core.automation
+owner_only: true
 name: Invoke Agent
 description: Send a smart-value prompt to one of your agents.
 repeatable: true
@@ -30,7 +31,7 @@ actions:
       properties:
         agent_id:
           type: string
-          description: Optional agent id override. Installed agent skills use the configured target agent by default.
+          description: Used by automation steps only. In a conversation the configured target agent is always used.
         prompt_template:
           type: string
           description: Prompt text after automation smart values have been rendered.

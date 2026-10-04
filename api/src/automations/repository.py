@@ -21,6 +21,7 @@ from src.automations.models import (
 from src.config import settings
 from src.crypto import decrypt
 from src.db import get_dynamodb_resource
+from src.common.pagination import decode_cursor
 
 log = logging.getLogger(__name__)
 
@@ -236,12 +237,7 @@ class AutomationRepository:
             "ScanIndexForward": False,
         }
         if cursor:
-            try:
-                query_params["ExclusiveStartKey"] = json.loads(
-                    base64.b64decode(cursor).decode("utf-8")
-                )
-            except Exception:
-                log.warning("Invalid run cursor: %s", cursor)
+            query_params["ExclusiveStartKey"] = decode_cursor(cursor)
         response = self.table.query(**query_params)
         runs = [AutomationRun.from_dynamo_item(item) for item in response.get("Items", [])]
         last_key = response.get("LastEvaluatedKey")

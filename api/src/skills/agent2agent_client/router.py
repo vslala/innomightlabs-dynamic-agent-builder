@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
@@ -9,6 +10,8 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from src.agents.repository import AgentRepository
+from src.auth.oauth_handoff import handoff_redirect, safe_return_to
+from src.config import settings
 from src.skills.agent2agent_client.discovery import A2ADiscoveryClient
 from src.skills.agent2agent_client.models import A2ARegistryConfig
 from src.skills.agent2agent_client.oauth import (
@@ -27,6 +30,8 @@ from src.skills.agent2agent_client.oauth import (
     generate_code_challenge,
 )
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["agent2agent-client"])
 security = HTTPBearer()
@@ -95,7 +100,7 @@ async def start_a2a_remote_oauth(
             agent_id=body.agent_id,
             installed_skill_id=body.installed_skill_id,
             service_url=service_url,
-            return_to=body.return_to,
+            return_to=safe_return_to(body.return_to),
             provider=provider,
         )
         return A2ARemoteOAuthStartResponse(
@@ -111,31 +116,32 @@ async def start_a2a_remote_oauth(
 
 @router.get("/oauth/callback")
 async def a2a_remote_oauth_callback(
-    repository: A2ARemoteOAuthRepository = Depends(get_a2a_remote_oauth_repository),
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
-    error_description: str | None = None,
 ) -> RedirectResponse:
+    """Hand the result to the SPA; it completes the connection as the signed-in user (see oauth_handoff)."""
     session = decode_state_session(state)
-    if not session or session.is_expired():
-        return _callback_redirect("/dashboard/agents", status_value="error", reason="invalid_state")
+    fallback = f"{settings.frontend_url}/dashboard/agents"
+    try:
+        return_to = safe_return_to(session.return_to) if session else fallback
+    except ValueError:
+        return_to = fallback
+    return handoff_redirect(return_to, flow="a2a", state=state, code=code, error=error)
 
+
+async def complete_a2a_remote_oauth(
+    *, state: str | None, code: str | None, error: str | None, user_email: str
+) -> dict[str, str]:
+    """Store the remote agent's tokens, if the signed-in user started this flow. Returns the page's result parameters."""
+    session = decode_state_session(state)
+    if not session or session.is_expired() or session.user_email != user_email:
+        return {"a2a_oauth": "error", "reason": "invalid_state"}
+    failure = {"a2a_oauth": "error", "installed_skill_id": session.installed_skill_id}
     if error:
-        return _callback_redirect(
-            session.return_to,
-            status_value="error",
-            reason=error_description or error,
-            installed_skill_id=session.installed_skill_id,
-        )
-
+        return {**failure, "reason": "Sign-in was cancelled"}
     if not code:
-        return _callback_redirect(
-            session.return_to,
-            status_value="error",
-            reason="missing_code",
-            installed_skill_id=session.installed_skill_id,
-        )
+        return {**failure, "reason": "Sign-in returned no authorization code"}
 
     try:
         tokens = await exchange_code_for_tokens(
@@ -144,7 +150,7 @@ async def a2a_remote_oauth_callback(
             code_verifier=session.code_verifier,
         )
         credentials = build_credentials(tokens, default_scope=session.provider.scope)
-        repository.save(
+        get_a2a_remote_oauth_repository().save(
             A2ARemoteOAuthCredentialRecord(
                 owner_email=session.user_email,
                 agent_id=session.agent_id,
@@ -159,34 +165,10 @@ async def a2a_remote_oauth_callback(
             )
         )
     except Exception as exc:
-        return _callback_redirect(
-            session.return_to,
-            status_value="error",
-            reason=str(exc)[:300],
-            installed_skill_id=session.installed_skill_id,
-        )
+        log.error("A2A remote OAuth completion failed: %s", exc, exc_info=True)
+        return {**failure, "reason": "Agent2Agent OAuth connection failed"}
 
-    return _callback_redirect(
-        session.return_to,
-        status_value="success",
-        installed_skill_id=session.installed_skill_id,
-    )
-
-
-def _callback_redirect(
-    return_to: str,
-    *,
-    status_value: str,
-    reason: str | None = None,
-    installed_skill_id: str | None = None,
-) -> RedirectResponse:
-    params = [f"a2a_oauth={quote(status_value)}"]
-    if reason:
-        params.append(f"reason={quote(reason)}")
-    if installed_skill_id:
-        params.append(f"installed_skill_id={quote(installed_skill_id)}")
-    separator = "&" if "?" in return_to else "?"
-    return RedirectResponse(f"{return_to}{separator}{'&'.join(params)}")
+    return {"a2a_oauth": "success", "installed_skill_id": session.installed_skill_id}
 
 
 def _select_oauth_candidate(candidates, *, service_url: str | None, target_origin: str | None):

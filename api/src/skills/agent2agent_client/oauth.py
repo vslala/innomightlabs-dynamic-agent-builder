@@ -15,6 +15,7 @@ from src.config import settings
 from src.crypto import decrypt, encrypt
 from src.db import get_dynamodb_resource
 from src.skills.agent2agent_client.models import A2ARegistryConfig
+from src.common import outbound
 
 
 class A2ARemoteOAuthError(ValueError):
@@ -393,7 +394,7 @@ def generate_code_challenge(code_verifier: str) -> str:
 
 
 async def _post_token(token_url: str, data: dict[str, str]) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with outbound.async_client(timeout=20.0, follow_redirects=False) as client:
         response = await client.post(
             token_url,
             data=data,
@@ -564,7 +565,7 @@ def _authorization_server_metadata_urls(authorization_server: str) -> list[str]:
 
 
 async def _fetch_json(url: str) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with outbound.async_client(timeout=20.0, follow_redirects=False) as client:
         response = await client.get(url, headers={"accept": "application/json"})
     if not response.is_success:
         raise A2ARemoteOAuthError(f"Remote A2A OAuth metadata discovery failed at {url}: HTTP {response.status_code}")
@@ -595,7 +596,7 @@ async def _register_client(*, registration_endpoint: str, scope: str) -> dict[st
     if scope:
         payload["scope"] = scope
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with outbound.async_client(timeout=20.0, follow_redirects=False) as client:
         response = await client.post(
             registration_endpoint,
             headers={"accept": "application/json", "content-type": "application/json"},

@@ -172,7 +172,8 @@ async def exchange_code_for_tokens(code: str, code_verifier: str) -> dict[str, A
         )
 
     if not response.is_success:
-        raise OpenAIOAuthError(f"Token exchange failed: {response.text}")
+        log.warning("OpenAI token exchange failed (%s): %s", response.status_code, response.text)
+        raise OpenAIOAuthError("OpenAI did not accept the sign-in. Please try again.")
 
     payload = response.json()
     return payload if isinstance(payload, dict) else {}
@@ -195,7 +196,8 @@ async def refresh_access_token(refresh_token: str) -> dict[str, Any]:
         )
 
     if not response.is_success:
-        raise OpenAIOAuthError(f"Token refresh failed: {response.text}")
+        log.warning("OpenAI token refresh failed (%s): %s", response.status_code, response.text)
+        raise OpenAIOAuthError("Your OpenAI sign-in has expired. Please connect it again.")
 
     payload = response.json()
     return payload if isinstance(payload, dict) else {}

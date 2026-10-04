@@ -1,29 +1,22 @@
 """
-Authentication middleware for token refresh and validation.
+Authentication middleware for owner routes.
 
-This middleware intercepts all requests and:
-1. Validates JWT tokens
-2. If token is expired but refresh token exists, gets a new access token
-3. Adds new JWT token to response headers if refreshed
+Accepts only owner tokens (aud=owner) for users that exist and are active.
 """
 
-from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Tuple, cast
 import jwt
-from fastapi import Request, HTTPException
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
 from ..config import settings
-from ..users import User, UserRepository
+from ..users import UserRepository
 from ..users.models import UserStatus
 from ..agents.repository import AgentRepository
-from .google_oauth import GoogleOAuth
+from .jwt_utils import OWNER_AUDIENCE, app_audience
 
-
-# Header name for sending refreshed tokens to frontend
-REFRESHED_TOKEN_HEADER = "X-Refreshed-Token"
 
 # Paths that don't require authentication
 PUBLIC_PATHS = {
@@ -40,6 +33,7 @@ PUBLIC_PATHS = {
     "/connectors/mcp/oauth/callback",
     "/auth/cognito",
     "/auth/token",
+    "/auth/session",
     "/auth/refresh",
     "/auth/revoke",
     "/auth/local/signup",
@@ -65,64 +59,31 @@ PUBLIC_API_PATH_PREFIX = "/v1/"
 EMBED_PATH_PREFIX = "/embed/"
 
 
-def decode_token_without_verification(token: str) -> Optional[dict[str, Any]]:
-    """Decode JWT token without verifying expiration (to get user email)."""
-    try:
-        payload = jwt.decode(
-            token,
-            settings.jwt_secret,
-            algorithms=[settings.jwt_algorithm],
-            options={"verify_exp": False}
-        )
-        return cast(dict[str, Any], payload)
-    except jwt.InvalidTokenError:
-        return None
+def token_audiences_for(path: str) -> list[str]:
+    """Owner routes take only owner tokens. /auth/me is the one route apps sharing this login call with a user token."""
+    if path == "/auth/me":
+        return [OWNER_AUDIENCE, *(app_audience(app) for app in settings.auth_app_urls)]
+    return [OWNER_AUDIENCE]
 
 
-def is_token_expired(token: str) -> Tuple[bool, Optional[dict]]:
-    """Check if token is expired. Returns (is_expired, payload)."""
+def decode_token(token: str, audiences: list[str]) -> Tuple[bool, Optional[dict[str, Any]]]:
+    """(is_expired, payload); the payload is None for a token that is not ours or not for this audience."""
     try:
-        payload = jwt.decode(
-            token,
-            settings.jwt_secret,
-            algorithms=[settings.jwt_algorithm]
-        )
-        return False, payload
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm], audience=audiences)
+        return False, cast(dict[str, Any], payload)
     except jwt.ExpiredSignatureError:
-        # Token is expired, decode without verification to get payload
-        payload = decode_token_without_verification(token)
-        return True, payload
+        return True, {}
     except jwt.InvalidTokenError:
         return True, None
 
 
-def create_access_token(user: User) -> str:
-    """Create a new JWT access token for the user."""
-    payload = {
-        "sub": user.email,
-        "name": user.name,
-        "picture": user.picture,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=settings.jwt_expiration_hours),
-        "iat": datetime.now(timezone.utc),
-    }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-
-
 class AuthMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware that handles JWT token validation and refresh.
-
-    For protected routes:
-    - Validates the JWT token
-    - If expired, attempts to refresh using Google refresh token
-    - Adds new JWT to response header if refreshed
-    """
+    """Validates the owner JWT on every route that is not public or authenticated another way."""
 
     def __init__(self, app):
         super().__init__(app)
         self.user_repository = UserRepository()
         self.agent_repository = AgentRepository()
-        self.google_oauth = GoogleOAuth()
 
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
@@ -130,7 +91,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Skip auth for public paths
         if (
             request.url.path in PUBLIC_PATHS
-            or request.url.path.startswith("/payments/stripe/session/")
             or request.url.path.startswith(DOWNLOADS_PLUGINS_PATH_PREFIX)
             or request.url.path.startswith(A2A_WELL_KNOWN_PATH_PREFIX)
         ):
@@ -156,14 +116,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # Extract token from Authorization header or query param
-        # Query param is needed for SSE endpoints (EventSource doesn't support custom headers)
+        # Every client sends the token as a header, SSE included (they stream over fetch, not EventSource).
         token = None
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
-        elif "token" in request.query_params:
-            token = request.query_params["token"]
 
         if not token:
             return JSONResponse(
@@ -171,8 +128,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Missing or invalid authorization header"}
             )
 
-        # Check if token is expired
-        is_expired, payload = is_token_expired(token)
+        is_expired, payload = decode_token(token, token_audiences_for(request.url.path))
 
         if payload is None:
             return JSONResponse(
@@ -180,78 +136,39 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Invalid token"}
             )
 
-        email = payload.get("sub")
-        if not email:
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Invalid token payload"}
-            )
-
-        # Check if user is inactive
-        user = self.user_repository.get_by_email(email)
-        if user and user.status in [UserStatus.INACTIVE.value, UserStatus.PENDING_DELETION.value]:
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "Account has been deactivated", "code": "ACCOUNT_INACTIVE"}
-            )
-
-        new_token = None
-
-        # TODO: Add policy based token refresh here, for now just check token expiration
         if is_expired:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Token expired"}
             )
-        else:
-            request.state.auth_token = token
-            request.state.user_email = email
-            analytics_agent_id = self._get_analytics_agent_id(request.url.path)
-            if analytics_agent_id:
-                agent = self.agent_repository.find_agent_by_id(analytics_agent_id, email)
-                if not agent:
-                    return JSONResponse(
-                        status_code=404,
-                        content={"detail": "Agent not found"},
-                    )
-                request.state.analytics_agent = agent
 
-        response = await call_next(request)
+        email = payload.get("sub")
+        user = self.user_repository.get_by_email(email) if email else None
+        if not user:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid token payload"}
+            )
 
-        # Add refreshed token to response header if token was refreshed
-        if new_token:
-            response.headers[REFRESHED_TOKEN_HEADER] = new_token
+        if user.status in [UserStatus.INACTIVE.value, UserStatus.PENDING_DELETION.value]:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Account has been deactivated", "code": "ACCOUNT_INACTIVE"}
+            )
 
-        return response
+        request.state.auth_token = token
+        request.state.user_email = email
+        analytics_agent_id = self._get_analytics_agent_id(request.url.path)
+        if analytics_agent_id:
+            agent = self.agent_repository.find_agent_by_id(analytics_agent_id, email)
+            if not agent:
+                return JSONResponse(
+                    status_code=404,
+                    content={"detail": "Agent not found"},
+                )
+            request.state.analytics_agent = agent
 
-    async def _refresh_token(self, email: str) -> Optional[str]:
-        """
-        Attempt to refresh the access token using stored refresh token.
-
-        Returns new JWT token if successful, None otherwise.
-        """
-        try:
-            # Get user from database
-            user = self.user_repository.get_by_email(email)
-            if not user or not user.refresh_token:
-                return None
-
-            # Use Google refresh token to get new access token
-            tokens = await self.google_oauth.refresh_access_token(user.refresh_token)
-
-            # If Google returns a new refresh token, update it
-            new_refresh_token = tokens.get("refresh_token")
-            if new_refresh_token:
-                self.user_repository.update_refresh_token(email, new_refresh_token)
-
-            # Generate new JWT for our app
-            new_jwt = create_access_token(user)
-            return new_jwt
-
-        except Exception as e:
-            # Log the error in production
-            print(f"Token refresh failed for {email}: {e}")
-            return None
+        return await call_next(request)
 
     def _get_analytics_agent_id(self, path: str) -> Optional[str]:
         """Extract analytics agent ID for analytics routes only."""

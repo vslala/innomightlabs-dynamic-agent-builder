@@ -236,6 +236,23 @@ Connectors make availability explicit for agent skills and automation actions. I
 
 Use connectors for external accounts/services. Use install `form` for skill-specific configuration values.
 
+### `owner_only`
+
+Optional boolean, default `false`.
+
+Every skill runs with its owner's configuration and credentials, whoever is chatting. Each install
+has an `available_to` list (`owner`, `api`, `a2a`, `visitor`), editable on the agent's skills
+page, which defaults to `[owner]`. Set `owner_only: true` when the skill must never run for anyone
+but the owner, whatever the owner chooses: it reaches the owner's machine, accounts, agents or
+secrets. Skills with `requires_oauth` or `connectors` are owner-only automatically.
+
+```yaml
+owner_only: true
+```
+
+The policy is enforced twice: non-owners are never told about a skill they can't use, and
+`execute_skill_action` refuses it if they call it anyway.
+
 ### `automation`
 
 Optional object. Controls whether the skill is generally available as automation actions.

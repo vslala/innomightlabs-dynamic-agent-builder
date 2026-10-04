@@ -42,6 +42,7 @@ import asyncio
 import json
 
 import src.form_models as form_models
+from src.agents.repository import AgentRepository
 from src.knowledge.models import (
     KnowledgeBase,
     KnowledgeBaseResponse,
@@ -74,6 +75,7 @@ from src.knowledge.schemas import (
 )
 from src.knowledge.service import get_knowledge_base_service, KnowledgeBaseService
 from src.common.pagination import Paginated
+from src.exceptions import GENERIC_ERROR_MESSAGE
 
 log = logging.getLogger(__name__)
 
@@ -96,6 +98,9 @@ sse_router = APIRouter(
 )
 
 # Agent knowledge base linking router (separate prefix)
+#: Pinecone settings are missing; the details are configuration, not something to show.
+KNOWLEDGE_SEARCH_UNAVAILABLE = "Knowledge search is not available right now."
+
 agent_kb_router = APIRouter(
     prefix="/agents",
     tags=["agent-knowledge-bases"],
@@ -130,6 +135,12 @@ def get_content_upload_repository() -> ContentUploadRepository:
 
 def get_agent_kb_repository() -> AgentKnowledgeBaseRepository:
     return AgentKnowledgeBaseRepository()
+
+
+def require_owned_agent(request: Request, agent_id: str) -> None:
+    """Agent ids are public (A2A cards, embeds), so every agent-keyed route checks the caller owns it."""
+    if not AgentRepository().find_agent_by_id(agent_id, request.state.user_email):
+        raise HTTPException(status_code=404, detail="Agent not found")
 
 
 def get_kb_service() -> KnowledgeBaseService:
@@ -360,9 +371,9 @@ async def start_crawl_job(
     if auto_start:
         try:
             settings.require_pinecone()
-        except Exception as e:
+        except Exception:
             # Map config issues to a consistent 503 for callers.
-            raise HTTPException(status_code=503, detail=str(e))
+            raise HTTPException(status_code=503, detail=KNOWLEDGE_SEARCH_UNAVAILABLE)
 
     # Create crawl config
     config = CrawlConfig(
@@ -497,8 +508,8 @@ async def run_crawl_job(
     from src.config import settings
     try:
         settings.require_pinecone()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=503, detail=KNOWLEDGE_SEARCH_UNAVAILABLE)
 
     # Start crawling
     from src.config import settings
@@ -681,8 +692,8 @@ async def run_and_stream_crawl_job(
     from src.config import settings
     try:
         settings.require_pinecone()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=503, detail=KNOWLEDGE_SEARCH_UNAVAILABLE)
 
     async def event_stream():
         """Run crawler and stream events."""
@@ -707,7 +718,7 @@ async def run_and_stream_crawl_job(
                 "event_type": "JOB_FAILED",
                 "job_id": job_id,
                 "kb_id": kb_id,
-                "error": str(e),
+                "error": GENERIC_ERROR_MESSAGE,
             }
             yield f"event: JOB_FAILED\ndata: {json.dumps(error_event)}\n\n"
 
@@ -831,8 +842,8 @@ async def search_knowledge_base(
     # Pinecone is required for vector search.
     try:
         settings.require_pinecone()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=503, detail=KNOWLEDGE_SEARCH_UNAVAILABLE)
 
     # Verify KB exists and belongs to user
     kb = kb_repo.find_by_id(kb_id, user_email)
@@ -859,7 +870,7 @@ async def search_knowledge_base(
     return KBSearchResponse(results=results, query=query).model_dump()
 
 
-@agent_kb_router.post("/{agent_id}/knowledge-search")
+@agent_kb_router.post("/{agent_id}/knowledge-search", dependencies=[Depends(require_owned_agent)])
 async def search_agent_knowledge_bases(
     request: Request,
     agent_id: str,
@@ -881,8 +892,8 @@ async def search_agent_knowledge_bases(
     # Pinecone is required for vector search.
     try:
         settings.require_pinecone()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=503, detail=KNOWLEDGE_SEARCH_UNAVAILABLE)
 
     # Get linked KB IDs
     links = agent_kb_repo.find_kbs_for_agent(agent_id)
@@ -927,6 +938,7 @@ async def search_agent_knowledge_bases(
 @agent_kb_router.post(
     "/{agent_id}/knowledge-bases",
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_owned_agent)],
 )
 async def link_knowledge_base(
     request: Request,
@@ -959,7 +971,11 @@ async def link_knowledge_base(
     }
 
 
-@agent_kb_router.get("/{agent_id}/knowledge-bases", response_model=list[KnowledgeBaseResponse])
+@agent_kb_router.get(
+    "/{agent_id}/knowledge-bases",
+    response_model=list[KnowledgeBaseResponse],
+    dependencies=[Depends(require_owned_agent)],
+)
 async def list_agent_knowledge_bases(
     request: Request,
     agent_id: str,
@@ -985,6 +1001,7 @@ async def list_agent_knowledge_bases(
 @agent_kb_router.delete(
     "/{agent_id}/knowledge-bases/{kb_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_owned_agent)],
 )
 async def unlink_knowledge_base(
     request: Request,

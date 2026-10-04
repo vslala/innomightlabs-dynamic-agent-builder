@@ -9,7 +9,8 @@ from uuid import uuid4
 
 import httpx
 
-from src.connectors.mcp.models import MCPConnection
+from src.common import outbound
+from src.connectors.mcp.models import MCPConnection, MCPTransport
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
 MCP_SESSION_HEADER = "Mcp-Session-Id"
@@ -39,6 +40,13 @@ class StreamableHTTPMCPClient:
     def __init__(self, *, timeout: float = 30.0, transport: httpx.AsyncBaseTransport | None = None):
         self.timeout = timeout
         self.transport = transport
+
+    def _http(self, connection: MCPConnection) -> httpx.AsyncClient:
+        """A hosted server is reached through our own runner, on the private network; any other
+        server_url came from a user and may only reach the public internet."""
+        if self.transport is not None or connection.transport == MCPTransport.STDIO:
+            return httpx.AsyncClient(timeout=self.timeout, transport=self.transport)
+        return outbound.async_client(timeout=self.timeout, follow_redirects=False)
 
     async def list_tools(
         self,
@@ -114,7 +122,7 @@ class StreamableHTTPMCPClient:
         headers = self._headers(auth_headers=auth_headers, session=session)
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
+            async with self._http(connection) as client:
                 response = await client.post(connection.server_url, headers=headers, json=payload)
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -179,7 +187,7 @@ class StreamableHTTPMCPClient:
         headers = self._headers(auth_headers=auth_headers, session=None)
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
+            async with self._http(connection) as client:
                 response = await client.post(connection.server_url, headers=headers, json=payload)
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -242,7 +250,7 @@ class StreamableHTTPMCPClient:
         headers = self._headers(auth_headers=auth_headers, session=session)
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as client:
+            async with self._http(connection) as client:
                 response = await client.post(connection.server_url, headers=headers, json=payload)
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:

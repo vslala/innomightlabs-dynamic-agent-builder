@@ -38,8 +38,8 @@ class WidgetAuthMiddleware(BaseHTTPMiddleware):
         if not request.url.path.startswith("/widget"):
             return await call_next(request)
 
-        # Skip auth for OAuth routes (they handle their own auth via state)
-        if request.url.path in ["/widget/auth/google", "/widget/auth/callback", "/widget/auth/callback-page", "/payments/stripe/webhook"]:
+        # The sign-in round trip is browser navigation, authenticated by its signed state instead
+        if request.url.path in ["/widget/auth/google", "/widget/auth/callback"]:
             return await call_next(request)
 
         # Validate API key for all widget routes (including /widget/config)
@@ -54,7 +54,7 @@ class WidgetAuthMiddleware(BaseHTTPMiddleware):
             log.error(f"Widget auth middleware error: {e}", exc_info=True)
             return JSONResponse(
                 status_code=500,
-                content={"detail": f"Internal server error: {str(e)}"},
+                content={"detail": "Internal server error"},
             )
 
         return await call_next(request)

@@ -16,6 +16,7 @@ from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2
 def _headers_for(email: str) -> dict[str, str]:
     token = jwt.encode(
         {
+            "aud": "owner",
             "sub": email,
             "name": "Test User",
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),

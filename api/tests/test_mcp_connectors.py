@@ -37,6 +37,7 @@ from src.connectors.mcp.oauth import (
 )
 from src.connectors.mcp.service import MCPConnectorService
 from src.crypto import encrypt
+from src.skills.models import ActorKind
 
 
 class FakeMCPRepository:
@@ -304,7 +305,7 @@ async def test_exchange_code_for_tokens_accepts_json_response(monkeypatch: pytes
         )
 
     monkeypatch.setattr(
-        "httpx.AsyncClient",
+        "src.connectors.mcp.oauth.outbound.async_client",
         lambda **kwargs: original_async_client(transport=httpx.MockTransport(handler), **kwargs),
     )
 
@@ -336,7 +337,7 @@ async def test_exchange_code_for_tokens_accepts_form_encoded_response(monkeypatc
         )
 
     monkeypatch.setattr(
-        "httpx.AsyncClient",
+        "src.connectors.mcp.oauth.outbound.async_client",
         lambda **kwargs: original_async_client(transport=httpx.MockTransport(handler), **kwargs),
     )
 
@@ -592,6 +593,7 @@ async def test_tool_execution_router_dispatches_mcp_tools() -> None:
         owner_email="owner@example.com",
         actor_email="owner@example.com",
         actor_id="owner@example.com",
+        actor_kind=ActorKind.OWNER,
         conversation_id="conversation-1",
         agent_id="agent-1",
         provider_name="OpenAI",

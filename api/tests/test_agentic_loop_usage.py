@@ -6,6 +6,7 @@ import pytest
 
 from src.agents.agentic_loop import _record_token_usage
 from src.token_usage.models import TokenUsagePeriod, TokenUsageRecord
+from src.skills.models import ActorKind
 
 
 class _Recorder:
@@ -31,6 +32,7 @@ async def test_record_token_usage_forwards_api_key_id(api_key_id):
         owner_email="owner@example.com",
         actor_email="owner@example.com",
         actor_id="secret-key:key-1",
+        actor_kind=ActorKind.OWNER,
         conversation_id="conversation-1",
         agent_id="agent-1",
         provider_name="anthropic",

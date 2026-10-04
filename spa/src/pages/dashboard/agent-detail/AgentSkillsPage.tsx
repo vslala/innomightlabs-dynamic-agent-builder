@@ -25,9 +25,15 @@ import {
 import { connectorApiService } from "../../../services/connectors";
 import { skillApiService } from "../../../services/skills";
 import type { FormValue, FormSchema } from "../../../types/form";
-import type { InstalledSkill, SkillCatalogItem, SkillConnectorStatus } from "../../../types/skills";
+import type { InstalledSkill, SkillActorKind, SkillCatalogItem, SkillConnectorStatus } from "../../../types/skills";
 import { useAgentDetailContext } from "./types";
 import "./AgentSkillsPage.css";
+
+const SHAREABLE_AUDIENCES: { kind: SkillActorKind; label: string }[] = [
+  { kind: "visitor", label: "Widget visitors" },
+  { kind: "api", label: "API keys" },
+  { kind: "a2a", label: "A2A agents" },
+];
 
 function getMissingRequiredConnectors(skill: SkillCatalogItem): SkillConnectorStatus[] {
   return (skill.connectors ?? []).filter((connector) => connector.required && !connector.connected);
@@ -340,6 +346,26 @@ export function AgentSkillsPage() {
     }
   };
 
+  const handleToggleAudience = async (skill: InstalledSkill, kind: SkillActorKind) => {
+    const installedSkillId = skill.installed_skill_id ?? skill.skill_id;
+    const availableTo = skill.available_to.includes(kind)
+      ? skill.available_to.filter((item) => item !== kind)
+      : [...skill.available_to, kind];
+    setUpdatingSkillId(installedSkillId);
+    try {
+      const updated = await skillApiService.updateInstalledSkill(agent.agent_id, installedSkillId, {
+        available_to: availableTo,
+      });
+      setInstalledSkills((prev) =>
+        prev.map((item) => ((item.installed_skill_id ?? item.skill_id) === updated.installed_skill_id ? updated : item))
+      );
+    } catch (err) {
+      console.error("Error updating who can use the skill:", err);
+    } finally {
+      setUpdatingSkillId(null);
+    }
+  };
+
   const openConfigureSkill = async (
     skill: InstalledSkill,
     options?: { focus?: string | null; credentialOrigin?: string | null }
@@ -608,6 +634,24 @@ export function AgentSkillsPage() {
                                 </span>
                               )}
                               <span className="agent-skill-card__namespace">{skill.namespace}</span>
+                              <div className="agent-skill-card__audience">
+                                <span>Who can use it</span>
+                                {skill.owner_only ? (
+                                  <em>Only you: it uses your own accounts or credentials</em>
+                                ) : (
+                                  SHAREABLE_AUDIENCES.map(({ kind, label }) => (
+                                    <label key={kind}>
+                                      <input
+                                        type="checkbox"
+                                        checked={skill.available_to.includes(kind)}
+                                        disabled={updatingSkillId === installedSkillId}
+                                        onChange={() => void handleToggleAudience(skill, kind)}
+                                      />
+                                      {label}
+                                    </label>
+                                  ))
+                                )}
+                              </div>
                             </div>
                             <div className="agent-skill-card__actions">
                               <Button

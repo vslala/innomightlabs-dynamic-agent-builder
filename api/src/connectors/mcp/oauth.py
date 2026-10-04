@@ -14,6 +14,7 @@ from pydantic import BaseModel, ValidationError
 from src.connectors.mcp.models import MCPOAuthCredentials, MCPOAuthDiscoveryResponse, MCPOAuthProviderConfig
 from src.config import settings
 from src.crypto import decrypt, encrypt
+from src.common import outbound
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
 
@@ -306,7 +307,7 @@ async def _fetch_oauth_challenge(resource_url: str) -> dict[str, str]:
         "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
     }
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with outbound.async_client(timeout=20.0, follow_redirects=False) as client:
         response = await client.post(resource_url, headers=headers, json=payload)
 
     if response.status_code != 401:
@@ -316,7 +317,7 @@ async def _fetch_oauth_challenge(resource_url: str) -> dict[str, str]:
 
 
 async def _fetch_json(url: str) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with outbound.async_client(timeout=20.0, follow_redirects=False) as client:
         response = await client.get(url)
     if not response.is_success:
         raise MCPOAuthError(f"OAuth metadata discovery failed at {url}: HTTP {response.status_code}")
@@ -357,7 +358,7 @@ async def _register_client(
     if scope:
         payload["scope"] = scope
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with outbound.async_client(timeout=20.0, follow_redirects=False) as client:
         response = await client.post(endpoint, json=payload)
     if not response.is_success:
         return {}
@@ -376,7 +377,7 @@ def _select_token_endpoint_auth_method(supported_methods: list[str]) -> str:
 
 
 async def _post_token(token_url: str, data: dict[str, str]) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with outbound.async_client(timeout=20.0, follow_redirects=False) as client:
         response = await client.post(
             token_url,
             data=data,

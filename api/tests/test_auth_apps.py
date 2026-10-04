@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 
-from src.auth.apps import DEFAULT_APP, app_from_state, create_state
+from src.auth.apps import DEFAULT_APP, NONCE_COOKIE, app_from_state, create_state
 
 BIDSIGNAL_URL = "https://bidsignal.example.com"
 
@@ -23,7 +23,7 @@ class FakeProvider:
         return {"access_token": "access"}
 
     async def get_user_info(self, access_token: str):
-        return {"email": "new.user@example.com", "name": "New User"}
+        return {"email": "new.user@example.com", "name": "New User", "verified_email": True}
 
 
 @pytest.fixture
@@ -39,19 +39,32 @@ def signed_in_as_new_user(monkeypatch, dynamodb_table):
 
 
 def test_state_round_trips_the_registered_app():
-    assert app_from_state(create_state("bidsignal")) == "bidsignal"
+    login = create_state("bidsignal")
+    assert app_from_state(login.state, login.nonce) == "bidsignal"
 
 
 @pytest.mark.parametrize("state", [None, "", "not-a-jwt", "a.b.c"])
-def test_unreadable_state_falls_back_to_the_default_app(state):
-    assert app_from_state(state) == DEFAULT_APP
+def test_unreadable_state_is_refused(state):
+    assert app_from_state(state, "nonce") is None
 
 
-def test_state_for_an_app_no_longer_registered_falls_back_to_the_default_app(monkeypatch):
-    state = create_state("bidsignal")
+def test_state_from_another_browser_is_refused():
+    login = create_state("bidsignal")
+    assert app_from_state(login.state, None) is None
+    assert app_from_state(login.state, create_state("bidsignal").nonce) is None
+
+
+def test_state_for_an_app_no_longer_registered_is_refused(monkeypatch):
+    login = create_state("bidsignal")
     monkeypatch.setattr("src.config.settings.auth_app_urls", {})
 
-    assert app_from_state(state) == DEFAULT_APP
+    assert app_from_state(login.state, login.nonce) is None
+
+
+def _callback(test_client: TestClient, app: str, query: str):
+    login = create_state(app)
+    test_client.cookies.set(NONCE_COOKIE, login.nonce)
+    return test_client.get(f"/auth/callback/google?{query}&state={login.state}", follow_redirects=False)
 
 
 @pytest.fixture
@@ -63,7 +76,7 @@ def test_login_carries_the_app_through_the_provider_round_trip(test_client: Test
     response = test_client.get("/auth/google?app=bidsignal", follow_redirects=False)
 
     state = parse_qs(urlparse(response.headers["location"]).query)["state"][0]
-    assert app_from_state(state) == "bidsignal"
+    assert app_from_state(state, response.cookies[NONCE_COOKIE]) == "bidsignal"
 
 
 def test_login_rejects_an_unregistered_app(test_client: TestClient, fake_provider):
@@ -75,9 +88,7 @@ def test_login_rejects_an_unregistered_app(test_client: TestClient, fake_provide
 def test_callback_redirects_to_the_app_the_login_started_from(
     test_client: TestClient, signed_in_as_new_user: list[str]
 ):
-    state = create_state("bidsignal")
-
-    response = test_client.get(f"/auth/callback/google?code=abc&state={state}", follow_redirects=False)
+    response = _callback(test_client, "bidsignal", "code=abc")
 
     location = urlparse(response.headers["location"])
     assert f"{location.scheme}://{location.netloc}{location.path}" == f"{BIDSIGNAL_URL}/login-success"
@@ -85,18 +96,46 @@ def test_callback_redirects_to_the_app_the_login_started_from(
     assert signed_in_as_new_user == []
 
 
-def test_callback_without_an_app_redirects_to_the_default_frontend_and_welcomes_the_user(
+def test_default_app_login_lands_with_a_one_time_code_and_welcomes_the_user(
     test_client: TestClient, signed_in_as_new_user: list[str]
 ):
-    response = test_client.get("/auth/callback/google?code=abc", follow_redirects=False)
+    response = _callback(test_client, DEFAULT_APP, "code=abc")
 
-    assert response.headers["location"].startswith("https://app.example.com/login-success?token=")
+    location = urlparse(response.headers["location"])
+    assert f"{location.scheme}://{location.netloc}{location.path}" == "https://app.example.com/login-success"
+    code = parse_qs(location.query)["code"][0]
     assert signed_in_as_new_user == ["new.user@example.com"]
+
+    session = test_client.post("/auth/session", json={"code": code})
+    assert session.status_code == 200
+    me = test_client.get("/auth/me", headers={"Authorization": f"Bearer {session.json()['token']}"})
+    assert me.json()["email"] == "new.user@example.com"
+    assert test_client.post("/auth/session", json={"code": code}).status_code == 401
+
+
+def test_a_callback_without_the_browsers_nonce_is_refused(
+    test_client: TestClient, signed_in_as_new_user: list[str]
+):
+    state = create_state(DEFAULT_APP).state
+
+    response = test_client.get(f"/auth/callback/google?code=abc&state={state}", follow_redirects=False)
+
+    assert response.headers["location"] == "https://app.example.com/login?error=auth_failed"
+    assert signed_in_as_new_user == []
+
+
+def test_an_unverified_email_is_refused(test_client: TestClient, signed_in_as_new_user: list[str], monkeypatch):
+    async def unverified(self, access_token: str):
+        return {"email": "victim@example.com", "name": "Mallory", "email_verified": "false"}
+
+    monkeypatch.setattr(FakeProvider, "get_user_info", unverified)
+
+    response = _callback(test_client, DEFAULT_APP, "code=abc")
+
+    assert response.headers["location"] == "https://app.example.com/login?error=email_not_verified"
 
 
 def test_provider_error_returns_to_the_app_the_login_started_from(test_client: TestClient):
-    state = create_state("bidsignal")
-
-    response = test_client.get(f"/auth/callback/google?error=access_denied&state={state}", follow_redirects=False)
+    response = _callback(test_client, "bidsignal", "error=access_denied")
 
     assert response.headers["location"] == f"{BIDSIGNAL_URL}/login?error=access_denied"

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from src.messages.models import Attachment
-from src.skills.models import AgentSkill, LoadedSkillRuntimeResponse
+from src.skills.models import ActorKind, AgentSkill, LoadedSkillRuntimeResponse
 
 if TYPE_CHECKING:
     from src.connectors.mcp.models import AgentMCPConnectionResponse
@@ -24,6 +24,7 @@ class AgentTurnState:
     owner_email: str
     actor_email: str
     actor_id: str
+    actor_kind: ActorKind
     conversation_id: str
     agent_id: str
     provider_name: str

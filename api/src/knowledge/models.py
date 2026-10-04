@@ -187,12 +187,17 @@ class CrawlCheckpoint(BaseModel):
     pending_urls: list[str] = Field(default_factory=list)
 
 
+#: Every page is fetched, chunked and embedded, so one crawl is bounded.
+MAX_CRAWL_PAGES = 1000
+MAX_CRAWL_DEPTH = 10
+
+
 class StartCrawlJobRequest(BaseModel):
     """Request model for starting a crawl job."""
     source_type: CrawlSourceType = CrawlSourceType.SITEMAP
     source_url: str
-    max_pages: int = 100
-    max_depth: int = 3
+    max_pages: int = Field(default=100, ge=1, le=MAX_CRAWL_PAGES)
+    max_depth: int = Field(default=3, ge=1, le=MAX_CRAWL_DEPTH)
     rate_limit_ms: int = 1000
     chunking_strategy: ChunkingStrategy = ChunkingStrategy.HIERARCHICAL
 

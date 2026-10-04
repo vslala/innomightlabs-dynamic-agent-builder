@@ -5,13 +5,13 @@ This module fetches web pages and extracts clean, structured content
 by converting HTML to Markdown for reliable text extraction.
 """
 
-import httpx
 from bs4 import BeautifulSoup, Tag
 from markdownify import markdownify as md
 from dataclasses import dataclass, field
 from typing import Optional
 import logging
 import re
+from src.common import outbound
 
 log = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class ContentExtractor:
         Raises:
             httpx.RequestError: If the request fails
         """
-        async with httpx.AsyncClient() as client:
+        async with outbound.async_client() as client:
             response = await client.get(
                 url,
                 timeout=self.timeout,

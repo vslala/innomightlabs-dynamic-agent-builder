@@ -16,6 +16,7 @@ import logging
 import re
 
 from src.crawler.robots import RobotsParser, RobotsTxt
+from src.common import outbound
 
 log = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class SitemapParser:
             return
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with outbound.async_client() as client:
                 response = await client.get(
                     sitemap_url,
                     timeout=self.config.timeout,
@@ -213,7 +214,7 @@ class UrlCrawler:
     async def _extract_links(self, url: str) -> list[str]:
         """Extract links from a page."""
         try:
-            async with httpx.AsyncClient() as client:
+            async with outbound.async_client() as client:
                 response = await client.get(
                     url,
                     timeout=self.config.timeout,

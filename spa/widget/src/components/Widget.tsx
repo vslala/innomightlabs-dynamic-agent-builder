@@ -1,7 +1,16 @@
 /** @jsxImportSource preact */
-import { useState, useEffect, useCallback } from 'preact/hooks';
+import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import { WidgetConfig, WidgetState, Message, Conversation, Visitor } from '../types';
-import { configureApi, fetchConfig, getOAuthUrl, createConversation, listConversations, listMessages } from '../api';
+import {
+  apiOrigin,
+  configureApi,
+  fetchConfig,
+  getOAuthUrl,
+  createConversation,
+  listConversations,
+  listMessages,
+  redeemSignInCode,
+} from '../api';
 import {
   getVisitorToken,
   setVisitorToken,
@@ -22,6 +31,7 @@ interface WidgetProps {
 }
 
 export function Widget({ config }: WidgetProps) {
+  const oauthPopup = useRef<Window | null>(null);
   const [state, setState] = useState<WidgetState>({
     isOpen: false,
     isAuthenticated: false,
@@ -139,10 +149,19 @@ export function Widget({ config }: WidgetProps) {
 
     init();
 
-    // Listen for OAuth callback messages
+    // Listen for the sign-in popup's one-time code. Only the API's own page may send it.
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'innomight-oauth-callback') {
-        handleOAuthCallback(event.data);
+      if (event.origin !== apiOrigin() || event.source !== oauthPopup.current) return;
+      if (event.data?.type === 'innomight-oauth-callback' && typeof event.data.code === 'string') {
+        redeemSignInCode(event.data.code)
+          .then(handleOAuthCallback)
+          .catch((error: unknown) =>
+            setState((prev) => ({
+              ...prev,
+              isLoading: false,
+              error: error instanceof Error ? error.message : 'Sign-in failed',
+            }))
+          );
       }
     };
 
@@ -190,16 +209,14 @@ export function Widget({ config }: WidgetProps) {
     const left = window.screenX + (window.outerWidth - width) / 2;
     const top = window.screenY + (window.outerHeight - height) / 2;
 
-    // Use backend-served callback page (works for both local and production)
-    const apiUrl = config.apiUrl || 'https://api.innomightlabs.com';
-    const redirectUri = `${apiUrl}/widget/auth/callback-page`;
-    const oauthUrl = getOAuthUrl(redirectUri);
+    const oauthUrl = getOAuthUrl();
 
     const popup = window.open(
       oauthUrl,
       'innomight-oauth',
       `width=${width},height=${height},left=${left},top=${top},popup=1`
     );
+    oauthPopup.current = popup;
 
     // Monitor popup close
     const checkClosed = setInterval(() => {

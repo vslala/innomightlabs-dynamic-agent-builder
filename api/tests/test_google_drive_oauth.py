@@ -18,6 +18,7 @@ from src.crypto import decrypt, encrypt
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from tests.mock_data import TEST_USER_EMAIL
+from tests.oauth_handoff import handoff_result
 
 
 def _create_agent_for_user(user_email: str) -> Agent:
@@ -98,8 +99,7 @@ class TestGoogleDriveOAuth:
         )
 
         assert response.status_code in {302, 307}
-        location = response.headers["location"]
-        params = parse_qs(urlparse(location).query)
+        params = handoff_result(test_client, response)
         assert params["google_drive_oauth"] == ["success"]
         assert params["agent_id"] == ["agent-1"]
         assert params["skill_id"] == ["google_drive"]
@@ -121,8 +121,7 @@ class TestGoogleDriveOAuth:
         )
 
         assert response.status_code in {302, 307}
-        location = response.headers["location"]
-        params = parse_qs(urlparse(location).query)
+        params = handoff_result(test_client, response)
         assert params["google_drive_oauth"] == ["error"]
 
     def test_force_refresh_google_drive_credentials_updates_storage(self, dynamodb_table, monkeypatch):

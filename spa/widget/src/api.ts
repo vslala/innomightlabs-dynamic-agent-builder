@@ -2,7 +2,7 @@
  * API client for widget backend communication.
  */
 
-import { Conversation, Message, SSEEvent } from './types';
+import { Conversation, Message, SSEEvent, Visitor } from './types';
 import { getVisitorToken } from './storage';
 
 const DEFAULT_API_URL = 'https://api.innomightlabs.com';
@@ -57,14 +57,46 @@ export async function fetchConfig(): Promise<{ agentName: string; agentId: strin
 }
 
 /**
- * Get the OAuth URL for visitor login.
+ * Get the OAuth URL for visitor login. The popup posts a one-time code back to this page,
+ * which must be one of the widget key's allowed origins.
  */
-export function getOAuthUrl(redirectUri: string): string {
+export function getOAuthUrl(): string {
   const params = new URLSearchParams({
     api_key: apiKey,
-    redirect_uri: redirectUri,
+    opener_origin: window.location.origin,
   });
   return `${apiUrl}/widget/auth/google?${params.toString()}`;
+}
+
+/** The origin the sign-in popup's messages come from. */
+export function apiOrigin(): string {
+  return new URL(apiUrl).origin;
+}
+
+/**
+ * Trade the popup's one-time code for a visitor token.
+ */
+export async function redeemSignInCode(code: string): Promise<{ token: string; visitor: Visitor }> {
+  const response = await fetch(`${apiUrl}/widget/auth/token`, {
+    method: 'POST',
+    headers: getHeaders(false),
+    body: JSON.stringify({ code }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Sign-in failed. Please try again.');
+  }
+
+  const data = await response.json();
+  return {
+    token: data.access_token,
+    visitor: {
+      visitorId: data.visitor.visitor_id,
+      email: data.visitor.email,
+      name: data.visitor.name ?? undefined,
+      picture: data.visitor.picture ?? undefined,
+    },
+  };
 }
 
 /**

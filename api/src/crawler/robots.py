@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 import logging
 import re
+from src.common import outbound
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ class RobotsParser:
             return self._cache[robots_url]
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with outbound.async_client() as client:
                 response = await client.get(
                     robots_url,
                     timeout=timeout,

@@ -13,6 +13,7 @@ from fastapi.security import HTTPBearer
 
 from src.agents.repository import AgentRepository
 from src.apikeys.models import (
+    A2ASecretResponse,
     AgentApiKey,
     ApiKeyResponse,
     CreateApiKeyRequest,
@@ -225,3 +226,25 @@ async def delete_api_key(
 
     api_key_repo.delete_by_id(agent_id, key_id)
     log.info(f"Deleted API key {key_id} for agent {agent_id}")
+
+
+@router.post("/{key_id}/a2a-secret", response_model=A2ASecretResponse, status_code=status.HTTP_201_CREATED)
+async def issue_a2a_secret(
+    request: Request,
+    agent_id: str,
+    key_id: str,
+    api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+) -> A2ASecretResponse:
+    """Issue (or rotate) the key's A2A client secret. The public key is embedded in web pages, so it
+    is never an A2A credential."""
+    user_email = get_user_email(request)
+    validate_agent_ownership(agent_id, user_email, agent_repo)
+
+    api_key = api_key_repo.find_by_id(agent_id, key_id)
+    if not api_key:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+    secret = api_key_repo.issue_a2a_secret(api_key)
+    log.info(f"Issued A2A secret for API key {key_id} on agent {agent_id}")
+    return A2ASecretResponse(client_id=api_key.key_id, client_secret=secret)

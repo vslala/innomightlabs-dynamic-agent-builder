@@ -4,6 +4,7 @@ import base64
 from typing import Any
 
 import httpx
+from src.common import outbound
 
 
 def _normalize_site_url(raw: str) -> str:
@@ -194,7 +195,7 @@ async def search(arguments: dict[str, Any], config: dict[str, Any], context: dic
 
     headers = _build_headers(config)
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with outbound.async_client(timeout=20.0, follow_redirects=False) as client:
         if author_input:
             author_id = await _resolve_author_id(client, base_url, headers, author_input)
             if author_id is None:

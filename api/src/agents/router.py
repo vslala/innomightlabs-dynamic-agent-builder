@@ -32,6 +32,7 @@ from src.agents.turns.transcript import TurnTranscript
 from src.a2a.models import A2ATaskListResponse, A2ATaskResponse
 from src.a2a.repository import A2ATaskRepository
 from src.apikeys.repository import ApiKeyRepository
+from src.public_api.keys import SecretKeyRepository
 from src.common.sse import sse_response
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
@@ -42,6 +43,8 @@ from src.form_options import FormOptionsContext, hydrate_form_options
 from src.llm.events import SSEEvent, SSEEventType
 from src.messages.models import Attachment, MAX_FILES, MAX_TOTAL_SIZE
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
+from src.skills.models import ActorKind
+from src.exceptions import GENERIC_ERROR_MESSAGE
 
 log = logging.getLogger(__name__)
 
@@ -385,14 +388,15 @@ async def delete_agent(
     agent_id: str,
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
 ) -> None:
-    """
-    Delete an agent by ID.
-
-    This endpoint is idempotent - returns success even if agent doesn't exist.
-    """
+    """Delete an agent, its keys and its media."""
     user_email: str = request.state.user_email
+    # Agent ids are public (A2A cards, embeds), so nothing is deleted until we know the caller owns it.
+    if not repo.find_agent_by_id(agent_id, user_email):
+        raise HTTPException(status_code=404, detail="Agent not found")
     DreamService().delete_schedule(agent_id, user_email, user_email)
     repo.delete_by_id(agent_id, user_email)
+    SecretKeyRepository().delete_all_by_agent(agent_id)
+    ApiKeyRepository().delete_all_by_agent(agent_id)
     try:
         ConversationMediaStorage().delete_agent_prefix(agent_id)
     except Exception:
@@ -507,6 +511,7 @@ async def send_message(
         owner_email=user_email,
         actor_email=user_email,
         actor_id=user_email,
+        actor_kind=ActorKind.OWNER,
     )
     transcript = cast(TurnTranscript, live_transcript(turn.turn_id))
 
@@ -608,7 +613,7 @@ async def generate_image_stream(
             yield SSEEvent(event_type=SSEEventType.ERROR, content=str(e)).to_sse()
         except Exception as e:
             log.error("Error in generate_image_stream: %s", e, exc_info=True)
-            yield SSEEvent(event_type=SSEEventType.ERROR, content=str(e)).to_sse()
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=GENERIC_ERROR_MESSAGE).to_sse()
 
     return StreamingResponse(
         event_stream(),

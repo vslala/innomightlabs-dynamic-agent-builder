@@ -1,5 +1,6 @@
 id: aws_cli
 namespace: infrastructure.aws
+owner_only: true
 name: AWS CLI
 description: Run approved read-only AWS CLI commands through the private infrastructure CLI runner.
 system_prompt: |

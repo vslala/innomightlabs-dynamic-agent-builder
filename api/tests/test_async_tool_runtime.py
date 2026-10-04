@@ -23,6 +23,7 @@ from src.tools.native.handlers import NativeToolHandler
 
 from tests.mock_data import TEST_USER_EMAIL
 from tests.test_skills import _create_agent_for_user
+from src.skills.models import ActorKind
 
 
 @dataclass
@@ -112,6 +113,7 @@ def test_tool_job_repository_persists_status_and_ttl(dynamodb_table):
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
+            actor_kind=ActorKind.OWNER,
             agent_id="agent-1",
             conversation_id="conversation-1",
             tool_name="execute_skill_action",
@@ -143,6 +145,7 @@ def test_tool_job_service_fails_stale_running_job(dynamodb_table):
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
+            actor_kind=ActorKind.OWNER,
             agent_id="agent-1",
             conversation_id="conversation-1",
             tool_name="execute_skill_action",
@@ -208,6 +211,7 @@ def test_skill_runtime_starts_async_job_without_storing_decrypted_config(
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
+            actor_kind=ActorKind.OWNER,
             conversation_id="conv-test",
         )
     )
@@ -392,6 +396,7 @@ async def test_start_skill_action_job_keeps_a_strong_reference_while_running():
         owner_email="owner@example.com",
         actor_email="owner@example.com",
         actor_id="owner@example.com",
+        actor_kind=ActorKind.OWNER,
         tool_name="execute_skill_action",
     )
 

@@ -65,7 +65,11 @@ export function App({ bootstrap, config }: AppProps) {
     [publicKey]
   );
 
-  const signOut = useCallback(() => adoptSession(null), [adoptSession]);
+  const signOut = useCallback(() => {
+    const refreshToken = sessionRef.current?.refreshToken;
+    if (refreshToken) void WidgetApi.revoke(publicKey, refreshToken).catch(() => undefined);
+    adoptSession(null);
+  }, [adoptSession, publicKey]);
 
   const api = useMemo(
     () =>

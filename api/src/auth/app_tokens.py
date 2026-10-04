@@ -15,7 +15,7 @@ from botocore.exceptions import ClientError
 from ..config import settings
 from ..db import get_dynamodb_resource
 from ..users import User
-from .jwt_utils import create_access_token
+from .jwt_utils import app_audience, create_access_token
 
 LOGIN_CODE_TTL_SECONDS = 60
 
@@ -107,7 +107,7 @@ def issue_tokens(user: User, app: str) -> AppTokens:
     """A fresh pair; any earlier refresh token for this user and app stops working."""
     refresh_token = secrets.token_urlsafe(32)
     repository.put_refresh_token(user.email, app, _hash(refresh_token), _refresh_expiry())
-    return _tokens(user, refresh_token)
+    return _tokens(user, app, refresh_token)
 
 
 def refresh_tokens(user: User, app: str, refresh_token: str) -> Optional[AppTokens]:
@@ -120,7 +120,7 @@ def refresh_tokens(user: User, app: str, refresh_token: str) -> Optional[AppToke
     rotated = secrets.token_urlsafe(32)
     if not repository.replace_refresh_token(user.email, app, str(stored["token_hash"]), _hash(rotated), _refresh_expiry()):
         return None
-    return _tokens(user, rotated)
+    return _tokens(user, app, rotated)
 
 
 def revoke_tokens(email: str, app: str) -> None:
@@ -131,6 +131,7 @@ def _refresh_expiry() -> int:
     return int(time.time()) + settings.auth_refresh_token_days * 24 * 3600
 
 
-def _tokens(user: User, refresh_token: str) -> AppTokens:
+def _tokens(user: User, app: str, refresh_token: str) -> AppTokens:
     lifetime = timedelta(minutes=settings.auth_app_access_token_minutes)
-    return AppTokens(create_access_token(user, lifetime), int(lifetime.total_seconds()), refresh_token)
+    access_token = create_access_token(user, lifetime, audience=app_audience(app))
+    return AppTokens(access_token, int(lifetime.total_seconds()), refresh_token)

@@ -14,6 +14,7 @@ from src.agents.models import Agent
 from src.agents.provider_session import ProviderNotConfigured, open_provider_session
 from src.conversations.models import Conversation
 from src.llm.events import SSEEvent, SSEEventType
+from src.skills.models import ActorKind
 
 
 def _agent(provider: str = "Anthropic", thinking: str | None = None) -> Agent:
@@ -121,6 +122,7 @@ def _turn_args():
         "owner_email": "owner@example.com",
         "actor_email": "owner@example.com",
         "actor_id": "owner@example.com",
+        "actor_kind": ActorKind.OWNER,
     }
 
 

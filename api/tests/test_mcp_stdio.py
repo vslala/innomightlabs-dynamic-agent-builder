@@ -27,7 +27,7 @@ from tests.test_mcp_connectors import FakeAgentRepository, FakeMCPRepository, ma
 
 OWNER = "owner@example.com"
 SIDECAR = "http://sidecar.internal:8080"
-RETURN_TO = "https://app.example/dashboard/connectors"
+RETURN_TO = "http://localhost:5173/dashboard/connectors"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 

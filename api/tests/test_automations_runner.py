@@ -19,6 +19,7 @@ from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from tests.mock_data import TEST_USER_EMAIL
+from src.skills.models import ActorKind
 
 
 class SuccessfulArchitecture(AgentArchitecture):
@@ -30,6 +31,7 @@ class SuccessfulArchitecture(AgentArchitecture):
         owner_email: str,
         actor_email: str,
         actor_id: str,
+        actor_kind: ActorKind,
         attachments=None,
         api_key_id=None,
     ) -> AsyncIterator[SSEEvent]:
@@ -60,6 +62,7 @@ class FailingArchitecture(AgentArchitecture):
         owner_email: str,
         actor_email: str,
         actor_id: str,
+        actor_kind: ActorKind,
         attachments=None,
         api_key_id=None,
     ) -> AsyncIterator[SSEEvent]:

@@ -84,8 +84,8 @@ export function AgentToAgent() {
           "agentApiKey": {
             "httpAuthSecurityScheme": {
               "scheme": "Bearer",
-              "bearerFormat": "Opaque API key",
-              "description": "Agent API key supplied as a Bearer credential."
+              "bearerFormat": "Opaque A2A client secret",
+              "description": "The agent's A2A client secret (a2a_live_...) supplied as a Bearer credential."
             }
           }
         },
@@ -159,8 +159,8 @@ export function AgentToAgent() {
     "agentApiKey": {
       "httpAuthSecurityScheme": {
         "scheme": "Bearer",
-        "bearerFormat": "Opaque API key",
-        "description": "Agent API key supplied as a Bearer credential."
+        "bearerFormat": "Opaque A2A client secret",
+        "description": "The agent's A2A client secret (a2a_live_...) supplied as a Bearer credential."
       }
     }
   },
@@ -233,18 +233,25 @@ Content-Type: application/json
       <section id="authentication">
         <h2>Authentication</h2>
         <p>
-          Discovery is public for agents that have A2A sharing enabled. Invocation requires an
-          active API key for the target agent.
+          Discovery is public for agents that have A2A sharing enabled. Invocation requires the
+          A2A client secret of one of the target agent's API keys. Generate it from the agent's API
+          Keys page; it is shown once. The key's public <code>pk_live_</code> value is embedded in
+          web pages and is never accepted for A2A.
         </p>
 
         <div className={styles.codeExample}>
           <div className={styles.codeHeader}>Authorization Header</div>
-          <pre>{`Authorization: Bearer <agent API key>`}</pre>
+          <pre>{`Authorization: Bearer <a2a_live_ client secret>`}</pre>
         </div>
 
+        <p>
+          For OAuth 2.0 client credentials, use the API key's id as <code>client_id</code> and the A2A
+          client secret as <code>client_secret</code>.
+        </p>
+
         <div className={styles.warningBox}>
-          Never publish API keys in Agent Cards, registry responses, notebooks, frontend code, or
-          public documentation examples.
+          Never publish A2A client secrets in Agent Cards, registry responses, notebooks, frontend
+          code, or public documentation examples.
         </div>
       </section>
     </DocsLayout>

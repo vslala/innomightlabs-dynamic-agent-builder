@@ -6,6 +6,7 @@ from src.agents.architectures.krishna_mini import KrishnaMiniArchitecture
 from src.agents.models import Agent
 from src.conversations.models import Conversation
 from src.memory.snapshot import CoreMemorySnapshot
+from src.skills.models import ActorKind
 
 
 class FakeMessageRepository:
@@ -32,7 +33,7 @@ EMPTY_MEMORY = CoreMemorySnapshot(block_defs=[], blocks={})
 
 
 class FakeSkillRuntime:
-    def list_enabled(self, agent_id):
+    def list_usable(self, agent_id, actor_kind):
         return []
 
 
@@ -86,7 +87,7 @@ async def test_krishna_memgpt_forwards_the_agents_thinking_choice_to_the_provide
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
-    architecture._get_linked_kb_ids = lambda agent_id: []
+    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
@@ -102,6 +103,7 @@ async def test_krishna_memgpt_forwards_the_agents_thinking_choice_to_the_provide
             owner_email="owner@example.com",
             actor_email="owner@example.com",
             actor_id="owner@example.com",
+            actor_kind=ActorKind.OWNER,
             attachments=[],
         )
     ]
@@ -129,7 +131,7 @@ async def test_krishna_memgpt_sends_no_think_key_when_the_agent_has_no_preferenc
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
-    architecture._get_linked_kb_ids = lambda agent_id: []
+    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
@@ -143,6 +145,7 @@ async def test_krishna_memgpt_sends_no_think_key_when_the_agent_has_no_preferenc
         owner_email="owner@example.com",
         actor_email="owner@example.com",
         actor_id="owner@example.com",
+        actor_kind=ActorKind.OWNER,
         attachments=[],
     ):
         pass
@@ -176,6 +179,7 @@ async def test_krishna_mini_forwards_the_agents_thinking_choice_to_the_provider(
         owner_email="owner@example.com",
         actor_email="owner@example.com",
         actor_id="owner@example.com",
+        actor_kind=ActorKind.OWNER,
     ):
         pass
 

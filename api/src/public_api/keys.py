@@ -224,6 +224,10 @@ class SecretKeyRepository:
         self.table.delete_item(Key=self._key(agent_id, key_id))
         log.info(f"Deleted secret key {key_id} for agent {agent_id}")
 
+    def delete_all_by_agent(self, agent_id: str) -> None:
+        for key in self.find_all_by_agent(agent_id):
+            self.delete_by_id(agent_id, key.key_id)
+
     @staticmethod
     def _key(agent_id: str, key_id: str) -> dict[str, str]:
         return {"pk": f"Agent#{agent_id}", "sk": f"SecretKey#{key_id}"}

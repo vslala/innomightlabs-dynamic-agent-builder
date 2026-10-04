@@ -98,6 +98,7 @@ export class AuthService implements vscode.UriHandler {
 	public async signOut(showMessage = true): Promise<void> {
 		this.isAuthenticating = false;
 		this.clearAuthenticationTimeout();
+		await this.revokeRefreshToken();
 		await this.context.secrets.delete(VISITOR_TOKEN_SECRET_KEY);
 		await this.context.secrets.delete(VISITOR_REFRESH_TOKEN_SECRET_KEY);
 		await this.context.globalState.update(VISITOR_INFO_STORAGE_KEY, undefined);
@@ -131,29 +132,23 @@ export class AuthService implements vscode.UriHandler {
 			return;
 		}
 
-		const token = params.get('token');
-		const refreshToken = params.get('refresh_token');
-		const visitorId = params.get('visitor_id');
-		const email = params.get('email');
+		// The sign-in hands over a one-time code; the session itself is fetched with our key.
+		const code = params.get('code');
+		const payload = code ? await this.redeemSignInCode(code) : null;
+		const token = payload ? this.extractAccessToken(payload) : null;
+		const visitor = payload ? this.extractVisitor(payload) : null;
 
-		if (!token || !visitorId || !email) {
+		if (!payload || !token || !visitor) {
 			this.isAuthenticating = false;
 			this.clearAuthenticationTimeout();
 			await this.emitAuthState();
-			void vscode.window.showErrorMessage('Google sign-in did not return the expected token data.');
+			void vscode.window.showErrorMessage('Google sign-in did not complete. Please try again.');
 			return;
 		}
 
-		const visitor: VisitorInfo = {
-			visitorId,
-			email,
-			name: params.get('name') || email.split('@')[0],
-			picture: params.get('picture'),
-		};
-
 		await this.context.secrets.store(VISITOR_TOKEN_SECRET_KEY, token);
-		if (refreshToken) {
-			await this.context.secrets.store(VISITOR_REFRESH_TOKEN_SECRET_KEY, refreshToken);
+		if (typeof payload.refresh_token === 'string' && payload.refresh_token.length > 0) {
+			await this.context.secrets.store(VISITOR_REFRESH_TOKEN_SECRET_KEY, payload.refresh_token);
 		}
 		await this.context.globalState.update(VISITOR_INFO_STORAGE_KEY, visitor);
 
@@ -161,6 +156,40 @@ export class AuthService implements vscode.UriHandler {
 		this.clearAuthenticationTimeout();
 		await this.emitAuthState();
 		void vscode.window.showInformationMessage(`Signed in as ${visitor.email}.`);
+	}
+
+	private async revokeRefreshToken(): Promise<void> {
+		const refreshToken = await this.context.secrets.get(VISITOR_REFRESH_TOKEN_SECRET_KEY);
+		const { baseUrl, apiKey } = await this.configService.getConfig();
+		if (!refreshToken || !baseUrl || !apiKey) {
+			return;
+		}
+		try {
+			await fetch(`${baseUrl}/widget/auth/revoke`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+				body: JSON.stringify({ refresh_token: refreshToken }),
+			});
+		} catch {
+			// Signing out locally still works; the token expires on its own.
+		}
+	}
+
+	private async redeemSignInCode(code: string): Promise<WidgetRefreshResponse | null> {
+		const { baseUrl, apiKey } = await this.configService.getConfig();
+		if (!baseUrl || !apiKey) {
+			return null;
+		}
+		try {
+			const response = await fetch(`${baseUrl}/widget/auth/token`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+				body: JSON.stringify({ code }),
+			});
+			return response.ok ? ((await response.json()) as WidgetRefreshResponse) : null;
+		} catch {
+			return null;
+		}
 	}
 
 	private isTokenValid(token: string): boolean {

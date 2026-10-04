@@ -4,7 +4,7 @@ Knowledge Base and Crawl Job form schemas.
 
 from src.form_models import Form, FormInput, FormInputType, SelectOption
 from src.messages.models import ALLOWED_EXTENSIONS as CONTENT_UPLOAD_ALLOWED_EXTENSIONS
-from src.knowledge.models import KnowledgeBase
+from src.knowledge.models import MAX_CRAWL_DEPTH, MAX_CRAWL_PAGES, KnowledgeBase
 
 
 # Source type options
@@ -58,7 +58,7 @@ def get_crawl_config_form(kb_id: str) -> Form:
                 attr={
                     "type": "number",
                     "min": "1",
-                    "max": "1000",
+                    "max": str(MAX_CRAWL_PAGES),
                 },
             ),
             FormInput(
@@ -69,7 +69,7 @@ def get_crawl_config_form(kb_id: str) -> Form:
                 attr={
                     "type": "number",
                     "min": "1",
-                    "max": "10",
+                    "max": str(MAX_CRAWL_DEPTH),
                 },
             ),
             FormInput(

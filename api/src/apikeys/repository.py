@@ -9,7 +9,7 @@ from typing import Optional
 from ..db import get_dynamodb_resource
 from boto3.dynamodb.conditions import Key
 
-from src.apikeys.models import AgentApiKey
+from src.apikeys.models import AgentApiKey, generate_a2a_secret, hash_a2a_secret
 from src.config import settings
 
 log = logging.getLogger(__name__)
@@ -100,6 +100,30 @@ class ApiKeyRepository:
             return AgentApiKey.from_dynamo_item(items[0])
         return None
 
+    def issue_a2a_secret(self, api_key: AgentApiKey) -> str:
+        """A new A2A client secret for the key; any earlier one stops working. Returns the plaintext, once."""
+        secret = generate_a2a_secret()
+        previous = api_key.a2a_secret_hash
+        api_key.a2a_secret_hash = hash_a2a_secret(secret)
+        self.table.put_item(Item={
+            "pk": f"A2ASecret#{api_key.a2a_secret_hash}", "sk": "A2ASecret#Metadata",
+            "agent_id": api_key.agent_id, "key_id": api_key.key_id,
+        })
+        self.save(api_key)
+        if previous:
+            self._forget_a2a_secret(previous)
+        return secret
+
+    def find_by_a2a_secret(self, secret: str) -> Optional[AgentApiKey]:
+        secret_hash = hash_a2a_secret(secret)
+        lookup = self.table.get_item(Key={"pk": f"A2ASecret#{secret_hash}", "sk": "A2ASecret#Metadata"}).get("Item")
+        api_key = self.find_by_id(lookup["agent_id"], lookup["key_id"]) if lookup else None
+        # A rotated secret's lookup item can outlive it briefly; the key itself is the truth.
+        return api_key if api_key and api_key.a2a_secret_hash == secret_hash else None
+
+    def _forget_a2a_secret(self, secret_hash: str) -> None:
+        self.table.delete_item(Key={"pk": f"A2ASecret#{secret_hash}", "sk": "A2ASecret#Metadata"})
+
     def find_all_by_agent(self, agent_id: str) -> list[AgentApiKey]:
         """
         Find all API keys for a specific agent.
@@ -135,12 +159,15 @@ class ApiKeyRepository:
             True if deleted successfully, False otherwise
         """
         try:
+            existing = self.find_by_id(agent_id, key_id)
             self.table.delete_item(
                 Key={
                     "pk": f"Agent#{agent_id}",
                     "sk": f"ApiKey#{key_id}",
                 }
             )
+            if existing and existing.a2a_secret_hash:
+                self._forget_a2a_secret(existing.a2a_secret_hash)
             log.info(f"Deleted API key {key_id} for agent {agent_id}")
             return True
         except Exception as e:

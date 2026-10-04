@@ -52,6 +52,7 @@ from src.knowledge.models import (
     ContentUpload,
     AgentKnowledgeBase,
 )
+from src.common.pagination import decode_cursor
 
 log = logging.getLogger(__name__)
 
@@ -608,11 +609,7 @@ class ContentUploadRepository:
         }
 
         if cursor:
-            try:
-                cursor_data = json.loads(base64.b64decode(cursor).decode("utf-8"))
-                query_params["ExclusiveStartKey"] = cursor_data
-            except Exception:
-                log.warning(f"Invalid cursor: {cursor}")
+            query_params["ExclusiveStartKey"] = decode_cursor(cursor)
 
         response = self.table.query(**query_params)
 

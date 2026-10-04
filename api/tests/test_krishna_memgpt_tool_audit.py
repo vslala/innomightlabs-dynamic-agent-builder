@@ -12,6 +12,7 @@ from src.agents.tool_audit import ToolCallAuditMessage
 from src.conversations.models import Conversation
 from src.memory.snapshot import CoreMemorySnapshot
 from src.llm.events import SSEEvent, SSEEventType
+from src.skills.models import ActorKind
 
 
 class FakeMessageRepository:
@@ -39,7 +40,7 @@ class FakeProviderSettingsRepository:
 
 
 class FakeSkillRuntime:
-    def list_enabled(self, agent_id):
+    def list_usable(self, agent_id, actor_kind):
         return []
 
 
@@ -170,7 +171,7 @@ async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
     architecture.message_repo = message_repo
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
     architecture.skill_runtime = FakeSkillRuntime()
-    architecture._get_linked_kb_ids = lambda agent_id: []
+    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
@@ -196,6 +197,7 @@ async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
             owner_email="owner@example.com",
             actor_email="owner@example.com",
             actor_id="owner@example.com",
+            actor_kind=ActorKind.OWNER,
             attachments=[],
         )
     ]
@@ -250,7 +252,7 @@ async def test_krishna_memgpt_unwraps_call_mcp_tool_for_display(monkeypatch):
     architecture.message_repo = FakeMessageRepository()
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
     architecture.skill_runtime = FakeSkillRuntime()
-    architecture._get_linked_kb_ids = lambda agent_id: []
+    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
@@ -276,6 +278,7 @@ async def test_krishna_memgpt_unwraps_call_mcp_tool_for_display(monkeypatch):
             owner_email="owner@example.com",
             actor_email="owner@example.com",
             actor_id="owner@example.com",
+            actor_kind=ActorKind.OWNER,
             attachments=[],
         )
     ]
@@ -318,7 +321,7 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
-    architecture._get_linked_kb_ids = lambda agent_id: []
+    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
 
     prompt_calls = []
@@ -351,6 +354,7 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
             owner_email="owner@example.com",
             actor_email="owner@example.com",
             actor_id="owner@example.com",
+            actor_kind=ActorKind.OWNER,
             attachments=[],
         )
     ]
@@ -380,7 +384,7 @@ async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_fallback(monkey
     architecture.message_repo = message_repo
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
     architecture.skill_runtime = FakeSkillRuntime()
-    architecture._get_linked_kb_ids = lambda agent_id: []
+    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
@@ -406,6 +410,7 @@ async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_fallback(monkey
             owner_email="owner@example.com",
             actor_email="owner@example.com",
             actor_id="owner@example.com",
+            actor_kind=ActorKind.OWNER,
             attachments=[],
         )
     ]
@@ -453,7 +458,7 @@ async def test_krishna_memgpt_attaches_canvas_artifact_to_assistant_message(monk
     architecture.message_repo = message_repo
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
     architecture.skill_runtime = FakeSkillRuntime()
-    architecture._get_linked_kb_ids = lambda agent_id: []
+    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
@@ -479,6 +484,7 @@ async def test_krishna_memgpt_attaches_canvas_artifact_to_assistant_message(monk
             owner_email="owner@example.com",
             actor_email="owner@example.com",
             actor_id="owner@example.com",
+            actor_kind=ActorKind.OWNER,
             attachments=[],
         )
     ]
@@ -506,6 +512,7 @@ def test_krishna_memgpt_builds_tool_definitions_from_command_registry():
         owner_email="owner@example.com",
         actor_email="owner@example.com",
         actor_id="owner@example.com",
+        actor_kind=ActorKind.OWNER,
         conversation_id="conversation-1",
         agent_id="agent-1",
         provider_name="Bedrock",

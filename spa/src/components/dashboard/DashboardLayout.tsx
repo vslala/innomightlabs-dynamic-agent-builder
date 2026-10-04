@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { OAuthReturn } from "./OAuthReturn";
 import { cn } from "../../lib/utils";
 import { authService, type UserInfo } from "../../services/auth";
 import "./DashboardLayout.css";
@@ -109,7 +110,9 @@ export function DashboardLayout() {
           )}
         >
           <div className="dashboard-layout__content">
-            <Outlet context={{ user }} />
+            <OAuthReturn>
+              <Outlet context={{ user }} />
+            </OAuthReturn>
           </div>
         </main>
       </div>

@@ -14,10 +14,12 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from src.agents.architectures import get_agent_architecture
+from src.agents.architectures.base import turn_error_message
 from src.agents.turns.models import ConversationTurn, ConversationTurnStatus
 from src.agents.turns.repository import ConversationTurnRepository
 from src.agents.turns.transcript import TurnTranscript, forget_transcript, live_transcript, open_transcript
 from src.config import settings
+from src.skills.models import ActorKind
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 
@@ -42,6 +44,7 @@ class TurnRequest:
     owner_email: str
     actor_email: str
     actor_id: str
+    actor_kind: ActorKind
     api_key_id: str | None = None
 
 
@@ -54,6 +57,7 @@ def start_turn(
     owner_email: str,
     actor_email: str,
     actor_id: str,
+    actor_kind: ActorKind,
     api_key_id: str | None = None,
 ) -> ConversationTurn:
     now = datetime.now(timezone.utc)
@@ -80,6 +84,7 @@ def start_turn(
                 owner_email=owner_email,
                 actor_email=actor_email,
                 actor_id=actor_id,
+                actor_kind=actor_kind,
                 api_key_id=api_key_id,
             ),
         )
@@ -117,6 +122,7 @@ async def _drive_turn(
             owner_email=request.owner_email,
             actor_email=request.actor_email,
             actor_id=request.actor_id,
+            actor_kind=request.actor_kind,
             attachments=request.attachments,
             api_key_id=request.api_key_id,
         ):
@@ -139,7 +145,7 @@ async def _drive_turn(
         raise
     except Exception as exc:
         log.error("Chat turn %s failed: %s", turn.turn_id, exc, exc_info=True)
-        transcript.record(SSEEvent(event_type=SSEEventType.ERROR, content=str(exc)))
+        transcript.record(SSEEvent(event_type=SSEEventType.ERROR, content=turn_error_message(exc, request.actor_kind)))
         turn_repo.finish(turn, ConversationTurnStatus.FAILED, error=str(exc))
     finally:
         # The user sent a message either way, so the conversation counts as

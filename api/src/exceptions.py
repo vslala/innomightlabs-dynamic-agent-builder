@@ -5,13 +5,33 @@ Provides consistent JSON error responses and logging for all exceptions.
 """
 
 import logging
-import traceback
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from src.common.pagination import InvalidCursor
+from src.logging.request_id import get_request_id
+
 log = logging.getLogger(__name__)
+
+GENERIC_ERROR_MESSAGE = "Something went wrong on our side. Please try again."
+
+
+class UserFacingError(Exception):
+    """An error whose message is written for the person using the app and safe to show anyone.
+
+    Anything else that escapes is reported as GENERIC_ERROR_MESSAGE: exception text from
+    DynamoDB, providers and upstream APIs stays in the logs.
+    """
+
+
+def client_error_message(exc: Exception) -> str:
+    return str(exc) if isinstance(exc, UserFacingError) else GENERIC_ERROR_MESSAGE
+
+
+def _request_id(request: Request) -> str | None:
+    return getattr(request.state, "request_id", None) or get_request_id()
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -60,24 +80,20 @@ def register_exception_handlers(app: FastAPI) -> None:
             },
         )
 
+    @app.exception_handler(InvalidCursor)
+    async def invalid_cursor_handler(request: Request, exc: InvalidCursor) -> JSONResponse:
+        return JSONResponse(status_code=400, content={"detail": str(exc), "path": request.url.path})
+
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        """
-        Global exception handler that:
-        1. Logs the full stack trace for debugging
-        2. Returns a clean JSON error response to the client
-        """
+        """Log everything; tell the client only that it failed, and which request to look up."""
+        request_id = _request_id(request)
         log.error(
-            f"Unhandled exception on {request.method} {request.url.path}: {exc}\n"
-            f"Stack trace:\n{traceback.format_exc()}"
+            "Unhandled exception on %s %s (request %s): %s",
+            request.method, request.url.path, request_id, exc, exc_info=exc,
         )
-
         return JSONResponse(
             status_code=500,
-            content={
-                "detail": "Internal server error",
-                "error_type": exc.__class__.__name__,
-                "message": str(exc),
-                "path": request.url.path,
-            },
+            content={"detail": GENERIC_ERROR_MESSAGE, "request_id": request_id, "path": request.url.path},
+            headers={"X-Request-Id": request_id} if request_id else None,
         )

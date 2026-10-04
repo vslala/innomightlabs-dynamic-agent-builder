@@ -7,6 +7,7 @@ from src.agents.architectures import get_agent_architecture
 from src.agents.repository import AgentRepository
 from src.conversations.models import Conversation
 from src.messages.repositories import get_message_repository
+from src.skills.models import ActorKind
 
 
 async def generate_report_html_with_agent(
@@ -42,6 +43,8 @@ async def generate_report_html_with_agent(
         owner_email=owner_email,
         actor_email=actor_email,
         actor_id=actor_id,
+        # A krishna-mini report agent has no tools, so whoever asked, it can reach nothing.
+        actor_kind=ActorKind.VISITOR,
     )
     if not result.success:
         raise ValueError(result.error or "Report generation failed")

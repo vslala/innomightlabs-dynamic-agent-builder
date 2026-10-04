@@ -23,6 +23,7 @@ from src.agents.tool_runtime import (
 from src.agents.tool_runtime.mcp import MCP_TOOL_SPECS
 from src.agents.tool_runtime.skills import SKILL_TOOL_SPECS
 from src.tools.native.specs import NATIVE_TOOL_SPECS
+from src.skills.models import ActorKind
 
 
 class FakeSkillRuntime:
@@ -66,6 +67,7 @@ def _state() -> AgentTurnState:
         owner_email="owner@example.com",
         actor_email="actor@example.com",
         actor_id="actor-1",
+        actor_kind=ActorKind.OWNER,
         conversation_id="conversation-1",
         agent_id="agent-1",
         provider_name="OpenAI",

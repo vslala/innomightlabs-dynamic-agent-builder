@@ -15,6 +15,7 @@ from src.settings.repository import ProviderSettingsRepository
 from src.skills.lead_capture.forms import parse_custom_inputs
 from src.skills.lifecycle import SkillLifecycleRunner
 from src.skills.service import SkillRuntimeService, SkillService
+from src.skills.models import ActorKind
 
 
 def _create_agent_for_user(user_email: str) -> Agent:
@@ -420,6 +421,7 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
+                actor_kind=ActorKind.OWNER,
                 conversation_id="conv-test",
             )
         )
@@ -440,6 +442,7 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
+            actor_kind=ActorKind.OWNER,
             conversation_id="conv-test",
         )
     )
@@ -482,6 +485,7 @@ def test_skill_runtime_passes_user_message_id_to_actions(test_client, auth_heade
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
+            actor_kind=ActorKind.OWNER,
             conversation_id="conv-test",
             user_message_id="user-message-1",
         )
@@ -597,6 +601,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
             owner_email,
             actor_email,
             actor_id,
+            actor_kind,
             attachments=None,
         ):
             captured.update(
@@ -640,6 +645,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
+            actor_kind=ActorKind.OWNER,
             conversation_id=conversation.conversation_id,
         )
     )
@@ -671,6 +677,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
+                actor_kind=ActorKind.OWNER,
                 conversation_id=conversation.conversation_id,
             )
         )
@@ -747,6 +754,7 @@ def test_scheduler_skill_creates_conversation_bound_schedule(test_client, auth_h
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
+            actor_kind=ActorKind.OWNER,
             conversation_id=conversation.conversation_id,
         )
     )
@@ -806,6 +814,7 @@ def test_scheduler_skill_without_schedule_id_updates_existing_conversation_sched
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
+                actor_kind=ActorKind.OWNER,
                 conversation_id=conversation.conversation_id,
             )
         )
@@ -1000,6 +1009,7 @@ def test_repeatable_skill_base_id_requires_unambiguous_instance(test_client, aut
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
+                actor_kind=ActorKind.OWNER,
                 conversation_id="conv-test",
             )
         )
@@ -1111,6 +1121,7 @@ def test_send_email_uses_configured_recipients_only(
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
+            actor_kind=ActorKind.OWNER,
             conversation_id="conversation-1",
         )
     )

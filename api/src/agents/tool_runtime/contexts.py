@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.agents.runtime_state import AgentTurnState
+from src.skills.models import ActorKind
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class SkillToolContext:
     owner_email: str
     actor_email: str
     actor_id: str
+    actor_kind: ActorKind
     conversation_id: str
     user_message_id: str | None = None
 
@@ -44,6 +46,7 @@ class SkillToolContext:
             owner_email=state.owner_email,
             actor_email=state.actor_email,
             actor_id=state.actor_id,
+            actor_kind=state.actor_kind,
             conversation_id=state.conversation_id,
             user_message_id=state.user_message_id,
         )
@@ -53,7 +56,8 @@ class SkillToolContext:
 class MCPToolContext:
     owner_email: str
     agent_id: str
+    actor_kind: ActorKind
 
     @classmethod
     def of(cls, state: AgentTurnState) -> "MCPToolContext":
-        return cls(owner_email=state.owner_email, agent_id=state.agent_id)
+        return cls(owner_email=state.owner_email, agent_id=state.agent_id, actor_kind=state.actor_kind)

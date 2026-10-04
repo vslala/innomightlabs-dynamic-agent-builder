@@ -72,12 +72,7 @@ class SkillRegistry:
         if not loaded:
             return set()
 
-        fields: set[str] = set()
-        for input_def in loaded.manifest.form:
-            attr = input_def.attr or {}
-            if attr.get("secret", "false").lower() == "true":
-                fields.add(input_def.name)
-        return fields
+        return {input_def.name for input_def in loaded.manifest.form if is_secret_input(input_def)}
 
     def validate_config(self, skill_id: str, config: dict[str, Any]) -> dict[str, Any]:
         loaded = self.get(skill_id)
@@ -184,6 +179,15 @@ class SkillRegistry:
         if not callable(func):
             raise ValueError(f"Invalid action handler: {handler}")
         return cast(Callable[..., Any], func)
+
+
+def is_secret_input(input_def: form_models.FormInput) -> bool:
+    """Stored encrypted and never shown to the model. A password input is a secret even if the manifest forgets to say so."""
+    attr = input_def.attr or {}
+    return (
+        input_def.input_type == form_models.FormInputType.PASSWORD
+        or attr.get("secret", "false").lower() == "true"
+    )
 
 
 def _schema_hint(action: SkillActionManifest) -> str:

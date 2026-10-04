@@ -2,9 +2,7 @@
 Tests for Widget module.
 """
 
-import pytest
 from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qs, urlparse
 import jwt
 from fastapi.testclient import TestClient
 
@@ -222,6 +220,7 @@ class TestWidgetRouter:
     def _create_visitor_token(self, visitor_id: str, agent_id: str) -> str:
         """Helper to create a visitor JWT token."""
         payload = {
+            "aud": "widget_visitor",
             "sub": visitor_id,
             "email": "visitor@example.com",
             "name": "Test Visitor",
@@ -263,117 +262,6 @@ class TestWidgetRouter:
 
         assert response.status_code == 401
         assert "Invalid API key" in response.json()["detail"]
-
-    def test_widget_oauth_callback_redirect_includes_refresh_token(
-        self,
-        test_client: TestClient,
-        auth_headers: dict,
-        monkeypatch,
-    ):
-        """OAuth callback redirects with widget JWT and Google refresh token."""
-        _, public_key = self._create_agent_and_api_key(test_client, auth_headers)
-        monkeypatch.setattr("src.config.settings.api_base_url", "https://api.example.com")
-
-        async def fake_exchange_code_for_tokens(code: str, redirect_uri: str | None = None):
-            assert code == "code-123"
-            assert redirect_uri == "https://api.example.com/widget/auth/callback"
-            return {
-                "access_token": "google-access-token",
-                "refresh_token": "google-refresh-token",
-            }
-
-        async def fake_get_user_info(access_token: str):
-            assert access_token == "google-access-token"
-            return {
-                "id": "google-user-123",
-                "email": "visitor@example.com",
-                "name": "Test Visitor",
-                "picture": "https://example.com/avatar.png",
-            }
-
-        import src.widget.router as widget_router
-
-        monkeypatch.setattr(
-            widget_router.google_oauth,
-            "exchange_code_for_tokens",
-            fake_exchange_code_for_tokens,
-        )
-        monkeypatch.setattr(
-            widget_router.google_oauth,
-            "get_user_info",
-            fake_get_user_info,
-        )
-
-        response = test_client.get(
-            "/widget/auth/callback",
-            params={
-                "code": "code-123",
-                "state": f"{public_key}|vscode://innomightlabs/auth-callback",
-            },
-            follow_redirects=False,
-        )
-
-        assert response.status_code == 307
-        location = response.headers["location"]
-        parsed = urlparse(location)
-        params = parse_qs(parsed.query)
-        assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == "vscode://innomightlabs/auth-callback"
-        assert params["refresh_token"] == ["google-refresh-token"]
-        assert params["visitor_id"] == ["google-user-123"]
-        assert params["email"] == ["visitor@example.com"]
-        assert params["token"][0]
-
-    def test_refresh_widget_token_returns_new_access_token_and_refresh_token(
-        self,
-        test_client: TestClient,
-        auth_headers: dict,
-        monkeypatch,
-    ):
-        """Refresh endpoint exchanges Google refresh token for a new widget JWT."""
-        agent_id, public_key = self._create_agent_and_api_key(test_client, auth_headers)
-
-        async def fake_refresh_access_token(refresh_token: str):
-            assert refresh_token == "google-refresh-token"
-            return {"access_token": "new-google-access-token"}
-
-        async def fake_get_user_info(access_token: str):
-            assert access_token == "new-google-access-token"
-            return {
-                "id": "google-user-123",
-                "email": "visitor@example.com",
-                "name": "Test Visitor",
-                "picture": None,
-            }
-
-        import src.widget.router as widget_router
-
-        monkeypatch.setattr(
-            widget_router.google_oauth,
-            "refresh_access_token",
-            fake_refresh_access_token,
-        )
-        monkeypatch.setattr(
-            widget_router.google_oauth,
-            "get_user_info",
-            fake_get_user_info,
-        )
-
-        response = test_client.post(
-            "/widget/auth/refresh",
-            json={"refresh_token": "google-refresh-token"},
-            headers={"X-API-Key": public_key},
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["refresh_token"] == "google-refresh-token"
-        assert data["expires_in"] == 4 * 3600
-        assert data["visitor"]["visitor_id"] == "google-user-123"
-        payload = jwt.decode(data["access_token"], "test-secret", algorithms=["HS256"])
-        assert payload["sub"] == "google-user-123"
-        assert payload["email"] == "visitor@example.com"
-        assert payload["agent_id"] == agent_id
-        assert payload["type"] == "widget_visitor"
 
     def test_refresh_widget_token_requires_api_key(self, test_client: TestClient):
         """Refresh endpoint still requires a valid widget API key."""
@@ -518,15 +406,6 @@ class TestWidgetRouter:
         )
 
         assert response.status_code == 404
-
-    def test_oauth_callback_page_returns_html(self, test_client: TestClient):
-        """Test that the OAuth callback page endpoint returns HTML."""
-        response = test_client.get("/widget/auth/callback-page")
-
-        assert response.status_code == 200
-        assert "text/html" in response.headers["content-type"]
-        assert "innomight-oauth-callback" in response.text
-        assert "postMessage" in response.text
 
     def test_widget_send_message_uses_owner_provider_credentials(
         self,

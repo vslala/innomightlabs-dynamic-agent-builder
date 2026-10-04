@@ -5,12 +5,25 @@ API keys allow external websites to authenticate requests to agents
 via the embeddable chat widget.
 """
 
+import hashlib
 import secrets
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+
+A2A_SECRET_PREFIX = "a2a_live_"
+
+
+def generate_a2a_secret() -> str:
+    """The credential A2A callers use. Unlike the public key, it is never embedded in a page."""
+    return f"{A2A_SECRET_PREFIX}{secrets.token_urlsafe(32)}"
+
+
+def hash_a2a_secret(secret: str) -> str:
+    return hashlib.sha256(secret.encode()).hexdigest()
 
 
 def generate_public_key() -> str:
@@ -49,6 +62,13 @@ class ApiKeyResponse(BaseModel):
     created_at: datetime
     last_used_at: Optional[datetime] = None
     request_count: int = 0
+    has_a2a_secret: bool = False
+
+
+class A2ASecretResponse(BaseModel):
+    """Shown once. A2A callers send it as a Bearer token, or as the OAuth client_secret with client_id."""
+    client_id: str
+    client_secret: str
 
 
 class AgentApiKey(BaseModel):
@@ -70,6 +90,8 @@ class AgentApiKey(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_used_at: Optional[datetime] = None
     request_count: int = 0
+    #: SHA-256 of the key's A2A client secret; the secret itself is shown once and never stored.
+    a2a_secret_hash: Optional[str] = None
 
     @property
     def pk(self) -> str:
@@ -108,6 +130,7 @@ class AgentApiKey(BaseModel):
             "created_at": self.created_at.isoformat(),
             "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
             "request_count": self.request_count,
+            "a2a_secret_hash": self.a2a_secret_hash,
             "entity_type": "AgentApiKey",
         }
 
@@ -125,6 +148,7 @@ class AgentApiKey(BaseModel):
             created_at=datetime.fromisoformat(item["created_at"]),
             last_used_at=datetime.fromisoformat(item["last_used_at"]) if item.get("last_used_at") else None,
             request_count=item.get("request_count", 0),
+            a2a_secret_hash=item.get("a2a_secret_hash"),
         )
 
     def to_response(self) -> ApiKeyResponse:
@@ -140,6 +164,7 @@ class AgentApiKey(BaseModel):
             created_at=self.created_at,
             last_used_at=self.last_used_at,
             request_count=self.request_count,
+            has_a2a_secret=bool(self.a2a_secret_hash),
         )
 
     def is_origin_allowed(self, origin: Optional[str]) -> bool:

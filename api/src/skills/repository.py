@@ -10,7 +10,7 @@ from boto3.dynamodb.conditions import Key
 from src.config import settings
 from src.crypto import decrypt, encrypt
 from src.db import get_dynamodb_resource
-from src.skills.models import AgentSkill
+from src.skills.models import ActorKind, AgentSkill
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ class AgentSkillRepository:
         plain_config: dict[str, Any],
         secret_config: dict[str, Any],
         secret_fields: list[str],
+        available_to: list[ActorKind] | None = None,
     ) -> AgentSkill:
         encrypted_secrets = encrypt(json.dumps(secret_config, ensure_ascii=True)) if secret_config else ""
         item = AgentSkill(
@@ -89,6 +90,7 @@ class AgentSkillRepository:
             config=plain_config,
             encrypted_secrets=encrypted_secrets,
             secret_fields=secret_fields,
+            available_to=available_to or [ActorKind.OWNER],
         )
         return self.save(item)
 

@@ -40,7 +40,13 @@ export interface InstalledSkill {
   secret_fields: string[];
   requires_oauth: boolean;
   oauth_provider_name: string | null;
+  available_to: SkillActorKind[];
+  /** The skill uses the owner's own accounts or credentials, so nobody else can be given it. */
+  owner_only: boolean;
 }
+
+/** Who is chatting with the agent: its owner, a /v1 secret key, an A2A caller, or a widget visitor. */
+export type SkillActorKind = "owner" | "api" | "a2a" | "visitor";
 
 export interface SkillInstallRequest {
   config: SkillConfig;
@@ -49,6 +55,7 @@ export interface SkillInstallRequest {
 export interface SkillUpdateRequest {
   enabled?: boolean;
   config?: SkillConfig;
+  available_to?: SkillActorKind[];
 }
 
 export type SkillInstallSchema = FormSchema;

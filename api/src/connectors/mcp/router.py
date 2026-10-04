@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
@@ -23,9 +23,13 @@ from src.connectors.mcp.models import (
     MCPRuntimeStatusResponse,
     MCPStdioPackageResponse,
 )
+from src.auth.oauth_handoff import handoff_redirect, safe_return_to
+from src.config import settings
 from src.connectors.mcp.oauth import decode_state_session
 from src.connectors.mcp.service import MCPConnectorService, get_mcp_connector_service
 from src.form_models import Form
+
+log = logging.getLogger(__name__)
 
 security = HTTPBearer()
 
@@ -44,16 +48,6 @@ def _not_found_from_value_error(error: ValueError) -> HTTPException:
     detail = str(error)
     status_code = status.HTTP_404_NOT_FOUND if "not found" in detail.lower() else status.HTTP_400_BAD_REQUEST
     return HTTPException(status_code=status_code, detail=detail)
-
-
-def _callback_redirect(return_to: str, *, status_value: str, reason: str | None = None, mcp_id: str | None = None) -> RedirectResponse:
-    params = [f"mcp_oauth={quote(status_value)}"]
-    if reason:
-        params.append(f"reason={quote(reason)}")
-    if mcp_id:
-        params.append(f"mcp_id={quote(mcp_id)}")
-    separator = "&" if "?" in return_to else "?"
-    return RedirectResponse(f"{return_to}{separator}{'&'.join(params)}")
 
 
 @router.get("/connectors/mcp", response_model=list[MCPConnectionResponse])
@@ -229,34 +223,42 @@ async def start_mcp_oauth(
 
 @public_router.get("/connectors/mcp/oauth/callback")
 async def mcp_oauth_callback(
-    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
-    error_description: str | None = None,
 ) -> RedirectResponse:
+    """Hand the result to the SPA; it completes the connection as the signed-in user (see oauth_handoff)."""
     session = decode_state_session(state)
-    if not session or session.is_expired():
-        return _callback_redirect("/dashboard/connectors", status_value="error", reason="invalid_state")
-
-    if error:
-        reason = error_description or error
-        return _callback_redirect(session.return_to, status_value="error", reason=reason)
-
-    if not code:
-        return _callback_redirect(session.return_to, status_value="error", reason="missing_code")
-
+    fallback = f"{settings.frontend_url}/dashboard/connectors"
     try:
-        await service.complete_oauth(
+        return_to = safe_return_to(session.return_to) if session else fallback
+    except ValueError:
+        return_to = fallback
+    return handoff_redirect(return_to, flow="mcp", state=state, code=code, error=error)
+
+
+async def complete_mcp_oauth(
+    *, state: str | None, code: str | None, error: str | None, user_email: str
+) -> dict[str, str]:
+    """Store the tokens, if the signed-in user started this flow. Returns the page's result parameters."""
+    session = decode_state_session(state)
+    if not session or session.is_expired() or session.user_email != user_email:
+        return {"mcp_oauth": "error", "reason": "invalid_state"}
+    if error:
+        return {"mcp_oauth": "error", "reason": "cancelled"}
+    if not code:
+        return {"mcp_oauth": "error", "reason": "missing_code"}
+    try:
+        await get_mcp_connector_service().complete_oauth(
             owner_email=session.user_email,
             mcp_id=session.mcp_id,
             code=code,
             code_verifier=session.code_verifier,
         )
     except Exception as exc:
-        return _callback_redirect(session.return_to, status_value="error", reason=str(exc))
-
-    return _callback_redirect(session.return_to, status_value="success", mcp_id=session.mcp_id)
+        log.error("MCP OAuth completion failed for %s: %s", session.mcp_id, exc, exc_info=True)
+        return {"mcp_oauth": "error", "reason": "callback_failed"}
+    return {"mcp_oauth": "success", "mcp_id": session.mcp_id}
 
 
 @router.get("/agents/{agent_id}/mcp-connections", response_model=list[AgentMCPConnectionResponse])

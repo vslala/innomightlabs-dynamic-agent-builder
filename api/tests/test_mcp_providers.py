@@ -27,7 +27,7 @@ from tests.test_mcp_connectors import (
 )
 
 OWNER = "owner@example.com"
-RETURN_TO = "https://app.example/dashboard/connectors"
+RETURN_TO = "http://localhost:5173/dashboard/connectors"
 
 GITHUB_INPUTS = {"oauth_client_id": "gh-client", "oauth_client_secret": "gh-secret"}
 

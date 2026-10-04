@@ -49,6 +49,9 @@ from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.repository import AgentSkillRepository
+from src.skills.models import ActorKind
+from src.common.pagination import InvalidCursor
+from src.exceptions import GENERIC_ERROR_MESSAGE
 
 
 A2A_PROTOCOL_VERSION = "1.0.0"
@@ -140,8 +143,8 @@ class A2ADiscoveryService:
             "agentApiKey": A2ASecurityScheme(
                 httpAuthSecurityScheme=A2AHttpAuthSecurityScheme(
                     scheme="Bearer",
-                    bearerFormat="Opaque API key",
-                    description="Agent API key supplied as a Bearer credential.",
+                    bearerFormat="Opaque A2A client secret",
+                    description="The agent's A2A client secret (a2a_live_...) supplied as a Bearer credential.",
                 )
             )
         }
@@ -245,6 +248,7 @@ class A2AInvocationService:
                 owner_email=api_key.created_by,
                 actor_email=api_key.created_by,
                 actor_id=f"a2a:{api_key.key_id}",
+                actor_kind=ActorKind.A2A,
                 attachments=[],
             )
             self.conversation_repository.save(conversation)
@@ -267,7 +271,7 @@ class A2AInvocationService:
             log.error("A2A message send failed: %s", exc, exc_info=True)
             task.status = A2ATaskStatus(
                 state=A2ATaskState.FAILED,
-                message=self._agent_message(str(exc)),
+                message=self._agent_message(GENERIC_ERROR_MESSAGE),
             )
 
         self.task_repository.save(task)
@@ -302,6 +306,7 @@ class A2AInvocationService:
                 owner_email=api_key.created_by,
                 actor_email=api_key.created_by,
                 actor_id=f"a2a:{api_key.key_id}",
+                actor_kind=ActorKind.A2A,
                 attachments=[],
             ):
                 events.append(event.model_dump(mode="json", exclude_none=True))
@@ -349,7 +354,7 @@ class A2AInvocationService:
             log.error("A2A message stream failed: %s", exc, exc_info=True)
             task.status = A2ATaskStatus(
                 state=A2ATaskState.FAILED,
-                message=self._agent_message(str(exc)),
+                message=self._agent_message(GENERIC_ERROR_MESSAGE),
             )
             task.artifacts = events
             self.task_repository.save(task)
@@ -505,9 +510,11 @@ def _decode_cursor(cursor: str | None) -> dict[str, Any] | None:
     try:
         decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
         value = json.loads(decoded)
-    except (ValueError, json.JSONDecodeError):
-        return None
-    return value if isinstance(value, dict) else None
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise InvalidCursor("Invalid pagination cursor") from exc
+    if not isinstance(value, dict) or not value or not all(isinstance(item, str) for item in value.values()):
+        raise InvalidCursor("Invalid pagination cursor")
+    return value
 
 
 def _conversation_id(*, agent_id: str, client_key_id: str, context_id: str) -> str:
