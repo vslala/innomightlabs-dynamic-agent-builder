@@ -120,6 +120,21 @@ class ConversationRepository:
             return self._from_dynamo_item(item)
         return None
 
+    def _query_all(self, created_by: str) -> list[dict]:
+        """Every conversation item in the user's partition, following DynamoDB's 1 MB pages."""
+        query = {
+            "KeyConditionExpression": (
+                Key("pk").eq(f"USER#{created_by}") & Key("sk").begins_with("CONVERSATION#")
+            )
+        }
+        items: list[dict] = []
+        while True:
+            response = self.table.query(**query)
+            items.extend(response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                return items
+            query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
     def find_all_by_user(self, created_by: str) -> list[Conversation]:
         """
         Find all conversations for a specific user.
@@ -130,14 +145,7 @@ class ConversationRepository:
         Returns:
             List of conversations for the user, sorted by last activity desc
         """
-        response = self.table.query(
-            KeyConditionExpression=(
-                Key("pk").eq(f"USER#{created_by}") & Key("sk").begins_with("CONVERSATION#")
-            )
-        )
-
-        items = response.get("Items", [])
-        conversations = [self._from_dynamo_item(item) for item in items]
+        conversations = [self._from_dynamo_item(item) for item in self._query_all(created_by)]
 
         # Sort by last activity descending (most recently updated/created first)
         conversations.sort(key=lambda c: c.updated_at or c.created_at, reverse=True)
@@ -162,15 +170,7 @@ class ConversationRepository:
         Returns:
             Tuple of (conversations, next_cursor, has_more)
         """
-        # Query all conversations for user
-        response = self.table.query(
-            KeyConditionExpression=(
-                Key("pk").eq(f"USER#{created_by}") & Key("sk").begins_with("CONVERSATION#")
-            )
-        )
-
-        items = response.get("Items", [])
-        conversations = [self._from_dynamo_item(item) for item in items]
+        conversations = [self._from_dynamo_item(item) for item in self._query_all(created_by)]
 
         # Sort by last activity descending (most recently updated/created first)
         conversations.sort(key=lambda c: c.updated_at or c.created_at, reverse=True)

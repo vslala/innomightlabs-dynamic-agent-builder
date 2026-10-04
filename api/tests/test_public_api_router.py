@@ -149,7 +149,11 @@ class TestAgentAndConversations:
     def test_create_and_get_conversation(self, test_client: TestClient, api):
         created = api.create_conversation(title="Order help", end_user_id="customer-42")
 
-        fetched = test_client.get(f"{api.base}/conversations/{created['conversation_id']}", headers=api.headers)
+        fetched = test_client.get(
+            f"{api.base}/conversations/{created['conversation_id']}",
+            params={"end_user_id": "customer-42"},
+            headers=api.headers,
+        )
 
         assert fetched.status_code == 200
         assert fetched.json() == created
@@ -196,6 +200,53 @@ class TestAgentAndConversations:
         assert dashboard["items"] == []
 
 
+class TestEndUserPartitions:
+    """Each end user's conversations live in their own partition within the key."""
+
+    def _list(self, test_client: TestClient, api, end_user_id: str | None = None) -> list[str]:
+        params = {"end_user_id": end_user_id} if end_user_id else {}
+        listed = test_client.get(f"{api.base}/conversations", params=params, headers=api.headers).json()
+        return [item["conversation_id"] for item in listed["items"]]
+
+    def test_each_end_user_lists_only_their_own_conversations(self, test_client: TestClient, api):
+        alice = api.create_conversation(end_user_id="alice@example.com")
+        bob = api.create_conversation(end_user_id="bob@example.com")
+        keys_own = api.create_conversation()
+
+        assert self._list(test_client, api, "alice@example.com") == [alice["conversation_id"]]
+        assert self._list(test_client, api, "bob@example.com") == [bob["conversation_id"]]
+        assert self._list(test_client, api) == [keys_own["conversation_id"]]
+
+    @pytest.mark.parametrize("asked_as", [None, "bob@example.com"])
+    def test_a_conversation_is_only_found_under_its_own_end_user(self, test_client: TestClient, api, asked_as):
+        conversation = api.create_conversation(end_user_id="alice@example.com", context="Alice's brief")
+        path = f"{api.base}/conversations/{conversation['conversation_id']}"
+        params = {"end_user_id": asked_as} if asked_as else {}
+
+        responses = [
+            test_client.get(path, params=params, headers=api.headers),
+            test_client.get(f"{path}/messages", params=params, headers=api.headers),
+            test_client.patch(path, params=params, json={"context": "hijacked"}, headers=api.headers),
+            test_client.post(f"{path}/messages", params=params, json={"content": "Hi", "stream": False}, headers=api.headers),
+        ]
+        fetched = test_client.get(path, params={"end_user_id": "alice@example.com"}, headers=api.headers).json()
+
+        assert [response.status_code for response in responses] == [404, 404, 404, 404]
+        assert fetched["context"] == "Alice's brief"
+
+    def test_the_same_end_user_id_under_another_key_is_another_partition(
+        self, test_client: TestClient, api, auth_headers: dict
+    ):
+        api.create_conversation(end_user_id="alice@example.com")
+        other_key = _create_key(test_client, auth_headers, api.agent_id)
+
+        listed = test_client.get(
+            f"{api.base}/conversations", params={"end_user_id": "alice@example.com"}, headers=_bearer(other_key)
+        ).json()
+
+        assert listed["items"] == []
+
+
 class TestConversationContext:
     BRIEF = "The user is bidding on tender T-881 for road resurfacing in Leeds."
 
@@ -217,11 +268,11 @@ class TestConversationContext:
 
     def test_patch_replaces_the_context_and_keeps_everything_else(self, test_client: TestClient, api):
         conversation = api.create_conversation(title="Tender chat", end_user_id="customer-42", context="old")
+        path = f"{api.base}/conversations/{conversation['conversation_id']}"
+        end_user = {"end_user_id": "customer-42"}
 
-        response = self._patch(test_client, api, conversation["conversation_id"], {"context": self.BRIEF})
-        fetched = test_client.get(
-            f"{api.base}/conversations/{conversation['conversation_id']}", headers=api.headers
-        ).json()
+        response = test_client.patch(path, params=end_user, json={"context": self.BRIEF}, headers=api.headers)
+        fetched = test_client.get(path, params=end_user, headers=api.headers).json()
 
         assert response.status_code == 200
         assert response.json()["context"] == self.BRIEF
@@ -353,6 +404,7 @@ class TestSendMessage:
 
         test_client.post(
             f"{api.base}/conversations/{conversation['conversation_id']}/messages",
+            params={"end_user_id": "customer-42"},
             json={"content": "Hi", "stream": False},
             headers=api.headers,
         )

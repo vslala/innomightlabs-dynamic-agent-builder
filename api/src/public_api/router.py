@@ -34,6 +34,11 @@ from src.skills.models import ActorKind
 router = APIRouter(prefix="/v1/agents/{agent_id}", tags=["public-api"])
 
 Caller = Annotated[PublicApiCaller, Depends(require_secret_key)]
+#: Names the end user whose conversations a call works on. Without it, the key's own ones.
+EndUserId = Annotated[
+    Optional[str],
+    Query(min_length=1, max_length=200, description="The end_user_id the conversation was created with."),
+]
 
 
 @dataclass(frozen=True)
@@ -42,9 +47,11 @@ class V1ChatTarget:
     conversation: ApiConversation
 
 
-def resolve_conversation(conversation_id: str, caller: Caller) -> V1ChatTarget:
-    """Load a conversation that genuinely belongs to this key and agent."""
-    conversation = ConversationRepository().find_by_id(conversation_id, ApiConversation.owner_for(caller.key.key_id))
+def resolve_conversation(conversation_id: str, caller: Caller, end_user_id: EndUserId = None) -> V1ChatTarget:
+    """Load a conversation that genuinely belongs to this key, end user and agent."""
+    conversation = ConversationRepository().find_by_id(
+        conversation_id, ApiConversation.owner_for(caller.key.key_id, end_user_id)
+    )
     if not isinstance(conversation, ApiConversation) or conversation.agent_id != caller.agent.agent_id:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return V1ChatTarget(caller=caller, conversation=conversation)
@@ -74,12 +81,13 @@ async def create_conversation(body: V1CreateConversationRequest, caller: Caller)
 @router.get("/conversations", response_model=Paginated[V1ConversationResponse])
 async def list_conversations(
     caller: Caller,
+    end_user_id: EndUserId = None,
     limit: int = Query(20, ge=1, le=100),
     cursor: Optional[str] = Query(None),
 ) -> Paginated[V1ConversationResponse]:
-    """This key's conversations with the agent, most recently active first."""
+    """The end user's conversations with the agent (or the key's own, without one), most recently active first."""
     conversations, next_cursor, has_more = ConversationRepository().find_all_by_user_paginated(
-        ApiConversation.owner_for(caller.key.key_id), limit=limit, cursor=cursor
+        ApiConversation.owner_for(caller.key.key_id, end_user_id), limit=limit, cursor=cursor
     )
     return Paginated[V1ConversationResponse](
         items=[

@@ -232,3 +232,26 @@ class TestConversationRepository:
         assert (
             conversation_repository.exists("non-existent-id", TEST_USER_EMAIL) is False
         )
+
+
+def test_listing_follows_dynamodb_pages(monkeypatch):
+    """A partition bigger than one 1 MB query page is still listed in full."""
+    from src.conversations.repository import ConversationRepository
+
+    repository = ConversationRepository()
+    pages = [
+        {"Items": [Conversation(title="a", agent_id="x", created_by="u").to_dynamo_item()], "LastEvaluatedKey": {"pk": "p"}},
+        {"Items": [Conversation(title="b", agent_id="x", created_by="u").to_dynamo_item()]},
+    ]
+    starts = []
+
+    def query(**kwargs):
+        starts.append(kwargs.get("ExclusiveStartKey"))
+        return pages[len(starts) - 1]
+
+    monkeypatch.setattr(repository.table, "query", query)
+
+    conversations, _, _ = repository.find_all_by_user_paginated("u", limit=10)
+
+    assert sorted(c.title for c in conversations) == ["a", "b"]
+    assert starts == [None, {"pk": "p"}]

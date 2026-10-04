@@ -184,16 +184,19 @@ class ApiConversation(Conversation):
 
     Stored under the key's own pseudo-owner partition rather than the agent
     owner's, so a busy integration never floods the owner's dashboard list and
-    one key can never load another key's conversations.
+    one key can never load another key's conversations. A conversation started
+    for an end user gets that end user's own partition within the key, the way
+    each dashboard user has theirs.
     """
 
     api_key_id: str
     end_user_id: Optional[str] = None
 
     @staticmethod
-    def owner_for(api_key_id: str) -> str:
-        """The `created_by` every conversation of this key is stored under."""
-        return f"secret-key:{api_key_id}"
+    def owner_for(api_key_id: str, end_user_id: Optional[str] = None) -> str:
+        """The `created_by` a conversation of this key, and of this end user if any, is stored under."""
+        owner = f"secret-key:{api_key_id}"
+        return f"{owner}:{end_user_id}" if end_user_id else owner
 
     @classmethod
     def start(
@@ -211,14 +214,13 @@ class ApiConversation(Conversation):
             title=title,
             end_user_id=end_user_id,
             context=context,
-            created_by=cls.owner_for(api_key_id),
+            created_by=cls.owner_for(api_key_id, end_user_id),
         )
 
     @property
     def actor_id(self) -> str:
         """Memory scope: per key, or per end user of that key when one is given."""
-        owner = self.owner_for(self.api_key_id)
-        return f"{owner}:{self.end_user_id}" if self.end_user_id else owner
+        return self.owner_for(self.api_key_id, self.end_user_id)
 
     def to_dynamo_item(self) -> dict[str, Any]:
         item = super().to_dynamo_item()
