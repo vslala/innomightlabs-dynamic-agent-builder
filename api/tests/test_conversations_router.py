@@ -333,6 +333,24 @@ class TestConversationsRouter:
         assert data["description"] == "Updated description"
         assert data["agent_id"] == self.agent_id  # Unchanged
 
+    def test_conversation_context_is_set_on_create_and_changed_by_put(
+        self, test_client: TestClient, auth_headers: dict
+    ):
+        request_data = {**CONVERSATION_CREATE_REQUEST, "agent_id": self.agent_id, "context": "Reply in French."}
+        created = test_client.post("/conversations/", json=request_data, headers=auth_headers).json()
+
+        renamed = test_client.put(
+            f"/conversations/{created['conversation_id']}", json={"title": "Renamed"}, headers=auth_headers
+        ).json()
+        updated = test_client.put(
+            f"/conversations/{created['conversation_id']}", json={"context": "Reply in German."}, headers=auth_headers
+        ).json()
+
+        assert created["context"] == "Reply in French."
+        assert renamed["context"] == "Reply in French."
+        assert updated["context"] == "Reply in German."
+        assert updated["title"] == "Renamed"
+
     def test_update_conversation_agent(
         self, test_client: TestClient, auth_headers: dict
     ):

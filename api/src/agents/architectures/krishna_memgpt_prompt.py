@@ -14,6 +14,7 @@ SYSTEM_PROMPT_TEMPLATE = "krishna_memgpt_system_prompt.j2"
 def build_krishna_memgpt_system_prompt(
     *,
     agent_persona: str,
+    conversation_context: str | None = None,
     kb_count: int | None = None,
     enabled_skills: list[AgentSkill] | None = None,
     recent_skill_actions: list[LoadedSkillRuntimeResponse] | None = None,
@@ -25,6 +26,7 @@ def build_krishna_memgpt_system_prompt(
         SYSTEM_PROMPT_TEMPLATE,
         has_memory_tools=True,
         agent_persona=agent_persona,
+        conversation_context=conversation_context,
         core_memory=core_memory,
         kb_count=kb_count or 0,
         enabled_skills=enabled_skills or [],

@@ -28,6 +28,7 @@ class ConversationRepository:
 
     Access Patterns:
         - save: PutItem (create or update)
+        - update_context: UpdateItem of `context` only
         - find_by_id: GetItem by pk + sk
         - find_all_by_user: Query by pk with sk prefix "CONVERSATION#"
         - find_all_by_user_paginated: Query with pagination, reverse chronological
@@ -82,6 +83,19 @@ class ConversationRepository:
             UpdateExpression="SET updated_at = :updated_at",
             ExpressionAttributeValues={":updated_at": updated_at.isoformat()},
         )
+        conversation.updated_at = updated_at
+
+    def update_context(self, conversation: Conversation, context: str) -> None:
+        """Set `context` alone, leaving every other field as it is stored."""
+        updated_at = datetime.now(timezone.utc)
+        self.table.update_item(
+            Key={"pk": conversation.pk, "sk": conversation.sk},
+            UpdateExpression="SET #context = :context, updated_at = :updated_at",
+            ConditionExpression="attribute_exists(pk)",
+            ExpressionAttributeNames={"#context": "context"},
+            ExpressionAttributeValues={":context": context, ":updated_at": updated_at.isoformat()},
+        )
+        conversation.context = context
         conversation.updated_at = updated_at
 
     def find_by_id(self, conversation_id: str, created_by: str) -> Optional[Conversation]:

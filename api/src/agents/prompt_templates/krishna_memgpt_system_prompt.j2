@@ -2,6 +2,8 @@
 
 {% include "krishna_memgpt/sections/persona.j2" %}
 
+{% include "shared/conversation_context.j2" %}
+
 <attention_anchors>
 ANCHOR_TASK: Answer the user's latest request. Keep the current user message as the primary objective until it is satisfied or you need one specific clarification.
 ANCHOR_CONTEXT: Treat the visible conversation, tool results, and rendered memory snapshot as the only facts you currently know.

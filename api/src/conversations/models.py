@@ -17,6 +17,10 @@ class CreateConversationRequest(BaseModel):
         default=None, max_length=1000, description="Optional description"
     )
     agent_id: str = Field(description="ID of the agent that will manage this conversation")
+    context: Optional[str] = Field(
+        default=None,
+        description="Standing instructions sent to the agent on every turn of this conversation",
+    )
 
 
 class UpdateConversationRequest(BaseModel):
@@ -27,6 +31,7 @@ class UpdateConversationRequest(BaseModel):
     )
     description: Optional[str] = Field(default=None, max_length=1000, description="New description")
     agent_id: Optional[str] = Field(default=None, description="New agent ID to assign")
+    context: Optional[str] = Field(default=None, description="New conversation context")
 
 
 class ConversationResponse(BaseModel):
@@ -39,6 +44,7 @@ class ConversationResponse(BaseModel):
     created_by: str
     created_at: datetime
     updated_at: Optional[datetime] = None
+    context: Optional[str] = None
     conversation_type: Literal["chat", "automation"] = "chat"
     automation_id: Optional[str] = None
     automation_run_id: Optional[str] = None
@@ -54,6 +60,8 @@ class Conversation(BaseModel):
     created_by: str  # User email who created this conversation
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
+    #: Sent to the LLM on every turn, so it never has to live in the message history.
+    context: Optional[str] = None
 
     @property
     def pk(self) -> str:
@@ -77,6 +85,7 @@ class Conversation(BaseModel):
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "context": self.context,
             "entity_type": "Conversation",
             "conversation_type": "chat",
             # GSI for sorting by created_at (reverse chronological)
@@ -97,6 +106,7 @@ class Conversation(BaseModel):
             updated_at=(
                 datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None
             ),
+            context=item.get("context"),
         )
 
     def to_response(self) -> ConversationResponse:
@@ -109,6 +119,7 @@ class Conversation(BaseModel):
             created_by=self.created_by,
             created_at=self.created_at,
             updated_at=self.updated_at,
+            context=self.context,
             conversation_type="chat",
         )
 
@@ -143,6 +154,7 @@ class AutomationConversation(Conversation):
             created_by=self.created_by,
             created_at=self.created_at,
             updated_at=self.updated_at,
+            context=self.context,
             conversation_type=self.conversation_type,
             automation_id=self.automation_id,
             automation_run_id=self.automation_run_id,
@@ -161,6 +173,7 @@ class AutomationConversation(Conversation):
             updated_at=(
                 datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None
             ),
+            context=item.get("context"),
             automation_id=item["automation_id"],
             automation_run_id=item["automation_run_id"],
         )
@@ -184,13 +197,20 @@ class ApiConversation(Conversation):
 
     @classmethod
     def start(
-        cls, *, api_key_id: str, agent_id: str, title: str, end_user_id: Optional[str] = None
+        cls,
+        *,
+        api_key_id: str,
+        agent_id: str,
+        title: str,
+        end_user_id: Optional[str] = None,
+        context: Optional[str] = None,
     ) -> "ApiConversation":
         return cls(
             api_key_id=api_key_id,
             agent_id=agent_id,
             title=title,
             end_user_id=end_user_id,
+            context=context,
             created_by=cls.owner_for(api_key_id),
         )
 
@@ -223,6 +243,7 @@ class ApiConversation(Conversation):
             updated_at=(
                 datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None
             ),
+            context=item.get("context"),
             api_key_id=item["api_key_id"],
             end_user_id=item.get("end_user_id"),
         )

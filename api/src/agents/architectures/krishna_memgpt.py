@@ -135,6 +135,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             user_message=user_message,
             attachments=attachments or [],
             api_key_id=api_key_id,
+            conversation_context=conversation.context,
         )
 
         state.linked_kb_ids = self._get_linked_kb_ids(agent.agent_id, owner_email)
@@ -269,6 +270,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         self,
         agent: "Agent",
         *,
+        conversation_context: str | None = None,
         kb_count: int | None = None,
         enabled_skills: list[AgentSkill] | None = None,
         recent_skill_actions: list[LoadedSkillRuntimeResponse] | None = None,
@@ -279,6 +281,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         """Build the system prompt, rendered from data already loaded this turn."""
         return build_krishna_memgpt_system_prompt(
             agent_persona=agent.agent_persona,
+            conversation_context=conversation_context,
             kb_count=kb_count,
             enabled_skills=enabled_skills,
             recent_skill_actions=recent_skill_actions,
@@ -302,6 +305,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         snapshot = self._load_core_memory_snapshot(agent.agent_id, actor_id)
         return self._build_system_prompt(
             agent,
+            conversation_context=state.conversation_context,
             kb_count=kb_count,
             enabled_skills=state.enabled_skills or None,
             recent_skill_actions=state.recent_skill_actions or None,

@@ -90,6 +90,7 @@ async def create_conversation(request: Request, body: CreateConversationRequest)
     - **title**: Title of the conversation (required)
     - **description**: Optional description
     - **agent_id**: ID of the agent to manage this conversation (must exist and belong to user)
+    - **context**: Optional context sent to the agent on every turn
     """
     user_email = get_user_email(request)
 
@@ -102,6 +103,7 @@ async def create_conversation(request: Request, body: CreateConversationRequest)
         description=body.description,
         agent_id=body.agent_id,
         created_by=user_email,
+        context=body.context,
     )
 
     saved = conversation_repository.save(conversation)
@@ -273,6 +275,7 @@ async def update_conversation(
     - **title**: New title (optional)
     - **description**: New description (optional)
     - **agent_id**: New agent ID (optional, must exist and belong to user)
+    - **context**: New conversation context (optional)
     """
     user_email = get_user_email(request)
 
@@ -292,6 +295,9 @@ async def update_conversation(
 
     if body.description is not None:
         conversation.description = body.description
+
+    if body.context is not None:
+        conversation.context = body.context
 
     saved = conversation_repository.save(conversation)
     return saved.to_response()

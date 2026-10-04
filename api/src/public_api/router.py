@@ -27,6 +27,7 @@ from src.public_api.models import (
     V1MessageResponse,
     V1SendMessageRequest,
     V1SendMessageResponse,
+    V1UpdateConversationRequest,
 )
 from src.skills.models import ActorKind
 
@@ -64,6 +65,7 @@ async def create_conversation(body: V1CreateConversationRequest, caller: Caller)
         agent_id=caller.agent.agent_id,
         title=body.title or f"Chat with {caller.agent.agent_name}",
         end_user_id=body.end_user_id,
+        context=body.context,
     )
     ConversationRepository().save(conversation)
     return V1ConversationResponse.of(conversation)
@@ -92,6 +94,14 @@ async def list_conversations(
 
 @router.get("/conversations/{conversation_id}", response_model=V1ConversationResponse)
 async def get_conversation(target: Target) -> V1ConversationResponse:
+    return V1ConversationResponse.of(target.conversation)
+
+
+@router.patch("/conversations/{conversation_id}", response_model=V1ConversationResponse)
+async def update_conversation(body: V1UpdateConversationRequest, target: Target) -> V1ConversationResponse:
+    """Change only the fields sent. A missing or null field is left as it is, so `{}` changes nothing."""
+    if body.context is not None:
+        ConversationRepository().update_context(target.conversation, body.context)
     return V1ConversationResponse.of(target.conversation)
 
 

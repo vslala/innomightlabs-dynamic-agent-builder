@@ -196,6 +196,89 @@ class TestAgentAndConversations:
         assert dashboard["items"] == []
 
 
+class TestConversationContext:
+    BRIEF = "The user is bidding on tender T-881 for road resurfacing in Leeds."
+
+    def _patch(self, test_client: TestClient, api, conversation_id: str, body: dict, headers: dict | None = None):
+        return test_client.patch(
+            f"{api.base}/conversations/{conversation_id}", json=body, headers=headers or api.headers
+        )
+
+    def test_a_conversation_starts_with_its_context(self, test_client: TestClient, api):
+        conversation = api.create_conversation(context=self.BRIEF)
+
+        fetched = test_client.get(f"{api.base}/conversations/{conversation['conversation_id']}", headers=api.headers)
+
+        assert conversation["context"] == self.BRIEF
+        assert fetched.json()["context"] == self.BRIEF
+
+    def test_a_conversation_has_no_context_unless_given_one(self, api):
+        assert api.create_conversation()["context"] is None
+
+    def test_patch_replaces_the_context_and_keeps_everything_else(self, test_client: TestClient, api):
+        conversation = api.create_conversation(title="Tender chat", end_user_id="customer-42", context="old")
+
+        response = self._patch(test_client, api, conversation["conversation_id"], {"context": self.BRIEF})
+        fetched = test_client.get(
+            f"{api.base}/conversations/{conversation['conversation_id']}", headers=api.headers
+        ).json()
+
+        assert response.status_code == 200
+        assert response.json()["context"] == self.BRIEF
+        assert fetched["context"] == self.BRIEF
+        assert (fetched["title"], fetched["end_user_id"]) == ("Tender chat", "customer-42")
+        assert fetched["updated_at"] is not None
+
+    def test_a_long_context_is_accepted(self, test_client: TestClient, api):
+        conversation = api.create_conversation()
+        brief = "x" * 100_000
+
+        response = self._patch(test_client, api, conversation["conversation_id"], {"context": brief})
+
+        assert response.json()["context"] == brief
+
+    @pytest.mark.parametrize("body", [{}, {"context": None}])
+    def test_an_empty_patch_changes_nothing(self, test_client: TestClient, api, body: dict):
+        conversation = api.create_conversation(title="Tender chat", context=self.BRIEF)
+
+        response = self._patch(test_client, api, conversation["conversation_id"], body)
+        fetched = test_client.get(
+            f"{api.base}/conversations/{conversation['conversation_id']}", headers=api.headers
+        ).json()
+
+        assert response.status_code == 200
+        assert fetched == conversation
+
+    def test_other_keys_cannot_change_a_conversations_context(self, test_client: TestClient, api, auth_headers: dict):
+        conversation = api.create_conversation(context=self.BRIEF)
+        other_key = _create_key(test_client, auth_headers, api.agent_id)
+
+        response = self._patch(
+            test_client, api, conversation["conversation_id"], {"context": "hijacked"}, headers=_bearer(other_key)
+        )
+        fetched = test_client.get(
+            f"{api.base}/conversations/{conversation['conversation_id']}", headers=api.headers
+        ).json()
+
+        assert response.status_code == 404
+        assert fetched["context"] == self.BRIEF
+
+    def test_patching_an_unknown_conversation_is_404(self, test_client: TestClient, api):
+        assert self._patch(test_client, api, "missing", {"context": self.BRIEF}).status_code == 404
+
+    def test_every_turn_runs_with_the_latest_context(self, test_client: TestClient, api, architecture):
+        conversation = api.create_conversation(context="old")
+        self._patch(test_client, api, conversation["conversation_id"], {"context": self.BRIEF})
+
+        test_client.post(
+            f"{api.base}/conversations/{conversation['conversation_id']}/messages",
+            json={"content": "Hello", "stream": False},
+            headers=api.headers,
+        )
+
+        assert architecture.calls[0]["conversation"].context == self.BRIEF
+
+
 class TestSendMessage:
     def test_stream_emits_only_public_events(self, test_client: TestClient, api, architecture):
         conversation = api.create_conversation()

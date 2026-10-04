@@ -35,6 +35,8 @@ class AgentTurnState:
     attachments: list[Attachment] = field(default_factory=list)
     #: Public API secret key this turn runs under; token usage is also counted against it.
     api_key_id: str | None = None
+    #: The conversation's standing context, rendered into every system prompt of the turn.
+    conversation_context: str | None = None
 
     # Enrichment (populated during preflight)
     linked_kb_ids: list[str] = field(default_factory=list)

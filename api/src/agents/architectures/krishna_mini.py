@@ -104,6 +104,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         context = self._build_context(
             self.message_repo.find_by_conversation(conversation.conversation_id),
             agent.agent_persona,
+            conversation.context,
         )
 
         yield SSEEvent(
@@ -135,7 +136,9 @@ class KrishnaMiniArchitecture(AgentArchitecture):
             message_id=assistant_msg.message_id,
         )
 
-    def _build_context(self, messages: list[Message], agent_persona: str) -> list[dict]:
+    def _build_context(
+        self, messages: list[Message], agent_persona: str, conversation_context: str | None = None
+    ) -> list[dict]:
         """System prompt followed by the conversation window."""
         return [
             {
@@ -144,6 +147,7 @@ class KrishnaMiniArchitecture(AgentArchitecture):
                     SYSTEM_PROMPT_TEMPLATE,
                     has_memory_tools=False,
                     agent_persona=agent_persona,
+                    conversation_context=conversation_context,
                 ),
             },
             *self.conversation_strategy.build_context(messages),

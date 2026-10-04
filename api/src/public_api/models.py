@@ -32,6 +32,15 @@ class V1CreateConversationRequest(BaseModel):
         max_length=200,
         description="Your identifier for the person chatting. Each end user gets their own agent memory.",
     )
+    context: Optional[str] = Field(
+        None, description="Sent to the agent on every turn of this conversation, so your messages need not repeat it."
+    )
+
+
+class V1UpdateConversationRequest(BaseModel):
+    """Only the fields sent are changed; an empty body changes nothing."""
+
+    context: Optional[str] = Field(None, description="Replaces the conversation's context.")
 
 
 class V1ConversationResponse(BaseModel):
@@ -39,6 +48,7 @@ class V1ConversationResponse(BaseModel):
     agent_id: str
     title: str
     end_user_id: Optional[str] = None
+    context: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -49,6 +59,7 @@ class V1ConversationResponse(BaseModel):
             agent_id=conversation.agent_id,
             title=conversation.title,
             end_user_id=conversation.end_user_id,
+            context=conversation.context,
             created_at=conversation.created_at,
             updated_at=conversation.updated_at,
         )

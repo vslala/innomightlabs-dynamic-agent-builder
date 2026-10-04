@@ -175,6 +175,7 @@ def test_both_architectures_render_the_same_creator_attribution():
         "krishna_mini_system_prompt.j2",
         has_memory_tools=False,
         agent_persona="Persona",
+        conversation_context=None,
     )
 
     for prompt in (memgpt, mini):
@@ -226,3 +227,31 @@ def test_a_block_with_no_stored_content_is_not_reported_as_full():
 
     assert snapshot.blocks == {}
     assert snapshot.nearing_capacity == []
+
+
+def test_both_architectures_render_the_conversation_context_after_the_persona():
+    from src.agents.prompts import render_system_prompt
+
+    brief = "The user is bidding on tender T-881."
+    memgpt = build_krishna_memgpt_system_prompt(
+        agent_persona="Persona", conversation_context=brief, core_memory=_core_memory_snapshot()
+    )
+    mini = render_system_prompt(
+        "krishna_mini_system_prompt.j2", has_memory_tools=False, agent_persona="Persona", conversation_context=brief
+    )
+
+    for prompt in (memgpt, mini):
+        assert "<conversation_context>" in prompt
+        assert prompt.index("</persona>") < prompt.index(brief)
+
+
+def test_no_conversation_context_section_without_a_context():
+    from src.agents.prompts import render_system_prompt
+
+    memgpt = build_krishna_memgpt_system_prompt(agent_persona="Persona", core_memory=_core_memory_snapshot())
+    mini = render_system_prompt(
+        "krishna_mini_system_prompt.j2", has_memory_tools=False, agent_persona="Persona", conversation_context=None
+    )
+
+    for prompt in (memgpt, mini):
+        assert "<conversation_context>" not in prompt
