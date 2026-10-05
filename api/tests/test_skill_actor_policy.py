@@ -8,8 +8,6 @@ import pytest
 
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
-from src.agents.runtime_state import AgentTurnState
-from src.agents.tool_runtime.handlers import call_mcp_tool
 from src.skills.agent_invocation.actions import _target_agent_id
 from src.skills.agent_invocation.models import InvokeAgentRequest
 from src.skills.models import ActorKind
@@ -110,23 +108,6 @@ def test_a_visitor_calling_a_skill_they_were_not_offered_is_refused(test_client,
     for kind in (ActorKind.VISITOR, ActorKind.API, ActorKind.A2A):
         with pytest.raises(ValueError, match="is not installed/enabled"):
             _execute(runtime, agent.agent_id, "rest_template", "get", kind)
-
-
-def test_mcp_tools_are_refused_for_non_owners():
-    state = AgentTurnState(
-        owner_email=TEST_USER_EMAIL,
-        actor_email="visitor@example.com",
-        actor_id="visitor-1",
-        actor_kind=ActorKind.VISITOR,
-        conversation_id="conv-1",
-        agent_id="agent-1",
-        provider_name="Bedrock",
-        model_name="m",
-        user_message="hi",
-    )
-
-    with pytest.raises(ValueError, match="MCP tools are not available"):
-        asyncio.run(call_mcp_tool(None, "call_mcp_tool", {"mcp_id": "m", "tool_name": "t", "arguments": {}}, state))
 
 
 def test_agent_invocation_in_a_chat_stays_on_its_configured_agent():

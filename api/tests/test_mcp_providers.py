@@ -20,6 +20,8 @@ from src.connectors.mcp.resolved import HttpTarget, StdioTarget
 from src.connectors.mcp.service import MCPConnectorService
 from src.form_models import FormInputType
 from tests.test_mcp_connectors import (
+    OWNER_CALLER,
+    FakeMCPUsage,
     FakeAgentRepository,
     FakeMCPRepository,
     FakeOAuthMCPClient,
@@ -39,6 +41,7 @@ def _service() -> tuple[MCPConnectorService, FakeMCPRepository, FakeOAuthMCPClie
         repository=repository,  # type: ignore[arg-type]
         agent_repository=FakeAgentRepository(make_agent()),  # type: ignore[arg-type]
         client=client,  # type: ignore[arg-type]
+        usage=FakeMCPUsage(),  # type: ignore[arg-type]
     )
     return service, repository, client
 
@@ -152,7 +155,7 @@ async def test_github_install_signs_in_with_the_users_client(monkeypatch: pytest
     assert service.get_connection(OWNER, installed.connection.mcp_id).setup_state == "ready"
 
     service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=installed.connection.mcp_id)
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1")
+    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
 
     assert "error" not in listed["connectors"][0]
     assert client.auth_headers == [{"X-MCP-Readonly": "true", "Authorization": "Bearer gho_1"}]
@@ -184,7 +187,7 @@ async def test_atlassian_installs_in_one_click_with_dcr(monkeypatch: pytest.Monk
         {"access_token": "atl-token", "refresh_token": "atl-refresh", "expires_in": 3600},
     )
     service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=installed.connection.mcp_id)
-    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1")
+    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
 
     assert client.auth_headers == [{"Authorization": "Bearer atl-token"}]
 

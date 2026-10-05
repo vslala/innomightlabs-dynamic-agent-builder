@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import Any, Optional
 
 from src.agents.repository import AgentRepository
 from src.connectors.mcp.client import MCPClientError, StreamableHTTPMCPClient, _sanitize_response_text
+from src.connectors.mcp.disclaimer import DISCLAIMER_VERSION, sharing_disclaimer
 from src.connectors.mcp.models import (
     AgentMCPConnection,
     AgentMCPConnectionResponse,
     MCPApiKeyAuthConfig,
     MCPAuthType,
+    MCPCaller,
+    MCPCatalogTool,
     MCPConnection,
     MCPConnectionCreateRequest,
     MCPConnectionResponse,
@@ -22,8 +27,14 @@ from src.connectors.mcp.models import (
     MCPProviderInstallResponse,
     MCPProviderResponse,
     MCPRuntimeStatusResponse,
+    MCPSharingDisclaimer,
+    MCPSharingSummary,
+    MCPSharingUpdateRequest,
+    MCPSharingView,
     MCPStdioPackageResponse,
     MCPStdioStoredConfig,
+    MCPToolCatalog,
+    MCPToolCatalogResponse,
     MCPTransport,
     validate_stdio_auth,
 )
@@ -48,13 +59,24 @@ from src.connectors.mcp.repository import MCPConnectionRepository, get_mcp_conne
 from src.connectors.mcp.resolved import HttpTarget, MCPTarget, OAuthBinding, StdioTarget
 from src.connectors.mcp.resolvers import ConnectionResolver, CustomResolver
 from src.connectors.mcp.sidecar import StdioMCPSidecarClient
+from src.connectors.mcp.usage import (
+    MAX_ERROR_CHARS,
+    MCPCall,
+    MCPUsageRepository,
+    arguments_preview,
+    get_mcp_usage_repository,
+    reported_error,
+)
 from src.crypto import encrypt
 from src.form_models import Form
+from src.skills.models import ActorKind
 
 log = logging.getLogger(__name__)
 
 # How long a tool call waits for a hosted server that is still starting (the sidecar allows up to 60).
 RUNTIME_START_WAIT_SECONDS = 45
+# How long signing in may wait on a server to list its tools before we leave it to the share dialog.
+CATALOG_CAPTURE_SECONDS = 15
 
 
 class MCPConnectorService:
@@ -67,8 +89,10 @@ class MCPConnectorService:
         agent_repository: Optional[AgentRepository] = None,
         client: Optional[StreamableHTTPMCPClient] = None,
         sidecar: Optional[StdioMCPSidecarClient] = None,
+        usage: Optional[MCPUsageRepository] = None,
     ):
         self.repository = repository or get_mcp_connection_repository()
+        self.usage = usage or get_mcp_usage_repository()
         self.agent_repository = agent_repository or AgentRepository()
         self.client = client or StreamableHTTPMCPClient()
         self.sidecar = sidecar or StdioMCPSidecarClient()
@@ -372,13 +396,9 @@ class MCPConnectorService:
         if not agent:
             raise ValueError("Agent not found")
         connection = self._require_connection(owner_email, mcp_id)
-        link = AgentMCPConnection(
-            agent_id=agent_id,
-            owner_email=owner_email,
-            mcp_id=mcp_id,
-            enabled=enabled,
-        )
-        saved = self.repository.save_agent_connection(link)
+        existing = self.repository.find_agent_connection(agent_id, mcp_id)
+        link = existing or AgentMCPConnection(agent_id=agent_id, owner_email=owner_email, mcp_id=mcp_id)
+        saved = self.repository.save_agent_connection(link.model_copy(update={"enabled": enabled}))
         return self._agent_response(saved, connection)
 
     def disable_for_agent(self, *, owner_email: str, agent_id: str, mcp_id: str) -> None:
@@ -392,6 +412,7 @@ class MCPConnectorService:
         *,
         owner_email: str,
         agent_id: str,
+        actor_kind: ActorKind,
         enabled_only: bool = False,
         verify_agent: bool = True,
     ) -> list[AgentMCPConnectionResponse]:
@@ -402,7 +423,7 @@ class MCPConnectorService:
 
         responses: list[AgentMCPConnectionResponse] = []
         for link in self.repository.list_agent_connections(agent_id):
-            if link.owner_email != owner_email:
+            if link.owner_email != owner_email or not link.usable_by(actor_kind):
                 continue
             if enabled_only and not link.enabled:
                 continue
@@ -412,45 +433,86 @@ class MCPConnectorService:
             responses.append(self._agent_response(link, connection))
         return responses
 
-    def build_system_prompt_addendum(self, enabled_connections: list[AgentMCPConnectionResponse]) -> str:
-        if not enabled_connections:
-            return ""
+    async def refresh_tool_catalog(self, owner_email: str, mcp_id: str) -> MCPToolCatalog:
+        connection = self._require_connection(owner_email, mcp_id)
+        target, headers = await self._session(connection)
+        listed = await self.client.list_tools(target, headers)
+        catalog = MCPToolCatalog(
+            owner_email=owner_email,
+            mcp_id=mcp_id,
+            tools=[MCPCatalogTool.from_server(tool) for tool in listed.get("tools", []) if tool.get("name")],
+        )
+        return self.repository.save_tool_catalog(catalog)
 
-        lines = [
-            "<mcp_connectors>",
-            "You can use external MCP connectors through two tools: list_mcp_tools and call_mcp_tool.",
-            "Call list_mcp_tools before call_mcp_tool when you need available tool names or input schemas.",
-            "Use the exact mcp_id and tool_name returned by list_mcp_tools.",
-        ]
-        for connection in enabled_connections:
-            lines.append(f"- {connection.mcp_id}: {connection.name}")
-        lines.append("</mcp_connectors>")
-        return "\n".join(lines)
+    async def capture_tool_catalog(self, owner_email: str, mcp_id: str) -> None:
+        """Snapshot the tools when the owner signs in or enables a connector. A miss costs nothing:
+        the share dialog lists them live when there is no snapshot."""
+        try:
+            await asyncio.wait_for(self.refresh_tool_catalog(owner_email, mcp_id), CATALOG_CAPTURE_SECONDS)
+        except Exception as exc:
+            log.warning("Could not capture MCP tool catalog mcp_id=%s error=%r", mcp_id, exc)
+
+    async def sharing_view(self, *, owner_email: str, agent_id: str, mcp_id: str) -> MCPSharingView:
+        link, connection = self._require_agent_link(owner_email=owner_email, agent_id=agent_id, mcp_id=mcp_id)
+        catalog = self.repository.find_tool_catalog(owner_email, mcp_id)
+        catalog_error: str | None = None
+        if catalog is None:
+            # Connectors set up before sharing existed have no snapshot yet.
+            try:
+                catalog = await self.refresh_tool_catalog(owner_email, mcp_id)
+            except Exception as exc:
+                log.warning("Could not list tools to share mcp_id=%s error=%r", mcp_id, exc)
+                catalog_error = f"Couldn't reach {connection.name} to list its tools. Check the connector and retry."
+        return self._sharing_view(link, connection, catalog, catalog_error)
+
+    def share(
+        self,
+        *,
+        owner_email: str,
+        agent_id: str,
+        mcp_id: str,
+        request: MCPSharingUpdateRequest,
+    ) -> MCPSharingView:
+        link, connection = self._require_agent_link(owner_email=owner_email, agent_id=agent_id, mcp_id=mcp_id)
+        catalog = self.repository.find_tool_catalog(owner_email, mcp_id)
+        saved = self.repository.save_agent_connection(link.shared(request, catalog, by=owner_email))
+        log.info(
+            "Updated MCP sharing mcp_id=%s agent_id=%s available_to=%s tools=%s",
+            mcp_id,
+            agent_id,
+            [kind.value for kind in saved.sharing.available_to],
+            len(saved.sharing.allowed_tools),
+        )
+        return self._sharing_view(saved, connection, catalog)
 
     async def list_runtime_tools(
         self,
         *,
         owner_email: str,
         agent_id: str,
+        caller: MCPCaller,
         mcp_id: str | None = None,
     ) -> dict[str, Any]:
-        connections = self._runtime_connections(owner_email=owner_email, agent_id=agent_id, mcp_id=mcp_id)
+        runtime = self._runtime_connections(owner_email=owner_email, agent_id=agent_id, caller=caller, mcp_id=mcp_id)
         results: list[dict[str, Any]] = []
-        for connection in connections:
+        for link, connection in runtime:
             try:
                 target, headers = await self._session(connection)
                 tools_result = await self.client.list_tools(target, headers)
+                listed = tools_result.get("tools")
+                if not isinstance(listed, list):
+                    listed = []
                 log.info(
                     "Listed MCP tools mcp_id=%s agent_id=%s tool_count=%s",
                     connection.mcp_id,
                     agent_id,
-                    len(tools_result.get("tools", [])) if isinstance(tools_result.get("tools"), list) else 0,
+                    len(listed),
                 )
                 results.append(
                     {
                         "mcp_id": connection.mcp_id,
                         "name": connection.name,
-                        "tools": tools_result.get("tools", []),
+                        "tools": link.offered_tools(caller.actor_kind, listed),
                     }
                 )
             except Exception as exc:
@@ -477,30 +539,41 @@ class MCPConnectorService:
         *,
         owner_email: str,
         agent_id: str,
+        caller: MCPCaller,
         mcp_id: str,
         tool_name: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
-        connections = self._runtime_connections(owner_email=owner_email, agent_id=agent_id, mcp_id=mcp_id)
-        if not connections:
-            raise ValueError(f"MCP connector '{mcp_id}' is not enabled for this agent")
-        connection = connections[0]
-        target, headers = await self._session(connection)
+        runtime = self._runtime_connections(owner_email=owner_email, agent_id=agent_id, caller=caller, mcp_id=mcp_id)
+        not_enabled = f"MCP connector '{mcp_id}' is not enabled for this agent"
+        if not runtime:
+            raise ValueError(not_enabled)
+        link, connection = runtime[0]
+        # An unshared tool gets the same answer as a missing connector, so nobody can probe what exists.
+        if not link.allows(caller.actor_kind, tool_name):
+            raise ValueError(not_enabled)
+
+        started = time.monotonic()
+        error: str | None = None
         try:
+            target, headers = await self._session(connection)
             result = await self.client.call_tool(
                 target,
                 headers,
                 tool_name=tool_name,
                 arguments=arguments,
             )
+            error = reported_error(result)
             log.info(
-                "Called MCP tool mcp_id=%s agent_id=%s tool_name=%s",
+                "Called MCP tool mcp_id=%s agent_id=%s tool_name=%s actor_kind=%s",
                 connection.mcp_id,
                 agent_id,
                 tool_name,
+                caller.actor_kind.value,
             )
             return result
-        except MCPClientError:
+        except Exception as exc:
+            error = str(exc)[:MAX_ERROR_CHARS]
             log.warning(
                 "Failed to call MCP tool mcp_id=%s agent_id=%s tool_name=%s",
                 connection.mcp_id,
@@ -509,6 +582,23 @@ class MCPConnectorService:
                 exc_info=True,
             )
             raise
+        finally:
+            await self._record(
+                MCPCall(
+                    agent_id=agent_id,
+                    mcp_id=connection.mcp_id,
+                    connection_name=connection.name,
+                    tool_name=tool_name,
+                    actor_kind=caller.actor_kind,
+                    actor_id=caller.actor_id,
+                    actor_email=caller.actor_email,
+                    conversation_id=caller.conversation_id,
+                    arguments_preview=arguments_preview(arguments),
+                    success=error is None,
+                    error=error,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                )
+            )
 
     def start_oauth(self, *, owner_email: str, mcp_id: str, return_to: str) -> str:
         connection = self._require_connection(owner_email, mcp_id)
@@ -560,19 +650,29 @@ class MCPConnectorService:
         *,
         owner_email: str,
         agent_id: str,
+        caller: MCPCaller,
         mcp_id: str | None = None,
-    ) -> list[MCPConnection]:
-        links = self.repository.list_agent_connections(agent_id)
-        connections: list[MCPConnection] = []
-        for link in links:
-            if link.owner_email != owner_email or not link.enabled:
+    ) -> list[tuple[AgentMCPConnection, MCPConnection]]:
+        runtime: list[tuple[AgentMCPConnection, MCPConnection]] = []
+        for link in self.repository.list_agent_connections(agent_id):
+            if link.owner_email != owner_email or not link.enabled or not link.usable_by(caller.actor_kind):
                 continue
             if mcp_id and link.mcp_id != mcp_id:
                 continue
             connection = self.repository.find_connection(owner_email, link.mcp_id)
             if connection and connection.enabled:
-                connections.append(connection)
-        return connections
+                runtime.append((link, connection))
+        return runtime
+
+    def _require_agent_link(
+        self, *, owner_email: str, agent_id: str, mcp_id: str
+    ) -> tuple[AgentMCPConnection, MCPConnection]:
+        if not self.agent_repository.find_agent_by_id(agent_id, owner_email):
+            raise ValueError("Agent not found")
+        link = self.repository.find_agent_connection(agent_id, mcp_id)
+        if not link or link.owner_email != owner_email:
+            raise ValueError("MCP connector not found for this agent")
+        return link, self._require_connection(owner_email, mcp_id)
 
     def _agent_response(
         self,
@@ -585,9 +685,36 @@ class MCPConnectorService:
             name=connection.name,
             server_url=connection.server_url,
             enabled=link.enabled and connection.enabled,
+            sharing=MCPSharingSummary.of(link.sharing),
             created_at=link.created_at,
             updated_at=link.updated_at,
         )
+
+    def _sharing_view(
+        self,
+        link: AgentMCPConnection,
+        connection: MCPConnection,
+        catalog: MCPToolCatalog | None,
+        catalog_error: str | None = None,
+    ) -> MCPSharingView:
+        return MCPSharingView(
+            agent_id=link.agent_id,
+            mcp_id=link.mcp_id,
+            connection_name=connection.name,
+            sharing=link.sharing,
+            catalog=MCPToolCatalogResponse(tools=catalog.tools, fetched_at=catalog.fetched_at) if catalog else None,
+            catalog_error=catalog_error,
+            disclaimer=MCPSharingDisclaimer(
+                version=DISCLAIMER_VERSION, paragraphs=sharing_disclaimer(connection.name)
+            ),
+        )
+
+    async def _record(self, call: MCPCall) -> None:
+        """Telemetry: a failed write is logged, never passed on to the tool call."""
+        try:
+            await asyncio.to_thread(self.usage.record, call)
+        except Exception as exc:
+            log.warning("Failed to record MCP call mcp_id=%s agent_id=%s error=%r", call.mcp_id, call.agent_id, exc)
 
     def _connection_response(self, connection: MCPConnection) -> MCPConnectionResponse:
         oauth_connected = False

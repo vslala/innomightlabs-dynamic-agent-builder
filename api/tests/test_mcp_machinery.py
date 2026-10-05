@@ -35,6 +35,8 @@ from src.connectors.mcp.resolved import HttpTarget, OAuthBinding, StdioTarget
 from src.connectors.mcp.service import MCPConnectorService
 from src.crypto import encrypt
 from tests.test_mcp_connectors import (
+    OWNER_CALLER,
+    FakeMCPUsage,
     FakeAgentRepository,
     FakeMCPRepository,
     FakeOAuthMCPClient,
@@ -63,6 +65,7 @@ def _service(client: Any) -> tuple[MCPConnectorService, FakeMCPRepository]:
         repository=repository,  # type: ignore[arg-type]
         agent_repository=FakeAgentRepository(make_agent()),  # type: ignore[arg-type]
         client=client,  # type: ignore[arg-type]
+        usage=FakeMCPUsage(),  # type: ignore[arg-type]
     )
     return service, repository
 
@@ -134,7 +137,7 @@ async def test_runtime_uses_non_expiring_token_after_an_hour() -> None:
         MCPOAuthCredentials(access_token="gho_token", refresh_token=None, expires_at=None),
     )
 
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1")
+    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
 
     assert "error" not in listed["connectors"][0]
     assert client.auth_headers == [{"Authorization": "Bearer gho_token"}]
@@ -334,7 +337,7 @@ async def test_connection_without_auth_sends_no_credentials() -> None:
     )
     service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=created.mcp_id)
 
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1")
+    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
 
     assert created.auth_type == MCPAuthType.NONE
     assert listed["connectors"][0]["tools"][0]["name"] == "search_pages"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, Optional
@@ -7,11 +8,16 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
+from src.connectors.mcp.disclaimer import DISCLAIMER_VERSION
+from src.skills.models import ActorKind
+
 if TYPE_CHECKING:
     from src.connectors.mcp.delivery import OAuthDelivery
     from src.connectors.mcp.resolved import StdioTarget
 
 ENV_NAME_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
+# Enough to recognise a tool; keeps a catalog of dozens of tools far below DynamoDB's 400 KB item limit.
+MAX_CATALOG_DESCRIPTION_CHARS = 400
 
 
 class MCPAuthType(str, Enum):
@@ -416,12 +422,144 @@ class MCPOAuthDiscoveryResponse(BaseModel):
     client_registration: Literal["manual", "dynamic"] = "manual"
 
 
+class MCPCatalogTool(BaseModel):
+    """Enough about a tool for its owner to decide whether to share it. Schemas are left to the live listing."""
+
+    name: str
+    title: Optional[str] = None
+    description: str = ""
+    read_only: bool = False
+    destructive: bool = False
+
+    @classmethod
+    def from_server(cls, listed: dict[str, Any]) -> "MCPCatalogTool":
+        annotations = listed.get("annotations") or {}
+        read_only = annotations.get("readOnlyHint") is True
+        return cls(
+            name=listed["name"],
+            title=listed.get("title") or annotations.get("title"),
+            description=(listed.get("description") or "")[:MAX_CATALOG_DESCRIPTION_CHARS],
+            read_only=read_only,
+            # The MCP spec presumes a tool that may write is destructive unless the server says otherwise.
+            destructive=not read_only and annotations.get("destructiveHint", True) is not False,
+        )
+
+
+class MCPToolCatalog(BaseModel):
+    """The tools a connector offered when we last asked, kept so the owner can choose which to share."""
+
+    owner_email: str
+    mcp_id: str
+    tools: list[MCPCatalogTool]
+    fetched_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def pk(self) -> str:
+        return f"User#{self.owner_email}"
+
+    @property
+    def sk(self) -> str:
+        return f"MCPToolCatalog#{self.mcp_id}"
+
+    def tool_names(self) -> set[str]:
+        return {tool.name for tool in self.tools}
+
+    def to_dynamo_item(self) -> dict[str, Any]:
+        return {
+            "pk": self.pk,
+            "sk": self.sk,
+            "entity_type": "MCPToolCatalog",
+            "owner_email": self.owner_email,
+            "mcp_id": self.mcp_id,
+            "tools": [tool.model_dump() for tool in self.tools],
+            "fetched_at": self.fetched_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dynamo_item(cls, item: dict[str, Any]) -> "MCPToolCatalog":
+        return cls.model_validate(item)
+
+
+class MCPSharingConsent(BaseModel):
+    accepted_by: str
+    accepted_at: datetime
+    version: str
+
+
+class MCPSharing(BaseModel):
+    """Who besides the owner may use a connector on one agent, and which of its tools."""
+
+    available_to: list[ActorKind] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)
+    consent: Optional[MCPSharingConsent] = None
+
+
+class MCPSharingUpdateRequest(BaseModel):
+    available_to: list[ActorKind]
+    allowed_tools: list[str] = Field(default_factory=list)
+    accept_disclaimer_version: Optional[str] = None
+
+    @field_validator("available_to")
+    @classmethod
+    def only_outsiders(cls, value: list[ActorKind]) -> list[ActorKind]:
+        if ActorKind.OWNER in value:
+            raise ValueError("The owner always has every connector; share with visitor, a2a or api")
+        return value
+
+
+class MCPSharingSummary(BaseModel):
+    available_to: list[ActorKind]
+    allowed_tool_count: int
+    consent_outdated: bool
+
+    @classmethod
+    def of(cls, sharing: MCPSharing) -> "MCPSharingSummary":
+        return cls(
+            available_to=sharing.available_to,
+            allowed_tool_count=len(sharing.allowed_tools),
+            consent_outdated=sharing.consent is not None and sharing.consent.version != DISCLAIMER_VERSION,
+        )
+
+
+class MCPToolCatalogResponse(BaseModel):
+    tools: list[MCPCatalogTool]
+    fetched_at: datetime
+
+
+class MCPSharingDisclaimer(BaseModel):
+    version: str
+    paragraphs: list[str]
+
+
+class MCPSharingView(BaseModel):
+    """Everything the share dialog needs in one round trip."""
+
+    agent_id: str
+    mcp_id: str
+    connection_name: str
+    sharing: MCPSharing
+    catalog: Optional[MCPToolCatalogResponse] = None
+    catalog_error: Optional[str] = None
+    disclaimer: MCPSharingDisclaimer
+
+
+@dataclass(frozen=True)
+class MCPCaller:
+    """Who is asking the agent to use a connector: it decides what they are offered."""
+
+    actor_kind: ActorKind
+    actor_id: str
+    actor_email: Optional[str] = None
+    conversation_id: Optional[str] = None
+
+
 class AgentMCPConnectionResponse(BaseModel):
     agent_id: str
     mcp_id: str
     name: str
     server_url: str
     enabled: bool
+    sharing: MCPSharingSummary
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -514,8 +652,48 @@ class AgentMCPConnection(BaseModel):
     owner_email: str
     mcp_id: str
     enabled: bool = True
+    sharing: MCPSharing = Field(default_factory=MCPSharing)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
+
+    def usable_by(self, actor_kind: ActorKind) -> bool:
+        """Every connector runs with the owner's account, so anyone else needs the owner's explicit share."""
+        if actor_kind == ActorKind.OWNER:
+            return True
+        return actor_kind in self.sharing.available_to
+
+    def allows(self, actor_kind: ActorKind, tool_name: str) -> bool:
+        if actor_kind == ActorKind.OWNER:
+            return True
+        return self.usable_by(actor_kind) and tool_name in self.sharing.allowed_tools
+
+    def offered_tools(self, actor_kind: ActorKind, listed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The live tools this actor may call. A tool the server adds later stays the owner's until shared."""
+        return [tool for tool in listed if self.allows(actor_kind, tool.get("name", ""))]
+
+    def shared(
+        self, request: MCPSharingUpdateRequest, catalog: Optional[MCPToolCatalog], *, by: str
+    ) -> "AgentMCPConnection":
+        """This link with the owner's new sharing, refused unless they accepted what sharing means."""
+        if not request.available_to:
+            return self.model_copy(update={"sharing": MCPSharing()})
+        if request.accept_disclaimer_version != DISCLAIMER_VERSION:
+            raise ValueError("Accept the current sharing disclaimer to share this connector")
+        if not request.allowed_tools:
+            raise ValueError("Choose at least one tool to share")
+        if catalog is None:
+            raise ValueError("List the connector's tools before sharing them")
+        unknown = set(request.allowed_tools) - catalog.tool_names()
+        if unknown:
+            raise ValueError(f"These tools are not offered by the connector: {', '.join(sorted(unknown))}")
+
+        consent = MCPSharingConsent(accepted_by=by, accepted_at=datetime.now(timezone.utc), version=DISCLAIMER_VERSION)
+        sharing = MCPSharing(
+            available_to=sorted(set(request.available_to), key=list(ActorKind).index),
+            allowed_tools=sorted(set(request.allowed_tools)),
+            consent=consent,
+        )
+        return self.model_copy(update={"sharing": sharing})
 
     @property
     def pk(self) -> str:
@@ -534,6 +712,7 @@ class AgentMCPConnection(BaseModel):
             "owner_email": self.owner_email,
             "mcp_id": self.mcp_id,
             "enabled": self.enabled,
+            "sharing": self.sharing.model_dump(mode="json"),
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -545,6 +724,8 @@ class AgentMCPConnection(BaseModel):
             owner_email=item["owner_email"],
             mcp_id=item["mcp_id"],
             enabled=bool(item.get("enabled", True)),
+            # Links saved before sharing existed have none, which means owner-only.
+            sharing=MCPSharing.model_validate(item.get("sharing") or {}),
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
         )

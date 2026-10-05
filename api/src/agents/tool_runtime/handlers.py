@@ -6,6 +6,7 @@ import json
 from typing import Any, Protocol
 
 from src.agents.runtime_state import AgentTurnState
+from src.connectors.mcp.models import MCPCaller
 from src.skills.models import ActorKind
 from src.agents.tool_runtime.contexts import (
     MCPToolContext,
@@ -47,6 +48,7 @@ class MCPRuntime(Protocol):
         *,
         owner_email: str,
         agent_id: str,
+        caller: MCPCaller,
         mcp_id: str | None = None,
     ) -> dict[str, Any]:
         ...
@@ -56,6 +58,7 @@ class MCPRuntime(Protocol):
         *,
         owner_email: str,
         agent_id: str,
+        caller: MCPCaller,
         mcp_id: str,
         tool_name: str,
         arguments: dict[str, Any],
@@ -101,10 +104,11 @@ async def list_mcp_tools(
     state: AgentTurnState,
 ) -> str:
     del tool_name
-    context = _owner_mcp_context(state)
+    context = MCPToolContext.of(state)
     result = await _required(mcp_runtime).list_runtime_tools(
         owner_email=context.owner_email,
         agent_id=context.agent_id,
+        caller=context.caller,
         mcp_id=tool_input.get("mcp_id") or None,
     )
     return _json_result(result)
@@ -117,25 +121,18 @@ async def call_mcp_tool(
     state: AgentTurnState,
 ) -> str:
     del tool_name
-    context = _owner_mcp_context(state)
+    context = MCPToolContext.of(state)
     # mcp_id, tool_name and arguments are all required by CallMCPToolInput,
-    # which has already validated this input.
+    # which has already validated this input. The runtime decides what this caller may use.
     result = await _required(mcp_runtime).call_runtime_tool(
         owner_email=context.owner_email,
         agent_id=context.agent_id,
+        caller=context.caller,
         mcp_id=tool_input["mcp_id"],
         tool_name=tool_input["tool_name"],
         arguments=tool_input["arguments"],
     )
     return _json_result(result)
-
-
-def _owner_mcp_context(state: AgentTurnState) -> MCPToolContext:
-    """MCP tools run on the owner's connections; nobody else is offered them, and a stray call is refused."""
-    context = MCPToolContext.of(state)
-    if context.actor_kind != ActorKind.OWNER:
-        raise ValueError("MCP tools are not available in this conversation")
-    return context
 
 
 def _required(mcp_runtime: MCPRuntime | None) -> MCPRuntime:

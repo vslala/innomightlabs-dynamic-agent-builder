@@ -17,11 +17,13 @@ from src.connectors.mcp.models import (
     AgentMCPConnection,
     MCPApiKeyAuthConfig,
     MCPAuthType,
+    MCPCaller,
     MCPConnection,
     MCPConnectionCreateRequest,
     MCPOAuthAuthConfig,
     MCPOAuthCredentials,
     MCPOAuthProviderConfig,
+    MCPToolCatalog,
     MCPToolCallRequest,
 )
 from src.connectors.mcp.oauth import (
@@ -36,14 +38,26 @@ from src.connectors.mcp.oauth import (
     protected_resource_metadata_url_for_path,
 )
 from src.connectors.mcp.service import MCPConnectorService
+from src.connectors.mcp.usage import MCPCall
 from src.crypto import encrypt
 from src.skills.models import ActorKind
+
+
+OWNER_CALLER = MCPCaller(actor_kind=ActorKind.OWNER, actor_id="owner@example.com")
 
 
 class FakeMCPRepository:
     def __init__(self):
         self.connections: dict[tuple[str, str], MCPConnection] = {}
         self.agent_connections: dict[tuple[str, str], AgentMCPConnection] = {}
+        self.catalogs: dict[tuple[str, str], MCPToolCatalog] = {}
+
+    def save_tool_catalog(self, catalog: MCPToolCatalog) -> MCPToolCatalog:
+        self.catalogs[(catalog.owner_email, catalog.mcp_id)] = catalog
+        return catalog
+
+    def find_tool_catalog(self, owner_email: str, mcp_id: str) -> MCPToolCatalog | None:
+        return self.catalogs.get((owner_email, mcp_id))
 
     def save_connection(self, connection: MCPConnection) -> MCPConnection:
         self.connections[(connection.owner_email, connection.mcp_id)] = connection
@@ -61,6 +75,7 @@ class FakeMCPRepository:
 
     def delete_connection(self, owner_email: str, mcp_id: str) -> None:
         self.connections.pop((owner_email, mcp_id), None)
+        self.catalogs.pop((owner_email, mcp_id), None)
 
     def save_agent_connection(self, link: AgentMCPConnection) -> AgentMCPConnection:
         self.agent_connections[(link.agent_id, link.mcp_id)] = link
@@ -78,6 +93,14 @@ class FakeMCPRepository:
 
     def delete_agent_connection(self, agent_id: str, mcp_id: str) -> None:
         self.agent_connections.pop((agent_id, mcp_id), None)
+
+
+class FakeMCPUsage:
+    def __init__(self):
+        self.calls: list[MCPCall] = []
+
+    def record(self, call: MCPCall) -> None:
+        self.calls.append(call)
 
 
 class FakeAgentRepository:
@@ -183,6 +206,7 @@ def make_service() -> tuple[MCPConnectorService, FakeMCPRepository, FakeMCPClien
         repository=repository,  # type: ignore[arg-type]
         agent_repository=FakeAgentRepository(agent),  # type: ignore[arg-type]
         client=client,  # type: ignore[arg-type]
+        usage=FakeMCPUsage(),  # type: ignore[arg-type]
     )
     return service, repository, client
 
@@ -229,7 +253,9 @@ def test_mcp_connection_can_be_enabled_per_agent() -> None:
     assert linked.mcp_id == mcp_id
     assert linked.name == "Ahrefs"
     assert linked.enabled is True
-    assert service.list_agent_connections(owner_email="owner@example.com", agent_id="agent-1")
+    assert service.list_agent_connections(
+        owner_email="owner@example.com", agent_id="agent-1", actor_kind=ActorKind.OWNER
+    )
 
 
 def test_oauth_mcp_connection_is_created_without_credentials() -> None:
@@ -456,6 +482,7 @@ async def test_oauth_mcp_runtime_uses_bearer_token() -> None:
         repository=repository,  # type: ignore[arg-type]
         agent_repository=FakeAgentRepository(agent),  # type: ignore[arg-type]
         client=client,  # type: ignore[arg-type]
+        usage=FakeMCPUsage(),  # type: ignore[arg-type]
     )
     auth = MCPOAuthAuthConfig(
         provider=MCPOAuthProviderConfig.model_validate(
@@ -488,7 +515,7 @@ async def test_oauth_mcp_runtime_uses_bearer_token() -> None:
         enabled=True,
     )
 
-    listed = await service.list_runtime_tools(owner_email="owner@example.com", agent_id="agent-1")
+    listed = await service.list_runtime_tools(owner_email="owner@example.com", agent_id="agent-1", caller=OWNER_CALLER)
 
     assert listed["connectors"][0]["tools"][0]["name"] == "search_pages"
     assert client.auth_headers == [{"Authorization": "Bearer oauth-token"}]
@@ -503,6 +530,7 @@ async def test_oauth_mcp_runtime_rejects_expired_token_without_refresh() -> None
         repository=repository,  # type: ignore[arg-type]
         agent_repository=FakeAgentRepository(agent),  # type: ignore[arg-type]
         client=client,  # type: ignore[arg-type]
+        usage=FakeMCPUsage(),  # type: ignore[arg-type]
     )
     auth = MCPOAuthAuthConfig(
         provider=MCPOAuthProviderConfig.model_validate(
@@ -535,7 +563,7 @@ async def test_oauth_mcp_runtime_rejects_expired_token_without_refresh() -> None
         enabled=True,
     )
 
-    listed = await service.list_runtime_tools(owner_email="owner@example.com", agent_id="agent-1")
+    listed = await service.list_runtime_tools(owner_email="owner@example.com", agent_id="agent-1", caller=OWNER_CALLER)
 
     assert "credentials expired" in listed["connectors"][0]["error"]
     assert client.auth_headers == []
@@ -555,10 +583,12 @@ async def test_mcp_runtime_lists_and_calls_live_tools() -> None:
     listed = await service.list_runtime_tools(
         owner_email="owner@example.com",
         agent_id="agent-1",
+        caller=OWNER_CALLER,
     )
     called = await service.call_runtime_tool(
         owner_email="owner@example.com",
         agent_id="agent-1",
+        caller=OWNER_CALLER,
         mcp_id=mcp_id,
         tool_name="site_audit",
         arguments={"url": "https://example.com"},

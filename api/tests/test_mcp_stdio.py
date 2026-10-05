@@ -23,7 +23,13 @@ from src.connectors.mcp.providers.base import ProviderInstall
 from src.connectors.mcp.resolved import StdioTarget
 from src.connectors.mcp.service import MCPConnectorService
 from src.connectors.mcp.sidecar import StdioMCPSidecarClient
-from tests.test_mcp_connectors import FakeAgentRepository, FakeMCPRepository, make_agent
+from tests.test_mcp_connectors import (
+    OWNER_CALLER,
+    FakeAgentRepository,
+    FakeMCPRepository,
+    FakeMCPUsage,
+    make_agent,
+)
 
 OWNER = "owner@example.com"
 SIDECAR = "http://sidecar.internal:8080"
@@ -92,6 +98,7 @@ def _service(sidecar: FakeSidecar) -> tuple[MCPConnectorService, FakeMCPReposito
         agent_repository=FakeAgentRepository(make_agent()),  # type: ignore[arg-type]
         client=StreamableHTTPMCPClient(transport=transport),
         sidecar=StdioMCPSidecarClient(transport=transport),
+        usage=FakeMCPUsage(),  # type: ignore[arg-type]
     )
     return service, repository
 
@@ -245,9 +252,14 @@ async def test_stdio_runtime_ensures_the_server_then_talks_to_the_facade(sidecar
     created = service.create_connection(OWNER, _stdio_request())
     service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=created.mcp_id)
 
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1")
+    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
     called = await service.call_runtime_tool(
-        owner_email=OWNER, agent_id="agent-1", mcp_id=created.mcp_id, tool_name="search_search", arguments={}
+        owner_email=OWNER,
+        agent_id="agent-1",
+        caller=OWNER_CALLER,
+        mcp_id=created.mcp_id,
+        tool_name="search_search",
+        arguments={},
     )
 
     assert listed["connectors"][0]["tools"] == [{"name": "search_search"}]
@@ -279,9 +291,9 @@ async def test_a_server_that_is_not_running_surfaces_why(sidecar: FakeSidecar) -
     service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=created.mcp_id)
 
     sidecar.state = "starting"
-    starting = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1")
+    starting = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
     sidecar.state = "failed"
-    failed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1")
+    failed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
 
     assert "still starting" in starting["connectors"][0]["error"]
     assert "exited with code 1" in failed["connectors"][0]["error"]
@@ -366,7 +378,7 @@ async def test_update_keeps_blank_env_values_by_name(sidecar: FakeSidecar) -> No
         ),
     )
     service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=created.mcp_id)
-    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1")
+    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
 
     assert sidecar.ensured[-1]["spec"]["env"] == {
         "GOOGLE_ADS_DEVELOPER_TOKEN": "dev-token",
@@ -406,7 +418,7 @@ async def test_access_token_env_delivers_the_token_and_restarts_on_refresh(
         return {"access_token": "token-2", "expires_in": 3600}
 
     monkeypatch.setattr("src.connectors.mcp.service.refresh_access_token", fake_refresh)
-    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1")
+    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
 
     # 200s left is inside the 300s buffer of AccessTokenEnv, so the process gets the refreshed token.
     assert sidecar.ensured[-1]["spec"]["env"] == {"ACCESS_TOKEN": "token-2"}
@@ -444,7 +456,7 @@ async def test_google_ads_preset_hands_the_server_an_authorized_user_file(
         service, monkeypatch, installed.connection.mcp_id, {"access_token": "ya29", "refresh_token": "1//r", "expires_in": 3599}
     )
     service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=installed.connection.mcp_id)
-    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1")
+    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
 
     spec = sidecar.ensured[-1]["spec"]
     assert spec["package"] == "google_ads"

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBearer
 
@@ -21,13 +21,18 @@ from src.connectors.mcp.models import (
     MCPProviderInstallResponse,
     MCPProviderResponse,
     MCPRuntimeStatusResponse,
+    MCPSharingUpdateRequest,
+    MCPSharingView,
     MCPStdioPackageResponse,
+    MCPToolCatalogResponse,
 )
 from src.auth.oauth_handoff import handoff_redirect, safe_return_to
 from src.config import settings
+from src.connectors.mcp.client import MCPClientError
 from src.connectors.mcp.oauth import decode_state_session
 from src.connectors.mcp.service import MCPConnectorService, get_mcp_connector_service
 from src.form_models import Form
+from src.skills.models import ActorKind
 
 log = logging.getLogger(__name__)
 
@@ -141,6 +146,21 @@ async def restart_mcp_runtime(
         raise _not_found_from_value_error(error) from error
 
 
+@router.post("/connectors/mcp/{mcp_id}/tools/refresh", response_model=MCPToolCatalogResponse)
+async def refresh_mcp_tool_catalog(
+    request: Request,
+    mcp_id: str,
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> MCPToolCatalogResponse:
+    try:
+        catalog = await service.refresh_tool_catalog(_user_email(request), mcp_id)
+    except ValueError as error:
+        raise _not_found_from_value_error(error) from error
+    except MCPClientError as error:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
+    return MCPToolCatalogResponse(tools=catalog.tools, fetched_at=catalog.fetched_at)
+
+
 @router.get("/connectors/mcp/{mcp_id}/forms/settings", response_model=Form)
 async def get_mcp_connection_settings_form(
     request: Request,
@@ -248,8 +268,9 @@ async def complete_mcp_oauth(
         return {"mcp_oauth": "error", "reason": "cancelled"}
     if not code:
         return {"mcp_oauth": "error", "reason": "missing_code"}
+    service = get_mcp_connector_service()
     try:
-        await get_mcp_connector_service().complete_oauth(
+        await service.complete_oauth(
             owner_email=session.user_email,
             mcp_id=session.mcp_id,
             code=code,
@@ -258,6 +279,8 @@ async def complete_mcp_oauth(
     except Exception as exc:
         log.error("MCP OAuth completion failed for %s: %s", session.mcp_id, exc, exc_info=True)
         return {"mcp_oauth": "error", "reason": "callback_failed"}
+    # Signing in is the first moment we can ask the server which tools it offers.
+    await service.capture_tool_catalog(session.user_email, session.mcp_id)
     return {"mcp_oauth": "success", "mcp_id": session.mcp_id}
 
 
@@ -268,7 +291,9 @@ async def list_agent_mcp_connections(
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> list[AgentMCPConnectionResponse]:
     try:
-        return service.list_agent_connections(owner_email=_user_email(request), agent_id=agent_id)
+        return service.list_agent_connections(
+            owner_email=_user_email(request), agent_id=agent_id, actor_kind=ActorKind.OWNER
+        )
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 
@@ -279,15 +304,46 @@ async def update_agent_mcp_connection(
     agent_id: str,
     mcp_id: str,
     body: AgentMCPConnectionUpdateRequest,
+    background_tasks: BackgroundTasks,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> AgentMCPConnectionResponse:
+    owner_email = _user_email(request)
     try:
-        return service.enable_for_agent(
-            owner_email=_user_email(request),
+        linked = service.enable_for_agent(
+            owner_email=owner_email,
             agent_id=agent_id,
             mcp_id=mcp_id,
             enabled=body.enabled,
         )
+    except ValueError as error:
+        raise _not_found_from_value_error(error) from error
+    background_tasks.add_task(service.capture_tool_catalog, owner_email, mcp_id)
+    return linked
+
+
+@router.get("/agents/{agent_id}/mcp-connections/{mcp_id}/sharing", response_model=MCPSharingView)
+async def get_agent_mcp_sharing(
+    request: Request,
+    agent_id: str,
+    mcp_id: str,
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> MCPSharingView:
+    try:
+        return await service.sharing_view(owner_email=_user_email(request), agent_id=agent_id, mcp_id=mcp_id)
+    except ValueError as error:
+        raise _not_found_from_value_error(error) from error
+
+
+@router.put("/agents/{agent_id}/mcp-connections/{mcp_id}/sharing", response_model=MCPSharingView)
+async def update_agent_mcp_sharing(
+    request: Request,
+    agent_id: str,
+    mcp_id: str,
+    body: MCPSharingUpdateRequest,
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> MCPSharingView:
+    try:
+        return service.share(owner_email=_user_email(request), agent_id=agent_id, mcp_id=mcp_id, request=body)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 

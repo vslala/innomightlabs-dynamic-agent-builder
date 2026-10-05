@@ -19,6 +19,7 @@ def build_krishna_memgpt_system_prompt(
     enabled_skills: list[AgentSkill] | None = None,
     recent_skill_actions: list[LoadedSkillRuntimeResponse] | None = None,
     enabled_mcp_connections: list[AgentMCPConnectionResponse] | None = None,
+    mcp_shared_by_owner: bool = False,
     core_memory: CoreMemorySnapshot | None = None,
     capacity_warnings: list[MemoryCapacityWarning] | None = None,
 ) -> str:
@@ -32,5 +33,6 @@ def build_krishna_memgpt_system_prompt(
         enabled_skills=enabled_skills or [],
         recent_skill_actions=recent_skill_actions or [],
         enabled_mcp_connections=enabled_mcp_connections or [],
+        mcp_shared_by_owner=mcp_shared_by_owner,
         capacity_warnings=capacity_warnings or [],
     )

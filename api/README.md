@@ -219,6 +219,10 @@ erDiagram
 | **CoreMemory** | `Agent#{agent_id}#User#{user_id}` | `CoreMemory#{block_id}` | Get/update memory block content |
 | **ArchivalMemory** | `Agent#{agent_id}#User#{user_id}` | `Archival#{timestamp}#{memory_id}` | Search archival memories (chronological) |
 | **CapacityWarning** | `Agent#{agent_id}#User#{user_id}` | `CapacityWarning#{block_id}` | Track memory capacity warnings |
+| **MCPToolCatalog** | `User#{owner_email}` | `MCPToolCatalog#{mcp_id}` | Tools a connector offers, for choosing what to share |
+| **AgentMCPConnection** | `Agent#{agent_id}` | `MCPConnection#{mcp_id}` | Connector enabled for an agent, with its `sharing` (audiences, allowed tools, consent) |
+| **MCPCall** | `Agent#{agent_id}#MCPCalls` | `{called_at}#{call_id}` | Audit of MCP calls, newest first; `ttl` 90 days |
+| **MCPDailyUsage** | `Agent#{agent_id}#MCPUsage` | `Day#{YYYY-MM-DD}#{actor_kind}#{mcp_id}#{tool_name}` | MCP usage counters, range-queried by day |
 
 ### Idempotency Patterns
 

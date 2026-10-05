@@ -275,6 +275,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         enabled_skills: list[AgentSkill] | None = None,
         recent_skill_actions: list[LoadedSkillRuntimeResponse] | None = None,
         enabled_mcp_connections: list[Any] | None = None,
+        mcp_shared_by_owner: bool = False,
         core_memory: CoreMemorySnapshot | None = None,
         capacity_warnings: list[MemoryCapacityWarning] | None = None,
     ) -> str:
@@ -286,6 +287,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             enabled_skills=enabled_skills,
             recent_skill_actions=recent_skill_actions,
             enabled_mcp_connections=enabled_mcp_connections,
+            mcp_shared_by_owner=mcp_shared_by_owner,
             core_memory=core_memory,
             capacity_warnings=capacity_warnings,
         )
@@ -310,6 +312,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             enabled_skills=state.enabled_skills or None,
             recent_skill_actions=state.recent_skill_actions or None,
             enabled_mcp_connections=state.enabled_mcp_connections or None,
+            mcp_shared_by_owner=state.actor_kind != ActorKind.OWNER,
             core_memory=snapshot,
             capacity_warnings=_capacity_warnings(snapshot) or None,
         )
@@ -345,13 +348,12 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         )
 
     def _mcp_connections_for(self, state: AgentTurnState) -> list[Any]:
-        """MCP servers act with the owner's own connections, so only the owner gets them."""
-        if state.actor_kind != ActorKind.OWNER:
-            return []
+        """The owner gets every enabled connector; anyone else only what the owner shared with them."""
         try:
             return self.mcp_connector_service.list_agent_connections(
                 owner_email=state.owner_email,
                 agent_id=state.agent_id,
+                actor_kind=state.actor_kind,
                 enabled_only=True,
                 verify_agent=False,
             )
