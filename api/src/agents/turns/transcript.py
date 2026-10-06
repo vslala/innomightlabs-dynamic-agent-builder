@@ -14,7 +14,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
-from src.agents.turn_runtime import is_droppable_runtime_event
 from src.llm.events import SSEEvent, SSEEventType
 
 log = logging.getLogger(__name__)
@@ -27,7 +26,6 @@ class TurnTranscript:
     turn_id: str
     events: list[SSEEvent] = field(default_factory=list)
     finished: bool = False
-    task: "asyncio.Task[None] | None" = None
     _arrival: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
     def record(self, event: SSEEvent) -> None:
@@ -56,26 +54,10 @@ class TurnTranscript:
 
     def _blank_superseded_partials(self) -> None:
         for index, event in enumerate(self.events):
-            if is_droppable_runtime_event(event) and event.image_b64 is not None:
+            # Only image previews: other events the runtime may drop are not payloads to compact.
+            if event.event_type == SSEEventType.IMAGE_GENERATION_PARTIAL and event.image_b64 is not None:
                 self.events[index] = event.model_copy(update={"image_b64": None})
 
     def _wake(self) -> None:
         waiters, self._arrival = self._arrival, asyncio.Event()
         waiters.set()
-
-
-_transcripts: dict[str, TurnTranscript] = {}
-
-
-def open_transcript(turn_id: str) -> TurnTranscript:
-    transcript = TurnTranscript(turn_id=turn_id)
-    _transcripts[turn_id] = transcript
-    return transcript
-
-
-def live_transcript(turn_id: str) -> TurnTranscript | None:
-    return _transcripts.get(turn_id)
-
-
-def forget_transcript(turn_id: str) -> None:
-    _transcripts.pop(turn_id, None)

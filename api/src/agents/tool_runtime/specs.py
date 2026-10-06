@@ -53,6 +53,8 @@ class ToolSpec:
 class ToolExecutionOutcome:
     result: str
     success: bool
+    #: The tool may have changed what the system prompt shows (core memory), so rebuild it before the next call.
+    refresh_prompt: bool = False
 
 
 @dataclass(frozen=True)

@@ -23,7 +23,6 @@ from src.agents.tool_results import interpret_tool_result
 from src.connectors.mcp.service import MCPConnectorService
 from src.agents.tool_runtime import (
     ToolCategory,
-    ToolRegistry,
     build_default_tool_registry,
 )
 from src.llm.conversation_strategy import FixedWindowStrategy
@@ -131,7 +130,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             actor_kind=actor_kind,
             conversation_id=conversation.conversation_id,
             agent_id=agent.agent_id,
-            provider_name=agent.agent_provider,
             model_name=agent.agent_model or "",
             user_message=user_message,
             attachments=attachments or [],
@@ -172,7 +170,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             owner_email=state.owner_email,
             provider_settings_repo=self.provider_settings_repo,
         )
-        state.credentials = session.credentials
 
         # 4. Build conversation context (first: the system prompt depends on it)
         yield SSEEvent(
@@ -217,7 +214,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         async for item in run_agentic_tool_loop(
             provider=session.provider,
             context=context,
-            credentials=state.credentials or {},
+            credentials=session.credentials,
             tools=tools,
             model=state.model_name,
             tool_router=tool_router,

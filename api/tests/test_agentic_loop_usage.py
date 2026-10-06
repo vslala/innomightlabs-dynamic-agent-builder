@@ -35,7 +35,6 @@ async def test_record_token_usage_forwards_api_key_id(api_key_id):
         actor_kind=ActorKind.OWNER,
         conversation_id="conversation-1",
         agent_id="agent-1",
-        provider_name="anthropic",
         model_name="model-a",
         user_message="Hi",
         api_key_id=api_key_id,

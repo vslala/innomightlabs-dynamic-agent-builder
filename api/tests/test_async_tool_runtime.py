@@ -196,7 +196,7 @@ def test_skill_runtime_starts_async_job_without_storing_decrypted_config(
     def fake_start(job):
         started_jobs.append(job.job_id)
 
-    monkeypatch.setattr(runtime.tool_job_service, "start_skill_action_job", fake_start)
+    monkeypatch.setattr(runtime.tool_job_service, "_schedule", fake_start)
 
     result = asyncio.run(
         runtime.handle_tool_call(
@@ -401,7 +401,7 @@ async def test_start_skill_action_job_keeps_a_strong_reference_while_running():
     )
 
     jobs_service._running_jobs.clear()
-    SlowService().start_skill_action_job(job)
+    SlowService()._schedule(job)
     await started.wait()
 
     assert len(jobs_service._running_jobs) == 1
@@ -411,3 +411,20 @@ async def test_start_skill_action_job_keeps_a_strong_reference_while_running():
     await asyncio.sleep(0)
 
     assert jobs_service._running_jobs == set()
+
+
+def test_a_job_is_stale_only_once_it_has_run_longer_than_ten_minutes():
+    started = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
+    job = ToolJob(
+        owner_email="owner@example.com",
+        actor_email="owner@example.com",
+        actor_id="owner@example.com",
+        tool_name="execute_skill_action",
+        status=ToolJobStatus.RUNNING,
+        started_at=started,
+    )
+
+    assert not job.is_stale(now=started + timedelta(minutes=10))
+    assert job.is_stale(now=started + timedelta(minutes=10, seconds=1))
+    finished = job.model_copy(update={"status": ToolJobStatus.SUCCEEDED})
+    assert not finished.is_stale(now=started + timedelta(hours=1))

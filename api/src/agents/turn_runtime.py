@@ -7,6 +7,7 @@ import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from typing import Any, AsyncIterator
 from uuid import uuid4
 
 from src.llm.events import SSEEvent, SSEEventType
@@ -44,16 +45,32 @@ class AgentTurnRuntime:
 
         await self.events.put(event)
 
-    async def next_event(self) -> SSEEvent:
-        return await self.events.get()
+    async def stream_while(self, task: "asyncio.Task[Any]") -> AsyncIterator[SSEEvent]:
+        """Yield the events `task` emits, in order, until it has finished. A failed task raises here.
 
-    def drain_available(self) -> list[SSEEvent]:
-        drained: list[SSEEvent] = []
-        while True:
-            try:
-                drained.append(self.events.get_nowait())
-            except asyncio.QueueEmpty:
-                return drained
+        Races the task against the queue rather than polling: a 50ms poll woke the shared
+        event loop 20 times a second for as long as a tool ran.
+        """
+        next_event = asyncio.ensure_future(self.events.get())
+        try:
+            while True:
+                done, _ = await asyncio.wait({task, next_event}, return_when=asyncio.FIRST_COMPLETED)
+                if next_event in done:
+                    yield next_event.result()
+                    next_event = asyncio.ensure_future(self.events.get())
+                if task in done:
+                    break
+
+            task.result()
+            # Cancelling a *done* future discards its event, so hand it over before draining the rest.
+            if next_event.done() and not next_event.cancelled():
+                yield next_event.result()
+            while not self.events.empty():
+                yield self.events.get_nowait()
+        finally:
+            next_event.cancel()
+            if not task.done():
+                task.cancel()
 
     def close(self) -> None:
         self.closed = True

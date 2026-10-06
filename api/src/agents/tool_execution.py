@@ -1,7 +1,7 @@
 """Tool execution policy: timeouts, error shape, and prompt staleness.
 
 The registry knows how to run a tool. This decides what happens when it takes
-too long or raises, and notices when a tool has invalidated the system prompt.
+too long or raises, and reports when a tool has invalidated the system prompt.
 """
 
 from __future__ import annotations
@@ -37,9 +37,9 @@ class ToolExecutionRouter:
             else:
                 result = await run
 
-            if tool.spec.mutates_prompt_context:
-                state.prompt_dirty = True
-            return ToolExecutionOutcome(result=result, success=True)
+            return ToolExecutionOutcome(
+                result=result, success=True, refresh_prompt=tool.spec.mutates_prompt_context
+            )
 
         except TimeoutError:
             log.warning(

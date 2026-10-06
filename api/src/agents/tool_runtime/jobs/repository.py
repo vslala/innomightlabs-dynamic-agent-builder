@@ -6,21 +6,11 @@ from typing import Any
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
-from src.agents.tool_runtime.jobs.models import (
-    TOOL_JOB_STALE_AFTER_SECONDS,
-    ToolJob,
-    ToolJobStatus,
-)
-from src.common import as_aware_utc
+from src.agents.tool_runtime.jobs.models import STALE_JOB_ERROR, ToolJob, ToolJobStatus
 from src.config import settings
 from src.db import get_dynamodb_resource
 from src.utils.dynamodb import convert_floats_to_decimals
 
-
-_STALE_JOB_ERROR = (
-    "Async tool job became stale before completion. The background execution "
-    "may have been interrupted; please retry the action."
-)
 
 
 class ToolJobRepository:
@@ -59,13 +49,6 @@ class ToolJobRepository:
                 ":started_at": datetime.now(timezone.utc).isoformat(),
                 ":progress_message": progress_message or "Running tool job...",
             },
-        )
-
-    def update_progress(self, job_id: str, progress_message: str) -> ToolJob:
-        return self._update_by_id(
-            job_id,
-            update_expression="SET progress_message = :progress_message",
-            values={":progress_message": progress_message},
         )
 
     def mark_succeeded(self, job_id: str, result: Any) -> ToolJob:
@@ -112,12 +95,9 @@ class ToolJobRepository:
         failed = 0
 
         for job in self._find_unfinished():
-            reference = job.started_at or job.created_at
-            elapsed = (checked_at - as_aware_utc(reference)).total_seconds()
-            if elapsed <= TOOL_JOB_STALE_AFTER_SECONDS:
-                continue
-            self.mark_failed(job.job_id, _STALE_JOB_ERROR)
-            failed += 1
+            if job.is_stale(now=checked_at):
+                self.mark_failed(job.job_id, STALE_JOB_ERROR)
+                failed += 1
 
         return failed
 

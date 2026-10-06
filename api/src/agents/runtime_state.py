@@ -1,16 +1,12 @@
-"""Per-turn runtime state for agent architectures.
+"""Who is speaking in a turn, what they asked, and what the architecture loaded for them.
 
-Keep this small and pragmatic. The goal is to:
-- centralize shared inputs (kb_ids, enabled_skills, credentials, tools)
-- reduce long parameter lists and cross-cutting concerns
-
-We'll evolve this incrementally as we extract prompt building + tool execution.
+Provider credentials are not here: the provider session owns them, so a tool can never reach them.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from src.messages.models import Attachment
 from src.skills.models import ActorKind, AgentSkill, LoadedSkillRuntimeResponse
@@ -27,7 +23,6 @@ class AgentTurnState:
     actor_kind: ActorKind
     conversation_id: str
     agent_id: str
-    provider_name: str
     model_name: str
 
     user_message: str
@@ -44,10 +39,3 @@ class AgentTurnState:
     #: Skill actions used recently in this conversation, whose schemas stay in the prompt.
     recent_skill_actions: list[LoadedSkillRuntimeResponse] = field(default_factory=list)
     enabled_mcp_connections: list["AgentMCPConnectionResponse"] = field(default_factory=list)
-
-    # Provider runtime
-    credentials: dict[str, Any] | None = None
-
-    # When a tool mutates core memory, we should rebuild the system prompt so the
-    # model doesn't operate on stale memory context.
-    prompt_dirty: bool = False

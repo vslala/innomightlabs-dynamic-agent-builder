@@ -479,7 +479,7 @@ class SkillRuntimeService:
                 "user_message_id": user_message_id,
             }
             if run_async:
-                job = self.tool_job_service.create_skill_action_job(
+                job = self.tool_job_service.start_skill_action_job(
                     owner_email=owner_email,
                     actor_email=actor_email,
                     actor_id=actor_id,
@@ -492,7 +492,6 @@ class SkillRuntimeService:
                     arguments=arguments,
                     context=context,
                 )
-                self.tool_job_service.start_skill_action_job(job)
                 return json.dumps(job.to_start_payload(), ensure_ascii=True)
 
             config = self.repository.get_runtime_config(installed)

@@ -515,7 +515,6 @@ def test_krishna_memgpt_builds_tool_definitions_from_command_registry():
         actor_kind=ActorKind.OWNER,
         conversation_id="conversation-1",
         agent_id="agent-1",
-        provider_name="Bedrock",
         model_name="test-model",
         user_message="hello",
     )

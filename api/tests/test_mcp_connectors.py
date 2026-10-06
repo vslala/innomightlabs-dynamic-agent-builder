@@ -626,7 +626,6 @@ async def test_tool_execution_router_dispatches_mcp_tools() -> None:
         actor_kind=ActorKind.OWNER,
         conversation_id="conversation-1",
         agent_id="agent-1",
-        provider_name="OpenAI",
         model_name="gpt-5.5",
         user_message="Audit my site",
     )

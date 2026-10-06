@@ -7,8 +7,7 @@ from src.agents.architectures.base import AgentArchitecture
 from src.agents.models import Agent
 from src.agents.turns.models import ConversationTurnStatus
 from src.agents.turns.repository import ConversationTurnRepository
-from src.agents.turns.run import start_turn, stop_turn
-from src.agents.turns.transcript import live_transcript
+from src.agents.turns.run import live_transcript, start_turn, stop_turn
 from src.config import settings
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
@@ -106,7 +105,7 @@ async def test_turn_completes_after_subscriber_disconnects(dynamodb_table, monke
     agent = _agent()
     conversation = _seeded_conversation(agent)
 
-    turn = start_turn(
+    running = start_turn(
         agent=agent,
         conversation=conversation,
         user_message="hi",
@@ -116,8 +115,9 @@ async def test_turn_completes_after_subscriber_disconnects(dynamodb_table, monke
         actor_id=OWNER,
         actor_kind=ActorKind.OWNER,
     )
-    transcript = live_transcript(turn.turn_id)
-    assert transcript is not None
+    turn = running.turn
+    transcript = running.transcript
+    assert live_transcript(turn.turn_id) is transcript
 
     received = []
     async for _sequence, event in transcript.follow():
@@ -125,7 +125,7 @@ async def test_turn_completes_after_subscriber_disconnects(dynamodb_table, monke
         if len(received) == 2:
             break  # simulates Starlette closing the response generator on disconnect
 
-    await asyncio.wait_for(transcript.task, timeout=2)
+    await asyncio.wait_for(running.task, timeout=2)
 
     saved_turn = ConversationTurnRepository().find_by_id(turn.turn_id)
     assert saved_turn is not None
@@ -143,7 +143,7 @@ async def test_reattach_replays_from_zero_then_follows_live(dynamodb_table, monk
     agent = _agent()
     conversation = _seeded_conversation(agent)
 
-    turn = start_turn(
+    running = start_turn(
         agent=agent,
         conversation=conversation,
         user_message="hi",
@@ -153,8 +153,7 @@ async def test_reattach_replays_from_zero_then_follows_live(dynamodb_table, monk
         actor_id=OWNER,
         actor_kind=ActorKind.OWNER,
     )
-    transcript = live_transcript(turn.turn_id)
-    assert transcript is not None
+    transcript = running.transcript
 
     first_pass: list[SSEEventType] = []
     async for _sequence, event in transcript.follow(after_sequence=0):
@@ -170,7 +169,7 @@ async def test_reattach_replays_from_zero_then_follows_live(dynamodb_table, monk
     async for _sequence, event in transcript.follow(after_sequence=0):
         replay.append(event.event_type)
 
-    await asyncio.wait_for(transcript.task, timeout=2)
+    await asyncio.wait_for(running.task, timeout=2)
 
     assert replay[: len(first_pass)] == first_pass
     assert replay[-1] == SSEEventType.STREAM_COMPLETE
@@ -182,7 +181,7 @@ async def test_two_concurrent_turns_do_not_interfere(dynamodb_table, monkeypatch
     agent_a, agent_b = _agent("Agent A"), _agent("Agent B")
     conversation_a, conversation_b = _seeded_conversation(agent_a), _seeded_conversation(agent_b)
 
-    turn_a = start_turn(
+    running_a = start_turn(
         agent=agent_a,
         conversation=conversation_a,
         user_message="hi a",
@@ -192,7 +191,8 @@ async def test_two_concurrent_turns_do_not_interfere(dynamodb_table, monkeypatch
         actor_id=OWNER,
         actor_kind=ActorKind.OWNER,
     )
-    turn_b = start_turn(
+    turn_a = running_a.turn
+    running_b = start_turn(
         agent=agent_b,
         conversation=conversation_b,
         user_message="hi b",
@@ -202,11 +202,12 @@ async def test_two_concurrent_turns_do_not_interfere(dynamodb_table, monkeypatch
         actor_id=OWNER,
         actor_kind=ActorKind.OWNER,
     )
+    turn_b = running_b.turn
 
-    transcript_a = live_transcript(turn_a.turn_id)
-    transcript_b = live_transcript(turn_b.turn_id)
+    transcript_a = running_a.transcript
+    transcript_b = running_b.transcript
     assert transcript_a is not None and transcript_b is not None
-    await asyncio.wait_for(asyncio.gather(transcript_a.task, transcript_b.task), timeout=2)
+    await asyncio.wait_for(asyncio.gather(running_a.task, running_b.task), timeout=2)
 
     events_a = [event async for _sequence, event in transcript_a.follow()]
     events_b = [event async for _sequence, event in transcript_b.follow()]
@@ -232,7 +233,7 @@ async def test_find_active_turn_reflects_running_state(dynamodb_table, monkeypat
     conversation = _seeded_conversation(agent)
     turn_repo = ConversationTurnRepository()
 
-    turn = start_turn(
+    running = start_turn(
         agent=agent,
         conversation=conversation,
         user_message="hi",
@@ -242,15 +243,14 @@ async def test_find_active_turn_reflects_running_state(dynamodb_table, monkeypat
         actor_id=OWNER,
         actor_kind=ActorKind.OWNER,
     )
+    turn = running.turn
 
     active = turn_repo.find_active(conversation.conversation_id)
     assert active is not None
     assert active.turn_id == turn.turn_id
 
     architecture.resume.set()
-    transcript = live_transcript(turn.turn_id)
-    assert transcript is not None
-    await asyncio.wait_for(transcript.task, timeout=2)
+    await asyncio.wait_for(running.task, timeout=2)
 
     assert turn_repo.find_active(conversation.conversation_id) is None
 
@@ -262,7 +262,7 @@ async def test_architecture_error_event_marks_turn_failed_and_terminates_followe
     agent = _agent()
     conversation = _seeded_conversation(agent)
 
-    turn = start_turn(
+    running = start_turn(
         agent=agent,
         conversation=conversation,
         user_message="hi",
@@ -272,8 +272,8 @@ async def test_architecture_error_event_marks_turn_failed_and_terminates_followe
         actor_id=OWNER,
         actor_kind=ActorKind.OWNER,
     )
-    transcript = live_transcript(turn.turn_id)
-    assert transcript is not None
+    turn = running.turn
+    transcript = running.transcript
 
     events = [event async for _sequence, event in transcript.follow()]
 
@@ -290,7 +290,7 @@ async def test_stop_turn_cancels_task_and_marks_cancelled(dynamodb_table, monkey
     agent = _agent()
     conversation = _seeded_conversation(agent)
 
-    turn = start_turn(
+    running = start_turn(
         agent=agent,
         conversation=conversation,
         user_message="hi",
@@ -300,8 +300,8 @@ async def test_stop_turn_cancels_task_and_marks_cancelled(dynamodb_table, monkey
         actor_id=OWNER,
         actor_kind=ActorKind.OWNER,
     )
-    transcript = live_transcript(turn.turn_id)
-    assert transcript is not None
+    turn = running.turn
+    transcript = running.transcript
 
     # Let the turn reach its genuine suspension point (mid-stream) before stopping it.
     # Cancelling a task before its first scheduling tick never runs its except/finally
@@ -316,9 +316,9 @@ async def test_stop_turn_cancels_task_and_marks_cancelled(dynamodb_table, monkey
     stop_turn(turn)
     # `_drive_turn` re-raises CancelledError after persisting the CANCELLED status, so
     # the cancelled task itself surfaces that exception to whoever awaits it — expected,
-    # not a failure; production code never awaits `transcript.task` after stopping it.
+    # not a failure; production code never awaits `running.task` after stopping it.
     try:
-        await asyncio.wait_for(transcript.task, timeout=2)
+        await asyncio.wait_for(running.task, timeout=2)
     except asyncio.CancelledError:
         pass
 
@@ -335,7 +335,7 @@ async def test_transcript_is_forgotten_after_grace_window_while_follower_keeps_s
     agent = _agent()
     conversation = _seeded_conversation(agent)
 
-    turn = start_turn(
+    running = start_turn(
         agent=agent,
         conversation=conversation,
         user_message="hi",
@@ -345,9 +345,9 @@ async def test_transcript_is_forgotten_after_grace_window_while_follower_keeps_s
         actor_id=OWNER,
         actor_kind=ActorKind.OWNER,
     )
-    transcript = live_transcript(turn.turn_id)
-    assert transcript is not None
-    await asyncio.wait_for(transcript.task, timeout=2)
+    turn = running.turn
+    transcript = running.transcript
+    await asyncio.wait_for(running.task, timeout=2)
 
     await asyncio.sleep(0.2)
     assert live_transcript(turn.turn_id) is None
@@ -368,7 +368,7 @@ async def test_conversation_is_touched_even_when_the_turn_fails(dynamodb_table, 
     before = ConversationRepository().find_by_id(conversation.conversation_id, OWNER)
     assert before is not None and before.updated_at is None
 
-    turn = start_turn(
+    running = start_turn(
         agent=agent,
         conversation=conversation,
         user_message="hi",
@@ -378,9 +378,8 @@ async def test_conversation_is_touched_even_when_the_turn_fails(dynamodb_table, 
         actor_id=OWNER,
         actor_kind=ActorKind.OWNER,
     )
-    transcript = live_transcript(turn.turn_id)
-    assert transcript is not None
-    await asyncio.wait_for(transcript.task, timeout=2)
+    turn = running.turn
+    await asyncio.wait_for(running.task, timeout=2)
 
     saved_turn = ConversationTurnRepository().find_by_id(turn.turn_id)
     assert saved_turn is not None
@@ -401,7 +400,7 @@ async def test_turn_does_not_clobber_a_rename_made_while_it_was_running(
     agent = _agent()
     conversation = _seeded_conversation(agent)
 
-    turn = start_turn(
+    running = start_turn(
         agent=agent,
         conversation=conversation,
         user_message="hi",
@@ -419,9 +418,7 @@ async def test_turn_does_not_clobber_a_rename_made_while_it_was_running(
     repo.save(renamed)
 
     architecture.resume.set()
-    transcript = live_transcript(turn.turn_id)
-    assert transcript is not None
-    await asyncio.wait_for(transcript.task, timeout=2)
+    await asyncio.wait_for(running.task, timeout=2)
 
     final = repo.find_by_id(conversation.conversation_id, OWNER)
     assert final is not None

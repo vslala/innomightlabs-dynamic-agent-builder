@@ -7,10 +7,15 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from src.common import as_aware_utc
 from src.utils.dynamodb import convert_decimals, convert_floats_to_decimals
 
 TOOL_JOB_TTL_DAYS = 7
 TOOL_JOB_STALE_AFTER_SECONDS = 10 * 60
+STALE_JOB_ERROR = (
+    "Async tool job became stale before completion. The background execution "
+    "may have been interrupted; please retry the action."
+)
 
 
 class ToolJobStatus(str, Enum):
@@ -49,6 +54,13 @@ class ToolJob(BaseModel):
             (datetime.now(timezone.utc) + timedelta(days=TOOL_JOB_TTL_DAYS)).timestamp()
         )
     )
+
+    def is_stale(self, *, now: datetime) -> bool:
+        """Still unfinished after the stale window, counted from when it started. Progress does not reset it."""
+        if self.status not in {ToolJobStatus.QUEUED, ToolJobStatus.RUNNING}:
+            return False
+        reference = as_aware_utc(self.started_at or self.created_at)
+        return (now - reference).total_seconds() > TOOL_JOB_STALE_AFTER_SECONDS
 
     @property
     def pk(self) -> str:

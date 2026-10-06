@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 from typing import Annotated, Any, cast
 from dataclasses import dataclass
 import logging
@@ -503,7 +503,7 @@ async def send_message(
             },
         )
 
-    turn = start_turn(
+    running = start_turn(
         agent=target.agent,
         conversation=target.conversation,
         user_message=body.content,
@@ -513,10 +513,8 @@ async def send_message(
         actor_id=user_email,
         actor_kind=ActorKind.OWNER,
     )
-    transcript = cast(TurnTranscript, live_transcript(turn.turn_id))
-
-    response = sse_response(_stream_transcript(transcript, after_sequence=0))
-    response.headers["X-Turn-Id"] = turn.turn_id
+    response = sse_response(_stream_transcript(running.transcript, after_sequence=0))
+    response.headers["X-Turn-Id"] = running.turn.turn_id
     return response
 
 

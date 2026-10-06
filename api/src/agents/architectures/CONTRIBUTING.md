@@ -68,13 +68,17 @@ Changes should be made at the appropriate seam. This reduces merge conflicts and
 - You want to change how we append toolUse/toolResult blocks into context
 - You want to change stop conditions or iteration limits
 
+A turn moves through named steps (`Step`: ask the model, run tools, summarise, done, stopped). Only the driver in
+`run_agentic_tool_loop` changes step, and what a model call leads to is the pure function `next_step_after_call`.
+To change when the loop summarises or stops, change that function and its table test in `tests/test_agentic_loop.py`.
+
 ### D) Tool routing + tool error policy
 **File:** `../../agents/tool_execution.py`
 
 **Use this seam when:**
 - You add a new tool category (native vs skills vs other)
 - You want to standardize tool error outputs
-- You want to mark prompt refresh conditions (e.g. memory write tools)
+- You want to change when a tool's outcome asks for a prompt refresh
 
 ### E) Per-turn runtime state
 **File:** `../../agents/runtime_state.py`
@@ -89,9 +93,10 @@ Changes should be made at the appropriate seam. This reduces merge conflicts and
 ### 1) Prompt refresh on memory mutation
 If a tool mutates core memory, the model must not operate on stale memory.
 
-- Mark dirty in `tool_execution.py`
-- Trigger refresh event in `agentic_loop.py`
-- Rebuild + replace system prompt in `krishna_memgpt.py`
+- Declare it on the tool: `ToolSpec(mutates_prompt_context=True)`
+- `tool_execution.py` reports it as `ToolExecutionOutcome.refresh_prompt` when the tool returns normally
+- `agentic_loop.py` yields one `PromptRefreshNeeded` after a batch where any outcome asked for it
+- `krishna_memgpt.py` rebuilds and replaces the system prompt
 
 ### 2) Error handling
 - Tool failures should be returned as tool results (so the next loop iteration sees the failure).
@@ -124,7 +129,7 @@ If a tool mutates core memory, the model must not operate on stale memory.
 
 ### Example: add a new tool that updates memory
 1. Implement tool logic (native tool handler)
-2. Add tool name to the "memory write" set in `tool_execution.py` so prompt is refreshed
+2. Declare its spec with `mutates_prompt_context=True` so the prompt is refreshed after it runs
 3. Add/adjust tests
 
 ---

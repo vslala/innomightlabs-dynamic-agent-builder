@@ -1,4 +1,7 @@
+import json
 import copy
+
+import pytest
 from dataclasses import dataclass
 from typing import Any
 
@@ -6,7 +9,11 @@ from src.agents.agentic_loop import (
     FINAL_SUMMARY_PROMPT,
     ITERATION_LIMIT_SUMMARY_PROMPT,
     POST_TOOL_CONTINUATION_PROMPT,
+    PromptRefreshNeeded,
+    Step,
     TurnComplete,
+    _ModelCall,
+    next_step_after_call,
     run_agentic_tool_loop,
 )
 from src.agents.runtime_state import AgentTurnState
@@ -102,7 +109,6 @@ def _turn_state() -> AgentTurnState:
         actor_kind=ActorKind.OWNER,
         conversation_id="conversation-1",
         agent_id="agent-1",
-        provider_name="Anthropic",
         model_name="claude-sonnet-4-5",
         user_message="hello",
     )
@@ -607,3 +613,104 @@ async def test_the_loop_unwraps_a_wrapper_tools_real_identity_for_display():
         assert event.tool_name == "call_mcp_tool"
         assert event.display_tool_name == "searchJiraIssuesUsingJql"
         assert event.display_tool_args == {"jql": "project = KAN"}
+
+
+# The transition rules, as a table. Each row is one thing a model call can produce.
+
+
+@pytest.mark.parametrize(
+    ("tool_calls", "text", "stop_reason", "tools_ran", "expected"),
+    [
+        (1, "", "end_turn", False, Step.RUN_TOOLS),
+        (1, "Let me check.", "max_tokens", True, Step.RUN_TOOLS),  # a tool call wins over everything
+        (0, "Done.", "max_tokens", True, Step.DONE),  # text wins over a stop reason
+        (0, "   \n", "end_turn", True, Step.SUMMARISE),  # whitespace is silence
+        (0, "", "max_tokens", True, Step.SUMMARISE),  # after tools, always try a summary first
+        (0, "", "max_tokens", False, Step.STOPPED),
+        (0, "", "content_filter", False, Step.STOPPED),
+        (0, "", "end_turn", False, Step.DONE),  # e.g. a tool-free image answer
+    ],
+)
+def test_what_a_model_call_leads_to(tool_calls, text, stop_reason, tools_ran, expected):
+    call = _ModelCall(text=text, tool_calls=[object()] * tool_calls, stop_reason=stop_reason)
+
+    assert next_step_after_call(call, tools_ran=tools_ran) is expected
+
+
+class MemoryRouter:
+    """Every tool it runs reports whether it changed the system prompt."""
+
+    def __init__(self, refreshes: dict[str, bool]):
+        self.refreshes = refreshes
+
+    async def execute(self, *, tool_name, tool_input, tool_use_id, state):
+        return ToolExecutionOutcome(result="ok", success=True, refresh_prompt=self.refreshes.get(tool_use_id, False))
+
+
+def two_tool_calls() -> list[FakeProviderEvent]:
+    return [
+        FakeProviderEvent(type="tool_use", tool_name="core_memory_append", tool_input={}, tool_use_id="a"),
+        FakeProviderEvent(type="tool_use", tool_name="core_memory_append", tool_input={}, tool_use_id="b"),
+        FakeProviderEvent(type="stop", content="end_turn"),
+    ]
+
+
+async def _run_with(router, provider) -> list[Any]:
+    return [
+        item
+        async for item in run_agentic_tool_loop(
+            provider=provider,
+            context=[],
+            credentials={},
+            tools=["core_memory_append"],
+            model="test-model",
+            tool_router=router,
+            state=object(),
+        )
+    ]
+
+
+async def test_a_batch_that_changed_memory_asks_for_one_prompt_refresh_after_all_its_results():
+    events = await _run_with(MemoryRouter({"a": True, "b": True}), ScriptedProvider(two_tool_calls(), text("Saved.")))
+
+    kinds = [type(item).__name__ if not hasattr(item, "event_type") else item.event_type.value for item in events]
+    refreshes = [index for index, kind in enumerate(kinds) if kind == "PromptRefreshNeeded"]
+    last_result = max(index for index, kind in enumerate(kinds) if kind == SSEEventType.TOOL_CALL_RESULT.value)
+    assert len(refreshes) == 1
+    assert refreshes[0] > last_result
+
+
+async def test_a_batch_that_left_memory_alone_asks_for_no_refresh():
+    events = await _run_with(MemoryRouter({}), ScriptedProvider(two_tool_calls(), text("Read.")))
+
+    assert not any(isinstance(item, PromptRefreshNeeded) for item in events)
+
+
+class AsyncJobRouter:
+    """Starts a job that finishes on the second poll, failing, after one poll changed memory."""
+
+    def __init__(self):
+        self.polls = 0
+
+    async def execute(self, *, tool_name, tool_input, tool_use_id, state):
+        if tool_name != "check_tool_job":
+            return ToolExecutionOutcome(result=json.dumps({"async": True, "status": "queued", "job_id": "j1"}), success=True)
+        self.polls += 1
+        status = "running" if self.polls == 1 else "failed"
+        return ToolExecutionOutcome(
+            result=json.dumps({"async": True, "status": status, "job_id": "j1"}),
+            success=True,
+            refresh_prompt=self.polls == 1,
+        )
+
+
+async def test_an_async_job_keeps_its_starting_success_flag_and_any_refresh_from_its_polls(monkeypatch):
+    monkeypatch.setattr("src.agents.agentic_loop.ASYNC_JOB_POLL_SECONDS", 0)
+
+    events = await _run_with(AsyncJobRouter(), ScriptedProvider(tool_call("t1"), text("The job failed.")))
+
+    [result] = [item for item in events if _type(item) == SSEEventType.TOOL_CALL_RESULT]
+    assert json.loads(result.content)["status"] == "failed"
+    # Preserved as-is: the start's flag stands even though the job failed (LLD-agent-core-readability.md §3).
+    assert result.success is True
+    assert any(isinstance(item, PromptRefreshNeeded) for item in events)

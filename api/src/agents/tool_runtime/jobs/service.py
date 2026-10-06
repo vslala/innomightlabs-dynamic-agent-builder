@@ -5,13 +5,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from src.agents.tool_runtime.jobs.models import (
-    TOOL_JOB_STALE_AFTER_SECONDS,
-    ToolJob,
-    ToolJobStatus,
-)
+from src.agents.tool_runtime.jobs.models import STALE_JOB_ERROR, ToolJob
 from src.agents.tool_runtime.jobs.repository import ToolJobRepository
-from src.common import as_aware_utc
 from src.skills.registry import SkillRegistry, get_skill_registry
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
 
@@ -36,7 +31,7 @@ class ToolJobService:
         self.skill_repository = skill_repository or get_agent_skill_repository()
         self.skill_registry = skill_registry or get_skill_registry()
 
-    def create_skill_action_job(
+    def start_skill_action_job(
         self,
         *,
         owner_email: str,
@@ -51,7 +46,9 @@ class ToolJobService:
         arguments: dict[str, Any],
         context: dict[str, Any],
     ) -> ToolJob:
-        return self.repository.create(
+        """Persist the job as queued, then run it in the background. Its skill config is loaded when it runs,
+        so decrypted secrets are never stored on the job."""
+        job = self.repository.create(
             ToolJob(
                 owner_email=owner_email,
                 actor_email=actor_email,
@@ -67,8 +64,10 @@ class ToolJobService:
                 context=context,
             )
         )
+        self._schedule(job)
+        return job
 
-    def start_skill_action_job(self, job: ToolJob) -> None:
+    def _schedule(self, job: ToolJob) -> None:
         task = asyncio.create_task(self.execute_skill_action_job(job.job_id))
         _running_jobs.add(task)
         task.add_done_callback(_running_jobs.discard)
@@ -125,15 +124,6 @@ class ToolJobService:
         return job.to_status_payload()
 
     def _fail_stale_job(self, job: ToolJob) -> ToolJob:
-        if job.status not in {ToolJobStatus.QUEUED, ToolJobStatus.RUNNING}:
+        if not job.is_stale(now=datetime.now(timezone.utc)):
             return job
-
-        reference_time = job.started_at or job.created_at
-        elapsed_seconds = (datetime.now(timezone.utc) - as_aware_utc(reference_time)).total_seconds()
-        if elapsed_seconds <= TOOL_JOB_STALE_AFTER_SECONDS:
-            return job
-
-        return self.repository.mark_failed(
-            job.job_id,
-            "Async tool job became stale before completion. The background execution may have been interrupted; please retry the action.",
-        )
+        return self.repository.mark_failed(job.job_id, STALE_JOB_ERROR)

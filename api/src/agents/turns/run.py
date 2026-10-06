@@ -17,7 +17,7 @@ from src.agents.architectures import get_agent_architecture
 from src.agents.architectures.base import turn_error_message
 from src.agents.turns.models import ConversationTurn, ConversationTurnStatus
 from src.agents.turns.repository import ConversationTurnRepository
-from src.agents.turns.transcript import TurnTranscript, forget_transcript, live_transcript, open_transcript
+from src.agents.turns.transcript import TurnTranscript
 from src.config import settings
 from src.skills.models import ActorKind
 from src.conversations.repository import ConversationRepository
@@ -31,6 +31,19 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _STOPPED_BY_USER = "Stopped by the user"
+
+
+@dataclass(frozen=True)
+class RunningTurn:
+    """A turn this process is running: its row, its replayable events, and the task driving it."""
+
+    turn: ConversationTurn
+    transcript: TurnTranscript
+    task: "asyncio.Task[None]"
+
+
+#: Turns started here, kept for the transcript grace window after they finish so a client can reattach.
+_running: dict[str, RunningTurn] = {}
 
 
 @dataclass(frozen=True)
@@ -59,7 +72,7 @@ def start_turn(
     actor_id: str,
     actor_kind: ActorKind,
     api_key_id: str | None = None,
-) -> ConversationTurn:
+) -> RunningTurn:
     now = datetime.now(timezone.utc)
     turn = ConversationTurn(
         conversation_id=conversation.conversation_id,
@@ -71,8 +84,8 @@ def start_turn(
     )
     ConversationTurnRepository().create(turn)
 
-    transcript = open_transcript(turn.turn_id)
-    transcript.task = asyncio.create_task(
+    transcript = TurnTranscript(turn_id=turn.turn_id)
+    task = asyncio.create_task(
         _drive_turn(
             turn=turn,
             transcript=transcript,
@@ -89,14 +102,22 @@ def start_turn(
             ),
         )
     )
-    return turn
+    # The task cannot run before this returns (no await in between), so it is registered before it starts.
+    running = _running[turn.turn_id] = RunningTurn(turn=turn, transcript=transcript, task=task)
+    return running
+
+
+def live_transcript(turn_id: str) -> TurnTranscript | None:
+    """The replayable events of a turn this process ran recently, for a client reattaching to it."""
+    running = _running.get(turn_id)
+    return running.transcript if running else None
 
 
 def stop_turn(turn: ConversationTurn) -> None:
     """Cancel a live turn's task, or mark it cancelled if its process is gone."""
-    transcript = live_transcript(turn.turn_id)
-    if transcript and transcript.task and not transcript.task.done():
-        transcript.task.cancel()
+    running = _running.get(turn.turn_id)
+    if running and not running.task.done():
+        running.task.cancel()
         return
     ConversationTurnRepository().finish(
         turn, ConversationTurnStatus.CANCELLED, error=_STOPPED_BY_USER
@@ -154,7 +175,7 @@ async def _drive_turn(
         heartbeat_task.cancel()
         transcript.finish()
         asyncio.get_running_loop().call_later(
-            settings.chat_turn_transcript_grace_seconds, forget_transcript, turn.turn_id
+            settings.chat_turn_transcript_grace_seconds, _running.pop, turn.turn_id, None
         )
 
 

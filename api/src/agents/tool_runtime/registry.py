@@ -24,9 +24,6 @@ class ToolRegistry:
             raise ValueError(f"Unknown tool: {tool_name}")
         return tool
 
-    def specs(self) -> list[Any]:
-        return [tool.spec for tool in self._tools.values()]
-
     def definitions_for_categories(self, categories: set[ToolCategory]) -> list[dict[str, Any]]:
         """Only the tools the model should be told about this turn."""
         return [

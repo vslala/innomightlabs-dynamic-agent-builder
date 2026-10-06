@@ -71,7 +71,6 @@ def _state() -> AgentTurnState:
         actor_kind=ActorKind.OWNER,
         conversation_id="conversation-1",
         agent_id="agent-1",
-        provider_name="OpenAI",
         model_name="gpt-5.5",
         user_message="hello",
         user_message_id="message-1",
@@ -249,28 +248,28 @@ async def test_a_memory_write_marks_the_system_prompt_stale():
     state = _state()
     router, _ = _router()
 
-    await router.execute(
+    outcome = await router.execute(
         tool_name="core_memory_append",
         tool_input={"block": "human", "content": "Likes concise answers."},
         tool_use_id="tool-1",
         state=state,
     )
 
-    assert state.prompt_dirty is True
+    assert outcome.refresh_prompt is True
 
 
 async def test_a_memory_read_leaves_the_system_prompt_alone():
     state = _state()
     router, _ = _router()
 
-    await router.execute(
+    outcome = await router.execute(
         tool_name="core_memory_read",
         tool_input={"block": "human"},
         tool_use_id="tool-1",
         state=state,
     )
 
-    assert state.prompt_dirty is False
+    assert outcome.refresh_prompt is False
 
 
 async def test_a_memory_write_that_raises_does_not_mark_the_prompt_stale():
@@ -290,7 +289,7 @@ async def test_a_memory_write_that_raises_does_not_mark_the_prompt_stale():
 
     assert outcome.success is False
     assert outcome.result == "Error: write failed"
-    assert state.prompt_dirty is False
+    assert outcome.refresh_prompt is False
 
 
 async def test_an_unknown_tool_is_a_result_the_model_can_read():

@@ -7,12 +7,11 @@ See docs/LLD-public-api-and-embeddable-widget.md.
 """
 
 from dataclasses import dataclass
-from typing import Annotated, Optional, cast
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from src.agents.turns import ConversationTurnRepository, live_transcript, start_turn
-from src.agents.turns.transcript import TurnTranscript
+from src.agents.turns import ConversationTurnRepository, start_turn
 from src.common.pagination import Paginated
 from src.common.sse import sse_response
 from src.conversations.models import ApiConversation
@@ -151,7 +150,7 @@ async def send_message(body: V1SendMessageRequest, target: Target):
         )
 
     owner_email = target.caller.owner_email
-    turn = start_turn(
+    running = start_turn(
         agent=target.caller.agent,
         conversation=conversation,
         user_message=body.content,
@@ -162,7 +161,7 @@ async def send_message(body: V1SendMessageRequest, target: Target):
         actor_kind=ActorKind.API,
         api_key_id=target.caller.key.key_id,
     )
-    transcript = cast(TurnTranscript, live_transcript(turn.turn_id))
+    turn, transcript = running.turn, running.transcript
 
     if body.stream:
         response = sse_response(stream_public_events(transcript))
