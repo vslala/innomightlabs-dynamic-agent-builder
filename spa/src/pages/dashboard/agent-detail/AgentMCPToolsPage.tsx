@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle, ExternalLink, Plug, RefreshCw, Server } from "lucide-react";
+import { CheckCircle, ExternalLink, Plug, RefreshCw, Server, Share2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Inline, Stack } from "../../../components/layout";
@@ -15,6 +15,8 @@ import {
 } from "../../../components/ui";
 import { connectorApiService } from "../../../services/connectors";
 import type { AgentMCPConnection, MCPConnection } from "../../../types/connectors";
+import { MCPSharingDialog } from "./mcp-sharing/MCPSharingDialog";
+import { SharingSummary } from "./mcp-sharing/SharingSummary";
 import { useAgentDetailContext } from "./types";
 
 export function AgentMCPToolsPage() {
@@ -24,6 +26,7 @@ export function AgentMCPToolsPage() {
   const [loading, setLoading] = useState(true);
   const [updatingMCPId, setUpdatingMCPId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sharing, setSharing] = useState<AgentMCPConnection | null>(null);
 
   const enabledById = useMemo(() => {
     return new Map(agentConnections.map((connection) => [connection.mcp_id, connection]));
@@ -80,6 +83,7 @@ export function AgentMCPToolsPage() {
             <PanelTitle className="text-lg">MCP Tools</PanelTitle>
             <PanelDescription>
               Enable configured MCP connectors for this agent. The agent can list and call MCP tools at runtime.
+              Only you can use them until you share one.
             </PanelDescription>
           </div>
           <Button size="sm" variant="outline" onClick={() => void loadMCPConnections()}>
@@ -122,7 +126,8 @@ export function AgentMCPToolsPage() {
         ) : (
           <Stack gap="md">
             {mcpConnections.map((connection) => {
-              const isAgentEnabled = enabledById.has(connection.mcp_id);
+              const agentConnection = enabledById.get(connection.mcp_id);
+              const isAgentEnabled = agentConnection !== undefined;
               const disabledByConnector = !connection.enabled;
               return (
                 <div
@@ -162,9 +167,16 @@ export function AgentMCPToolsPage() {
                       <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginTop: "0.25rem" }}>
                         ID: {connection.mcp_id}
                       </p>
+                      {agentConnection && <SharingSummary summary={agentConnection.sharing} />}
                     </div>
                   </div>
                   <Inline justify="flex-end">
+                    {agentConnection && !disabledByConnector && (
+                      <Button variant="outline" size="sm" onClick={() => setSharing(agentConnection)}>
+                        <Share2 className="h-4 w-4" />
+                        Share
+                      </Button>
+                    )}
                     <Link to="/dashboard/connectors">
                       <Button variant="outline" size="sm">
                         <ExternalLink className="h-4 w-4" />
@@ -191,6 +203,9 @@ export function AgentMCPToolsPage() {
           </Stack>
         )}
       </PanelBody>
+      {sharing && (
+        <MCPSharingDialog connection={sharing} onClose={() => setSharing(null)} onSaved={loadMCPConnections} />
+      )}
     </Panel>
   );
 }

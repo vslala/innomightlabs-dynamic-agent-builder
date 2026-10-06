@@ -12,9 +12,12 @@ import type {
   MCPProviderInstallRequest,
   MCPProviderInstallResponse,
   MCPRuntimeStatus,
+  MCPSharingView,
   MCPStdioPackage,
+  MCPToolCatalog,
   UpdateAgentMCPConnectionRequest,
   UpdateMCPConnectionRequest,
+  UpdateMCPSharingRequest,
 } from "../../types/connectors";
 import type { FormSchema } from "../../types/form";
 
@@ -93,6 +96,22 @@ class ConnectorApiService {
 
   async deleteAgentMCPConnection(agentId: string, mcpId: string): Promise<void> {
     await httpClient.delete<void>(`/agents/${agentId}/mcp-connections/${mcpId}`);
+  }
+
+  async getAgentMCPSharing(agentId: string, mcpId: string): Promise<MCPSharingView> {
+    return httpClient.get<MCPSharingView>(`/agents/${agentId}/mcp-connections/${mcpId}/sharing`);
+  }
+
+  async updateAgentMCPSharing(
+    agentId: string,
+    mcpId: string,
+    payload: UpdateMCPSharingRequest
+  ): Promise<MCPSharingView> {
+    return httpClient.put<MCPSharingView>(`/agents/${agentId}/mcp-connections/${mcpId}/sharing`, payload);
+  }
+
+  async refreshMCPToolCatalog(mcpId: string): Promise<MCPToolCatalog> {
+    return httpClient.post<MCPToolCatalog>(`/connectors/mcp/${mcpId}/tools/refresh`, {});
   }
 }
 

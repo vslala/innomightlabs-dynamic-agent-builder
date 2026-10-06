@@ -26,14 +26,10 @@ import { connectorApiService } from "../../../services/connectors";
 import { skillApiService } from "../../../services/skills";
 import type { FormValue, FormSchema } from "../../../types/form";
 import type { InstalledSkill, SkillActorKind, SkillCatalogItem, SkillConnectorStatus } from "../../../types/skills";
+import { SHAREABLE_AUDIENCES } from "./audiences";
 import { useAgentDetailContext } from "./types";
 import "./AgentSkillsPage.css";
 
-const SHAREABLE_AUDIENCES: { kind: SkillActorKind; label: string }[] = [
-  { kind: "visitor", label: "Widget visitors" },
-  { kind: "api", label: "API keys" },
-  { kind: "a2a", label: "A2A agents" },
-];
 
 function getMissingRequiredConnectors(skill: SkillCatalogItem): SkillConnectorStatus[] {
   return (skill.connectors ?? []).filter((connector) => connector.required && !connector.connected);

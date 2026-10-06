@@ -1,3 +1,5 @@
+import type { SkillActorKind } from "./skills";
+
 export interface ConnectorStatus {
   connector_id: string;
   provider_name: string;
@@ -151,8 +153,59 @@ export interface AgentMCPConnection {
   name: string;
   server_url: string;
   enabled: boolean;
+  sharing: MCPSharingSummary;
   created_at: string;
   updated_at?: string | null;
+}
+
+/** Anyone an owner can share a connector with. The owner always has every connector. */
+export type MCPAudience = Exclude<SkillActorKind, "owner">;
+
+export interface MCPSharingSummary {
+  available_to: MCPAudience[];
+  allowed_tool_count: number;
+  consent_outdated: boolean;
+}
+
+export interface MCPSharingConsent {
+  accepted_by: string;
+  accepted_at: string;
+  version: string;
+}
+
+export interface MCPSharing {
+  available_to: MCPAudience[];
+  allowed_tools: string[];
+  consent?: MCPSharingConsent | null;
+}
+
+export interface MCPCatalogTool {
+  name: string;
+  title?: string | null;
+  description: string;
+  read_only: boolean;
+  destructive: boolean;
+}
+
+export interface MCPToolCatalog {
+  tools: MCPCatalogTool[];
+  fetched_at: string;
+}
+
+export interface MCPSharingView {
+  agent_id: string;
+  mcp_id: string;
+  connection_name: string;
+  sharing: MCPSharing;
+  catalog?: MCPToolCatalog | null;
+  catalog_error?: string | null;
+  disclaimer: { version: string; paragraphs: string[] };
+}
+
+export interface UpdateMCPSharingRequest {
+  available_to: MCPAudience[];
+  allowed_tools: string[];
+  accept_disclaimer_version?: string;
 }
 
 export interface CreateMCPConnectionRequest {

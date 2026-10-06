@@ -1,0 +1,295 @@
+@reference "tailwindcss";
+
+/* Dialog frame: wide enough for tool descriptions, and only the body scrolls. */
+
+.dialog {
+  max-width: 44rem;
+  max-height: min(90vh, 52rem);
+}
+
+.body {
+  @apply flex min-h-0 flex-1 flex-col overflow-y-auto;
+  gap: var(--space-6);
+  margin-inline: calc(-1 * var(--space-2));
+  padding-inline: var(--space-2);
+}
+
+.footer {
+  @apply items-center;
+}
+
+.stopSharing {
+  margin-inline-end: auto;
+  color: var(--danger);
+}
+
+.quiet {
+  @apply text-sm;
+  color: var(--text-muted);
+}
+
+/* Numbered steps */
+
+.step {
+  @apply flex flex-col;
+  gap: var(--space-3);
+}
+
+.stepTitle {
+  @apply flex items-center text-sm font-semibold;
+  gap: var(--space-2);
+  color: var(--text-primary);
+}
+
+.stepNumber {
+  @apply grid h-5 w-5 place-items-center rounded-full text-xs;
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+/* 1 · Audiences */
+
+.audiences {
+  @apply grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+
+.audience {
+  @apply relative flex items-start text-left transition-colors;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-control);
+}
+
+.audience:hover {
+  background: var(--surface-control-hover);
+}
+
+.audience:focus-visible {
+  outline: 2px solid var(--button-primary-bg);
+  outline-offset: 2px;
+}
+
+.audienceSelected,
+.audienceSelected:hover {
+  border-color: var(--button-primary-bg);
+  background: var(--surface-selected);
+}
+
+.audienceIcon {
+  @apply grid h-8 w-8 shrink-0 place-items-center;
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+  color: var(--text-primary);
+}
+
+.audienceText {
+  @apply flex min-w-0 flex-col;
+  gap: var(--space-1);
+  padding-inline-end: var(--space-5);
+}
+
+.audienceLabel {
+  @apply text-sm font-semibold;
+  color: var(--text-primary);
+}
+
+.audienceReach {
+  @apply text-xs leading-snug;
+  color: var(--text-muted);
+}
+
+.audienceCheck {
+  @apply absolute grid h-4 w-4 place-items-center rounded-full;
+  top: var(--space-3);
+  right: var(--space-3);
+  border: 1px solid var(--border-input);
+  color: var(--text-inverse);
+}
+
+.audienceSelected .audienceCheck {
+  border-color: var(--button-primary-bg);
+  background: var(--button-primary-bg);
+}
+
+/* 2 · Tools, grouped by what they can do */
+
+.allowlist {
+  @apply flex flex-col;
+  gap: var(--space-4);
+}
+
+.allowlistBar {
+  @apply flex flex-wrap items-center justify-between text-sm;
+  gap: var(--space-2);
+  color: var(--text-muted);
+}
+
+.count strong {
+  color: var(--text-primary);
+}
+
+.refreshed {
+  @apply flex items-center text-xs;
+  gap: var(--space-2);
+}
+
+.group {
+  --risk: var(--text-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.group[data-risk="read"] {
+  --risk: var(--success);
+}
+
+.group[data-risk="write"] {
+  --risk: var(--warning);
+}
+
+.group[data-risk="destructive"] {
+  --risk: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border-default));
+}
+
+.groupHeader {
+  @apply flex flex-wrap items-baseline;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-subtle);
+}
+
+.riskDot {
+  @apply h-2 w-2 shrink-0 self-center rounded-full;
+  background: var(--risk);
+}
+
+.groupTitle {
+  @apply text-sm font-semibold;
+  color: var(--text-primary);
+}
+
+.groupHint {
+  @apply text-xs;
+  color: var(--text-muted);
+}
+
+.groupAction {
+  @apply ml-auto text-xs font-medium;
+  color: var(--text-secondary);
+}
+
+.groupAction:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.tools > li + li {
+  border-top: 1px solid var(--border-default);
+}
+
+.tool {
+  @apply flex cursor-pointer items-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.tool:hover {
+  background: var(--surface-control-hover);
+}
+
+.tool input {
+  @apply shrink-0;
+  margin-top: 0.15rem;
+}
+
+.toolText {
+  @apply flex min-w-0 flex-col;
+  gap: var(--space-1);
+}
+
+.toolName {
+  @apply flex flex-wrap items-baseline text-sm;
+  gap: var(--space-2);
+  color: var(--text-primary);
+}
+
+.toolName code {
+  @apply font-mono text-xs;
+  color: var(--text-muted);
+}
+
+.toolDescription {
+  @apply line-clamp-2 text-xs leading-relaxed;
+  color: var(--text-muted);
+}
+
+.catalogError {
+  @apply flex flex-wrap items-center justify-between;
+  gap: var(--space-3);
+}
+
+/* 3 · Consent */
+
+.disclaimer {
+  @apply flex flex-col;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border-default));
+  border-radius: var(--radius-lg);
+  background: var(--warning-bg);
+}
+
+.disclaimerHeading {
+  @apply flex items-center text-sm font-semibold;
+  gap: var(--space-2);
+  color: var(--text-primary);
+}
+
+.disclaimerHeading svg {
+  color: var(--warning);
+}
+
+.disclaimerPoints {
+  @apply flex list-disc flex-col text-sm leading-relaxed;
+  gap: var(--space-1);
+  padding-inline-start: var(--space-5);
+  color: var(--text-secondary);
+}
+
+.consent {
+  @apply flex cursor-pointer items-center text-sm font-medium;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+  color: var(--text-primary);
+}
+
+/* The sharing summary on each connector row */
+
+.sharingSummary {
+  @apply mt-2 flex flex-wrap items-center text-xs;
+  gap: var(--space-2);
+  color: var(--text-muted);
+}
+
+.sharingSummary svg {
+  @apply h-3.5 w-3.5;
+}
+
+.sharingSummaryShared {
+  color: var(--text-secondary);
+}
+
+.sharingSummaryShared svg {
+  color: var(--button-primary-bg);
+}
+
+.reviewTerms {
+  color: var(--warning);
+}
