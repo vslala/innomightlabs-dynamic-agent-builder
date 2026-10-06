@@ -15,6 +15,227 @@ export interface ChangeLogEntry {
 
 export const changeLogEntries: ChangeLogEntry[] = [
   {
+    date: "2026-10-06",
+    title: "Public API, embeddable widget, and MCP sharing",
+    summary:
+      "Agents can now be reached from your own apps and sites through a public API and an iframe widget, and you can let those outside users call selected MCP tools on your behalf.",
+    items: [
+      {
+        title: "Public API with secret keys",
+        description:
+          "Generate sk_live_ secret keys for an agent and chat with it through the versioned /v1 API, with the same skills, knowledge bases, and tools it has in the dashboard. Each key is scoped to one agent and its usage is tracked.",
+        category: "new",
+      },
+      {
+        title: "Embeddable iframe widget",
+        description:
+          "A new chat widget that runs in an iframe on any site, set up with a small loader script and data attributes. The existing widget keeps working alongside it.",
+        category: "new",
+      },
+      {
+        title: "Per-user conversations and conversation context",
+        description:
+          "API clients get a separate conversation for each of their end users, and a conversation can carry a context attribute that tells the agent what it is about.",
+        category: "new",
+      },
+      {
+        title: "MCP sharing for widget, A2A, and API users",
+        description:
+          "Share an agent's MCP connector with widget visitors, Agent2Agent callers, and API keys, one connector at a time, choosing exactly which tools they may call. Sharing only starts after you accept that they act through your connected account.",
+        category: "new",
+      },
+      {
+        title: "Automations guide",
+        description:
+          "A new Automations page in the docs walks through building a daily briefing email, using live examples of the real automation editor.",
+        category: "new",
+      },
+      {
+        title: "Safer marketplace publishing",
+        description:
+          "Published automation templates no longer include your skill settings, such as email recipients. Invoke Agent steps now ask whoever imports the template to choose one of their own agents.",
+        category: "improved",
+      },
+      {
+        title: "Stronger sign-in and token handling",
+        description:
+          "OAuth and token handling for the dashboard, widget, and Agent2Agent was rewritten to be more secure.",
+        category: "improved",
+      },
+      {
+        title: "More dependable agent runs",
+        description:
+          "The agent loop now always ends with an answer or a record of what ran. Long Codex tool runs keep their final answer, and background tool jobs report failures correctly.",
+        category: "fixed",
+      },
+      {
+        title: "Automation step checks",
+        description:
+          "An Invoke Agent step with no agent chosen is now caught before activation or a test run, instead of failing mid-run.",
+        category: "fixed",
+      },
+    ],
+  },
+  {
+    date: "2026-09-27",
+    title: "MCP provider catalog and Google Ads",
+    summary:
+      "Connect popular MCP providers from a curated catalog, run hosted MCP servers without managing them yourself, and manage Google Ads from your agents.",
+    items: [
+      {
+        title: "MCP provider catalog",
+        description:
+          "The Connectors page now offers ready-made MCP providers, starting with Atlassian, GitHub, Canva, and Google Ads. Install them from a short form, or in one click where the provider supports it.",
+        category: "new",
+      },
+      {
+        title: "Hosted stdio MCP servers",
+        description:
+          "MCP servers that normally run as local processes are now hosted for you, so they can be connected like any other connector.",
+        category: "new",
+      },
+      {
+        title: "Google Ads skill",
+        description:
+          "Agents can work with your Google Ads account for SEO and campaign management. A Google Ads developer token is no longer needed.",
+        category: "new",
+      },
+      {
+        title: "Messages no longer vanish after streaming",
+        description:
+          "Fixed an issue where the agent's reply could disappear once streaming finished, and tool results are now matched to the right call.",
+        category: "fixed",
+      },
+    ],
+  },
+  {
+    date: "2026-09-19",
+    title: "Background conversations, agent dreams, and a new automation editor",
+    summary:
+      "Conversations now run in the background so you can work on several at once, agents can tidy their memory overnight, and automations are built in one simpler workspace.",
+    items: [
+      {
+        title: "Background conversations",
+        description:
+          "Each conversation turn runs as a background job, so replies keep going if you leave the page and you can work in several conversations at once.",
+        category: "new",
+      },
+      {
+        title: "Agent dreams",
+        description:
+          "MemGPT agents can run a nightly dream that replays the day's conversations and organizes their memory: keeping what lasts, correcting what changed, and removing what is stale. Configure it in Settings.",
+        category: "new",
+      },
+      {
+        title: "Redesigned automation workspace",
+        description:
+          "Automations are now built as a simple top-to-bottom chain of triggers and steps, with testing, run history, and analytics on the same screen.",
+        category: "improved",
+      },
+      {
+        title: "Ollama provider",
+        description: "Run agents on your own self-hosted Ollama models.",
+        category: "new",
+      },
+      {
+        title: "Default agent",
+        description: "Choose a default agent in Settings so new conversations start with it selected.",
+        category: "new",
+      },
+      {
+        title: "Clearer agent activity",
+        description: "The agent activity view now shows which tool is being called.",
+        category: "improved",
+      },
+      {
+        title: "Lighter automation storage",
+        description:
+          "Automation runs store each result once and leave out bulky event data, roughly halving their storage.",
+        category: "improved",
+      },
+      {
+        title: "Better results from smaller models",
+        description:
+          "Responses from smaller models are parsed more reliably, and WordPress image results now always work in the editor.",
+        category: "fixed",
+      },
+    ],
+  },
+  {
+    date: "2026-09-08",
+    title: "New skills, canvas visuals, and token usage",
+    summary:
+      "Agents gained skills for the AWS CLI, Python, and files, can draw rich visuals on a canvas, and every conversation now shows how many tokens it uses.",
+    items: [
+      {
+        title: "AWS CLI skill",
+        description:
+          "Agents can run AWS CLI commands through an isolated runner, limited by a policy you set. Smart suggestions can help write the policy.",
+        category: "new",
+      },
+      {
+        title: "Python execution skill",
+        description: "Agents can run Python code in a controlled environment to calculate and analyze.",
+        category: "new",
+      },
+      {
+        title: "File manager skill",
+        description: "Agents can create, read, and organize files.",
+        category: "new",
+      },
+      {
+        title: "HTML canvas",
+        description:
+          "Agents can render complex visuals as HTML, shown inline in the chat and in a side panel.",
+        category: "new",
+      },
+      {
+        title: "Token usage analytics",
+        description:
+          "Conversations show token usage, updated with every message, and the overview page includes usage analytics.",
+        category: "new",
+      },
+      {
+        title: "Tool call timeline",
+        description:
+          "Agent tool calls are shown as a compact timeline in the chat, and the agent skills page was redesigned.",
+        category: "improved",
+      },
+      {
+        title: "Smart suggestions for agent instructions",
+        description: "Smart suggestions can now help write an agent's instructions.",
+        category: "improved",
+      },
+      {
+        title: "Agent2Agent OAuth 2.1",
+        description:
+          "Agent2Agent clients can register themselves through dynamic client registration and authenticate with OAuth 2.1.",
+        category: "new",
+      },
+      {
+        title: "Resumable knowledge base jobs",
+        description:
+          "A failed knowledge base crawl can be retried and resumes from the page it reached.",
+        category: "improved",
+      },
+      {
+        title: "Retry on empty replies",
+        description: "If an agent returns no response, it is retried once automatically.",
+        category: "fixed",
+      },
+      {
+        title: "Updated privacy, terms, and pricing policies",
+        description: "The privacy policy, terms, and pricing policy were rewritten and expanded.",
+        category: "improved",
+      },
+      {
+        title: "Local embedding images",
+        description: "Docker images are available for running embeddings locally.",
+        category: "developer",
+      },
+    ],
+  },
+  {
     date: "2026-08-23",
     title: "Gemini models and Agent2Agent upgrades",
     summary:
