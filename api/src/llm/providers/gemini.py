@@ -21,9 +21,17 @@ from src.llm.messages import (
     split_system_messages,
 )
 from src.llm.tools import normalize_tool_definitions
-from .base import LLMEvent, LLMProvider
+from .base import LLMEvent, LLMProvider, StopReason, stop_reason_of
 
 log = logging.getLogger(__name__)
+
+GEMINI_STOP_REASONS: dict[str, StopReason] = {
+    "MAX_TOKENS": "max_tokens",
+    **{
+        reason: "content_filter"
+        for reason in ("SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY")
+    },
+}
 
 DEFAULT_MODEL_NAME = "gemini-2.5-flash"
 
@@ -226,7 +234,8 @@ class GeminiProvider(LLMProvider):
                     completion_tokens=usage_metadata.candidates_token_count or 0,
                 )
 
-            yield LLMEvent(type="stop", content=stop_reason)
+            # google-genai renders the enum as "FinishReason.MAX_TOKENS"; the name is what matters.
+            yield LLMEvent(type="stop", content=stop_reason_of(stop_reason.rsplit(".", 1)[-1], GEMINI_STOP_REASONS))
         except Exception as e:
             log.error("Gemini API error: %s", e, exc_info=True)
             raise

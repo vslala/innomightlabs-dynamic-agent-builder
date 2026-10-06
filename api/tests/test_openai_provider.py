@@ -1,6 +1,8 @@
 import json as _json
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from src.auth.openai_oauth import OpenAICredentials
 from src.llm.providers.openai import OpenAIProvider
 
@@ -212,3 +214,48 @@ async def test_openai_provider_yields_usage_event_from_response_completed(monkey
     assert len(usage_events) == 1
     assert usage_events[0].prompt_tokens == 12
     assert usage_events[0].completion_tokens == 8
+
+
+def _stream_of(*events):
+    class Client(FakeOpenAIAsyncClient):
+        def stream(self, method, url, headers=None, json=None):
+            return FakeOpenAIStreamContext(
+                FakeOpenAIStreamResponse(["data: " + _json.dumps(event) for event in events] + ["data: [DONE]"])
+            )
+
+    return Client
+
+
+async def _events(monkeypatch, *stream_events):
+    monkeypatch.setattr("src.llm.providers.openai.httpx.AsyncClient", _stream_of(*stream_events))
+    credentials = {
+        "access_token": "token",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        "account_id": "acct-1",
+    }
+    return [
+        event
+        async for event in OpenAIProvider().stream_response(
+            messages=[{"role": "user", "content": "hi"}], credentials=credentials, tools=None, model="gpt-5.5"
+        )
+    ]
+
+
+async def test_an_incomplete_codex_response_says_the_model_was_cut_off(monkeypatch):
+    events = await _events(
+        monkeypatch,
+        {"type": "response.incomplete", "response": {"incomplete_details": {"reason": "max_output_tokens"}}},
+    )
+
+    assert [(event.type, event.content) for event in events][-1] == ("stop", "max_tokens")
+
+
+async def test_a_completed_codex_response_is_a_normal_end(monkeypatch):
+    events = await _events(monkeypatch, {"type": "response.completed", "response": {}})
+
+    assert [(event.type, event.content) for event in events][-1] == ("stop", "end_turn")
+
+
+async def test_a_failed_codex_response_raises_instead_of_ending_silently(monkeypatch):
+    with pytest.raises(RuntimeError, match="OpenAI response failed"):
+        await _events(monkeypatch, {"type": "response.failed", "response": {"error": {"code": "server_error"}}})

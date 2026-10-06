@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress: phases 1–2 implemented (per-call log line, native Codex function calls, filter deleted); phases 3–4 pending |
+| Status | ✅ Implemented: phases 1–4 (log line, native Codex function calls, named loop steps with a tools-off summary, honest stop reasons, single nudge) |
 | Last reviewed | 2026-10-06 |
 | Scope | `src/llm/providers/openai.py`, `src/agents/agentic_loop.py`, `src/agents/architectures/krishna_memgpt.py`, `src/llm/providers/{anthropic,bedrock}.py` |
 | Related | [Agent runtime refactor, P4](LLD-agent-runtime-refactor.md): already flagged the root cause as "out of scope" |
@@ -268,6 +268,24 @@ per turn, because it has no edge back to AskModel.*
 - **Groundwork for durable turns.** [Durable agent orchestration](LLD-durable-agent-orchestration.md) needs to
   checkpoint and resume a run. With named states, that is "save `(step, turn)` at each transition". This design
   doesn't build any of that, but it stops making it harder.
+
+## What shipped differently from the plan
+
+- **A silent summary is not an error.** §2 and §3 suggested an `ERROR` when the summary call also hits a limit. But the
+  architecture saves nothing after an `ERROR`, which would lose the tool record. So `SUMMARISE` always ends in
+  `DONE`, `TurnComplete` carries `stop_reason`, and `TurnOutputs.record_of_tool_runs()` says why there was no
+  summary. `STOPPED` with an `ERROR` is left for turns where no tool ran, so there is nothing to lose.
+- **The iteration limit summarises too.** Hitting `MAX_TOOL_ITERATIONS` used to end in `MAX_ITERATIONS_MESSAGE` with
+  nothing saved. It now goes to `SUMMARISE` with `ITERATION_LIMIT_SUMMARY_PROMPT`, so a 37-call run still reports
+  what it did and what is left.
+- **`StopReason` is three words, not four:** `end_turn`, `max_tokens`, `content_filter`. The loop already knows a
+  tool call from its `tool_use` events, so `tool_use` added nothing. Providers map their raw reasons with
+  `stop_reason_of(raw, MAPPING)` (`llm/providers/base.py`). Anything unmapped is `end_turn`.
+- **The summary call uses the nudge slot.** `SUMMARISE` puts its prompt where the continuation nudge was, on the
+  latest tool results, so it never adds a user message after a user message. Tool calls the model makes during that
+  call are logged and ignored.
+- **The record names tools the way the user sees them** (`display_tool_name`, so `editJiraIssue`, not
+  `call_mcp_tool`), counts repeats, and counts failures.
 
 ## Rollout
 

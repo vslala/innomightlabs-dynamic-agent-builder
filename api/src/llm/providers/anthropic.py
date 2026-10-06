@@ -10,11 +10,15 @@ from src.llm.messages import (
     normalize_messages,
     split_system_messages,
 )
-from src.llm.providers.base import LLMEvent, LLMProvider
+from src.llm.providers.base import LLMEvent, LLMProvider, StopReason, stop_reason_of
 from src.llm.tools import normalize_anthropic_tools
 import logging
 
 log = logging.getLogger(__name__)
+
+# Room for a long final summary after a tool-heavy turn.
+MAX_OUTPUT_TOKENS = 16_000
+ANTHROPIC_STOP_REASONS: dict[str, StopReason] = {"max_tokens": "max_tokens", "refusal": "content_filter"}
 
 
 @dataclass(frozen=True)
@@ -93,7 +97,7 @@ class AnthropicProvider(LLMProvider):
         request_params: dict[str, Any] = {
             "model": model_id,
             "messages": request_input.messages,
-            "max_tokens": 4096,  # Required parameter for Anthropic API
+            "max_tokens": MAX_OUTPUT_TOKENS,
         }
 
         # Add system prompt if provided
@@ -163,7 +167,7 @@ class AnthropicProvider(LLMProvider):
                         final_message = await stream.get_final_message()
                         stop_reason = final_message.stop_reason
                         log.info(f"Anthropic stream completed: {stop_reason}")
-                        yield LLMEvent(type="stop", content=stop_reason or "empty")
+                        yield LLMEvent(type="stop", content=stop_reason_of(stop_reason, ANTHROPIC_STOP_REASONS))
 
                         # Log usage
                         usage = final_message.usage

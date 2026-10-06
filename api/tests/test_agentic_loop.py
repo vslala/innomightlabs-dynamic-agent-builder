@@ -1,8 +1,10 @@
+import copy
 from dataclasses import dataclass
 from typing import Any
 
 from src.agents.agentic_loop import (
-    EMPTY_POST_TOOL_RETRY_PROMPT,
+    FINAL_SUMMARY_PROMPT,
+    ITERATION_LIMIT_SUMMARY_PROMPT,
     POST_TOOL_CONTINUATION_PROMPT,
     TurnComplete,
     run_agentic_tool_loop,
@@ -158,17 +160,6 @@ class FakeStreamingToolRouter:
         return ToolExecutionOutcome(result="image generated", success=True)
 
 
-class AlwaysToolProvider:
-    async def stream_response(self, context, credentials, tools, model):
-        yield FakeProviderEvent(
-            type="tool_use",
-            tool_name="lookup_customer",
-            tool_input={"customer_id": "cus_123"},
-            tool_use_id=f"tooluse_{len(context)}",
-        )
-        yield FakeProviderEvent(type="stop")
-
-
 class MultiStepProvider:
     def __init__(self):
         self.calls = 0
@@ -200,30 +191,49 @@ class MultiStepProvider:
         yield FakeProviderEvent(type="stop")
 
 
-class EmptyPostToolThenFinalProvider:
-    def __init__(self):
-        self.calls = 0
-        self.contexts = []
+class ScriptedProvider:
+    """Plays one scripted reply per model call and remembers what each call was given."""
+
+    def __init__(self, *replies: list[FakeProviderEvent]):
+        self.replies = list(replies)
+        self.contexts: list[list[dict[str, Any]]] = []
+        self.tools: list[list[Any]] = []
 
     async def stream_response(self, context, credentials, tools, model):
-        self.calls += 1
-        self.contexts.append(list(context))
-        if self.calls == 1:
-            yield FakeProviderEvent(
-                type="tool_use",
-                tool_name="lookup_customer",
-                tool_input={"customer_id": "cus_123"},
-                tool_use_id="tooluse_1",
-            )
-            yield FakeProviderEvent(type="stop")
-            return
+        self.contexts.append(copy.deepcopy(context))
+        self.tools.append(list(tools))
+        for event in self.replies.pop(0):
+            yield event
 
-        if self.calls == 2:
-            yield FakeProviderEvent(type="stop")
-            return
 
-        yield FakeProviderEvent(type="text", content="customer found")
-        yield FakeProviderEvent(type="stop")
+def tool_call(tool_use_id: str) -> list[FakeProviderEvent]:
+    return [
+        FakeProviderEvent(type="tool_use", tool_name="lookup_customer", tool_input={}, tool_use_id=tool_use_id),
+        FakeProviderEvent(type="stop", content="end_turn"),
+    ]
+
+
+def text(content: str, stop: str = "end_turn") -> list[FakeProviderEvent]:
+    return [FakeProviderEvent(type="text", content=content), FakeProviderEvent(type="stop", content=stop)]
+
+
+def silence(stop: str = "end_turn") -> list[FakeProviderEvent]:
+    return [FakeProviderEvent(type="stop", content=stop)]
+
+
+async def _run(provider, tools=("lookup_customer",)) -> list[Any]:
+    return [
+        event
+        async for event in run_agentic_tool_loop(
+            provider=provider,
+            context=[],
+            credentials={},
+            tools=list(tools),
+            model="test-model",
+            tool_router=FakeToolRouter(),
+            state=object(),
+        )
+    ]
 
 
 async def test_agentic_loop_emits_tool_call_id_on_start_and_result():
@@ -271,26 +281,85 @@ async def test_agentic_loop_prompts_model_to_continue_or_finish_after_tool_resul
     assert events[-1].full_text == "Created the epic and task."
 
 
-async def test_agentic_loop_retries_once_when_post_tool_response_is_empty():
-    provider = EmptyPostToolThenFinalProvider()
+async def test_a_model_silent_after_tools_is_asked_once_more_with_tools_off():
+    provider = ScriptedProvider(tool_call("t1"), silence(), text("Customer found."))
 
-    events = [
+    events = await _run(provider)
+
+    # Without tools the model cannot answer with another call, typed or real, so it has to write.
+    assert provider.tools[-1] == []
+    assert _context_contains_text(provider.contexts[-1], FINAL_SUMMARY_PROMPT)
+    assert events[-1] == TurnComplete(full_text="Customer found.", stop_reason="end_turn")
+
+
+async def test_a_turn_silent_even_when_summarising_still_completes_with_its_stop_reason():
+    provider = ScriptedProvider(tool_call("t1"), silence(), silence(stop="max_tokens"))
+
+    events = await _run(provider)
+
+    assert len(provider.contexts) == 3
+    assert events[-1] == TurnComplete(full_text="", stop_reason="max_tokens")
+
+
+async def test_a_long_run_keeps_one_continuation_nudge_on_the_latest_results():
+    provider = ScriptedProvider(tool_call("t1"), tool_call("t2"), tool_call("t3"), text("All three done."))
+
+    await _run(provider)
+
+    final_context = provider.contexts[-1]
+    nudges = [
+        index for index, message in enumerate(final_context) if _message_has_text(message, POST_TOOL_CONTINUATION_PROMPT)
+    ]
+    assert nudges == [len(final_context) - 1]
+    roles = [message["role"] for message in final_context]
+    assert all(first != second for first, second in zip(roles, roles[1:]))
+
+
+async def test_reaching_the_iteration_limit_still_ends_with_what_was_done(monkeypatch):
+    monkeypatch.setattr("src.agents.agentic_loop.MAX_TOOL_ITERATIONS", 2)
+    provider = ScriptedProvider(tool_call("t1"), tool_call("t2"), text("Did two of three."))
+
+    events = await _run(provider)
+
+    assert provider.tools[-1] == []
+    assert _context_contains_text(provider.contexts[-1], ITERATION_LIMIT_SUMMARY_PROMPT)
+    assert events[-1] == TurnComplete(full_text="Did two of three.", stop_reason="end_turn")
+
+
+async def test_a_model_cut_off_before_answering_anything_says_why():
+    events = await _run(ScriptedProvider(silence(stop="max_tokens")))
+
+    assert _type(events[-1]) == SSEEventType.ERROR
+    assert "output limit" in events[-1].content
+    assert not any(isinstance(event, TurnComplete) for event in events)
+
+
+async def test_a_large_tool_result_reaches_the_model_whole():
+    class BigResultRouter(FakeToolRouter):
+        async def execute(self, **kwargs):
+            return ToolExecutionOutcome(result="x" * 250_000, success=True)
+
+    provider = ScriptedProvider(tool_call("t1"), text("Read it all."))
+    [
         event
         async for event in run_agentic_tool_loop(
             provider=provider,
             context=[],
             credentials={},
-            tools=[],
+            tools=["lookup_customer"],
             model="test-model",
-            tool_router=FakeToolRouter(),
+            tool_router=BigResultRouter(),
             state=object(),
         )
     ]
 
-    assert provider.calls == 3
-    assert _context_contains_text(provider.contexts[2], EMPTY_POST_TOOL_RETRY_PROMPT)
-    assert isinstance(events[-1], TurnComplete)
-    assert events[-1].full_text == "customer found"
+    results = [
+        block["toolResult"]["content"][0]["text"]
+        for message in provider.contexts[-1]
+        for block in message["content"]
+        if isinstance(block, dict) and "toolResult" in block
+    ]
+    assert results == ["x" * 250_000]
 
 
 async def test_agentic_loop_preserves_provider_thought_signature_in_tool_context():
@@ -344,27 +413,6 @@ async def test_agentic_loop_surfaces_runtime_events_during_tool_execution():
     assert runtime_event_index < result_index
     assert runtime_event.event_type == SSEEventType.IMAGE_GENERATION_PARTIAL
     assert runtime_event.image_b64 == "abc123"
-
-
-async def test_agentic_loop_reports_max_iterations_as_failure(monkeypatch):
-    monkeypatch.setattr("src.agents.agentic_loop.MAX_TOOL_ITERATIONS", 1)
-
-    events = [
-        event
-        async for event in run_agentic_tool_loop(
-            provider=AlwaysToolProvider(),
-            context=[],
-            credentials={},
-            tools=[],
-            model="test-model",
-            tool_router=FakeToolRouter(),
-            state=object(),
-        )
-    ]
-
-    assert _type(events[-1]) == SSEEventType.ERROR
-    assert "maximum tool iterations" in events[-1].content
-    assert not any(isinstance(event, TurnComplete) for event in events)
 
 
 async def test_agentic_loop_records_token_usage_once_per_llm_iteration():
@@ -443,6 +491,10 @@ async def test_agentic_loop_swallows_token_usage_recording_errors():
 
     assert isinstance(events[-1], TurnComplete)
     assert events[-1].full_text == "done"
+
+
+def _message_has_text(message: dict[Any, Any], expected_text: str) -> bool:
+    return any(isinstance(block, dict) and block.get("text") == expected_text for block in message.get("content", []))
 
 
 def _context_contains_text(context: list[dict[Any, Any]], expected_text: str) -> bool:

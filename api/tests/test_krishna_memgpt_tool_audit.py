@@ -365,7 +365,7 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
     assert prompt_calls[1]["enabled_mcp_connections"] == ["mcp-connection"]
 
 
-async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_fallback(monkeypatch):
+async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_a_record_of_what_ran(monkeypatch):
     monkeypatch.setattr(
         "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
         fake_empty_tool_turn_loop,
@@ -424,7 +424,7 @@ async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_fallback(monkey
     assert not [event for event in events if event.event_type == SSEEventType.ERROR]
     assert len(response_events) == 1
     assert response_events[0].content
-    assert "tools finished running" in response_events[0].content
+    assert "I ran 1 tool call (search_docs)" in response_events[0].content
     assert events[-2].event_type == SSEEventType.ASSISTANT_MESSAGE_SAVED
     assert events[-1].event_type == SSEEventType.STREAM_COMPLETE
     assert [message.role for message in message_repo.messages] == [

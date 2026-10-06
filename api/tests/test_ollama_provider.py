@@ -284,7 +284,7 @@ class TestOllamaStreaming:
             ("text", "Hello"),
             ("text", " there"),
             ("usage", ""),
-            ("stop", "stop"),
+            ("stop", "end_turn"),
         ]
         assert events[2].prompt_tokens == 26
         assert events[2].completion_tokens == 8

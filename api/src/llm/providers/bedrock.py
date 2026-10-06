@@ -20,9 +20,15 @@ from src.llm.messages import (
     split_system_messages,
 )
 from src.llm.tools import normalize_tool_definitions
-from .base import LLMProvider, LLMEvent
+from .base import LLMEvent, LLMProvider, StopReason, stop_reason_of
 
 log = logging.getLogger(__name__)
+
+BEDROCK_STOP_REASONS: dict[str, StopReason] = {
+    "max_tokens": "max_tokens",
+    "guardrail_intervened": "content_filter",
+    "content_filtered": "content_filter",
+}
 
 
 # Default model name when none specified
@@ -193,7 +199,7 @@ class BedrockProvider(LLMProvider):
                     if "messageStop" in event:
                         stop_reason = event["messageStop"].get("stopReason", "")
                         log.info(f"Bedrock stream completed: {stop_reason}")
-                        yield LLMEvent(type="stop", content=stop_reason)
+                        yield LLMEvent(type="stop", content=stop_reason_of(stop_reason, BEDROCK_STOP_REASONS))
 
                     # Handle metadata event (usage info)
                     if "metadata" in event:

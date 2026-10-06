@@ -23,9 +23,15 @@ from src.llm.messages import (
     split_system_messages,
 )
 from src.llm.tools import normalize_tool_definitions
-from .base import LLMEvent, LLMProvider
+from .base import LLMEvent, LLMProvider, StopReason, stop_reason_of
 
 log = logging.getLogger(__name__)
+
+# Reasons Codex gives in `response.incomplete`'s `incomplete_details`.
+OPENAI_INCOMPLETE_REASONS: dict[str, StopReason] = {
+    "max_output_tokens": "max_tokens",
+    "content_filter": "content_filter",
+}
 
 DEFAULT_MODEL_NAME = "gpt-5.5"
 CODEX_INCLUDE_FIELDS = ["reasoning.encrypted_content"]
@@ -263,14 +269,28 @@ class OpenAIProvider(LLMProvider):
                             tool_input=tool_input,
                         )
 
-                    elif event_type == "response.completed":
+                    elif event_type in ("response.completed", "response.incomplete"):
                         prompt_tokens, completion_tokens = self._extract_usage(event)
                         yield LLMEvent(
                             type="usage",
                             prompt_tokens=prompt_tokens,
                             completion_tokens=completion_tokens,
                         )
-                        yield LLMEvent(type="stop", content="completed")
+                        details = (event.get("response") or {}).get("incomplete_details") or {}
+                        yield LLMEvent(
+                            type="stop",
+                            content=stop_reason_of(details.get("reason"), OPENAI_INCOMPLETE_REASONS),
+                        )
+
+                    elif event_type == "response.failed":
+                        err = (event.get("response") or {}).get("error") or {}
+                        log.error(
+                            "OpenAI response failed: request_id=%s error=%s context=%s",
+                            upstream_request_id,
+                            err,
+                            diagnostic_context,
+                        )
+                        raise RuntimeError(f"OpenAI response failed (request_id={upstream_request_id}): {err}")
 
                     elif event_type == "error":
                         err = event.get("error") or {}

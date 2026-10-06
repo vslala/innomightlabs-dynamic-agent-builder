@@ -19,9 +19,11 @@ from src.config.settings import settings
 from src.llm.messages import TextBlock, ToolResultBlock, ToolUseBlock, normalize_messages
 from src.llm.ollama import OllamaConnection
 from src.llm.tools import normalize_tool_definitions
-from .base import LLMEvent, LLMProvider
+from .base import LLMEvent, LLMProvider, StopReason, stop_reason_of
 
 log = logging.getLogger(__name__)
+
+OLLAMA_STOP_REASONS: dict[str, StopReason] = {"length": "max_tokens"}
 
 CHAT_PATH = "/api/chat"
 
@@ -278,7 +280,7 @@ class OllamaProvider(LLMProvider):
                             )
                             yield LLMEvent(
                                 type="stop",
-                                content=str(chunk.get("done_reason") or "completed"),
+                                content=stop_reason_of(chunk.get("done_reason"), OLLAMA_STOP_REASONS),
                             )
             except httpx.RequestError as e:
                 log.error(

@@ -11,7 +11,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum, auto
 from typing import Any, AsyncIterator, Optional, Protocol
 
 from src.agents.async_jobs import extract_async_job_status
@@ -40,15 +41,19 @@ POST_TOOL_CONTINUATION_PROMPT = (
     "Only provide a final answer when all requested work is complete. "
     "Do not say you will do something next unless you call the tool for it in this response."
 )
-EMPTY_POST_TOOL_RETRY_PROMPT = (
-    "The previous response after receiving tool results was empty. "
-    "Continue from the latest tool result now. "
-    "Call another tool if required; otherwise provide the final answer."
+FINAL_SUMMARY_PROMPT = (
+    "Tool use is finished for this turn. Using only the tool results above, tell the user what was done, "
+    "what was found, and anything that failed or still needs their input."
 )
-MAX_ITERATIONS_MESSAGE = (
-    "Agent stopped because it reached the maximum tool iterations "
-    f"({MAX_TOOL_ITERATIONS}) before producing a final answer."
+ITERATION_LIMIT_SUMMARY_PROMPT = (
+    f"This turn has reached its limit of {MAX_TOOL_ITERATIONS} model calls, so no more tools can run. "
+    "Using only the tool results above, tell the user what was done, what was found, and what is still left to do."
 )
+#: What to tell the user when the model was kept from answering and no tool had run.
+STOPPED_MESSAGES: dict[str, str] = {
+    "max_tokens": "The model reached its output limit before it could answer. Try asking for a shorter answer.",
+    "content_filter": "The model's provider blocked this response with its content filter.",
+}
 ASYNC_JOB_TIMEOUT_MESSAGE = (
     "Async tool job is still running after the maximum in-turn wait time. "
     "The response was not completed because the agent has not received the final tool result."
@@ -69,6 +74,8 @@ class TurnComplete:
     """The model has finished. `full_text` is everything it said to the user."""
 
     full_text: str
+    #: Why the model last stopped (a `StopReason`): a normal end, or a limit that kept it from answering.
+    stop_reason: str = "end_turn"
 
 
 #: Everything `run_agentic_tool_loop` can yield.
@@ -112,6 +119,16 @@ class TokenUsageRecorder(Protocol):
         ...
 
 
+class Step(Enum):
+    """Where a turn is. Each step streams its events, then chooses the next one."""
+
+    ASK_MODEL = auto()
+    RUN_TOOLS = auto()
+    SUMMARISE = auto()
+    DONE = auto()
+    STOPPED = auto()
+
+
 async def run_agentic_tool_loop(
     *,
     provider: LLMProvider,
@@ -123,114 +140,172 @@ async def run_agentic_tool_loop(
     state: Any,
     token_usage_service: Optional[TokenUsageRecorder] = None,
 ) -> AsyncIterator[LoopYield]:
-    """Call the model, run whatever tools it asks for, repeat until it stops.
+    """Call the model, run whatever tools it asks for, repeat until it answers.
 
     The caller owns persisting the assistant message; everything streamed here
     is ready to hand to a client as-is.
     """
-    full_response = ""
-    usage_service: TokenUsageRecorder = token_usage_service or TokenUsageService()
-    runtime = AgentTurnRuntime()
-    awaiting_post_tool_response = False
-    empty_post_tool_retry_used = False
-    model_iterations = 0
+    turn = _Turn(
+        provider=provider,
+        context=context,
+        credentials=credentials,
+        tools=tools,
+        model=model,
+        tool_router=tool_router,
+        state=state,
+        usage_service=token_usage_service or TokenUsageService(),
+    )
+    steps = {Step.ASK_MODEL: turn.ask_model, Step.RUN_TOOLS: turn.run_tools, Step.SUMMARISE: turn.summarise}
 
-    with use_turn_runtime(runtime):
-        while True:
-            if model_iterations >= MAX_TOOL_ITERATIONS:
-                yield SSEEvent(event_type=SSEEventType.ERROR, content=MAX_ITERATIONS_MESSAGE)
-                return
+    with use_turn_runtime(turn.runtime):
+        while turn.step in steps:
+            async for item in steps[turn.step]():
+                yield item
 
-            model_iterations += 1
-            pending_tool_calls: list[Any] = []
-            iteration_text = ""
-            is_post_tool_response = awaiting_post_tool_response
-            awaiting_post_tool_response = False
-            usage_event: Any = None
-            stop_reason = ""
+    if turn.step is Step.DONE:
+        yield TurnComplete(full_text=turn.full_text, stop_reason=turn.stop_reason)
 
-            async for event in provider.stream_response(context, credentials, tools, model):
-                if event.type == "text" and event.content:
-                    full_response += event.content
-                    iteration_text += event.content
-                    yield _text_event(event.content)
 
-                elif event.type == "tool_use":
-                    pending_tool_calls.append(event)
-                    yield _tool_call_start_event(event)
+@dataclass
+class _Turn:
+    """One user turn on its way through the loop's steps."""
 
-                elif event.type == "usage":
-                    usage_event = event
+    provider: LLMProvider
+    context: list[dict[Any, Any]]
+    credentials: dict[Any, Any]
+    tools: list[dict[Any, Any]]
+    model: str
+    tool_router: ToolRouter
+    state: Any
+    usage_service: TokenUsageRecorder
+    runtime: AgentTurnRuntime = field(default_factory=AgentTurnRuntime)
 
-                elif event.type == "stop":
-                    stop_reason = event.content
+    step: Step = Step.ASK_MODEL
+    model_calls: int = 0
+    full_text: str = ""
+    tools_ran: bool = False
+    summary_prompt: str = FINAL_SUMMARY_PROMPT
+    # What the latest model call produced.
+    call_text: str = ""
+    tool_calls: list[Any] = field(default_factory=list)
+    stop_reason: str = "end_turn"
+    # The one instruction riding on the latest tool results, so the context never fills with copies.
+    nudge: tuple[dict[Any, Any], dict[str, str]] | None = None
 
-            log.info(
-                "Agent loop call=%d stop=%s text_chars=%d tool_calls=%d context_messages=%d context_chars=%d",
-                model_iterations,
-                stop_reason or "none",
-                len(iteration_text),
-                len(pending_tool_calls),
-                len(context),
-                _context_chars(context),
-            )
+    async def ask_model(self) -> AsyncIterator[LoopYield]:
+        if self.model_calls >= MAX_TOOL_ITERATIONS:
+            # A long run that hits the limit still tells the user what it did.
+            self.summary_prompt = ITERATION_LIMIT_SUMMARY_PROMPT
+            self.step = Step.SUMMARISE
+            return
 
-            if usage_event is not None:
-                usage = await _record_token_usage(usage_service, state, usage_event)
-                if usage is not None:
-                    yield usage
+        async for item in self._call_model():
+            yield item
 
-            if pending_tool_calls:
-                append_assistant_tool_uses(
-                    context,
-                    iteration_text=iteration_text,
-                    tool_events=pending_tool_calls,
-                )
+        if self.tool_calls:
+            self.step = Step.RUN_TOOLS
+        elif self.call_text.strip():
+            self.step = Step.DONE
+        elif self.tools_ran:
+            self.step = Step.SUMMARISE
+        elif self.stop_reason in STOPPED_MESSAGES:
+            yield SSEEvent(event_type=SSEEventType.ERROR, content=STOPPED_MESSAGES[self.stop_reason])
+            self.step = Step.STOPPED
+        else:
+            # Nothing said and no tool ran: the turn answered some other way, such as by generating an image.
+            self.step = Step.DONE
 
-                tool_results: list[dict[str, Any]] = []
-                for tool_event in pending_tool_calls:
-                    result = None
-                    async for item in _run_tool(
-                        runtime=runtime,
-                        tool_router=tool_router,
-                        tool_event=tool_event,
-                        state=state,
-                    ):
-                        if isinstance(item, _ToolFinished):
-                            result = item
-                            continue
-                        yield item
-                    if result is None:
-                        raise RuntimeError(f"Tool execution did not complete: {tool_event.tool_name}")
+    async def run_tools(self) -> AsyncIterator[LoopYield]:
+        append_assistant_tool_uses(self.context, iteration_text=self.call_text, tool_events=self.tool_calls)
 
-                    yield _tool_call_result_event(tool_event, result)
-                    tool_results.append(tool_result_block(tool_event.tool_use_id, result.result))
-
-                append_user_tool_results(context, tool_results)
-
-                # If tools mutated core memory, ask for a prompt refresh before
-                # the next call, at most once per batch.
-                if getattr(state, "prompt_dirty", False):
-                    yield PromptRefreshNeeded()
-                    state.prompt_dirty = False
-
-                context.append({"role": "user", "content": [{"text": POST_TOOL_CONTINUATION_PROMPT}]})
-                awaiting_post_tool_response = True
-                continue
-
-            if (
-                is_post_tool_response
-                and not iteration_text.strip()
-                and not empty_post_tool_retry_used
+        tool_results: list[dict[str, Any]] = []
+        for tool_event in self.tool_calls:
+            result = None
+            async for item in _run_tool(
+                runtime=self.runtime,
+                tool_router=self.tool_router,
+                tool_event=tool_event,
+                state=self.state,
             ):
-                empty_post_tool_retry_used = True
-                awaiting_post_tool_response = True
-                context.append({"role": "user", "content": [{"text": EMPTY_POST_TOOL_RETRY_PROMPT}]})
-                continue
+                if isinstance(item, _ToolFinished):
+                    result = item
+                    continue
+                yield item
+            if result is None:
+                raise RuntimeError(f"Tool execution did not complete: {tool_event.tool_name}")
 
-            break
+            yield _tool_call_result_event(tool_event, result)
+            tool_results.append(tool_result_block(tool_event.tool_use_id, result.result))
 
-    yield TurnComplete(full_text=full_response)
+        append_user_tool_results(self.context, tool_results)
+        self.tools_ran = True
+        self._nudge(POST_TOOL_CONTINUATION_PROMPT)
+
+        # If tools mutated core memory, ask for a prompt refresh before
+        # the next call, at most once per batch.
+        if getattr(self.state, "prompt_dirty", False):
+            yield PromptRefreshNeeded()
+            self.state.prompt_dirty = False
+
+        self.step = Step.ASK_MODEL
+
+    async def summarise(self) -> AsyncIterator[LoopYield]:
+        """Ask once more with tools turned off, so the only thing the model can do is answer."""
+        self._nudge(self.summary_prompt)
+        async for item in self._call_model(answer_only=True):
+            yield item
+        # Even silence ends the turn here: the caller then records which tools ran, so nothing is lost.
+        self.step = Step.DONE
+
+    async def _call_model(self, *, answer_only: bool = False) -> AsyncIterator[LoopYield]:
+        tools = [] if answer_only else self.tools
+        self.model_calls += 1
+        self.call_text, self.tool_calls, self.stop_reason = "", [], "end_turn"
+        usage_event: Any = None
+
+        async for event in self.provider.stream_response(self.context, self.credentials, tools, self.model):
+            if event.type == "text" and event.content:
+                self.call_text += event.content
+                self.full_text += event.content
+                yield _text_event(event.content)
+
+            elif event.type == "tool_use":
+                if answer_only:
+                    log.warning("Ignoring tool call %s made while tools were off", event.tool_name)
+                    continue
+                self.tool_calls.append(event)
+                yield _tool_call_start_event(event)
+
+            elif event.type == "usage":
+                usage_event = event
+
+            elif event.type == "stop":
+                self.stop_reason = event.content or "end_turn"
+
+        log.info(
+            "Agent loop call=%d step=%s stop=%s text_chars=%d tool_calls=%d context_messages=%d context_chars=%d",
+            self.model_calls,
+            self.step.name,
+            self.stop_reason,
+            len(self.call_text),
+            len(self.tool_calls),
+            len(self.context),
+            _context_chars(self.context),
+        )
+
+        if usage_event is not None:
+            usage = await _record_token_usage(self.usage_service, self.state, usage_event)
+            if usage is not None:
+                yield usage
+
+    def _nudge(self, text: str) -> None:
+        """Put `text` on the latest tool results, taking it off wherever it rode before."""
+        if self.nudge is not None:
+            message, block = self.nudge
+            message["content"].remove(block)
+        block = {"text": text}
+        self.context[-1]["content"].append(block)
+        self.nudge = (self.context[-1], block)
 
 
 def _context_chars(context: list[dict[Any, Any]]) -> int:

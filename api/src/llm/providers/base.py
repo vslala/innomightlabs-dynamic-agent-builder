@@ -10,6 +10,15 @@ from dataclasses import dataclass, field
 from typing import AsyncIterator, Literal, Optional
 
 
+#: Why the model stopped, in the loop's words. Each provider maps its own reasons onto these.
+StopReason = Literal["end_turn", "max_tokens", "content_filter"]
+
+
+def stop_reason_of(raw: object, known: dict[str, StopReason]) -> StopReason:
+    """A provider's raw reason in the loop's words. Anything that is not a limit is a normal end."""
+    return known.get(str(raw or ""), "end_turn")
+
+
 @dataclass
 class LLMEvent:
     """
@@ -18,7 +27,8 @@ class LLMEvent:
     Types:
     - "text": Text content chunk
     - "tool_use": Tool call request from the model
-    - "stop": Stream completed
+    - "stop": Stream completed. `content` is a `StopReason`, so the loop can tell a
+      finished answer from one the model was cut off from giving.
     - "usage": Token usage for the call. A dedicated event type (rather than
       piggybacking on "stop") because providers don't all have usage available
       at the same point relative to their stop signal -- e.g. Bedrock's
@@ -71,5 +81,5 @@ class LLMProvider(ABC):
             Exception: If the API call fails
         """
         if False:
-            yield LLMEvent(type="stop")
+            yield LLMEvent(type="stop", content="end_turn")
         raise NotImplementedError
