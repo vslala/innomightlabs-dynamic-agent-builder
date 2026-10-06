@@ -579,6 +579,21 @@ actions:
 
 Use this when an action makes sense for agents but not as an automation action. For example, scheduler `create_or_update` wakes the current agent in the current conversation, which is not the right abstraction for automation trigger management.
 
+Two more fields cover arguments that matter only in automations:
+
+- `required_arguments`: arguments an automation step must set, on top of `input_schema.required`. A blank string counts as missing. The action catalog merges them into the `required` list it returns, so the step editor flags them too.
+- `owner_scoped_arguments`: arguments that name something the owner owns. Publishing to the automation marketplace rejects a step whose value is not an `{{ inputs.* }}` placeholder, so a template never carries the publisher's id.
+
+Example from `agent_invocation.invoke`. In a chat the agent comes from the installed config, but an automation step must pick one:
+
+```yaml
+actions:
+  - name: invoke
+    automation:
+      required_arguments: [agent_id]
+      owner_scoped_arguments: [agent_id]
+```
+
 ### `lifecycle`
 
 Optional action-level lifecycle hooks. Current runtime support is focused on `delete`.

@@ -20,7 +20,6 @@ import {
   StatusBadge,
 } from "../../../../components/ui";
 import { SchemaForm } from "../../../../components/forms";
-import { automationApiService } from "../../../../services/automations";
 import type {
   AutomationTrigger,
   AutomationTriggerType,
@@ -38,7 +37,7 @@ const TRIGGER_TYPES: { value: AutomationTriggerType; label: string; hint: string
 ];
 
 export function TriggerCard({ item }: { item: TriggerChainItem }) {
-  const { graph, readOnly, expandedNodeId, onToggleExpand, onEditTriggers } = useChain();
+  const { gateway, readOnly, expandedNodeId, onToggleExpand, onEditTriggers } = useChain();
   const expanded = expandedNodeId === item.startNode.node_id;
   const [editing, setEditing] = useState<AutomationTrigger | "new" | null>(null);
   const [schema, setSchema] = useState<FormSchema | null>(null);
@@ -46,20 +45,19 @@ export function TriggerCard({ item }: { item: TriggerChainItem }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const automationId = graph.automation.automation_id;
   const primary = item.triggers[0] ?? null;
 
   const loadSchema = useCallback(
     async (type: AutomationTriggerType) => {
       setError(null);
       try {
-        setSchema(await automationApiService.getTriggerForm(automationId, type));
+        setSchema(await gateway.getTriggerForm(type));
       } catch (loadError) {
         setSchema(null);
         setError(messageOf(loadError));
       }
     },
-    [automationId]
+    [gateway]
   );
 
   useEffect(() => {
@@ -82,7 +80,7 @@ export function TriggerCard({ item }: { item: TriggerChainItem }) {
     try {
       const payload = toRequest(triggerType, values, item.startNode.node_id);
       if (editing && editing !== "new") {
-        await automationApiService.updateTrigger(automationId, editing.trigger_id, {
+        await gateway.updateTrigger(editing.trigger_id, {
           type: payload.type,
           name: payload.name,
           enabled: payload.enabled,
@@ -90,7 +88,7 @@ export function TriggerCard({ item }: { item: TriggerChainItem }) {
           config: payload.config,
         });
       } else {
-        await automationApiService.createTrigger(automationId, payload);
+        await gateway.createTrigger(payload);
       }
       setEditing(null);
       await onEditTriggers();
@@ -105,7 +103,7 @@ export function TriggerCard({ item }: { item: TriggerChainItem }) {
     setBusy(true);
     setError(null);
     try {
-      await automationApiService.deleteTrigger(automationId, trigger.trigger_id);
+      await gateway.deleteTrigger(trigger.trigger_id);
       if (editing !== "new" && editing?.trigger_id === trigger.trigger_id) setEditing(null);
       await onEditTriggers();
     } catch (removeError) {

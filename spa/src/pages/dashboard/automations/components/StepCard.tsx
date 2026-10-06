@@ -18,7 +18,6 @@ import {
 
 import { Button, Input, Label, Textarea } from "../../../../components/ui";
 import { SchemaForm, SmartValueProvider } from "../../../../components/forms";
-import { automationApiService } from "../../../../services/automations";
 import type { AutomationNode } from "../../../../types/automation";
 import type { FormValue } from "../../../../types/form";
 import { describeStep, findCatalogItem, skillActionOf } from "../chain/actionSummary";
@@ -41,6 +40,7 @@ export function StepCard({ node }: { node: AutomationNode }) {
   const {
     catalog,
     expandedNodeId,
+    gateway,
     graph,
     issuesByNode,
     onConfigureAction,
@@ -76,17 +76,6 @@ export function StepCard({ node }: { node: AutomationNode }) {
         context: runContext,
       }),
     [catalog, graph, node.node_id, runContext]
-  );
-
-  const preview = useMemo(
-    () => async (template: string) => {
-      const response = await automationApiService.previewSmartValues(
-        graph.automation.automation_id,
-        { template }
-      );
-      return response.rendered;
-    },
-    [graph.automation.automation_id]
   );
 
   const needsSetup = Boolean(item && !item.available && item.install_schema);
@@ -206,7 +195,7 @@ export function StepCard({ node }: { node: AutomationNode }) {
       </div>
 
       {expanded && (
-        <SmartValueProvider groups={smartValueGroups} preview={preview}>
+        <SmartValueProvider groups={smartValueGroups} preview={gateway.previewSmartValues}>
           <div className="chain-card__body">
             <div className="chain-card__fields">
               <div className="chain-field">

@@ -13,12 +13,14 @@ import type {
   AutomationRunNodeResult,
 } from "../../../../types/automation";
 import type { ChainLaneLabel } from "../chain/chainModel";
+import type { ChainGateway } from "./chainGateway";
 import type { ChainStepType, NodePatch } from "../chain/chainOperations";
 import type { ChainIssue } from "../chain/chainValidation";
 
 export interface ChainContextValue {
   graph: AutomationGraphResponse;
   catalog: AutomationActionCatalogItem[];
+  gateway: ChainGateway;
   readOnly: boolean;
   expandedNodeId: string | null;
   issuesByNode: Map<string, ChainIssue[]>;

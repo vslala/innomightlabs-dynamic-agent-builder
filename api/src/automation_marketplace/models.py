@@ -27,7 +27,6 @@ class MarketplaceAutomationSkillTemplate(BaseModel):
     description: str | None = None
     required: bool = True
     enabled_on_import: bool = True
-    default_config: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def normalize(self) -> "MarketplaceAutomationSkillTemplate":

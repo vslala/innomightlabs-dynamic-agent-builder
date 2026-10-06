@@ -181,7 +181,7 @@ export function AutomationDetailLayout() {
           <DialogHeader>
             <DialogTitle>Publish to Automation Marketplace</DialogTitle>
             <DialogDescription>
-              Create a reusable workflow template. Triggers are not published, and skill secrets are never copied.
+              Create a reusable workflow template. Triggers and skill settings are not published: whoever imports it sets up each skill and picks their own agents.
             </DialogDescription>
           </DialogHeader>
 

@@ -114,9 +114,30 @@ class _FakeAutomationService:
 class _FakeSkillRegistry:
     def get(self, skill_id: str):
         if skill_id == "agent_invocation":
-            return SimpleNamespace(manifest=SimpleNamespace(name="Invoke Agent", form=self.install_form(skill_id, "").form_inputs))
+            return SimpleNamespace(
+                manifest=SimpleNamespace(
+                    name="Invoke Agent",
+                    requires_oauth=False,
+                    form=self.install_form(skill_id, "").form_inputs,
+                    find_action=lambda name: SimpleNamespace(
+                        automation=SimpleNamespace(owner_scoped_arguments=["agent_id"]),
+                        action_form=Form(
+                            form_name="Invoke Agent",
+                            submit_path="",
+                            form_inputs=[
+                                FormInput(
+                                    input_type=FormInputType.SELECT,
+                                    name="agent_id",
+                                    label="Agent",
+                                    options_source=FormOptionsSource(type="agents"),
+                                )
+                            ],
+                        ),
+                    ),
+                )
+            )
         if skill_id == "google_mail":
-            return SimpleNamespace(manifest=SimpleNamespace(name="Gmail", form=[]))
+            return SimpleNamespace(manifest=SimpleNamespace(name="Gmail", form=[], find_action=lambda name: None))
         return None
 
     def install_form(self, skill_id: str, submit_path: str):
@@ -514,3 +535,118 @@ def test_automation_marketplace_import_plan_hydrates_agent_options(dynamodb_tabl
     assert target_agent.name == "target_agent_id"
     assert target_agent.options
     assert target_agent.options[0].label == "Research Agent"
+
+
+def _publish_invoke_agent_step(service, automation_repo, agent_id: str):
+    automation = automation_repo.save_automation(Automation(title="Briefing", created_by=TEST_USER_EMAIL))
+    automation_repo.save_skill(
+        AutomationSkill(
+            automation_id=automation.automation_id,
+            installed_skill_id="agent_invocation",
+            skill_id="agent_invocation",
+            namespace="core.automation",
+            skill_name="Invoke Agent",
+            skill_description="Invoke an agent",
+            enabled=True,
+            config={"target_agent_id": "publisher-agent-id"},
+            enabled_by=TEST_USER_EMAIL,
+        )
+    )
+    start = AutomationNode(
+        automation_id=automation.automation_id, node_id="start", type=AutomationNodeType.START, name="Start"
+    )
+    action = AutomationNode(
+        automation_id=automation.automation_id,
+        node_id="briefing",
+        type=AutomationNodeType.ACTION,
+        name="Write briefing",
+        config={
+            "action_type": "skill_action",
+            "skill_id": "agent_invocation",
+            "installed_skill_id": "agent_invocation",
+            "action": "invoke",
+            "arguments": {"agent_id": agent_id, "prompt_template": "Brief me."},
+        },
+    )
+    final = AutomationNode(
+        automation_id=automation.automation_id, node_id="final", type=AutomationNodeType.FINAL, name="Done"
+    )
+    edges = [
+        AutomationEdge(
+            automation_id=automation.automation_id,
+            edge_id="start-briefing",
+            source_node_id="start",
+            target_node_id="briefing",
+        ),
+        AutomationEdge(
+            automation_id=automation.automation_id,
+            edge_id="briefing-final",
+            source_node_id="briefing",
+            target_node_id="final",
+        ),
+    ]
+    automation_repo.save_graph(automation.automation_id, [start, action, final], edges, [])
+    return service.publish_automation(
+        user_email=TEST_USER_EMAIL,
+        request=PublishMarketplaceAutomationRequest(
+            automation_id=automation.automation_id,
+            title="Daily briefing",
+            short_description="Briefing",
+            full_description="Briefing",
+            tags=[],
+            included_node_ids=["start", "briefing", "final"],
+            included_edge_ids=[edge.edge_id for edge in edges],
+            included_skill_ids=["agent_invocation"],
+            import_inputs=[],
+            status=MarketplaceAutomationStatus.PUBLISHED,
+        ),
+    )
+
+
+def test_automation_marketplace_asks_the_importer_for_their_own_agent(dynamodb_table):
+    del dynamodb_table
+    automation_repo = AutomationRepository()
+    service = _service(automation_repo)
+
+    published = _publish_invoke_agent_step(service, automation_repo, "publisher-agent-id")
+
+    template = AutomationMarketplaceRepository().find_by_id(published.template_id)
+    assert template is not None
+    assert "publisher-agent-id" not in str(template.model_dump())
+    briefing = next(node for node in template.nodes if node.node_id == "briefing")
+    assert briefing.config["arguments"]["agent_id"] == "{{ inputs.briefing_agent_id }}"
+    [agent_input] = template.import_inputs
+    assert agent_input.input_key == "briefing_agent_id"
+    assert agent_input.form_input.input_type == FormInputType.SELECT
+    assert agent_input.form_input.options_source.type == "agents"
+
+    imported = service.import_automation(
+        template_id=published.template_id,
+        user_email=TEST_USER_EMAIL,
+        request=ImportMarketplaceAutomationRequest(
+            title="Imported",
+            skill_configs={"agent_invocation": {"target_agent_id": "importer-agent-id"}},
+            import_inputs={"briefing_agent_id": "importer-agent-id"},
+        ),
+    )
+
+    nodes, _, _ = automation_repo.get_graph(imported.automation_id)
+    imported_step = next(node for node in nodes if node.node_id == "briefing")
+    assert imported_step.config["arguments"]["agent_id"] == "importer-agent-id"
+
+
+def test_automation_marketplace_publish_never_copies_skill_config(dynamodb_table):
+    del dynamodb_table
+    automation_repo = AutomationRepository()
+    service = _service(automation_repo)
+
+    published = _publish_invoke_agent_step(service, automation_repo, "publisher-agent-id")
+
+    with pytest.raises(ValueError, match="Missing configuration for skill"):
+        service.import_automation(
+            template_id=published.template_id,
+            user_email=TEST_USER_EMAIL,
+            request=ImportMarketplaceAutomationRequest(
+                title="Imported", skill_configs={}, import_inputs={"briefing_agent_id": "importer-agent-id"}
+            ),
+        )

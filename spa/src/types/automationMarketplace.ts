@@ -10,7 +10,6 @@ export interface MarketplaceAutomationSkillTemplate {
   description: string | null;
   required: boolean;
   enabled_on_import: boolean;
-  default_config: Record<string, unknown>;
 }
 
 export interface MarketplaceAutomationNodeTemplate {

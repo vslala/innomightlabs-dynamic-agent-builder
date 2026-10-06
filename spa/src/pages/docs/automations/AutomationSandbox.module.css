@@ -1,0 +1,62 @@
+.sandbox {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  margin: 1.5rem 0 2rem;
+  overflow: hidden;
+}
+
+.toolbar {
+  align-items: center;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.badge {
+  background: rgba(var(--gradient-start-rgb), 0.15);
+  border-radius: 999px;
+  color: var(--gradient-start);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.625rem;
+}
+
+.note {
+  color: var(--text-muted);
+  flex: 1;
+  font-size: 0.8125rem;
+}
+
+.reset {
+  align-items: center;
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.8125rem;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+}
+
+.reset:hover {
+  border-color: var(--gradient-start);
+  color: var(--text-primary);
+}
+
+/* The workspace fills its parent, so the frame sets the height. */
+.frame {
+  background: var(--bg-primary);
+  height: 720px;
+  line-height: 1.5;
+}
+
+.caption {
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  padding: 0.5rem 0.75rem;
+}

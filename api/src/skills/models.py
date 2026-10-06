@@ -52,6 +52,11 @@ class SkillLifecycleManifest(BaseModel):
 
 class SkillActionAutomationConfig(BaseModel):
     enabled: bool = True
+    #: Arguments an automation step must set even though an agent call may leave them out.
+    required_arguments: list[str] = Field(default_factory=list)
+    #: Arguments naming something the owner owns, such as an agent. A published template
+    #: cannot carry the publisher's value, so these must be import input placeholders.
+    owner_scoped_arguments: list[str] = Field(default_factory=list)
 
 
 class ActionDisclosureMode(str, Enum):
@@ -74,6 +79,16 @@ class SkillActionManifest(BaseModel):
     automation: SkillActionAutomationConfig = Field(default_factory=SkillActionAutomationConfig)
     lifecycle: SkillLifecycleManifest = Field(default_factory=SkillLifecycleManifest)
     handler: str
+
+    def automation_input_schema(self) -> dict[str, Any]:
+        """The input schema an automation step is held to: the agent-facing schema plus the
+        arguments only a step has to supply."""
+        extra = self.automation.required_arguments
+        if not extra:
+            return self.input_schema
+        required = list(self.input_schema.get("required", []))
+        required += [name for name in extra if name not in required]
+        return {**self.input_schema, "required": required}
 
     def answers_to(self, name: str) -> bool:
         return self.name == name or name in self.aliases

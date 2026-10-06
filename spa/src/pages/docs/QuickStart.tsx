@@ -637,6 +637,11 @@ InnomightEmbed.on('ready', () => console.log('Chat ready'));`}
             <h3>FAQ</h3>
             <p>Common questions and troubleshooting tips</p>
           </a>
+          <a href="/docs/automations" className={styles.nextStepCard}>
+            <span className={styles.nextStepIcon}>⏰</span>
+            <h3>Automate It</h3>
+            <p>Have your agent email you a daily briefing</p>
+          </a>
           <a href="/dashboard/agents" className={styles.nextStepCard}>
             <span className={styles.nextStepIcon}>🤖</span>
             <h3>Create Another Agent</h3>

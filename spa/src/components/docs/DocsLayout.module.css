@@ -152,7 +152,12 @@
   line-height: 1.8;
 }
 
-.content h2 {
+/*
+ * Prose styles target bare elements, so they skip anything inside a
+ * [data-docs-embed] block, such as the live workspace in the automations guide.
+ * The :where() keeps their specificity unchanged, so page modules still win ties.
+ */
+.content h2:not(:where([data-docs-embed] *)) {
   font-size: 1.75rem;
   font-weight: 700;
   color: var(--text-primary);
@@ -161,7 +166,7 @@
   scroll-margin-top: 100px;
 }
 
-.content h3 {
+.content h3:not(:where([data-docs-embed] *)) {
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--text-primary);
@@ -169,26 +174,26 @@
   margin-bottom: 0.75rem;
 }
 
-.content p {
+.content p:not(:where([data-docs-embed] *)) {
   margin-bottom: 1.25rem;
 }
 
-.content ul,
-.content ol {
+.content ul:not(:where([data-docs-embed] *)),
+.content ol:not(:where([data-docs-embed] *)) {
   margin-bottom: 1.25rem;
   padding-left: 1.5rem;
 }
 
-.content li {
+.content li:not(:where([data-docs-embed] *)) {
   margin-bottom: 0.5rem;
 }
 
-.content strong {
+.content strong:not(:where([data-docs-embed] *)) {
   color: var(--text-primary);
   font-weight: 600;
 }
 
-.content code {
+.content code:not(:where([data-docs-embed] *)) {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.875em;
   background: var(--bg-card);
@@ -197,7 +202,7 @@
   color: var(--accent-cyan);
 }
 
-.content pre {
+.content pre:not(:where([data-docs-embed] *)) {
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
@@ -206,25 +211,25 @@
   margin-bottom: 1.5rem;
 }
 
-.content pre code {
+.content pre code:not(:where([data-docs-embed] *)) {
   background: none;
   padding: 0;
   font-size: 0.875rem;
   color: var(--text-secondary);
 }
 
-.content a {
+.content a:not(:where([data-docs-embed] *)) {
   color: var(--gradient-start);
   text-decoration: underline;
   text-underline-offset: 2px;
   transition: color 0.2s ease;
 }
 
-.content a:hover {
+.content a:not(:where([data-docs-embed] *)):hover {
   color: var(--gradient-mid);
 }
 
-.content blockquote {
+.content blockquote:not(:where([data-docs-embed] *)) {
   border-left: 3px solid var(--gradient-start);
   padding-left: 1rem;
   margin: 1.5rem 0;
@@ -232,14 +237,14 @@
   font-style: italic;
 }
 
-.content img {
+.content img:not(:where([data-docs-embed] *)) {
   max-width: 100%;
   border-radius: 12px;
   margin: 1.5rem 0;
   border: 1px solid var(--border-subtle);
 }
 
-.content hr {
+.content hr:not(:where([data-docs-embed] *)) {
   border: none;
   border-top: 1px solid var(--border-subtle);
   margin: 2.5rem 0;

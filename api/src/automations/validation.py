@@ -201,8 +201,11 @@ class SkillActionValidator:
             )
         if not isinstance(skill_config.arguments, dict):
             raise AutomationValidationError("skill_action arguments must be an object")
-        for field_name in action.input_schema.get("required", []):
-            if field_name not in skill_config.arguments:
+        # A step-only argument left blank in the form is as missing as an absent one.
+        step_only = set(action.automation.required_arguments)
+        for field_name in action.automation_input_schema().get("required", []):
+            value = skill_config.arguments.get(field_name)
+            if field_name not in skill_config.arguments or (field_name in step_only and _is_blank(value)):
                 raise AutomationValidationError(
                     f"skill_action missing required action argument: {field_name}"
                 )
@@ -388,3 +391,7 @@ def _require_outgoing(
     if not node_edges:
         raise AutomationValidationError(f"Node '{node.node_id}' must have an outgoing edge")
     return node_edges
+
+
+def _is_blank(value: object) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())

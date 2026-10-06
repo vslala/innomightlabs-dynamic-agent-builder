@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -12,6 +13,7 @@ from src.automation_marketplace.models import (
     MarketplaceAutomationImportSessionResponse,
     MarketplaceAutomationDetailResponse,
     MarketplaceAutomationEdgeTemplate,
+    MarketplaceAutomationImportInput,
     MarketplaceAutomationImportPlanInfo,
     MarketplaceAutomationImportPlanResponse,
     MarketplaceAutomationNodeTemplate,
@@ -43,7 +45,7 @@ from src.automations.models import (
 )
 from src.automations.repository import AutomationRepository
 from src.form_options import FormOptionsContext, hydrate_form_options
-from src.form_models import Form
+from src.form_models import Form, FormInput, FormInputType
 
 if TYPE_CHECKING:
     from src.automations.service import AutomationService
@@ -336,13 +338,24 @@ class AutomationMarketplaceService:
             nodes=[self._node_template(node, skill_templates) for node in graph.nodes],
             edges=[self._edge_template(edge) for edge in graph.edges],
             skills=skill_templates,
-            import_inputs=request.import_inputs,
+            import_inputs=self._with_owner_scoped_inputs(request.import_inputs, graph.nodes),
             source_automation_id=request.automation_id,
             publisher_user_email=user_email,
             publisher_display_name=user_email.split("@", 1)[0],
             tags=request.tags,
             status=request.status,
         )
+
+    def _with_owner_scoped_inputs(
+        self,
+        declared: list[MarketplaceAutomationImportInput],
+        nodes: list[AutomationNode],
+    ) -> list[MarketplaceAutomationImportInput]:
+        """A template cannot carry the publisher's agent, so each step that names one asks
+        the importer for theirs instead."""
+        keys = {item.input_key for item in declared}
+        generated = [item for item in self._owner_scoped_import_inputs(nodes) if item.input_key not in keys]
+        return [*declared, *generated]
 
     def _node_template(
         self,
@@ -406,7 +419,7 @@ class AutomationMarketplaceService:
                 installed=self.automation_service.install_skill(
                     automation_id=automation_id,
                     skill_id=skill.skill_id,
-                    raw_config=self._merged_skill_config(skill, skill_configs),
+                    raw_config=skill_configs.get(skill.template_skill_key, {}),
                     user_email=user_email,
                     enabled=skill.enabled_on_import,
                     validate_connectors=skill.enabled_on_import,
@@ -530,7 +543,7 @@ class AutomationMarketplaceService:
                 raise ValueError(f"Missing configuration for skill: {skill.display_name or skill.skill_id}")
             self.automation_service.validate_skill_config(
                 skill_id=skill.skill_id,
-                raw_config=self._merged_skill_config(skill, skill_configs),
+                raw_config=skill_configs.get(skill.template_skill_key, {}),
                 user_email=user_email,
                 validate_connectors=skill.enabled_on_import,
             )
@@ -547,7 +560,7 @@ class AutomationMarketplaceService:
             skill = _required_lookup(skills_by_key, key, "Unknown template skill")
             self.automation_service.validate_skill_config(
                 skill_id=skill.skill_id,
-                raw_config=self._merged_skill_config(skill, all_skill_configs),
+                raw_config=all_skill_configs.get(skill.template_skill_key, {}),
                 user_email=user_email,
                 validate_connectors=skill.enabled_on_import,
             )
@@ -572,13 +585,6 @@ class AutomationMarketplaceService:
             if item.required and _is_blank(value):
                 raise ValueError(f"Missing import input: {item.label}")
 
-    def _merged_skill_config(
-        self,
-        skill: MarketplaceAutomationSkillTemplate,
-        skill_configs: dict[str, dict[str, Any]],
-    ) -> dict[str, Any]:
-        return {**skill.default_config, **skill_configs.get(skill.template_skill_key, {})}
-
     def _skill_requires_config(self, skill_id: str) -> bool:
         loaded = self.automation_service.skill_registry.get(skill_id)
         return bool(loaded and loaded.manifest.form)
@@ -592,7 +598,6 @@ class AutomationMarketplaceService:
             skill.required
             and self._skill_requires_config(skill.skill_id)
             and skill.template_skill_key not in skill_configs
-            and not skill.default_config
         )
 
     def _selected_skills(
@@ -617,7 +622,6 @@ class AutomationMarketplaceService:
             description=skill.skill_description,
             required=True,
             enabled_on_import=not (loaded.manifest.requires_oauth if loaded else False),
-            default_config=dict(skill.config),
         )
 
     def _publish_node_config(
@@ -657,9 +661,51 @@ class AutomationMarketplaceService:
         matching = self._selected_skill_for_config(installed_skill_id, config.get("skill_id"), skills)
         if not matching:
             raise ValueError(f"Action node '{node.name}' references a skill that was not selected for publishing")
+        arguments = config.get("arguments")
+        if isinstance(arguments, dict):
+            config["arguments"] = {
+                **arguments,
+                **{
+                    name: f"{{{{ inputs.{_owner_scoped_input_key(node, name)} }}}}"
+                    for name, _ in self._owner_scoped_literals(node)
+                },
+            }
         config["skill_id"] = matching.skill_id
         config["installed_skill_id"] = f"{{{{ skills.{matching.template_skill_key}.installed_skill_id }}}}"
         return config
+
+    def _owner_scoped_literals(self, node: AutomationNode) -> list[tuple[str, FormInput | None]]:
+        """Owner-scoped arguments this step sets to the publisher's own value, with the form
+        field the step editor uses for each, so the importer can be asked the same way."""
+        if node.type != AutomationNodeType.ACTION:
+            return []
+        if _enum_value(node.config.get("action_type")) != AutomationActionType.SKILL_ACTION.value:
+            return []
+        loaded = self.automation_service.skill_registry.get(str(node.config.get("skill_id") or ""))
+        action = loaded.manifest.find_action(str(node.config.get("action") or "")) if loaded else None
+        arguments = node.config.get("arguments")
+        if not action or not isinstance(arguments, dict):
+            return []
+        fields = {item.name: item for item in action.action_form.form_inputs} if action.action_form else {}
+        return [
+            (name, fields.get(name))
+            for name in action.automation.owner_scoped_arguments
+            if arguments.get(name) and not _is_input_placeholder(str(arguments[name]))
+        ]
+
+    def _owner_scoped_import_inputs(self, nodes: list[AutomationNode]) -> list[MarketplaceAutomationImportInput]:
+        inputs: list[MarketplaceAutomationImportInput] = []
+        for node in nodes:
+            for name, field in self._owner_scoped_literals(node):
+                key = _owner_scoped_input_key(node, name)
+                label = f"{field.label if field else name} for “{node.name}”"
+                form_input = (
+                    field.model_copy(update={"name": key, "label": label})
+                    if field
+                    else FormInput(input_type=FormInputType.TEXT, name=key, label=label)
+                )
+                inputs.append(MarketplaceAutomationImportInput(input_key=key, label=label, form_input=form_input))
+        return inputs
 
     def _selected_skill_for_config(
         self,
@@ -747,3 +793,7 @@ def _is_blank(value: Any) -> bool:
     if isinstance(value, list):
         return not value
     return False
+
+
+def _owner_scoped_input_key(node: AutomationNode, argument: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_\-]", "_", f"{node.node_id}_{argument}")

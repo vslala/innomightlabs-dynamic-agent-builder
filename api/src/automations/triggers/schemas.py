@@ -73,10 +73,13 @@ def build_schedule_trigger_form(nodes: list[AutomationNode], submit_path: str = 
                 name="input",
                 label="Input",
                 attr={
-                    "help_text": "Optional values available to the workflow as scheduled run input.",
+                    "help_text": (
+                        "Optional fixed values passed to every scheduled run. Steps read them as "
+                        "{{ input.<key> }}; the values themselves are used as typed."
+                    ),
                     "empty_text": "No input values will be passed to the scheduled automation.",
-                    "key_placeholder": "customer_email",
-                    "value_placeholder": "{{ input.email }}",
+                    "key_placeholder": "topic",
+                    "value_placeholder": "AI agent news",
                     "add_label": "Add input",
                 },
             ),

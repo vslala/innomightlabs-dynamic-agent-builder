@@ -35,6 +35,9 @@ actions:
         prompt_template:
           type: string
           description: Prompt text after automation smart values have been rendered.
+    automation:
+      required_arguments: [agent_id]
+      owner_scoped_arguments: [agent_id]
     action_form:
       form_name: Invoke Agent
       submit_path: ""

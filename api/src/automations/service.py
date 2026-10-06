@@ -776,7 +776,7 @@ class AutomationService:
                         action=action.name,
                         label=f"{enabled.skill_name}: {action.name}",
                         description=action.description,
-                        input_schema=action.input_schema,
+                        input_schema=action.automation_input_schema(),
                         action_form=(
                             action.action_form.model_dump(mode="json", exclude_none=True)
                             if action.action_form
@@ -825,7 +825,7 @@ class AutomationService:
                         action=action.name,
                         label=f"{loaded.manifest.name}: {action.name}",
                         description=action.description,
-                        input_schema=action.input_schema,
+                        input_schema=action.automation_input_schema(),
                         action_form=(
                             action.action_form.model_dump(mode="json", exclude_none=True)
                             if action.action_form

@@ -642,3 +642,57 @@ def test_validate_skill_action_requires_installed_id_when_repeatable_is_ambiguou
 
     with pytest.raises(AutomationValidationError, match="multiple installed instances"):
         service.validate_graph([start, action, final], edges, [trigger], TEST_USER_EMAIL)
+
+
+def _invoke_agent_step_graph(automation_id: str, arguments: dict):
+    start = AutomationNode(automation_id=automation_id, node_id="start", type=AutomationNodeType.START, name="Start")
+    action = AutomationNode(
+        automation_id=automation_id,
+        node_id="action",
+        type="action",
+        name="Write briefing",
+        config={
+            "action_type": "skill_action",
+            "skill_id": "agent_invocation",
+            "installed_skill_id": "agent_invocation",
+            "action": "invoke",
+            "arguments": arguments,
+        },
+    )
+    final = AutomationNode(automation_id=automation_id, node_id="final", type=AutomationNodeType.FINAL, name="Done")
+    edges = [
+        AutomationEdge(automation_id=automation_id, source_node_id="start", target_node_id="action"),
+        AutomationEdge(automation_id=automation_id, source_node_id="action", target_node_id="final"),
+    ]
+    trigger = AutomationTrigger(automation_id=automation_id, type="manual", name="Manual", entry_node_id="start")
+    return [start, action, final], edges, [trigger]
+
+
+@pytest.mark.parametrize("arguments", [{"prompt_template": "Hi"}, {"agent_id": "  ", "prompt_template": "Hi"}])
+def test_validate_invoke_agent_step_requires_an_agent(dynamodb_table, arguments):
+    service = make_service()
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    nodes, edges, triggers = _invoke_agent_step_graph(automation.automation_id, arguments)
+
+    with pytest.raises(AutomationValidationError, match="missing required action argument: agent_id"):
+        service.validate_graph(nodes, edges, triggers, TEST_USER_EMAIL, automation.automation_id)
+
+
+def test_validate_invoke_agent_step_accepts_a_chosen_agent(dynamodb_table):
+    service = make_service()
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    nodes, edges, triggers = _invoke_agent_step_graph(
+        automation.automation_id, {"agent_id": "agent-1", "prompt_template": "Hi"}
+    )
+
+    service.validate_graph(nodes, edges, triggers, TEST_USER_EMAIL, automation.automation_id)
+
+
+def test_action_catalog_marks_the_agent_as_required_for_invoke_agent_steps(dynamodb_table):
+    service = make_service()
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+
+    catalog = service.list_action_catalog(automation.automation_id, TEST_USER_EMAIL)
+    invoke = next(item for item in catalog.actions if item.skill_id == "agent_invocation")
+
+    assert invoke.input_schema["required"] == ["prompt_template", "agent_id"]
