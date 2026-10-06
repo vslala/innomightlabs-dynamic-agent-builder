@@ -271,6 +271,31 @@
   }
 }
 
+.agent-skill-card__meta {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+  margin-top: var(--space-2);
+  min-width: 0;
+}
+
+.agent-skill-card__meta .agent-skill-card__namespace {
+  margin-top: 0;
+}
+
+.agent-skill-sharing {
+  cursor: help;
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  gap: var(--space-1);
+}
+
+.agent-skill-sharing svg {
+  height: 0.75rem;
+  width: 0.75rem;
+}
+
 .agent-skill-card__audience {
   align-items: center;
   color: var(--text-muted);

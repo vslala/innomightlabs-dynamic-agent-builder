@@ -25,6 +25,8 @@ export interface SkillCatalogItem {
   connectors: SkillConnectorStatus[];
   available: boolean;
   repeatable: boolean;
+  /** The skill uses the owner's own accounts or machine, so it can never be shared once installed. */
+  owner_only: boolean;
 }
 
 export interface InstalledSkill {

@@ -27,6 +27,7 @@ import { skillApiService } from "../../../services/skills";
 import type { FormValue, FormSchema } from "../../../types/form";
 import type { InstalledSkill, SkillActorKind, SkillCatalogItem, SkillConnectorStatus } from "../../../types/skills";
 import { SHAREABLE_AUDIENCES } from "./audiences";
+import { SkillSharingBadge } from "./SkillSharingBadge";
 import { useAgentDetailContext } from "./types";
 import "./AgentSkillsPage.css";
 
@@ -556,7 +557,10 @@ export function AgentSkillsPage() {
                                 )}
                               </div>
                               <p>{skill.description}</p>
-                              <span className="agent-skill-card__namespace">{skill.namespace}</span>
+                              <div className="agent-skill-card__meta">
+                                <span className="agent-skill-card__namespace">{skill.namespace}</span>
+                                <SkillSharingBadge ownerOnly={skill.owner_only} />
+                              </div>
                             </div>
                             <Button
                               type="button"
@@ -633,7 +637,7 @@ export function AgentSkillsPage() {
                               <div className="agent-skill-card__audience">
                                 <span>Who can use it</span>
                                 {skill.owner_only ? (
-                                  <em>Only you: it uses your own accounts or credentials</em>
+                                  <SkillSharingBadge ownerOnly />
                                 ) : (
                                   SHAREABLE_AUDIENCES.map(({ kind, label }) => (
                                     <label key={kind}>

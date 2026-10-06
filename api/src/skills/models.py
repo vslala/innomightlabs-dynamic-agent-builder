@@ -135,6 +135,8 @@ class SkillCatalogItemResponse(BaseModel):
     connectors: list[SkillConnectorStatus] = Field(default_factory=list)
     available: bool = True
     repeatable: bool = False
+    #: The skill uses the owner's own accounts or machine, so it can never be shared once installed.
+    owner_only: bool = True
 
 
 class InstalledSkillResponse(BaseModel):

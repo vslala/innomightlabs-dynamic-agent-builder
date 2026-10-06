@@ -91,6 +91,7 @@ class SkillService:
                     if user_email
                     else not manifest_for_status.connectors,
                     repeatable=loaded.manifest.repeatable,
+                    owner_only=loaded.manifest.runs_only_for_owner,
                 )
             )
         return items

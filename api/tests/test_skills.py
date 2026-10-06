@@ -62,6 +62,18 @@ def test_list_skills_catalog(test_client, auth_headers):
     assert image_generation["action_names"] == ["generate"]
 
 
+def test_the_catalog_says_which_skills_can_be_shared_before_install(test_client, auth_headers):
+    payload = test_client.get("/skills", headers=auth_headers).json()
+    owner_only = {item["skill_id"]: item["owner_only"] for item in payload}
+
+    # Shareable: runs on our side with no account of the owner's behind it.
+    assert owner_only["wordpress_search"] is False
+    # Only the owner: OAuth-backed, connector-backed, or reaching the owner's machine.
+    assert owner_only["google_drive"] is True
+    assert owner_only["google_ads"] is True
+    assert owner_only["python_code_execution"] is True
+
+
 def test_list_skills_catalog_reports_google_drive_connected(test_client, auth_headers, dynamodb_table):
     from tests.mock_data import TEST_USER_EMAIL
 
