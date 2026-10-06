@@ -30,8 +30,6 @@ from src.token_usage.service import TokenUsageService
 
 log = logging.getLogger(__name__)
 
-INTERNAL_TOOL_MARKER_PREFIXES = ("[tool_call ", "[tool_result]")
-
 #: How long the loop will wait, in total, for one async tool job to finish.
 ASYNC_TOOL_MAX_IN_TURN_WAIT_SECONDS = 10 * 60
 ASYNC_JOB_POLL_SECONDS = 2
@@ -131,7 +129,6 @@ async def run_agentic_tool_loop(
     is ready to hand to a client as-is.
     """
     full_response = ""
-    text_filter = UserVisibleTextFilter()
     usage_service: TokenUsageRecorder = token_usage_service or TokenUsageService()
     runtime = AgentTurnRuntime()
     awaiting_post_tool_response = False
@@ -150,14 +147,13 @@ async def run_agentic_tool_loop(
             is_post_tool_response = awaiting_post_tool_response
             awaiting_post_tool_response = False
             usage_event: Any = None
+            stop_reason = ""
 
             async for event in provider.stream_response(context, credentials, tools, model):
-                if event.type == "text":
-                    visible_content = text_filter.feed(event.content)
-                    if visible_content:
-                        full_response += visible_content
-                        iteration_text += visible_content
-                        yield _text_event(visible_content)
+                if event.type == "text" and event.content:
+                    full_response += event.content
+                    iteration_text += event.content
+                    yield _text_event(event.content)
 
                 elif event.type == "tool_use":
                     pending_tool_calls.append(event)
@@ -166,16 +162,23 @@ async def run_agentic_tool_loop(
                 elif event.type == "usage":
                     usage_event = event
 
+                elif event.type == "stop":
+                    stop_reason = event.content
+
+            log.info(
+                "Agent loop call=%d stop=%s text_chars=%d tool_calls=%d context_messages=%d context_chars=%d",
+                model_iterations,
+                stop_reason or "none",
+                len(iteration_text),
+                len(pending_tool_calls),
+                len(context),
+                _context_chars(context),
+            )
+
             if usage_event is not None:
                 usage = await _record_token_usage(usage_service, state, usage_event)
                 if usage is not None:
                     yield usage
-
-            visible_tail = text_filter.flush()
-            if visible_tail:
-                full_response += visible_tail
-                iteration_text += visible_tail
-                yield _text_event(visible_tail)
 
             if pending_tool_calls:
                 append_assistant_tool_uses(
@@ -228,6 +231,11 @@ async def run_agentic_tool_loop(
             break
 
     yield TurnComplete(full_text=full_response)
+
+
+def _context_chars(context: list[dict[Any, Any]]) -> int:
+    """Roughly how much the model reads on this call, so a runaway context shows up in the logs."""
+    return len(repr(context))
 
 
 def _text_event(content: str) -> SSEEvent:
@@ -405,53 +413,3 @@ async def _with_runtime_events(
         next_event.cancel()
         if not task.done():
             task.cancel()
-
-
-class UserVisibleTextFilter:
-    """Remove internal tool transcript markers while preserving normal streaming text.
-
-    The markers come from the OpenAI provider, which flattens tool blocks into
-    text when encoding a request; the model then imitates them in its output.
-    """
-
-    def __init__(self) -> None:
-        self._pending = ""
-
-    def feed(self, chunk: str) -> str:
-        if not chunk:
-            return ""
-
-        self._pending += chunk
-        output: list[str] = []
-
-        while "\n" in self._pending:
-            line, separator, remainder = self._pending.partition("\n")
-            self._pending = remainder
-            sanitized = self._sanitize_line(line + separator)
-            if sanitized:
-                output.append(sanitized)
-
-        if self._pending and not self._could_be_internal_marker(self._pending):
-            output.append(self._pending)
-            self._pending = ""
-
-        return "".join(output)
-
-    def flush(self) -> str:
-        pending = self._pending
-        self._pending = ""
-        return self._sanitize_line(pending)
-
-    def _sanitize_line(self, line: str) -> str:
-        return "" if self._is_internal_marker(line) else line
-
-    def _is_internal_marker(self, text: str) -> bool:
-        stripped = text.lstrip()
-        return any(stripped.startswith(prefix) for prefix in INTERNAL_TOOL_MARKER_PREFIXES)
-
-    def _could_be_internal_marker(self, text: str) -> bool:
-        stripped = text.lstrip()
-        return any(
-            prefix.startswith(stripped) or stripped.startswith(prefix)
-            for prefix in INTERNAL_TOOL_MARKER_PREFIXES
-        )

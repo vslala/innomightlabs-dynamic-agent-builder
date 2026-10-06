@@ -45,6 +45,49 @@ def test_openai_codex_request_body_uses_responses_envelope():
     ]
 
 
+def test_tool_calls_reach_codex_as_function_calls_not_text():
+    """Text-encoded calls taught the model to type its next call, which ended long tool runs with no answer."""
+    context = [
+        {"role": "user", "content": "Update PROJ-1"},
+        {
+            "role": "assistant",
+            "content": [
+                {"text": "Updating it now."},
+                {"toolUse": {"toolUseId": "call_1", "name": "call_mcp_tool", "input": {"tool_name": "editJiraIssue"}}},
+            ],
+        },
+        {"role": "user", "content": [{"toolResult": {"toolUseId": "call_1", "content": [{"text": '{"ok": true}'}]}}]},
+        {"role": "user", "content": [{"text": "Continue."}]},
+    ]
+
+    items = OpenAIProvider()._convert_messages(context)
+
+    assert items == [
+        {"role": "user", "content": [{"type": "input_text", "text": "Update PROJ-1"}]},
+        {"role": "assistant", "content": [{"type": "output_text", "text": "Updating it now."}]},
+        {
+            "type": "function_call",
+            "call_id": "call_1",
+            "name": "call_mcp_tool",
+            "arguments": '{"tool_name": "editJiraIssue"}',
+        },
+        {"type": "function_call_output", "call_id": "call_1", "output": '{"ok": true}'},
+        {"role": "user", "content": [{"type": "input_text", "text": "Continue."}]},
+    ]
+
+
+def test_a_large_tool_result_reaches_codex_whole():
+    result = "x" * 250_000
+    context = [
+        {"role": "assistant", "content": [{"toolUse": {"toolUseId": "call_1", "name": "search", "input": {}}}]},
+        {"role": "user", "content": [{"toolResult": {"toolUseId": "call_1", "content": [{"text": result}]}}]},
+    ]
+
+    items = OpenAIProvider()._convert_messages(context)
+
+    assert items[-1]["output"] == result
+
+
 def test_openai_codex_request_headers_include_account_and_sse_metadata(monkeypatch):
     provider = OpenAIProvider()
     credentials = OpenAICredentials(

@@ -98,6 +98,11 @@ class OpenAIProvider(LLMProvider):
         }
 
     def _convert_messages(self, messages: list[ChatMessage] | list[dict]) -> list[dict[str, Any]]:
+        """Text stays in chat messages; tool calls and their results become the Responses API's own items.
+
+        Sending them as text taught the model that a tool call is something it writes, so long tool runs
+        ended with the model typing a call instead of making one. See LLD-agent-loop-lost-final-answer.md.
+        """
         # `all(isinstance(...))` over the elements does not narrow the
         # container type for mypy, so the homogeneity this already checks at
         # runtime has to be asserted with a cast.
@@ -106,19 +111,22 @@ class OpenAIProvider(LLMProvider):
             if all(isinstance(message, ChatMessage) for message in messages)
             else normalize_messages(cast("list[dict[Any, Any]]", messages))
         )
-        converted: list[dict[str, Any]] = []
+        items: list[dict[str, Any]] = []
 
         for message in normalized_messages:
-            role = message.role
-            text_block_type = self._text_block_type_for_role(role)
-            blocks = [
-                {"type": text_block_type, "text": self._content_block_text(block)}
-                for block in message.content
-            ]
-            if blocks:
-                converted.append({"role": role, "content": blocks})
+            text_type = self._text_block_type_for_role(message.role)
+            texts: list[dict[str, Any]] = []
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    texts.append({"type": text_type, "text": block.text})
+                    continue
+                # Text said before a call belongs before it, so flush it into a message first.
+                items += _chat_message(message.role, texts)
+                texts = []
+                items.append(_tool_item(block))
+            items += _chat_message(message.role, texts)
 
-        return converted
+        return items
 
     @staticmethod
     def _extract_usage(event: dict[str, Any]) -> tuple[int, int]:
@@ -145,13 +153,6 @@ class OpenAIProvider(LLMProvider):
         except Exception:
             log.warning("Failed to parse OpenAI usage payload from response.completed event", exc_info=True)
             return 0, 0
-
-    def _content_block_text(self, block: TextBlock | ToolUseBlock | ToolResultBlock) -> str:
-        if isinstance(block, TextBlock):
-            return block.text
-        if isinstance(block, ToolUseBlock):
-            return f"[tool_call name={block.name}] {json.dumps(block.input, ensure_ascii=True)}"
-        return f"[tool_result] {block.content}"
 
     async def stream_response(
         self,
@@ -286,3 +287,18 @@ class OpenAIProvider(LLMProvider):
                             diagnostic_context,
                         )
                         raise RuntimeError(f"OpenAI stream error (request_id={request_id}): {err}")
+
+
+def _chat_message(role: str, texts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{"role": role, "content": texts}] if texts else []
+
+
+def _tool_item(block: ToolUseBlock | ToolResultBlock) -> dict[str, Any]:
+    if isinstance(block, ToolUseBlock):
+        return {
+            "type": "function_call",
+            "call_id": block.id,
+            "name": block.name,
+            "arguments": json.dumps(block.input, ensure_ascii=True),
+        }
+    return {"type": "function_call_output", "call_id": block.tool_use_id, "output": block.content}
