@@ -325,8 +325,10 @@ class _Turn:
         # so wait for it here. Asking the model to drive a wait/check cycle cost
         # extra LLM round trips and put synthetic tool calls in the timeline.
         settled = await _await_async_job(job_id=job.job_id, tool_router=self.tool_router, state=self.state)
-        # The start's success flag stands, whatever the job reports. See LLD-agent-core-readability.md §3.
-        return replace(settled, success=outcome.success, refresh_prompt=outcome.refresh_prompt or settled.refresh_prompt)
+        # The job's end decides success, not its start: a job that failed must be counted as failed.
+        finished = extract_async_job_status(settled.result)
+        succeeded = settled.success and not (finished is not None and finished.failed)
+        return replace(settled, success=succeeded, refresh_prompt=outcome.refresh_prompt or settled.refresh_prompt)
 
 
 def _context_chars(context: list[dict[Any, Any]]) -> int:

@@ -21,6 +21,10 @@ class AsyncJobStatus:
         return self.status in PENDING_JOB_STATUSES
 
     @property
+    def failed(self) -> bool:
+        return self.status == "failed"
+
+    @property
     def progress_message(self) -> str | None:
         message = self.payload.get("progress_message")
         return message if isinstance(message, str) and message.strip() else None

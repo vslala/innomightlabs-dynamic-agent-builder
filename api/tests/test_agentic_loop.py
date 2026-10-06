@@ -2,7 +2,7 @@ import json
 import copy
 
 import pytest
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from src.agents.agentic_loop import (
@@ -704,13 +704,42 @@ class AsyncJobRouter:
         )
 
 
-async def test_an_async_job_keeps_its_starting_success_flag_and_any_refresh_from_its_polls(monkeypatch):
+async def test_an_async_job_that_fails_is_reported_as_failed_and_keeps_any_refresh_from_its_polls(monkeypatch):
     monkeypatch.setattr("src.agents.agentic_loop.ASYNC_JOB_POLL_SECONDS", 0)
 
     events = await _run_with(AsyncJobRouter(), ScriptedProvider(tool_call("t1"), text("The job failed.")))
 
     [result] = [item for item in events if _type(item) == SSEEventType.TOOL_CALL_RESULT]
     assert json.loads(result.content)["status"] == "failed"
-    # Preserved as-is: the start's flag stands even though the job failed (LLD-agent-core-readability.md §3).
-    assert result.success is True
+    # The job's end decides, not its successful start, so the tool-run record counts it as a failure.
+    assert result.success is False
     assert any(isinstance(item, PromptRefreshNeeded) for item in events)
+
+
+async def test_an_async_job_that_succeeds_is_reported_as_succeeded(monkeypatch):
+    monkeypatch.setattr("src.agents.agentic_loop.ASYNC_JOB_POLL_SECONDS", 0)
+
+    class SucceedingJobRouter(AsyncJobRouter):
+        async def execute(self, **kwargs):
+            outcome = await super().execute(**kwargs)
+            return replace(outcome, result=outcome.result.replace('"failed"', '"succeeded"'))
+
+    events = await _run_with(SucceedingJobRouter(), ScriptedProvider(tool_call("t1"), text("Done.")))
+
+    [result] = [item for item in events if _type(item) == SSEEventType.TOOL_CALL_RESULT]
+    assert result.success is True
+
+
+async def test_a_job_whose_status_check_errors_is_reported_as_failed(monkeypatch):
+    monkeypatch.setattr("src.agents.agentic_loop.ASYNC_JOB_POLL_SECONDS", 0)
+
+    class LostJobRouter(AsyncJobRouter):
+        async def execute(self, *, tool_name, **kwargs):
+            if tool_name == "check_tool_job":
+                return ToolExecutionOutcome(result="Error: Tool job not found", success=False)
+            return await super().execute(tool_name=tool_name, **kwargs)
+
+    events = await _run_with(LostJobRouter(), ScriptedProvider(tool_call("t1"), text("It got lost.")))
+
+    [result] = [item for item in events if _type(item) == SSEEventType.TOOL_CALL_RESULT]
+    assert result.success is False

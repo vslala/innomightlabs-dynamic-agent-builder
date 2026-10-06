@@ -101,7 +101,7 @@ Use this as the compatibility checklist before moving code.
 | Context | Preserve assistant text plus native tool-use blocks, matching tool IDs, Gemini thought signatures, complete tool results, and the single movable continuation/summary block. `loop_context.py`; `agentic_loop.py:219–242,301–308`. |
 | Memory refresh | Once per successful completed batch if any normally returning tool is marked as mutating prompt context, before the next model call. A returned error string still triggers refresh; an exception mapped to an error result does not. `tool_execution.py:32–60`. |
 | Async settlement | Keep the initial two-second sleep, per-job ten-minute budget, `check_tool_job` routing, generated poll IDs, progress events, and no synthetic start/result events for polls. Return any non-pending/non-job poll result unchanged. `agentic_loop.py:399–454`. |
-| Async success flag | The final settled result currently retains the original start outcome's `success`, even if the job payload says failure. Do not silently correct this. `:406–416`. |
+| Async success flag | ~~The final settled result retains the original start outcome's `success`.~~ **Fixed after this refactor:** the job's final poll decides, so a failed job is reported as failed. See §11. |
 | Poll deadline | A terminal result is returned before checking elapsed budget; only a still-pending result can trigger the in-turn timeout. Preserve this order. `:441–446`. |
 | Runtime interleaving | Runtime events that arrive before successful tool return must precede the tool result. Preserve the pending-get handoff and queue drain, including simultaneous completion. On task failure, the current helper raises before its success-path trailing drain. `:457–490`. |
 | Usage | Once per completed call with usage, using the last usage event, offloaded with `asyncio.to_thread`, best-effort on recording errors. Preserve API-key attribution and omission of an SSE update when no day record is returned. `:346–381`. |
@@ -525,8 +525,9 @@ limit, not the suite: the full suite finishes in about 70–75 s.
 - `next_step_after_call` takes the `_ModelCall` itself rather than four keyword arguments.
 - `_drive_turn` was not split into named phases. At 8 complexity and about 50 lines it already reads top to bottom,
   and splitting it would only spread it out.
-- The async success flag is still preserved as-is (§3), and a test pins it down. It is a known bug, because the
-  tool-run record counts failures from it. Fix it as its own change.
+- The async success flag was kept as-is in the refactor (§3), then fixed in its own change. The job's final poll now
+  decides `success`: a job that ends `failed`, or a status check that errors, is reported as failed. So the tool-run
+  record's "N failed" count is right for async jobs too (`AsyncJobStatus.failed`, `_Turn._execute_and_settle`).
 
 ### Measurements
 
