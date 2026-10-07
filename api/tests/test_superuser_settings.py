@@ -25,7 +25,7 @@ def test_openai_models_default_to_latest_supported_models(monkeypatch):
     monkeypatch.delenv("OPENAI_MODELS", raising=False)
     parsed = Settings.from_env()
 
-    assert parsed.openai_models[:4] == ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"]
+    assert parsed.openai_models[:3] == ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]
     assert parsed.openai_models == DEFAULT_OPENAI_MODELS
 
 

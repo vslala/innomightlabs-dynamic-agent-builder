@@ -4,9 +4,10 @@ LLM Models service - fetches available models from providers.
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import boto3
 import httpx
@@ -19,6 +20,10 @@ from src.llm.ollama import DISCOVERY_TIMEOUT_SECONDS, OllamaConnection
 from src.settings.models import ProviderSettings
 
 log = logging.getLogger(__name__)
+
+#: How long one account's Codex model catalog is reused before asking again.
+OPENAI_CATALOG_TTL_SECONDS = 3600
+OPENAI_CATALOG_TIMEOUT_SECONDS = 10
 
 
 class ModelInfo(BaseModel):
@@ -214,22 +219,76 @@ class ModelsService:
             for m in models
         ]
 
-    def get_openai_models(self) -> list[ModelInfo]:
+    def __init__(self) -> None:
+        # account id -> (expires at, models). The catalog changes when OpenAI ships a
+        # model, not per request, so one fetch an hour per account is plenty.
+        self._openai_catalog_cache: dict[str, tuple[float, list[ModelInfo]]] = {}
+
+    def get_openai_models(self, provider_settings: ProviderSettings) -> list[ModelInfo]:
+        """List the models the user's ChatGPT sign-in can use.
+
+        The OpenAI provider talks to the Codex backend, not the public API, so the
+        model list comes from the same backend's catalog (`GET .../codex/models`,
+        the one the Codex CLI reads). Models the catalog marks hidden are left out.
+        When the catalog can't be read -- an expired token, an outage, a new
+        payload shape -- the configured `OPENAI_MODELS` list is offered instead,
+        so the picker is never empty.
         """
-        Get OpenAI models from settings.
-        """
-        models = [m.strip() for m in settings.openai_models if m and m.strip()]
-        result = [
-            ModelInfo(
-                model_id=model,
-                model_name=model,
-                display_name=f"[OpenAI] {model}",
-                provider="openai",
-                capabilities=image_capability_registry.capabilities_for("OpenAI", model),
+        try:
+            catalog = self._openai_catalog(provider_settings)
+        except Exception as e:
+            log.warning("Falling back to configured OpenAI models: %s", e)
+            catalog = []
+        return catalog or self._configured_openai_models()
+
+    def _openai_catalog(self, provider_settings: ProviderSettings) -> list[ModelInfo]:
+        from src.auth.openai_oauth import credentials_from_provider_settings, extract_account_id_from_access_token
+
+        credentials = credentials_from_provider_settings(provider_settings)
+        account_id = credentials.account_id or extract_account_id_from_access_token(credentials.access_token)
+        cache_key = account_id or provider_settings.user_email
+        cached = self._openai_catalog_cache.get(cache_key)
+        if cached and cached[0] > time.monotonic():
+            return cached[1]
+
+        headers = {"Authorization": f"Bearer {credentials.access_token}", "Accept": "application/json"}
+        if account_id:
+            headers["ChatGPT-Account-ID"] = account_id
+        if settings.openai_oauth_originator:
+            headers["originator"] = settings.openai_oauth_originator
+        response = httpx.get(
+            settings.openai_oauth_responses_url.rsplit("/", 1)[0] + "/models",
+            params={"client_version": settings.openai_codex_client_version},
+            headers=headers,
+            timeout=OPENAI_CATALOG_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        entries = response.json().get("models")
+        if not isinstance(entries, list):
+            raise ValueError("Codex model catalog returned an unexpected payload shape")
+
+        models = [
+            self._openai_model(str(entry["slug"]), entry.get("display_name"))
+            for entry in sorted(
+                (entry for entry in entries if _is_listed_openai_model(entry)),
+                key=lambda entry: entry.get("priority") if isinstance(entry.get("priority"), int) else 1_000,
             )
-            for model in models
         ]
-        return result
+        if models:
+            self._openai_catalog_cache[cache_key] = (time.monotonic() + OPENAI_CATALOG_TTL_SECONDS, models)
+        return models
+
+    def _configured_openai_models(self) -> list[ModelInfo]:
+        return [self._openai_model(model.strip()) for model in settings.openai_models if model and model.strip()]
+
+    def _openai_model(self, slug: str, display_name: Any = None) -> ModelInfo:
+        return ModelInfo(
+            model_id=slug,
+            model_name=slug,
+            display_name=f"[OpenAI] {display_name if isinstance(display_name, str) and display_name else slug}",
+            provider="openai",
+            capabilities=image_capability_registry.capabilities_for("OpenAI", slug),
+        )
 
     def get_gemini_models(self, provider_settings: ProviderSettings) -> list[ModelInfo]:
         """Fetch Gemini models available to the user's API key."""
@@ -341,6 +400,17 @@ class ModelsService:
         ]
 
 
+def _is_listed_openai_model(entry: object) -> bool:
+    """A catalog entry the Codex model picker would show: named, listed, and usable over the API."""
+    return (
+        isinstance(entry, dict)
+        and isinstance(entry.get("slug"), str)
+        and bool(entry["slug"].strip())
+        and entry.get("visibility") == "list"
+        and entry.get("supported_in_api") is not False
+    )
+
+
 def _ollama_model_tag(model: object) -> str | None:
     name = model.get("name") if isinstance(model, dict) else None
     return name.strip() or None if isinstance(name, str) else None
@@ -365,7 +435,10 @@ PROVIDER_MODEL_SOURCES: tuple[ProviderModelSource, ...] = (
         "Anthropic",
         lambda provider_settings: models_service.get_anthropic_models(provider_settings=provider_settings),
     ),
-    ProviderModelSource("OpenAI", lambda _: models_service.get_openai_models()),
+    ProviderModelSource(
+        "OpenAI",
+        lambda provider_settings: models_service.get_openai_models(provider_settings=provider_settings),
+    ),
     ProviderModelSource(
         "Gemini",
         lambda provider_settings: models_service.get_gemini_models(provider_settings=provider_settings),

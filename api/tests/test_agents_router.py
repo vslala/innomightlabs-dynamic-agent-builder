@@ -197,15 +197,11 @@ class TestAgentsRouter:
         provider_field = next(field for field in data["form_inputs"] if field["name"] == "agent_provider")
         model_field = next(field for field in data["form_inputs"] if field["name"] == "agent_model")
         model_values = [option["value"] for option in model_field["options"]]
-        openai_start = model_values.index("gpt-5.5")
+        openai_start = model_values.index(DEFAULT_OPENAI_MODELS[0])
 
         assert "OpenAI" in [option["value"] for option in provider_field["options"]]
-        assert model_values[openai_start:openai_start + 4] == [
-            "gpt-5.5",
-            "gpt-5.4",
-            "gpt-5.4-mini",
-            "gpt-5.4-nano",
-        ]
+        # These credentials can't be read, so the configured fallback list is offered.
+        assert model_values[openai_start:openai_start + len(DEFAULT_OPENAI_MODELS)] == DEFAULT_OPENAI_MODELS
 
     def test_update_agent(self, test_client: TestClient, auth_headers: dict):
         """Test updating an agent."""

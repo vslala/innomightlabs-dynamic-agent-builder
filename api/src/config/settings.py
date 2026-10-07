@@ -14,16 +14,18 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+#: The Codex CLI release the model catalog request claims to be (see openai_codex_client_version).
+DEFAULT_OPENAI_CODEX_CLIENT_VERSION = "0.159.3"
+
+#: Offered only when the live Codex model catalog can't be read; normally the list
+#: comes from that catalog (see ModelsService.get_openai_models).
 DEFAULT_OPENAI_MODELS = [
-    "gpt-5.5",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-    "gpt-5.4-nano",
-    "gpt-5.3-codex",
-    "gpt-5.2-codex",
-    "gpt-5.2",
-    "gpt-5.1-codex-max",
-    "gpt-5.1-codex-mini",
+    "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
 ]
 
 
@@ -133,6 +135,9 @@ class Settings:
     openai_oauth_originator: str = ""
     openai_oauth_redirect_uri: str = ""
     openai_oauth_responses_url: str = "https://chatgpt.com/backend-api/codex/responses"
+    #: Sent as `client_version` when reading the Codex model catalog, which hides
+    #: models newer than the client asking. Track a recent Codex CLI release.
+    openai_codex_client_version: str = DEFAULT_OPENAI_CODEX_CLIENT_VERSION
     openai_image_generation_backend: str = "codex_oauth"
     openai_image_generation_models: list[str] = field(default_factory=lambda: ["gpt-5.4", "gpt-5.5"])
 
@@ -479,6 +484,7 @@ class Settings:
                 "OPENAI_OAUTH_RESPONSES_URL",
                 "https://chatgpt.com/backend-api/codex/responses",
             ),
+            openai_codex_client_version=os.getenv("OPENAI_CODEX_CLIENT_VERSION", DEFAULT_OPENAI_CODEX_CLIENT_VERSION),
             openai_image_generation_backend=os.getenv("OPENAI_IMAGE_GENERATION_BACKEND", "codex_oauth"),
             openai_image_generation_models=parse_env_list(
                 "OPENAI_IMAGE_GENERATION_MODELS",
