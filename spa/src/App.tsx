@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 import { RateLimitBanner } from './components/RateLimitBanner';
+import { SiteConcierge } from './components/SiteConcierge';
 import { LoadingState } from './components/ui';
 import { PUBLIC_PAGES, type PublicPath } from './routes/publicPages';
 
@@ -114,6 +115,7 @@ function App() {
   return (
     <BrowserRouter basename={basename}>
       <ScrollToHash />
+      <SiteConcierge />
       <RateLimitBanner />
       <Suspense fallback={<LoadingState />}>
         <Routes>

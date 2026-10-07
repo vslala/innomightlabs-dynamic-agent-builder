@@ -164,3 +164,8 @@ textarea {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
+
+/* The concierge launcher (SiteConcierge) stays out of the dashboard. */
+body[data-concierge-hidden] [data-innomight-embed] {
+  display: none !important;
+}
