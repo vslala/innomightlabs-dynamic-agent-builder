@@ -12,12 +12,15 @@ from pydantic import BaseModel, EmailStr, Field
 
 from src.email import send_email
 from src.email.message import EmailLink, MessageEmail
-from .rate_limiter import check_rate_limit, record_submission
+from src.rate_limits.limiter import RateLimitPolicy, RateLimiter
 from .github_service import GitHubService
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/contact", tags=["contact"])
+
+#: One submission per 5 minutes per IP address, across both forms.
+CONTACT_RATE_LIMIT = RateLimitPolicy.cooldown("CONTACT", seconds=300)
 
 
 @dataclass(frozen=True)
@@ -74,12 +77,12 @@ async def record_enquiry(enquiry: ContactEnquiry, site: ContactSite, request: Re
     One submission per 5 minutes per IP address, across both forms.
     """
     client_ip = request.client.host if request.client else "unknown"
-    is_allowed, seconds_remaining = check_rate_limit(client_ip, window_seconds=300)
-    if not is_allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=f"You've already sent us a message. Please wait {seconds_remaining} seconds before sending another.",
-        )
+    limiter = RateLimiter(CONTACT_RATE_LIMIT)
+    # Taken before the work so two simultaneous submissions can't both get through.
+    decision = limiter.acquire(client_ip)
+    if not decision.allowed:
+        wait = f" Please wait {decision.retry_after_seconds} seconds before sending another." if decision.retry_after_seconds else ""
+        raise HTTPException(status_code=429, detail=f"You've already sent us a message.{wait}")
 
     # The issue is the record of the enquiry, so failing to create it fails the submission.
     try:
@@ -90,12 +93,13 @@ async def record_enquiry(enquiry: ContactEnquiry, site: ContactSite, request: Re
         )
     except Exception as e:
         log.error(f"✗ Error recording {site.label} enquiry: {e}", exc_info=True)
+        # The enquiry wasn't recorded, so it shouldn't stop the sender trying again.
+        limiter.release(decision)
         raise HTTPException(
             status_code=502,
             detail=f"We couldn't send your message just now. Please email us at {site.inbox}.",
         )
 
-    record_submission(client_ip, window_seconds=300)
     log.info(f"✓ Enquiry recorded: site={site.label}, category={enquiry.category}, issue=#{issue['number']}")
 
     # The issue already holds the enquiry, so neither email failing is fatal.
