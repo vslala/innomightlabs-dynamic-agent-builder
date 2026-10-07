@@ -1,4 +1,4 @@
-export type ChangeCategory = "new" | "improved" | "fixed" | "developer";
+export type ChangeCategory = "new" | "improved" | "fixed";
 
 export interface ChangeItem {
   title: string;
@@ -228,11 +228,6 @@ export const changeLogEntries: ChangeLogEntry[] = [
         description: "The privacy policy, terms, and pricing policy were rewritten and expanded.",
         category: "improved",
       },
-      {
-        title: "Local embedding images",
-        description: "Docker images are available for running embeddings locally.",
-        category: "developer",
-      },
     ],
   },
   {
@@ -281,32 +276,26 @@ export const changeLogEntries: ChangeLogEntry[] = [
   },
   {
     date: "2026-07-02",
-    title: "Design system hardening",
+    title: "A more consistent dashboard",
     summary:
-      "The dashboard UI is moving to shared layout and control primitives so spacing, buttons, forms, and cards stay consistent across pages.",
+      "Spacing, buttons, forms, and cards now look the same across the whole dashboard.",
     items: [
       {
         title: "Consistent page layouts",
         description:
-          "Core dashboard list pages now use shared page, stack, inline, and grid primitives for more predictable margins and card spacing.",
+          "Dashboard pages share one layout, so margins and card spacing are the same everywhere.",
         category: "improved",
       },
       {
         title: "Button and form consistency",
         description:
-          "Shared buttons, inputs, textareas, selects, checkboxes, radios, and file inputs now own their sizing and padding instead of relying on page-specific fixes.",
+          "Buttons and form fields are sized and spaced the same way on every page.",
         category: "improved",
-      },
-      {
-        title: "Frontend design audit",
-        description:
-          "A design audit command now catches raw controls and common button contract violations before they spread to new pages.",
-        category: "developer",
       },
       {
         title: "Faster route loading",
         description:
-          "Dashboard and public pages are now lazy-loaded so the initial application bundle is smaller and heavy pages load only when needed.",
+          "Pages load only when you open them, so the site starts faster.",
         category: "improved",
       },
     ],
@@ -372,7 +361,7 @@ export const changeLogEntries: ChangeLogEntry[] = [
       {
         title: "Async skill jobs",
         description:
-          "Skill actions can run in the background with persisted job status, progress, result, error state, and seven-day TTL cleanup.",
+          "Slow skill actions run in the background, with their progress, result, or error kept until the agent picks them up.",
         category: "new",
       },
       {
@@ -384,7 +373,7 @@ export const changeLogEntries: ChangeLogEntry[] = [
       {
         title: "Long report reliability",
         description:
-          "Report generation and other slow tool calls are less likely to hit request timeouts because the runtime can separate job execution from immediate tool response.",
+          "Report generation and other slow tool calls are much less likely to time out.",
         category: "improved",
       },
     ],
@@ -444,7 +433,7 @@ export const changeLogEntries: ChangeLogEntry[] = [
       {
         title: "Direct trigger loading",
         description:
-          "Automation trigger lists now load from trigger records directly, making the page faster and less expensive to operate.",
+          "Automation trigger lists load faster.",
         category: "improved",
       },
       {
@@ -494,9 +483,9 @@ export const changeLogEntries: ChangeLogEntry[] = [
         category: "new",
       },
       {
-        title: "Automation scheduling backend",
+        title: "Scheduled automations",
         description:
-          "The platform can persist scheduled automation runs in DynamoDB and execute them through the scheduler runtime.",
+          "Automations can be scheduled to run by themselves at planned times.",
         category: "new",
       },
       {
@@ -522,20 +511,14 @@ export const changeLogEntries: ChangeLogEntry[] = [
       {
         title: "Skills as automation actions",
         description:
-          "Supported skills can appear as automation actions without custom action registry code.",
+          "Supported skills can be used directly as automation steps.",
         category: "new",
       },
       {
         title: "Sub-agent invocation support",
         description:
-          "Agents can invoke configured sub-agents with isolated in-memory conversation state for each call.",
+          "Agents can hand work to your other agents as sub-agents, with each call starting fresh.",
         category: "new",
-      },
-      {
-        title: "Shared form schema",
-        description:
-          "Agent creation, skill setup, and automation forms now use a more generic schema-driven form pattern.",
-        category: "developer",
       },
     ],
   },
@@ -543,7 +526,7 @@ export const changeLogEntries: ChangeLogEntry[] = [
     date: "2026-05-30",
     title: "WordPress connector and pricing updates",
     summary:
-      "The platform added WordPress AI connector work and simplified pricing logic.",
+      "A WordPress connector arrived and pricing was simplified.",
     items: [
       {
         title: "WordPress AI connector",
@@ -554,23 +537,17 @@ export const changeLogEntries: ChangeLogEntry[] = [
       {
         title: "Pricing model refresh",
         description:
-          "Pricing logic was updated to better match the current launch model.",
+          "Pricing was simplified.",
         category: "improved",
       },
     ],
   },
   {
     date: "2026-05-25",
-    title: "Railway packaging and widget polish",
+    title: "Widget polish and image streaming",
     summary:
-      "Deployment and widget work made the platform easier to run and embed.",
+      "The website widget got a refresh, and image generation can now stream its results.",
     items: [
-      {
-        title: "Railway backend packaging",
-        description:
-          "The backend was packaged for Railway deployment so the product can run outside the previous AWS-only shape.",
-        category: "developer",
-      },
       {
         title: "Widget UI updates",
         description:
@@ -600,7 +577,7 @@ export const changeLogEntries: ChangeLogEntry[] = [
       {
         title: "Plugin downloads",
         description:
-          "Plugins can now be published and downloaded through generated artifacts.",
+          "Plugins can be downloaded from the Downloads page.",
         category: "new",
       },
       {
@@ -652,9 +629,9 @@ export const changeLogEntries: ChangeLogEntry[] = [
       "Conversation handling became more resilient and better instrumented.",
     items: [
       {
-        title: "Buffered agent invocation",
+        title: "More reliable agent replies",
         description:
-          "Agent responses can be buffered through a stronger invocation path for dashboard and automation usage.",
+          "Agents answer more reliably in the dashboard and in automations.",
         category: "new",
       },
       {
@@ -668,12 +645,6 @@ export const changeLogEntries: ChangeLogEntry[] = [
         description:
           "Sign-in stability improved with refresh token handling and a clearer re-authentication timeout.",
         category: "fixed",
-      },
-      {
-        title: "Prompt templating",
-        description:
-          "Prompt construction now supports Jinja templates for cleaner prompt composition.",
-        category: "developer",
       },
     ],
   },
@@ -693,9 +664,9 @@ export const changeLogEntries: ChangeLogEntry[] = [
   },
   {
     date: "2026-05-03",
-    title: "Developer tooling improvements",
+    title: "VS Code plugin",
     summary:
-      "Early developer workflow support was added.",
+      "Pair-program with your agents from inside VS Code.",
     items: [
       {
         title: "VS Code plugin",
@@ -703,19 +674,13 @@ export const changeLogEntries: ChangeLogEntry[] = [
           "A VS Code plugin was added for pair-programming workflows.",
         category: "new",
       },
-      {
-        title: "Global key state",
-        description:
-          "Key state handling was centralized for smoother app behavior.",
-        category: "improved",
-      },
     ],
   },
   {
     date: "2026-05-01",
     title: "Branding polish",
     summary:
-      "Launch-facing polish continued across the app shell.",
+      "Small touches across the app.",
     items: [
       {
         title: "Browser tab logo",
@@ -726,9 +691,28 @@ export const changeLogEntries: ChangeLogEntry[] = [
       {
         title: "Widget input update",
         description:
-          "The widget API no longer applies the previous input cap.",
+          "Visitors can send longer messages through the widget.",
         category: "improved",
       },
     ],
   },
 ];
+
+/** One anchor per month, on that month's newest release, e.g. `#2026-10`. */
+export const releaseMonths: { id: string; label: string }[] = changeLogEntries
+  .map((entry) => entry.date.slice(0, 7))
+  .filter((month, index, months) => months.indexOf(month) === index)
+  .map((month) => ({
+    id: month,
+    label: new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(
+      new Date(`${month}-01T00:00:00Z`)
+    ),
+  }));
+
+export function monthAnchor(entry: ChangeLogEntry, index: number): string | undefined {
+  const month = entry.date.slice(0, 7);
+  const previous = changeLogEntries[index - 1];
+  return previous?.date.startsWith(month) ? undefined : month;
+}
+
+export const totalChanges = changeLogEntries.reduce((count, entry) => count + entry.items.length, 0);

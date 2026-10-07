@@ -50,6 +50,7 @@ export function DocsLayout({ children, navItems, title, description }: DocsLayou
     { path: '/docs/agent-to-agent', label: 'Agent2Agent' },
     { path: '/docs/public-api', label: 'Public API' },
     { path: '/docs/faq', label: 'FAQ' },
+    { path: '/whats-new', label: "What's New" },
   ];
 
   return (

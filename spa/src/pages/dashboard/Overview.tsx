@@ -34,7 +34,7 @@ import type { ConversationResponse } from "../../types/conversation";
 import type { KnowledgeBase } from "../../types/knowledge";
 import { userVisibleConversations } from "../../utils/conversations";
 import { formatCompactNumber } from "../../lib/utils";
-import { changeLogEntries } from "./whatsNewData";
+import { changeLogEntries } from "../whats-new/whatsNewData";
 import "./Overview.css";
 
 interface DashboardData {

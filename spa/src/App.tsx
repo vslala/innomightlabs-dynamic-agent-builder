@@ -17,6 +17,7 @@ const QuickStart = lazyRoute(() => import('./pages/docs/QuickStart'), 'QuickStar
 const AgentToAgent = lazyRoute(() => import('./pages/docs/AgentToAgent'), 'AgentToAgent');
 const PublicApi = lazyRoute(() => import('./pages/docs/PublicApi'), 'PublicApi');
 const Automations = lazyRoute(() => import('./pages/docs/Automations'), 'Automations');
+const WhatsNew = lazyRoute(() => import('./pages/whats-new/WhatsNew'), 'WhatsNew');
 const FAQ = lazyRoute(() => import('./pages/docs/FAQ'), 'FAQ');
 const Terms = lazyRoute(() => import('./pages/legal/Terms'), 'Terms');
 const PricingPolicy = lazyRoute(() => import('./pages/legal/PricingPolicy'), 'PricingPolicy');
@@ -102,6 +103,7 @@ function App() {
           <Route path="/docs/agent-to-agent" element={<AgentToAgent />} />
           <Route path="/docs/public-api" element={<PublicApi />} />
           <Route path="/docs/automations" element={<Automations />} />
+          <Route path="/whats-new" element={<WhatsNew />} />
           <Route path="/docs/faq" element={<FAQ />} />
           <Route path="/legal/terms" element={<Terms />} />
           <Route path="/legal/privacy" element={<Privacy />} />
