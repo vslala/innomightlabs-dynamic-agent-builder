@@ -1,0 +1,101 @@
+.page {
+  margin: 0 auto;
+  max-width: 960px;
+  padding: 8rem 1.5rem 5rem;
+}
+
+.header {
+  margin-bottom: 2rem;
+}
+
+.title {
+  background: linear-gradient(90deg, var(--gradient-start), var(--gradient-mid));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: 2.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  margin: 0 0 0.5rem;
+}
+
+.lead {
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 40rem;
+}
+
+.lead a {
+  color: var(--gradient-start);
+}
+
+.sections {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.cardHead {
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  padding: 0.875rem 1.25rem;
+}
+
+.cardHead h2 {
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.count {
+  background: rgba(var(--gradient-start-rgb), 0.15);
+  border-radius: 999px;
+  color: var(--gradient-start);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.125rem 0.75rem;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.link {
+  align-items: baseline;
+  color: var(--text-primary);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  text-decoration: none;
+}
+
+.link:hover {
+  background: var(--surface-subtle);
+}
+
+.link:hover span {
+  color: var(--gradient-start);
+}
+
+.link code {
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8125rem;
+}

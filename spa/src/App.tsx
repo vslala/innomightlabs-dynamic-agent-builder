@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, type ComponentType } from 'react';
+import { lazy, Suspense, useEffect, type ComponentType, type ReactElement } from 'react';
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 import { RateLimitBanner } from './components/RateLimitBanner';
 import { LoadingState } from './components/ui';
+import { PUBLIC_PAGES, type PublicPath } from './routes/publicPages';
 
 const basename = import.meta.env.BASE_URL;
 
@@ -18,6 +19,7 @@ const AgentToAgent = lazyRoute(() => import('./pages/docs/AgentToAgent'), 'Agent
 const PublicApi = lazyRoute(() => import('./pages/docs/PublicApi'), 'PublicApi');
 const Automations = lazyRoute(() => import('./pages/docs/Automations'), 'Automations');
 const WhatsNew = lazyRoute(() => import('./pages/whats-new/WhatsNew'), 'WhatsNew');
+const SitemapPage = lazyRoute(() => import('./pages/sitemap/SitemapPage'), 'SitemapPage');
 const FAQ = lazyRoute(() => import('./pages/docs/FAQ'), 'FAQ');
 const Terms = lazyRoute(() => import('./pages/legal/Terms'), 'Terms');
 const PricingPolicy = lazyRoute(() => import('./pages/legal/PricingPolicy'), 'PricingPolicy');
@@ -85,6 +87,29 @@ function ScrollToHash() {
   return null;
 }
 
+/** Keyed by every public path, so a page cannot be listed without a component or routed without being listed. */
+const publicPageElements: Record<PublicPath, ReactElement> = {
+  '/': <LandingPage />,
+  '/pricing': <Pricing />,
+  '/contact': <Contact />,
+  '/downloads': <DownloadsPage />,
+  '/downloads/plugins/:pluginId': <PluginDetailsPage />,
+  '/docs/quick-start': <QuickStart />,
+  '/docs/automations': <Automations />,
+  '/docs/agent-to-agent': <AgentToAgent />,
+  '/docs/public-api': <PublicApi />,
+  '/docs/faq': <FAQ />,
+  '/whats-new': <WhatsNew />,
+  '/legal/terms': <Terms />,
+  '/legal/privacy': <Privacy />,
+  '/legal/pricing': <PricingPolicy />,
+  '/sitemap': <SitemapPage />,
+  '/login': <Login />,
+  '/login-success': <LoginSuccess />,
+  '/payments/success': <PaymentSuccess />,
+  '/payments/cancel': <PaymentCancel />,
+};
+
 function App() {
   return (
     <BrowserRouter basename={basename}>
@@ -92,25 +117,10 @@ function App() {
       <RateLimitBanner />
       <Suspense fallback={<LoadingState />}>
         <Routes>
-          {/* Public routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/pricing" element={<Pricing />} />
-          <Route path="/payments/success" element={<PaymentSuccess />} />
-          <Route path="/payments/cancel" element={<PaymentCancel />} />
-          <Route path="/login-success" element={<LoginSuccess />} />
-          <Route path="/docs/quick-start" element={<QuickStart />} />
-          <Route path="/docs/agent-to-agent" element={<AgentToAgent />} />
-          <Route path="/docs/public-api" element={<PublicApi />} />
-          <Route path="/docs/automations" element={<Automations />} />
-          <Route path="/whats-new" element={<WhatsNew />} />
-          <Route path="/docs/faq" element={<FAQ />} />
-          <Route path="/legal/terms" element={<Terms />} />
-          <Route path="/legal/privacy" element={<Privacy />} />
-          <Route path="/legal/pricing" element={<PricingPolicy />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/downloads" element={<DownloadsPage />} />
-          <Route path="/downloads/plugins/:pluginId" element={<PluginDetailsPage />} />
+          {/* Public routes, listed in routes/publicPages.ts */}
+          {PUBLIC_PAGES.map((page) => (
+            <Route key={page.path} path={page.path} element={publicPageElements[page.path]} />
+          ))}
 
         {/* Protected dashboard routes */}
         <Route
