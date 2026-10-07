@@ -107,6 +107,28 @@ class Settings:
     chat_turn_reaper_interval_seconds: int = 5 * 60
     tool_job_reaper_interval_seconds: int = 5 * 60
     chat_turn_transcript_grace_seconds: int = 120
+    # Widget guest sessions: email-only visitors whose chat is archived, emailed and deleted when
+    # their session ends. See docs/LLD-widget-guest-sessions.md.
+    #: Guest session length when the agent's session timeout is 0 (no timeout).
+    widget_guest_default_session_minutes: int = 60
+    #: Hard cap on one guest identity, however active it is.
+    widget_guest_max_lifetime_hours: int = 24
+    widget_guest_sweep_interval_seconds: int = 120
+    widget_guest_sweep_batch: int = 100
+    widget_guest_email_dns_timeout_seconds: int = 3
+    widget_guest_transcript_attempts: int = 3
+    widget_guest_transcript_max_chars: int = 100000
+    #: Guest starts per IP per window.
+    widget_guest_start_limit: int = 5
+    widget_guest_start_window_seconds: int = 600
+    #: Guest starts (and so transcripts) per email address per day.
+    widget_guest_email_daily_limit: int = 5
+    #: Messages per guest per window.
+    widget_guest_message_limit: int = 30
+    widget_guest_message_window_seconds: int = 3600
+    #: Guest messages per widget key per day.
+    widget_guest_daily_message_limit: int = 500
+    widget_guest_max_message_chars: int = 2000
     mcp_oauth_redirect_uri: str = ""
     cli_runner_base_url: str = ""
     cli_runner_shared_token: str = ""
@@ -435,6 +457,20 @@ class Settings:
             dream_soft_chunks_per_run=int(os.getenv("DREAM_SOFT_CHUNKS_PER_RUN", "120")),
             dream_soft_actions_per_run=int(os.getenv("DREAM_SOFT_ACTIONS_PER_RUN", "40")),
             dream_min_confidence=float(os.getenv("DREAM_MIN_CONFIDENCE", "0.75")),
+            widget_guest_default_session_minutes=int(os.getenv("WIDGET_GUEST_DEFAULT_SESSION_MINUTES", "60")),
+            widget_guest_max_lifetime_hours=int(os.getenv("WIDGET_GUEST_MAX_LIFETIME_HOURS", "24")),
+            widget_guest_sweep_interval_seconds=int(os.getenv("WIDGET_GUEST_SWEEP_INTERVAL_SECONDS", "120")),
+            widget_guest_sweep_batch=int(os.getenv("WIDGET_GUEST_SWEEP_BATCH", "100")),
+            widget_guest_email_dns_timeout_seconds=int(os.getenv("WIDGET_GUEST_EMAIL_DNS_TIMEOUT_SECONDS", "3")),
+            widget_guest_transcript_attempts=int(os.getenv("WIDGET_GUEST_TRANSCRIPT_ATTEMPTS", "3")),
+            widget_guest_transcript_max_chars=int(os.getenv("WIDGET_GUEST_TRANSCRIPT_MAX_CHARS", "100000")),
+            widget_guest_start_limit=int(os.getenv("WIDGET_GUEST_START_LIMIT", "5")),
+            widget_guest_start_window_seconds=int(os.getenv("WIDGET_GUEST_START_WINDOW_SECONDS", "600")),
+            widget_guest_email_daily_limit=int(os.getenv("WIDGET_GUEST_EMAIL_DAILY_LIMIT", "5")),
+            widget_guest_message_limit=int(os.getenv("WIDGET_GUEST_MESSAGE_LIMIT", "30")),
+            widget_guest_message_window_seconds=int(os.getenv("WIDGET_GUEST_MESSAGE_WINDOW_SECONDS", "3600")),
+            widget_guest_daily_message_limit=int(os.getenv("WIDGET_GUEST_DAILY_MESSAGE_LIMIT", "500")),
+            widget_guest_max_message_chars=int(os.getenv("WIDGET_GUEST_MAX_MESSAGE_CHARS", "2000")),
             dream_message_page_size=int(os.getenv("DREAM_MESSAGE_PAGE_SIZE", "200")),
             dream_chunk_max_words=int(os.getenv("DREAM_CHUNK_MAX_WORDS", "6000")),
             dream_window_overlap_words=int(os.getenv("DREAM_WINDOW_OVERLAP_WORDS", "100")),

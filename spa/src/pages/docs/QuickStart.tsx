@@ -573,6 +573,29 @@ InnomightChat.destroy();`}
           </pre>
         </div>
 
+        <h3>Optional Guest Visitors</h3>
+        <p>
+          In your agent's <strong>Widget API Keys</strong>, enable <strong>Allow guest visitors</strong>
+          when creating a key or toggle it on an existing key. It is off by default. This works only
+          with the iframe embed (<code>embed.js</code>); the classic <code>widget.js</code> still requires Google sign-in.
+          Guest access is controlled by the key, not by a script attribute.
+        </p>
+        <p>
+          Guests give an email address they own. We check its format and mail domain and reject disposable
+          addresses; this does not verify mailbox ownership. The entry screen shows the inactivity timeout.
+          Guests cannot use the agent's skills or shared tools. Limits apply to guest starts and messages;
+          visitors can retry later or use Google sign-in.
+        </p>
+        <p>
+          After the agent's session timeout without a message, or when a guest selects <strong>End chat</strong>,
+          background processing archives the chat, attempts to email a transcript, and removes the guest's
+          chat, memory and credentials from active storage. This can take a few minutes; delivery is not
+          guaranteed, and empty chats do not produce an email. Private archives have a default 90-day
+          retention period. See our <a href="/legal/privacy">Privacy Policy</a>.
+          The next chat starts fresh, with only the email remembered for convenience. Use Google from the
+          start to retain chat history; guest history cannot be transferred to Google.
+        </p>
+
         <h3>A Chat in Each Section</h3>
         <p>
           Mark any element with <code>data-innomight-chat</code> and the same script fills it with its
@@ -585,7 +608,7 @@ InnomightChat.destroy();`}
           A section's prompt is sent once, when the visitor first scrolls the chat into view, so
           sections nobody reaches don't use any messages. Add <code>data-auto-prompt="false"</code>{' '}
           to show it as a one-click suggestion instead. Each prompt keeps its own conversation, so
-          returning visitors pick up where they left off instead of being asked again. Visitors who
+          Google-signed-in returning visitors pick up where they left off instead of being asked again. Visitors who
           aren't signed in see the question and get the answer as soon as they sign in.
         </p>
         <div className={styles.codeExample}>

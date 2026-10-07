@@ -8,6 +8,7 @@ Handles CRUD operations for:
 - CapacityWarningTracker
 """
 
+from collections.abc import Callable
 import hashlib
 import logging
 from datetime import datetime, timezone
@@ -38,6 +39,29 @@ class MemoryRepository:
     def __init__(self):
         self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
+
+    def delete_all_for_user(
+        self, agent_id: str, user_id: str, *, before_delete: Callable[[], None] | None = None
+    ) -> None:
+        """Delete hash pointers before their source rows, so interruption is retryable."""
+        pk = build_agent_user_pk(agent_id, user_id)
+        query = {"KeyConditionExpression": Key("pk").eq(pk), "ConsistentRead": True}
+        while True:
+            response = self.table.query(**query)
+            for item in response.get("Items", []):
+                if before_delete:
+                    before_delete()
+                if item["sk"].startswith("Archival#") and item.get("content_hash"):
+                    self.table.delete_item(Key={
+                        "pk": f"{pk}#Hash#{item['content_hash']}",
+                        "sk": f"Archival#{item['memory_id']}",
+                    })
+                if before_delete:
+                    before_delete()
+                self.table.delete_item(Key={"pk": pk, "sk": item["sk"]})
+            if not response.get("LastEvaluatedKey"):
+                break
+            query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
     def get_block_definitions(self, agent_id: str, user_id: str) -> list[MemoryBlockDefinition]:
         """Get all memory block definitions for an agent and user."""

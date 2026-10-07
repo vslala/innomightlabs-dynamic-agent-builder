@@ -6,10 +6,16 @@ between agent owners and widget visitors.
 """
 
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+
+class WidgetVisitorKind(str, Enum):
+    GOOGLE = "google"
+    GUEST = "guest"
 
 
 class WidgetVisitor(BaseModel):
@@ -18,6 +24,11 @@ class WidgetVisitor(BaseModel):
     email: str
     name: Optional[str] = None
     picture: Optional[str] = None
+    kind: WidgetVisitorKind = WidgetVisitorKind.GOOGLE
+
+    @property
+    def is_guest(self) -> bool:
+        return self.kind == WidgetVisitorKind.GUEST
 
 
 class WidgetConversationResponse(BaseModel):
@@ -26,6 +37,7 @@ class WidgetConversationResponse(BaseModel):
     agent_id: str
     visitor_id: str
     visitor_name: Optional[str] = None
+    visitor_kind: WidgetVisitorKind = WidgetVisitorKind.GOOGLE
     title: str
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -58,6 +70,7 @@ class WidgetConversation(BaseModel):
     agent_id: str
     visitor_id: str  # From OAuth (Google user ID)
     visitor_email: str
+    visitor_kind: WidgetVisitorKind = WidgetVisitorKind.GOOGLE
     visitor_name: Optional[str] = None
     visitor_picture: Optional[str] = None
     title: str = "New Conversation"
@@ -96,6 +109,7 @@ class WidgetConversation(BaseModel):
             "agent_id": self.agent_id,
             "visitor_id": self.visitor_id,
             "visitor_email": self.visitor_email,
+            "visitor_kind": self.visitor_kind.value,
             "visitor_name": self.visitor_name,
             "visitor_picture": self.visitor_picture,
             "title": self.title,
@@ -113,6 +127,7 @@ class WidgetConversation(BaseModel):
             agent_id=item["agent_id"],
             visitor_id=item["visitor_id"],
             visitor_email=item["visitor_email"],
+            visitor_kind=item.get("visitor_kind", "google"),
             visitor_name=item.get("visitor_name"),
             visitor_picture=item.get("visitor_picture"),
             title=item.get("title", "New Conversation"),
@@ -128,6 +143,7 @@ class WidgetConversation(BaseModel):
             agent_id=self.agent_id,
             visitor_id=self.visitor_id,
             visitor_name=self.visitor_name,
+            visitor_kind=self.visitor_kind,
             title=self.title,
             created_at=self.created_at,
             updated_at=self.updated_at,

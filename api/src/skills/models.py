@@ -19,6 +19,7 @@ class ActorKind(str, Enum):
     A2A = "a2a"
     #: A widget or embed visitor.
     VISITOR = "visitor"
+    GUEST = "guest"
 
 
 class SkillConnectorDependency(BaseModel):

@@ -259,6 +259,29 @@ export function Privacy() {
 
               <section className={styles.section} id="retention">
                 <h2>How long we keep information</h2>
+                <h3>Guest widget sessions</h3>
+                <p>
+                  When a site enables guest chat, we collect the email address you provide, your messages,
+                  session activity and associated guest memory. We check the address format and mail domain
+                  and reject disposable addresses, but do not verify that you own the mailbox. Provide only
+                  an address you own. We use it to send your transcript through our email provider, Mailjet.
+                </p>
+                <p>
+                  Guest sessions end after the inactivity period shown in the widget or when you choose End chat,
+                  and have a maximum lifetime of 24 hours. Background processing archives the chat and attempts
+                  to email the transcript before deleting the guest's active conversations, messages, memory,
+                  media and credentials. Processing and retries can delay deletion; email delivery is not
+                  guaranteed. Chats without a visitor message do not generate a transcript email.
+                </p>
+                <p>
+                  A private archive, including your email, transcript and guest memory, is retained in our
+                  cloud storage for 90 days by default, subject to the service's configured archive retention.
+                  The emailed copy remains with the recipient and their email provider. Security and aggregate
+                  usage records may remain under the separate retention rules below. The widget remembers
+                  your email in its browser storage only to prefill a new chat; ended guest sessions and their
+                  conversation references are cleared. You can remove the remembered email by clearing site data.
+                  Google-signed-in chat history is not subject to guest-session deletion.
+                </p>
                 <p>
                   We retain information for as long as needed to provide the service, maintain your
                   account, meet legal obligations, resolve disputes, enforce agreements, and

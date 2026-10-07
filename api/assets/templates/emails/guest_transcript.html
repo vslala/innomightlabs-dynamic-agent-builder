@@ -1,0 +1,25 @@
+{% extends "_layout.html" %}
+{% block content %}
+            <h1 style="margin:0 0 24px 0; font-size:22px; line-height:1.3; font-weight:600; color:#172b4d;">{{ email.heading }}</h1>
+            <p style="margin:0 0 24px 0;">Here's a copy of your chat with <strong style="color:#172b4d;">{{ email.agent_name }}</strong> on {{ email.origin_host }}, {{ email.date_label }}.</p>
+            {% for conversation in email.conversations %}
+            {% if email.conversations | length > 1 %}
+            <h2 style="margin:32px 0 12px 0; font-size:16px; line-height:1.4; font-weight:600; color:#172b4d;">{{ conversation.title }}</h2>
+            {% endif %}
+            {% for message in conversation.messages %}
+            <div style="margin:0 0 16px 0;">
+              <div style="margin:0 0 4px 0; font-size:13px; color:#626f86;"><strong style="color:#172b4d;">{{ message.label }}</strong>{% if message.time_label %} · {{ message.time_label }}{% endif %}</div>
+              {% if message.from_visitor %}
+              <div style="padding:12px 16px; background-color:#f7f8f9; border-radius:6px; color:#172b4d;">{{ message.html }}</div>
+              {% else %}
+              <div style="padding:2px 0 2px 16px; border-left:3px solid #dcdfe4; color:#44546f;">{{ message.html }}</div>
+              {% endif %}
+            </div>
+            {% endfor %}
+            {% endfor %}
+            {% if email.truncated %}
+            <p style="margin:24px 0 0 0; font-size:14px; color:#626f86;">This transcript was shortened. The rest is in the site owner's archive.</p>
+            {% endif %}
+            <p style="margin:32px 0 16px 0;">This chat has ended. To continue, open the chat on {{ email.origin_host }} again.</p>
+            <p style="margin:24px 0 0 0; padding-top:16px; border-top:1px solid #dcdfe4; font-size:13px; color:#626f86;">You received this because this address was entered to start a guest chat on {{ email.origin_host }}. If that wasn't you, you can ignore this email.</p>
+{% endblock %}

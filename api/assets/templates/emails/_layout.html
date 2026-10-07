@@ -1,0 +1,40 @@
+{#- The house frame: wordmark, white card, footer. Emails extend it and fill `content`. -#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>{{ email.heading }}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f7f8f9;">
+{% if email.preheader %}
+<div style="display:none; max-height:0; overflow:hidden; opacity:0;">{{ email.preheader }}</div>
+{% endif %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f7f8f9;">
+  <tr>
+    <td align="center" style="padding:40px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px; background-color:#ffffff; border:1px solid #dcdfe4; border-radius:8px;">
+        <tr>
+          <td style="padding:32px 40px 0 40px;">
+            <img src="{{ logo_url }}" width="109" height="28" alt="Innomight" style="display:block; border:0; outline:none; text-decoration:none;">
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px 40px 40px 40px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size:16px; line-height:1.6; color:#44546f;">
+{% block content %}{% endblock %}
+          </td>
+        </tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+        <tr>
+          <td align="center" style="padding:24px 40px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size:12px; line-height:1.5; color:#626f86;">
+            <a href="{{ email.footer.url }}" style="color:#626f86; text-decoration:none;">{{ email.footer.label }}</a>{% if email.footer.url != "https://innomight.com" %} · part of <a href="https://innomight.com" style="color:#626f86; text-decoration:none;">Innomight</a>{% endif %}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

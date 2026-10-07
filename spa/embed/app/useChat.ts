@@ -154,6 +154,7 @@ export function useChat(api: WidgetApi, publicKey: string, onSignedOut: () => vo
         let id = conversationId;
         if (!id) {
           const created = await api.createConversation(titleFrom(display ?? content));
+          if (controller.signal.aborted) return;
           id = created.conversation_id;
           setConversationId(id);
           saveConversationId(publicKey, scope, id);

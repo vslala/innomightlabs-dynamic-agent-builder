@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { History, LogOut, SquarePen } from "lucide-react";
 
 import { envelope, isEmbedMessage, type EmbedConfig, type FrameToHostMessage } from "../shared/protocol";
-import { SignedOutError, WidgetApi, signInWithPopup } from "./api";
+import { GuestSessionEndedError, SignedOutError, WidgetApi, signInWithPopup } from "./api";
 import type { Bootstrap } from "./bootstrap";
 import { Composer } from "./components/Composer";
 import { ConversationList } from "./components/ConversationList";
 import { Header } from "./components/Header";
 import { LoginPanel } from "./components/LoginPanel";
 import { MessageList } from "./components/MessageList";
-import { clearSession, loadSession, needsRefresh, saveSession, tokenExpiresAt, type Session } from "./session";
+import { clearSession, endLocalSession, loadSession, needsRefresh, rememberGuestEmail, saveSession, tokenExpiresAt, type Session } from "./session";
 import { useChat, type ChatOptions } from "./useChat";
 
 interface AppProps {
@@ -39,6 +39,10 @@ function useSeenByVisitor(mode: EmbedConfig["mode"]): [boolean, () => void] {
   return [seen, markSeen];
 }
 
+function focusEndedHeading(node: HTMLHeadingElement | null): void {
+  node?.focus();
+}
+
 function postToHost(message: FrameToHostMessage): void {
   // The parent's origin isn't known in advance; frame-ancestors already limits who the parent can be,
   // and these messages carry nothing private.
@@ -49,6 +53,7 @@ export function App({ bootstrap, config }: AppProps) {
   const publicKey = bootstrap.public_key;
   const [session, setSession] = useState<Session | null>(() => loadSession(publicKey));
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [endedEmail, setEndedEmail] = useState<string | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
   const sessionRef = useRef(session);
   const refreshRef = useRef<Promise<string> | null>(null);
@@ -64,6 +69,18 @@ export function App({ bootstrap, config }: AppProps) {
     },
     [publicKey]
   );
+
+  const sessionEnded = useCallback(() => {
+    setEndedEmail(endLocalSession(publicKey, sessionRef.current));
+    adoptSession(null);
+  }, [publicKey, adoptSession]);
+
+  const startGuest = useCallback((next: Session) => {
+    clearSession(publicKey);
+    rememberGuestEmail(publicKey, next.visitor.email);
+    setEndedEmail(null);
+    adoptSession(next);
+  }, [publicKey, adoptSession]);
 
   const signOut = useCallback(() => {
     const refreshToken = sessionRef.current?.refreshToken;
@@ -86,11 +103,13 @@ export function App({ bootstrap, config }: AppProps) {
 
         refreshRef.current ??= WidgetApi.refresh(publicKey, current.refreshToken)
           .then((refreshed) => {
+            if (sessionRef.current !== current) throw new SignedOutError("This session has ended.");
             adoptSession(refreshed);
             return refreshed.token;
           })
           .catch((err) => {
-            if (stillValid) return current.token;
+            if (sessionRef.current === current && stillValid && !(err instanceof GuestSessionEndedError)
+                          && (current.visitor.kind !== "guest" || !(err instanceof SignedOutError))) return current.token;
             throw err;
           })
           .finally(() => {
@@ -126,7 +145,9 @@ export function App({ bootstrap, config }: AppProps) {
     setIsSigningIn(true);
     setSignInError(null);
     try {
-      adoptSession(await signInWithPopup(publicKey));
+      const next = await signInWithPopup(publicKey);
+      setEndedEmail(null);
+      adoptSession(next);
     } catch (err) {
       setSignInError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
     } finally {
@@ -155,12 +176,25 @@ export function App({ bootstrap, config }: AppProps) {
           }}
           composerRef={composerRef}
           onSignOut={signOut}
+          onSessionEnded={sessionEnded}
           onClose={onClose}
         />
       ) : (
         <>
           <Header agentName={bootstrap.agent_name} subtitle="AI assistant" onClose={onClose} />
-          <LoginPanel
+          {endedEmail ? (
+            <div className="ie-login">
+              <h2 className="ie-login-title" tabIndex={-1} ref={focusEndedHeading}>This chat has ended.</h2>
+              <p>Your transcript will be emailed shortly to {endedEmail} if you sent a message. Delivery is not guaranteed.</p>
+              <button type="button" className="ie-button" onClick={() => setEndedEmail(null)}>Start a new chat</button>
+              <button type="button" className="ie-button ie-google" disabled={isSigningIn} onClick={signIn}>Continue with Google</button>
+              {signInError && <p role="alert" className="ie-alert">{signInError}</p>}
+            </div>
+          ) : <LoginPanel
+            publicKey={publicKey}
+            allowGuests={bootstrap.allow_guests === true}
+            timeoutMinutes={bootstrap.guest_session_timeout_minutes}
+            onGuestSession={startGuest}
             agentName={bootstrap.agent_name}
             description={bootstrap.agent_description}
             greeting={greeting}
@@ -169,7 +203,7 @@ export function App({ bootstrap, config }: AppProps) {
             isSigningIn={isSigningIn}
             error={signInError}
             onSignIn={signIn}
-          />
+          />}
         </>
       )}
       <Footer />
@@ -186,11 +220,29 @@ interface ChatScreenProps {
   chatOptions: ChatOptions;
   composerRef: RefObject<HTMLTextAreaElement | null>;
   onSignOut: () => void;
+  onSessionEnded: () => void;
   onClose?: () => void;
 }
 
-function ChatScreen({ api, bootstrap, session, greeting, placeholder, chatOptions, composerRef, onSignOut, onClose }: ChatScreenProps) {
-  const chat = useChat(api, bootstrap.public_key, onSignOut, chatOptions);
+function ChatScreen({ api, bootstrap, session, greeting, placeholder, chatOptions, composerRef, onSignOut, onSessionEnded, onClose }: ChatScreenProps) {
+  const chat = useChat(api, bootstrap.public_key, onSessionEnded, chatOptions);
+  const isGuest = session.visitor.kind === "guest";
+  const [ending, setEnding] = useState(false);
+  const [endError, setEndError] = useState<string | null>(null);
+  const endChat = async () => {
+    if (ending) return;
+    setEnding(true);
+    setEndError(null);
+    try {
+      await api.endGuest();
+      onSessionEnded();
+    } catch (err) {
+      if (err instanceof GuestSessionEndedError || err instanceof SignedOutError) onSessionEnded();
+      else setEndError(err instanceof Error ? err.message : "Couldn't end this chat. Please try again.");
+    } finally {
+      setEnding(false);
+    }
+  };
   const [showHistory, setShowHistory] = useState(false);
 
   const newChat = () => {
@@ -239,19 +291,20 @@ function ChatScreen({ api, bootstrap, session, greeting, placeholder, chatOption
               chat.openConversation(id);
             }}
           />
-          <div className="ie-account">
+          {!isGuest && <div className="ie-account">
             <span className="ie-account-email">Signed in as {session.visitor.email}</span>
             <button type="button" className="ie-link-button" onClick={onSignOut}>
               <LogOut aria-hidden="true" />
               Sign out
             </button>
-          </div>
+          </div>}
         </div>
       ) : (
         <>
           <MessageList
             agentName={bootstrap.agent_name}
             greeting={greeting}
+            guestGreeting={isGuest && chat.messages.length === 0}
             messages={chat.messages}
             streaming={chat.streaming}
             activeTool={chat.activeTool}
@@ -261,9 +314,16 @@ function ChatScreen({ api, bootstrap, session, greeting, placeholder, chatOption
             suggestion={chat.suggestion}
             onSubmitForm={chat.send}
           />
-          <Composer ref={composerRef} placeholder={placeholder} disabled={chat.isSending} onSend={(content) => chat.send(content)} />
+          <Composer ref={composerRef} placeholder={placeholder} disabled={chat.isSending || ending} onSend={(content) => chat.send(content)} />
         </>
       )}
+      {isGuest && <div className="ie-account">
+        <span>Guest chat · transcript goes to {session.visitor.email}</span>
+        <button type="button" className="ie-link-button" disabled={ending} aria-busy={ending} onClick={endChat}>
+          {ending ? "Ending…" : "End chat"}
+        </button>
+      </div>}
+      {endError && <p className="ie-alert ie-alert-banner" role="alert">{endError}</p>}
     </>
   );
 }

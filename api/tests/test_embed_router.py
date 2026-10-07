@@ -56,6 +56,8 @@ class TestEmbedShell:
             "agent_name": "Support Agent",
             "agent_description": AGENT_CREATE_REQUEST.get("agent_description"),
             "api_base_url": settings.api_base_url.rstrip("/"),
+            "allow_guests": False,
+            "guest_session_timeout_minutes": None,
         }
 
     def test_needs_no_dashboard_login(self, test_client: TestClient, auth_headers: dict):

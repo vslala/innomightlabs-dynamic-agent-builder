@@ -86,6 +86,7 @@ dependencies = [
     { name = "boto3-stubs", extra = ["dynamodb"] },
     { name = "croniter" },
     { name = "cryptography" },
+    { name = "disposable-email-domains" },
     { name = "email-validator" },
     { name = "fastapi" },
     { name = "google-auth" },
@@ -135,6 +136,7 @@ requires-dist = [
     { name = "boto3-stubs", extras = ["dynamodb"], specifier = ">=1.42.25" },
     { name = "croniter", specifier = ">=6.2.2" },
     { name = "cryptography", specifier = ">=46.0.3" },
+    { name = "disposable-email-domains", specifier = ">=0.0.275" },
     { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fastapi", specifier = ">=0.128.0" },
     { name = "google-auth", specifier = ">=2.47.0" },
@@ -471,6 +473,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69", size = 75520, upload-time = "2021-03-08T10:59:26.269Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604, upload-time = "2021-03-08T10:59:24.45Z" },
+]
+
+[[package]]
+name = "disposable-email-domains"
+version = "0.0.275"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/37/52/e90793762d3e0634b2d14e1bd0400e75207b0703002ec3ba1ac80e9bb251/disposable_email_domains-0.0.275.tar.gz", hash = "sha256:59d850679c33cd474779af879258a9ca3c6a6018fc67c137928c6f7b55f37c41", size = 111902, upload-time = "2026-10-06T12:29:13.376Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/19/784ec3b99cec888a84abf33f3793d9262f412e28b92b0c2237f0e171858c/disposable_email_domains-0.0.275-py3-none-any.whl", hash = "sha256:b73a983b8c3f6dfdc659d8ef15384e55860ce1834c3f3254d056253aeec471f7", size = 57419, upload-time = "2026-10-06T12:29:12.104Z" },
 ]
 
 [[package]]

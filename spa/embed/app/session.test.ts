@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   clearSession,
+  endLocalSession,
+  loadGuestEmail,
+  type Session,
   conversationIdsOutside,
   conversationScope,
   loadConversationId,
@@ -59,6 +62,30 @@ describe("session storage", () => {
 
     expect(loadConversationId("pk_c", "default")).toBe("conversation-1");
     expect(loadConversationId("pk_c", "prompt-x")).toBeNull();
+  });
+});
+
+describe("guest sessions", () => {
+  it("stores a guest and forgets every conversation on end, remembering only the email", () => {
+    const guest: Session = { token: "guest-token", refreshToken: "guest-refresh", visitor: { visitorId: "guest_1", email: "guest@example.com", kind: "guest" } };
+    saveSession("guest-key", guest);
+    saveConversationId("guest-key", "default", "one");
+    saveConversationId("guest-key", "prompt-x", "two");
+    expect(loadSession("guest-key")).toEqual(guest);
+    expect(endLocalSession("guest-key", guest)).toBe("guest@example.com");
+    expect(loadSession("guest-key")).toBeNull();
+    expect(loadConversationId("guest-key", "default")).toBeNull();
+    expect(loadConversationId("guest-key", "prompt-x")).toBeNull();
+    expect(loadGuestEmail("guest-key")).toBe("guest@example.com");
+    expect(loadGuestEmail("other-key")).toBe("");
+  });
+
+  it("returns legacy Google sessions to sign-in, not the guest ended card", () => {
+    const google = { token: "t", visitor: { visitorId: "google", email: "google@example.com" } };
+    saveSession("google-key", google);
+    expect(endLocalSession("google-key", google)).toBeNull();
+    expect(loadGuestEmail("google-key")).toBe("");
+    expect(loadSession("google-key")).toBeNull();
   });
 });
 

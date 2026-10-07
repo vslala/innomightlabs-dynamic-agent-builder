@@ -16,6 +16,7 @@ export interface ApiKeyResponse {
   last_used_at: string | null;
   request_count: number;
   has_a2a_secret: boolean;
+  allow_guests?: boolean;
 }
 
 // An A2A client secret, shown once
@@ -26,12 +27,14 @@ export interface A2ASecretResponse {
 
 // Request to create a new API key
 export interface CreateApiKeyRequest {
+  allow_guests?: boolean;
   name: string;
   allowed_origins?: string[];
 }
 
 // Request to update an API key
 export interface UpdateApiKeyRequest {
+  allow_guests?: boolean;
   name?: string;
   allowed_origins?: string[];
   is_active?: boolean;

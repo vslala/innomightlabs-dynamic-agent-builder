@@ -56,11 +56,20 @@ export interface StreamEvent {
 interface TokenResponse {
   access_token: string;
   refresh_token?: string | null;
-  visitor: { visitor_id: string; email: string; name?: string | null; picture?: string | null };
+  visitor: { visitor_id: string; email: string; kind?: "google" | "guest"; name?: string | null; picture?: string | null };
 }
 
 /** The visitor's sign-in is no longer valid; they have to sign in again. */
 export class SignedOutError extends Error {}
+export class GuestSessionEndedError extends SignedOutError {}
+
+export class GuestEntryError extends Error {
+  readonly retryable: boolean;
+  constructor(message: string, retryable = false) {
+    super(message);
+    this.retryable = retryable;
+  }
+}
 
 export class WidgetApi {
   private readonly publicKey: string;
@@ -69,6 +78,29 @@ export class WidgetApi {
   constructor(publicKey: string, token: () => Promise<string>) {
     this.publicKey = publicKey;
     this.token = token;
+  }
+
+  static async startGuest(publicKey: string, email: string, signal?: AbortSignal): Promise<Session> {
+    const response = await fetch("/widget/auth/guest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": publicKey },
+      body: JSON.stringify({ email }),
+      signal,
+    });
+    if (!response.ok) {
+      const detail = await errorDetail(response);
+      if (response.status === 429) throw new GuestEntryError("Guest chat is temporarily limited. Please try again later or continue with Google.");
+      if (response.status === 404) throw new GuestEntryError("Guest access is no longer available. Please continue with Google.");
+      if (response.status === 422 && !/timeout|timed out|couldn't check|could not check/i.test(detail)) {
+        throw new GuestEntryError(detail);
+      }
+      throw new GuestEntryError("We couldn't check that address. Please try again.", true);
+    }
+    return sessionFrom(await response.json() as TokenResponse);
+  }
+
+  async endGuest(): Promise<void> {
+    await this.request("/widget/auth/guest/end", { method: "POST" });
   }
 
   listConversations(): Promise<WidgetConversation[]> {
@@ -128,8 +160,7 @@ export class WidgetApi {
         ...init.headers,
       },
     });
-    if (response.status === 401) throw new SignedOutError("Your sign-in has expired.");
-    if (!response.ok) throw new Error(await errorDetail(response));
+    if (!response.ok) await throwResponseError(response);
     return response;
   }
 }
@@ -140,7 +171,7 @@ async function authPost(publicKey: string, path: string, body: object): Promise<
     headers: { "Content-Type": "application/json", "X-API-Key": publicKey },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw new SignedOutError("Your sign-in has expired.");
+  if (!response.ok) await throwResponseError(response);
   return (await response.json()) as TokenResponse;
 }
 
@@ -150,11 +181,25 @@ function sessionFrom(body: TokenResponse): Session {
     refreshToken: body.refresh_token,
     visitor: {
       visitorId: body.visitor.visitor_id,
+      kind: body.visitor.kind ?? "google",
       email: body.visitor.email,
       name: body.visitor.name,
       picture: body.visitor.picture,
     },
   };
+}
+
+async function throwResponseError(response: Response): Promise<never> {
+  const detail = await errorDetail(response);
+  if (response.status === 401) {
+    if (detail === "guest_session_ended") throw new GuestSessionEndedError("This guest chat has ended.");
+    throw new SignedOutError("Your sign-in has expired.");
+  }
+  if (response.status === 409 && detail === "guest_turn_in_progress") {
+    throw new Error("Please wait for the reply to finish before sending another message.");
+  }
+  if (response.status === 429) throw new Error("Chat is temporarily limited. Please try again later. Guests can end this chat and continue with Google.");
+  throw new Error(detail);
 }
 
 async function errorDetail(response: Response): Promise<string> {

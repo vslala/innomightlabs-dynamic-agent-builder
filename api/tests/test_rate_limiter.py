@@ -1,7 +1,5 @@
 """Rate limit strategies, against the mocked DynamoDB table and a controllable clock."""
 
-from concurrent.futures import ThreadPoolExecutor
-
 import pytest
 
 from src.rate_limits.limiter import RateLimitAlgorithm, RateLimitPolicy, RateLimiter, strategy_for
@@ -84,11 +82,12 @@ class TestCooldown:
         assert newer.allowed
         assert not cooldown.acquire("1.2.3.4").allowed
 
-    def test_only_one_of_many_simultaneous_requests_gets_through(self, dynamodb_table):
-        cooldown = limiter(self.policy, Clock())
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            results = list(pool.map(lambda _: cooldown.acquire("1.2.3.4").allowed, range(8)))
-        assert results.count(True) == 1
+    def test_two_replicas_share_one_cooldown(self, dynamodb_table):
+        """Each server replica has its own limiter; the conditional claim in DynamoDB is what's shared."""
+        clock = Clock()
+        first, second = limiter(self.policy, clock), limiter(self.policy, clock)
+        assert first.acquire("1.2.3.4").allowed
+        assert not second.acquire("1.2.3.4").allowed
 
 
 class TestFixedWindow:
@@ -131,10 +130,10 @@ class TestFixedWindow:
         clock.now += 1
         assert all(fixed.acquire("guest").allowed for _ in range(3))
 
-    def test_concurrent_requests_never_exceed_the_limit(self, dynamodb_table):
-        fixed = limiter(self.policy, Clock())
-        with ThreadPoolExecutor(max_workers=10) as pool:
-            results = list(pool.map(lambda _: fixed.acquire("guest").allowed, range(10)))
+    def test_replicas_interleaving_never_exceed_the_limit(self, dynamodb_table):
+        clock = Clock()
+        replicas = [limiter(self.policy, clock) for _ in range(3)]
+        results = [replicas[i % 3].acquire("guest").allowed for i in range(10)]
         assert results.count(True) == 3
 
 

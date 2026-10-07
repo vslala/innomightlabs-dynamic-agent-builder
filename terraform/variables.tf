@@ -1,3 +1,14 @@
+variable "guest_archive_retention_days" {
+  description = "Retention for tagged guest session archives and copied media"
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.guest_archive_retention_days >= 1 && floor(var.guest_archive_retention_days) == var.guest_archive_retention_days
+    error_message = "Guest archive retention must be a positive whole number of days."
+  }
+}
+
 variable "aws_region" {
   description = "AWS region for resources"
   type        = string

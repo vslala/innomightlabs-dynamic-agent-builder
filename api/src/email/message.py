@@ -34,6 +34,11 @@ _env = Environment(
 _env.filters["nl2br"] = _nl2br
 
 
+def render_email_template(name: str, **context: object) -> str:
+    """Render a template that extends `_layout.html`; `context["email"]` supplies heading, preheader and footer."""
+    return _env.get_template(name).render(logo_url=INNOMIGHT_WORDMARK_URL, **context)
+
+
 @dataclass(frozen=True)
 class EmailLink:
     label: str
@@ -59,7 +64,7 @@ class MessageEmail:
     footer: EmailLink = EmailLink("Innomight", "https://innomight.com")
 
     def html(self) -> str:
-        return _env.get_template("message.html").render(email=self, logo_url=INNOMIGHT_WORDMARK_URL)
+        return render_email_template("message.html", email=self)
 
     def text(self) -> str:
         parts = [self.heading, *self.paragraphs]

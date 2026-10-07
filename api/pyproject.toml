@@ -38,6 +38,7 @@ dependencies = [
     "croniter>=6.2.2",
     "apscheduler>=3.11,<4",
     "google-genai>=2.19.0",
+    "disposable-email-domains>=0.0.275",
 ]
 
 [project.optional-dependencies]

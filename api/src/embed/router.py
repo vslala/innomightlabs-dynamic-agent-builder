@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from src.agents.repository import AgentRepository
 from src.apikeys.repository import ApiKeyRepository
 from src.config import settings
+from src.widget.guests import guest_session_minutes
 
 router = APIRouter(tags=["embed"])
 
@@ -28,6 +29,10 @@ class EmbedBootstrap(BaseModel):
     agent_name: str
     agent_description: str | None = None
     api_base_url: str
+    #: Trusted here rather than in the URL fragment, so the host page can't switch guests on.
+    allow_guests: bool = False
+    #: How long a guest chat lasts without messages; only sent when guests are allowed.
+    guest_session_timeout_minutes: int | None = None
 
 
 def embed_csp(allowed_origins: list[str]) -> str:
@@ -112,6 +117,10 @@ async def embed_shell(public_key: str) -> HTMLResponse:
         agent_name=agent.agent_name,
         agent_description=agent.agent_description,
         api_base_url=settings.api_base_url.rstrip("/"),
+        allow_guests=api_key.allow_guests,
+        guest_session_timeout_minutes=(
+            guest_session_minutes(agent.session_timeout_minutes) if api_key.allow_guests else None
+        ),
     )
     return HTMLResponse(
         render_shell(bootstrap),

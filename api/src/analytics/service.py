@@ -64,6 +64,7 @@ class ConversationRecord:
     created_at: datetime
     user_identity: Optional[str] = None
     messages: list[Message] | None = None
+    user_label: Optional[str] = None
 
 
 class AnalyticsService:
@@ -258,7 +259,9 @@ class AnalyticsService:
                             title=widget_conversation.title,
                             source=AnalyticsSource.WIDGET,
                             created_at=widget_conversation.created_at,
-                            user_identity=widget_conversation.visitor_email,
+                            user_identity=widget_conversation.visitor_id,
+                            user_label=(f"{widget_conversation.visitor_email} (guest, unverified)"
+                                if widget_conversation.visitor_kind == "guest" else widget_conversation.visitor_email),
                         )
                     )
                     context.conversations_scanned += 1
@@ -367,15 +370,17 @@ class AnalyticsService:
 
     def _build_top_users(self, records: list[ConversationRecord]) -> list[TopUser]:
         counter: Counter[tuple[AnalyticsSource, str]] = Counter()
+        labels: dict[tuple[AnalyticsSource, str], str] = {}
         for record in records:
             for message in record.messages or []:
                 identity = get_message_user_identity(record, message)
                 if identity:
                     counter[(record.source, identity)] += 1
+                    labels[(record.source, identity)] = record.user_label or identity
 
         ranked = counter.most_common(TOP_RESULTS_LIMIT)
         return [
-            TopUser(user=user, source=source, messages=count)
+            TopUser(user=labels[(source, user)], source=source, messages=count)
             for (source, user), count in ranked
         ]
 

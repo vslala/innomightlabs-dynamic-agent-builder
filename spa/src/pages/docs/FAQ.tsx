@@ -248,6 +248,24 @@ const faqSections: FAQSection[] = [
         ),
       },
       {
+        question: 'Can visitors chat without Google sign-in?',
+        answer: (
+          <>
+            <p>Yes, if you enable <strong>Allow guest visitors</strong> on the widget API key. It is off
+              by default and applies only to the iframe embed (<code>embed.js</code>), not classic <code>widget.js</code>.</p>
+            <p>Guests provide an email address they own. We check its format, mail domain and whether it
+              is disposable, but do not verify mailbox ownership. An invalid address shows the reason;
+              if checking is unavailable, retry or continue with Google. Guest start and message limits
+              may require waiting or using Google instead. Guests cannot use skills or shared tools.</p>
+            <p>A guest chat ends after the inactivity timeout shown at entry or when they select End chat.
+              A transcript will be emailed shortly if they sent a message; delivery is not guaranteed.
+              The chat is removed from active storage after background processing, with a private archive
+              retained for 90 days by default. Only the email is remembered to prefill a new session.
+              Sign in with Google from the start to keep chat history; guest history cannot be transferred.</p>
+          </>
+        ),
+      },
+      {
         question: 'Can I customize the widget appearance?',
         answer: (
           <>
@@ -280,7 +298,9 @@ const faqSections: FAQSection[] = [
             Widget conversations are stored separately from dashboard conversations.
             They appear in your <strong>Conversations</strong> page with a "widget" tag,
             so you can monitor what visitors are asking. Each visitor gets their own
-            conversation history based on their authentication.
+            conversation history based on their authentication. Guest history lasts only for the active
+            session: after it ends, background processing archives it, attempts to email a transcript,
+            and deletes the active chat and guest memory. A new guest chat has no previous history.
           </p>
         ),
       },

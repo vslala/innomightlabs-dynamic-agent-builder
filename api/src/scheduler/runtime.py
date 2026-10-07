@@ -6,6 +6,7 @@ truth for schedules, run records, and duplicate dispatch protection.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -29,6 +30,7 @@ CRAWL_JOB_REAPER_ID = "internal:stale-crawl-job-reaper"
 DREAM_RUN_REAPER_ID = "internal:stale-dream-run-reaper"
 CHAT_TURN_REAPER_ID = "internal:stale-chat-turn-reaper"
 TOOL_JOB_REAPER_ID = "internal:stale-tool-job-reaper"
+WIDGET_GUEST_CLOSER_ID = "internal:widget-guest-session-closer"
 
 
 class SchedulerRuntime:
@@ -60,6 +62,7 @@ class SchedulerRuntime:
             (self._reap_stale_dream_runs, settings.dream_run_reaper_interval_seconds, DREAM_RUN_REAPER_ID),
             (self._reap_stale_chat_turns, settings.chat_turn_reaper_interval_seconds, CHAT_TURN_REAPER_ID),
             (self._reap_stale_tool_jobs, settings.tool_job_reaper_interval_seconds, TOOL_JOB_REAPER_ID),
+            (self._close_ended_guest_sessions, settings.widget_guest_sweep_interval_seconds, WIDGET_GUEST_CLOSER_ID),
         ):
             self.scheduler.add_job(
                 reaper,
@@ -127,6 +130,17 @@ class SchedulerRuntime:
 
     async def _reap_stale_tool_jobs(self) -> None:
         self._reap("tool job", self.tool_job_repository.fail_stale_jobs)
+
+    async def _close_ended_guest_sessions(self) -> None:
+        from src.widget.guest_closer import GuestSessionCloser
+
+        try:
+            # boto3 and Mailjet are synchronous; never stall live chat heartbeats.
+            closed = await asyncio.to_thread(lambda: GuestSessionCloser().sweep())
+            if closed:
+                log.info("Closed %s ended widget guest sessions", closed)
+        except Exception:
+            log.exception("Failed to close ended widget guest sessions")
 
     @staticmethod
     def _reap(label: str, fail_stale: Callable[[], int]) -> None:

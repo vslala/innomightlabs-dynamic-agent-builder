@@ -7,6 +7,9 @@ Provides endpoints for:
 - Chat conversations with SSE streaming
 """
 
+import asyncio
+from contextlib import suppress
+from uuid import uuid4
 import logging
 import hashlib
 import json
@@ -17,6 +20,7 @@ from urllib.parse import urlencode
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from src.agents.architectures import get_agent_architecture
@@ -36,6 +40,8 @@ from src.llm.events import SSEEvent, SSEEventType
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.widget import sessions as widget_sessions
 from src.widget.middleware import get_api_key_from_request
+from src.widget.guest_email import GuestEmailRejected, check_guest_email
+from src.widget.guests import GuestSessionEnded, GuestSessionRepository, GuestTurnInProgress, enforce_guest_limit
 from src.widget.models import (
     CreateWidgetConversationRequest,
     WidgetGeneratedImage,
@@ -155,7 +161,8 @@ def create_visitor_token(visitor: WidgetVisitor, agent_id: str) -> str:
         "picture": visitor.picture,
         "agent_id": agent_id,  # Scope token to specific agent
         "type": "widget_visitor",
-        "exp": datetime.now(timezone.utc) + timedelta(hours=WIDGET_JWT_EXPIRATION_HOURS),
+        "kind": visitor.kind.value,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=1 if visitor.is_guest else WIDGET_JWT_EXPIRATION_HOURS),
         "iat": datetime.now(timezone.utc),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
@@ -189,12 +196,25 @@ def get_visitor_from_request(request: Request) -> WidgetVisitor:
     token = auth_header.split(" ")[1]
     payload = decode_visitor_token(token)
 
-    return WidgetVisitor(
+    api_key = get_api_key_from_request(request)
+    if payload.get("agent_id") != api_key.agent_id:
+        raise HTTPException(401, detail="Invalid token agent")
+    if payload.get("kind", "google") not in {"google", "guest"}:
+        raise HTTPException(401, detail="Invalid visitor kind")
+    visitor = WidgetVisitor(
         visitor_id=payload["sub"],
         email=payload["email"],
         name=payload.get("name"),
         picture=payload.get("picture"),
+        kind=payload.get("kind", "google"),
     )
+    if visitor.is_guest:
+        try:
+            request.state.guest_session = GuestSessionRepository().require_active(
+                visitor.visitor_id, api_key.agent_id, api_key.key_id)
+        except GuestSessionEnded as error:
+            raise HTTPException(401, detail="guest_session_ended") from error
+    return visitor
 
 
 def get_widget_oauth_callback_url() -> str:
@@ -319,6 +339,48 @@ async def widget_oauth_callback(
     return _sign_in_result(sign_in, code=widget_sessions.create_login_code(api_key.agent_id, visitor))
 
 
+class WidgetGuestRequest(BaseModel):
+    email: str
+
+
+@router.post("/auth/guest", response_model=WidgetTokenResponse)
+async def start_guest_session(
+    request: Request,
+    body: WidgetGuestRequest,
+    api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+) -> WidgetTokenResponse:
+    if not api_key.allow_guests:
+        raise HTTPException(404, detail="guests_disabled")
+    ip = request.client.host if request.client else "unknown"
+    enforce_guest_limit("GUEST_START_IP", ip)
+    try:
+        email = await run_in_threadpool(check_guest_email, body.email)
+    except GuestEmailRejected as error:
+        raise HTTPException(422, detail=str(error)) from error
+    enforce_guest_limit("GUEST_START_EMAIL", email.casefold())
+    agent = agent_repo.find_agent_by_id(api_key.agent_id, api_key.created_by)
+    if not agent:
+        raise HTTPException(404, detail="Agent not found")
+    session = widget_sessions.create_guest_session(agent_id=api_key.agent_id, key_id=api_key.key_id,
+        email=email, session_timeout_minutes=agent.session_timeout_minutes,
+        origin=request.headers.get("Origin", ""), ip=ip)
+    return _token_response(session)
+
+
+@router.post("/auth/guest/end", status_code=204)
+async def end_guest_session(
+    request: Request,
+    visitor: Annotated[WidgetVisitor, Depends(get_visitor_from_request)],
+) -> None:
+    if not visitor.is_guest:
+        raise HTTPException(400, detail="Not a guest session")
+    try:
+        GuestSessionRepository().end(request.state.guest_session)
+    except GuestSessionEnded as error:
+        raise HTTPException(401, detail="guest_session_ended") from error
+
+
 class WidgetCodeRequest(BaseModel):
     code: str
 
@@ -344,7 +406,7 @@ async def refresh_widget_token(
     Trade a visitor refresh token for a new session. The refresh token rotates: the one sent
     stops working. It is only good for the agent it was issued for.
     """
-    session = widget_sessions.rotate_refresh_token(body.refresh_token.strip(), api_key.agent_id)
+    session = widget_sessions.rotate_refresh_token(body.refresh_token.strip(), api_key.agent_id, api_key.key_id)
     if session is None:
         raise HTTPException(status_code=401, detail="Token refresh failed")
     return _token_response(session)
@@ -364,7 +426,7 @@ def _token_response(session: widget_sessions.VisitorSession) -> WidgetTokenRespo
     return WidgetTokenResponse(
         access_token=create_visitor_token(session.visitor, session.agent_id),
         refresh_token=session.refresh_token,
-        expires_in=WIDGET_JWT_EXPIRATION_HOURS * 3600,
+        expires_in=(1 if session.visitor.is_guest else WIDGET_JWT_EXPIRATION_HOURS) * 3600,
         visitor=session.visitor,
     )
 
@@ -628,12 +690,36 @@ async def create_conversation(
         agent_id=api_key.agent_id,
         visitor_id=visitor.visitor_id,
         visitor_email=visitor.email,
+        visitor_kind=visitor.kind,
         visitor_name=visitor.name,
         visitor_picture=visitor.picture,
         title=body.title or f"Chat with {visitor.name or 'Visitor'}",
     )
 
-    saved = conv_repo.save(conversation)
+    if visitor.is_guest:
+        from botocore.exceptions import ClientError
+
+        guest = request.state.guest_session
+        table = GuestSessionRepository().table
+        try:
+            # Creation must precede the closer's claim or fail, so it can't leave a row after cleanup.
+            # The same write records the id on the session, which is how the closer finds it.
+            table.meta.client.transact_write_items(TransactItems=[
+                {"Update": {"TableName": table.name, "Key": {"pk": guest.pk, "sk": guest.sk},
+                    "UpdateExpression": "ADD conversation_ids :cid",
+                    "ConditionExpression": "attribute_exists(pk) AND #status = :active AND session_ends_at > :now",
+                    "ExpressionAttributeNames": {"#status": "status"},
+                    "ExpressionAttributeValues": {":active": "active", ":now": datetime.now(timezone.utc).isoformat(),
+                                                  ":cid": {conversation.conversation_id}}}},
+                {"Put": {"TableName": table.name, "Item": conversation.to_dynamo_item()}},
+            ])
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "TransactionCanceledException":
+                raise HTTPException(401, detail="guest_session_ended") from error
+            raise
+        saved = conversation
+    else:
+        saved = conv_repo.save(conversation)
     log.info(f"Created widget conversation {saved.conversation_id} for visitor {visitor.visitor_id}")
 
     return saved.to_response()
@@ -708,7 +794,38 @@ async def send_message(
     if conversation.visitor_id != visitor.visitor_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    guest_repo = GuestSessionRepository() if visitor.is_guest else None
+    turn_id = uuid4().hex
+    if guest_repo:
+        if len(body.content) > settings.widget_guest_max_message_chars:
+            raise HTTPException(422, detail="Guest message is too long")
+        # Take the turn first, so a message refused as busy or ended doesn't use up the guest's limits.
+        try:
+            guest_repo.touch(request.state.guest_session, datetime.now(timezone.utc), turn_id=turn_id)
+        except GuestTurnInProgress as error:
+            raise HTTPException(409, detail="guest_turn_in_progress") from error
+        except GuestSessionEnded as error:
+            raise HTTPException(401, detail="guest_session_ended") from error
+        try:
+            enforce_guest_limit("GUEST_MESSAGES", visitor.visitor_id)
+            enforce_guest_limit("GUEST_KEY_DAILY", api_key.key_id)
+        except HTTPException:
+            guest_repo.finish_turn(request.state.guest_session, turn_id)
+            raise
+
+    async def heartbeat_guest_turn(stream_task: asyncio.Task | None) -> None:
+        try:
+            while True:
+                await asyncio.sleep(30)
+                assert guest_repo is not None
+                guest_repo.heartbeat_turn(request.state.guest_session, turn_id)
+        except Exception:
+            log.exception("Guest turn lease renewal failed; cancelling the turn")
+            if stream_task:
+                stream_task.cancel()
+
     async def event_stream():
+        heartbeat = asyncio.create_task(heartbeat_guest_turn(asyncio.current_task())) if guest_repo else None
         try:
             # Load agent
             yield SSEEvent(
@@ -748,7 +865,7 @@ async def send_message(
                 owner_email=api_key.created_by,
                 actor_email=visitor.email,
                 actor_id=visitor.visitor_id,
-                actor_kind=ActorKind.VISITOR,
+                actor_kind=ActorKind.GUEST if visitor.is_guest else ActorKind.VISITOR,
                 attachments=[],  # Widget doesn't support attachments yet
             ):
                 yield event.to_sse()
@@ -759,6 +876,13 @@ async def send_message(
         except Exception as e:
             log.error(f"Error in widget message stream: {e}", exc_info=True)
             yield SSEEvent(event_type=SSEEventType.ERROR, content=GENERIC_ERROR_MESSAGE).to_sse()
+        finally:
+            if heartbeat:
+                heartbeat.cancel()
+                with suppress(asyncio.CancelledError):
+                    await heartbeat
+            if guest_repo:
+                guest_repo.finish_turn(request.state.guest_session, turn_id)
 
     return StreamingResponse(
         event_stream(),

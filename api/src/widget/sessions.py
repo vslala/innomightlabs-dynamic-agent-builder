@@ -131,8 +131,72 @@ def redeem_login_code(code: str, agent_id: str) -> Optional[VisitorSession]:
     return _take_for_agent(_LOGIN_CODE, code, agent_id)
 
 
-def rotate_refresh_token(refresh_token: str, agent_id: str) -> Optional[VisitorSession]:
+def rotate_refresh_token(refresh_token: str, agent_id: str, key_id: str | None = None) -> Optional[VisitorSession]:
+    repository = WidgetSessionRepository()
+    old_hash = _hash(refresh_token)
+    item = repository.table.get_item(
+        Key={"pk": f"{_REFRESH}#{old_hash}", "sk": f"{_REFRESH}#Metadata"}, ConsistentRead=True,
+    ).get("Item")
+    if item and item.get("visitor", {}).get("kind") == "guest":
+        from src.widget.guests import GuestSessionEnded, GuestSessionRepository
+
+        visitor = WidgetVisitor.model_validate(item["visitor"])
+        try:
+            guest = GuestSessionRepository().require_active(visitor.visitor_id, agent_id, key_id or "")
+        except GuestSessionEnded:
+            return None
+        if guest.refresh_hash != old_hash or int(item["expires_at"]) <= time.time():
+            return None
+        token = secrets.token_urlsafe(32)
+        now = datetime.now(timezone.utc)
+        try:
+            # All three writes commit together: neither a replay nor a closer can leave an orphan token.
+            repository.table.meta.client.transact_write_items(TransactItems=[
+                {"Delete": {"TableName": repository.table.name,
+                    "Key": {"pk": f"{_REFRESH}#{old_hash}", "sk": f"{_REFRESH}#Metadata"},
+                    "ConditionExpression": "attribute_exists(pk)"}},
+                {"Put": {"TableName": repository.table.name, "Item": {
+                    "pk": f"{_REFRESH}#{_hash(token)}", "sk": f"{_REFRESH}#Metadata",
+                    "agent_id": agent_id, "visitor": visitor.model_dump(mode="json"),
+                    "expires_at": int(guest.max_ends_at.timestamp()), "ttl": int(guest.max_ends_at.timestamp())}}},
+                {"Update": {"TableName": repository.table.name,
+                    "Key": {"pk": guest.pk, "sk": guest.sk},
+                    "UpdateExpression": "SET refresh_hash = :new",
+                    "ConditionExpression": "attribute_exists(pk) AND #status = :active AND session_ends_at > :now AND refresh_hash = :old",
+                    "ExpressionAttributeNames": {"#status": "status"},
+                    "ExpressionAttributeValues": {":active": "active", ":now": now.isoformat(),
+                        ":old": old_hash, ":new": _hash(token)}}},
+            ])
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "TransactionCanceledException":
+                return None
+            raise
+        return VisitorSession(agent_id=agent_id, visitor=visitor, refresh_token=token)
     return _take_for_agent(_REFRESH, refresh_token, agent_id)
+
+
+def create_guest_session(*, agent_id: str, key_id: str, email: str,
+                         session_timeout_minutes: int, origin: str, ip: str) -> VisitorSession:
+    from src.widget.guests import GuestSessionRepository
+    from src.widget.models import WidgetVisitorKind
+
+    token = secrets.token_urlsafe(32)
+    guests = GuestSessionRepository()
+    guest = guests.create(agent_id=agent_id, key_id=key_id, email=email,
+        session_timeout_minutes=session_timeout_minutes, origin=origin, ip=ip, refresh_hash=_hash(token))
+    visitor = WidgetVisitor(visitor_id=guest.visitor_id, email=email, kind=WidgetVisitorKind.GUEST)
+    # Conditional registry update and token insertion also protect an unusually delayed start from cleanup.
+    guests.table.meta.client.transact_write_items(TransactItems=[
+        {"ConditionCheck": {"TableName": guests.table.name, "Key": {"pk": guest.pk, "sk": guest.sk},
+            "ConditionExpression": "attribute_exists(pk) AND #status = :active AND session_ends_at > :now",
+            "ExpressionAttributeNames": {"#status": "status"},
+            "ExpressionAttributeValues": {":active": "active", ":now": datetime.now(timezone.utc).isoformat()}}},
+        {"Put": {"TableName": guests.table.name, "Item": {
+            "pk": f"{_REFRESH}#{_hash(token)}", "sk": f"{_REFRESH}#Metadata", "agent_id": agent_id,
+            "visitor": visitor.model_dump(mode="json"), "expires_at": int(guest.max_ends_at.timestamp()),
+            "ttl": int(guest.max_ends_at.timestamp())}}},
+    ])
+    return VisitorSession(agent_id=agent_id, visitor=visitor, refresh_token=token)
 
 
 def revoke_refresh_token(refresh_token: str) -> None:

@@ -2,10 +2,13 @@
 from importlib import import_module
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import TYPE_CHECKING, Dict
 from enum import Enum
 
 from src.config import settings
+
+if TYPE_CHECKING:
+    from src.widget.transcript import GuestTranscriptEmail
 
 log = logging.getLogger(__name__)
 Client = import_module("mailjet_rest").Client
@@ -103,6 +106,27 @@ class EmailService:
 
         except Exception as e:
             log.error(f"Error sending email to {to_email}: {e}", exc_info=True)
+            return False
+
+    async def send_guest_transcript_email(self, *, to_email: str, email: "GuestTranscriptEmail") -> bool:
+        """Send a guest's transcript in the house layout, with a plain-text part.
+
+        True only when Mailjet accepted every message: a 200 can still carry a per-message error.
+        """
+        try:
+            result = self.client.send.create(data={"Messages": [{
+                "From": {"Email": self.from_email, "Name": f"{email.agent_name} via InnomightLabs".replace("\n", " ")},
+                "To": [{"Email": to_email}],
+                "Subject": email.subject,
+                "TextPart": email.text(),
+                "HTMLPart": email.html(),
+            }]})
+            messages = result.json().get("Messages", [])
+            return result.status_code == 200 and bool(messages) and all(
+                message.get("Status") == "success" for message in messages
+            )
+        except Exception:
+            log.exception("Guest transcript delivery failed")
             return False
 
     async def send_welcome_email(self, to_email: str, user_name: str) -> bool:

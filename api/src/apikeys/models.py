@@ -41,6 +41,7 @@ class CreateApiKeyRequest(BaseModel):
         default_factory=list,
         description="List of allowed origins (e.g., ['https://example.com']). Empty = allow all."
     )
+    allow_guests: bool = Field(False, description="Let visitors chat without signing in, by giving their email")
 
 
 class UpdateApiKeyRequest(BaseModel):
@@ -48,6 +49,7 @@ class UpdateApiKeyRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     allowed_origins: Optional[list[str]] = None
     is_active: Optional[bool] = None
+    allow_guests: Optional[bool] = None
 
 
 class ApiKeyResponse(BaseModel):
@@ -63,6 +65,7 @@ class ApiKeyResponse(BaseModel):
     last_used_at: Optional[datetime] = None
     request_count: int = 0
     has_a2a_secret: bool = False
+    allow_guests: bool = False
 
 
 class A2ASecretResponse(BaseModel):
@@ -92,6 +95,8 @@ class AgentApiKey(BaseModel):
     request_count: int = 0
     #: SHA-256 of the key's A2A client secret; the secret itself is shown once and never stored.
     a2a_secret_hash: Optional[str] = None
+    #: Visitors may start an email-only guest session. See docs/LLD-widget-guest-sessions.md.
+    allow_guests: bool = False
 
     @property
     def pk(self) -> str:
@@ -131,6 +136,7 @@ class AgentApiKey(BaseModel):
             "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
             "request_count": self.request_count,
             "a2a_secret_hash": self.a2a_secret_hash,
+            "allow_guests": self.allow_guests,
             "entity_type": "AgentApiKey",
         }
 
@@ -149,6 +155,7 @@ class AgentApiKey(BaseModel):
             last_used_at=datetime.fromisoformat(item["last_used_at"]) if item.get("last_used_at") else None,
             request_count=item.get("request_count", 0),
             a2a_secret_hash=item.get("a2a_secret_hash"),
+            allow_guests=bool(item.get("allow_guests", False)),
         )
 
     def to_response(self) -> ApiKeyResponse:
@@ -165,6 +172,7 @@ class AgentApiKey(BaseModel):
             last_used_at=self.last_used_at,
             request_count=self.request_count,
             has_a2a_secret=bool(self.a2a_secret_hash),
+            allow_guests=self.allow_guests,
         )
 
     def is_origin_allowed(self, origin: Optional[str]) -> bool:

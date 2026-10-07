@@ -504,6 +504,9 @@ class MCPSharingUpdateRequest(BaseModel):
     def only_outsiders(cls, value: list[ActorKind]) -> list[ActorKind]:
         if ActorKind.OWNER in value:
             raise ValueError("The owner always has every connector; share with visitor, a2a or api")
+        if ActorKind.GUEST in value:
+            # Guests are anonymous email-only visitors; v1 never lets them act through the owner's accounts.
+            raise ValueError("Connectors can't be shared with guest visitors")
         return value
 
 

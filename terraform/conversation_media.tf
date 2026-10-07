@@ -34,6 +34,26 @@ resource "aws_s3_bucket_versioning" "conversation_media" {
   }
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "guest_session_archives" {
+  bucket = aws_s3_bucket.conversation_media.id
+
+  rule {
+    id     = "expire-guest-session-archives"
+    status = "Enabled"
+
+    filter {
+      tag {
+        key   = "retention"
+        value = "guest-session"
+      }
+    }
+
+    expiration {
+      days = var.guest_archive_retention_days
+    }
+  }
+}
+
 resource "aws_iam_role_policy" "lambda_conversation_media" {
   name = "${var.project_name}-lambda-conversation-media"
   role = aws_iam_role.lambda.id
@@ -56,6 +76,7 @@ resource "aws_iam_role_policy" "lambda_conversation_media" {
         Action = [
           "s3:GetObject",
           "s3:PutObject",
+          "s3:PutObjectTagging",
           "s3:DeleteObject"
         ]
         Resource = "${aws_s3_bucket.conversation_media.arn}/agents/*"

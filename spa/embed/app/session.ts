@@ -6,6 +6,8 @@
 
 export interface Visitor {
   visitorId: string;
+  /** Missing on sessions saved before guest access was introduced. */
+  kind?: "google" | "guest";
   email: string;
   name?: string | null;
   picture?: string | null;
@@ -73,6 +75,22 @@ export function loadSession(publicKey: string): Session | null {
 
 export function saveSession(publicKey: string, session: Session): void {
   storage.setItem(sessionKey(publicKey), JSON.stringify(session));
+}
+
+export function rememberGuestEmail(publicKey: string, email: string): void {
+  storage.setItem(`innomight-embed:${publicKey}:guest-email`, email);
+}
+
+export function loadGuestEmail(publicKey: string): string {
+  return storage.getItem(`innomight-embed:${publicKey}:guest-email`) ?? "";
+}
+
+/** Return the ended guest's email; legacy Google sessions return to sign-in. */
+export function endLocalSession(publicKey: string, session: Session | null): string | null {
+  const email = session?.visitor.kind === "guest" ? session.visitor.email : null;
+  if (email) rememberGuestEmail(publicKey, email);
+  clearSession(publicKey);
+  return email;
 }
 
 export function clearSession(publicKey: string): void {

@@ -16,6 +16,20 @@ REGION = os.getenv("AWS_REGION_NAME", "us-east-1")
 TABLE_NAME = "dynamic-agent-builder-local"
 
 
+def enable_ttl(dynamodb) -> None:
+    """Also repair pre-existing local tables; TTL is not part of CreateTable."""
+    description = dynamodb.describe_time_to_live(TableName=TABLE_NAME)["TimeToLiveDescription"]
+    if description.get("TimeToLiveStatus") in {"ENABLED", "ENABLING"}:
+        if description.get("AttributeName") != "ttl":
+            raise RuntimeError("Local table TTL uses a different attribute; expected ttl")
+        return
+    if description.get("TimeToLiveStatus") == "DISABLING":
+        raise RuntimeError("Local table TTL is still disabling; retry setup later")
+    dynamodb.update_time_to_live(
+        TableName=TABLE_NAME, TimeToLiveSpecification={"Enabled": True, "AttributeName": "ttl"},
+    )
+
+
 def create_table():
     """Create the DynamoDB table with the same schema as production."""
     dynamodb = boto3.client(
@@ -31,6 +45,7 @@ def create_table():
         # Check if table already exists
         dynamodb.describe_table(TableName=TABLE_NAME)
         print(f"✓ Table '{TABLE_NAME}' already exists")
+        enable_ttl(dynamodb)
         return
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code")
@@ -103,6 +118,7 @@ def create_table():
     waiter = dynamodb.get_waiter("table_exists")
     waiter.wait(TableName=TABLE_NAME)
 
+    enable_ttl(dynamodb)
     print(f"✓ Table '{TABLE_NAME}' created successfully")
 
 

@@ -625,6 +625,47 @@ button:disabled {
   color: var(--text-muted);
 }
 
+/* Guest entry */
+.ie-guest-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 280px;
+  text-align: left;
+}
+.ie-guest-form input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+.ie-guest-status { font-size: 12px; color: var(--text-secondary); }
+.ie-guest-status:empty { display: none; }
+.ie-guest-status p { animation: ie-rise 180ms ease; }
+.ie-email-checking { position: relative; }
+.ie-email-checking::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--ie-accent);
+  animation: ie-pulse 1s ease infinite;
+}
+.ie-email-rejected { animation: ie-nudge 200ms ease; }
+.ie-guest-accepted { animation: ie-entry-fade 400ms ease forwards; }
+@keyframes ie-nudge {
+  25%, 75% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+}
+@keyframes ie-entry-fade {
+  60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* History */
 
 .ie-history-panel {

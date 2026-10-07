@@ -1,6 +1,6 @@
 """Email helper functions to reduce code duplication."""
 import logging
-from typing import Optional, Dict
+from typing import TYPE_CHECKING, Optional, Dict
 
 from src.config import settings
 from src.users import UserRepository
@@ -10,6 +10,10 @@ from .pending_email import (
     create_pending_email,
     EmailType,
 )
+
+
+if TYPE_CHECKING:
+    from src.widget.transcript import GuestTranscriptEmail
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +43,19 @@ def _handle_email_failure(
         template_variables=template_variables,
     )
     pending_email_repo.create(pending_email)
+
+
+async def send_guest_transcript_email_safe(*, to_email: str, email: "GuestTranscriptEmail") -> bool:
+    """One attempt only: the guest closer owns durable, bounded retries.
+
+    Do not enqueue PendingEmail rows containing guest data outside its lifecycle.
+    Mailjet acceptance and our checkpoint are not atomic; a crash can duplicate mail.
+    """
+    try:
+        return await EmailService().send_guest_transcript_email(to_email=to_email, email=email)
+    except Exception:
+        log.exception("Guest transcript attempt failed")
+        return False
 
 
 async def send_welcome_email_safe(user_email: str) -> None:

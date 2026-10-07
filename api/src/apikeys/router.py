@@ -100,6 +100,7 @@ async def create_api_key(
         agent_id=agent_id,
         name=body.name,
         allowed_origins=body.allowed_origins,
+        allow_guests=body.allow_guests,
         created_by=user_email,
     )
 
@@ -197,6 +198,8 @@ async def update_api_key(
         api_key.allowed_origins = body.allowed_origins
     if body.is_active is not None:
         api_key.is_active = body.is_active
+    if body.allow_guests is not None:
+        api_key.allow_guests = body.allow_guests
 
     saved = api_key_repo.save(api_key)
     log.info(f"Updated API key {key_id} for agent {agent_id}")

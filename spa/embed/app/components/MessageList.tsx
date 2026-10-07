@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { buildChatStreamRenderPlan } from "../../../packages/chat-stream-renderer/src";
 import { ArrowDown, Sparkles, Wrench } from "lucide-react";
 
@@ -10,6 +10,7 @@ import { Markdown } from "./Markdown";
 interface MessageListProps {
   agentName: string;
   greeting: string;
+  guestGreeting?: boolean;
   messages: ChatMessage[];
   streaming: string;
   activeTool: string | null;
@@ -27,6 +28,7 @@ const FOLLOW_THRESHOLD = 48;
 export function MessageList({
   agentName,
   greeting,
+  guestGreeting = false,
   messages,
   streaming,
   activeTool,
@@ -37,6 +39,12 @@ export function MessageList({
   onSubmitForm,
 }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const [greetingReady, setGreetingReady] = useState(!guestGreeting);
+  useEffect(() => {
+    if (!guestGreeting) return;
+    const timer = setTimeout(() => setGreetingReady(true), 400);
+    return () => clearTimeout(timer);
+  }, [guestGreeting]);
   // Follow new text only while the visitor is at the bottom; scrolling up stops it. Only the list
   // itself is scrolled (never scrollIntoView), so the host page around the iframe never moves.
   const followingRef = useRef(true);
@@ -62,12 +70,16 @@ export function MessageList({
 
   useLayoutEffect(() => {
     if (followingRef.current) scrollToBottom();
-  }, [messages, streaming, activeTool, pendingForm, isLoading]);
+  }, [messages, streaming, activeTool, pendingForm, isLoading, greetingReady]);
 
-  if (isLoading) {
+  // A short "typing" pause before a fresh guest chat's greeting; never while there are messages to show.
+  const greetingPending = guestGreeting && !greetingReady;
+  if (isLoading || greetingPending) {
     return (
       <div className="ie-messages ie-messages-loading" aria-busy="true">
-        <span className="ie-spinner" />
+        {greetingPending ? <div className="ie-typing" role="status" aria-label={`${agentName} is typing`}>
+          <span /><span /><span />
+        </div> : <span className="ie-spinner" />}
       </div>
     );
   }

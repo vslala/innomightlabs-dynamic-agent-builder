@@ -13,6 +13,8 @@ import { WidgetSnippets } from "./WidgetSnippets";
 import { useAgentDetailContext } from "./types";
 import styles from "./AgentApiKeysPage.module.css";
 
+const guestHelp = "Visitors can chat without signing in by giving their email. When their session ends (this agent's session timeout), the chat is archived, a transcript email is attempted, and it's removed from the site. Guests can't use this agent's skills or shared tools. Applies to the iframe embed only; classic widget.js still requires Google sign-in.";
+
 export function AgentApiKeysPage() {
   const { agent } = useAgentDetailContext();
   const [apiKeys, setApiKeys] = useState<ApiKeyResponse[]>([]);
@@ -20,6 +22,9 @@ export function AgentApiKeysPage() {
   const [isCreateKeyDialogOpen, setIsCreateKeyDialogOpen] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyOrigins, setNewKeyOrigins] = useState("");
+  const [newKeyAllowGuests, setNewKeyAllowGuests] = useState(false);
+  const [updatingGuestKeyId, setUpdatingGuestKeyId] = useState<string | null>(null);
+  const [guestUpdateError, setGuestUpdateError] = useState<{ keyId: string; message: string } | null>(null);
   const [isCreatingKey, setIsCreatingKey] = useState(false);
   const [createKeyError, setCreateKeyError] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
@@ -68,12 +73,14 @@ export function AgentApiKeysPage() {
       const newKey = await apiKeyService.createApiKey(agent.agent_id, {
         name: newKeyName.trim(),
         allowed_origins: origins,
+        allow_guests: newKeyAllowGuests,
       });
 
       setApiKeys((prev) => [newKey, ...prev]);
       setIsCreateKeyDialogOpen(false);
       setNewKeyName("");
       setNewKeyOrigins("");
+      setNewKeyAllowGuests(false);
       setVisibleKeyId(newKey.key_id);
     } catch (err: unknown) {
       setCreateKeyError(err instanceof Error ? err.message : "Failed to create API key");
@@ -109,6 +116,20 @@ export function AgentApiKeysPage() {
       console.error("Error issuing A2A secret:", err);
     } finally {
       setIssuingA2AKeyId(null);
+    }
+  };
+
+  const handleGuestToggle = async (key: ApiKeyResponse) => {
+    if (updatingGuestKeyId) return;
+    setUpdatingGuestKeyId(key.key_id);
+    setGuestUpdateError(null);
+    try {
+      const updated = await apiKeyService.updateApiKey(agent.agent_id, key.key_id, { allow_guests: !key.allow_guests });
+      setApiKeys((prev) => prev.map((item) => item.key_id === key.key_id ? updated : item));
+    } catch (err) {
+      setGuestUpdateError({ keyId: key.key_id, message: err instanceof Error ? err.message : "Couldn't update guest access. Please try again." });
+    } finally {
+      setUpdatingGuestKeyId(null);
     }
   };
 
@@ -207,6 +228,16 @@ export function AgentApiKeysPage() {
                             {key.has_a2a_secret ? "Rotate" : "Generate"}
                           </Button>
                         </div>
+                        <div style={{ marginTop: "0.5rem", fontSize: "0.75rem" }}>
+                          <label>
+                            <input type="checkbox" checked={key.allow_guests === true} disabled={updatingGuestKeyId !== null}
+                              aria-describedby={`guest-help-${key.key_id}`} onChange={() => void handleGuestToggle(key)} />
+                            {" "}Allow guest visitors
+                          </label>
+                          <p id={`guest-help-${key.key_id}`} style={{ color: "var(--text-muted)" }}>{guestHelp}</p>
+                          {updatingGuestKeyId === key.key_id && <p role="status">Saving guest access…</p>}
+                          {guestUpdateError?.keyId === key.key_id && <p role="alert">{guestUpdateError.message}</p>}
+                        </div>
                         {revealedA2ASecret?.keyId === key.key_id && (
                           <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
                             <p style={{ marginBottom: "0.25rem" }}>
@@ -261,6 +292,11 @@ export function AgentApiKeysPage() {
               <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
                 One URL per line. Leave empty to allow all origins.
               </p>
+            </div>
+            <div>
+              <label><input type="checkbox" checked={newKeyAllowGuests} disabled={isCreatingKey}
+                aria-describedby="new-key-guest-help" onChange={(event) => setNewKeyAllowGuests(event.target.checked)} /> Allow guest visitors</label>
+              <p id="new-key-guest-help" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{guestHelp}</p>
             </div>
           </div>
           <DialogFooter>
