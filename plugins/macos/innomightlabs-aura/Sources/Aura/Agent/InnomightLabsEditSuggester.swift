@@ -2,9 +2,10 @@ import Foundation
 
 /// Talks to the InnomightLabs agent over the Agent2Agent protocol.
 ///
-/// A2A rather than the widget endpoints for two reasons. It authenticates with the agent API
-/// key alone (`Authorization: Bearer pk_live_…`), where the widget conversation endpoints want
-/// a visitor token obtained through a browser redirect. And `contextId` is a first-class
+/// A2A rather than the widget endpoints for two reasons. It authenticates with the key's A2A
+/// client secret alone (`Authorization: Bearer a2a_live_…`), where the widget conversation
+/// endpoints want a visitor token obtained through a browser redirect. Not the public
+/// `pk_live_…` key: the server refuses it for A2A because that one is embedded in web pages. And `contextId` is a first-class
 /// conversation key, so one recording maps to one durable conversation — the widget path
 /// derives its conversation from WordPress-shaped `site_url`/`post_id` fields, which works but
 /// couples Aura to a contract that has nothing to do with it.
@@ -32,12 +33,11 @@ struct InnomightLabsEditSuggester: EditSuggesting {
             characterBudget: Self.maximumMessageCharacters
         )
 
-        var request = URLRequest(url: configuration.messageEndpoint)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 180
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try Self.rpcBody(prompt: prompt, contextID: context.conversationKey)
+        let request = try Self.request(
+            to: configuration.messageEndpoint,
+            secret: configuration.a2aSecret,
+            body: Self.rpcBody(prompt: prompt, contextID: context.conversationKey)
+        )
 
         let data: Data
         let response: URLResponse
@@ -52,6 +52,17 @@ struct InnomightLabsEditSuggester: EditSuggesting {
         }
 
         return EditSuggestionParser.parse(try Self.reply(in: data))
+    }
+
+    /// A JSON-RPC POST to an agent's A2A endpoint, authenticated with the A2A client secret.
+    static func request(to endpoint: URL, secret: String, body: Data, timeout: TimeInterval = 180) -> URLRequest {
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        request.httpBody = body
+        return request
     }
 
     static func rpcBody(prompt: String, contextID: String) throws -> Data {

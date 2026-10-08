@@ -108,10 +108,10 @@ the expensive one.
 - The Keychain item in `AgentSettings` moves into the app's own access group. Expected to work,
   worth testing rather than assuming.
 
-**App Review has to be able to exercise the AI panel.** It needs a `pk_live_…` key that a
-reviewer does not have. The panel already degrades gracefully when unconfigured
-(`AgentSettings.isConfigured` gates it), so the app is reviewable as-is, but supply a test key
-in App Store Connect's review notes or the feature will be treated as non-functional.
+**App Review has to be able to exercise the AI panel.** It needs a `pk_live_…` key and its
+`a2a_live_…` A2A client secret, which a reviewer does not have. The panel already degrades gracefully when unconfigured
+(`AgentSettings.isConfigured` gates it), so the app is reviewable as-is, but supply a test key and
+secret in App Store Connect's review notes or the feature will be treated as non-functional.
 
 **WhisperKit downloads a model on first use.** Guideline 2.5.2 forbids downloading executable
 code; a CoreML model is data, not code, so this is allowed. Reviewers occasionally ask — say so

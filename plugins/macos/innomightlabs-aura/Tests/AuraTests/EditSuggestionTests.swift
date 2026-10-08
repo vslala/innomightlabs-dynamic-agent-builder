@@ -279,6 +279,17 @@ final class EditSuggestionTests: XCTestCase {
         XCTAssertEqual(parts[0]["text"] as? String, "do the thing")
     }
 
+    func testRequestAuthenticatesWithTheA2ASecret() throws {
+        // The server only accepts the A2A client secret here; the public key gets a 401.
+        let endpoint = try XCTUnwrap(URL(string: "https://api.example.com/a2a/agents/agent-1"))
+        let request = InnomightLabsEditSuggester.request(to: endpoint, secret: "a2a_live_abc", body: Data("{}".utf8))
+
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url, endpoint)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer a2a_live_abc")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+    }
+
     // MARK: - Summaries shown in the suggestion list
 
     func testEveryOperationHasAReadableSummary() {

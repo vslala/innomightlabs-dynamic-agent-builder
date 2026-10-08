@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Connection details for the InnomightLabs agent. The API key is stored in the Keychain.
+/// Connection details for the InnomightLabs agent. Both credentials are stored in the Keychain.
 struct AgentSettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var baseURL = AgentSettings.baseURL
     @State private var agentID = AgentSettings.agentID ?? ""
     @State private var apiKey = AgentSettings.apiKey ?? ""
+    @State private var a2aSecret = AgentSettings.a2aSecret ?? ""
     @State private var isTesting = false
     @State private var outcome: AgentConnectionCheck.Outcome?
 
@@ -18,13 +19,18 @@ struct AgentSettingsView: View {
             Form {
                 TextField("API base URL", text: $baseURL)
                 SecureField("Agent API key (pk_live_…)", text: $apiKey)
+                SecureField("A2A client secret (a2a_live_…)", text: $a2aSecret)
                 TextField("Agent ID (discovered from the key)", text: $agentID)
             }
             .textFieldStyle(.roundedBorder)
 
             HStack(spacing: 8) {
                 Button("Test Connection") { test() }
-                    .disabled(isTesting || apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(
+                        isTesting
+                            || apiKey.trimmingCharacters(in: .whitespaces).isEmpty
+                            || a2aSecret.trimmingCharacters(in: .whitespaces).isEmpty
+                    )
 
                 if isTesting {
                     ProgressView().controlSize(.small)
@@ -40,9 +46,10 @@ struct AgentSettingsView: View {
             }
 
             Text("""
-            Create an API key for your agent in the InnomightLabs dashboard and enable \
-            Agent2Agent sharing on it. Testing the connection fills in the agent ID for you \
-            and confirms sharing is on. The key is stored in your Keychain, never in a file.
+            Create an API key for your agent in the InnomightLabs dashboard, enable \
+            Agent2Agent sharing, and generate the key's A2A client secret (it's shown once). \
+            Testing the connection fills in the agent ID for you and confirms the secret \
+            works. Both are stored in your Keychain, never in a file.
             """)
             .font(.caption2)
             .foregroundStyle(.secondary)
@@ -64,10 +71,11 @@ struct AgentSettingsView: View {
         outcome = nil
         let base = baseURL.trimmingCharacters(in: .whitespaces)
         let key = apiKey.trimmingCharacters(in: .whitespaces)
+        let secret = a2aSecret.trimmingCharacters(in: .whitespaces)
         let id = agentID.trimmingCharacters(in: .whitespaces)
 
         Task {
-            let result = await AgentConnectionCheck.run(baseURL: base, agentID: id, apiKey: key)
+            let result = await AgentConnectionCheck.run(baseURL: base, agentID: id, apiKey: key, a2aSecret: secret)
             isTesting = false
             outcome = result
             if let discovered = result.agentID, agentID.isEmpty {
@@ -80,6 +88,7 @@ struct AgentSettingsView: View {
         AgentSettings.baseURL = baseURL.trimmingCharacters(in: .whitespaces)
         AgentSettings.agentID = agentID.trimmingCharacters(in: .whitespaces)
         AgentSettings.apiKey = apiKey.trimmingCharacters(in: .whitespaces)
+        AgentSettings.a2aSecret = a2aSecret.trimmingCharacters(in: .whitespaces)
         dismiss()
     }
 }

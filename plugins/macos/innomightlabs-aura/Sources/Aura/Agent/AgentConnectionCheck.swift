@@ -2,11 +2,12 @@ import Foundation
 
 /// Verifies the agent settings actually work, and discovers what it can.
 ///
-/// Two steps because they answer different questions. `/widget/config` needs only the API key,
-/// so it proves the key is valid *and* returns the agent id — meaning the user can paste a key
-/// and have the rest filled in. The A2A card then confirms Agent2Agent is enabled on that
-/// agent, which is the part that actually has to be true for editing to work, and is invisible
-/// from the key alone.
+/// Three steps because they answer different questions. `/widget/config` needs only the public
+/// key, so it proves the key is valid *and* returns the agent id — meaning the user can paste a
+/// key and have the id filled in. The A2A card then confirms Agent2Agent is enabled on that
+/// agent, which is invisible from the key alone. Last, one authenticated A2A call proves the
+/// client secret works: the first two pass without it, so skipping this would report a
+/// connection that fails on the first edit.
 enum AgentConnectionCheck {
     struct Outcome: Equatable {
         let agentName: String?
@@ -16,7 +17,13 @@ enum AgentConnectionCheck {
         let isUsable: Bool
     }
 
-    static func run(baseURL: String, agentID: String?, apiKey: String, session: URLSession = .shared) async -> Outcome {
+    static func run(
+        baseURL: String,
+        agentID: String?,
+        apiKey: String,
+        a2aSecret: String,
+        session: URLSession = .shared
+    ) async -> Outcome {
         guard let base = URL(string: baseURL), base.scheme != nil else {
             return Outcome(agentName: nil, agentID: nil, isA2AEnabled: false,
                            message: "That base URL isn't valid.", isUsable: false)
@@ -24,6 +31,19 @@ enum AgentConnectionCheck {
         guard !apiKey.isEmpty else {
             return Outcome(agentName: nil, agentID: nil, isA2AEnabled: false,
                            message: "Paste your agent API key.", isUsable: false)
+        }
+        guard !a2aSecret.isEmpty else {
+            return Outcome(agentName: nil, agentID: nil, isA2AEnabled: false,
+                           message: "Paste the key's A2A client secret.", isUsable: false)
+        }
+        // The dashboard's "Secret keys" (`sk_live_…`) are for the /v1 Public API and look like
+        // the right thing to paste here, but A2A rejects them.
+        guard !a2aSecret.hasPrefix("sk_live_") else {
+            return Outcome(
+                agentName: nil, agentID: nil, isA2AEnabled: false,
+                message: "That's a Public API secret key (sk_live_…). Aura needs the A2A client secret (a2a_live_…) generated on the API key.",
+                isUsable: false
+            )
         }
 
         let discovered = await discover(base: base, apiKey: apiKey, session: session)
@@ -39,6 +59,16 @@ enum AgentConnectionCheck {
                 agentID: resolvedID,
                 isA2AEnabled: false,
                 message: "Key works, but Agent2Agent sharing is off for this agent — enable it in the dashboard.",
+                isUsable: false
+            )
+        }
+
+        guard await secretIsAccepted(base: base, agentID: resolvedID, secret: a2aSecret, session: session) else {
+            return Outcome(
+                agentName: card,
+                agentID: resolvedID,
+                isA2AEnabled: true,
+                message: "The A2A client secret was rejected. Generate or rotate it on the key in the dashboard.",
                 isUsable: false
             )
         }
@@ -78,5 +108,25 @@ enum AgentConnectionCheck {
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
         return (object["name"] as? String) ?? agentID
+    }
+
+    /// `ListTasks` is the cheapest authenticated call: it reads, starts nothing, and a wrong
+    /// secret comes back as HTTP 401.
+    private static func secretIsAccepted(base: URL, agentID: String, secret: String, session: URLSession) async -> Bool {
+        let payload: [String: Any] = ["jsonrpc": "2.0", "id": UUID().uuidString, "method": "ListTasks", "params": [:]]
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return false }
+        let request = InnomightLabsEditSuggester.request(
+            to: base.appendingPathComponent("a2a/agents/\(agentID)"),
+            secret: secret,
+            body: body,
+            timeout: 30
+        )
+
+        guard
+            let (data, response) = try? await session.data(for: request),
+            let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        return object["error"] == nil
     }
 }

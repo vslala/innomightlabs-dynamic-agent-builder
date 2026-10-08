@@ -423,9 +423,14 @@ transcribes it with the same on-device WhisperKit pipeline, so dictation needs n
 ### Transport
 
 **Agent2Agent JSON-RPC**, verified against the live service. `POST /a2a/agents/{id}` with
-`Authorization: Bearer pk_live_…`; the key alone is sufficient, where the widget conversation
+`Authorization: Bearer a2a_live_…`, the API key's A2A client secret (generated on the key in the
+dashboard and shown once). The secret alone is sufficient, where the widget conversation
 endpoints additionally want a visitor token obtained through a browser redirect — a poor fit
-for a desktop app. Requires Agent2Agent sharing enabled on the agent.
+for a desktop app. The public `pk_live_…` key is refused here: it is embedded in web pages, so
+since the auth rewrite (`9931e18`) the server accepts only the secret or an OAuth token minted
+from it. Aura sends the secret directly rather than doing the OAuth client-credentials exchange;
+the user pastes the same two values either way, and a Keychain-held secret gains little from a
+short-lived token. Requires Agent2Agent sharing enabled on the agent.
 
 Three things about this endpoint are not what its own spec would suggest, and each was found
 by trying it:
@@ -486,14 +491,18 @@ the microphone's own clock would make every proposed cut land slightly wrong.
 
 ### Configuration
 
-The key lives in the **Keychain**; base URL and agent id in `UserDefaults`. A GUI app launched
-from Finder inherits no shell environment, so environment variables (`AURA_AGENT_API_KEY`,
-`AURA_AGENT_ID`, `AURA_AGENT_BASE_URL`) are honoured only as an override for scripts and tests.
+Two credentials live in the **Keychain**: the public key (`pk_live_…`), used only to discover
+the agent id, and the A2A client secret (`a2a_live_…`), used for every A2A call. Base URL and
+agent id go in `UserDefaults`. A GUI app launched from Finder inherits no shell environment, so
+environment variables (`AURA_AGENT_API_KEY`, `AURA_AGENT_A2A_SECRET`, `AURA_AGENT_ID`,
+`AURA_AGENT_BASE_URL`) are honoured only as an override for scripts and tests.
 
-`AgentConnectionCheck` powers "Test Connection" in the settings sheet and answers two different
-questions: `/widget/config` needs only the key, so it both proves the key valid and returns the
-agent id (the user pastes a key and the id fills itself in); the A2A card then confirms sharing
-is actually enabled, which the key alone cannot tell you.
+`AgentConnectionCheck` powers "Test Connection" in the settings sheet and answers three different
+questions: `/widget/config` needs only the public key, so it both proves the key valid and returns
+the agent id (the user pastes a key and the id fills itself in); the A2A card then confirms
+sharing is actually enabled, which the key alone cannot tell you; and a `ListTasks` call with the
+secret proves the credential A2A actually checks. The first two pass without the secret, so a
+check that stopped there would report "Connected" for a setup whose first edit gets a 401.
 
 Two pieces carry the weight and are unit-tested accordingly. `EditSuggestionPrompt` states the
 operation vocabulary exactly and includes the transcript **shifted into recording time** by
