@@ -5,12 +5,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 API_DIR="$PROJECT_ROOT/api"
 CLI_RUNNER_DIR="$PROJECT_ROOT/infra-cli-runner"
+OLLAMA_DIR="$PROJECT_ROOT/ollama-embeddings"
 
 RAILWAY_PROJECT_ID="${RAILWAY_PROJECT_ID:-f71e184d-415c-40ce-886e-b8e293a568ca}"
 RAILWAY_SERVICE="${RAILWAY_SERVICE:-InnomightLabs API}"
 RAILWAY_CLI_RUNNER_SERVICE="${RAILWAY_CLI_RUNNER_SERVICE:-infra-cli-runner}"
 RAILWAY_ENVIRONMENT="${RAILWAY_ENVIRONMENT:-production}"
 DEPLOY_CLI_RUNNER="${DEPLOY_CLI_RUNNER:-true}"
+RAILWAY_OLLAMA_SERVICE="${RAILWAY_OLLAMA_SERVICE:-ollama-embeddings}"
 
 echo "=========================================="
 echo "DEPLOYING API TO RAILWAY PRODUCTION"
@@ -149,6 +151,16 @@ cli_runner_max_timeout_seconds="$(get_prod_var_default 'CLI_RUNNER_MAX_TIMEOUT_S
 cli_runner_internal_port="$(get_prod_var_default 'CLI_RUNNER_PORT' '8080')"
 default_cli_runner_base_url="http://$(railway_ref "$RAILWAY_CLI_RUNNER_SERVICE" 'RAILWAY_PRIVATE_DOMAIN'):$cli_runner_internal_port"
 cli_runner_base_url="$(get_prod_var_default 'CLI_RUNNER_BASE_URL' "$default_cli_runner_base_url")"
+# Bedrock model invocation is blocked for the AWS account, so prod embeds through the private Ollama
+# service. Only PROD_* overrides apply: the shared .envrc values describe the local setup.
+embedding_backend="$(get_prod_var_default 'EMBEDDING_BACKEND' 'ollama')"
+ollama_embedding_model="$(get_prod_var_default 'OLLAMA_EMBEDDING_MODEL' 'qwen3-embedding:0.6b')"
+default_ollama_base_url="http://$(railway_ref "$RAILWAY_OLLAMA_SERVICE" 'RAILWAY_PRIVATE_DOMAIN'):11434"
+ollama_base_url="$(get_prod_var_default 'OLLAMA_BASE_URL' "$default_ollama_base_url")"
+deploy_ollama="false"
+if [[ "$embedding_backend" == "ollama" ]]; then
+  deploy_ollama="$(get_prod_var_default 'DEPLOY_OLLAMA' 'true')"
+fi
 
 if [[ -z "$api_base_url" && -n "$api_domain" ]]; then
   api_base_url="https://$api_domain"
@@ -166,6 +178,9 @@ echo "Checking Railway project/services..."
 require_railway_service "$RAILWAY_SERVICE"
 if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
   ensure_railway_service "$RAILWAY_CLI_RUNNER_SERVICE"
+fi
+if [[ "$deploy_ollama" == "true" ]]; then
+  ensure_railway_service "$RAILWAY_OLLAMA_SERVICE"
 fi
 
 if [[ "$DEPLOY_CLI_RUNNER" == "true" && -z "$cli_runner_shared_token" ]]; then
@@ -226,12 +241,12 @@ set_railway_var "SUPERUSER_EMAILS" "$(get_var 'SUPERUSER_EMAILS')"
 set_railway_var "PINECONE_API_KEY" "$(get_var 'PINECONE_API_KEY')"
 set_railway_var "PINECONE_HOST" "$(get_var 'PINECONE_HOST')"
 set_railway_var "PINECONE_INDEX" "$(get_var 'PINECONE_INDEX')"
-set_railway_var "EMBEDDING_BACKEND" "$(get_var_default 'EMBEDDING_BACKEND' 'bedrock')"
+set_railway_var "EMBEDDING_BACKEND" "$embedding_backend"
 set_railway_var "EMBEDDING_DIMENSION" "$(get_var_default 'EMBEDDING_DIMENSION' '1024')"
 set_railway_var "BEDROCK_EMBEDDING_MODEL" "$(get_var_default 'BEDROCK_EMBEDDING_MODEL' 'amazon.titan-embed-text-v2:0')"
 set_railway_var "BEDROCK_EMBEDDING_DIMENSION" "$(get_var_default 'BEDROCK_EMBEDDING_DIMENSION' '1024')"
-set_railway_var "OLLAMA_BASE_URL" "$(get_var_default 'OLLAMA_BASE_URL' 'http://localhost:11434')"
-set_railway_var "OLLAMA_EMBEDDING_MODEL" "$(get_var_default 'OLLAMA_EMBEDDING_MODEL' 'qwen3-embedding:0.6b')"
+set_railway_var "OLLAMA_BASE_URL" "$ollama_base_url"
+set_railway_var "OLLAMA_EMBEDDING_MODEL" "$ollama_embedding_model"
 set_railway_var "OLLAMA_TIMEOUT_SECONDS" "$(get_var_default 'OLLAMA_TIMEOUT_SECONDS' '120')"
 
 set_railway_var "STRIPE_SECRET_KEY" "$(get_var 'STRIPE_SECRET_KEY')"
@@ -317,12 +332,26 @@ if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
 
   echo "Private sidecar variables synced."
 fi
+
+if [[ "$deploy_ollama" == "true" ]]; then
+  echo ""
+  echo "Syncing Railway variables for private Ollama service '$RAILWAY_OLLAMA_SERVICE'..."
+  railway variable set \
+    --project "$RAILWAY_PROJECT_ID" \
+    --service "$RAILWAY_OLLAMA_SERVICE" \
+    --environment "$RAILWAY_ENVIRONMENT" \
+    --skip-deploys \
+    "RAILWAY_DOCKERFILE_PATH=Dockerfile.railway" \
+    "RAILWAY_HEALTHCHECK_TIMEOUT_SEC=300" >/dev/null
+  echo "Ollama service variables synced."
+fi
 echo ""
 echo "=========================================="
 echo "WARNING: You are about to deploy to Railway PRODUCTION."
 echo "Project ID: $RAILWAY_PROJECT_ID"
 echo "API service: $RAILWAY_SERVICE"
 echo "CLI runner sidecar: ${RAILWAY_CLI_RUNNER_SERVICE:-not set} (deploy: $DEPLOY_CLI_RUNNER)"
+echo "Embedding backend: $embedding_backend (Ollama service: $RAILWAY_OLLAMA_SERVICE, deploy: $deploy_ollama)"
 echo "Railway environment: $RAILWAY_ENVIRONMENT"
 echo "API_BASE_URL: ${api_base_url:-not set}"
 echo "CLI_RUNNER_BASE_URL: ${cli_runner_base_url:-not set}"
@@ -346,6 +375,18 @@ if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
     --service "$RAILWAY_CLI_RUNNER_SERVICE" \
     --environment "$RAILWAY_ENVIRONMENT" \
     --message "prod infra cli runner deploy from scripts/deploy_prod_railway.sh"
+fi
+
+if [[ "$deploy_ollama" == "true" ]]; then
+  echo ""
+  echo "Deploying private Ollama embedding service to Railway..."
+  railway up "$OLLAMA_DIR" \
+    --detach \
+    --path-as-root \
+    --project "$RAILWAY_PROJECT_ID" \
+    --service "$RAILWAY_OLLAMA_SERVICE" \
+    --environment "$RAILWAY_ENVIRONMENT" \
+    --message "prod ollama embeddings deploy from scripts/deploy_prod_railway.sh"
 fi
 
 echo ""

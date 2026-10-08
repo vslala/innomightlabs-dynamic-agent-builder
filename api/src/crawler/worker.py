@@ -773,6 +773,9 @@ class CrawlerWorker:
 
     def _invoke_continuation(self, job_id: str, kb_id: str, user_email: str) -> None:
         """Invoke Lambda asynchronously to continue crawl from checkpoint."""
+        running_in_lambda = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+        if not running_in_lambda and settings.async_job_backend != "lambda":
+            return  # In-process crawls are resumed by run_crawl_in_background.
         function_name = settings.async_job_lambda_name or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
         if not function_name:
             log.warning("No async Lambda function configured, skipping crawl continuation invocation")

@@ -1,0 +1,25 @@
+# Private embedding server for the API's knowledge base (EMBEDDING_BACKEND=ollama).
+# The model is pulled at build time so a fresh container serves immediately, without a volume or
+# a first-request download.
+FROM ollama/ollama:latest
+
+ARG OLLAMA_EMBEDDING_MODEL=qwen3-embedding:0.6b
+# llama.cpp sizes its thread pool from the host's cores (48 on Railway), not the container's vCPU
+# quota. Oversubscribed threads throttle each other until one page takes minutes, so pin the count
+# to the service's vCPUs. Railway passes a service variable of the same name as a build arg.
+ARG OLLAMA_NUM_THREAD=8
+
+# Re-create the model under its own name with num_thread baked in, so the API needs no options.
+RUN ollama serve & \
+  until ollama list >/dev/null 2>&1; do sleep 1; done; \
+  ollama pull "$OLLAMA_EMBEDDING_MODEL" && \
+  printf 'FROM %s\nPARAMETER num_thread %s\n' "$OLLAMA_EMBEDDING_MODEL" "$OLLAMA_NUM_THREAD" > /tmp/Modelfile && \
+  ollama create "$OLLAMA_EMBEDDING_MODEL" -f /tmp/Modelfile && \
+  rm /tmp/Modelfile
+
+# Railway private networking is IPv6, so listen on every interface rather than Ollama's localhost default.
+ENV OLLAMA_HOST=[::]:11434
+# Keep the model loaded so searches don't pay a reload after idle periods.
+ENV OLLAMA_KEEP_ALIVE=-1
+
+EXPOSE 11434

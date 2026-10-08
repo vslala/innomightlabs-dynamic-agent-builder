@@ -1131,6 +1131,9 @@ Tests go in `api/tests/test_blueprints_*.py`.
 
 ## Later phases
 
+Extending Ada to every skill, automation and feature (new kinds, setup requirements for secrets and OAuth, context
+management, specialists) has its own design: [Ada: Building With Everything InnomightLabs Offers](LLD-ada-capabilities.md).
+
 - **Phase 2: Builder chatbot.** Built in the POC as Ada on the Vishwakarma architecture (see Implementation notes).
   Still to do:
   - trying it with real models, small ones included, and tuning the prompt sections;

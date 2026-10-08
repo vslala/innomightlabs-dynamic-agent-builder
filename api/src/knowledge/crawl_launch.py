@@ -86,13 +86,20 @@ async def run_crawl_in_background(
     crawler,  # CrawlerWorker - type annotation omitted to avoid circular import
 ):
     """Background task to run the crawler in this process (local and Railway)."""
+    from src.knowledge.models import CrawlJobStatus
+
     try:
-        # Run with a 5 minute timeout for development
-        await crawler.run(
-            job_id=job_id,
-            kb_id=kb_id,
-            user_email=user_email,
-            timeout_ms=300000,  # 5 minutes
-        )
+        # The worker checkpoints every 5 minutes for Lambda's time limit. Nothing re-invokes a process,
+        # so resume each checkpoint here until the job completes, fails or is cancelled.
+        while True:
+            job = await crawler.run(
+                job_id=job_id,
+                kb_id=kb_id,
+                user_email=user_email,
+                timeout_ms=300000,  # 5 minutes
+            )
+            if job.status != CrawlJobStatus.IN_PROGRESS or job.checkpoint is None:
+                break
+            log.info(f"Resuming crawl job {job_id} in process from index {job.checkpoint.current_url_index}")
     except Exception as e:
         log.error(f"Background crawl failed for job {job_id}: {e}")
