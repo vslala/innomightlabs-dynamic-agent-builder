@@ -67,6 +67,10 @@ protocol CaptureSource: AnyObject, Sendable {
     /// Reported when the source dies mid-recording. Only `ScreenCaptureSource` currently can.
     var onFailure: (@Sendable (Error) -> Void)? { get set }
 
+    /// Things worth knowing that don't stop the recording: what the device actually delivers,
+    /// and a signal that looks broken. Only `MicrophoneCaptureSource` currently reports any.
+    var onNotice: (@Sendable (CaptureSourceNotice) -> Void)? { get set }
+
     /// Permission prompts and device configuration, before any file exists. Throws
     /// `RecordingError` so the menu bar can explain what was refused.
     func prepare() async throws
@@ -97,7 +101,22 @@ protocol CaptureSource: AnyObject, Sendable {
     var droppedFrameCount: Int { get }
 }
 
+/// A non-fatal report from a capture source. `at` is the host time of the buffer that
+/// prompted it, so the controller can place it on the session timeline.
+enum CaptureSourceNotice: Sendable, Equatable {
+    /// The format the device delivered, on its first buffer and whenever it changes.
+    case inputFormat(kind: TrackKind, device: String, format: String, at: CMTime)
+    /// The track is, or is about to be, unusable: the signal looks corrupted, or the device
+    /// changed format mid-take. `reason` is for the event log.
+    case signalSuspect(kind: TrackKind, device: String, reason: String, at: CMTime)
+}
+
 extension CaptureSource {
+    var onNotice: (@Sendable (CaptureSourceNotice) -> Void)? {
+        get { nil }
+        set {}
+    }
+
     func setMuted(_ muted: Bool) {}
     var latestVideoFrame: CVPixelBuffer? { nil }
     var droppedFrameCount: Int { 0 }

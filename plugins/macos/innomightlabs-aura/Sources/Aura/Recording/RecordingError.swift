@@ -8,6 +8,9 @@ enum RecordingError: Error, Equatable, LocalizedError {
     case noSourcesSelected
     case writerSetupFailed(String)
     case captureStreamStopped(String)
+    /// Not fatal — the recording carries on — but worth interrupting for: see
+    /// `MicrophoneSignalMonitor`.
+    case microphoneSignalSuspect(device: String)
 
     var errorDescription: String? {
         switch self {
@@ -25,6 +28,8 @@ enum RecordingError: Error, Equatable, LocalizedError {
             return "Failed to set up recording: \(reason)"
         case .captureStreamStopped(let reason):
             return "Recording stopped unexpectedly: \(reason)"
+        case .microphoneSignalSuspect(let device):
+            return "Audio from \(device) went wrong during this recording, so narration from here on may be distorted or missing. Replug the microphone or switch to another one, then record again."
         }
     }
 }

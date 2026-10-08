@@ -16,6 +16,14 @@ enum RecordingEventKind: String, Codable {
     /// itself become a performance problem under the load that causes drops in the first
     /// place. See `TrackWriter.droppedSampleCount` and `CaptureSource.droppedFrameCount`.
     case framesDropped = "frames_dropped"
+    /// Diagnostic only: the device and the audio format it actually delivered, logged on a
+    /// track's first buffer and again if the format changes mid-recording. Label is
+    /// `kind:device:format`.
+    case inputFormat = "input_format"
+    /// The moment a track's signal started looking corrupted (see `MicrophoneSignalMonitor`),
+    /// so the review window and anyone debugging can find where it went wrong. Label is
+    /// `kind:device:problem`.
+    case signalSuspect = "signal_suspect"
 }
 
 struct RecordingEvent: Codable, Equatable {

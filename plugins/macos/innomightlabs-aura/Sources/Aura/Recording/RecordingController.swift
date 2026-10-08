@@ -10,6 +10,10 @@ final class RecordingController: ObservableObject {
     @Published var lastError: RecordingError?
     @Published private(set) var currentTargetName: String?
     @Published private(set) var currentProfile: RecordingProfile?
+    /// Set while the current recording has a track whose signal looks corrupted, so the menu
+    /// bar icon can say so even with the popover closed. Cleared when the session ends;
+    /// `lastError` keeps the explanation afterwards.
+    @Published private(set) var signalWarning: String?
 
     /// Called once a session's files are finalized, so a review window can open over it.    /// A callback rather than a published property because `stop()` completes asynchronously
     /// after the menu that started it has already been dismissed — there is no view alive at
@@ -82,6 +86,7 @@ final class RecordingController: ObservableObject {
 
             for source in sources {
                 source.onFailure = makeFailureHandler()
+                source.onNotice = makeNoticeHandler()
                 try await source.start(context: context)
             }
             advanceSegmentCounts(for: sources.flatMap { $0.kinds })
@@ -155,6 +160,7 @@ final class RecordingController: ObservableObject {
             }
             for source in plan.added {
                 source.onFailure = makeFailureHandler()
+                source.onNotice = makeNoticeHandler()
                 try await source.start(context: context)
             }
         } catch {
@@ -271,6 +277,26 @@ final class RecordingController: ObservableObject {
         Task { await stop() }
     }
 
+    private func handleNotice(_ notice: CaptureSourceNotice) {
+        // `.starting` included: a source's first buffer can arrive before the controller
+        // reaches `.recording`, and that is exactly when the input format is reported.
+        guard sessionManager != nil, state != .idle else { return }
+
+        switch notice {
+        case let .inputFormat(kind, device, format, time):
+            logEvent(.inputFormat, at: time, label: "\(kind.rawValue):\(device):\(format)")
+
+        case let .signalSuspect(kind, device, reason, time):
+            logEvent(.signalSuspect, at: time, label: "\(kind.rawValue):\(device):\(reason)")
+            // Both causes can fire in one take; one interruption is enough.
+            guard signalWarning == nil else { return }
+            let error = RecordingError.microphoneSignalSuspect(device: device)
+            signalWarning = error.localizedDescription
+            lastError = error
+            RecordingAlert.post(title: "Microphone audio looks broken", body: error.localizedDescription)
+        }
+    }
+
     private func rollbackFailedStart() async {
         for source in sources { source.cancel() }
         tearDownSessionState()
@@ -287,6 +313,7 @@ final class RecordingController: ObservableObject {
         currentProfile = nil
         accumulatedPausedDuration = .zero
         pauseStartedAt = nil
+        signalWarning = nil
     }
 
     /// Stops capturing, records where each retiring track's file actually began, and
@@ -357,6 +384,14 @@ final class RecordingController: ObservableObject {
         { [weak self] error in
             Task { @MainActor [weak self] in
                 self?.handleSourceFailure(error)
+            }
+        }
+    }
+
+    private func makeNoticeHandler() -> @Sendable (CaptureSourceNotice) -> Void {
+        { [weak self] notice in
+            Task { @MainActor [weak self] in
+                self?.handleNotice(notice)
             }
         }
     }

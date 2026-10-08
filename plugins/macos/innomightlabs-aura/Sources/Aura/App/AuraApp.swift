@@ -69,8 +69,15 @@ struct AuraApp: App {
             // and the silhouette of this logo is a shapeless blob — the gradient *is* the
             // identity. The trade-off, accepted deliberately: a colour icon does not invert
             // with the menu bar's appearance or tint white while the menu is open.
-            Image("MenuBarIcon")
-                .renderingMode(.original)
+            if recordingController.signalWarning != nil {
+                // Swapped for the whole icon, not badged: a menu bar label is a single image,
+                // and the warning has to be noticeable at a glance mid-take.
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .symbolRenderingMode(.multicolor)
+            } else {
+                Image("MenuBarIcon")
+                    .renderingMode(.original)
+            }
         }
         // Without this, `.automatic` renders as a native `NSMenu` whenever the content is
         // menu-compatible (Toggle/Picker/Divider/...) — which silently degrades every custom
