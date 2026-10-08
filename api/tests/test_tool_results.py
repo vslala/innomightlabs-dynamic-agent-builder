@@ -147,3 +147,19 @@ def test_one_result_can_match_more_than_one_interpreter():
     assert len(found) == 2
     assert any(f.canvas is not None for f in found)
     assert any(f.fallback_text is not None for f in found)
+
+
+def test_a_form_can_carry_a_canvas_alongside_it():
+    form, canvas = interpret_tool_result(
+        json.dumps(
+            {
+                "type": "ui_form_render",
+                "form": {"form_name": "Approve plan abc"},
+                "canvas": {"ok": True, "type": "canvas_artifact", "artifact_id": "art-1", "title": "Blueprint"},
+            }
+        )
+    )
+
+    assert form.event.event_type == SSEEventType.UI_FORM_RENDER
+    assert canvas.canvas is not None and canvas.canvas.artifact_id == "art-1"
+    assert canvas.event.event_type == SSEEventType.CANVAS_ARTIFACT_READY

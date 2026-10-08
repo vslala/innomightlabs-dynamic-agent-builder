@@ -110,6 +110,19 @@ class CanvasArtifact:
         )
 
 
+class AttachedCanvas:
+    """A canvas riding along on a result that is something else too (a plan with its approval form).
+
+    A payload has one `type`, so a second payload is nested under `canvas` rather than replacing the first.
+    """
+
+    def interpret(self, payload: dict[str, Any]) -> InterpretedToolResult | None:
+        attached = payload.get("canvas")
+        if payload.get("type") == "canvas_artifact" or not isinstance(attached, dict):
+            return None
+        return CanvasArtifact().interpret(attached)
+
+
 class AuthRequiredCredential:
     """A remote agent refusing until the user adds a credential.
 
@@ -145,6 +158,7 @@ class AuthRequiredCredential:
 INTERPRETERS: list[ToolResultInterpreter] = [
     UiFormRender(),
     CanvasArtifact(),
+    AttachedCanvas(),
     AuthRequiredCredential(),
 ]
 

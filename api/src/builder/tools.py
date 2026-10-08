@@ -16,6 +16,7 @@ from src.blueprints.issues import BlueprintInvalid
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.repository import DeploymentRepository
 from src.blueprints.validator import validate_blueprint
+from src.builder.canvas import drawing_for, save_blueprint_canvas
 from src.builder.models import BuilderSession
 from src.builder.repository import BuilderSessionRepository
 from src.config import settings
@@ -136,14 +137,17 @@ class BuilderTools:
         session.plan_id = plan_id_for(yaml, params)
         self.sessions.save(session)
         context = {"agent_id": state.agent_id, "conversation_id": state.conversation_id}
+        canvas = save_blueprint_canvas(drawing_for(validated, plan, stage="plan", plan_id=session.plan_id), state)
         return json.dumps({
             **approval_form(session.plan_id, plan, context),
+            **({"canvas": canvas} if canvas else {}),
             "ok": True,
             "plan_id": session.plan_id,
             "steps": steps,
             "next": (
-                "Describe what you'll build in a few plain sentences. The approval form appears under your "
-                "message. Nothing is built until they choose 'Apply this plan'."
+                "The person can see the blueprint drawing (with the steps and the YAML) and the approval form "
+                "under your message. Describe what you'll build in two or three plain sentences; don't repeat "
+                "the steps. Nothing is built until they choose 'Apply this plan'."
             ),
         })
 
@@ -182,7 +186,11 @@ class BuilderTools:
 
         session.deployment_id, session.plan_id = deployment.deployment_id, None
         self.sessions.save(session)
+        canvas = save_blueprint_canvas(
+            drawing_for(validated, plan, stage="built", plan_id=plan_id, deployment=deployment), state
+        )
         return json.dumps({
+            **({"canvas": canvas} if canvas else {}),
             "applied": True,
             "outputs": {name: output.model_dump(exclude_none=True) for name, output in deployment.outputs.items()},
             "resources": self._resources(deployment.resources),

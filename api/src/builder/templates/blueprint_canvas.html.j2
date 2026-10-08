@@ -1,0 +1,356 @@
+{%- set built = d.stage == "built" -%}
+{%- set last_lane = d.cards | map(attribute="depth") | max -%}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ d.title }}</title>
+<style>
+  :root {
+    --paper: #0c3a74;
+    --paper-deep: #08284f;
+    --ink: #e8f1ff;
+    --ink-soft: #9fbfe8;
+    --ink-faint: rgba(232, 241, 255, 0.14);
+    --cyan: #67e8f9;
+    --amber: #fbbf24;
+    --green: #4ade80;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    padding: 16px 18px 12px;
+    color: var(--ink);
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(ellipse at top left, rgba(103, 232, 249, 0.10), transparent 55%),
+      linear-gradient(var(--ink-faint) 1px, transparent 1px),
+      linear-gradient(90deg, var(--ink-faint) 1px, transparent 1px),
+      linear-gradient(rgba(232, 241, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232, 241, 255, 0.05) 1px, transparent 1px);
+    background-size: 100% 100%, 80px 80px, 80px 80px, 16px 16px, 16px 16px;
+    animation: paper-in 0.6s ease both;
+  }
+  @keyframes paper-in { from { opacity: 0; filter: blur(2px); } to { opacity: 1; filter: none; } }
+
+  /* Header and stamp */
+  .head { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; }
+  .eyebrow { font: 600 10px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--cyan); }
+  h1 { margin: 6px 0 2px; font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
+  .lede { margin: 0; max-width: 62ch; color: var(--ink-soft); }
+  .stamp {
+    flex-shrink: 0;
+    padding: 6px 10px;
+    border: 2px solid currentColor;
+    border-radius: 6px;
+    font: 700 11px/1.1 var(--mono);
+    letter-spacing: 0.12em;
+    text-align: center;
+    text-transform: uppercase;
+    color: var(--amber);
+    transform: rotate(-7deg);
+    animation: stamp 0.5s cubic-bezier(0.2, 1.7, 0.45, 1) 1.5s both;
+  }
+  .built .stamp { color: var(--green); box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.12); }
+  @keyframes stamp { from { opacity: 0; transform: scale(2.4) rotate(-18deg); } to { opacity: 1; transform: scale(1) rotate(-7deg); } }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin: 14px 0 10px; border-bottom: 1px solid var(--ink-faint); }
+  .tab {
+    padding: 6px 10px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--ink-soft);
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--cyan); }
+  .panel { display: none; }
+  .panel.active { display: block; animation: fade 0.3s ease both; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* The drawing */
+  .board { position: relative; padding: 6px 0 4px; }
+  .lanes, .card { position: relative; }
+  .wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .wire { fill: none; stroke: var(--cyan); stroke-width: 1.6; stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw 0.9s ease forwards; }
+  .plan .wire { stroke-dasharray: 5 5; stroke-dashoffset: 0; opacity: 0; animation: wire-fade 0.6s ease forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  @keyframes wire-fade { to { opacity: 0.9; } }
+  .pulse { fill: var(--cyan); filter: drop-shadow(0 0 4px var(--cyan)); }
+  .lanes { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(160px, 1fr); gap: 56px; align-items: center; }
+  .lane { display: flex; flex-direction: column; gap: 14px; }
+  .card {
+    position: relative;
+    padding: 10px 12px 10px;
+    border: 1.5px dashed rgba(232, 241, 255, 0.55);
+    border-radius: 10px;
+    background: rgba(8, 40, 79, 0.72);
+    backdrop-filter: blur(2px);
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+    animation: rise 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.1) forwards;
+    animation-delay: calc(var(--i) * 220ms + 150ms);
+  }
+  .built .card { border-style: solid; border-color: rgba(103, 232, 249, 0.75); box-shadow: 0 0 18px rgba(103, 232, 249, 0.15); }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  .card-top { display: flex; gap: 8px; align-items: center; }
+  .icon { width: 22px; height: 22px; flex-shrink: 0; color: var(--cyan); }
+  .kind { font: 600 9.5px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-soft); }
+  .card-title { margin: 2px 0 0; font-size: 13px; font-weight: 650; }
+  .details { margin: 6px 0 0; padding: 0; list-style: none; font-size: 11.5px; color: var(--ink-soft); }
+  .details li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .done {
+    position: absolute; top: -8px; right: -8px;
+    display: grid; place-items: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--green); color: var(--paper-deep); font: 800 12px/1 system-ui;
+    animation: pop 0.4s cubic-bezier(0.2, 1.8, 0.4, 1) both;
+    animation-delay: calc(var(--i) * 220ms + 1.1s);
+  }
+  @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
+
+  .params { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .chip { padding: 3px 8px; border: 1px solid var(--ink-faint); border-radius: 999px; font-size: 11px; color: var(--ink-soft); }
+  .chip b { color: var(--ink); font-weight: 600; }
+
+  /* Steps */
+  .steps { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+  .steps li {
+    position: relative; display: flex; gap: 10px; align-items: baseline;
+    padding: 8px 0; border-bottom: 1px dashed var(--ink-faint);
+    opacity: 0; animation: rise 0.4s ease forwards; animation-delay: calc(var(--i) * 140ms);
+  }
+  .steps li::before {
+    counter-increment: step; content: counter(step);
+    flex-shrink: 0; display: grid; place-items: center; width: 20px; height: 20px;
+    border: 1.5px solid var(--cyan); border-radius: 50%;
+    font: 700 10px/1 var(--mono); color: var(--cyan);
+  }
+  .built .steps li::before { content: "\2713"; border-color: var(--green); background: var(--green); color: var(--paper-deep); }
+
+  /* YAML */
+  .yaml {
+    margin: 0; padding: 10px 0; max-height: 360px; overflow: auto;
+    border: 1px solid var(--ink-faint); border-radius: 8px; background: rgba(5, 24, 48, 0.75);
+    font: 11.5px/1.6 var(--mono); color: var(--ink);
+  }
+  .y-line { display: block; padding-right: 12px; white-space: pre; }
+  .y-line:hover { background: rgba(103, 232, 249, 0.07); }
+  .y-num { display: inline-block; width: 36px; margin-right: 12px; padding-right: 8px; text-align: right; color: rgba(159, 191, 232, 0.45); border-right: 1px solid var(--ink-faint); user-select: none; }
+  .y-key { color: #93c5fd; }
+  .y-val { color: #fde68a; }
+  .y-lit { color: #f9a8d4; }
+  .y-tpl { color: var(--cyan); background: rgba(103, 232, 249, 0.12); border-radius: 3px; }
+  .y-com { color: rgba(159, 191, 232, 0.6); font-style: italic; }
+  .y-dash { color: var(--ink-soft); }
+
+  /* Outputs */
+  .output { margin-bottom: 12px; }
+  .output-name { font: 600 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--cyan); }
+  .output-desc { margin: 4px 0; color: var(--ink-soft); }
+  .output-value {
+    display: block; padding: 8px 10px; border: 1px solid var(--ink-faint); border-radius: 6px;
+    background: rgba(5, 24, 48, 0.75); font: 11.5px/1.5 var(--mono); word-break: break-all; cursor: text;
+  }
+  .hint { font-size: 11px; color: var(--ink-soft); }
+
+  .title-block {
+    display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 8px;
+    border-top: 1px solid var(--ink-faint); font: 10px/1.2 var(--mono); letter-spacing: 0.1em;
+    text-transform: uppercase; color: rgba(159, 191, 232, 0.7);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before { animation: none !important; opacity: 1 !important; transform: none !important; }
+    .wire { stroke-dashoffset: 0 !important; }
+    .stamp { transform: rotate(-7deg) !important; }
+  }
+</style>
+</head>
+<body class="{{ d.stage }}">
+  <header class="head">
+    <div>
+      <div class="eyebrow">InnomightLabs blueprint</div>
+      <h1>{{ d.title }}</h1>
+      {% if d.description %}<p class="lede">{{ d.description }}</p>{% endif %}
+    </div>
+    <div class="stamp">{% if built %}Built{% else %}Draft<br>awaiting approval{% endif %}</div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="drawing" aria-selected="true">Blueprint</button>
+    <button class="tab" role="tab" data-tab="steps" aria-selected="false">{% if built %}What I built{% else %}The plan{% endif %}</button>
+    {% if d.outputs %}<button class="tab" role="tab" data-tab="outputs" aria-selected="false">Use it</button>{% endif %}
+    <button class="tab" role="tab" data-tab="yaml" aria-selected="false">YAML</button>
+  </nav>
+
+  <section class="panel active" id="drawing" role="tabpanel">
+    <div class="board">
+      <svg class="wires" aria-hidden="true">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#67e8f9"></path>
+          </marker>
+        </defs>
+      </svg>
+      <div class="lanes">
+        {% for lane in range(last_lane + 1) %}
+        <div class="lane">
+          {% for card in d.cards if card.depth == lane %}
+          <article class="card" data-name="{{ card.name }}" style="--i: {{ d.cards.index(card) }}">
+            {% if built %}<span class="done" aria-label="built">&#10003;</span>{% endif %}
+            <div class="card-top">
+              {% if card.kind == "KnowledgeBase" %}
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v6c0 1.6 3.4 2.8 7.5 2.8s7.5-1.2 7.5-2.8v-6"/><path d="M4.5 11.5v6c0 1.6 3.4 2.8 7.5 2.8s7.5-1.2 7.5-2.8v-6"/></svg>
+              {% elif card.kind == "Agent" %}
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="7" width="16" height="12" rx="4"/><path d="M12 3v4M9 12.5h.01M15 12.5h.01M9.5 16h5"/></svg>
+              {% else %}
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5h16v10H9l-5 4z"/><path d="M8 9.5h8M8 12h5"/></svg>
+              {% endif %}
+              <div>
+                <div class="kind">{{ card.label }}</div>
+                <h2 class="card-title">{{ card.title }}</h2>
+              </div>
+            </div>
+            <ul class="details">
+              {% for line in card.details %}<li title="{{ line }}">{{ line }}</li>{% endfor %}
+            </ul>
+          </article>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% if d.params %}
+    <div class="params">
+      {% for label, value in d.params %}<span class="chip">{{ label }}: <b>{{ value }}</b></span>{% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="panel" id="steps" role="tabpanel">
+    <ol class="steps">
+      {% for step in d.steps %}<li style="--i: {{ loop.index0 }}">{{ step }}</li>{% endfor %}
+    </ol>
+    {% if not built %}<p class="hint">Nothing is created until you choose "Apply this plan" below.</p>{% endif %}
+  </section>
+
+  {% if d.outputs %}
+  <section class="panel" id="outputs" role="tabpanel">
+    {% for name, description, value in d.outputs %}
+    <div class="output">
+      <div class="output-name">{{ name | replace("_", " ") }}</div>
+      {% if description %}<p class="output-desc">{{ description }}</p>{% endif %}
+      <code class="output-value" tabindex="0">{{ value }}</code>
+    </div>
+    {% endfor %}
+    <p class="hint">Click a value to select it, then copy.</p>
+  </section>
+  {% endif %}
+
+  <section class="panel" id="yaml" role="tabpanel">
+    <pre class="yaml">{{ d.yaml_html }}</pre>
+  </section>
+
+  <footer class="title-block">
+    <span>Drawn by Ada</span>
+    <span>{% if built %}Built{% else %}Rev {{ d.plan_id }}{% endif %} &middot; innomight/v1</span>
+  </footer>
+
+<script>
+(function () {
+  var EDGES = {{ edges_json }};
+  var BUILT = {{ "true" if built else "false" }};
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  var board = document.querySelector(".board");
+  var svg = board.querySelector(".wires");
+
+  // Layout position within the board. Offsets ignore transforms, so a card still rising measures where it lands.
+  function place(el) {
+    var left = 0, top = 0, node = el;
+    while (node && node !== board) { left += node.offsetLeft; top += node.offsetTop; node = node.offsetParent; }
+    return { left: left, top: top, width: el.offsetWidth, height: el.offsetHeight };
+  }
+
+  function drawWires(animate) {
+    Array.prototype.slice.call(svg.querySelectorAll(".wire, .pulse")).forEach(function (n) { n.remove(); });
+    var width = board.clientWidth, height = board.clientHeight;
+    if (!width) return;
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    EDGES.forEach(function (edge, index) {
+      var from = board.querySelector('[data-name="' + edge[0] + '"]');
+      var to = board.querySelector('[data-name="' + edge[1] + '"]');
+      if (!from || !to) return;
+      var a = place(from), b = place(to);
+      var x1 = a.left + a.width, y1 = a.top + a.height / 2;
+      var x2 = b.left - 3, y2 = b.top + b.height / 2;
+      var mid = (x1 + x2) / 2;
+      var path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", "M" + x1 + "," + y1 + " C" + mid + "," + y1 + " " + mid + "," + y2 + " " + x2 + "," + y2);
+      path.setAttribute("class", "wire");
+      path.setAttribute("marker-end", "url(#arrow)");
+      svg.appendChild(path);
+      var length = path.getTotalLength();
+      path.style.setProperty("--len", length);
+      path.style.animationDelay = animate ? (0.9 + index * 0.25) + "s" : "0s";
+      if (!animate) path.style.animationDuration = "0.01s";
+      if (BUILT) {
+        var dot = document.createElementNS(SVG_NS, "circle");
+        dot.setAttribute("r", "2.6");
+        dot.setAttribute("class", "pulse");
+        // Hidden until it starts moving, or it would sit at the board's corner.
+        dot.setAttribute("opacity", "0");
+        var show = document.createElementNS(SVG_NS, "set");
+        show.setAttribute("attributeName", "opacity");
+        show.setAttribute("to", "1");
+        show.setAttribute("begin", (2 + index * 0.4) + "s");
+        dot.appendChild(show);
+        var motion = document.createElementNS(SVG_NS, "animateMotion");
+        motion.setAttribute("dur", "2.4s");
+        motion.setAttribute("begin", (2 + index * 0.4) + "s");
+        motion.setAttribute("repeatCount", "indefinite");
+        motion.setAttribute("path", path.getAttribute("d"));
+        dot.appendChild(motion);
+        svg.appendChild(dot);
+      }
+    });
+  }
+
+  document.querySelectorAll(".tab").forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      document.querySelectorAll(".tab").forEach(function (t) { t.setAttribute("aria-selected", String(t === tab)); });
+      document.querySelectorAll(".panel").forEach(function (p) { p.classList.toggle("active", p.id === tab.dataset.tab); });
+      if (tab.dataset.tab === "drawing") drawWires(false);
+    });
+  });
+
+  document.querySelectorAll(".output-value").forEach(function (code) {
+    code.addEventListener("click", function () {
+      var range = document.createRange();
+      range.selectNodeContents(code);
+      var selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+  });
+
+  var resizeTimer;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { drawWires(false); }, 120);
+  });
+  // Cards rise into place first; wires are drawn from where they land.
+  setTimeout(function () { drawWires(true); }, 60);
+})();
+</script>
+</body>
+</html>

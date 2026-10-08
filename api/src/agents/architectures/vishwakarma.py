@@ -170,6 +170,8 @@ class VishwakarmaArchitecture(AgentArchitecture):
             created_by=actor_email,
             role="assistant",
             content=assistant_text,
+            # The blueprint drawings Ada's tools made; kept on the message so they survive a reload.
+            canvases=outputs.canvases,
         )
         self.message_repo.save(assistant_msg)
         yield SSEEvent(

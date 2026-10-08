@@ -36,7 +36,9 @@ import {
 } from "../../components/ui/select";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
-import { agentDisplayName, showsToolActivity } from "../../services/builder/ada";
+import { agentDisplayName, isAda, showsToolActivity } from "../../services/builder/ada";
+import { AdaWorking } from "../../components/chat/AdaWorking";
+import { adaStep } from "../../components/chat/adaSteps";
 import { chatService, type ActiveTurn } from "../../services/chat";
 import { authService } from "../../services/auth";
 import type { ConversationResponse } from "../../types/conversation";
@@ -279,6 +281,9 @@ export function ConversationDetail() {
   }, [conversation, initialMessagesLoaded, isGeneratingImage, isSending, location.state, navigate]);
 
   const getAgentName = (agentId: string): string => agentDisplayName(agents, agentId);
+  const isAdaConversation = isAda(conversation?.agent_id);
+  // Ada shows what she's doing as a drawing instead of a tool list; it steps aside once her reply streams in.
+  const adaWorkingStep = isAdaConversation ? adaStep(toolActivities, isSending && !streamingContent) : null;
 
   const currentAgent = conversation
     ? agents.find((agent) => agent.agent_id === conversation.agent_id)
@@ -1215,12 +1220,13 @@ export function ConversationDetail() {
                   streamingContent={streamingContent}
                   toolActivities={showsToolActivity(conversation?.agent_id, featureFlags.showToolActivity) ? toolActivities : []}
                   debugToolActivity={debugEnabled}
-                  statusMessage={statusMessage}
+                  statusMessage={isAdaConversation ? null : statusMessage}
                   userPicture={userInfo?.picture}
                   userName={userInfo?.name}
                   onExpandCanvas={setExpandedCanvas}
                   extraNode={
                     <>
+                      {adaWorkingStep && <AdaWorking step={adaWorkingStep} />}
                       {activeForm && (
                         <div
                           style={{

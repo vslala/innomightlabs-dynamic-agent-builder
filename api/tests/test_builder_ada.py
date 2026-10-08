@@ -2,6 +2,7 @@
 
 import json
 
+import boto3
 import pytest
 
 from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete
@@ -12,8 +13,11 @@ from src.agents.runtime_state import AgentTurnState
 from src.blueprints.approval import APPROVE, REVISE, approval_label
 from src.blueprints.catalog import example_yaml
 from src.blueprints.kinds import knowledge_base as knowledge_base_kind
+from src.blueprints.planner import plan_blueprint
+from src.blueprints.validator import validate_blueprint
 from src.builder import router as builder_router
 from src.builder.ada import ADA_AGENT_ID, GREETING, ada_agent
+from src.builder.canvas import drawing_for, highlight_yaml, render_drawing
 from src.builder.models import BuilderSession
 from src.builder.repository import BuilderSessionRepository
 from src.builder.tools import BuilderTools, build_builder_tool_registry, builder_tool_definitions
@@ -290,3 +294,69 @@ def test_send_message_runs_ada_through_the_injected_architecture(test_client, au
 def test_send_message_to_a_conversation_that_isnt_a_build(test_client, auth_headers, account):
     response = test_client.post("/builder/not-a-build/send-message", headers=auth_headers, json={"content": "hi"})
     assert response.status_code == 404
+
+
+# --- Blueprint canvas -------------------------------------------------------------------------
+
+MEDIA_BUCKET = "innomightlabs-conversations-meta"
+
+
+def _planned(account, params=PARAMS):
+    validated = validate_blueprint(SITE_AGENT, params)
+    return validated, plan_blueprint(validated, TEST_USER_EMAIL)
+
+
+def test_the_drawing_shows_each_resource_and_how_they_connect(account):
+    validated, plan = _planned(account)
+    drawing = drawing_for(validated, plan, stage="plan", plan_id="abc")
+
+    assert [(card.name, card.label, card.depth) for card in drawing.cards] == [
+        ("site_kb", "Knowledge base", 0), ("assistant", "Agent", 1), ("widget", "Chat widget", 2),
+    ]
+    assert drawing.edges == [("site_kb", "assistant"), ("assistant", "widget")]
+    assert drawing.cards[2].title == "Acme assistant widget"
+    assert ("Business name", "Acme") in drawing.params
+    page = render_drawing(drawing)
+    assert "Draft<br>awaiting approval" in page and "Rev abc" in page
+
+
+def test_what_the_person_typed_cannot_inject_markup(account):
+    validated, plan = _planned(account, {**PARAMS, "business_name": "<script>alert(1)</script>"})
+    page = render_drawing(drawing_for(validated, plan, stage="plan", plan_id="abc"))
+
+    assert "<script>alert(1)</script>" not in page
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
+
+
+def test_yaml_is_escaped_then_coloured():
+    highlighted = str(highlight_yaml('name: "{{ params.x }}"\n# note <b>\n'))
+    assert '<span class="y-key">name</span>' in highlighted
+    assert '<span class="y-tpl">{{ params.x }}</span>' in highlighted
+    assert "&lt;b&gt;" in highlighted and "<b>" not in highlighted
+
+
+async def test_plan_and_build_each_attach_a_blueprint_canvas(session, monkeypatch):
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=MEDIA_BUCKET)
+    monkeypatch.setattr("src.artifacts.storage.settings.conversation_media_bucket", MEDIA_BUCKET)
+    tools, state = BuilderTools(), turn_state(session)
+
+    planned = json.loads(await tools.plan("plan_blueprint", {"yaml": SITE_AGENT, "params": PARAMS}, state))
+    assert planned["type"] == "ui_form_render"
+    assert planned["canvas"]["type"] == "canvas_artifact"
+    assert planned["canvas"]["title"] == "Blueprint: Website support agent"
+
+    say(session, "user", approval(planned["plan_id"]))
+    built = json.loads(await tools.apply("apply_blueprint", {"plan_id": planned["plan_id"]}, state))
+    assert built["applied"] is True
+    assert built["canvas"]["title"] == "Built: Website support agent"
+
+
+async def test_a_canvas_that_cant_be_saved_doesnt_stop_the_plan(session, monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("storage down")
+
+    monkeypatch.setattr("src.builder.canvas.ArtifactService.create_artifact", broken)
+    planned = json.loads(await BuilderTools().plan("plan_blueprint", {"yaml": SITE_AGENT, "params": PARAMS}, turn_state(session)))
+
+    assert planned["ok"] is True and planned["type"] == "ui_form_render"
+    assert "canvas" not in planned
