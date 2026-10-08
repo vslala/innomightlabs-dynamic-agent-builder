@@ -94,6 +94,31 @@ person.*
 - **While she works:** the dashboard shows `AdaWorking` (`spa/src/components/chat/AdaWorking.tsx`) instead of the
   tool list. It's a blueprint tile sketching a drawing for the current step (asking, drafting, building, checking),
   with her words for it.
+- **Applying updates what exists (idempotent).** Phase 4 is partly built: applying no longer only creates.
+  - **Matching:** each resource gets an optional `id`. With it, apply updates that resource, and an unknown id
+    blocks the plan. Without it, apply matches by name: an agent by name, a knowledge base by a unique name, a
+    widget key by name on the matched agent, or the agent's only key. Anything unmatched is created.
+  - **The plan:** every step is `create`, `update` (with each change in plain words) or `unchanged`. Plan limits
+    count only creates. A plan that changes nothing has no approval form.
+  - **Applying:** `apply_blueprint(validated, plan, ...)` creates, updates or keeps each resource. If a step
+    fails, created resources are deleted and updated ones restored from their previous record. Skill settings are
+    restored through `update_installed`, which keeps secrets.
+  - **What an update does:**
+    - Agent: changes its fields, links new knowledge bases, installs new skills, and changes existing skills'
+      settings, sharing and on/off state.
+    - Knowledge base: re-read only when its crawl settings differ from the last crawl.
+    - Widget key: updated in place, so its public key, and the snippet already on the site, never change.
+  - **Updates never delete.** Skills, knowledge base links and keys the blueprint leaves out stay as they are. To
+    switch a skill off, a blueprint sets `enabled: false`. Deleting is still to do.
+  - **Starting from an existing agent:** `blueprints/export.py` (`export_agent`) writes an agent, its knowledge
+    bases, skills and widget keys out as a blueprint with their ids. Skills that need a secret are left out, and
+    since updates never remove skills, they stay installed.
+  - **Ada's side:**
+    - `list_my_agents` and `load_agent` load an existing agent into her draft.
+    - After a build she pins the draft to the built ids (`with_ids`), so her next change updates rather than
+      rebuilds.
+    - Her prompt says so, adds `ANCHOR_NO_DUPLICATES`, and forbids renaming to get past a blocker.
+  - **The drawing** badges each card New, Update or No change, and lists an update's changes on the card.
 - **Builder session:** `api/src/builder/models.py`, item `pk=User#{email}`, `sk=BuilderSession#{conversation_id}`.
   - Chat history keeps messages, not tool calls. So the draft (YAML, params), the current `plan_id` and the
     `deployment_id` live here, and the prompt renders them every turn.

@@ -1,10 +1,19 @@
 from html import escape
+from typing import Optional
 from urllib.parse import urlsplit
 
 from src.apikeys.models import AgentApiKey
 from src.apikeys.repository import ApiKeyRepository
 from src.blueprints.issues import BlueprintIssue
-from src.blueprints.kinds.base import AppliedResource, ApplyContext, ResourceKind
+from src.blueprints.kinds.base import (
+    AppliedResource,
+    ApplyContext,
+    Change,
+    Existing,
+    NotFound,
+    PlanContext,
+    ResourceKind,
+)
 from src.blueprints.spec import WidgetKeySpec
 from src.config import settings
 
@@ -17,12 +26,17 @@ def origin_of(url: str) -> str | None:
     return f"{parts.scheme}://{parts.netloc.lower()}"
 
 
+def origins(spec: WidgetKeySpec) -> list[str]:
+    return sorted({origin for origin in map(origin_of, spec.allowed_origins) if origin})
+
+
 def embed_snippet(public_key: str) -> str:
     return f'<script src="{escape(settings.embed_loader_url)}" data-api-key="{escape(public_key)}" async></script>'
 
 
 class WidgetKeyKind(ResourceKind[WidgetKeySpec]):
     kind = "WidgetKey"
+    label = "Chat widget"
     spec_model = WidgetKeySpec
     exposes = ("id", "public_key", "snippet")
 
@@ -37,6 +51,32 @@ class WidgetKeyKind(ResourceKind[WidgetKeySpec]):
             if "{{" not in origin and origin_of(origin) is None
         ]
 
+    def find_existing(self, name: str, spec: WidgetKeySpec, ctx: PlanContext) -> Optional[Existing]:
+        agent = ctx.matched.get(spec.agent)
+        keys = ApiKeyRepository().find_all_by_agent(agent.id) if agent else []
+        if spec.id:
+            key = next((key for key in keys if key.key_id == spec.id), None)
+            if key is None:
+                raise NotFound(f"There's no widget key with id '{spec.id}' on that agent.")
+            return Existing(id=key.key_id, record=key, matched_by="id")
+        if spec.name:
+            same = [key for key in keys if key.name == spec.name]
+        else:
+            # Unnamed keys are "<agent name> widget"; an agent with a single key is that key, renamed or not.
+            same = keys if len(keys) == 1 else [key for key in keys if key.name.endswith(" widget")]
+        return Existing(id=same[0].key_id, record=same[0], matched_by="name") if len(same) == 1 else None
+
+    def differences(self, name: str, spec: WidgetKeySpec, existing: Existing, ctx: PlanContext) -> list[str]:
+        key: AgentApiKey = existing.record
+        changes = []
+        if spec.name and spec.name != key.name:
+            changes.append(f"rename to '{spec.name}'")
+        if origins(spec) != sorted(key.allowed_origins):
+            changes.append("allow it on " + ", ".join(origins(spec)))
+        if spec.allow_guests != key.allow_guests:
+            changes.append("let guests chat with just an email" if spec.allow_guests else "ask visitors to sign in")
+        return changes
+
     def describe(self, name: str, spec: WidgetKeySpec) -> str:
         guests = ", guests allowed" if spec.allow_guests else ""
         return f"Create a widget key for {spec.agent} on {', '.join(spec.allowed_origins)}{guests}"
@@ -46,17 +86,38 @@ class WidgetKeyKind(ResourceKind[WidgetKeySpec]):
         key = ApiKeyRepository().save(AgentApiKey(
             agent_id=agent.id,
             name=spec.name or f"{agent.attributes['name']} widget",
-            allowed_origins=sorted({origin for origin in map(origin_of, spec.allowed_origins) if origin}),
+            allowed_origins=origins(spec),
             allow_guests=spec.allow_guests,
             created_by=ctx.user_email,
         ))
+        return self._applied(name, key)
+
+    def update(self, name: str, spec: WidgetKeySpec, change: Change, ctx: ApplyContext) -> AppliedResource:
+        previous: AgentApiKey = change.existing.record  # type: ignore[union-attr]
+        # The same key, so the snippet already on the person's site keeps working.
+        key = ApiKeyRepository().save(previous.model_copy(update={
+            "name": spec.name or previous.name,
+            "allowed_origins": origins(spec),
+            "allow_guests": spec.allow_guests,
+        }))
+        applied = self._applied(name, key)
+        applied.previous = previous
+        return applied
+
+    def kept(self, name: str, change: Change) -> AppliedResource:
+        return self._applied(name, change.existing.record)  # type: ignore[union-attr]
+
+    def _applied(self, name: str, key: AgentApiKey) -> AppliedResource:
         return AppliedResource(
             name=name,
             kind=self.kind,
             id=key.key_id,
             attributes={"id": key.key_id, "public_key": key.public_key, "snippet": embed_snippet(key.public_key)},
-            cleanup={"agent_id": [agent.id]},
+            cleanup={"agent_id": [key.agent_id]},
         )
 
     def rollback(self, applied: AppliedResource, ctx: ApplyContext) -> None:
         ApiKeyRepository().delete_by_id(applied.cleanup["agent_id"][0], applied.id)
+
+    def restore(self, applied: AppliedResource, ctx: ApplyContext) -> None:
+        ApiKeyRepository().save(applied.previous)

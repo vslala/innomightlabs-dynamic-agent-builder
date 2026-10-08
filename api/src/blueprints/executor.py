@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 
 from fastapi import BackgroundTasks
 
-from src.blueprints.kinds import AppliedResource, ApplyContext, kind_for
+from src.blueprints.kinds import Action, AppliedResource, ApplyContext, kind_for
+from src.blueprints.planner import Plan
 from src.blueprints.models import DeployedResource, Deployment, DeploymentOutput, DeploymentStatus
 from src.blueprints.repository import DeploymentRepository
 from src.blueprints.validator import RESOURCE_REF, TEMPLATE, ValidatedBlueprint
@@ -23,12 +24,13 @@ def apply_rate_limit() -> RateLimitPolicy:
 
 def apply_blueprint(
     validated: ValidatedBlueprint,
+    plan: Plan,
     user_email: str,
     background_tasks: BackgroundTasks | None = None,
     repository: DeploymentRepository | None = None,
 ) -> Deployment:
-    """Call only with a plan that has no blockers. The deployment is recorded at every step, so a
-    failure part-way still says what was created."""
+    """Call only with a plan that has no blockers. Each resource is created, updated or kept as the plan says.
+    The deployment is recorded at every step, so a failure part-way still says what was touched."""
     repository = repository or DeploymentRepository()
     blueprint = validated.blueprint
     deployment = repository.save(Deployment(
@@ -39,22 +41,31 @@ def apply_blueprint(
         params=validated.params,
     ))
     ctx = ApplyContext(user_email=user_email, background_tasks=background_tasks)
-    created: list[AppliedResource] = []
+    # Created or updated, in order, so a failure undoes them in reverse.
+    touched: list[tuple[Action, AppliedResource]] = []
     try:
         for name in validated.order:
             spec = blueprint.resources[name]
-            applied = kind_for(spec.kind).apply(name, spec, ctx)
+            kind = kind_for(spec.kind)
+            change = plan.changes[name]
+            if change.action == Action.CREATE:
+                applied = kind.apply(name, spec, ctx)
+            elif change.action == Action.UPDATE:
+                applied = kind.update(name, spec, change, ctx)
+            else:
+                applied = kind.kept(name, change)
             ctx.applied[name] = applied
-            created.append(applied)
+            if change.action != Action.UNCHANGED:
+                touched.append((change.action, applied))
             _record(deployment, applied)
             repository.save(_touch(deployment))
-        for applied in created:
+        for _, applied in touched:
             kind_for(applied.kind).start(applied, blueprint.resources[applied.name], ctx)
             _record(deployment, applied)
     except Exception as e:
         log.exception("Blueprint %s failed for %s", blueprint.metadata.name, user_email)
         deployment.error = str(e) or type(e).__name__
-        deployment.status = _roll_back(created, ctx, deployment)
+        deployment.status = _undo(touched, ctx, deployment)
         return repository.save(_touch(deployment))
 
     deployment.outputs = {
@@ -65,14 +76,19 @@ def apply_blueprint(
     return repository.save(_touch(deployment))
 
 
-def _roll_back(created: list[AppliedResource], ctx: ApplyContext, deployment: Deployment) -> DeploymentStatus:
+def _undo(touched: list[tuple[Action, AppliedResource]], ctx: ApplyContext, deployment: Deployment) -> DeploymentStatus:
+    """Deletes what was created and puts back what was updated, newest first."""
     status = DeploymentStatus.FAILED
-    for applied in reversed(created):
+    for action, applied in reversed(touched):
+        kind = kind_for(applied.kind)
         try:
-            kind_for(applied.kind).rollback(applied, ctx)
-            deployment.resources.pop(applied.name, None)
+            if action == Action.CREATE:
+                kind.rollback(applied, ctx)
+                deployment.resources.pop(applied.name, None)
+            else:
+                kind.restore(applied, ctx)
         except Exception:
-            log.exception("Rollback of %s %s failed", applied.kind, applied.id)
+            log.exception("Undoing %s %s failed", applied.kind, applied.id)
             status = DeploymentStatus.FAILED_PARTIAL
     return status
 

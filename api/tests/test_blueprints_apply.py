@@ -57,8 +57,8 @@ def test_plan_lists_steps_in_order_with_no_blockers(launched):
 
 
 def test_apply_creates_the_whole_solution(launched):
-    validated, _ = planned()
-    deployment = apply_blueprint(validated, TEST_USER_EMAIL, BackgroundTasks())
+    validated, plan = planned()
+    deployment = apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
 
     assert deployment.status == DeploymentStatus.APPLIED
     kb_id = deployment.resources["site_kb"].id
@@ -92,8 +92,8 @@ def test_a_failure_rolls_everything_back(launched, monkeypatch):
         raise RuntimeError("key service down")
 
     monkeypatch.setattr(WidgetKeyKind, "apply", fail)
-    validated, _ = planned()
-    deployment = apply_blueprint(validated, TEST_USER_EMAIL, BackgroundTasks())
+    validated, plan = planned()
+    deployment = apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
 
     assert deployment.status == DeploymentStatus.FAILED
     assert deployment.error == "key service down"
@@ -107,8 +107,8 @@ def test_a_failure_rolls_everything_back(launched, monkeypatch):
 def test_a_failed_rollback_keeps_the_leftovers(launched, monkeypatch):
     monkeypatch.setattr(WidgetKeyKind, "apply", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     monkeypatch.setattr(AgentKind, "rollback", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("stuck")))
-    validated, _ = planned()
-    deployment = apply_blueprint(validated, TEST_USER_EMAIL, BackgroundTasks())
+    validated, plan = planned()
+    deployment = apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
 
     assert deployment.status == DeploymentStatus.FAILED_PARTIAL
     assert list(deployment.resources) == ["assistant"]
@@ -119,8 +119,8 @@ def test_provider_that_isnt_set_up_blocks(launched):
     assert any(issue.path == "resources.assistant.provider" for issue in plan.blockers)
 
 
-def test_existing_agent_name_and_agent_cap_block(launched):
-    AgentRepository().save(Agent(
+def test_an_agent_with_the_same_name_is_updated_not_duplicated(launched):
+    existing = AgentRepository().save(Agent(
         agent_name="Acme assistant",
         agent_architecture="krishna-mini",
         agent_provider="Bedrock",
@@ -128,11 +128,27 @@ def test_existing_agent_name_and_agent_cap_block(launched):
         created_by=TEST_USER_EMAIL,
     ))
     _, plan = planned()
-    messages = [issue.message for issue in plan.blockers]
+    agent_step = next(step for step in plan.steps if step.resource == "assistant")
 
-    assert any("already have an agent called 'Acme assistant'" in message for message in messages)
-    # The free tier allows one agent, and the user already has it.
-    assert any("Agent limit reached" in message for message in messages)
+    assert plan.ok, plan.blockers
+    assert agent_step.action == "update"
+    assert agent_step.existing_id == existing.agent_id
+    assert "update its instructions" in agent_step.changes
+    assert "add skill lead capture" in agent_step.changes
+
+
+def test_another_agent_already_called_the_new_name_blocks(launched):
+    for name in ("Acme assistant", "Taken name"):
+        AgentRepository().save(Agent(
+            agent_name=name, agent_architecture="krishna-memgpt", agent_provider="Bedrock",
+            agent_persona="Existing.", created_by=TEST_USER_EMAIL,
+        ))
+    target = AgentRepository().find_by_name("Acme assistant", TEST_USER_EMAIL)
+    renamed = SITE_AGENT.replace("    kind: Agent\n", f"    kind: Agent\n    id: {target.agent_id}\n").replace(
+        'name: "{{ params.business_name }} assistant"', "name: Taken name"
+    )
+    _, plan = planned(renamed)
+    assert any("another agent called 'Taken name'" in issue.message for issue in plan.blockers)
 
 
 def test_page_cap_blocks(launched):
@@ -193,10 +209,10 @@ def test_apply_over_http_then_list_and_fetch(test_client, auth_headers, launched
     fetched = test_client.get(f"/blueprints/deployments/{deployment_id}", headers=auth_headers).json()
     assert fetched["status"] == "applied"
 
-    # The same blueprint again is blocked: the name is taken and the free tier's one agent is used.
-    again = test_client.post("/blueprints/deployments", headers=auth_headers, json=body)
-    assert again.status_code == 422
-    assert again.json()["blockers"]
+    # The same blueprint again changes nothing: everything matches what's there.
+    replanned = test_client.post("/blueprints/plan", headers=auth_headers, json=body).json()
+    assert replanned["ok"] is True
+    assert [step["action"] for step in replanned["steps"]] == ["unchanged", "unchanged", "unchanged"]
 
 
 def test_apply_is_rate_limited(test_client, auth_headers, launched, monkeypatch):

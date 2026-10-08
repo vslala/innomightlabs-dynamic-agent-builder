@@ -117,7 +117,7 @@ async def create_deployment(request: Request, body: BlueprintRequest, background
             detail="You've applied a lot of blueprints in the last hour. Please try again later.",
             headers={"Retry-After": str(decision.retry_after_seconds or 60)},
         )
-    deployment = apply_blueprint(validated, user_email, background_tasks)
+    deployment = apply_blueprint(validated, result, user_email, background_tasks)
     if deployment.status != "applied":
         # Nothing (or only leftovers) was created, so the attempt shouldn't count against the limit.
         limiter.release(decision)

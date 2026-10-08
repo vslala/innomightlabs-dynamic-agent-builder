@@ -50,6 +50,11 @@ class ParamSpec(Strict):
 
 
 class ResourceBase(Strict):
+    id: str | None = Field(
+        None,
+        description="An existing resource to update instead of creating a new one. Without it, a resource with the "
+        "same name is updated if there is one, and otherwise a new one is created.",
+    )
     description: str | None = Field(
         None, description="What this resource is for. Stored as the resource's description where it has one."
     )

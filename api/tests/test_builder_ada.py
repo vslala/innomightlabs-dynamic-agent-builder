@@ -210,7 +210,9 @@ async def test_a_turn_runs_ada_with_only_her_tools(session, monkeypatch):
         actor_kind=ActorKind.OWNER,
     )]
 
-    assert seen["tools"] == ["show_form", "plan_blueprint", "apply_blueprint", "get_build_status"]
+    assert seen["tools"] == [
+        "show_form", "plan_blueprint", "apply_blueprint", "list_my_agents", "load_agent", "get_build_status",
+    ]
     assert "You are Ada" in seen["first_prompt"]
     assert "## Website support agent" in seen["first_prompt"]
     assert "No draft yet." in seen["first_prompt"]
@@ -360,3 +362,49 @@ async def test_a_canvas_that_cant_be_saved_doesnt_stop_the_plan(session, monkeyp
 
     assert planned["ok"] is True and planned["type"] == "ui_form_render"
     assert "canvas" not in planned
+
+
+# --- Extending what exists --------------------------------------------------------------------
+
+
+async def test_after_a_build_the_draft_is_pinned_to_what_was_built(session):
+    tools, state = BuilderTools(), turn_state(session)
+    plan_id = json.loads(await tools.plan("plan_blueprint", {"yaml": SITE_AGENT, "params": PARAMS}, state))["plan_id"]
+    say(session, "user", approval(plan_id))
+    built = json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))
+
+    draft = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id).draft_yaml
+    assert f"id: {built['resources']['assistant']['id']}" in draft
+
+    # Ada changes the draft and plans again: the same agent is updated, nothing new is built.
+    changed = draft.replace("allow_guests: true", "allow_guests: false")
+    replanned = json.loads(await tools.plan("plan_blueprint", {"yaml": changed, "params": PARAMS}, state))
+    assert [step["action"] for step in replanned["steps"]] == ["unchanged", "unchanged", "update"]
+
+
+async def test_ada_can_find_and_load_an_existing_agent(session):
+    tools, state = BuilderTools(), turn_state(session)
+    plan_id = json.loads(await tools.plan("plan_blueprint", {"yaml": SITE_AGENT, "params": PARAMS}, state))["plan_id"]
+    say(session, "user", approval(plan_id))
+    built = json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))
+    agent_id = built["resources"]["assistant"]["id"]
+
+    [listed] = json.loads(await tools.list_agents("list_my_agents", {}, state))["agents"]
+    assert listed == {
+        "agent_id": agent_id, "name": "Acme assistant", "description": "The agent visitors chat with.",
+        "knowledge_bases": 1, "skills": ["lead_capture"], "widget_keys": 1,
+    }
+
+    loaded = json.loads(await tools.load_agent("load_agent", {"agent_id": agent_id}, state))
+    assert loaded["loaded"] is True
+    draft = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id).draft_yaml
+    assert f"id: {agent_id}" in draft
+    replanned = json.loads(await tools.plan("plan_blueprint", {"yaml": draft, "params": {}}, state))
+    assert replanned["ok"] is True, replanned
+    assert {step["action"] for step in replanned["steps"]} == {"unchanged"}
+    # Nothing to approve when nothing changes.
+    assert replanned["nothing_to_change"] is True
+    assert "type" not in replanned and "plan_id" not in replanned
+
+    missing = json.loads(await tools.load_agent("load_agent", {"agent_id": "nope"}, state))
+    assert missing["loaded"] is False

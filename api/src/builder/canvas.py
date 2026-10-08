@@ -20,6 +20,7 @@ from src.agents.runtime_state import AgentTurnState
 from src.artifacts.models import ArtifactSource
 from src.artifacts.service import ArtifactService
 from src.blueprints.models import Deployment
+from src.blueprints.kinds import kind_for
 from src.blueprints.planner import Plan
 from src.blueprints.spec import REF_KIND, AgentSpec, KnowledgeBaseSpec, WidgetKeySpec
 from src.blueprints.validator import ValidatedBlueprint
@@ -44,6 +45,10 @@ class Card:
     details: list[str]
     #: Column in the drawing: how many references deep the resource sits.
     depth: int
+    #: create, update or unchanged, from the plan.
+    action: str = "create"
+    #: For an update, what changes.
+    changes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -82,11 +87,11 @@ def _widget_key(spec: WidgetKeySpec) -> list[str]:
     return details
 
 
-#: How each kind is drawn: its label and the lines on its card.
-KIND_DRAWINGS: dict[str, tuple[str, Callable[[Any], list[str]]]] = {
-    "KnowledgeBase": ("Knowledge base", _knowledge_base),
-    "Agent": ("Agent", _agent),
-    "WidgetKey": ("Chat widget", _widget_key),
+#: The lines on each kind's card. Labels come from the kinds themselves.
+CARD_DETAILS: dict[str, Callable[[Any], list[str]]] = {
+    "KnowledgeBase": _knowledge_base,
+    "Agent": _agent,
+    "WidgetKey": _widget_key,
 }
 
 
@@ -156,7 +161,9 @@ def drawing_for(
         references = _references(spec)
         depth[name] = 1 + max((depth[ref] for ref in references), default=-1)
         edges += [(ref, name) for ref in references]
-        label, describe = KIND_DRAWINGS.get(spec.kind, (spec.kind, lambda _: []))
+        label = kind_for(spec.kind).label
+        describe = CARD_DETAILS.get(spec.kind, lambda _: [])
+        change = plan.changes.get(name)
         title = getattr(spec, "name", None)
         if not title and isinstance(spec, WidgetKeySpec):
             # The key's dashboard label defaults to "<agent name> widget" too.
@@ -168,6 +175,8 @@ def drawing_for(
             title=str(title or name),
             details=describe(spec),
             depth=depth[name],
+            action=change.action.value if change else "create",
+            changes=change.changes if change else (),
         ))
     params = [
         (blueprint.params[key].label, str(value))

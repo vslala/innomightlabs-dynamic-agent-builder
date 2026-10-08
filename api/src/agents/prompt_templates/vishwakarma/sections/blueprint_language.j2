@@ -4,6 +4,9 @@ A blueprint is YAML with `apiVersion: innomight/v1`, `kind: Blueprint`, `metadat
 
 Rules:
 - Resources refer to each other by name, e.g. `agent: assistant` or `knowledge_bases: [site_kb]`.
+- A resource with `id` updates that existing resource. Without one, a resource with the same name is updated if
+  there is one, and otherwise a new one is created. Nothing is ever deleted: skills and knowledge bases you leave
+  out stay as they are. To switch a skill off, list it with `enabled: false`.
 - {{ '{{' }} params.<name> {{ '}}' }} fills any text field. {{ '{{' }} resources.<name>.<attribute> {{ '}}' }} works only in `outputs`.
 - Numbers and true/false can't come from params; write them directly.
 - No passwords, API keys or tokens, ever.

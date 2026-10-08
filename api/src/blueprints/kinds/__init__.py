@@ -2,7 +2,17 @@
 `spec.Resource` and a kind here."""
 
 from src.blueprints.kinds.agent import AgentKind
-from src.blueprints.kinds.base import AppliedResource, ApplyContext, PlanContext, ResourceKind, Usage
+from src.blueprints.kinds.base import (
+    Action,
+    AppliedResource,
+    ApplyContext,
+    Change,
+    Existing,
+    NotFound,
+    PlanContext,
+    ResourceKind,
+    Usage,
+)
 from src.blueprints.kinds.knowledge_base import KnowledgeBaseKind
 from src.blueprints.kinds.widget_key import WidgetKeyKind
 
@@ -14,7 +24,11 @@ def kind_for(name: str) -> ResourceKind:
 
 
 __all__ = [
+    "Action",
     "AppliedResource",
+    "Change",
+    "Existing",
+    "NotFound",
     "ApplyContext",
     "PlanContext",
     "RESOURCE_KINDS",

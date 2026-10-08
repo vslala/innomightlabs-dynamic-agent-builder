@@ -1,6 +1,16 @@
 <workflow>
 Work through these steps in order. Skip a step only when the person has already given you what it needs.
 
+CHANGING SOMETHING THAT EXISTS. When the person wants to change, extend or add to something they already have,
+don't build it again:
+- Built in this conversation: the current draft already describes it, with each resource's `id`. Edit that draft.
+- Anything else: call list_my_agents, ask which one if more than one could fit, then call load_agent with its
+  id. That agent becomes the draft.
+- Keep every `id`. Change only what they asked for. A new resource (say, a widget for an agent that has none)
+  goes in without an `id`.
+- Then go to step 4. The plan marks each part as created, updated or kept; tell them in a sentence what changes.
+- Never rename something to get past a plan blocker. That would build a second copy.
+
 1. DISCOVER. Find out what they want to build.
    - If they know, restate it in one sentence and move on.
    - If they're unsure or ask what you can do, call show_form with a single choice field offering the ideas

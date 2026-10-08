@@ -12,6 +12,7 @@ from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_runtime import BoundTool, ToolCategory, ToolRegistry, ToolSpec
 from src.blueprints.approval import approval_form, approves, plan_id_for
 from src.blueprints.executor import apply_blueprint, apply_rate_limit
+from src.blueprints.export import export_agent, with_ids
 from src.blueprints.issues import BlueprintInvalid
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.repository import DeploymentRepository
@@ -19,8 +20,11 @@ from src.blueprints.validator import validate_blueprint
 from src.builder.canvas import drawing_for, save_blueprint_canvas
 from src.builder.models import BuilderSession
 from src.builder.repository import BuilderSessionRepository
+from src.agents.repository import AgentRepository
+from src.apikeys.repository import ApiKeyRepository
 from src.config import settings
-from src.knowledge.repository import CrawlJobRepository
+from src.skills.repository import AgentSkillRepository
+from src.knowledge.repository import AgentKnowledgeBaseRepository, CrawlJobRepository
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.rate_limits.limiter import RateLimiter
 from src.skills.lead_capture.actions import render_custom_form
@@ -79,6 +83,27 @@ def builder_tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "list_my_agents",
+            "description": (
+                "The person's existing agents: id, name, description, and what they use. Call it when they want "
+                "to change or add to something they already have, to find which agent they mean."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "load_agent",
+            "description": (
+                "Make an existing agent the current draft: the agent, its knowledge bases, skills and widget keys "
+                "written as a blueprint with their ids. Change only what the person asks, then plan it; applying "
+                "updates those resources instead of creating new ones."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"agent_id": {"type": "string", "description": "An id from list_my_agents."}},
+                "required": ["agent_id"],
+            },
+        },
+        {
             "name": "get_build_status",
             "description": "How the last build is doing: whether the website crawl has finished, and where to try things.",
             "parameters": {"type": "object", "properties": {}},
@@ -134,6 +159,15 @@ class BuilderTools:
                 "next": "Explain what blocks this in plain words and how to fix it, or change the draft and plan again.",
             })
 
+        if not plan.changes_anything:
+            self.sessions.save(session)
+            return json.dumps({
+                "ok": True,
+                "nothing_to_change": True,
+                "steps": steps,
+                "next": "Everything already matches this draft. Tell the person there's nothing to change; don't ask them to approve.",
+            })
+
         session.plan_id = plan_id_for(yaml, params)
         self.sessions.save(session)
         context = {"agent_id": state.agent_id, "conversation_id": state.conversation_id}
@@ -179,12 +213,14 @@ class BuilderTools:
         decision = limiter.acquire(state.owner_email)
         if not decision.allowed:
             return json.dumps({"applied": False, "reason": "Too many builds in the last hour. Try again later."})
-        deployment = apply_blueprint(validated, state.owner_email)
+        deployment = apply_blueprint(validated, plan, state.owner_email)
         if deployment.status != "applied":
             limiter.release(decision)
             return json.dumps({"applied": False, "status": deployment.status.value, "error": deployment.error})
 
         session.deployment_id, session.plan_id = deployment.deployment_id, None
+        # The next change in this conversation updates what was just built, rather than building it again.
+        session.draft_yaml = with_ids(session.draft_yaml, {name: res.id for name, res in deployment.resources.items()})
         self.sessions.save(session)
         canvas = save_blueprint_canvas(
             drawing_for(validated, plan, stage="built", plan_id=plan_id, deployment=deployment), state
@@ -197,6 +233,35 @@ class BuilderTools:
             "next": (
                 "Tell the person what you built, give each output with its description, and walk them through "
                 "testing it. Call get_build_status if they ask whether it's ready."
+            ),
+        })
+
+    async def list_agents(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
+        agents = []
+        for agent in AgentRepository().find_all_by_created_by(state.owner_email):
+            agents.append({
+                "agent_id": agent.agent_id,
+                "name": agent.agent_name,
+                "description": agent.agent_description or "",
+                "knowledge_bases": len(AgentKnowledgeBaseRepository().find_kbs_for_agent(agent.agent_id)),
+                "skills": [skill.skill_id for skill in AgentSkillRepository().list_by_agent(agent.agent_id)],
+                "widget_keys": len(ApiKeyRepository().find_all_by_agent(agent.agent_id)),
+            })
+        return json.dumps({"agents": agents})
+
+    async def load_agent(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
+        session = self._session(state)
+        agent_id = str(tool_input.get("agent_id") or "").strip()
+        yaml = export_agent(agent_id, state.owner_email)
+        if yaml is None:
+            return json.dumps({"loaded": False, "reason": "There's no agent with that id. Call list_my_agents."})
+        session.draft_yaml, session.draft_params, session.plan_id = yaml, {}, None
+        self.sessions.save(session)
+        return json.dumps({
+            "loaded": True,
+            "next": (
+                "The agent is now the current draft (see your prompt). Keep every `id`. Change only what the person "
+                "asked for, add new resources without an id, then call plan_blueprint with the whole YAML."
             ),
         })
 
@@ -241,12 +306,15 @@ class BuilderTools:
 
 def build_builder_tool_registry(tools: Optional[BuilderTools] = None) -> ToolRegistry:
     tools = tools or BuilderTools()
-    show_form, plan, apply, status = builder_tool_definitions()
+    show_form, plan, apply, list_agents, load_agent, status = builder_tool_definitions()
     return ToolRegistry([
         BoundTool(ToolSpec(show_form, ToolCategory.BUILDER), tools.show_form),
         # Planning and applying change the draft that Ada's prompt shows.
         BoundTool(ToolSpec(plan, ToolCategory.BUILDER, mutates_prompt_context=True), tools.plan),
         BoundTool(ToolSpec(apply, ToolCategory.BUILDER, mutates_prompt_context=True), tools.apply),
+        BoundTool(ToolSpec(list_agents, ToolCategory.BUILDER), tools.list_agents),
+        # Loading replaces the draft the prompt shows.
+        BoundTool(ToolSpec(load_agent, ToolCategory.BUILDER, mutates_prompt_context=True), tools.load_agent),
         BoundTool(ToolSpec(status, ToolCategory.BUILDER), tools.build_status),
     ])
 
