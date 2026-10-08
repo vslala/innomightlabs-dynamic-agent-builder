@@ -26,6 +26,8 @@ AVAILABLE_TO_DESCRIPTION = (
 
 #: Marks a field whose value names other resources in the blueprint, and the kind they must be.
 REF_KIND = "x-ref-kind"
+#: Marks a reference field that names things to take away, so it may name a resource that is being removed.
+REMOVES = "x-removes"
 
 
 class Strict(BaseModel):
@@ -57,6 +59,12 @@ class ResourceBase(Strict):
     )
     description: str | None = Field(
         None, description="What this resource is for. Stored as the resource's description where it has one."
+    )
+    remove: bool = Field(
+        False,
+        description="Delete this existing resource from the account. Needs its `id`. It can't be undone: a "
+        "knowledge base loses its content, an agent its conversations and keys, a widget key stops working on "
+        "the site. Leaving a resource out of a blueprint never removes it.",
     )
 
 
@@ -125,6 +133,17 @@ class AgentSpec(ResourceBase):
     )
     skills: list[SkillEntry] = Field(
         default_factory=list, description="Skills to install on the agent, such as `lead_capture`."
+    )
+    remove_knowledge_bases: list[ResourceName] = Field(
+        default_factory=list,
+        description="Knowledge bases in this blueprint to disconnect from the agent. The knowledge bases "
+        "themselves stay, with their content.",
+        json_schema_extra={REF_KIND: "KnowledgeBase", REMOVES: True},
+    )
+    remove_skills: list[str] = Field(
+        default_factory=list,
+        description="Skill ids to uninstall from the agent, with their settings and secrets. To only switch a "
+        "skill off, list it under `skills` with `enabled: false` instead.",
     )
     session_timeout_minutes: int | None = Field(
         None, ge=0, description="Minutes of silence after which a conversation starts fresh. 0 means never."

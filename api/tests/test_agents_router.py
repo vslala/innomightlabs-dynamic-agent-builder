@@ -318,7 +318,7 @@ class TestAgentsRouter:
     ):
         wiped: list[str] = []
         monkeypatch.setattr(
-            "src.agents.router.ConversationMediaStorage",
+            "src.agents.service.ConversationMediaStorage",
             lambda: type("Storage", (), {"delete_agent_prefix": lambda self, agent_id: wiped.append(agent_id)})(),
         )
         agent_id = test_client.post("/agents", json=AGENT_CREATE_REQUEST, headers=auth_headers).json()["agent_id"]

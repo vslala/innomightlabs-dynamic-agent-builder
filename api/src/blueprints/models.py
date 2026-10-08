@@ -16,7 +16,7 @@ class DeploymentStatus(str, Enum):
     APPLIED = "applied"
     #: Rolled back cleanly; nothing was left behind.
     FAILED = "failed"
-    #: A rollback step failed too; `resources` lists what's left to clean up.
+    #: A rollback step failed too, or a removal failed after everything else was applied; `error` says which.
     FAILED_PARTIAL = "failed_partial"
 
 
@@ -47,6 +47,8 @@ class Deployment(BaseModel):
     status: DeploymentStatus = DeploymentStatus.APPLYING
     resources: dict[str, DeployedResource] = Field(default_factory=dict)
     outputs: dict[str, DeploymentOutput] = Field(default_factory=dict)
+    #: What was taken away, in plain words, in the order it happened.
+    removed: list[str] = Field(default_factory=list)
     error: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None

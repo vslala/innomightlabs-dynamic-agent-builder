@@ -1,0 +1,12 @@
+<open_pages>
+{% if open_pages %}
+Pages you have open. They are the full detail for what they describe.
+{% for open in open_pages %}
+
+# {{ open.page.title }} (`{{ open.page.id }}`, {% if open.turns_left > 0 %}open for {{ open.turns_left }} more turn{{ "s" if open.turns_left != 1 else "" }}{% else %}closes after this turn{% endif %})
+{{ open.page.body }}
+{% endfor %}
+{% else %}
+No pages open. Open the pages you need from the book index with open_pages.
+{% endif %}
+</open_pages>

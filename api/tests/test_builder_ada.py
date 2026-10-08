@@ -4,6 +4,7 @@ import json
 
 import boto3
 import pytest
+import yaml
 
 from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete
 from src.agents.architectures import get_agent_architecture
@@ -12,6 +13,8 @@ from src.agents.repository import AgentRepository
 from src.agents.runtime_state import AgentTurnState
 from src.blueprints.approval import APPROVE, REVISE, approval_label
 from src.blueprints.catalog import example_yaml
+from src.blueprints.executor import apply_blueprint
+from src.blueprints.export import export_agent
 from src.blueprints.kinds import knowledge_base as knowledge_base_kind
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.validator import validate_blueprint
@@ -91,7 +94,7 @@ def test_vishwakarma_is_not_in_the_agent_factory():
 
 
 def test_show_form_uses_the_interactive_forms_schema():
-    show_form = builder_tool_definitions()[0]
+    show_form = next(tool for tool in builder_tool_definitions() if tool["name"] == "show_form")
     lead_capture = get_skill_registry().get("lead_capture").manifest.find_action("render_custom_form")
     assert show_form["name"] == "show_form"
     assert show_form["parameters"] == lead_capture.input_schema
@@ -211,10 +214,13 @@ async def test_a_turn_runs_ada_with_only_her_tools(session, monkeypatch):
     )]
 
     assert seen["tools"] == [
-        "show_form", "plan_blueprint", "apply_blueprint", "list_my_agents", "load_agent", "get_build_status",
+        "open_pages", "search_book", "show_form", "plan_blueprint", "apply_blueprint", "list_my_agents", "load_agent", "get_build_status",
     ]
     assert "You are Ada" in seen["first_prompt"]
-    assert "## Website support agent" in seen["first_prompt"]
+    # The book's index, not its pages: the recipe is listed, its YAML isn't there until it's opened.
+    assert "`recipe/site-agent`: Website support agent." in seen["first_prompt"]
+    assert "kind: WidgetKey" not in seen["first_prompt"]
+    assert "No pages open." in seen["first_prompt"]
     assert "No draft yet." in seen["first_prompt"]
     assert "waiting for the person's approval" in seen["refreshed_prompt"]
 
@@ -408,3 +414,18 @@ async def test_ada_can_find_and_load_an_existing_agent(session):
 
     missing = json.loads(await tools.load_agent("load_agent", {"agent_id": "nope"}, state))
     assert missing["loaded"] is False
+
+
+async def test_ada_names_what_a_plan_removes(session):
+    validated = validate_blueprint(SITE_AGENT, PARAMS)
+    built = apply_blueprint(validated, plan_blueprint(validated, TEST_USER_EMAIL), TEST_USER_EMAIL)
+    document = yaml.safe_load(export_agent(built.resources["assistant"].id, TEST_USER_EMAIL))
+    document["resources"]["agent"]["skills"] = []
+    document["resources"]["agent"]["remove_skills"] = ["lead_capture"]
+
+    result = json.loads(await BuilderTools().plan(
+        "plan_blueprint", {"yaml": yaml.safe_dump(document, sort_keys=False), "params": {}}, turn_state(session)
+    ))
+    assert result["removals"] == ["uninstall skill lead capture"]
+    assert "can't be undone" in result["next"]
+    assert "This removes" in result["form"]["form_inputs"][0]["attr"]["help_text"]

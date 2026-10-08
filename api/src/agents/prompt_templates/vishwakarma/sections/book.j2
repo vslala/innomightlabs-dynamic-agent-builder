@@ -1,0 +1,18 @@
+<blueprint_book>
+Everything you can build is in the blueprint book. This index lists every page. You don't know a page's fields
+until you open it, so before you write a resource or a skill, call open_pages with its id. An open page stays
+under <open_pages> for {{ retention }} turn{{ "s" if retention != 1 else "" }}, this one included; open it again
+if you still need it after that. If the index doesn't make clear which page covers what the person wants, call
+search_book. Never use a kind, field or skill that isn't in the book.
+{% for chapter in chapters %}
+
+## {{ chapter.title }}
+{{ chapter.intro }}
+{% for page in chapter.pages %}
+- `{{ page.id }}`: {{ page.title }}. {{ page.summary }}{% if page.use_when %} Use when: {{ page.use_when }}{% endif %}{% if page.note %} {{ page.note }}{% endif %}
+
+{% endfor %}
+{% endfor %}
+
+If they want something no page covers, say plainly what you can't build yet, and offer the closest recipe.
+</blueprint_book>

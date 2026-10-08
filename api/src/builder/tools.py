@@ -1,4 +1,8 @@
-"""Ada's tools: ask with forms, plan a blueprint, apply it once approved, and report how the build is doing.
+"""Ada's tools: read the blueprint book, ask with forms, plan a blueprint, apply it once approved, and report how
+the build is doing.
+
+The book's index is always in Ada's prompt; `open_pages` puts whole pages there for a few turns, and issues from a
+plan open the pages that explain them.
 
 Forms come from the Interactive Forms module (`lead_capture`), so the chat renders them like any other
 skill's forms. The blueprint tools keep the draft on the BuilderSession, which Ada's prompt shows every
@@ -6,14 +10,16 @@ turn, so a plan made in one turn can be approved and applied in the next.
 """
 
 import json
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
+from src.agents.book import Book, open_pages
 from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_runtime import BoundTool, ToolCategory, ToolRegistry, ToolSpec
 from src.blueprints.approval import approval_form, approves, plan_id_for
+from src.blueprints.book import blueprint_book, page_for_issue
 from src.blueprints.executor import apply_blueprint, apply_rate_limit
 from src.blueprints.export import export_agent, with_ids
-from src.blueprints.issues import BlueprintInvalid
+from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.repository import DeploymentRepository
 from src.blueprints.validator import validate_blueprint
@@ -29,6 +35,9 @@ from src.messages.repositories import MessageRepository, get_message_repository
 from src.rate_limits.limiter import RateLimiter
 from src.skills.lead_capture.actions import render_custom_form
 from src.skills.registry import get_skill_registry
+
+#: Pages one open_pages call may open, so a turn can't fill the prompt with the whole book.
+MAX_PAGES_PER_OPEN = 6
 
 DASHBOARD_PATHS = {"Agent": "/dashboard/agents/{id}", "KnowledgeBase": "/dashboard/knowledge-bases/{id}"}
 
@@ -54,6 +63,38 @@ BLUEPRINT_INPUT = {
 
 def builder_tool_definitions() -> list[dict[str, Any]]:
     return [
+        {
+            "name": "open_pages",
+            "description": (
+                "Open pages of the blueprint book by their ids from the index, such as kind/Agent or "
+                "skill/lead_capture. The pages appear in your prompt under <open_pages> and stay for a few turns. "
+                "Open a page before writing the resource or skill it describes."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "page_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": MAX_PAGES_PER_OPEN,
+                        "description": "Page ids from the book index.",
+                    },
+                },
+                "required": ["page_ids"],
+            },
+        },
+        {
+            "name": "search_book",
+            "description": (
+                "Search the blueprint book when the index doesn't make clear which page covers what the person "
+                "wants. Returns page ids to open."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "What the person wants, in a few words."}},
+                "required": ["query"],
+            },
+        },
         {
             "name": "show_form",
             "description": (
@@ -116,15 +157,66 @@ class BuilderTools:
         self,
         sessions: Optional[BuilderSessionRepository] = None,
         messages: Optional[MessageRepository] = None,
+        book: Optional[Callable[[], Book]] = None,
     ) -> None:
         self.sessions = sessions or BuilderSessionRepository()
         self.messages = messages or get_message_repository()
+        self.book = book or blueprint_book
 
     def _session(self, state: AgentTurnState) -> BuilderSession:
         session = self.sessions.find(state.owner_email, state.conversation_id)
         if session is None:
             raise ValueError("This conversation isn't a building session.")
         return session
+
+    async def open_book_pages(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
+        session = self._session(state)
+        page_ids = tool_input.get("page_ids")
+        if isinstance(page_ids, str):
+            page_ids = [page_ids]
+        if not isinstance(page_ids, list) or not page_ids:
+            raise ValueError("open_pages needs `page_ids`: a list of ids from the book index.")
+        opened = self.book().open(str(page_id) for page_id in page_ids[:MAX_PAGES_PER_OPEN])
+        session.opened_pages = open_pages(session.opened_pages, [page.id for page in opened.pages], session.turn)
+        self.sessions.save(session)
+        return json.dumps({
+            "opened": [page.id for page in opened.pages],
+            **({"unknown": opened.unknown} if opened.unknown else {}),
+            **({"did_you_mean": opened.suggestions} if opened.suggestions else {}),
+            "next": (
+                f"The opened pages are in your prompt under <open_pages> for the next "
+                f"{settings.ada_page_retention_turns} turns, this one included."
+            ),
+        })
+
+    async def search_book(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
+        query = str(tool_input.get("query") or "").strip()
+        if not query:
+            raise ValueError("search_book needs a `query`.")
+        pages = self.book().search(query)
+        return json.dumps({
+            "pages": [
+                {"id": page.id, "title": page.title, "summary": page.summary, **({"note": page.note} if page.note else {})}
+                for page in pages
+            ],
+            "next": "Open the pages you need with open_pages." if pages else "Nothing matches; check the book index.",
+        })
+
+    def _pointing_at_pages(
+        self, session: BuilderSession, issues: list[BlueprintIssue], yaml: str
+    ) -> list[dict[str, Any]]:
+        """Each issue with the page that explains it. Those pages are opened, so the fix has them to hand."""
+        book = self.book()
+        described, pages = [], []
+        for issue in issues:
+            row = issue.model_dump(exclude_none=True)
+            page_id = page_for_issue(issue.path, yaml, book)
+            if page_id:
+                row["page"] = page_id
+                pages.append(page_id)
+            described.append(row)
+        session.opened_pages = open_pages(session.opened_pages, pages, session.turn)
+        return described
 
     async def show_form(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
         context = {"agent_id": state.agent_id, "conversation_id": state.conversation_id}
@@ -141,21 +233,26 @@ class BuilderTools:
         try:
             validated = validate_blueprint(yaml, params)
         except BlueprintInvalid as e:
+            issues = self._pointing_at_pages(session, e.issues, yaml)
             self.sessions.save(session)
             return json.dumps({
                 "ok": False,
-                "issues": [issue.model_dump(exclude_none=True) for issue in e.issues],
-                "next": "Fix every issue in the YAML and call plan_blueprint again. Don't show these to the person.",
+                "issues": issues,
+                "next": (
+                    "Fix every issue in the YAML and call plan_blueprint again. Each issue's `page` is now open in "
+                    "your prompt. Don't show these to the person."
+                ),
             })
 
         plan = plan_blueprint(validated, state.owner_email)
         steps = [step.model_dump() for step in plan.steps]
         if not plan.ok:
+            blockers = self._pointing_at_pages(session, plan.blockers, yaml)
             self.sessions.save(session)
             return json.dumps({
                 "ok": False,
                 "steps": steps,
-                "blockers": [issue.model_dump(exclude_none=True) for issue in plan.blockers],
+                "blockers": blockers,
                 "next": "Explain what blocks this in plain words and how to fix it, or change the draft and plan again.",
             })
 
@@ -178,10 +275,13 @@ class BuilderTools:
             "ok": True,
             "plan_id": session.plan_id,
             "steps": steps,
+            **({"removals": plan.removals} if plan.removals else {}),
             "next": (
                 "The person can see the blueprint drawing (with the steps and the YAML) and the approval form "
                 "under your message. Describe what you'll build in two or three plain sentences; don't repeat "
                 "the steps. Nothing is built until they choose 'Apply this plan'."
+                + (" This plan also removes things, which can't be undone: name each one plainly so they know "
+                   "before they approve." if plan.removals else "")
             ),
         })
 
@@ -216,7 +316,12 @@ class BuilderTools:
         deployment = apply_blueprint(validated, plan, state.owner_email)
         if deployment.status != "applied":
             limiter.release(decision)
-            return json.dumps({"applied": False, "status": deployment.status.value, "error": deployment.error})
+            return json.dumps({
+                "applied": False,
+                "status": deployment.status.value,
+                "error": deployment.error,
+                **({"removed": deployment.removed} if deployment.removed else {}),
+            })
 
         session.deployment_id, session.plan_id = deployment.deployment_id, None
         # The next change in this conversation updates what was just built, rather than building it again.
@@ -228,6 +333,7 @@ class BuilderTools:
         return json.dumps({
             **({"canvas": canvas} if canvas else {}),
             "applied": True,
+            **({"removed": deployment.removed} if deployment.removed else {}),
             "outputs": {name: output.model_dump(exclude_none=True) for name, output in deployment.outputs.items()},
             "resources": self._resources(deployment.resources),
             "next": (
@@ -306,8 +412,11 @@ class BuilderTools:
 
 def build_builder_tool_registry(tools: Optional[BuilderTools] = None) -> ToolRegistry:
     tools = tools or BuilderTools()
-    show_form, plan, apply, list_agents, load_agent, status = builder_tool_definitions()
+    open_book, search, show_form, plan, apply, list_agents, load_agent, status = builder_tool_definitions()
     return ToolRegistry([
+        # Opening pages changes the pages Ada's prompt shows.
+        BoundTool(ToolSpec(open_book, ToolCategory.BUILDER, mutates_prompt_context=True), tools.open_book_pages),
+        BoundTool(ToolSpec(search, ToolCategory.BUILDER), tools.search_book),
         BoundTool(ToolSpec(show_form, ToolCategory.BUILDER), tools.show_form),
         # Planning and applying change the draft that Ada's prompt shows.
         BoundTool(ToolSpec(plan, ToolCategory.BUILDER, mutates_prompt_context=True), tools.plan),

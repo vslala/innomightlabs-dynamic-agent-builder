@@ -22,7 +22,7 @@ from src.artifacts.service import ArtifactService
 from src.blueprints.models import Deployment
 from src.blueprints.kinds import kind_for
 from src.blueprints.planner import Plan
-from src.blueprints.spec import REF_KIND, AgentSpec, KnowledgeBaseSpec, WidgetKeySpec
+from src.blueprints.spec import REF_KIND, REMOVES, AgentSpec, KnowledgeBaseSpec, WidgetKeySpec
 from src.blueprints.validator import ValidatedBlueprint
 from src.skills.html_canvas.models import CANVAS_ARTIFACT_FILENAME
 
@@ -45,10 +45,12 @@ class Card:
     details: list[str]
     #: Column in the drawing: how many references deep the resource sits.
     depth: int
-    #: create, update or unchanged, from the plan.
+    #: create, update, unchanged or remove, from the plan.
     action: str = "create"
     #: For an update, what changes.
     changes: tuple[str, ...] = ()
+    #: What it takes away; drawn in red, since it can't be undone.
+    removals: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -99,7 +101,8 @@ def _references(spec: Any) -> list[str]:
     names: list[str] = []
     for field_name, info in type(spec).model_fields.items():
         extra = info.json_schema_extra
-        if isinstance(extra, dict) and REF_KIND in extra:
+        # Things being disconnected aren't drawn as wires; the card lists them instead.
+        if isinstance(extra, dict) and REF_KIND in extra and not extra.get(REMOVES):
             value = getattr(spec, field_name)
             names += value if isinstance(value, list) else [value]
     return names
@@ -177,6 +180,7 @@ def drawing_for(
             depth=depth[name],
             action=change.action.value if change else "create",
             changes=change.changes if change else (),
+            removals=change.removals if change else (),
         ))
     params = [
         (blueprint.params[key].label, str(value))
