@@ -24,6 +24,10 @@ class BuilderSession(BaseModel):
     #: Set when the draft last planned without blockers; apply needs the person to approve this id.
     plan_id: Optional[str] = None
     deployment_id: Optional[str] = None
+    #: Ada's turns in this conversation so far, counting the current one.
+    turn: int = 0
+    #: Book pages Ada has open, with the turn each was last opened in. See src/agents/book.py.
+    opened_pages: dict[str, int] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 

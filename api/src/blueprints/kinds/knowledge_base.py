@@ -17,6 +17,7 @@ from src.config import settings
 from src.knowledge.crawl_launch import launch_crawl
 from src.knowledge.models import CrawlConfig, CrawlJob, CrawlSourceType, KnowledgeBase, KnowledgeBaseStatus
 from src.knowledge.repository import CrawlJobRepository, KnowledgeBaseRepository
+from src.knowledge.service import get_knowledge_base_service
 
 CRAWL_SOURCE = {"site": CrawlSourceType.URL, "sitemap": CrawlSourceType.SITEMAP}
 CRAWL_MODE: dict[CrawlSourceType, Literal["site", "sitemap"]] = {CrawlSourceType.URL: "site", CrawlSourceType.SITEMAP: "sitemap"}
@@ -40,6 +41,8 @@ def last_crawl(kb_id: str) -> Optional[CrawlSpec]:
 class KnowledgeBaseKind(ResourceKind[KnowledgeBaseSpec]):
     kind = "KnowledgeBase"
     label = "Knowledge base"
+    use_when = "The agent should answer from a website or other content: learn my site, answer from our docs or FAQ."
+    deletes = "its content is deleted, and every agent using it loses it"
     spec_model = KnowledgeBaseSpec
     exposes = ("id", "name", "crawl_job_id")
 
@@ -143,6 +146,12 @@ class KnowledgeBaseKind(ResourceKind[KnowledgeBaseSpec]):
         ))
         applied.attributes["crawl_job_id"] = job.job_id
         launch_crawl(job.job_id, applied.id, ctx.user_email, ctx.background_tasks)
+
+    def delete(self, change: Change, ctx: ApplyContext) -> None:
+        # The same delete as the dashboard's: vectors and chunks go, and it's disconnected from every agent.
+        result = get_knowledge_base_service().soft_delete(change.existing.id, ctx.user_email)  # type: ignore[union-attr]
+        if not result.success:
+            raise RuntimeError(result.error or "The knowledge base couldn't be deleted.")
 
     def rollback(self, applied: AppliedResource, ctx: ApplyContext) -> None:
         # Crawls start only after every resource exists, so there are no vectors to clean up here.

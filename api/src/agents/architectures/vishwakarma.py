@@ -4,7 +4,11 @@ Vishwakarma: the architecture behind Ada, InnomightLabs' solution builder.
 Named after the divine architect. Where Krishna MemGPT is a general agent, Vishwakarma runs one workflow:
 discover what the person wants (with forms), draft a blueprint, collect requirements, plan, build once
 approved, and explain how to try it. It has no memory or knowledge tools; its tools are the builder's
-(forms, plan, apply, status), and its prompt carries the ideas, the blueprint language and the draft.
+(book, forms, plan, apply, status).
+
+What Ada can build is a book (`blueprints/book.py`): her prompt carries its index, the blueprint rules and the
+draft, and only the pages she has opened in the last few turns (`page_retention_turns`). So a new resource kind or
+skill adds a page, not prompt weight.
 
 It is not in the architecture factory, so no agent can be created with it. The builder module creates
 it explicitly. See docs/LLD-solution-blueprints.md.
@@ -19,10 +23,12 @@ from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_audit import ToolCallAuditLog
 from src.agents.tool_execution import ToolExecutionRouter
 from src.agents.tool_runtime import ToolCategory, ToolRegistry
-from src.blueprints.catalog import build_ideas, catalog
+from src.agents.book import Book, pages_in_view
+from src.blueprints.book import blueprint_book
 from src.builder.models import BuilderSession
 from src.builder.repository import BuilderSessionRepository
 from src.builder.tools import build_builder_tool_registry
+from src.config import settings
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
 from src.messages.models import Attachment, Message
@@ -54,6 +60,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
         tool_registry: Optional[ToolRegistry] = None,
         provider_settings_repository: Optional[ProviderSettingsRepository] = None,
         skill_service: Optional[SkillService] = None,
+        page_retention_turns: Optional[int] = None,
     ):
         self.message_repo = message_repository or get_message_repository("dynamodb")
         self.sessions = session_repository or BuilderSessionRepository()
@@ -61,6 +68,14 @@ class VishwakarmaArchitecture(AgentArchitecture):
         self.provider_settings_repo = provider_settings_repository or get_provider_settings_repository()
         self.skill_service = skill_service or SkillService()
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
+        self._page_retention_turns = page_retention_turns
+
+    @property
+    def page_retention_turns(self) -> int:
+        """Read at use, so the setting can be changed while trying different values."""
+        if self._page_retention_turns is not None:
+            return self._page_retention_turns
+        return settings.ada_page_retention_turns
 
     @property
     def name(self) -> str:
@@ -83,6 +98,11 @@ class VishwakarmaArchitecture(AgentArchitecture):
         session = self.sessions.find(owner_email, conversation.conversation_id)
         if session is None:
             raise ValueError("This conversation isn't a building session.")
+        # A new turn: pages opened too long ago leave the prompt.
+        session.turn += 1
+        in_view = set(pages_in_view(session.opened_pages, session.turn, self.page_retention_turns))
+        session.opened_pages = {page_id: at for page_id, at in session.opened_pages.items() if page_id in in_view}
+        self.sessions.save(session)
         state = AgentTurnState(
             owner_email=owner_email,
             actor_email=actor_email,
@@ -113,15 +133,14 @@ class VishwakarmaArchitecture(AgentArchitecture):
             agent, owner_email=owner_email, provider_settings_repo=self.provider_settings_repo
         )
 
-        # 2. Context, then the prompt: the ideas, the blueprint language and the draft, loaded once.
+        # 2. Context, then the prompt: the book's index and open pages, the rules and the draft.
         history = self.conversation_strategy.build_context(
             self.message_repo.find_by_conversation(conversation.conversation_id),
             session_timeout_minutes=agent.session_timeout_minutes,
         )
-        blueprint_catalog = self._catalog(owner_email)
-        ideas = build_ideas()
+        book = self._book(owner_email)
         context: list[dict[str, Any]] = [
-            {"role": "system", "content": self._prompt(ideas, blueprint_catalog, session, conversation.context)},
+            {"role": "system", "content": self._prompt(book, session, conversation.context)},
             *history,
         ]
 
@@ -147,9 +166,9 @@ class VishwakarmaArchitecture(AgentArchitecture):
                 outputs.stop_reason = item.stop_reason
                 continue
             if isinstance(item, PromptRefreshNeeded):
-                # Planning or building changed the draft the prompt shows.
+                # Opening pages, planning or building changed what the prompt shows.
                 refreshed = self.sessions.find(owner_email, conversation.conversation_id) or session
-                context[0]["content"] = self._prompt(ideas, blueprint_catalog, refreshed, conversation.context)
+                context[0]["content"] = self._prompt(book, refreshed, conversation.context)
                 continue
 
             yield item
@@ -180,18 +199,17 @@ class VishwakarmaArchitecture(AgentArchitecture):
             message_id=assistant_msg.message_id,
         )
 
-    def _catalog(self, owner_email: str) -> dict[str, Any]:
+    def _book(self, owner_email: str) -> Book:
         ready = {
             item.skill_id: item.available and item.oauth_connected is not False
             for item in self.skill_service.list_catalog(owner_email)
         }
-        return catalog(ready=ready)
+        return blueprint_book(ready=ready)
 
-    @staticmethod
-    def _prompt(ideas: list, blueprint_catalog: dict[str, Any], session: BuilderSession, conversation_context: str | None) -> str:
+    def _prompt(self, book: Book, session: BuilderSession, conversation_context: str | None) -> str:
         return build_vishwakarma_system_prompt(
-            ideas=ideas,
-            catalog=blueprint_catalog,
+            book=book,
             session=session,
+            retention=self.page_retention_turns,
             conversation_context=conversation_context,
         )

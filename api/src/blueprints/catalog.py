@@ -72,7 +72,7 @@ def blueprint_json_schema(registry: Optional[SkillRegistry] = None) -> dict[str,
     return schema
 
 
-def _field_rows(model: type[BaseModel]) -> list[dict[str, Any]]:
+def field_rows(model: type[BaseModel]) -> list[dict[str, Any]]:
     schema = model.model_json_schema(by_alias=True)
     required = set(schema.get("required", []))
     return [
@@ -100,7 +100,7 @@ def _type_label(prop: dict[str, Any]) -> str:
     return str(prop.get("type", "any"))
 
 
-def _skill_config_rows(variant: SkillVariant) -> list[dict[str, Any]]:
+def skill_config_rows(variant: SkillVariant) -> list[dict[str, Any]]:
     return [
         {
             "name": field_def.name,
@@ -121,7 +121,7 @@ def catalog(registry: Optional[SkillRegistry] = None, ready: Optional[dict[str, 
             {
                 "kind": kind.kind,
                 "purpose": (kind.spec_model.__doc__ or "").strip(),
-                "fields": [row for row in _field_rows(kind.spec_model) if row["name"] != "kind"],
+                "fields": [row for row in field_rows(kind.spec_model) if row["name"] != "kind"],
                 "exposes": list(kind.exposes),
             }
             for kind in RESOURCE_KINDS
@@ -131,7 +131,7 @@ def catalog(registry: Optional[SkillRegistry] = None, ready: Optional[dict[str, 
                 "id": skill_id,
                 "name": variant.skill.manifest.name,
                 "description": variant.skill.manifest.description,
-                "config_fields": _skill_config_rows(variant),
+                "config_fields": skill_config_rows(variant),
                 "shareable": variant.shareable,
                 "actions": [
                     {"name": action.name, "description": action.description}
@@ -145,7 +145,7 @@ def catalog(registry: Optional[SkillRegistry] = None, ready: Optional[dict[str, 
     }
 
 
-def _table(rows: list[dict[str, Any]]) -> list[str]:
+def markdown_table(rows: list[dict[str, Any]]) -> list[str]:
     lines = ["| Field | Type | Required | Description |", "| --- | --- | --- | --- |"]
     for row in rows:
         description = row["description"].replace("|", "\\|").replace("\n", " ")
@@ -156,7 +156,7 @@ def _table(rows: list[dict[str, Any]]) -> list[str]:
 
 def _section(title: str, model: type[BaseModel]) -> list[str]:
     purpose = (model.__doc__ or "").strip()
-    return [f"## {title}", "", *([purpose, ""] if purpose else []), *_table(_field_rows(model)), ""]
+    return [f"## {title}", "", *([purpose, ""] if purpose else []), *markdown_table(field_rows(model)), ""]
 
 
 def reference_markdown(registry: Optional[SkillRegistry] = None) -> str:
@@ -168,14 +168,14 @@ def reference_markdown(registry: Optional[SkillRegistry] = None) -> str:
         "",
         "## Blueprint",
         "",
-        *_table(_field_rows(Blueprint)),
+        *markdown_table(field_rows(Blueprint)),
         "",
         *_section("Metadata", Metadata),
         *_section("Param", ParamSpec),
         *_section("Output", OutputSpec),
     ]
     for entry in catalog(registry)["kinds"]:
-        out += [f"## {entry['kind']}", "", entry["purpose"], "", *_table(entry["fields"]), ""]
+        out += [f"## {entry['kind']}", "", entry["purpose"], "", *markdown_table(entry["fields"]), ""]
         out += [f"Outputs can use: {', '.join(f'`{name}`' for name in entry['exposes'])}.", ""]
     out += [*_section("Crawl", CrawlSpec), *_section("Skill entry", SkillEntry)]
     out += ["## Skills", ""]
@@ -184,7 +184,7 @@ def reference_markdown(registry: Optional[SkillRegistry] = None) -> str:
         if not skill["shareable"]:
             out += ["Only you can use this skill, so it takes no `available_to`.", ""]
         if skill["config_fields"]:
-            out += [*_table(skill["config_fields"]), ""]
+            out += [*markdown_table(skill["config_fields"]), ""]
     return "\n".join(out)
 
 

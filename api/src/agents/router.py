@@ -8,7 +8,6 @@ import logging
 
 import src.form_models as form_models
 from src.config import settings
-from src.agents.image_generation.storage import ConversationMediaStorage
 from src.agents.image_generation.models import GenerateImageRequest, GenerateImageResponse
 from src.agents.image_generation.service import (
     AgentImageGenerationError,
@@ -33,7 +32,6 @@ from src.agents.turns.transcript import TurnTranscript
 from src.a2a.models import A2ATaskListResponse, A2ATaskResponse
 from src.a2a.repository import A2ATaskRepository
 from src.apikeys.repository import ApiKeyRepository
-from src.public_api.keys import SecretKeyRepository
 from src.common.sse import sse_response
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
@@ -375,15 +373,7 @@ async def delete_agent(
     # Agent ids are public (A2A cards, embeds), so nothing is deleted until we know the caller owns it.
     if not repo.find_agent_by_id(agent_id, user_email):
         raise HTTPException(status_code=404, detail="Agent not found")
-    DreamService().delete_schedule(agent_id, user_email, user_email)
-    repo.delete_by_id(agent_id, user_email)
-    SecretKeyRepository().delete_all_by_agent(agent_id)
-    ApiKeyRepository().delete_all_by_agent(agent_id)
-    try:
-        ConversationMediaStorage().delete_agent_prefix(agent_id)
-    except Exception:
-        log.warning("Failed to delete media for agent %s", agent_id, exc_info=True)
-    log.info(f"Deleted agent {agent_id} for user {user_email}")
+    AgentService(repo).delete(agent_id, user_email)
 
 
 @dataclass(frozen=True)

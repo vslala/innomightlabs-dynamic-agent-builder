@@ -33,6 +33,9 @@ def approval_label(plan_id: str) -> str:
 def approval_form(plan_id: str, plan: Plan, context: dict[str, Any]) -> dict[str, Any]:
     """A `ui_form_render` payload from the Interactive Forms module: the chat shows it under the agent's message."""
     steps = "\n".join(f"{index}. {step.summary}" for index, step in enumerate(plan.steps, start=1))
+    if plan.removals:
+        # Said again on its own, because these can't be undone.
+        steps += "\n\nThis removes, and it can't be undone:\n" + "\n".join(f"- {removal}" for removal in plan.removals)
     return render_custom_form(
         arguments={
             "form_label": approval_label(plan_id),

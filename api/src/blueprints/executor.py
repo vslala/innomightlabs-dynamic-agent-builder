@@ -1,4 +1,10 @@
-"""Applying a planned blueprint: create in dependency order, start crawls last, roll back on failure."""
+"""Applying a planned blueprint: create and update in dependency order, start crawls, then remove; roll back the
+creates and updates if one of them fails.
+
+Removals come last because they can't be undone. If one fails, everything before it stays applied and the
+deployment says what's left; applying the same blueprint again finishes the job, since what's already gone is
+planned as done.
+"""
 
 import logging
 import re
@@ -46,6 +52,8 @@ def apply_blueprint(
     try:
         for name in validated.order:
             spec = blueprint.resources[name]
+            if spec.remove:
+                continue
             kind = kind_for(spec.kind)
             change = plan.changes[name]
             if change.action == Action.CREATE:
@@ -68,12 +76,35 @@ def apply_blueprint(
         deployment.status = _undo(touched, ctx, deployment)
         return repository.save(_touch(deployment))
 
+    try:
+        _remove(validated, plan, ctx, deployment)
+    except Exception as e:
+        log.exception("Removing parts of blueprint %s failed for %s", blueprint.metadata.name, user_email)
+        deployment.error = f"Everything else was applied, but a removal failed: {str(e) or type(e).__name__}"
+        deployment.status = DeploymentStatus.FAILED_PARTIAL
+        return repository.save(_touch(deployment))
+
     deployment.outputs = {
         name: DeploymentOutput(value=_fill_outputs(output.value, ctx.applied), description=output.description)
         for name, output in blueprint.outputs.items()
     }
     deployment.status = DeploymentStatus.APPLIED
     return repository.save(_touch(deployment))
+
+
+def _remove(validated: ValidatedBlueprint, plan: Plan, ctx: ApplyContext, deployment: Deployment) -> None:
+    """Dependents first (a widget key before its agent), recording each removal as it happens."""
+    for name in reversed(validated.order):
+        change = plan.changes[name]
+        if not change.removals:
+            continue
+        spec = validated.blueprint.resources[name]
+        kind = kind_for(spec.kind)
+        if change.action == Action.REMOVE:
+            kind.delete(change, ctx)
+        else:
+            kind.remove_parts(ctx.applied[name], spec, change, ctx)
+        deployment.removed += change.removals
 
 
 def _undo(touched: list[tuple[Action, AppliedResource]], ctx: ApplyContext, deployment: Deployment) -> DeploymentStatus:

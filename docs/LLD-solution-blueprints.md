@@ -108,8 +108,9 @@ person.*
       settings, sharing and on/off state.
     - Knowledge base: re-read only when its crawl settings differ from the last crawl.
     - Widget key: updated in place, so its public key, and the snippet already on the site, never change.
-  - **Updates never delete.** Skills, knowledge base links and keys the blueprint leaves out stay as they are. To
-    switch a skill off, a blueprint sets `enabled: false`. Deleting is still to do.
+  - **Leaving something out never removes it.** Skills, knowledge base links and keys the blueprint leaves out
+    stay as they are. To switch a skill off, a blueprint sets `enabled: false`. Removing is explicit; see the next
+    note.
   - **Starting from an existing agent:** `blueprints/export.py` (`export_agent`) writes an agent, its knowledge
     bases, skills and widget keys out as a blueprint with their ids. Skills that need a secret are left out, and
     since updates never remove skills, they stay installed.
@@ -119,6 +120,35 @@ person.*
       rebuilds.
     - Her prompt says so, adds `ANCHOR_NO_DUPLICATES`, and forbids renaming to get past a blocker.
   - **The drawing** badges each card New, Update or No change, and lists an update's changes on the card.
+- **Removing, explicitly.** Part of phase 4. A blueprint removes only what it names:
+
+  | To | Write | What happens |
+  | --- | --- | --- |
+  | Disconnect a knowledge base from an agent | `remove_knowledge_bases: [<kb resource>]` on the agent | The link goes; the knowledge base and its content stay |
+  | Uninstall a skill | `remove_skills: [<skill id>]` on the agent | Every install of it on that agent, with its settings and secrets |
+  | Delete a resource | `remove: true` on it, with its `id` | The same delete as the dashboard: a knowledge base loses its vectors and chunks and every agent's link to it; an agent goes with its dream schedule, keys and media (`AgentService.delete`, now shared with `DELETE /agents/{id}`); a widget key stops working |
+
+  ```mermaid
+  flowchart LR
+      V[validate<br/>remove needs id · nothing kept uses a removed resource · no link-and-unlink] --> P
+      P[plan<br/>update steps carry removals · remove steps · already gone = unchanged] --> A[approval form<br/>"This removes, and it can't be undone"]
+      A --> X1[apply creates and updates<br/>roll back on failure]
+      X1 --> X2[start crawls]
+      X2 --> X3[removals, dependents first<br/>recorded in deployment.removed]
+  ```
+
+  *Removals run last because they can't be undone. A failed removal leaves everything before it applied, with
+  status `failed_partial`; applying again finishes the job, since what's already gone plans as unchanged.*
+
+  - **Kind interface** (`kinds/base.py`): `Action.REMOVE`, `Change.removals`, plus `removals()` (what an update
+    takes away, in plain words), `remove_parts()`, `delete()`, and a `deletes` sentence per kind for the plan.
+  - **The plan** lists removals apart (`PlanStep.removals`, `Plan.removals`). The approval form repeats them under
+    "This removes, and it can't be undone", and the drawing marks them in red: a **Remove** badge on deleted
+    resources, and "− disconnect knowledge base …" on updated ones. Disconnections aren't drawn as wires.
+  - **Ada:** the plan result carries `removals`, and she must name each one before the person approves. Her
+    prompt says when to remove (only when asked; prefer disconnecting or switching off to deleting), and never to
+    send the person to the dashboard for something a blueprint can do.
+  - **Tests:** `api/tests/test_blueprints_remove.py`, and a removal case in `test_builder_ada.py`.
 - **Builder session:** `api/src/builder/models.py`, item `pk=User#{email}`, `sk=BuilderSession#{conversation_id}`.
   - Chat history keeps messages, not tool calls. So the draft (YAML, params), the current `plan_id` and the
     `deployment_id` live here, and the prompt renders them every turn.

@@ -52,6 +52,8 @@ def skill_changes(entry: SkillEntry, installed: AgentSkill) -> bool:
 class AgentKind(ResourceKind[AgentSpec]):
     kind = "Agent"
     label = "Agent"
+    use_when = "Anything people chat with: a support assistant, a docs helper, an agent with skills such as forms or email."
+    deletes = "its conversations, skills, widget keys and API keys go with it"
     spec_model = AgentSpec
     exposes = ("id", "name")
 
@@ -67,13 +69,16 @@ class AgentKind(ResourceKind[AgentSpec]):
             if not agent:
                 return None
             matched_by = "name"
+        installs = AgentSkillRepository().list_by_agent(agent.agent_id)
         return Existing(
             id=agent.agent_id,
             record=agent,
             matched_by=matched_by,  # type: ignore[arg-type]
             related={
                 "kb_ids": {link.kb_id for link in AgentKnowledgeBaseRepository().find_kbs_for_agent(agent.agent_id)},
-                "skills": {skill.skill_id: skill for skill in AgentSkillRepository().list_by_agent(agent.agent_id)},
+                "skills": {skill.skill_id: skill for skill in installs},
+                # Every install, since a repeatable skill can be on the agent more than once.
+                "installs": installs,
             },
         )
 
@@ -103,6 +108,19 @@ class AgentKind(ResourceKind[AgentSpec]):
             elif skill_changes(entry, skill):
                 changes.append(f"update skill {entry.id.replace('_', ' ')}")
         return changes
+
+    def removals(self, name: str, spec: AgentSpec, existing: Existing, ctx: PlanContext) -> list[str]:
+        removals = []
+        linked = existing.related["kb_ids"]
+        for kb_name in spec.remove_knowledge_bases:
+            matched = ctx.matched.get(kb_name)
+            if matched is not None and matched.id in linked:
+                removals.append(f"disconnect knowledge base '{matched.record.name}'")
+        installed = {install.skill_id for install in existing.related["installs"]}
+        for skill_id in spec.remove_skills:
+            if skill_id in installed:
+                removals.append(f"uninstall skill {skill_id.replace('_', ' ')}")
+        return removals
 
     def check(self, name: str, spec: AgentSpec, change: Change, ctx: PlanContext) -> list[BlueprintIssue]:
         path = f"resources.{name}"
@@ -255,6 +273,28 @@ class AgentKind(ResourceKind[AgentSpec]):
                     available_to=[ActorKind.OWNER, *(skill_audience(entry) or [])],
                 )
                 applied.previous["skills"][installed_skill_id] = existing_skill
+
+    def remove_parts(self, applied: AppliedResource, spec: AgentSpec, change: Change, ctx: ApplyContext) -> None:
+        existing = change.existing
+        if existing is None:
+            return
+        links = AgentKnowledgeBaseRepository()
+        for kb_name in spec.remove_knowledge_bases:
+            # A knowledge base being deleted in this blueprint is disconnected by its own delete.
+            kb = ctx.applied.get(kb_name)
+            if kb is not None and kb.id in existing.related["kb_ids"]:
+                links.unlink(applied.id, kb.id)
+        service = SkillService()
+        for install in existing.related["installs"]:
+            if install.skill_id in spec.remove_skills:
+                service.uninstall(
+                    agent_id=applied.id,
+                    installed_skill_id=install.installed_skill_id or install.skill_id,
+                    user_email=ctx.user_email,
+                )
+
+    def delete(self, change: Change, ctx: ApplyContext) -> None:
+        AgentService().delete(change.existing.id, ctx.user_email)  # type: ignore[union-attr]
 
     def kept(self, name: str, change: Change) -> AppliedResource:
         return self._applied(name, change.existing.record)  # type: ignore[union-attr]

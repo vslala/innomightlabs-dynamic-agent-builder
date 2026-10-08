@@ -37,6 +37,8 @@ def embed_snippet(public_key: str) -> str:
 class WidgetKeyKind(ResourceKind[WidgetKeySpec]):
     kind = "WidgetKey"
     label = "Chat widget"
+    use_when = "Put an agent on a website as a chat bubble, or let visitors chat without signing in."
+    deletes = "the chat widget stops working on every site that uses this key"
     spec_model = WidgetKeySpec
     exposes = ("id", "public_key", "snippet")
 
@@ -115,6 +117,10 @@ class WidgetKeyKind(ResourceKind[WidgetKeySpec]):
             attributes={"id": key.key_id, "public_key": key.public_key, "snippet": embed_snippet(key.public_key)},
             cleanup={"agent_id": [key.agent_id]},
         )
+
+    def delete(self, change: Change, ctx: ApplyContext) -> None:
+        key: AgentApiKey = change.existing.record  # type: ignore[union-attr]
+        ApiKeyRepository().delete_by_id(key.agent_id, key.key_id)
 
     def rollback(self, applied: AppliedResource, ctx: ApplyContext) -> None:
         ApiKeyRepository().delete_by_id(applied.cleanup["agent_id"][0], applied.id)

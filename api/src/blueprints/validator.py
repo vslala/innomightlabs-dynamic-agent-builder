@@ -18,6 +18,7 @@ from src.blueprints.parser import join_path, parse_yaml
 from src.blueprints.skills_schema import SkillVariant, skill_variants
 from src.blueprints.spec import (
     REF_KIND,
+    REMOVES,
     RESOURCE_SPECS,
     AgentSpec,
     Blueprint,
@@ -100,6 +101,7 @@ def validate_blueprint(
         issues += kind_for(resource.kind).validate(name, resource)
     reference_issues, order = check_references(blueprint)
     issues += reference_issues
+    issues += check_removals(blueprint, skill_variants(registry))
 
     if issues:
         raise BlueprintInvalid(_with_lines(issues, lines))
@@ -330,6 +332,12 @@ def check_references(blueprint: Blueprint) -> tuple[list[BlueprintIssue], list[s
                         path=path,
                         message=f"'{target}' is a {referenced.kind}, but `{field_name}` needs a {extra[REF_KIND]}.",
                     ))
+                elif referenced.remove and not resource.remove and not extra.get(REMOVES):
+                    issues.append(BlueprintIssue(
+                        path=path,
+                        message=f"'{target}' is being removed, so `{field_name}` can't use it.",
+                        hint=f"Take '{target}' out of `{field_name}`, or don't remove it.",
+                    ))
                 else:
                     depends_on.add(target)
         graph[name] = depends_on
@@ -340,6 +348,55 @@ def check_references(blueprint: Blueprint) -> tuple[list[BlueprintIssue], list[s
         issues.append(BlueprintIssue(path="resources", message=f"These resources refer to each other in a loop: {cycle}."))
         order = []
     return issues, order
+
+
+def check_removals(blueprint: Blueprint, variants: dict[str, SkillVariant]) -> list[BlueprintIssue]:
+    """Removing is explicit and names exactly what goes, so nothing is removed by a typo or a guess."""
+    issues = []
+    for name, resource in blueprint.resources.items():
+        path = f"resources.{name}"
+        if resource.remove and not resource.id:
+            issues.append(BlueprintIssue(
+                path=f"{path}.remove",
+                message="Only an existing resource can be removed, and it needs its `id` to say which one.",
+                hint="Load it first, so the draft has its id.",
+            ))
+        if not isinstance(resource, AgentSpec):
+            continue
+        for index, kb_name in enumerate(resource.remove_knowledge_bases):
+            if kb_name in resource.knowledge_bases:
+                issues.append(BlueprintIssue(
+                    path=f"{path}.remove_knowledge_bases[{index}]",
+                    message=f"'{kb_name}' is in both `knowledge_bases` and `remove_knowledge_bases`.",
+                    hint="Keep it in one of them.",
+                ))
+        listed = {entry.id for entry in resource.skills}
+        for index, skill_id in enumerate(resource.remove_skills):
+            entry_path = f"{path}.remove_skills[{index}]"
+            if skill_id not in variants:
+                issues.append(BlueprintIssue(
+                    path=entry_path,
+                    message=f"There's no skill called '{skill_id}'.",
+                    hint=did_you_mean(skill_id, variants.keys()),
+                ))
+            elif skill_id in listed:
+                issues.append(BlueprintIssue(
+                    path=entry_path,
+                    message=f"'{skill_id}' is in both `skills` and `remove_skills`.",
+                    hint="Keep it in one of them. To switch it off but keep it, use `enabled: false` under `skills`.",
+                ))
+    for output_name, output in blueprint.outputs.items():
+        for token in TEMPLATE.findall(output.value):
+            reference = RESOURCE_REF.match(token)
+            target_name = reference.group(1) if reference else ""
+            target = blueprint.resources.get(target_name)
+            if target is not None and target.remove:
+                issues.append(BlueprintIssue(
+                    path=f"outputs.{output_name}.value",
+                    message=f"'{target_name}' is being removed, so an output can't show it.",
+                    hint="Remove this output.",
+                ))
+    return issues
 
 
 def check_skills(blueprint: Blueprint, data: dict[str, Any], variants: dict[str, SkillVariant]) -> list[BlueprintIssue]:

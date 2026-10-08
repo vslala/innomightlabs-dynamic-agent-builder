@@ -3,6 +3,10 @@
 A blueprint is applied against what already exists: each resource is matched to an existing one (by `id`, else
 by name), compared with it, and then created, updated or left alone. Applying the same blueprint twice changes
 nothing the second time.
+
+Removing is always explicit: leaving something out of a blueprint never removes it. A resource marked `remove`
+is deleted, and an update can take parts away (an agent's `remove_knowledge_bases`, `remove_skills`). Removals
+run after everything else has been applied, because they can't be undone.
 """
 
 from dataclasses import dataclass, field
@@ -19,6 +23,7 @@ class Action(str, Enum):
     CREATE = "create"
     UPDATE = "update"
     UNCHANGED = "unchanged"
+    REMOVE = "remove"
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,8 @@ class Change:
     existing: Optional[Existing] = None
     #: What an update changes, in plain words ("add skill lead capture").
     changes: tuple[str, ...] = ()
+    #: What it takes away, in plain words ("disconnect knowledge base 'Docs'"). Shown apart, since it can't be undone.
+    removals: tuple[str, ...] = ()
 
 
 @dataclass
@@ -91,6 +98,10 @@ class ResourceKind(Generic[SpecT]):
     kind: ClassVar[str]
     #: How the kind is named to people, in plans and drawings.
     label: ClassVar[str]
+    #: When to use it, in the words a person would ask with. Ada's book index routes on this.
+    use_when: ClassVar[str]
+    #: What deleting one takes with it, in plain words, for the plan.
+    deletes: ClassVar[str]
     spec_model: ClassVar[type[BaseModel]]
     #: Attribute names `apply` fills in, listed in the catalog and checked in `outputs`.
     exposes: ClassVar[tuple[str, ...]]
@@ -106,6 +117,10 @@ class ResourceKind(Generic[SpecT]):
 
     def differences(self, name: str, spec: SpecT, existing: Existing, ctx: PlanContext) -> list[str]:
         """What updating `existing` to match the spec changes, in plain words. Empty means nothing to do."""
+        return []
+
+    def removals(self, name: str, spec: SpecT, existing: Existing, ctx: PlanContext) -> list[str]:
+        """What updating `existing` takes away, in plain words. Only what the spec explicitly names."""
         return []
 
     def check(self, name: str, spec: SpecT, change: Change, ctx: PlanContext) -> list[BlueprintIssue]:
@@ -133,6 +148,13 @@ class ResourceKind(Generic[SpecT]):
 
     def start(self, applied: AppliedResource, spec: SpecT, ctx: ApplyContext) -> None:
         """Runs once every resource exists, so work that can't be undone (a crawl) starts last."""
+
+    def remove_parts(self, applied: AppliedResource, spec: SpecT, change: Change, ctx: ApplyContext) -> None:
+        """Take away what `removals` listed. Runs once everything else is applied."""
+
+    def delete(self, change: Change, ctx: ApplyContext) -> None:
+        """Delete the existing resource a `remove` matched. Runs once everything else is applied."""
+        raise NotImplementedError
 
     def rollback(self, applied: AppliedResource, ctx: ApplyContext) -> None:
         """Undo a create."""
