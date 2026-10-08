@@ -1,0 +1,18 @@
+<current_draft>
+{% if draft_yaml %}
+The blueprint you're working on in this conversation. Change it as the person's needs change, and always pass the
+whole YAML to plan_blueprint.
+```yaml
+{{ draft_yaml }}
+```
+Param values: {{ draft_params | tojson }}
+{% if plan_id %}
+It is planned with plan_id {{ plan_id }}, waiting for the person's approval.
+{% endif %}
+{% else %}
+No draft yet.
+{% endif %}
+{% if built %}
+You have already built something in this conversation; get_build_status tells you how it's doing.
+{% endif %}
+</current_draft>

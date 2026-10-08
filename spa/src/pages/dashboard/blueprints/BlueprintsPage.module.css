@@ -1,0 +1,186 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  max-width: 72ch;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.side,
+.stack,
+.editorBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.editor {
+  min-height: 560px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.buttonIcon {
+  width: 16px;
+  height: 16px;
+}
+
+.issues {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issue {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid #f87171;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+}
+
+.issueIcon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: #f87171;
+}
+
+.issueMessage {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.issueHint {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.issueLocation {
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.steps,
+.resources,
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step,
+.resources li {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.resources a {
+  color: var(--gradient-start);
+}
+
+.stepKind {
+  flex-shrink: 0;
+  min-width: 112px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.blockedNote {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.output {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.outputHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.outputName {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.outputDescription {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.outputValue {
+  display: block;
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.historyRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 16px;
+  align-items: center;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.historyDate {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}

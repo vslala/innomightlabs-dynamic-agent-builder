@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Archive, Bot, MessageSquare, Settings, LogOut, Home, Database, Workflow, Plug, Sparkles } from "lucide-react";
+import { Archive, Bot, MessageSquare, Settings, LogOut, Home, Database, Workflow, Plug, Sparkles, Hammer } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { authService } from "../../services/auth";
@@ -7,6 +7,7 @@ import logo from "../../assets/brand/innomightlabs-logo.png";
 
 const navItems = [
   { to: "/dashboard", icon: Home, label: "Overview" },
+  { to: "/dashboard/build", icon: Hammer, label: "Build with Ada" },
   { to: "/dashboard/agents", icon: Bot, label: "Agents" },
   { to: "/dashboard/automations", icon: Workflow, label: "Automations" },
   { to: "/dashboard/conversations", icon: MessageSquare, label: "Conversations" },

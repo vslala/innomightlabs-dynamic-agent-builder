@@ -44,6 +44,8 @@ PUBLIC_PATHS = {
     "/redoc",
     "/payments/stripe/webhook",
     "/payments/stripe/pricing",
+    "/blueprints/schema/v1.json",
+    "/blueprints/reference",
     "/contact/submit",
     "/contact/enquiry",
     "/.well-known/agent-card.json",

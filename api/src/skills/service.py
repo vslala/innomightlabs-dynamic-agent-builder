@@ -21,6 +21,7 @@ from src.skills.models import (
     ActorKind,
     AgentSkill,
     InstalledSkillResponse,
+    LoadedSkill,
     LoadedSkillRuntimeAction,
     LoadedSkillRuntimeActionSummary,
     LoadedSkillRuntimeResponse,
@@ -105,18 +106,21 @@ class SkillService:
             FormOptionsContext(user_email=user_email),
         )
 
-    def install_skill(
+    def check_install(
         self,
         *,
-        agent_id: str,
         skill_id: str,
         user_email: str,
         raw_config: dict[str, Any],
         enabled: bool = True,
-    ) -> AgentSkill:
+        available_to: list[ActorKind] | None = None,
+    ) -> tuple[LoadedSkill, dict[str, Any]]:
+        """Everything an install checks, without installing. Raises ValueError with a user-facing reason."""
         loaded = self.registry.get(skill_id)
         if not loaded:
             raise ValueError(f"Unknown skill: {skill_id}")
+        if available_to and loaded.manifest.runs_only_for_owner and set(available_to) != {ActorKind.OWNER}:
+            raise ValueError(f"{loaded.manifest.name} uses your own accounts or credentials, so only you can use it")
 
         if enabled and loaded.manifest.requires_oauth and loaded.manifest.oauth_provider_name:
             provider_settings = self.provider_settings_repository.find_by_provider(
@@ -133,7 +137,26 @@ class SkillService:
                 f"{loaded.manifest.name} requires connected connector(s): {', '.join(missing_connectors)}"
             )
 
-        normalized = self.validate_install_config(skill_id, user_email, raw_config)
+        return loaded, self.validate_install_config(skill_id, user_email, raw_config)
+
+    def install_skill(
+        self,
+        *,
+        agent_id: str,
+        skill_id: str,
+        user_email: str,
+        raw_config: dict[str, Any],
+        enabled: bool = True,
+        available_to: list[ActorKind] | None = None,
+    ) -> AgentSkill:
+        """`available_to=None` keeps the audience of an existing install (owner only for a new one)."""
+        loaded, normalized = self.check_install(
+            skill_id=skill_id,
+            user_email=user_email,
+            raw_config=raw_config,
+            enabled=enabled,
+            available_to=available_to,
+        )
         secret_fields = self.registry.secret_fields(skill_id)
         plain_config = {k: v for k, v in normalized.items() if k not in secret_fields}
         secret_config = {k: v for k, v in normalized.items() if k in secret_fields}
@@ -152,7 +175,11 @@ class SkillService:
             plain_config=plain_config,
             secret_config=secret_config,
             secret_fields=sorted(secret_fields),
-            available_to=existing.available_to if existing else None,
+            available_to=(
+                sorted({ActorKind.OWNER, *available_to}, key=list(ActorKind).index)
+                if available_to is not None
+                else existing.available_to if existing else None
+            ),
         )
 
     def validate_install_config(

@@ -19,6 +19,7 @@ from src.agents.image_generation.service import (
 )
 from src.agents.models import Agent, CreateAgentRequest, AgentResponse
 from src.agents.repository import AgentRepository
+from src.agents.service import AgentService
 from src.agents.schemas import get_create_agent_form, get_update_agent_form, UPDATE_AGENT_FORM
 from src.agents.turns import (
     ConversationTurn,
@@ -185,26 +186,7 @@ async def create_agent(
         log.info(f"Agent '{create_request.agent_name}' already exists for user {user_email}, returning existing")
         return existing_agent.to_response()
 
-    # Create new agent (API keys now stored in provider settings)
-    agent = Agent(
-        agent_name=create_request.agent_name,
-        agent_architecture=create_request.agent_architecture,
-        agent_provider=create_request.agent_provider,
-        agent_model=create_request.agent_model,
-        agent_persona=create_request.agent_persona,
-        agent_description=create_request.agent_description,
-        agent_ollama_thinking=create_request.agent_ollama_thinking,
-        created_by=user_email,
-    )
-
-    saved_agent = repo.save(agent)
-    if saved_agent.agent_architecture == "krishna-memgpt":
-        dream_settings = DreamRepository().find_settings(user_email)
-        if dream_settings:
-            DreamService().ensure_schedule(saved_agent.agent_id, user_email, user_email, dream_settings)
-    log.info(f"Created new agent '{saved_agent.agent_name}' (id={saved_agent.agent_id}) for user {user_email}")
-
-    return saved_agent.to_response()
+    return AgentService(repo).create(create_request, user_email).to_response()
 
 
 @router.get("", response_model=list[AgentResponse])

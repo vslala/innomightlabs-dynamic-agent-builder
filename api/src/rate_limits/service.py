@@ -49,9 +49,9 @@ class RateLimitService:
 
         return config.tiers[0].limits
 
-    def check_agent_limit(self, user_email: str) -> None:
+    def check_agent_limit(self, user_email: str, additional: int = 1) -> None:
         """
-        Check if user can create a new agent.
+        Check if user can create `additional` new agents.
 
         Raises:
             HTTPException: 429 if limit exceeded
@@ -78,7 +78,7 @@ class RateLimitService:
             if current_agents > 0:
                 self.usage_repo.adjust_active_agents(user_email, current_agents)
 
-        if current_agents >= limits.agents:
+        if current_agents + additional > limits.agents:
             log.info(
                 "Agent limit reached",
                 extra={

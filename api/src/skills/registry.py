@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import inspect
 import json
@@ -48,6 +49,13 @@ class SkillRegistry:
                 log.warning("Skipping invalid skill manifest %s: %s", manifest_path, e)
 
         self._loaded = loaded
+        #: Changes whenever a manifest does; caches built from the manifests key on it.
+        self.version = hashlib.sha256(
+            json.dumps(
+                [loaded[skill_id].manifest.model_dump(mode="json") for skill_id in sorted(loaded)],
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()[:16]
         log.info("Loaded %d skills from %s", len(self._loaded), self.root_dir)
 
     def list(self) -> list[LoadedSkill]:

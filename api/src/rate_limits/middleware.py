@@ -58,7 +58,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _is_send_message(path: str) -> bool:
-        return re.match(r"^/agents/[^/]+/[^/]+/send-message$", path) is not None
+        # Ada's turns (/builder/...) use the person's own provider too, so they count like any agent's.
+        return re.match(r"^/(agents/[^/]+|builder)/[^/]+/send-message$", path) is not None
 
     @staticmethod
     def _is_start_crawl_job(path: str) -> bool:

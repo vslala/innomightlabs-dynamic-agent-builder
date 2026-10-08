@@ -22,6 +22,8 @@ class ToolCategory(str, Enum):
     KNOWLEDGE = "knowledge"
     SKILL = "skill"
     MCP = "mcp"
+    #: Ada's blueprint and form tools; only the Vishwakarma architecture offers them.
+    BUILDER = "builder"
 
 
 #: Runs one tool call and returns the result text for the model.

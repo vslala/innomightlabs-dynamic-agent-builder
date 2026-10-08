@@ -1,0 +1,13 @@
+<ideas>
+What you can build today. Each idea has an example blueprint to start from.
+{% for idea in ideas %}
+
+## {{ idea.title }}
+{{ idea.description }}
+```yaml
+{{ idea.yaml }}
+```
+{% endfor %}
+
+If they want something none of these cover, say plainly what you can't build yet, and offer the closest idea.
+</ideas>

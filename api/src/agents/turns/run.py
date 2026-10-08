@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from src.agents.architectures import get_agent_architecture
-from src.agents.architectures.base import turn_error_message
+from src.agents.architectures.base import AgentArchitecture, turn_error_message
 from src.agents.turns.models import ConversationTurn, ConversationTurnStatus
 from src.agents.turns.repository import ConversationTurnRepository
 from src.agents.turns.transcript import TurnTranscript
@@ -59,6 +59,9 @@ class TurnRequest:
     actor_id: str
     actor_kind: ActorKind
     api_key_id: str | None = None
+    #: Runs the turn instead of the agent's own architecture, for agents that aren't in the
+    #: factory (Ada, the solution builder).
+    architecture: AgentArchitecture | None = None
 
 
 def start_turn(
@@ -72,6 +75,7 @@ def start_turn(
     actor_id: str,
     actor_kind: ActorKind,
     api_key_id: str | None = None,
+    architecture: AgentArchitecture | None = None,
 ) -> RunningTurn:
     now = datetime.now(timezone.utc)
     turn = ConversationTurn(
@@ -99,6 +103,7 @@ def start_turn(
                 actor_id=actor_id,
                 actor_kind=actor_kind,
                 api_key_id=api_key_id,
+                architecture=architecture,
             ),
         )
     )
@@ -135,7 +140,7 @@ async def _drive_turn(
     failed_error: str | None = None
 
     try:
-        architecture = get_agent_architecture(request.agent.agent_architecture)
+        architecture = request.architecture or get_agent_architecture(request.agent.agent_architecture)
         async for event in architecture.handle_message(  # pyright: ignore[reportGeneralTypeIssues]
             agent=request.agent,
             conversation=request.conversation,

@@ -129,6 +129,13 @@ class Settings:
     #: Guest messages per widget key per day.
     widget_guest_daily_message_limit: int = 500
     widget_guest_max_message_chars: int = 2000
+    # Solution blueprints. See docs/LLD-solution-blueprints.md.
+    blueprint_max_resources: int = 20
+    blueprint_max_bytes: int = 64 * 1024
+    #: Blueprint applies per user per hour.
+    blueprint_apply_limit: int = 10
+    #: The iframe widget loader that embed snippets point at.
+    embed_loader_url: str = "https://cdn.innomightlabs.com/embed.js"
     mcp_oauth_redirect_uri: str = ""
     cli_runner_base_url: str = ""
     cli_runner_shared_token: str = ""
@@ -470,6 +477,10 @@ class Settings:
             widget_guest_message_limit=int(os.getenv("WIDGET_GUEST_MESSAGE_LIMIT", "30")),
             widget_guest_message_window_seconds=int(os.getenv("WIDGET_GUEST_MESSAGE_WINDOW_SECONDS", "3600")),
             widget_guest_daily_message_limit=int(os.getenv("WIDGET_GUEST_DAILY_MESSAGE_LIMIT", "500")),
+            blueprint_max_resources=int(os.getenv("BLUEPRINT_MAX_RESOURCES", "20")),
+            blueprint_max_bytes=int(os.getenv("BLUEPRINT_MAX_BYTES", str(64 * 1024))),
+            blueprint_apply_limit=int(os.getenv("BLUEPRINT_APPLY_LIMIT", "10")),
+            embed_loader_url=os.getenv("EMBED_LOADER_URL", "https://cdn.innomightlabs.com/embed.js"),
             widget_guest_max_message_chars=int(os.getenv("WIDGET_GUEST_MAX_MESSAGE_CHARS", "2000")),
             dream_message_page_size=int(os.getenv("DREAM_MESSAGE_PAGE_SIZE", "200")),
             dream_chunk_max_words=int(os.getenv("DREAM_CHUNK_MAX_WORDS", "6000")),

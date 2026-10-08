@@ -8,6 +8,7 @@ import type {
   GenerateImageResponse,
   SSEEvent,
 } from "../../types/message";
+import { chatPath } from "../builder/ada";
 
 const AUTH_TOKEN_KEY = "auth_token";
 const TURN_ID_HEADER = "X-Turn-Id";
@@ -141,7 +142,7 @@ class ChatService {
     const { onEvent, onError, onComplete, onTurnStarted, onConflict, signal } = options;
     const token = this.getAuthToken();
 
-    const url = `${this.baseUrl}/agents/${agentId}/${conversationId}/send-message`;
+    const url = `${this.baseUrl}${chatPath(agentId, conversationId)}/send-message`;
 
     // Build request body with optional attachments
     const body: { content: string; attachments?: Attachment[]; deep_research?: boolean } = {
@@ -204,7 +205,7 @@ class ChatService {
   /** The turn still running for this conversation, if any — for reattaching on mount. */
   async getActiveTurn(agentId: string, conversationId: string): Promise<ActiveTurn | null> {
     const token = this.getAuthToken();
-    const response = await fetch(`${this.baseUrl}/agents/${agentId}/${conversationId}/turns/active`, {
+    const response = await fetch(`${this.baseUrl}${chatPath(agentId, conversationId)}/turns/active`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
 
@@ -232,7 +233,7 @@ class ChatService {
     let afterSequence = 0;
 
     for (let attempt = 1; attempt <= FOLLOW_TURN_MAX_ATTEMPTS; attempt++) {
-      const url = `${this.baseUrl}/agents/${agentId}/${conversationId}/turns/${turnId}/events?after_sequence=${afterSequence}`;
+      const url = `${this.baseUrl}${chatPath(agentId, conversationId)}/turns/${turnId}/events?after_sequence=${afterSequence}`;
 
       try {
         const response = await fetch(url, {
@@ -272,7 +273,7 @@ class ChatService {
   async stopTurn(agentId: string, conversationId: string, turnId: string): Promise<void> {
     const token = this.getAuthToken();
     const response = await fetch(
-      `${this.baseUrl}/agents/${agentId}/${conversationId}/turns/${turnId}/stop`,
+      `${this.baseUrl}${chatPath(agentId, conversationId)}/turns/${turnId}/stop`,
       {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},

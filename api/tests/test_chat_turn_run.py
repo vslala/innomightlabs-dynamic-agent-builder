@@ -423,3 +423,29 @@ async def test_turn_does_not_clobber_a_rename_made_while_it_was_running(
     final = repo.find_by_id(conversation.conversation_id, OWNER)
     assert final is not None
     assert final.title == "Renamed mid-turn"
+
+
+async def test_an_injected_architecture_runs_without_the_factory(dynamodb_table, monkeypatch):
+    def no_factory(*_a, **_kw):
+        raise AssertionError("the factory must not be asked for an injected architecture")
+
+    monkeypatch.setattr("src.agents.turns.run.get_agent_architecture", no_factory)
+    agent = _agent()
+    conversation = _seeded_conversation(agent)
+
+    running = start_turn(
+        agent=agent,
+        conversation=conversation,
+        user_message="hi",
+        attachments=None,
+        owner_email=OWNER,
+        actor_email=OWNER,
+        actor_id=OWNER,
+        actor_kind=ActorKind.OWNER,
+        architecture=FixedArchitecture(),
+    )
+    await asyncio.wait_for(running.task, timeout=2)
+
+    saved_turn = ConversationTurnRepository().find_by_id(running.turn.turn_id)
+    assert saved_turn is not None
+    assert saved_turn.status == ConversationTurnStatus.SUCCEEDED

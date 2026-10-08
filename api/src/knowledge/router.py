@@ -74,6 +74,7 @@ from src.knowledge.schemas import (
     CONTENT_UPLOAD_ALLOWED_EXTENSIONS,
 )
 from src.knowledge.service import get_knowledge_base_service, KnowledgeBaseService
+from src.knowledge.crawl_launch import launch_crawl
 from src.common.pagination import Paginated
 from src.exceptions import GENERIC_ERROR_MESSAGE
 
@@ -284,60 +285,6 @@ async def get_crawl_config_schema(kb_id: str) -> form_models.Form:
     return get_crawl_config_form(kb_id)
 
 
-def _invoke_crawl_async(job_id: str, kb_id: str, user_email: str):
-    """Invoke the crawl job asynchronously via the configured Lambda worker."""
-    import boto3
-
-    from src.config import settings
-
-    function_name = settings.async_job_lambda_name
-    if not function_name:
-        raise HTTPException(
-            status_code=503,
-            detail="ASYNC_JOB_LAMBDA_NAME is required when ASYNC_JOB_BACKEND=lambda",
-        )
-    lambda_client = boto3.client("lambda", region_name=settings.aws_region)
-
-    payload = json.dumps({
-        "crawl_job": {
-            "job_id": job_id,
-            "kb_id": kb_id,
-            "user_email": user_email,
-        }
-    })
-
-    try:
-        response = lambda_client.invoke(
-            FunctionName=function_name,
-            InvocationType="Event",  # Async invocation
-            Payload=payload,
-        )
-        log.info(f"Invoked Lambda async for crawl job {job_id}, status: {response['StatusCode']}")
-        return response
-    except Exception as e:
-        log.error(f"Failed to invoke Lambda async for crawl job {job_id}: {e}")
-        raise
-
-
-async def _run_crawl_in_background(
-    job_id: str,
-    kb_id: str,
-    user_email: str,
-    crawler,  # CrawlerWorker - type annotation omitted to avoid circular import
-):
-    """Background task to run the crawler (for local development only)."""
-    try:
-        # Run with a 5 minute timeout for development
-        await crawler.run(
-            job_id=job_id,
-            kb_id=kb_id,
-            user_email=user_email,
-            timeout_ms=300000,  # 5 minutes
-        )
-    except Exception as e:
-        log.error(f"Background crawl failed for job {job_id}: {e}")
-
-
 @router.post(
     "/{kb_id}/crawl-jobs",
     response_model=CrawlJobResponse,
@@ -397,20 +344,7 @@ async def start_crawl_job(
 
     # Start crawling if auto_start is enabled
     if auto_start:
-        from src.config import settings
-
-        if settings.async_job_backend == "lambda":
-            _invoke_crawl_async(saved_job.job_id, kb_id, user_email)
-            log.info(f"Invoked async Lambda for crawl job {saved_job.job_id}")
-        else:
-            background_tasks.add_task(
-                _run_crawl_in_background,
-                saved_job.job_id,
-                kb_id,
-                user_email,
-                crawler,
-            )
-            log.info(f"Queued background crawl for job {saved_job.job_id}")
+        launch_crawl(saved_job.job_id, kb_id, user_email, background_tasks, crawler)
 
     return saved_job.to_response()
 
@@ -511,21 +445,7 @@ async def run_crawl_job(
     except Exception:
         raise HTTPException(status_code=503, detail=KNOWLEDGE_SEARCH_UNAVAILABLE)
 
-    # Start crawling
-    from src.config import settings
-
-    if settings.async_job_backend == "lambda":
-        _invoke_crawl_async(job_id, kb_id, user_email)
-        log.info(f"Invoked async Lambda for crawl job {job_id} (manual trigger)")
-    else:
-        background_tasks.add_task(
-            _run_crawl_in_background,
-            job_id,
-            kb_id,
-            user_email,
-            crawler,
-        )
-        log.info(f"Queued background crawl for job {job_id} (manual trigger)")
+    launch_crawl(job_id, kb_id, user_email, background_tasks, crawler)
 
     return job.to_response()
 

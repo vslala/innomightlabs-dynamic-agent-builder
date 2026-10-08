@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v1.json
+apiVersion: innomight/v1
+kind: Blueprint
+metadata:
+  name: site-agent
+  title: Website support agent
+  description: Learns your website and answers visitors' questions in a chat widget. Offers a contact form when a visitor is interested.
+
+params:
+  site_url:
+    type: url
+    label: Your website
+    description: The homepage the agent should learn from. Only pages on the same domain are read.
+  business_name:
+    type: string
+    label: Business name
+    description: Used in the agent's name and in how it introduces itself.
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  site_kb:
+    kind: KnowledgeBase
+    description: Everything the agent knows about the business, read from the website.
+    name: "{{ params.business_name }} website"
+    crawl:
+      url: "{{ params.site_url }}"
+      mode: site
+      max_pages: 10
+
+  assistant:
+    kind: Agent
+    description: The agent visitors chat with.
+    name: "{{ params.business_name }} assistant"
+    provider: "{{ params.provider }}"
+    instructions: |
+      You are the website assistant for {{ params.business_name }}.
+      Answer visitors' questions using the website knowledge base, and keep answers short and friendly.
+      If the knowledge base doesn't cover a question, say so instead of guessing.
+      When a visitor wants a quote, a demo, or to be contacted, offer the contact form.
+    knowledge_bases: [site_kb]
+    skills:
+      - id: lead_capture
+        available_to: [visitor, guest]
+
+  widget:
+    kind: WidgetKey
+    description: The key the website's chat widget uses.
+    agent: assistant
+    allowed_origins: ["{{ params.site_url }}"]
+    allow_guests: true
+
+outputs:
+  snippet:
+    description: Paste this before </body> on every page of your site.
+    value: "{{ resources.widget.snippet }}"
+  agent_id:
+    description: Open the agent in the dashboard to test it.
+    value: "{{ resources.assistant.id }}"
+  crawl_job_id:
+    description: The crawl reading your website. It runs in the background for a minute or two.
+    value: "{{ resources.site_kb.crawl_job_id }}"

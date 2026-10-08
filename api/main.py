@@ -37,6 +37,8 @@ from src.automations.router import router as automations_router
 from src.downloads import router as downloads_router
 from src.artifacts import artifacts_router
 from src.agent_marketplace import router as agent_marketplace_router
+from src.blueprints.router import public_router as blueprints_public_router, router as blueprints_router
+from src.builder.router import router as builder_router
 from src.automation_marketplace.router import router as automation_marketplace_router
 from src.scheduler.router import router as scheduler_router
 from src.smart_suggestions.router import router as smart_suggestions_router
@@ -173,6 +175,9 @@ def create_app() -> FastAPI:
     app.include_router(router=downloads_router)
     app.include_router(router=artifacts_router)
     app.include_router(router=agent_marketplace_router)
+    app.include_router(router=blueprints_public_router)
+    app.include_router(router=blueprints_router)
+    app.include_router(router=builder_router)
     app.include_router(router=automation_marketplace_router)
     app.include_router(router=scheduler_router)
     app.include_router(router=smart_suggestions_router)

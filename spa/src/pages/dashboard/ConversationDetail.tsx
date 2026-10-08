@@ -36,6 +36,7 @@ import {
 } from "../../components/ui/select";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
+import { agentDisplayName, showsToolActivity } from "../../services/builder/ada";
 import { chatService, type ActiveTurn } from "../../services/chat";
 import { authService } from "../../services/auth";
 import type { ConversationResponse } from "../../types/conversation";
@@ -277,10 +278,7 @@ export function ConversationDetail() {
     }
   }, [conversation, initialMessagesLoaded, isGeneratingImage, isSending, location.state, navigate]);
 
-  const getAgentName = (agentId: string): string => {
-    const agent = agents.find((a) => a.agent_id === agentId);
-    return agent?.agent_name || "Unknown Agent";
-  };
+  const getAgentName = (agentId: string): string => agentDisplayName(agents, agentId);
 
   const currentAgent = conversation
     ? agents.find((agent) => agent.agent_id === conversation.agent_id)
@@ -1215,7 +1213,7 @@ export function ConversationDetail() {
                 <ChatStreamRenderer
                   messages={messages}
                   streamingContent={streamingContent}
-                  toolActivities={toolActivities}
+                  toolActivities={showsToolActivity(conversation?.agent_id, featureFlags.showToolActivity) ? toolActivities : []}
                   debugToolActivity={debugEnabled}
                   statusMessage={statusMessage}
                   userPicture={userInfo?.picture}

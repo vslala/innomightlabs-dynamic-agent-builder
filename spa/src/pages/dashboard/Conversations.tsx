@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
+import { agentDisplayName } from "../../services/builder/ada";
 import { defaultAgentService } from "../../services/settings/DefaultAgentService";
 import { featureFlags } from "../../config/featureFlags";
 import type { ConversationResponse } from "../../types/conversation";
@@ -180,7 +181,7 @@ export function Conversations() {
 }
 
 function getAgentName(agents: AgentResponse[], agentId: string): string {
-  return agents.find((agent) => agent.agent_id === agentId)?.agent_name || "Unknown Agent";
+  return agentDisplayName(agents, agentId);
 }
 
 function titleFromPrompt(prompt: string, mode: ConversationStartMode): string {

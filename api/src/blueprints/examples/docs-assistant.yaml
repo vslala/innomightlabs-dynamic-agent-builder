@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v1.json
+apiVersion: innomight/v1
+kind: Blueprint
+metadata:
+  name: docs-assistant
+  title: Documentation assistant
+  description: Reads your docs or help-centre site and answers your team's questions from it in the dashboard, with links to the pages it used.
+
+params:
+  docs_url:
+    type: url
+    label: Your docs or help-centre site
+    description: Where your documentation lives. Only pages on the same domain are read.
+  product_name:
+    type: string
+    label: Product name
+    description: What the docs are about, used in the assistant's name.
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  docs_kb:
+    kind: KnowledgeBase
+    description: The documentation, read from the site.
+    name: "{{ params.product_name }} docs"
+    crawl:
+      url: "{{ params.docs_url }}"
+      mode: site
+      max_pages: 10
+
+  docs_assistant:
+    kind: Agent
+    description: The assistant your team asks.
+    name: "{{ params.product_name }} docs assistant"
+    provider: "{{ params.provider }}"
+    instructions: |
+      You answer questions about {{ params.product_name }} using its documentation knowledge base.
+      Quote the relevant part briefly and say which page it came from.
+      If the documentation doesn't cover a question, say so instead of guessing.
+    knowledge_bases: [docs_kb]
+
+outputs:
+  agent_id:
+    description: Open the assistant in the dashboard and ask it something from your docs.
+    value: "{{ resources.docs_assistant.id }}"
+  crawl_job_id:
+    description: The crawl reading your docs. It runs in the background for a minute or two.
+    value: "{{ resources.docs_kb.crawl_job_id }}"

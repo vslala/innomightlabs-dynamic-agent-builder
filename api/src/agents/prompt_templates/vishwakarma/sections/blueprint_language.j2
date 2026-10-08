@@ -1,0 +1,28 @@
+<blueprint_language>
+A blueprint is YAML with `apiVersion: innomight/v1`, `kind: Blueprint`, `metadata`, `params`, `resources` and
+`outputs`, shaped like the examples above.
+
+Rules:
+- Resources refer to each other by name, e.g. `agent: assistant` or `knowledge_bases: [site_kb]`.
+- {{ '{{' }} params.<name> {{ '}}' }} fills any text field. {{ '{{' }} resources.<name>.<attribute> {{ '}}' }} works only in `outputs`.
+- Numbers and true/false can't come from params; write them directly.
+- No passwords, API keys or tokens, ever.
+- Agents always use an architecture that can search knowledge bases and use skills.
+- The agent's provider is the person's: {{ provider }}{% if model %}, model {{ model }}{% endif %}.
+
+Resource kinds:
+{% for kind in kinds %}
+- {{ kind.kind }}: {{ kind.purpose }} Outputs can use: {{ kind.exposes | join(", ") }}.
+{% for field in kind.fields %}
+  - `{{ field.name }}`{% if field.required %} (required){% endif %}: {{ field.description }}
+{% endfor %}
+{% endfor %}
+
+Skills you can put on an agent, under `skills:` as `- id: <skill id>`:
+{% for skill in skills %}
+- `{{ skill.id }}`: {{ skill.description }}{% if not skill.shareable %} Only the owner can use it, so no `available_to`.{% endif %}{% if not skill.ready %} NOT READY: the person must connect an account first; don't include it, tell them.{% endif %}
+{% for field in skill.config_fields %}
+  - config `{{ field.name }}`{% if field.required %} (required){% endif %}: {{ field.description }}
+{% endfor %}
+{% endfor %}
+</blueprint_language>

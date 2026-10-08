@@ -22,8 +22,7 @@ from src.agent_marketplace.models import (
 from src.agent_marketplace.repository import AgentMarketplaceRepository, get_agent_marketplace_repository
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
-from src.agents.schemas import get_create_agent_form
-from src.form_options import FormOptionsContext, validate_form_options
+from src.agents.service import validate_provider_model
 from src.skills.models import AgentSkill
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
 from src.skills.service import SkillService, get_skill_service
@@ -83,7 +82,7 @@ class AgentMarketplaceService:
 
         provider = request.agent_provider if template.allow_model_override and request.agent_provider else template.agent_provider
         model = request.agent_model if template.allow_model_override and request.agent_model else template.agent_model
-        self._validate_provider_model(user_email, provider, model)
+        validate_provider_model(user_email, provider, model)
 
         agent = Agent(
             agent_name=(request.agent_name or template.agent_name).strip(),
@@ -241,16 +240,6 @@ class AgentMarketplaceService:
             **skill.default_config,
             **skill_configs.get(skill.template_skill_key, {}),
         }
-
-    def _validate_provider_model(self, user_email: str, provider: str, model: str | None) -> None:
-        values = {"agent_provider": provider}
-        if model:
-            values["agent_model"] = model
-        validate_form_options(
-            get_create_agent_form().form_inputs,
-            values,
-            FormOptionsContext(user_email=user_email),
-        )
 
     def _published_skill_templates(
         self,
