@@ -23,6 +23,7 @@ from src.artifacts.service import ArtifactService
 from src.blueprints.models import Deployment
 from src.blueprints.kinds import kind_for
 from src.blueprints.planner import Plan
+from src.blueprints.spec import API_VERSION
 from src.blueprints.validator import ValidatedBlueprint
 from src.skills.html_canvas.models import CANVAS_ARTIFACT_FILENAME
 
@@ -69,14 +70,14 @@ class BlueprintDrawing:
     params: list[tuple[str, str]]
     yaml_html: Markup
     outputs: list[tuple[str, str, str]] = field(default_factory=list)
+    api_version: str = API_VERSION
 
 
 def _wires(name: str, spec: Any, resources: dict[str, Any]) -> list[tuple[str, str, str]]:
     """How this resource connects to the others it names, each wire pointing the way the drawing reads."""
     wires: list[tuple[str, str, str]] = []
     for reference in kind_for(spec.kind).references(name, spec):
-        # Things being disconnected aren't drawn as wires; the card lists them instead.
-        if reference.removes or reference.target not in resources:
+        if reference.target not in resources:
             continue
         if reference.outward_wire:
             wires.append((name, reference.target, reference.outward_wire))
@@ -146,17 +147,21 @@ def drawing_for(
 ) -> BlueprintDrawing:
     blueprint = validated.blueprint
     edges = [wire for name in validated.order for wire in _wires(name, blueprint.resources[name], blueprint.resources)]
-    depth = _columns(validated.order, edges)
+    # What this plan deletes isn't in the blueprint any more; it's drawn too, marked for removal, with no wires.
+    removed = {name: spec for name, spec in plan.removed_specs.items() if name not in blueprint.resources}
+    names = [*validated.order, *removed]
+    shown = {**blueprint.resources, **removed}
+    depth = _columns(names, edges)
     cards = []
-    for name in validated.order:
-        spec = blueprint.resources[name]
+    for name in names:
+        spec = shown[name]
         kind = kind_for(spec.kind)
         change = plan.changes.get(name)
         cards.append(Card(
             name=name,
             kind=spec.kind,
             label=kind.label,
-            title=kind.title(name, spec, blueprint.resources),
+            title=kind.title(name, spec, shown),
             summary=spec.description or "",
             details=kind.card_details(spec),
             depth=depth[name],

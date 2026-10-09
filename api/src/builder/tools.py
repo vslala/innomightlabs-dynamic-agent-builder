@@ -22,6 +22,7 @@ from src.blueprints.export import export_agent
 from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
 from src.blueprints.kinds import kind_for
 from src.blueprints.models import DeploymentStatus
+from src.blueprints.kits import KitError, KitRepository, active_kit, declared, pin
 from src.blueprints.repository import DeploymentRepository
 from src.blueprints.service import Blocked, Deployed, Invalid, RateLimited, deploy_blueprint
 from src.blueprints.validator import validate_blueprint
@@ -251,8 +252,14 @@ class BuilderTools:
         params = tool_input["params"] if isinstance(tool_input.get("params"), dict) else session.draft_params
         if not isinstance(yaml, str) or not yaml.strip():
             raise ValueError("plan_blueprint needs `yaml`, the whole blueprint: there's no draft yet.")
-        # The person's answers to earlier skill forms, whatever Ada's YAML says.
-        draft = Draft(yaml).with_skill_settings(session.skill_inputs)
+        # The person's answers to earlier skill forms, whatever Ada's YAML says; and the kit's ids, whatever names
+        # she wrote them under.
+        try:
+            kit = active_kit(state.owner_email, session.kit_id) if session.kit_id else None
+            before = declared(kit, session.baseline_yaml)
+        except KitError as e:
+            return json.dumps({"ok": False, "reason": str(e), "next": "Tell the person plainly; this kit can't change."})
+        draft = Draft(pin(Draft(yaml).with_skill_settings(session.skill_inputs).text, kit))
         session.draft_yaml, session.draft_params, session.plan_id = draft.text, params, None
         needs = [(requirement, requirement.missing(draft, session, state.owner_email)) for requirement in REQUIREMENTS]
         for requirement, missing in needs:
@@ -262,7 +269,7 @@ class BuilderTools:
         except BlueprintInvalid as e:
             validated, issues = None, e.issues
 
-        attempt = PlanAttempt(self, session, state, draft, params, validated, issues, needs)
+        attempt = PlanAttempt(self, session, state, draft, params, validated, issues, needs, before)
         result = next(answer for gate in PLAN_GATES if (answer := gate.check(attempt)) is not None)
         self.sessions.save(session)
         return json.dumps(result)
@@ -282,10 +289,16 @@ class BuilderTools:
                 "reason": "The person hasn't approved this plan. Wait until they choose 'Apply this plan' in its form.",
             })
 
-        outcome = deploy_blueprint(session.draft_yaml, session.draft_params, state.owner_email)
+        outcome = deploy_blueprint(
+            session.draft_yaml, session.draft_params, state.owner_email,
+            kit_id=session.kit_id, baseline=session.baseline_yaml, conversation_id=state.conversation_id,
+        )
         if not isinstance(outcome, Deployed):
             return json.dumps({"applied": False, **_not_deployed(outcome)})
         validated, plan, deployment = outcome.validated, outcome.plan, outcome.deployment
+        if outcome.kit is not None:
+            # From now on the draft is that kit's next version.
+            session.kit_id, session.baseline_yaml = outcome.kit.kit_id, None
         if deployment.status != DeploymentStatus.APPLIED:
             return json.dumps({
                 "applied": False,
@@ -329,18 +342,32 @@ class BuilderTools:
     async def load_agent(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
         session = self._session(state)
         agent_id = str(tool_input.get("agent_id") or "").strip()
-        yaml = export_agent(agent_id, state.owner_email)
-        if yaml is None:
-            return json.dumps({"loaded": False, "reason": "There's no agent with that id. Call list_my_agents."})
-        session.draft_yaml, session.draft_params, session.plan_id = yaml, {}, None
+        kit = KitRepository().holding(state.owner_email, agent_id) if agent_id else None
+        current = (
+            DeploymentRepository().find_by_id(state.owner_email, kit.current_deployment_id)
+            if kit and kit.current_deployment_id else None
+        )
+        if kit is not None and current is not None:
+            # In a kit: the draft is the kit's last version, so changing it is the kit's next one.
+            session.draft_yaml = pin(Draft(current.blueprint_yaml).without_ids().text, kit)
+            session.draft_params, session.kit_id, session.baseline_yaml = dict(current.params), kit.kit_id, None
+        else:
+            yaml = export_agent(agent_id, state.owner_email)
+            if yaml is None:
+                return json.dumps({"loaded": False, "reason": "There's no agent with that id. Call list_my_agents."})
+            # Not in a kit yet: what it is now is the baseline, and its first apply here starts a kit.
+            session.draft_yaml, session.draft_params, session.kit_id, session.baseline_yaml = yaml, {}, None, yaml
+        session.plan_id = None
         # Answers to skill forms belonged to the old draft's resources.
         session.skill_inputs, session.pending_input = {}, None
         self.sessions.save(session)
         return json.dumps({
             "loaded": True,
+            **({"kit": kit.title} if kit else {}),
             "next": (
-                "The agent is now the current draft (see your prompt). Keep every `id`. Change only what the person "
-                "asked for, add new resources without an id, then call plan_blueprint with the whole YAML."
+                "The draft is now in your prompt. Keep every `id` and resource name. Change only what the person "
+                "asked for: add new resources without an id, and leave out anything they want gone. Then call "
+                "plan_blueprint with the whole YAML."
             ),
         })
 

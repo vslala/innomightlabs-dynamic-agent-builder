@@ -203,5 +203,6 @@ def _response(session: BuilderSession) -> BuilderSessionResponse:
         provider=session.provider,
         model=session.model,
         deployment_id=session.deployment_id,
+        kit_id=session.kit_id,
         created_at=session.created_at,
     )

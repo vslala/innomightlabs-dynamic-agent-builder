@@ -12,6 +12,7 @@ way, from its saved undos.
 import logging
 import re
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from fastapi import BackgroundTasks
 
@@ -46,6 +47,7 @@ def apply_blueprint(
     user_email: str,
     background_tasks: BackgroundTasks | None = None,
     repository: DeploymentRepository | None = None,
+    deployment_fields: dict[str, Any] | None = None,
 ) -> Deployment:
     """Call only with a plan that has no blockers. The deployment is saved at every step, so a failure part-way
     still says what was touched, and how to put it back."""
@@ -57,6 +59,8 @@ def apply_blueprint(
         blueprint_title=blueprint.metadata.title,
         blueprint_yaml=validated.yaml,
         params=validated.params,
+        steps=[step.summary for step in plan.steps],
+        **(deployment_fields or {}),
     ))
     ctx = ApplyContext(user_email=user_email, background_tasks=background_tasks)
     for step in plan.commands:
@@ -94,6 +98,7 @@ def _run(command: Command, ctx: ApplyContext, deployment: Deployment, repository
         resource=command.resource,
         undo=UndoRecord(action=undo.action, args=undo.args) if undo else None,
         creates=command.creates,
+        deletes=command.deletes,
         removal=command.removal,
     )
     deployment.journal.append(entry)

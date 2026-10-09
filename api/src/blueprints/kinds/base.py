@@ -4,9 +4,9 @@ A blueprint is applied against what already exists: each resource is matched to 
 by name), compared with it, and turned into commands (`commands.py`) that create it, change what differs, or keep
 it as it is. Applying the same blueprint twice changes nothing the second time.
 
-Removing is always explicit: leaving something out of a blueprint never removes it. A resource marked `remove`
-is deleted, and an update can take parts away (an agent's `remove_knowledge_bases`, `remove_skills`). What can't
-be undone runs after everything that can, whatever order the commands come in.
+A kit remembers what its last version declared. Leaving out something it declared removes it: a resource is
+deleted, a link or skill taken away. What it never declared is never touched. What can't be undone runs after
+everything that can, whatever order the commands come in.
 """
 
 from dataclasses import dataclass, field
@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from src.blueprints.commands import Command, Use
 from src.blueprints.issues import BlueprintIssue
+from src.blueprints.reconcile import Context, Outcome, reconcile
 from src.blueprints.references import Reference, field_references
 
 
@@ -68,6 +69,9 @@ class PlanContext:
     created: set[str] = field(default_factory=set)
     #: Resources planned so far that will be deleted, by blueprint name.
     removing: set[str] = field(default_factory=set)
+    #: Every id the kit pins, by blueprint name, now and in its last version, for resources found through another
+    #: one (a widget key through its agent) before that one is planned.
+    pinned: dict[str, str] = field(default_factory=dict)
 
     def ids(self) -> dict[str, str]:
         """Blueprint name → id, for everything matched so far."""
@@ -148,10 +152,18 @@ class ResourceKind(Generic[SpecT]):
         with the same name. None means it will be created."""
         return None
 
-    def commands(self, name: str, spec: SpecT, existing: Optional[Existing], ctx: PlanContext) -> list[Command]:
-        """What applying it does: create it when there's nothing `existing`, else change what differs from the spec,
-        or keep it as it is. Exactly one command establishes the resource. Each says what it changes or takes away,
-        which is what the plan shows."""
+    def reconcile(
+        self, spec: SpecT, existing: Optional[Existing], before: Optional[dict[str, Any]], ctx: PlanContext
+    ) -> Outcome:
+        """What differs, by the rules the spec's fields declare. `before` is what the kit's last version declared."""
+        return reconcile(spec, existing.observed if existing else None, before, reconcile_context(ctx))
+
+    def commands(
+        self, name: str, spec: SpecT, existing: Optional[Existing], outcome: Outcome, ctx: PlanContext
+    ) -> list[Command]:
+        """What applying it does: create it when there's nothing `existing`, else carry out the outcome, or keep it
+        as it is. Exactly one command establishes the resource. Each says what it changes or takes away, which is
+        what the plan shows."""
         raise NotImplementedError
 
     def check(self, name: str, spec: SpecT, change: Change, ctx: PlanContext) -> list[BlueprintIssue]:
@@ -174,18 +186,12 @@ class LookupKind(ResourceKind[SpecT]):
     """A kind the account owns and a blueprint only uses, such as an MCP connection holding the person's sign-in.
     It's found and linked to, never created, changed or deleted by a blueprint."""
 
-    def commands(self, name: str, spec: SpecT, existing: Optional[Existing], ctx: PlanContext) -> list[Command]:
+    def commands(
+        self, name: str, spec: SpecT, existing: Optional[Existing], outcome: Outcome, ctx: PlanContext
+    ) -> list[Command]:
         # Not there: `check` says so, and the plan is blocked, so nothing runs.
         return [Use(resource=name, applied=self.applied(name, existing.record))] if existing else []
 
-    def validate(self, name: str, spec: SpecT) -> list[BlueprintIssue]:
-        if getattr(spec, "remove", False):
-            return [BlueprintIssue(
-                path=f"resources.{name}.remove",
-                message=f"A blueprint can't delete this {self.label}; it belongs to the whole account.",
-                hint="Take it off the resources that use it instead.",
-            )]
-        return []
 
 
 class ManagedKind(ResourceKind[SpecT]):
@@ -194,6 +200,19 @@ class ManagedKind(ResourceKind[SpecT]):
     #: What deleting one takes with it, in plain words, for the plan.
     deletes: ClassVar[str]
 
+    def delete_blockers(self, name: str, existing: Existing, kit_ids: set[str]) -> list[BlueprintIssue]:
+        """Why it can't be deleted with the kit: something outside the kit still uses it."""
+        return []
+
     def delete_commands(self, name: str, spec: SpecT, existing: Existing, removal: str) -> list[Command]:
-        """Delete the existing resource a `remove` matched. `removal` is how the plan says it."""
+        """Delete an existing resource an earlier version declared and this one leaves out. `spec` is as that version
+        wrote it; `removal` is how the plan says it."""
         raise NotImplementedError
+
+
+def reconcile_context(ctx: PlanContext) -> Context:
+    """How the plan names what each resource links to: by the record's name where it has one."""
+    return Context(
+        titles={name: str(getattr(matched.record, "name", name)) for name, matched in ctx.matched.items()},
+        removing=frozenset(ctx.removing),
+    )

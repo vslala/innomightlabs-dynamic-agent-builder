@@ -49,9 +49,6 @@ class Each:
     adds: str
     removes: str
     changes: Optional[str] = None
-    #: The field that names items to take away. Until a kit remembers what it declared, leaving an item out never
-    #: takes it away; only this list does.
-    removals_from: Optional[str] = None
 
 
 def _fields(spec: Any) -> dict[str, Any]:

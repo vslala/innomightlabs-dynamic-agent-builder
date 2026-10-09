@@ -33,6 +33,11 @@ class BuilderSession(BaseModel):
     #: Set when the draft last planned without blockers; apply needs the person to approve this id.
     plan_id: Optional[str] = None
     deployment_id: Optional[str] = None
+    #: The kit the draft is a version of: built here, or loaded. Its next apply is that kit's next version.
+    kit_id: Optional[str] = None
+    #: An agent loaded that isn't in a kit yet, as it was when loaded: what the draft is compared with, so leaving
+    #: something out of the draft removes it, as it would in a kit.
+    baseline_yaml: Optional[str] = None
     #: Ada's turns in this conversation so far, counting the current one.
     turn: int = 0
     #: Book pages Ada has open, with the turn each was last opened in. See src/agents/book.py.
@@ -62,4 +67,5 @@ class BuilderSessionResponse(BaseModel):
     provider: str
     model: Optional[str] = None
     deployment_id: Optional[str] = None
+    kit_id: Optional[str] = None
     created_at: datetime

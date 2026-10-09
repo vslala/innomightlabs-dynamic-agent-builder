@@ -74,6 +74,9 @@ class Draft:
 
     def pinned(self, ids: dict[str, str]) -> "Draft":
         """Each named resource pinned to the id it was built as, so the next apply updates it."""
+        resources = self.resources
+        if all(name not in resources or resources[name].get("id") == resource_id for name, resource_id in ids.items()):
+            return self  # nothing to pin, so the text stays exactly as written
         draft = self._copy()
         for name, resource_id in ids.items():
             resource = draft.resources.get(name)
@@ -82,6 +85,16 @@ class Draft:
                 pinned = {"kind": resource.get("kind"), "id": resource_id}
                 pinned.update({key: value for key, value in resource.items() if key not in ("kind", "id")})
                 draft.data["resources"][name] = pinned
+        return Draft(draft.dump())
+
+    def without_ids(self) -> "Draft":
+        """The draft with no `id`s, so a kit's own map says which resource each name is (an old version's ids may be
+        of resources deleted since)."""
+        if not any("id" in spec for spec in self.resources.values()):
+            return self
+        draft = self._copy()
+        for spec in draft.resources.values():
+            spec.pop("id", None)
         return Draft(draft.dump())
 
     def _copy(self) -> "Draft":

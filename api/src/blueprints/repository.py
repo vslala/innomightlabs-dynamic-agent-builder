@@ -51,11 +51,21 @@ class DeploymentRepository:
 
     def list_by_user(self, user_email: str) -> list[Deployment]:
         """Newest first."""
-        response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"User#{user_email}") & Key("sk").begins_with(SK_PREFIX),
-            ScanIndexForward=False,
-        )
-        return [self._from_item(item) for item in response.get("Items", [])]
+        kwargs: dict = {
+            "KeyConditionExpression": Key("pk").eq(f"User#{user_email}") & Key("sk").begins_with(SK_PREFIX),
+            "ScanIndexForward": False,
+        }
+        found = []
+        while True:
+            response = self.table.query(**kwargs)
+            found += [self._from_item(item) for item in response.get("Items", [])]
+            if "LastEvaluatedKey" not in response:
+                return found
+            kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
+    def list_for_kit(self, user_email: str, kit_id: str) -> list[Deployment]:
+        """A kit's deployments, newest first."""
+        return [deployment for deployment in self.list_by_user(user_email) if deployment.kit_id == kit_id]
 
     def find_by_id(self, user_email: str, deployment_id: str) -> Optional[Deployment]:
         # A user's deployments are few, so a filtered query is enough without an index.

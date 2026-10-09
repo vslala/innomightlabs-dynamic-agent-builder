@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from src.blueprints.parser import join_path
 from src.blueprints.skills_schema import skill_variants
-from src.blueprints.spec import REF_KIND, REMOVES, SkillEntry
+from src.blueprints.spec import REF_KIND, SkillEntry
 
 
 @dataclass(frozen=True)
@@ -26,8 +26,6 @@ class Reference:
     kind: str
     #: How the place it's written reads in a sentence: "`knowledge_bases`", "this skill".
     where: str
-    #: Names something to take away, so it may name a resource that is being removed.
-    removes: bool = False
     #: An id from the person's account is fine too; the plan checks it against the account.
     may_be_id: bool = False
     #: Set when the drawing's wire runs from the resource naming the target, with this label ("hands work to").
@@ -52,7 +50,6 @@ def field_references(name: str, spec: BaseModel) -> Iterator[Reference]:
                 target=target,
                 kind=str(extra[REF_KIND]),
                 where=f"`{field_name}`",
-                removes=bool(extra.get(REMOVES)),
             )
 
 

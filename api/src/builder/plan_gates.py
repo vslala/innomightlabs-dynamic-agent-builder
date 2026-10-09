@@ -36,6 +36,8 @@ class PlanAttempt:
     issues: list[BlueprintIssue]
     #: What each requirement still needs from the person, in the order they're asked.
     needs: list[tuple[Requirement, list[Any]]]
+    #: What the kit declares now (or the loaded agent as it was): what leaving something out is compared with.
+    before: Optional[ValidatedBlueprint] = None
     _plan: Optional[Plan] = field(default=None, repr=False)
 
     @property
@@ -51,7 +53,7 @@ class PlanAttempt:
     def plan(self) -> Plan:
         assert self.validated is not None
         if self._plan is None:
-            self._plan = plan_blueprint(self.validated, self.state.owner_email)
+            self._plan = plan_blueprint(self.validated, self.state.owner_email, self.before)
         return self._plan
 
     @property

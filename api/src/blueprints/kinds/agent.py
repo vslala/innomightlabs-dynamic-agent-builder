@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Mapping, Optional
 from uuid import uuid4
 
@@ -17,6 +17,7 @@ from src.blueprints.kinds.base import (
     NotFound,
     PlanContext,
     Usage,
+    reconcile_context,
 )
 from src.blueprints.reconcile import Context, Outcome, reconcile
 from src.blueprints.references import Reference, skill_references
@@ -119,13 +120,10 @@ def _skill_uses(name: str, entry: SkillEntry) -> frozenset[str]:
 
 def _reconcile_context(ctx: PlanContext) -> Context:
     ids = ctx.ids()
-    return Context(
-        titles={name: str(getattr(matched.record, "name", name)) for name, matched in ctx.matched.items()},
-        removing=frozenset(ctx.removing),
+    return replace(
+        reconcile_context(ctx),
         keys={"skills": lambda item: _skill_key(item, ids)},
         differs={"skills": lambda item, installed: _skill_differs(item, installed, ids)},
-        # `remove_skills` names skills, so it takes away every install of one.
-        named_by={"skills": lambda listed, installed: _entry(installed).id == listed},
     )
 
 
@@ -214,6 +212,12 @@ class LinkKnowledgeBase(Command):
 
 @dataclass(kw_only=True)
 class UnlinkKnowledgeBase(LinkKnowledgeBase):
+    #: Found by the plan: what's taken away may not be in this version at all.
+    kb_id: str
+
+    def _ids(self, ctx: ApplyContext) -> dict[str, str]:
+        return {"agent_id": ctx.applied[self.resource].id, "kb_id": self.kb_id}
+
     def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
         return Undo("link_knowledge_base", self._ids(ctx))
 
@@ -248,6 +252,12 @@ class EnableTools(Command):
 
 @dataclass(kw_only=True)
 class DisableTools(EnableTools):
+    #: Found by the plan: a connection the kit leaves out isn't in this version at all.
+    mcp_id: str
+
+    def _ids(self, ctx: ApplyContext) -> dict[str, str]:
+        return {"agent_id": ctx.applied[self.resource].id, "mcp_id": self.mcp_id}
+
     def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
         return Undo("enable_tools", self._ids(ctx))
 
@@ -446,10 +456,16 @@ class AgentKind(ManagedKind[AgentSpec]):
     def applied(self, name: str, record: Agent) -> AppliedResource:
         return _applied(name, record)
 
-    def commands(self, name: str, spec: AgentSpec, existing: Optional[Existing], ctx: PlanContext) -> list[Command]:
-        """Adds what's missing and changes what differs. Takes away only what `remove_*` names: links and skills
-        the blueprint doesn't mention stay as they are."""
-        outcome = reconcile(spec, existing.observed if existing else None, ctx=_reconcile_context(ctx))
+    def reconcile(
+        self, spec: AgentSpec, existing: Optional[Existing], before: Optional[dict[str, Any]], ctx: PlanContext
+    ) -> Outcome:
+        return reconcile(spec, existing.observed if existing else None, before, _reconcile_context(ctx))
+
+    def commands(
+        self, name: str, spec: AgentSpec, existing: Optional[Existing], outcome: Outcome, ctx: PlanContext
+    ) -> list[Command]:
+        """Adds what's missing and changes what differs. Takes away a link or skill only if the kit's last version
+        declared it and this one leaves it out; ones the kit never declared stay as they are."""
         commands: list[Command] = [self._establish(name, spec, existing, outcome)]
         for item in outcome.items("added", "knowledge_bases"):
             commands.append(LinkKnowledgeBase(
@@ -457,13 +473,13 @@ class AgentKind(ManagedKind[AgentSpec]):
             ))
         for item in outcome.items("removed", "knowledge_bases"):
             commands.append(UnlinkKnowledgeBase(
-                resource=name, uses=frozenset({item.actual}), knowledge_base=item.actual, removal=item.says
+                resource=name, knowledge_base=item.actual, kb_id=ctx.matched[item.actual].id, removal=item.says
             ))
         for item in outcome.items("added", "mcp_connections"):
             commands.append(EnableTools(resource=name, uses=frozenset({item.now}), connection=item.now, says=(item.says,)))
         for item in outcome.items("removed", "mcp_connections"):
             commands.append(DisableTools(
-                resource=name, uses=frozenset({item.actual}), connection=item.actual, removal=item.says
+                resource=name, connection=item.actual, mcp_id=ctx.matched[item.actual].id, removal=item.says
             ))
         for item in outcome.items("added", "skills"):
             commands.append(InstallSkill(resource=name, uses=_skill_uses(name, item.now), entry=item.now, says=(item.says,)))
@@ -495,7 +511,7 @@ class AgentKind(ManagedKind[AgentSpec]):
         return SaveAgent(resource=name, agent_id=existing.id, fields=fields, says=outcome.says())
 
     def delete_commands(self, name: str, spec: AgentSpec, existing: Existing, removal: str) -> list[Command]:
-        uses = frozenset(ref.target for ref in self.references(name, spec) if not ref.removes)
+        uses = frozenset(ref.target for ref in self.references(name, spec))
         return [DeleteAgent(resource=name, uses=uses, agent_id=existing.id, removal=removal)]
 
     def check(self, name: str, spec: AgentSpec, change: Change, ctx: PlanContext) -> list[BlueprintIssue]:

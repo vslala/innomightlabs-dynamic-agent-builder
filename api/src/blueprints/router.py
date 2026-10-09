@@ -2,7 +2,7 @@
 Solution blueprints: validate, plan and apply YAML descriptions of a solution.
 
 Endpoints:
-    GET  /blueprints/schema/v1.json          JSON Schema (public, for editors)
+    GET  /blueprints/schema/v2.json          JSON Schema (public, for editors)
     GET  /blueprints/reference               Markdown reference (public)
     GET  /blueprints/catalog                 Kinds and skills, compact, for models
     GET  /blueprints/examples/{name}         An example blueprint
@@ -31,6 +31,7 @@ from src.blueprints.models import (
     PlanResponse,
     ValidateResponse,
 )
+from src.blueprints.kits import KitError, KitNotFound, active_kit, declared, pin
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.repository import DeploymentRepository
 from src.blueprints.service import Blocked, Deployed, Invalid, RateLimited, deploy_blueprint
@@ -41,14 +42,14 @@ from src.skills.service import get_skill_service
 log = logging.getLogger(__name__)
 
 #: Paths open without sign-in, so editors can fetch the schema. Listed in auth PUBLIC_PATHS.
-SCHEMA_PATH = "/blueprints/schema/v1.json"
+SCHEMA_PATH = "/blueprints/schema/v2.json"
 REFERENCE_PATH = "/blueprints/reference"
 
 public_router = APIRouter(prefix="/blueprints", tags=["blueprints"])
 router = APIRouter(prefix="/blueprints", tags=["blueprints"], dependencies=[Depends(HTTPBearer())])
 
 
-@public_router.get("/schema/v1.json")
+@public_router.get("/schema/v2.json")
 async def get_schema(response: Response) -> dict[str, Any]:
     response.headers["ETag"] = f'"{get_skill_registry().version}"'
     return blueprint_json_schema()
@@ -89,13 +90,25 @@ async def plan(request: Request, body: BlueprintRequest) -> PlanResponse:
         validated = validate_blueprint(body.yaml, body.params or {})
     except BlueprintInvalid as e:
         return PlanResponse(ok=False, issues=e.issues)
-    result = plan_blueprint(validated, request.state.user_email)
+    if not body.kit_id:
+        result = plan_blueprint(validated, request.state.user_email)
+        return PlanResponse(ok=result.ok, steps=result.steps, blockers=result.blockers)
+    try:
+        kit = active_kit(request.state.user_email, body.kit_id)
+        validated = validate_blueprint(pin(body.yaml, kit), body.params or {})
+        result = plan_blueprint(validated, request.state.user_email, declared(kit))
+    except BlueprintInvalid as e:
+        return PlanResponse(ok=False, issues=e.issues)
+    except KitError as e:
+        raise HTTPException(status_code=404 if isinstance(e, KitNotFound) else 409, detail=str(e)) from e
     return PlanResponse(ok=result.ok, steps=result.steps, blockers=result.blockers)
 
 
 @router.post("/deployments", response_model=Deployment, status_code=status.HTTP_201_CREATED)
 async def create_deployment(request: Request, body: BlueprintRequest, background_tasks: BackgroundTasks):
-    outcome = deploy_blueprint(body.yaml, body.params or {}, request.state.user_email, background_tasks)
+    outcome = deploy_blueprint(
+        body.yaml, body.params or {}, request.state.user_email, background_tasks, kit_id=body.kit_id
+    )
     match outcome:
         case Invalid(issues=issues):
             return JSONResponse(status_code=422, content=PlanResponse(ok=False, issues=issues).model_dump(mode="json"))

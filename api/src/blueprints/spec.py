@@ -1,4 +1,4 @@
-"""The blueprint spec, `innomight/v1`: the parts of a blueprint document. The document itself, whose resources are
+"""The blueprint spec, `innomight/v2`: the parts of a blueprint document. The document itself, whose resources are
 read from the kinds, is `document.Blueprint`.
 
 Every field carries its description here. That text is the documentation: it reaches the JSON
@@ -17,7 +17,9 @@ from src.connectors.mcp.providers import PROVIDERS
 from src.knowledge.models import MAX_CRAWL_DEPTH, MAX_CRAWL_PAGES
 from src.skills.models import ActorKind
 
-API_VERSION = "innomight/v1"
+API_VERSION = "innomight/v2"
+#: Earlier documents still read, upgraded by `upgrade.py` (stored kit versions are replayed on rollback).
+OLDER_VERSIONS = ("innomight/v1",)
 
 ResourceName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,39}$")]
 
@@ -34,8 +36,6 @@ AVAILABLE_TO_DESCRIPTION = (
 
 #: Marks a field whose value names other resources in the blueprint, and the kind they must be.
 REF_KIND = "x-ref-kind"
-#: Marks a reference field that names things to take away, so it may name a resource that is being removed.
-REMOVES = "x-removes"
 
 
 def origin_of(url: str) -> str | None:
@@ -94,12 +94,6 @@ class ResourceBase(Strict):
         "same name is updated if there is one, and otherwise a new one is created.",
     )
     description: str | None = Field(None, description=DESCRIPTION)
-    remove: bool = Field(
-        False,
-        description="Delete this existing resource from the account. Needs its `id`. It can't be undone: a "
-        "knowledge base loses its content, an agent its conversations and keys, a widget key stops working on "
-        "the site. Leaving a resource out of a blueprint never removes it.",
-    )
 
 
 class CrawlSpec(Strict):
@@ -177,7 +171,6 @@ class AgentSpec(ResourceBase):
         Each(
             adds="link knowledge base '{name}'",
             removes="disconnect knowledge base '{title}'",
-            removals_from="remove_knowledge_bases",
         ),
     ] = Field(
         default_factory=list,
@@ -190,33 +183,15 @@ class AgentSpec(ResourceBase):
             adds="add skill {label}",
             changes="update skill {label}",
             removes="uninstall skill {label}",
-            removals_from="remove_skills",
         ),
     ] = Field(default_factory=list, description="Skills to install on the agent, such as `lead_capture`.")
-    remove_knowledge_bases: list[ResourceName] = Field(
-        default_factory=list,
-        description="Knowledge bases in this blueprint to disconnect from the agent. The knowledge bases "
-        "themselves stay, with their content.",
-        json_schema_extra={REF_KIND: "KnowledgeBase", REMOVES: True},
-    )
     mcp_connections: Annotated[
         list[ResourceName],
-        Each(adds="give it the {title} tools", removes="take the {title} tools away", removals_from="remove_mcp_connections"),
+        Each(adds="give it the {title} tools", removes="take the {title} tools away"),
     ] = Field(
         default_factory=list,
         description="MCP connections in this blueprint whose tools the agent can use, such as web search.",
         json_schema_extra={REF_KIND: "McpConnection"},
-    )
-    remove_mcp_connections: list[ResourceName] = Field(
-        default_factory=list,
-        description="MCP connections in this blueprint to take away from the agent. The connection itself stays "
-        "on the account.",
-        json_schema_extra={REF_KIND: "McpConnection", REMOVES: True},
-    )
-    remove_skills: list[str] = Field(
-        default_factory=list,
-        description="Skill ids to uninstall from the agent, with their settings and secrets. To only switch a "
-        "skill off, list it under `skills` with `enabled: false` instead.",
     )
     session_timeout_minutes: Annotated[
         int | None,

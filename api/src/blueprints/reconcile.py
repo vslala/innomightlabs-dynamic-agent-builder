@@ -11,8 +11,7 @@ the work. A field the person didn't change but that differs from actual was chan
 reported as drift and left alone. Without `before`, the actual state stands in for it, so every difference is work.
 
 Items in a collection are matched by key. One the person added is added; one they changed is changed; one they
-took away (in before, not now) is taken away, and so is one named in the field's explicit removals list. One that
-was never declared is never touched, even when it's there.
+took away (in before, not now) is taken away. One that was never declared is never touched, even when it's there.
 """
 
 from __future__ import annotations
@@ -86,8 +85,6 @@ class Context:
     keys: Mapping[str, Callable[[Any], str]] = field(default_factory=dict)
     #: Per collection field, whether an item asks for something different from what's there.
     differs: Mapping[str, Callable[[Any, Any], bool]] = field(default_factory=dict)
-    #: Per collection field, whether a name in the removals list means this existing item.
-    named_by: Mapping[str, Callable[[str, Any], bool]] = field(default_factory=dict)
 
 
 def rules(model: type[BaseModel]) -> dict[str, Scalar | Each]:
@@ -176,13 +173,7 @@ def _each(
         elif rule.changes and differs and differs(item, there[item_key]):
             outcome.changed.append(ItemChange(name, item_key, item, there[item_key], _phrase(rule.changes, item, ctx)))
 
-    taken_away: set[str] = set()
-    if before is not None:
-        taken_away |= {key(item) for item in before.get(name) or []} - wanted.keys()
-    named_by = ctx.named_by.get(name, lambda listed, item: listed == key(item))
-    listed_for_removal = (getattr(now, rule.removals_from) or []) if rule.removals_from else []
-    for listed in listed_for_removal:
-        taken_away |= {item_key for item_key, item in there.items() if named_by(listed, item)}
+    taken_away = {key(item) for item in before.get(name) or []} - wanted.keys() if before is not None else set()
     for item_key in sorted(taken_away & there.keys(), key=list(there).index):
         item = there[item_key]
         if item_name(item) in ctx.removing:

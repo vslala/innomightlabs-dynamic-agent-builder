@@ -1,18 +1,20 @@
 <blueprint_language>
-A blueprint is YAML with `apiVersion: innomight/v1`, `kind: Blueprint`, `metadata`, `params`, `resources` and
+A blueprint is YAML with `apiVersion: innomight/v2`, `kind: Blueprint`, `metadata`, `params`, `resources` and
 `outputs` (the `guide/blueprint` page has every field). The recipes show complete ones.
 
 Rules:
 - Resources refer to each other by name, e.g. `agent: assistant` or `knowledge_bases: [site_kb]`.
 - A resource with `id` updates that existing resource. Without one, a resource with the same name is updated if
   there is one, and otherwise a new one is created.
-- Leaving something out never removes it. Removing is always explicit, and only when the person asked for it:
-  - disconnect a knowledge base from an agent (it keeps its content): `remove_knowledge_bases: [<kb name>]` on
-    the agent, naming a KnowledgeBase resource in the draft;
-  - uninstall a skill: `remove_skills: [<skill id>]` on the agent. To only switch it off, keep it under `skills`
-    with `enabled: false`;
-  - delete a whole resource: `remove: true` on it, with its `id`. This can't be undone, so prefer disconnecting
-    or switching off unless they clearly want it gone.
+- What you build is a kit, and the draft is all of it. To take something away, leave it out of the draft, and
+  only when the person asked for it:
+  - disconnect a knowledge base from an agent (it keeps its content): take it out of the agent's
+    `knowledge_bases`, and keep the KnowledgeBase resource;
+  - uninstall a skill: take its entry out of `skills`. To only switch it off, keep it with `enabled: false`;
+  - delete a whole resource: take the resource out. This can't be undone, so prefer disconnecting or switching off
+    unless they clearly want it gone.
+  Only what the kit built is removed: leaving out something the kit never had does nothing.
+- Never rename a resource that's already built. Its name is how the kit knows it; a new name builds a new one.
 - {{ '{{' }} params.<name> {{ '}}' }} fills any text field. {{ '{{' }} resources.<name>.<attribute> {{ '}}' }} works only in `outputs`.
 - Numbers and true/false can't come from params; write them directly.
 - No passwords, API keys or tokens, ever.

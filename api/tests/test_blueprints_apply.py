@@ -172,7 +172,7 @@ def test_owner_only_skill_audience_blocks_at_install(launched):
 
 
 def test_schema_and_reference_are_public(test_client):
-    schema = test_client.get("/blueprints/schema/v1.json")
+    schema = test_client.get("/blueprints/schema/v2.json")
     assert schema.status_code == 200
     assert schema.headers["ETag"]
     assert "Skill_lead_capture" in schema.json()["$defs"]

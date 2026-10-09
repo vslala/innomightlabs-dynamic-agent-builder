@@ -17,8 +17,7 @@ from src.blueprints.document import Blueprint
 from src.blueprints.kinds import KIND_NAMES, RESOURCE_KINDS, kind_for
 from src.blueprints.params import param_type
 from src.blueprints.parser import join_path, parse_yaml
-from src.blueprints.diff import Each
-from src.blueprints.reconcile import item_name, rules
+from src.blueprints.upgrade import upgrade
 from src.blueprints.references import Reference
 from src.blueprints.skills_schema import SkillSetup, SkillVariant, skill_variants
 from src.blueprints.spec import (
@@ -69,6 +68,7 @@ def validate_blueprint(
     data, lines = parse_yaml(text)
     if not isinstance(data, dict):
         raise BlueprintInvalid([BlueprintIssue(path="", line=1, message="A blueprint must be a YAML mapping.")])
+    data = upgrade(data)
 
     issues = list(check_templates(data))
     template = _model_or_issues(data, lines, issues)
@@ -98,7 +98,6 @@ def validate_blueprint(
         issues += kind_for(resource.kind).validate(name, resource)
     reference_issues, order = check_references(blueprint)
     issues += reference_issues
-    issues += check_removals(blueprint, skill_variants(registry))
 
     if issues:
         raise BlueprintInvalid(_with_lines(issues, lines))
@@ -328,58 +327,7 @@ def _reference_problem(name: str, resource: Any, reference: Reference, reference
             message=f"'{reference.target}' is {_a(referenced.kind)}, not {_a(reference.kind)}.",
             hint=f"{reference.where[:1].upper()}{reference.where[1:]} needs {_a(reference.kind)}.",
         )
-    if referenced.remove and not resource.remove and not reference.removes:
-        return BlueprintIssue(
-            path=reference.path,
-            message=f"'{reference.target}' is being removed, so {reference.where} can't use it.",
-            hint=f"Stop naming '{reference.target}' there, or don't remove it.",
-        )
     return None
-
-
-def check_removals(blueprint: Blueprint, variants: dict[str, SkillVariant]) -> list[BlueprintIssue]:
-    """Removing is explicit and names exactly what goes, so nothing is removed by a typo or a guess."""
-    issues = []
-    for name, resource in blueprint.resources.items():
-        path = f"resources.{name}"
-        if resource.remove and not resource.id:
-            issues.append(BlueprintIssue(
-                path=f"{path}.remove",
-                message="Only an existing resource can be removed, and it needs its `id` to say which one.",
-                hint="Load it first, so the draft has its id.",
-            ))
-        for field_name, rule in rules(type(resource)).items():
-            if not isinstance(rule, Each) or not rule.removals_from:
-                continue
-            kept = {item_name(item) for item in getattr(resource, field_name)}
-            for index, listed in enumerate(getattr(resource, rule.removals_from)):
-                if listed in kept:
-                    issues.append(BlueprintIssue(
-                        path=f"{path}.{rule.removals_from}[{index}]",
-                        message=f"'{listed}' is in both `{field_name}` and `{rule.removals_from}`.",
-                        hint="Keep it in one of them.",
-                    ))
-        if not isinstance(resource, AgentSpec):
-            continue
-        for index, skill_id in enumerate(resource.remove_skills):
-            if skill_id not in variants:
-                issues.append(BlueprintIssue(
-                    path=f"{path}.remove_skills[{index}]",
-                    message=f"There's no skill called '{skill_id}'.",
-                    hint=did_you_mean(skill_id, variants.keys()),
-                ))
-    for output_name, output in blueprint.outputs.items():
-        for token in TEMPLATE.findall(output.value):
-            reference = RESOURCE_REF.match(token)
-            target_name = reference.group(1) if reference else ""
-            target = blueprint.resources.get(target_name)
-            if target is not None and target.remove:
-                issues.append(BlueprintIssue(
-                    path=f"outputs.{output_name}.value",
-                    message=f"'{target_name}' is being removed, so an output can't show it.",
-                    hint="Remove this output.",
-                ))
-    return issues
 
 
 def check_skills(blueprint: Blueprint, data: dict[str, Any], variants: dict[str, SkillVariant]) -> list[BlueprintIssue]:

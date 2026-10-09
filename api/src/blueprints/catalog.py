@@ -17,7 +17,7 @@ from src.blueprints.spec import API_VERSION, CrawlSpec, Metadata, OutputSpec, Pa
 from src.skills.registry import SkillRegistry
 
 EXAMPLES_DIR = Path(__file__).resolve().parent / "examples"
-SCHEMA_ID = "https://api.innomightlabs.com/blueprints/schema/v1.json"
+SCHEMA_ID = "https://api.innomightlabs.com/blueprints/schema/v2.json"
 
 
 def example_names() -> list[str]:

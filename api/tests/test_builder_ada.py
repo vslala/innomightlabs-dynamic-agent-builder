@@ -14,7 +14,6 @@ from src.agents.runtime_state import AgentTurnState
 from src.blueprints.approval import APPROVE, REVISE, approval_label
 from src.blueprints.catalog import example_yaml
 from src.blueprints.executor import apply_blueprint
-from src.blueprints.export import export_agent
 from src.blueprints.kinds import knowledge_base as knowledge_base_kind
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.validator import validate_blueprint
@@ -405,7 +404,8 @@ async def test_ada_can_find_and_load_an_existing_agent(session):
     assert loaded["loaded"] is True
     draft = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id).draft_yaml
     assert f"id: {agent_id}" in draft
-    replanned = json.loads(await tools.plan("plan_blueprint", {"yaml": draft, "params": {}}, state))
+    # In its kit, the draft is the kit's last version with its params.
+    replanned = json.loads(await tools.plan("plan_blueprint", {"yaml": draft}, state))
     assert replanned["ok"] is True, replanned
     assert {step["action"] for step in replanned["steps"]} == {"unchanged"}
     # Nothing to approve when nothing changes.
@@ -417,15 +417,16 @@ async def test_ada_can_find_and_load_an_existing_agent(session):
 
 
 async def test_ada_names_what_a_plan_removes(session):
+    """An agent loaded from outside a kit: what it was is the baseline, so leaving a skill out uninstalls it."""
     validated = validate_blueprint(SITE_AGENT, PARAMS)
     built = apply_blueprint(validated, plan_blueprint(validated, TEST_USER_EMAIL), TEST_USER_EMAIL)
-    document = yaml.safe_load(export_agent(built.resources["assistant"].id, TEST_USER_EMAIL))
+    tools, state = BuilderTools(), turn_state(session)
+    assert json.loads(await tools.load_agent("load_agent", {"agent_id": built.resources["assistant"].id}, state))["loaded"]
+    draft = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id).draft_yaml
+    document = yaml.safe_load(draft)
     document["resources"]["agent"]["skills"] = []
-    document["resources"]["agent"]["remove_skills"] = ["lead_capture"]
 
-    result = json.loads(await BuilderTools().plan(
-        "plan_blueprint", {"yaml": yaml.safe_dump(document, sort_keys=False), "params": {}}, turn_state(session)
-    ))
+    result = json.loads(await tools.plan("plan_blueprint", {"yaml": yaml.safe_dump(document, sort_keys=False)}, state))
     assert result["removals"] == ["uninstall skill lead capture"]
     assert "can't be undone" in result["next"]
     assert "This removes" in result["form"]["form_inputs"][0]["attr"]["help_text"]

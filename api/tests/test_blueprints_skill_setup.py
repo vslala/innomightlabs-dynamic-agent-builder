@@ -150,14 +150,6 @@ def test_a_setting_must_name_another_agent(target, message):
     assert any(message in issue.message for issue in raised.value.issues)
 
 
-def test_a_removed_agent_cant_be_named():
-    document = yaml.safe_load(TEAM)
-    document["resources"]["specialist"].update({"id": "agent-1", "remove": True})
-    with pytest.raises(BlueprintInvalid) as raised:
-        validate_blueprint(yaml.safe_dump(document, sort_keys=False), {})
-    assert "resources.lead.skills[0].config.target_agent_id" in {issue.path for issue in raised.value.issues}
-
-
 # --- A skill installed more than once ----------------------------------------------------------
 
 
