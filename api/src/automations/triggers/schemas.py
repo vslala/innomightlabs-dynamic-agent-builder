@@ -40,7 +40,7 @@ def build_schedule_trigger_form(nodes: list[AutomationNode], submit_path: str = 
             FormInput(
                 input_type=FormInputType.TEXT,
                 name="cron_expression",
-                label="Cron expression",
+                label="Repeat (cron expression)",
                 smart_suggestion=SmartSuggestionConfig(
                     suggestion_type="cron_expression",
                     button_label="Suggest",
@@ -48,7 +48,24 @@ def build_schedule_trigger_form(nodes: list[AutomationNode], submit_path: str = 
                 ),
                 attr={
                     "placeholder": "0 9 * * 1-5",
-                    "help_text": "Standard 5-field cron: minute hour day month weekday.",
+                    "optional": "true",
+                    "help_text": (
+                        "To run repeatedly. Standard 5-field cron: minute hour day month weekday. "
+                        "Fill this or Run once at, not both."
+                    ),
+                },
+            ),
+            FormInput(
+                input_type=FormInputType.TEXT,
+                name="run_at",
+                label="Run once at",
+                attr={
+                    "placeholder": "2026-10-10T09:00",
+                    "optional": "true",
+                    "help_text": (
+                        "To run a single time, then stop. A date and time (ISO 8601) in the timezone below. "
+                        "Cron can't do this: it has no year, so a dated cron repeats every year."
+                    ),
                 },
             ),
             FormInput(

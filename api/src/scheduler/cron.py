@@ -24,7 +24,7 @@ def validate_schedule_expression(value: ScheduleExpression) -> None:
     expression = value.cron_expression.strip()
     if len(expression.split()) != 5:
         raise ScheduleExpressionError("Cron expression must use 5 fields: minute hour day month weekday")
-    _zone(value.timezone)
+    zone(value.timezone)
     if not croniter.is_valid(expression):
         raise ScheduleExpressionError("Invalid cron expression")
 
@@ -32,13 +32,12 @@ def validate_schedule_expression(value: ScheduleExpression) -> None:
 def next_run_at(value: ScheduleExpression, now: datetime | None = None) -> datetime:
     validate_schedule_expression(value)
     base = now or datetime.now(timezone.utc)
-    zone = _zone(value.timezone)
-    localized = base.astimezone(zone)
+    localized = base.astimezone(zone(value.timezone))
     next_local = croniter(value.cron_expression.strip(), localized).get_next(datetime)
     return cast(datetime, next_local).astimezone(timezone.utc)
 
 
-def _zone(name: str) -> ZoneInfo:
+def zone(name: str) -> ZoneInfo:
     try:
         return ZoneInfo(name or "UTC")
     except ZoneInfoNotFoundError as exc:

@@ -5,8 +5,12 @@ name: Scheduler
 description: Schedule this agent to wake up later in the current conversation.
 system_prompt: |
   Use this skill when the user asks you to remind them, follow up later, run a recurring check,
-  or otherwise wake yourself on a cron schedule. Schedules are bound to the current agent and
-  current conversation.
+  or otherwise wake yourself later. Schedules are bound to the current agent and current conversation.
+  - Once ("remind me tomorrow at 9", "check back in two hours"): use run_at, an ISO 8601 date and time
+    worked out from the current time, such as 2026-10-10T09:00:00+01:00. It runs once and then completes.
+  - Repeatedly ("every Monday at 9"): use cron_expression.
+  Never write a one-time reminder as a cron expression with a day and month: cron has no year, so
+  "34 22 31 5 *" repeats every 31 May.
 actions:
   - name: create_or_update
     aliases: [schedule, create_schedule, update_schedule]
@@ -15,7 +19,7 @@ actions:
       enabled: false
     input_schema:
       type: object
-      required: [name, cron_expression, message]
+      required: [name, message]
       properties:
         schedule_id:
           type: string
@@ -25,7 +29,10 @@ actions:
           description: Human-readable schedule name.
         cron_expression:
           type: string
-          description: "Standard 5-field cron expression: minute hour day month weekday."
+          description: "To repeat: a standard 5-field cron expression (minute hour day month weekday). Give this or run_at."
+        run_at:
+          type: string
+          description: "To run once: an ISO 8601 date and time, such as 2026-10-10T09:00:00+01:00. Without an offset it's read in `timezone`. Give this or cron_expression."
         timezone:
           type: string
           description: IANA timezone name. Defaults to UTC.
@@ -50,9 +57,17 @@ actions:
             smart_values: "true"
         - input_type: text
           name: cron_expression
-          label: Cron expression
+          label: Cron expression (to repeat)
           attr:
             placeholder: "0 9 * * 1-5"
+            optional: "true"
+            smart_values: "true"
+        - input_type: text
+          name: run_at
+          label: Run once at
+          attr:
+            placeholder: "2026-10-10T09:00:00+01:00"
+            optional: "true"
             smart_values: "true"
         - input_type: text
           name: timezone

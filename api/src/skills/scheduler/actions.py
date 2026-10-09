@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any, cast
 
-from src.scheduler.models import CreateScheduleRequest, Schedule, ScheduleTargetType, UpdateScheduleRequest
+from src.scheduler.models import (
+    CreateScheduleRequest,
+    Schedule,
+    ScheduleStatus,
+    ScheduleTargetType,
+    UpdateScheduleRequest,
+)
 from src.scheduler.service import SchedulerService
 
 
@@ -30,6 +37,16 @@ def _required_argument_or_context(
     if not value:
         raise ValueError(f"Missing scheduler argument or runtime context: {key}")
     return value
+
+
+def _run_at(arguments: dict[str, Any]) -> datetime | None:
+    raw = str(arguments.get("run_at") or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError(f"run_at must be an ISO 8601 date and time, such as 2026-10-10T09:00:00+01:00, not '{raw}'") from None
 
 
 def _schedule_response(schedule) -> dict[str, Any]:
@@ -73,8 +90,10 @@ def _find_existing_agent_schedule(
     owner_email: str,
     target: dict[str, Any],
     cron_expression: str,
+    run_at: datetime | None,
     timezone: str,
 ) -> Schedule | None:
+    """The same wake-up asked for again: same conversation, same timing. Saves duplicates if the model repeats."""
     agent_id = str(target.get("agent_id") or "").strip()
     conversation_id = str(target.get("conversation_id") or "").strip()
     normalized_cron = cron_expression.strip()
@@ -89,7 +108,9 @@ def _find_existing_agent_schedule(
             continue
         if schedule.target.get("conversation_id") != conversation_id:
             continue
-        if schedule.cron_expression != normalized_cron:
+        if schedule.status == ScheduleStatus.COMPLETED:
+            continue
+        if schedule.cron_expression != normalized_cron or schedule.run_at != run_at:
             continue
         if schedule.timezone != normalized_timezone:
             continue
@@ -114,7 +135,12 @@ async def create_or_update(
     schedule_id = str(arguments.get("schedule_id") or "").strip()
     name = str(arguments.get("name") or "").strip()
     cron_expression = str(arguments.get("cron_expression") or "").strip()
+    run_at = _run_at(arguments)
     timezone = str(arguments.get("timezone") or "UTC").strip() or "UTC"
+    if not schedule_id and bool(cron_expression) == bool(run_at):
+        raise ValueError(
+            "Give run_at (an ISO 8601 date and time) to wake up once, or cron_expression to wake up repeatedly."
+        )
 
     if schedule_id:
         schedule = service.update_schedule(
@@ -122,6 +148,7 @@ async def create_or_update(
             UpdateScheduleRequest(
                 name=name or None,
                 cron_expression=cron_expression or None,
+                run_at=run_at,
                 timezone=timezone or None,
                 target=target,
                 source_ref=source_ref,
@@ -135,6 +162,7 @@ async def create_or_update(
             owner_email=owner_email,
             target=target,
             cron_expression=cron_expression,
+            run_at=run_at,
             timezone=timezone,
         )
         if existing:
@@ -143,6 +171,7 @@ async def create_or_update(
                 UpdateScheduleRequest(
                     name=name or None,
                     cron_expression=cron_expression or None,
+                    run_at=run_at,
                     timezone=timezone or None,
                     target=target,
                     source_ref=source_ref,
@@ -154,7 +183,8 @@ async def create_or_update(
             schedule = service.create_schedule(
                 CreateScheduleRequest(
                     name=name,
-                    cron_expression=cron_expression,
+                    cron_expression=cron_expression or None,
+                    run_at=run_at,
                     timezone=timezone,
                     target_type=ScheduleTargetType.AGENT_MESSAGE,
                     target=target,
@@ -168,7 +198,11 @@ async def create_or_update(
 
     return {
         "schedule": _schedule_response(schedule),
-        "message": "Schedule saved for this conversation.",
+        "message": (
+            "One-time wake-up saved for this conversation; it runs once and then completes."
+            if schedule.run_at
+            else "Schedule saved for this conversation."
+        ),
     }
 
 

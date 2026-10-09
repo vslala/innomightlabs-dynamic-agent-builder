@@ -44,6 +44,7 @@ from src.automations.service import AutomationService
 from src.common.pagination import Paginated
 from src.config import settings
 from src.form_models import Form
+from src.scheduler.service import SchedulerValidationError
 
 log = logging.getLogger(__name__)
 
@@ -109,7 +110,8 @@ def invoke_automation_run_async(run_id: str, automation_id: str, user_email: str
 def translate_error(exc: Exception) -> HTTPException:
     if isinstance(exc, AutomationNotFoundError):
         return HTTPException(status_code=404, detail=str(exc))
-    if isinstance(exc, AutomationValidationError):
+    if isinstance(exc, (AutomationValidationError, SchedulerValidationError)):
+        # A schedule trigger's timing the scheduler refuses (a one-time moment already past) is the person's to fix.
         return HTTPException(status_code=422, detail=str(exc))
     return HTTPException(status_code=500, detail="Automation operation failed")
 

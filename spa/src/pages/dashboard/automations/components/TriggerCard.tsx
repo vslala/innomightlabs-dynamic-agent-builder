@@ -267,6 +267,7 @@ function initialValues(trigger: AutomationTrigger): Record<string, FormValue> {
     enabled: String(trigger.enabled),
     entry_node_id: trigger.entry_node_id,
     cron_expression: String(trigger.config.cron_expression ?? ""),
+    run_at: String(trigger.config.run_at ?? ""),
     timezone: String(trigger.config.timezone ?? "UTC"),
     input: asStringMap(trigger.config.input),
   };
@@ -288,7 +289,9 @@ function toRequest(
     return {
       ...base,
       config: {
+        // One of the two: the API rejects both or neither, and treats the empty one as unset.
         cron_expression: text(values.cron_expression),
+        run_at: text(values.run_at),
         timezone: text(values.timezone) || "UTC",
         input: asStringMap(values.input),
       },

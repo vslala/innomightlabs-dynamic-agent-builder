@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 from threading import Lock
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from src.agents.tool_runtime.jobs.repository import ToolJobRepository
@@ -23,6 +22,7 @@ from src.dream.repository import DreamRepository
 from src.knowledge.run_state import CrawlJobStateService
 from src.scheduler.models import Schedule, ScheduleStatus
 from src.scheduler.repository import SchedulerRepository
+from src.scheduler.timing import timing_for
 
 log = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ class SchedulerRuntime:
             self.remove(schedule.schedule_id)
             return
 
-        trigger = CronTrigger.from_crontab(schedule.cron_expression, timezone=schedule.timezone)
+        trigger = timing_for(schedule).trigger(schedule, datetime.now(timezone.utc))
         self.scheduler.add_job(
             self._dispatch_job,
             trigger=trigger,

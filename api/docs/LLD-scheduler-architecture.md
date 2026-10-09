@@ -91,6 +91,52 @@ minute hour day month weekday
 
 Timezone is always explicit and defaults to `UTC`.
 
+### One-time schedules (`run_at`), added 2026-10-09
+
+**Why.** A 5-field cron expression has no year, so it can't say "once". Agents using the scheduler skill wrote
+one-off reminders as dated cron, such as `34 22 31 5 *`, which repeats every 31 May. Two such reminders from
+2026-05-31 were still active, due again on 2027-05-31.
+
+**The model.** A schedule now either repeats on `cron_expression` or runs once at `run_at`; exactly one is set,
+and `cron_expression` is `""` for a one-time schedule. A `run_at` without an offset is read in the schedule's
+`timezone`. A new `run_at` may be at most a minute in the past (`RUN_AT_PAST_TOLERANCE`).
+
+**Timing strategies.** `src/scheduler/timing.py` has two:
+
+| Timing | Validates | Next run | Process clock | After its run |
+| --- | --- | --- | --- | --- |
+| `OneTime` | not both, a real timezone, not in the past | `run_at` until it has passed | `DateTrigger`; a moment missed while the server was down runs as soon as it's back | `completed` |
+| `Recurring` | a 5-field cron | from `croniter` | `CronTrigger` | the next cron time |
+
+`timing_for(schedule)` picks the strategy, and the service, runtime and dispatcher use it rather than branching.
+
+- **The new status `completed`.** After its run, succeeded or failed, a one-time schedule becomes `completed`.
+  It leaves the active index and the process clock, can't be resumed, and a repeat fire is skipped
+  (`schedule_completed`). Its runs stay as history.
+- **A recurring schedule now moves to its next time after a failed run too.** Before, a failed run left
+  `next_run_at` where it was.
+- **Validation errors** are raised as `SchedulerValidationError`, so the API answers 400.
+- **The scheduler skill:**
+  - `create_or_update` takes `run_at` (ISO 8601) or `cron_expression`, and says plainly when it gets neither,
+    both, or an unreadable time.
+  - Its system prompt tells the agent to use `run_at` for anything one-off, and why dated cron is wrong.
+  - Repeating the same request finds the existing one-time schedule instead of adding another.
+- **Automation schedule triggers can run once too.**
+  - `ScheduleTriggerConfig` (`automations/triggers/models.py`) takes `cron_expression` or `run_at`. The form
+    field left empty arrives as `""` and counts as unset.
+  - The trigger form (`build_schedule_trigger_form`) has a "Run once at" field next to the cron one. The editor
+    builds the form from the API schema, so it shows up there with no extra work.
+  - `AutomationTriggerLifecycleService.sync_trigger` passes `run_at` to the scheduler. It leaves a completed
+    one-time schedule alone when its `run_at` hasn't changed, so switching the automation off and on neither
+    fails (the moment has passed) nor runs it again. A new `run_at` schedules it again.
+  - `pause_schedule` leaves a completed schedule completed.
+  - A moment already past is refused when the automation goes active: a draft's schedule is saved paused and
+    isn't timed. The API answers 422 with the reason, because `translate_error` now maps `SchedulerValidationError`.
+  - The SPA's trigger summary reads "Once on 2026-10-10 at 09:00 · Europe/London".
+  - Tests: `api/tests/test_automations_one_time_trigger.py`, plus `chain.test.ts` in the SPA.
+- **Not changed:** dream schedules are nightly by nature and stay cron-only.
+- **Tests:** `api/tests/test_scheduler_one_time.py`.
+
 ## Runtime
 
 Use APScheduler, added with:

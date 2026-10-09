@@ -23,6 +23,8 @@ class ScheduleStatus(str, Enum):
     ACTIVE = "active"
     PAUSED = "paused"
     DELETED = "deleted"
+    #: A one-time schedule after its run. It's kept for its history but never runs again.
+    COMPLETED = "completed"
 
 
 class ScheduleRunStatus(str, Enum):
@@ -38,7 +40,8 @@ class ScheduleResponse(BaseModel):
     owner_email: str
     name: str
     status: ScheduleStatus
-    cron_expression: str
+    cron_expression: str = ""
+    run_at: Optional[datetime] = None
     timezone: str = "UTC"
     target_type: ScheduleTargetType
     target: dict[str, Any] = Field(default_factory=dict)
@@ -54,7 +57,9 @@ class ScheduleResponse(BaseModel):
 class CreateScheduleRequest(BaseModel):
     schedule_id: Optional[str] = None
     name: str
-    cron_expression: str
+    #: Exactly one of these: a 5-field cron expression to repeat, or the moment to run once.
+    cron_expression: Optional[str] = None
+    run_at: Optional[datetime] = None
     timezone: str = "UTC"
     target_type: ScheduleTargetType
     target: dict[str, Any] = Field(default_factory=dict)
@@ -65,7 +70,9 @@ class CreateScheduleRequest(BaseModel):
 
 class UpdateScheduleRequest(BaseModel):
     name: Optional[str] = None
+    #: Setting one replaces the other: a schedule either repeats or runs once.
     cron_expression: Optional[str] = None
+    run_at: Optional[datetime] = None
     timezone: Optional[str] = None
     target: Optional[dict[str, Any]] = None
     source_ref: Optional[dict[str, Any]] = None
@@ -91,7 +98,10 @@ class Schedule(BaseModel):
     owner_email: str
     name: str
     status: ScheduleStatus = ScheduleStatus.ACTIVE
-    cron_expression: str
+    #: Repeats on this 5-field cron expression. Empty for a one-time schedule.
+    cron_expression: str = ""
+    #: Runs once, at this moment, then is completed. See src/scheduler/timing.py.
+    run_at: Optional[datetime] = None
     timezone: str = "UTC"
     target_type: ScheduleTargetType
     target: dict[str, Any] = Field(default_factory=dict)
@@ -128,6 +138,7 @@ class Schedule(BaseModel):
             "name": self.name,
             "status": self.status.value,
             "cron_expression": self.cron_expression,
+            "run_at": self.run_at.isoformat() if self.run_at else None,
             "timezone": self.timezone,
             "target_type": self.target_type.value,
             "target": self.target,
@@ -184,7 +195,8 @@ class Schedule(BaseModel):
             owner_email=item["owner_email"],
             name=item["name"],
             status=ScheduleStatus(item.get("status", ScheduleStatus.ACTIVE.value)),
-            cron_expression=item["cron_expression"],
+            cron_expression=item.get("cron_expression") or "",
+            run_at=datetime.fromisoformat(item["run_at"]) if item.get("run_at") else None,
             timezone=item.get("timezone", "UTC"),
             target_type=ScheduleTargetType(item["target_type"]),
             target=item.get("target") or {},

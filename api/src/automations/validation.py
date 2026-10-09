@@ -23,7 +23,7 @@ from src.automations.models import (
 )
 from src.automations.triggers.models import ScheduleTriggerConfig
 from src.connectors.service import ConnectorService
-from src.scheduler.cron import ScheduleExpression, validate_schedule_expression
+from src.scheduler.cron import ScheduleExpression, validate_schedule_expression, zone
 from src.skills.registry import SkillRegistry
 
 
@@ -332,9 +332,12 @@ class AutomationGraphValidator:
         if trigger.type == AutomationTriggerType.SCHEDULE:
             try:
                 config = ScheduleTriggerConfig.model_validate(trigger.config)
-                validate_schedule_expression(
-                    ScheduleExpression(config.cron_expression, config.timezone)
-                )
+                if config.cron_expression:
+                    validate_schedule_expression(ScheduleExpression(config.cron_expression, config.timezone))
+                else:
+                    # Whether `run_at` is still ahead is the scheduler's to say, when it's synced: a trigger
+                    # whose one run already happened is still a valid part of the automation.
+                    zone(config.timezone)
             except Exception as exc:
                 raise AutomationValidationError(f"Invalid schedule trigger: {exc}") from exc
 

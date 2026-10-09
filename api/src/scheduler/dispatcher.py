@@ -72,11 +72,12 @@ class SchedulerDispatcher:
             executor = self.executors[schedule.target_type]
             run.output = await executor.execute(schedule, scheduled_for)
             run.status = ScheduleRunStatus.SUCCEEDED
-            self.service.mark_dispatched(schedule, scheduled_for)
         except Exception as exc:
             run.status = ScheduleRunStatus.FAILED
             run.error = str(exc)
         finally:
+            # Either way the run happened: a one-time schedule is done, and a recurring one moves to its next time.
+            self.service.mark_dispatched(schedule, scheduled_for)
             run.completed_at = datetime.now(timezone.utc)
             self.repository.save_run(run)
         return run

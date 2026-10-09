@@ -145,11 +145,22 @@ export function describeCondition(node: AutomationNode): string | null {
 export function describeTrigger(trigger: AutomationTrigger): string {
   if (trigger.type === "schedule") {
     const cron = typeof trigger.config.cron_expression === "string" ? trigger.config.cron_expression : "";
+    const runAt = typeof trigger.config.run_at === "string" ? trigger.config.run_at : "";
     const timezone = typeof trigger.config.timezone === "string" ? trigger.config.timezone : "UTC";
+    if (runAt) return `${describeRunAt(runAt)} · ${timezone}`;
     return cron ? `${describeCron(cron)} · ${timezone}` : "Schedule not set";
   }
   if (trigger.type === "webhook") return "Incoming webhook";
   return "Run manually or from a test";
+}
+
+/**
+ * A one-time trigger's moment, as written: "Once on 2026-10-10 at 09:00". It's shown in the trigger's own
+ * timezone (the text says which), so it's not converted to the viewer's.
+ */
+export function describeRunAt(runAt: string): string {
+  const match = runAt.trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+  return match ? `Once on ${match[1]} at ${match[2]}` : `Once at ${runAt}`;
 }
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
