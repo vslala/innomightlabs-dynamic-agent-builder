@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress: phases 1 to 4 done |
+| Status | 🚧 In progress: phases 1 to 5 done; phase 6 (Kits) next |
 | Owner | InnomightLabs API |
 | Last reviewed | 2026-10-09 |
 | Scope | `api/src/blueprints/`, and the parts of `api/src/builder/` that call into it |
@@ -167,6 +167,31 @@
   - The rename blocker (Kits, phase 6).
   - `planner._title` still reads the record's name for a resource being removed.
 - **Tests:** `test_blueprints_reconcile.py`.
+
+**Phase 5 (builder), 2026-10-09:**
+
+- **`blueprints/draft.Draft`** is the one reader of the raw document: `resources`, `kept(kind)`,
+  `skill_entries()` (with their `<agent>/<skill>/<n>` keys), `with_skill_settings`, `pinned` and `dump`.
+  - `skill_inputs`, `connections` and `book.page_for_issue` take a `Draft`.
+  - `fill_inputs`, `export.with_ids` and the private YAML walkers are gone.
+  - `Draft` lives in `blueprints/` rather than `builder/` because the book uses it too.
+- **Issue owners.** `BlueprintIssue.owner` is `AUTHOR` (the default) or `PERSON`.
+  - The validator marks an issue `PERSON` only when it's a required person's setting that the entry doesn't have,
+    for a skill outside the secrets tier. A wrong value Ada wrote there stays hers, so a draft can't stall with
+    nobody to fix it.
+  - `covers()` is gone, and Ada's tool results leave `owner` out.
+- **`builder/requirements.py`:** `Requirement` (`missing`, `settle`, `ask`, `absorb`) with `AccountConnection` and
+  `SkillSettings`.
+  - `REQUIREMENTS` is the order the person is asked.
+  - `absorb_answers` replaces the architecture's direct call to `absorb_submission`.
+- **`builder/plan_gates.py`:** `PlanAttempt` plus `PLAN_GATES` (`AuthorIssues`, `NeedsPerson`, `Blocked`,
+  `NothingToChange`, `AwaitApproval`).
+  - `BuilderTools.plan` builds the attempt and returns the first gate's answer.
+  - `_ask_for_settings` and the inline connection branch are gone.
+- **Behaviour change.** A missing account is now asked before missing settings even when the draft doesn't validate
+  yet. Before, a draft that was invalid only because of the person's settings asked for them first. The order now
+  always matches the documented one: sign in, then settings, then the plan.
+- **Tests:** `test_builder_plan_gates.py`. The examples test now checks issue owners instead of `covers`.
 
 ## What's good and stays
 

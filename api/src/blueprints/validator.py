@@ -12,7 +12,7 @@ from typing import Any, Iterable, Iterator, Optional
 
 from pydantic import BaseModel, ValidationError
 
-from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
+from src.blueprints.issues import BlueprintInvalid, BlueprintIssue, IssueOwner
 from src.blueprints.document import Blueprint
 from src.blueprints.kinds import KIND_NAMES, RESOURCE_KINDS, kind_for
 from src.blueprints.params import param_type
@@ -20,7 +20,7 @@ from src.blueprints.parser import join_path, parse_yaml
 from src.blueprints.diff import Each
 from src.blueprints.reconcile import item_name, rules
 from src.blueprints.references import Reference
-from src.blueprints.skills_schema import SkillVariant, skill_variants
+from src.blueprints.skills_schema import SkillSetup, SkillVariant, skill_variants
 from src.blueprints.spec import (
     AgentSpec,
     CrawlSpec,
@@ -432,7 +432,11 @@ def check_skills(blueprint: Blueprint, data: dict[str, Any], variants: dict[str,
                 variant.model.model_validate(entry)
             except ValidationError as e:
                 vocabulary = [*variant.config_fields, "id", "config", "enabled", "available_to"]
-                issues += issues_from_validation_error(e, path, vocabulary)
+                theirs = _person_settings_missing(variant, path, config)
+                issues += [
+                    issue.model_copy(update={"owner": IssueOwner.PERSON}) if issue.path in theirs else issue
+                    for issue in issues_from_validation_error(e, path, vocabulary)
+                ]
             if skill_id in installed and not manifest.repeatable:
                 issues.append(BlueprintIssue(
                     path=f"{path}.id",
@@ -440,3 +444,14 @@ def check_skills(blueprint: Blueprint, data: dict[str, Any], variants: dict[str,
                 ))
             installed.add(skill_id)
     return issues
+
+
+def _person_settings_missing(variant: SkillVariant, path: str, config: dict[str, Any]) -> set[str]:
+    """Paths of the required settings only the person knows that this entry doesn't have yet. Issues there are the
+    person's to settle (the builder asks them in a form), not the author's to fix. A skill that needs a secret
+    can't be built yet, so nobody is asked."""
+    if variant.setup == SkillSetup.SECRETS:
+        return set()
+    missing = {f"{path}.config.{field.name}" for field in variant.person_settings if config.get(field.name) in (None, "")}
+    # With nothing written under `config`, the issue is about `config` itself.
+    return missing | ({f"{path}.config"} if missing and not config else set())

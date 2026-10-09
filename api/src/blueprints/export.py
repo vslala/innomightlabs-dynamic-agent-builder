@@ -66,16 +66,3 @@ def export_agent(agent_id: str, user_email: str) -> Optional[str]:
         "outputs": outputs,
     }
     return yaml.safe_dump(document, sort_keys=False, allow_unicode=True, width=100)
-
-
-def with_ids(text: str, ids: dict[str, str]) -> str:
-    """The blueprint with each named resource pinned to the id it was built as, so the next apply updates it."""
-    document = yaml.safe_load(text)
-    for name, resource_id in ids.items():
-        resource = document.get("resources", {}).get(name)
-        if isinstance(resource, dict):
-            # Put `id` right after `kind`, where a reader expects it.
-            pinned = {"kind": resource.get("kind"), "id": resource_id}
-            pinned.update({key: value for key, value in resource.items() if key not in ("kind", "id")})
-            document["resources"][name] = pinned
-    return yaml.safe_dump(document, sort_keys=False, allow_unicode=True, width=100)

@@ -8,7 +8,8 @@ from src.agents.repository import AgentRepository
 from src.apikeys.repository import ApiKeyRepository
 from src.blueprints.catalog import example_yaml
 from src.blueprints.executor import apply_blueprint
-from src.blueprints.export import export_agent, with_ids
+from src.blueprints.draft import Draft
+from src.blueprints.export import export_agent
 from src.blueprints.kinds import knowledge_base as knowledge_base_kind
 from src.blueprints.kinds.widget_key import SaveWidgetKey
 from src.blueprints.models import DeploymentStatus
@@ -166,7 +167,7 @@ def test_an_exported_agent_plans_as_unchanged_and_can_be_extended(launched):
 
 
 def test_with_ids_pins_each_resource():
-    pinned = yaml.safe_load(with_ids(SITE_AGENT, {"assistant": "agent-1", "widget": "key-1"}))
+    pinned = yaml.safe_load(Draft(SITE_AGENT).pinned({"assistant": "agent-1", "widget": "key-1"}).text)
     assert list(pinned["resources"]["assistant"])[:2] == ["kind", "id"]
     assert pinned["resources"]["assistant"]["id"] == "agent-1"
     assert "id" not in pinned["resources"]["site_kb"]

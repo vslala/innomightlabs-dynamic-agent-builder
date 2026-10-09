@@ -4,7 +4,9 @@ from typing import Any
 
 import pytest
 
-from src.builder.skill_inputs import covers, missing_inputs
+from src.blueprints.draft import Draft
+from src.blueprints.issues import IssueOwner
+from src.builder.skill_inputs import missing_inputs
 from src.blueprints.catalog import EXAMPLES_DIR, blueprint_json_schema, example_yaml, reference_markdown
 from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
 from src.blueprints.validator import validate_blueprint
@@ -30,11 +32,12 @@ def issue_at(issues: list[BlueprintIssue], path: str) -> BlueprintIssue:
 def test_every_example_validates_against_the_real_skills(path):
     """Apart from skill settings the person gives: examples leave those out, and the system asks for them."""
     text = path.read_text(encoding="utf-8")
-    missing = missing_inputs(text)
+    missing = missing_inputs(Draft(text))
     try:
         validated = validate_blueprint(text)
     except BlueprintInvalid as e:
-        assert missing and all(covers(missing, issue.path) for issue in e.issues), e.issues
+        # Only the person's own settings are left, and the system asks for each of them.
+        assert missing and all(issue.owner == IssueOwner.PERSON for issue in e.issues), e.issues
         return
     assert validated.order and not missing
 

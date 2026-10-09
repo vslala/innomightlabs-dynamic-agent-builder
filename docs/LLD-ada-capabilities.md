@@ -195,8 +195,8 @@ The `settings` tier is built end to end:
   - **The form** is built from the manifest's own `FormInput`s, through the Interactive Forms module, so the chat
     renders it like any form. Option sources are hydrated. Agent pickers also offer the agents this build creates,
     "(in this build)", by blueprint name. Entries of a repeatable skill get their own form, "(2)".
-  - **Answers** are taken at the start of the next turn, before Ada runs (`absorb_submission`, from the session's
-    `pending_input`). They're checked with `registry.validate_config`. A bad answer keeps the form pending with the
+  - **Answers** are taken at the start of the next turn, before Ada runs (`requirements.absorb_answers`, which for
+    settings is `absorb_submission`, from the session's `pending_input`). They're checked with `registry.validate_config`. A bad answer keeps the form pending with the
     reason, shown on the form next time.
   - **They outlive Ada's edits.** `session.skill_inputs` is keyed by `<agent>/<skill id>/<n>`, and every plan fills
     the answers back in, so Ada resending her YAML doesn't lose them. `load_agent` clears them.
@@ -222,12 +222,27 @@ The `settings` tier is built end to end:
   | Gmail inbox helper | `google_mail` (account tier) |
 
   - Recipes leave skill settings out, as Ada does, so the system asks for them. The examples test accepts
-    validation issues only where `missing_inputs` covers them.
+    only validation issues the validator marks as the person's (`IssueOwner.PERSON`).
   - Ideas are listed by file name. Add an order to `metadata` if the brainstorm list needs one.
 - **Still to do in this tier:** `agent2agent_client` also needs the account's A2A domain allowlist. The plan
   reports it as a blocker (from `check_install`), but there's no way to build it yet; that's the consent surface in
   [§3](#3-setup-requirements).
 - **Tests:** `api/tests/test_blueprints_skill_setup.py` and `api/tests/test_builder_skill_inputs.py`.
+
+**What the system asks the person, and how `plan_blueprint` answers (refactor phase 5, 2026-10-09).**
+
+- **`builder/requirements.py`.** Each `Requirement` has `missing(draft, …)`, `settle`, `ask` and `absorb`, and
+  `REQUIREMENTS = (AccountConnection(), SkillSettings())` is the order the person is asked. The secure secrets
+  panel and A2A consent ([§3](#3-setup-requirements)) are meant to be further entries.
+- **`builder/plan_gates.py`.** `plan_blueprint` runs `PLAN_GATES`: `AuthorIssues`, `NeedsPerson`, `Blocked`,
+  `NothingToChange` and `AwaitApproval`. The first gate that answers gives the tool result.
+- **Issues carry an owner** (`BlueprintIssue.owner`). The validator marks a missing required person's setting as
+  `PERSON`, and Ada only sees `AUTHOR` issues. This replaces filtering issues by path (`covers`), and the owner isn't
+  in her tool results.
+- **The draft is read once,** through `blueprints/draft.Draft`. It holds the skill entries and their keys,
+  `with_skill_settings` (was `fill_inputs`) and `pinned` (was `export.with_ids`).
+- **Order change:** a missing account is now asked before a missing setting even when the draft doesn't validate
+  yet. Before, a draft invalid only for the person's settings asked for them first.
 
 **MCP connections (`McpConnection`), and Tavily web search.** Built ahead of the rest of
 [§2.2](#22-mcpconnection), and simpler: a blueprint never creates or stores a connection.

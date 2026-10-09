@@ -16,9 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
-import yaml  # type: ignore[import-untyped,unused-ignore]
 from pydantic import ValidationError
 
+from src.blueprints.draft import Draft
 from src.blueprints.kinds.mcp_connection import connection_for, is_ready
 from src.blueprints.spec import McpConnectionSpec
 from src.config import settings
@@ -39,17 +39,10 @@ class ConnectionNeed:
     description: str
 
 
-def missing_connections(text: Optional[str], user_email: str) -> list[ConnectionNeed]:
+def missing_connections(draft: Draft, user_email: str) -> list[ConnectionNeed]:
     """Every MCP connection in the draft that the person can connect from the chat and hasn't yet."""
-    try:
-        data = yaml.safe_load(text or "")
-    except yaml.YAMLError:
-        return []
-    resources = data.get("resources") if isinstance(data, dict) else None
     needs = []
-    for name, raw in (resources.items() if isinstance(resources, dict) else []):
-        if not isinstance(raw, dict) or raw.get("kind") != "McpConnection" or raw.get("remove"):
-            continue
+    for name, raw in draft.kept("McpConnection"):
         try:
             spec = McpConnectionSpec.model_validate(raw)
         except ValidationError:
