@@ -6,6 +6,8 @@ export interface BuilderSession {
   provider: string;
   model?: string | null;
   deployment_id?: string | null;
+  /** The kit this conversation built or changed. */
+  kit_id?: string | null;
   created_at: string;
 }
 
