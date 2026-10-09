@@ -33,11 +33,11 @@ class Existing:
     """A resource that's already in the owner's account, as the plan found it."""
 
     id: str
-    #: The stored model (Agent, KnowledgeBase, AgentApiKey) at plan time; an update restores it on rollback.
+    #: The stored model (Agent, KnowledgeBase, AgentApiKey) at plan time.
     record: Any
     matched_by: Literal["id", "name"]
-    #: Whatever else the kind loaded to compare against (an agent's skills and linked knowledge bases).
-    related: dict[str, Any] = field(default_factory=dict)
+    #: The resource as it is, written as a spec by its kind's `observe`: what the reconciler compares with.
+    observed: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

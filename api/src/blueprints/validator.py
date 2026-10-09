@@ -17,6 +17,8 @@ from src.blueprints.document import Blueprint
 from src.blueprints.kinds import KIND_NAMES, RESOURCE_KINDS, kind_for
 from src.blueprints.params import param_type
 from src.blueprints.parser import join_path, parse_yaml
+from src.blueprints.diff import Each
+from src.blueprints.reconcile import item_name, rules
 from src.blueprints.references import Reference
 from src.blueprints.skills_schema import SkillVariant, skill_variants
 from src.blueprints.spec import (
@@ -346,29 +348,25 @@ def check_removals(blueprint: Blueprint, variants: dict[str, SkillVariant]) -> l
                 message="Only an existing resource can be removed, and it needs its `id` to say which one.",
                 hint="Load it first, so the draft has its id.",
             ))
+        for field_name, rule in rules(type(resource)).items():
+            if not isinstance(rule, Each) or not rule.removals_from:
+                continue
+            kept = {item_name(item) for item in getattr(resource, field_name)}
+            for index, listed in enumerate(getattr(resource, rule.removals_from)):
+                if listed in kept:
+                    issues.append(BlueprintIssue(
+                        path=f"{path}.{rule.removals_from}[{index}]",
+                        message=f"'{listed}' is in both `{field_name}` and `{rule.removals_from}`.",
+                        hint="Keep it in one of them.",
+                    ))
         if not isinstance(resource, AgentSpec):
             continue
-        for index, kb_name in enumerate(resource.remove_knowledge_bases):
-            if kb_name in resource.knowledge_bases:
-                issues.append(BlueprintIssue(
-                    path=f"{path}.remove_knowledge_bases[{index}]",
-                    message=f"'{kb_name}' is in both `knowledge_bases` and `remove_knowledge_bases`.",
-                    hint="Keep it in one of them.",
-                ))
-        listed = {entry.id for entry in resource.skills}
         for index, skill_id in enumerate(resource.remove_skills):
-            entry_path = f"{path}.remove_skills[{index}]"
             if skill_id not in variants:
                 issues.append(BlueprintIssue(
-                    path=entry_path,
+                    path=f"{path}.remove_skills[{index}]",
                     message=f"There's no skill called '{skill_id}'.",
                     hint=did_you_mean(skill_id, variants.keys()),
-                ))
-            elif skill_id in listed:
-                issues.append(BlueprintIssue(
-                    path=entry_path,
-                    message=f"'{skill_id}' is in both `skills` and `remove_skills`.",
-                    hint="Keep it in one of them. To switch it off but keep it, use `enabled: false` under `skills`.",
                 ))
     for output_name, output in blueprint.outputs.items():
         for token in TEMPLATE.findall(output.value):

@@ -1,6 +1,7 @@
 """Planning a validated blueprint against what already exists: what it creates, updates, removes or leaves
 alone, the commands that do it in the order they must run, and what stops it. No side effects."""
 
+from dataclasses import replace
 from typing import Any
 
 from fastapi import HTTPException
@@ -72,6 +73,9 @@ def plan_blueprint(validated: ValidatedBlueprint, user_email: str) -> Plan:
         if existing is None:
             ctx.created.add(name)
         else:
+            # What it links to is named as the blueprint names it; links to anything else aren't the blueprint's.
+            names = {matched.id: matched_name for matched_name, matched in ctx.matched.items()}
+            existing = replace(existing, observed=kind.observe(existing.record, names))
             ctx.matched[name] = existing
         resource_commands = kind.commands(name, spec, existing, ctx)
         commands += resource_commands

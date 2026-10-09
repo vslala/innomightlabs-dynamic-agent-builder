@@ -225,6 +225,11 @@ Where the POC differs from the design below, and why:
     interrupted by a restart.
   - **Disconnects now roll back with the rest of a failed apply.** A crawl that fails to start no longer rolls back
     the build. This replaces the "Crawls start in `start()`" caveat above.
+- **Refactor phase 4, 2026-10-09: one reconciler.**
+  - **Each spec field declares how it's compared,** in its type metadata (`blueprints/diff.py`).
+  - **`blueprints/reconcile.py` compares the spec with the resource as `observe` reads it,** and the kinds turn
+    the outcome into commands. No kind compares fields by hand.
+  - **"In both lists" is checked for every collection,** MCP connections included.
 - **Tests:**
   - `api/tests/test_blueprints_validator.py`, `test_blueprints_skills_schema.py`, `test_blueprints_apply.py` and
     `test_builder_ada.py`, plus an injected-architecture case in `test_chat_turn_run.py`.

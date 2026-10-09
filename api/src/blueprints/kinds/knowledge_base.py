@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
 from src.blueprints.issues import BlueprintIssue
+from src.blueprints.reconcile import reconcile
 from src.blueprints.kinds.base import (
     Action,
     AppliedResource,
@@ -190,13 +191,13 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
             kb = repo.find_by_id(spec.id, ctx.user_email)
             if not kb or kb.status == KnowledgeBaseStatus.DELETED:
                 raise NotFound(f"There's no knowledge base with id '{spec.id}' in your account.")
-            return Existing(id=kb.kb_id, record=kb, matched_by="id", related={"crawl": last_crawl(kb.kb_id)})
+            return Existing(id=kb.kb_id, record=kb, matched_by="id")
         same_name = [kb for kb in repo.find_all_by_user(ctx.user_email) if kb.name == spec.name]
         if len(same_name) != 1:
             # None to match, or several and no way to tell which: create a new one.
             return None
         kb = same_name[0]
-        return Existing(id=kb.kb_id, record=kb, matched_by="name", related={"crawl": last_crawl(kb.kb_id)})
+        return Existing(id=kb.kb_id, record=kb, matched_by="name")
 
     def commands(
         self, name: str, spec: KnowledgeBaseSpec, existing: Optional[Existing], ctx: PlanContext
@@ -204,25 +205,17 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
         if existing is None:
             crawl = [StartCrawl(resource=name, crawl=spec.crawl)] if spec.crawl else []
             return [CreateKnowledgeBase(resource=name, kb_name=spec.name, description=spec.description), *crawl]
+        outcome = reconcile(spec, existing.observed)
         kb: KnowledgeBase = existing.record
-        fields: dict[str, Any] = {}
-        says = []
-        if spec.name != kb.name:
-            fields["name"] = spec.name
-            says.append(f"rename to '{spec.name}'")
-        if spec.description is not None and spec.description != kb.description:
-            fields["description"] = spec.description
-            says.append("update its description")
+        fields = outcome.values(KnowledgeBaseSpec)
+        says = tuple(change.says for change in outcome.sets if change.says and change.field != "crawl")
         commands: list[Command] = (
-            [SaveKnowledgeBase(resource=name, kb_id=kb.kb_id, fields=fields, says=tuple(says))]
+            [SaveKnowledgeBase(resource=name, kb_id=kb.kb_id, fields=fields, says=says)]
             if fields else [Use(resource=name, applied=_applied(name, kb))]
         )
-        if spec.crawl and spec.crawl != existing.related.get("crawl"):
-            commands.append(StartCrawl(
-                resource=name,
-                crawl=spec.crawl,
-                says=(f"read {spec.crawl.url} again, up to {spec.crawl.max_pages} pages",),
-            ))
+        if spec.crawl and outcome.sets_field("crawl"):
+            said = next(change.says for change in outcome.sets if change.field == "crawl")
+            commands.append(StartCrawl(resource=name, crawl=spec.crawl, says=(said,) if said else ()))
         return commands
 
     def delete_commands(
@@ -249,7 +242,9 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
     def _crawls(spec: KnowledgeBaseSpec, change: Change) -> bool:
         if not spec.crawl or change.action == Action.UNCHANGED:
             return False
-        return change.action == Action.CREATE or spec.crawl != change.existing.related.get("crawl")  # type: ignore[union-attr]
+        if change.action == Action.CREATE or change.existing is None:
+            return True
+        return spec.crawl.model_dump() != change.existing.observed.get("crawl")
 
     def describe(self, name: str, spec: KnowledgeBaseSpec) -> str:
         if spec.crawl:

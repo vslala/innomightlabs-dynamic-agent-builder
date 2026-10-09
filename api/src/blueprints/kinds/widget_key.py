@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from html import escape
 from typing import Any, ClassVar, Mapping, Optional
-from urllib.parse import urlsplit
 from uuid import uuid4
 
 from src.apikeys.models import AgentApiKey
@@ -16,20 +15,13 @@ from src.blueprints.kinds.base import (
     NotFound,
     PlanContext,
 )
-from src.blueprints.spec import WidgetKeySpec
+from src.blueprints.reconcile import reconcile
+from src.blueprints.spec import WidgetKeySpec, origin_of, origins_of
 from src.config import settings
 
 
-def origin_of(url: str) -> str | None:
-    """`https://example.com/about` → `https://example.com`; None for anything that isn't a web address."""
-    parts = urlsplit(url.strip())
-    if parts.scheme not in ("http", "https") or not parts.netloc:
-        return None
-    return f"{parts.scheme}://{parts.netloc.lower()}"
-
-
 def origins(spec: WidgetKeySpec) -> list[str]:
-    return sorted({origin for origin in map(origin_of, spec.allowed_origins) if origin})
+    return origins_of(spec.allowed_origins)
 
 
 def embed_snippet(public_key: str) -> str:
@@ -208,17 +200,10 @@ class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
                 allow_guests=spec.allow_guests,
             )]
         key: AgentApiKey = existing.record
-        fields: dict[str, Any] = {}
-        says = []
-        if spec.name and spec.name != key.name:
-            fields["name"] = spec.name
-            says.append(f"rename to '{spec.name}'")
-        if origins(spec) != sorted(key.allowed_origins):
-            fields["allowed_origins"] = origins(spec)
-            says.append("allow it on " + ", ".join(origins(spec)))
-        if spec.allow_guests != key.allow_guests:
-            fields["allow_guests"] = spec.allow_guests
-            says.append("let guests chat with just an email" if spec.allow_guests else "ask visitors to sign in")
+        outcome = reconcile(spec, existing.observed)
+        fields = outcome.values(WidgetKeySpec)
+        if "allowed_origins" in fields:
+            fields["allowed_origins"] = origins(spec)  # stored as origins, as compared
         if not fields:
             return [Use(resource=name, uses=frozenset({spec.agent}), applied=_applied(name, key))]
         return [SaveWidgetKey(
@@ -227,7 +212,7 @@ class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
             agent_id=key.agent_id,
             key_id=key.key_id,
             fields=fields,
-            says=tuple(says),
+            says=outcome.says(),
         )]
 
     def delete_commands(self, name: str, spec: WidgetKeySpec, existing: Existing, removal: str) -> list[Command]:
