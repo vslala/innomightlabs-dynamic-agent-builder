@@ -101,16 +101,29 @@ SpecT = TypeVar("SpecT", bound=BaseModel)
 
 
 class ResourceKind(Generic[SpecT]):
+    """What every kind has: how it's found, checked and shown. Whether a blueprint can create it is up to the
+    subclass: `ManagedKind` creates, updates and deletes; `LookupKind` only finds what the account already has."""
+
     kind: ClassVar[str]
     #: How the kind is named to people, in plans and drawings.
     label: ClassVar[str]
     #: When to use it, in the words a person would ask with. Ada's book index routes on this.
     use_when: ClassVar[str]
-    #: What deleting one takes with it, in plain words, for the plan.
-    deletes: ClassVar[str]
     spec_model: ClassVar[type[BaseModel]]
     #: Attribute names `apply` fills in, listed in the catalog and checked in `outputs`.
     exposes: ClassVar[tuple[str, ...]]
+    #: How a wire from this kind to a resource naming it reads in the drawing ("knowledge for").
+    feeds: ClassVar[str] = ""
+    #: Where it is in the dashboard, with `{id}`; empty when it has no page of its own.
+    dashboard_path: ClassVar[str] = ""
+
+    def title(self, name: str, spec: SpecT, resources: dict[str, Any]) -> str:
+        """How this resource is named to people when the spec may not say."""
+        return str(getattr(spec, "name", None) or name)
+
+    def card_details(self, spec: SpecT) -> list[str]:
+        """The lines on its card in the blueprint drawing."""
+        return []
 
     def page_sections(self) -> list[str]:
         """Extra Markdown for this kind's page in Ada's book, beyond the fields its spec model gives."""
@@ -141,8 +154,33 @@ class ResourceKind(Generic[SpecT]):
         return Usage()
 
     def describe(self, name: str, spec: SpecT) -> str:
-        """The plan's sentence for creating this resource."""
+        """The plan's sentence for this resource when it isn't there yet."""
         raise NotImplementedError
+
+    def kept(self, name: str, change: Change) -> AppliedResource:
+        """An unchanged resource, so references to it and outputs about it still resolve."""
+        raise NotImplementedError
+
+
+class LookupKind(ResourceKind[SpecT]):
+    """A kind the account owns and a blueprint only uses, such as an MCP connection holding the person's sign-in.
+    It's found and linked to, never created, changed or deleted by a blueprint."""
+
+    def validate(self, name: str, spec: SpecT) -> list[BlueprintIssue]:
+        if getattr(spec, "remove", False):
+            return [BlueprintIssue(
+                path=f"resources.{name}.remove",
+                message=f"A blueprint can't delete this {self.label}; it belongs to the whole account.",
+                hint="Take it off the resources that use it instead.",
+            )]
+        return []
+
+
+class ManagedKind(ResourceKind[SpecT]):
+    """A kind a blueprint creates, updates and deletes."""
+
+    #: What deleting one takes with it, in plain words, for the plan.
+    deletes: ClassVar[str]
 
     def apply(self, name: str, spec: SpecT, ctx: ApplyContext) -> AppliedResource:
         """Create it."""
@@ -150,10 +188,6 @@ class ResourceKind(Generic[SpecT]):
 
     def update(self, name: str, spec: SpecT, change: Change, ctx: ApplyContext) -> AppliedResource:
         """Change the existing resource to match the spec. Anything that can't be undone waits for `finalize`."""
-        raise NotImplementedError
-
-    def kept(self, name: str, change: Change) -> AppliedResource:
-        """An unchanged resource, so references to it and outputs about it still resolve."""
         raise NotImplementedError
 
     def start(self, applied: AppliedResource, spec: SpecT, ctx: ApplyContext) -> None:

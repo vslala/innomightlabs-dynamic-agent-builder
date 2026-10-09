@@ -75,7 +75,7 @@ def test_the_providers_come_from_the_preset_catalog():
     "change, message",
     [
         ("    provider: tavily\n", "Say which MCP server to connect."),
-        ("    provider: tavily\n    id: m-1\n    remove: true\n", "can't delete an MCP connection"),
+        ("    provider: tavily\n    id: m-1\n    remove: true\n", "can't delete this MCP connection"),
     ],
 )
 def test_a_connection_needs_a_provider_and_cant_be_deleted(change, message):

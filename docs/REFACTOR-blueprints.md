@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 📝 Proposed |
+| Status | 🚧 In progress: phase 1 done |
 | Owner | InnomightLabs API |
 | Last reviewed | 2026-10-09 |
 | Scope | `api/src/blueprints/`, and the parts of `api/src/builder/` that call into it |
@@ -22,6 +22,33 @@
 > command declares whether it can be undone, and records its own undo in a log saved on the deployment. Together
 > these make **Kits** (KAN-68) nearly free: rolling back is "apply an earlier version", and removing a kit is
 > "apply nothing".
+
+## Implementation notes
+
+**Phase 1 (tidy), 2026-10-09:**
+
+- **Single registry.** `Blueprint` and its `Resource` union moved to `blueprints/document.py` and are read from
+  `RESOURCE_KINDS`, so `spec.py` no longer lists the kinds. `kinds.KIND_NAMES` replaces the validator's own list.
+- **Base classes.** `ResourceKind` is the shared base, with `ManagedKind` and `LookupKind` under it.
+  - `McpConnection` is a `LookupKind`. `LookupKind.validate` rejects `remove` for every lookup kind.
+  - The executor and planner use `managed_kind_for`, which refuses a lookup kind.
+  - The planner still plans a missing lookup resource as a create with a blocker. Turning that into a person
+    requirement is phase 5.
+- **Presentation on the kind:** `title`, `card_details`, `feeds` and `dashboard_path`.
+  - `feeds` stands in for `WIRE_LABELS` until phase 2 moves wire labels onto references.
+  - `planner._title` still falls back to the existing record's name. Phase 2's `observe()` replaces it.
+- **Param types:** `blueprints/params.py`. `ParamSpec.type` is read from `PARAM_TYPES`.
+- **`deploy_blueprint` is a function, not a `BlueprintService` class.** Its outcomes are types (`Invalid`, `Blocked`,
+  `RateLimited`, `Deployed`) that callers `match` on.
+- **Behaviour:** unchanged, apart from wording. The "can't delete" message is now the generic "A blueprint can't
+  delete this MCP connection; it belongs to the whole account." The kinds' order in the "Unknown kind" message
+  follows `RESOURCE_KINDS`.
+- **Tests:** `test_blueprints_kinds.py` and `test_blueprints_params.py`, plus `test_deploying_says_why_it_didnt` in
+  `test_blueprints_apply.py`.
+
+**Open for phase 3: write-ahead logging.** A command can run and the process die before its `Undo` is saved.
+Record "about to run X" first, with any ids we generate ourselves, and mark it done afterwards. The reaper checks
+each half-finished entry against the account. Creates need their id chosen up front so that check is possible.
 
 ## What's good and stays
 

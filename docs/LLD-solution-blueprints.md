@@ -201,9 +201,21 @@ Where the POC differs from the design below, and why:
 - **Crawls start in `start()`.** If two KBs crawl and the second launch fails, the first crawl is already queued and
   then runs against a KB that has been rolled back. With one KB per blueprint today this can't happen; fix it before
   multi-KB blueprints.
+- **Refactor phase 1 ([REFACTOR-blueprints.md](REFACTOR-blueprints.md)), 2026-10-09:**
+  - **One list of kinds.** `Blueprint` and its `Resource` union moved to `blueprints/document.py`, which reads the
+    spec models from `RESOURCE_KINDS`, so adding a kind is one entry. `spec.py` keeps the parts.
+  - **Two base classes.** Kinds extend `ManagedKind` (created, updated and deleted) or `LookupKind` (only found:
+    `McpConnection`). A lookup kind can't be removed, and the executor reaches managed methods through
+    `managed_kind_for`.
+  - **Kinds own how they're shown:** `title`, `card_details`, `feeds` (the drawing's wire label) and
+    `dashboard_path`.
+  - **Param types are strategies** in `blueprints/params.py`, shared by the spec, the validator and the run form.
+  - **One deploy path.** `blueprints/service.deploy_blueprint` validates, plans, rate-limits and applies, returning
+    `Invalid`, `Blocked`, `RateLimited` or `Deployed`. The API route and Ada's `apply_blueprint` both use it.
 - **Tests:**
   - `api/tests/test_blueprints_validator.py`, `test_blueprints_skills_schema.py`, `test_blueprints_apply.py` and
     `test_builder_ada.py`, plus an injected-architecture case in `test_chat_turn_run.py`.
+  - `test_blueprints_kinds.py` and `test_blueprints_params.py`, for refactor phase 1.
   - `spa/src/pages/dashboard/blueprints/blueprintView.test.ts`.
 
 ## Context and problem

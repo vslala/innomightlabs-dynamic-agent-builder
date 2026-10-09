@@ -5,16 +5,16 @@ person connects it, through the card the system shows when Ada plans (`builder/c
 blueprint finds that connection and links agents to it. Applying the same blueprint again finds it again.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.kinds.base import (
     AppliedResource,
     Change,
     Existing,
+    LookupKind,
     NotFound,
     PlanContext,
-    ResourceKind,
 )
 from src.blueprints.spec import McpConnectionSpec
 from src.connectors.mcp.models import MCPConnection
@@ -48,32 +48,31 @@ def provider_name(spec: McpConnectionSpec) -> str:
     return provider.display_name if provider else (spec.name or "MCP server")
 
 
-class McpConnectionKind(ResourceKind[McpConnectionSpec]):
+class McpConnectionKind(LookupKind[McpConnectionSpec]):
     kind = "McpConnection"
     label = "MCP connection"
     use_when = (
         "The agent needs tools from another service: search the web, read web pages, or work in Jira, GitHub or "
         "Canva."
     )
-    deletes = "every agent using it loses its tools"
     spec_model = McpConnectionSpec
     exposes = ("id", "name")
+    feeds = "tools for"
+
+    def title(self, name: str, spec: McpConnectionSpec, resources: dict[str, Any]) -> str:
+        return spec.name or provider_name(spec)
+
+    def card_details(self, spec: McpConnectionSpec) -> list[str]:
+        return [f"Tools from {provider_name(spec)}", "You sign in once; every linked agent can use it"]
 
     def validate(self, name: str, spec: McpConnectionSpec) -> list[BlueprintIssue]:
-        path = f"resources.{name}"
         if not spec.provider and not spec.id:
             return [BlueprintIssue(
-                path=f"{path}.provider",
+                path=f"resources.{name}.provider",
                 message="Say which MCP server to connect.",
                 hint=f"Set `provider` to one of: {', '.join(PROVIDERS)}.",
             )]
-        if spec.remove:
-            return [BlueprintIssue(
-                path=f"{path}.remove",
-                message="A blueprint can't delete an MCP connection; it belongs to the whole account.",
-                hint="Use the agent's `remove_mcp_connections` to take it away from one agent.",
-            )]
-        return []
+        return super().validate(name, spec)
 
     def find_existing(self, name: str, spec: McpConnectionSpec, ctx: PlanContext) -> Optional[Existing]:
         connection = connection_for(spec, ctx.user_email)

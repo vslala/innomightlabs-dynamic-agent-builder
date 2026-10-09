@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from fastapi import BackgroundTasks
 
-from src.blueprints.kinds import Action, AppliedResource, ApplyContext, kind_for
+from src.blueprints.kinds import Action, AppliedResource, ApplyContext, kind_for, managed_kind_for
 from src.blueprints.planner import Plan
 from src.blueprints.models import DeployedResource, Deployment, DeploymentOutput, DeploymentStatus
 from src.blueprints.repository import DeploymentRepository
@@ -54,21 +54,20 @@ def apply_blueprint(
             spec = blueprint.resources[name]
             if spec.remove:
                 continue
-            kind = kind_for(spec.kind)
             change = plan.changes[name]
             if change.action == Action.CREATE:
-                applied = kind.apply(name, spec, ctx)
+                applied = managed_kind_for(spec.kind).apply(name, spec, ctx)
             elif change.action == Action.UPDATE:
-                applied = kind.update(name, spec, change, ctx)
+                applied = managed_kind_for(spec.kind).update(name, spec, change, ctx)
             else:
-                applied = kind.kept(name, change)
+                applied = kind_for(spec.kind).kept(name, change)
             ctx.applied[name] = applied
             if change.action != Action.UNCHANGED:
                 touched.append((change.action, applied))
             _record(deployment, applied)
             repository.save(_touch(deployment))
         for _, applied in touched:
-            kind_for(applied.kind).start(applied, blueprint.resources[applied.name], ctx)
+            managed_kind_for(applied.kind).start(applied, blueprint.resources[applied.name], ctx)
             _record(deployment, applied)
     except Exception as e:
         log.exception("Blueprint %s failed for %s", blueprint.metadata.name, user_email)
@@ -99,7 +98,7 @@ def _remove(validated: ValidatedBlueprint, plan: Plan, ctx: ApplyContext, deploy
         if not change.removals:
             continue
         spec = validated.blueprint.resources[name]
-        kind = kind_for(spec.kind)
+        kind = managed_kind_for(spec.kind)
         if change.action == Action.REMOVE:
             kind.delete(change, ctx)
         else:
@@ -111,7 +110,7 @@ def _undo(touched: list[tuple[Action, AppliedResource]], ctx: ApplyContext, depl
     """Deletes what was created and puts back what was updated, newest first."""
     status = DeploymentStatus.FAILED
     for action, applied in reversed(touched):
-        kind = kind_for(applied.kind)
+        kind = managed_kind_for(applied.kind)
         try:
             if action == Action.CREATE:
                 kind.rollback(applied, ctx)

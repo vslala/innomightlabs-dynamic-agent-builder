@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.blueprints.issues import BlueprintIssue
-from src.blueprints.kinds import Action, Change, Existing, NotFound, PlanContext, ResourceKind, kind_for
+from src.blueprints.kinds import Action, Change, Existing, ManagedKind, NotFound, PlanContext, kind_for, managed_kind_for
 from src.blueprints.validator import ValidatedBlueprint
 from src.rate_limits.service import RateLimitService
 
@@ -55,7 +55,7 @@ def plan_blueprint(validated: ValidatedBlueprint, user_email: str) -> Plan:
         spec = validated.blueprint.resources[name]
         kind = kind_for(spec.kind)
         if spec.remove:
-            plan.steps.append(_removal_step(name, spec, kind, ctx, plan))
+            plan.steps.append(_removal_step(name, spec, managed_kind_for(spec.kind), ctx, plan))
             continue
         try:
             existing = kind.find_existing(name, spec, ctx)
@@ -112,7 +112,7 @@ def _title(name: str, spec: Any, existing: Existing) -> str:
     return getattr(spec, "name", None) or getattr(existing.record, "name", None) or name
 
 
-def _removal_step(name: str, spec: Any, kind: ResourceKind[Any], ctx: PlanContext, plan: Plan) -> PlanStep:
+def _removal_step(name: str, spec: Any, kind: ManagedKind[Any], ctx: PlanContext, plan: Plan) -> PlanStep:
     """A resource marked `remove`. Already gone counts as done, so applying the same blueprint again is a no-op."""
     try:
         existing = kind.find_existing(name, spec, ctx)

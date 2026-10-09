@@ -1,7 +1,6 @@
 """Views of the one schema: the published JSON Schema, a Markdown reference, the Builder's catalog,
 and the run form for a blueprint's params. None of them is written by hand."""
 
-from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Optional, Union
@@ -11,8 +10,10 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 import src.form_models as form_models
 from src.blueprints.kinds import RESOURCE_KINDS
+from src.blueprints.params import param_type
 from src.blueprints.skills_schema import SkillVariant, describe_field, skill_variants
-from src.blueprints.spec import API_VERSION, Blueprint, CrawlSpec, Metadata, OutputSpec, ParamSpec, SkillEntry
+from src.blueprints.document import Blueprint
+from src.blueprints.spec import API_VERSION, CrawlSpec, Metadata, OutputSpec, ParamSpec, SkillEntry
 from src.skills.registry import SkillRegistry
 
 EXAMPLES_DIR = Path(__file__).resolve().parent / "examples"
@@ -188,36 +189,25 @@ def reference_markdown(registry: Optional[SkillRegistry] = None) -> str:
     return "\n".join(out)
 
 
-PARAM_INPUT_TYPES = {
-    "string": form_models.FormInputType.TEXT,
-    "url": form_models.FormInputType.TEXT,
-    "integer": form_models.FormInputType.TEXT,
-    "text": form_models.FormInputType.TEXT_AREA,
-    "boolean": form_models.FormInputType.SELECT,
-    "choice": form_models.FormInputType.SELECT,
-}
-
-
 def params_form(blueprint: Blueprint) -> form_models.Form:
     """The blueprint's params as a schema-driven form, so the SPA renders them with SchemaForm."""
     inputs = []
     for name, spec in blueprint.params.items():
+        kind = param_type(spec)
         attr = {}
         if spec.description:
             attr["help_text"] = spec.description
         if spec.default is not None:
             attr["optional"] = "true"
-        if spec.type == "url":
-            attr["placeholder"] = "https://example.com"
-        values = deepcopy(spec.options) if spec.type == "choice" else ["true", "false"] if spec.type == "boolean" else None
+        if kind.placeholder:
+            attr["placeholder"] = kind.placeholder
         default = spec.default
         inputs.append(form_models.FormInput(
-            input_type=PARAM_INPUT_TYPES[spec.type],
+            input_type=kind.input_type,
             name=name,
             label=spec.label,
             value=str(default).lower() if isinstance(default, bool) else None if default is None else str(default),
-            values=values,
+            values=kind.form_values(spec),
             attr=attr or None,
         ))
     return form_models.Form(form_name=blueprint.metadata.title, submit_path="/blueprints/plan", form_inputs=inputs)
-

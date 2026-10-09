@@ -10,9 +10,9 @@ from src.blueprints.kinds.base import (
     ApplyContext,
     Change,
     Existing,
+    ManagedKind,
     NotFound,
     PlanContext,
-    ResourceKind,
     Usage,
 )
 from src.blueprints.skills_schema import skill_variants
@@ -65,6 +65,10 @@ def pending_agents(entry: SkillEntry, config: dict[str, Any], new_agents: set[st
     return {name for name in (variant.agent_fields if variant else []) if config.get(name) in new_agents}
 
 
+def _count(n: int, text: str) -> str:
+    return text.format(n=n) + ("s" if n > 1 else "")
+
+
 def _audience(skill: AgentSkill) -> set[str]:
     return {ActorKind(kind).value for kind in skill.available_to}
 
@@ -79,13 +83,27 @@ def skill_changes(entry: SkillEntry, config: dict[str, Any], installed: AgentSki
     )
 
 
-class AgentKind(ResourceKind[AgentSpec]):
+class AgentKind(ManagedKind[AgentSpec]):
     kind = "Agent"
     label = "Agent"
     use_when = "Anything people chat with: a support assistant, a docs helper, an agent with skills such as forms or email."
     deletes = "its conversations, skills, widget keys and API keys go with it"
     spec_model = AgentSpec
     exposes = ("id", "name")
+    feeds = "chats through"
+    dashboard_path = "/dashboard/agents/{id}"
+
+    def card_details(self, spec: AgentSpec) -> list[str]:
+        details = [f"Thinks with {spec.provider}" + (f" · {spec.model}" if spec.model else "")]
+        if spec.skills:
+            variants = skill_variants()
+            names = [variants[entry.id].skill.manifest.name if entry.id in variants else entry.id for entry in spec.skills]
+            details.append("Skills: " + ", ".join(names))
+        if spec.knowledge_bases:
+            details.append(_count(len(spec.knowledge_bases), "Answers from {n} knowledge base"))
+        if spec.mcp_connections:
+            details.append(_count(len(spec.mcp_connections), "Uses tools from {n} connection"))
+        return details
 
     def find_existing(self, name: str, spec: AgentSpec, ctx: PlanContext) -> Optional[Existing]:
         repo = AgentRepository()

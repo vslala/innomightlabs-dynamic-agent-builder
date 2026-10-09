@@ -23,7 +23,6 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.security import HTTPBearer
 
 from src.blueprints.catalog import blueprint_json_schema, catalog, example_yaml, params_form, reference_markdown
-from src.blueprints.executor import apply_blueprint, apply_rate_limit
 from src.blueprints.issues import BlueprintInvalid
 from src.blueprints.models import (
     BlueprintRequest,
@@ -34,8 +33,8 @@ from src.blueprints.models import (
 )
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.repository import DeploymentRepository
+from src.blueprints.service import Blocked, Deployed, Invalid, RateLimited, deploy_blueprint
 from src.blueprints.validator import validate_blueprint
-from src.rate_limits.limiter import RateLimiter
 from src.skills.registry import get_skill_registry
 from src.skills.service import get_skill_service
 
@@ -96,32 +95,23 @@ async def plan(request: Request, body: BlueprintRequest) -> PlanResponse:
 
 @router.post("/deployments", response_model=Deployment, status_code=status.HTTP_201_CREATED)
 async def create_deployment(request: Request, body: BlueprintRequest, background_tasks: BackgroundTasks):
-    user_email: str = request.state.user_email
-    # Validated and planned again here: the account may have changed since the client planned.
-    try:
-        validated = validate_blueprint(body.yaml, body.params or {})
-    except BlueprintInvalid as e:
-        return JSONResponse(status_code=422, content=PlanResponse(ok=False, issues=e.issues).model_dump(mode="json"))
-    result = plan_blueprint(validated, user_email)
-    if not result.ok:
-        return JSONResponse(
-            status_code=422,
-            content=PlanResponse(ok=False, steps=result.steps, blockers=result.blockers).model_dump(mode="json"),
-        )
-
-    limiter = RateLimiter(apply_rate_limit())
-    decision = limiter.acquire(user_email)
-    if not decision.allowed:
-        raise HTTPException(
-            status_code=429,
-            detail="You've applied a lot of blueprints in the last hour. Please try again later.",
-            headers={"Retry-After": str(decision.retry_after_seconds or 60)},
-        )
-    deployment = apply_blueprint(validated, result, user_email, background_tasks)
-    if deployment.status != "applied":
-        # Nothing (or only leftovers) was created, so the attempt shouldn't count against the limit.
-        limiter.release(decision)
-    return deployment
+    outcome = deploy_blueprint(body.yaml, body.params or {}, request.state.user_email, background_tasks)
+    match outcome:
+        case Invalid(issues=issues):
+            return JSONResponse(status_code=422, content=PlanResponse(ok=False, issues=issues).model_dump(mode="json"))
+        case Blocked(plan=plan):
+            return JSONResponse(
+                status_code=422,
+                content=PlanResponse(ok=False, steps=plan.steps, blockers=plan.blockers).model_dump(mode="json"),
+            )
+        case RateLimited(retry_after_seconds=retry_after):
+            raise HTTPException(
+                status_code=429,
+                detail="You've applied a lot of blueprints in the last hour. Please try again later.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        case Deployed(deployment=deployment):
+            return deployment
 
 
 @router.get("/deployments", response_model=list[DeploymentSummary])

@@ -9,7 +9,7 @@ from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.agents.service import AgentService
 from src.apikeys.repository import ApiKeyRepository
-from src.blueprints import router as blueprints_router
+from src.blueprints import service as blueprints_service
 from src.blueprints.catalog import example_yaml
 from src.blueprints.executor import apply_blueprint
 from src.blueprints.kinds import knowledge_base as knowledge_base_kind
@@ -228,7 +228,7 @@ def test_apply_is_rate_limited(test_client, auth_headers, launched, monkeypatch)
         def acquire(self, subject):
             return SimpleNamespace(allowed=False, retry_after_seconds=120)
 
-    monkeypatch.setattr(blueprints_router, "RateLimiter", Refuse)
+    monkeypatch.setattr(blueprints_service, "RateLimiter", Refuse)
     response = test_client.post("/blueprints/deployments", headers=auth_headers, json={"yaml": SITE_AGENT, "params": PARAMS})
     assert response.status_code == 429
     assert response.headers["Retry-After"] == "120"
@@ -265,3 +265,19 @@ def test_a_failed_build_leaves_no_dream_schedule_behind(dynamodb_table, monkeypa
     [agent_id] = created
     schedule_id = DreamService().schedule_id_for(agent_id, TEST_USER_EMAIL)
     assert SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule_id) is None
+
+
+def test_deploying_says_why_it_didnt(launched):
+    """The API and Ada both deploy through deploy_blueprint, and each outcome is its own type."""
+    invalid = blueprints_service.deploy_blueprint("kind: Blueprint", {}, TEST_USER_EMAIL)
+    assert isinstance(invalid, blueprints_service.Invalid) and invalid.issues
+
+    no_provider = SITE_AGENT.replace("Bedrock", "OpenAI")
+    blocked = blueprints_service.deploy_blueprint(no_provider, PARAMS, TEST_USER_EMAIL)
+    assert isinstance(blocked, blueprints_service.Blocked)
+    assert any(issue.path.endswith(".provider") for issue in blocked.plan.blockers)
+
+    deployed = blueprints_service.deploy_blueprint(SITE_AGENT, PARAMS, TEST_USER_EMAIL)
+    assert isinstance(deployed, blueprints_service.Deployed)
+    assert deployed.deployment.status == DeploymentStatus.APPLIED
+    assert [step.resource for step in deployed.plan.steps] == ["site_kb", "assistant", "widget"]

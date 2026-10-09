@@ -8,20 +8,20 @@ import difflib
 import re
 from dataclasses import dataclass, field
 from graphlib import CycleError, TopologicalSorter
-from typing import Any, Iterable, Iterator, Optional, get_args
+from typing import Any, Iterable, Iterator, Optional
 
 from pydantic import BaseModel, ValidationError
 
 from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
-from src.blueprints.kinds import kind_for
+from src.blueprints.document import Blueprint
+from src.blueprints.kinds import KIND_NAMES, RESOURCE_KINDS, kind_for
+from src.blueprints.params import param_type
 from src.blueprints.parser import join_path, parse_yaml
 from src.blueprints.skills_schema import SkillVariant, agent_settings, skill_variants
 from src.blueprints.spec import (
     REF_KIND,
     REMOVES,
-    RESOURCE_SPECS,
     AgentSpec,
-    Blueprint,
     CrawlSpec,
     Metadata,
     OutputSpec,
@@ -34,13 +34,9 @@ from src.skills.registry import SkillRegistry
 TEMPLATE = re.compile(r"\{\{\s*(.*?)\s*\}\}")
 PARAM_REF = re.compile(r"^params\.([A-Za-z0-9_]+)$")
 RESOURCE_REF = re.compile(r"^resources\.([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)$")
-URL = re.compile(r"^https?://[^\s/$.?#][^\s]*$", re.IGNORECASE)
-TRUE_WORDS = {"true", "yes", "on", "1"}
-FALSE_WORDS = {"false", "no", "off", "0"}
 
-KIND_NAMES = [get_args(spec.model_fields["kind"].annotation)[0] for spec in RESOURCE_SPECS]
 STRUCTURE_MODELS: tuple[type[BaseModel], ...] = (
-    Blueprint, Metadata, ParamSpec, CrawlSpec, SkillEntry, OutputSpec, *RESOURCE_SPECS,
+    Blueprint, Metadata, ParamSpec, CrawlSpec, SkillEntry, OutputSpec, *(kind.spec_model for kind in RESOURCE_KINDS),
 )
 VOCABULARY = sorted({
     field_info.alias or name for model in STRUCTURE_MODELS for name, field_info in model.model_fields.items()
@@ -232,37 +228,16 @@ def check_param_specs(blueprint: Blueprint) -> list[BlueprintIssue]:
     issues = []
     for name, spec in blueprint.params.items():
         path = f"params.{name}"
-        if spec.type == "choice" and not spec.options:
-            issues.append(BlueprintIssue(path=f"{path}.options", message="A `choice` param needs `options`."))
-        if spec.type != "choice" and spec.options:
+        kind = param_type(spec)
+        if kind.takes_options and not spec.options:
+            issues.append(BlueprintIssue(path=f"{path}.options", message=f"A `{kind.name}` param needs `options`."))
+        if not kind.takes_options and spec.options:
             issues.append(BlueprintIssue(path=f"{path}.options", message="Only `choice` params have `options`."))
         if spec.default is not None:
-            _, error = coerce_param(spec, spec.default)
+            _, error = kind.coerce(spec, spec.default)
             if error:
                 issues.append(BlueprintIssue(path=f"{path}.default", message=f"The default {error}"))
     return issues
-
-
-def coerce_param(spec: ParamSpec, value: Any) -> tuple[Any, Optional[str]]:
-    """The value as the param's type, or an error that reads after "The value …"."""
-    if spec.type == "integer":
-        try:
-            return int(str(value).strip()), None
-        except ValueError:
-            return None, "must be a whole number."
-    if spec.type == "boolean":
-        if isinstance(value, bool):
-            return value, None
-        word = str(value).strip().lower()
-        if word in TRUE_WORDS | FALSE_WORDS:
-            return word in TRUE_WORDS, None
-        return None, "must be true or false."
-    text = str(value).strip() if spec.type != "text" else str(value)
-    if spec.type == "url" and not URL.match(text):
-        return None, "must be a web address starting with http:// or https://."
-    if spec.type == "choice" and text not in spec.options:
-        return None, f"must be one of: {', '.join(spec.options)}."
-    return text, None
 
 
 def resolve_params(specs: dict[str, ParamSpec], given: dict[str, Any]) -> tuple[dict[str, Any], list[BlueprintIssue]]:
@@ -282,7 +257,7 @@ def resolve_params(specs: dict[str, ParamSpec], given: dict[str, Any]) -> tuple[
         if raw is None:
             issues.append(BlueprintIssue(path=f"params.{name}", message=f"'{spec.label}' is required."))
             continue
-        value, error = coerce_param(spec, raw)
+        value, error = param_type(spec).coerce(spec, raw)
         if error:
             issues.append(BlueprintIssue(path=f"params.{name}", message=f"'{spec.label}' {error}"))
         else:

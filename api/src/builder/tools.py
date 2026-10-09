@@ -17,11 +17,13 @@ from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_runtime import BoundTool, ToolCategory, ToolRegistry, ToolSpec
 from src.blueprints.approval import approval_form, approves, plan_id_for
 from src.blueprints.book import blueprint_book, page_for_issue
-from src.blueprints.executor import apply_blueprint, apply_rate_limit
 from src.blueprints.export import export_agent, with_ids
 from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
+from src.blueprints.kinds import kind_for
 from src.blueprints.planner import plan_blueprint
+from src.blueprints.models import DeploymentStatus
 from src.blueprints.repository import DeploymentRepository
+from src.blueprints.service import Blocked, Deployed, Invalid, RateLimited, deploy_blueprint
 from src.blueprints.validator import validate_blueprint
 from src.builder.canvas import drawing_for, save_blueprint_canvas
 from src.builder.connections import connect_request, missing_connections
@@ -34,15 +36,11 @@ from src.config import settings
 from src.skills.repository import AgentSkillRepository
 from src.knowledge.repository import AgentKnowledgeBaseRepository, CrawlJobRepository
 from src.messages.repositories import MessageRepository, get_message_repository
-from src.rate_limits.limiter import RateLimiter
 from src.skills.lead_capture.actions import render_custom_form
 from src.skills.registry import get_skill_registry
 
 #: Pages one open_pages call may open, so a turn can't fill the prompt with the whole book.
 MAX_PAGES_PER_OPEN = 6
-
-DASHBOARD_PATHS = {"Agent": "/dashboard/agents/{id}", "KnowledgeBase": "/dashboard/knowledge-bases/{id}"}
-
 
 def _forms_schema() -> dict[str, Any]:
     """The Interactive Forms module's own schema for a custom form, so there's one definition of it."""
@@ -159,6 +157,17 @@ def builder_tool_definitions() -> list[dict[str, Any]]:
             "parameters": {"type": "object", "properties": {}},
         },
     ]
+
+
+def _not_deployed(outcome: Invalid | Blocked | RateLimited) -> dict[str, Any]:
+    match outcome:
+        case Invalid(issues=issues):
+            return {"issues": [issue.model_dump(exclude_none=True) for issue in issues]}
+        case Blocked(plan=plan):
+            # The account changed since the plan: a name was taken, or a limit was reached.
+            return {"blockers": [issue.model_dump(exclude_none=True) for issue in plan.blockers]}
+        case RateLimited():
+            return {"reason": "Too many builds in the last hour. Try again later."}
 
 
 class BuilderTools:
@@ -357,22 +366,11 @@ class BuilderTools:
                 "reason": "The person hasn't approved this plan. Wait until they choose 'Apply this plan' in its form.",
             })
 
-        try:
-            validated = validate_blueprint(session.draft_yaml, session.draft_params)
-        except BlueprintInvalid as e:
-            return json.dumps({"applied": False, "issues": [issue.model_dump(exclude_none=True) for issue in e.issues]})
-        plan = plan_blueprint(validated, state.owner_email)
-        if not plan.ok:
-            # The account changed since the plan: a name was taken, or a limit was reached.
-            return json.dumps({"applied": False, "blockers": [issue.model_dump(exclude_none=True) for issue in plan.blockers]})
-
-        limiter = RateLimiter(apply_rate_limit())
-        decision = limiter.acquire(state.owner_email)
-        if not decision.allowed:
-            return json.dumps({"applied": False, "reason": "Too many builds in the last hour. Try again later."})
-        deployment = apply_blueprint(validated, plan, state.owner_email)
-        if deployment.status != "applied":
-            limiter.release(decision)
+        outcome = deploy_blueprint(session.draft_yaml, session.draft_params, state.owner_email)
+        if not isinstance(outcome, Deployed):
+            return json.dumps({"applied": False, **_not_deployed(outcome)})
+        validated, plan, deployment = outcome.validated, outcome.plan, outcome.deployment
+        if deployment.status != DeploymentStatus.APPLIED:
             return json.dumps({
                 "applied": False,
                 "status": deployment.status.value,
@@ -458,15 +456,15 @@ class BuilderTools:
 
     @staticmethod
     def _resources(resources: dict[str, Any]) -> dict[str, dict[str, str]]:
-        return {
-            name: {
+        described = {}
+        for name, resource in resources.items():
+            path = kind_for(resource.kind).dashboard_path
+            described[name] = {
                 "kind": resource.kind,
                 "id": resource.id,
-                **({"dashboard_url": settings.frontend_url + DASHBOARD_PATHS[resource.kind].format(id=resource.id)}
-                   if resource.kind in DASHBOARD_PATHS else {}),
+                **({"dashboard_url": settings.frontend_url + path.format(id=resource.id)} if path else {}),
             }
-            for name, resource in resources.items()
-        }
+        return described
 
 
 def build_builder_tool_registry(tools: Optional[BuilderTools] = None) -> ToolRegistry:
