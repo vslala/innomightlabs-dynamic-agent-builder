@@ -1,16 +1,31 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Hammer, MessageSquare } from "lucide-react";
+import { ChevronRight, Hammer, MessageSquare, Package } from "lucide-react";
 import { SchemaForm } from "../../../components/forms";
-import { Alert, AlertDescription, Panel, PanelBody, PanelHeader, PanelTitle } from "../../../components/ui";
+import {
+  Alert,
+  AlertDescription,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+  StatusBadge,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../../../components/ui";
 import { builderApiService, type BuilderSession } from "../../../services/builder/BuilderApiService";
+import { kitApiService, type KitSummary } from "../../../services/kits/KitApiService";
 import type { FormSchema, FormValue } from "../../../types/form";
+import { kitContents, kitStatus } from "./kitView";
 import styles from "./BuildPage.module.css";
 
 export function BuildPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState<FormSchema | null>(null);
   const [sessions, setSessions] = useState<BuilderSession[]>([]);
+  const [kits, setKits] = useState<KitSummary[] | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,6 +35,10 @@ export function BuildPage() {
       setError("Couldn't load the build form. Please try again.");
     });
     builderApiService.listSessions().then(setSessions).catch((err) => console.error("Error loading builds:", err));
+    kitApiService.listKits().then(setKits).catch((err) => {
+      console.error("Error loading kits:", err);
+      setKits([]);
+    });
   }, []);
 
   const handleStart = async (values: Record<string, FormValue>) => {
@@ -77,28 +96,63 @@ export function BuildPage() {
         </Panel>
 
         <Panel>
-          <PanelHeader>
-            <PanelTitle>Your builds</PanelTitle>
-          </PanelHeader>
-          <PanelBody>
-            {sessions.length === 0 ? (
-              <p className={styles.note}>Nothing yet. Your conversations with Ada will appear here.</p>
-            ) : (
-              <ul className={styles.sessions}>
-                {sessions.map((session) => (
-                  <li key={session.conversation_id}>
-                    <Link to={`/dashboard/conversations/${session.conversation_id}`} className={styles.session}>
-                      <MessageSquare className={styles.sessionIcon} aria-hidden="true" />
-                      <span>{new Date(session.created_at).toLocaleString()}</span>
-                      <span className={styles.sessionMeta}>
-                        {session.deployment_id ? "Built" : "In progress"} · {session.provider}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </PanelBody>
+          <Tabs defaultValue="kits">
+            <PanelHeader className={styles.tabsHeader}>
+              <PanelTitle>Your builds</PanelTitle>
+              <TabsList>
+                <TabsTrigger value="kits">Kits{kits && kits.length > 0 ? ` (${kits.length})` : ""}</TabsTrigger>
+                <TabsTrigger value="conversations">Conversations</TabsTrigger>
+              </TabsList>
+            </PanelHeader>
+            <PanelBody>
+              <TabsContent value="kits">
+                {kits === null ? null : kits.length === 0 ? (
+                  <p className={styles.note}>
+                    No kits yet. Everything Ada builds for you becomes a kit: its agents, knowledge bases and widgets,
+                    kept together so you can change, roll back or remove them as one.
+                  </p>
+                ) : (
+                  <ul className={styles.sessions}>
+                    {kits.map((kit) => {
+                      const status = kitStatus(kit);
+                      return (
+                        <li key={kit.kit_id}>
+                          <Link to={`/dashboard/build/kits/${kit.kit_id}`} className={styles.kit}>
+                            <Package className={styles.sessionIcon} aria-hidden="true" />
+                            <span className={styles.kitText}>
+                              <span className={styles.kitTitle}>{kit.title}</span>
+                              <span className={styles.sessionMeta}>{kitContents(kit.counts)}</span>
+                            </span>
+                            <StatusBadge size="sm" status={status.status} label={status.label} />
+                            <ChevronRight className={styles.sessionIcon} aria-hidden="true" />
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </TabsContent>
+              <TabsContent value="conversations">
+                {sessions.length === 0 ? (
+                  <p className={styles.note}>Nothing yet. Your conversations with Ada will appear here.</p>
+                ) : (
+                  <ul className={styles.sessions}>
+                    {sessions.map((session) => (
+                      <li key={session.conversation_id}>
+                        <Link to={`/dashboard/conversations/${session.conversation_id}`} className={styles.session}>
+                          <MessageSquare className={styles.sessionIcon} aria-hidden="true" />
+                          <span>{new Date(session.created_at).toLocaleString()}</span>
+                          <span className={styles.sessionMeta}>
+                            {session.kit_id ? "Built" : "In progress"} · {session.provider}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </TabsContent>
+            </PanelBody>
+          </Tabs>
         </Panel>
       </div>
     </div>
