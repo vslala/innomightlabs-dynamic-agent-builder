@@ -25,7 +25,8 @@ from src.agents.book import Book, Chapter, Page
 from src.blueprints.catalog import build_ideas, field_rows, markdown_table, skill_config_rows
 from src.blueprints.kinds import RESOURCE_KINDS, ResourceKind
 from src.blueprints.skills_schema import SkillSetup, SkillVariant, requirement_note, skill_variants
-from src.blueprints.spec import AVAILABLE_TO_DESCRIPTION, Blueprint, Metadata, OutputSpec, ParamSpec
+from src.blueprints.document import Blueprint
+from src.blueprints.spec import AVAILABLE_TO_DESCRIPTION, Metadata, OutputSpec, ParamSpec
 from src.skills.disclosure import summarize
 from src.skills.registry import SkillRegistry
 

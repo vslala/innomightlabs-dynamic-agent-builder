@@ -8,8 +8,8 @@ from src.blueprints.kinds.base import (
     Change,
     Existing,
     NotFound,
+    ManagedKind,
     PlanContext,
-    ResourceKind,
     Usage,
 )
 from src.blueprints.spec import CrawlSpec, KnowledgeBaseSpec
@@ -38,13 +38,20 @@ def last_crawl(kb_id: str) -> Optional[CrawlSpec]:
     )
 
 
-class KnowledgeBaseKind(ResourceKind[KnowledgeBaseSpec]):
+class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
     kind = "KnowledgeBase"
     label = "Knowledge base"
     use_when = "The agent should answer from a website or other content: learn my site, answer from our docs or FAQ."
     deletes = "its content is deleted, and every agent using it loses it"
     spec_model = KnowledgeBaseSpec
     exposes = ("id", "name", "crawl_job_id")
+    feeds = "knowledge for"
+    dashboard_path = "/dashboard/knowledge-bases/{id}"
+
+    def card_details(self, spec: KnowledgeBaseSpec) -> list[str]:
+        if not spec.crawl:
+            return ["Empty, ready for content"]
+        return [f"Reads {spec.crawl.url}", f"Up to {spec.crawl.max_pages} pages"]
 
     def validate(self, name: str, spec: KnowledgeBaseSpec) -> list[BlueprintIssue]:
         if spec.crawl and "{{" not in spec.crawl.url and not spec.crawl.url.startswith(("http://", "https://")):

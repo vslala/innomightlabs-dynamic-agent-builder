@@ -1,5 +1,5 @@
 from html import escape
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlsplit
 
 from src.apikeys.models import AgentApiKey
@@ -10,9 +10,9 @@ from src.blueprints.kinds.base import (
     ApplyContext,
     Change,
     Existing,
+    ManagedKind,
     NotFound,
     PlanContext,
-    ResourceKind,
 )
 from src.blueprints.spec import WidgetKeySpec
 from src.config import settings
@@ -34,13 +34,23 @@ def embed_snippet(public_key: str) -> str:
     return f'<script src="{escape(settings.embed_loader_url)}" data-api-key="{escape(public_key)}" async></script>'
 
 
-class WidgetKeyKind(ResourceKind[WidgetKeySpec]):
+class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
     kind = "WidgetKey"
     label = "Chat widget"
     use_when = "Put an agent on a website as a chat bubble, or let visitors chat without signing in."
     deletes = "the chat widget stops working on every site that uses this key"
     spec_model = WidgetKeySpec
     exposes = ("id", "public_key", "snippet")
+
+    def title(self, name: str, spec: WidgetKeySpec, resources: dict[str, Any]) -> str:
+        # The key's dashboard label defaults to "<agent name> widget" too.
+        return spec.name or f"{getattr(resources.get(spec.agent), 'name', None) or spec.agent} widget"
+
+    def card_details(self, spec: WidgetKeySpec) -> list[str]:
+        return [
+            "On " + ", ".join(spec.allowed_origins),
+            "Guests can chat with just an email" if spec.allow_guests else "Visitors sign in with Google",
+        ]
 
     def validate(self, name: str, spec: WidgetKeySpec) -> list[BlueprintIssue]:
         return [

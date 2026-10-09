@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, field
 from graphlib import TopologicalSorter
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional
+from typing import Any, Literal, Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
@@ -23,9 +23,8 @@ from src.artifacts.service import ArtifactService
 from src.blueprints.models import Deployment
 from src.blueprints.kinds import kind_for
 from src.blueprints.planner import Plan
-from src.blueprints.skills_schema import agent_settings, skill_variants
-from src.blueprints.kinds.mcp_connection import provider_name
-from src.blueprints.spec import REF_KIND, REMOVES, AgentSpec, KnowledgeBaseSpec, McpConnectionSpec, WidgetKeySpec
+from src.blueprints.skills_schema import agent_settings
+from src.blueprints.spec import REF_KIND, REMOVES, AgentSpec
 from src.blueprints.validator import ValidatedBlueprint
 from src.skills.html_canvas.models import CANVAS_ARTIFACT_FILENAME
 
@@ -74,47 +73,6 @@ class BlueprintDrawing:
     outputs: list[tuple[str, str, str]] = field(default_factory=list)
 
 
-def _knowledge_base(spec: KnowledgeBaseSpec) -> list[str]:
-    if not spec.crawl:
-        return ["Empty, ready for content"]
-    return [f"Reads {spec.crawl.url}", f"Up to {spec.crawl.max_pages} pages"]
-
-
-def _agent(spec: AgentSpec) -> list[str]:
-    details = [f"Thinks with {spec.provider}" + (f" · {spec.model}" if spec.model else "")]
-    if spec.skills:
-        variants = skill_variants()
-        names = [variants[entry.id].skill.manifest.name if entry.id in variants else entry.id for entry in spec.skills]
-        details.append("Skills: " + ", ".join(names))
-    if spec.knowledge_bases:
-        details.append(f"Answers from {len(spec.knowledge_bases)} knowledge base" + ("s" if len(spec.knowledge_bases) > 1 else ""))
-    if spec.mcp_connections:
-        details.append(f"Uses tools from {len(spec.mcp_connections)} connection" + ("s" if len(spec.mcp_connections) > 1 else ""))
-    return details
-
-
-def _widget_key(spec: WidgetKeySpec) -> list[str]:
-    details = ["On " + ", ".join(spec.allowed_origins)]
-    details.append("Guests can chat with just an email" if spec.allow_guests else "Visitors sign in with Google")
-    return details
-
-
-def _mcp_connection(spec: McpConnectionSpec) -> list[str]:
-    return [f"Tools from {provider_name(spec)}", "You sign in once; every linked agent can use it"]
-
-
-#: Each reference field's kind, and how its wire reads from that resource to the one naming it.
-WIRE_LABELS = {"KnowledgeBase": "knowledge for", "McpConnection": "tools for", "Agent": "chats through"}
-
-#: The lines on each kind's card. Labels come from the kinds themselves.
-CARD_DETAILS: dict[str, Callable[[Any], list[str]]] = {
-    "McpConnection": _mcp_connection,
-    "KnowledgeBase": _knowledge_base,
-    "Agent": _agent,
-    "WidgetKey": _widget_key,
-}
-
-
 def _wires(name: str, spec: Any, resources: dict[str, Any]) -> list[tuple[str, str, str]]:
     """How this resource connects to the others it names, each wire pointing the way the drawing reads."""
     wires: list[tuple[str, str, str]] = []
@@ -125,7 +83,7 @@ def _wires(name: str, spec: Any, resources: dict[str, Any]) -> list[tuple[str, s
             continue
         value = getattr(spec, field_name)
         for target in value if isinstance(value, list) else [value]:
-            wires.append((target, name, WIRE_LABELS.get(extra[REF_KIND], "")))
+            wires.append((target, name, kind_for(extra[REF_KIND]).feeds))
     if isinstance(spec, AgentSpec):
         # A skill setting naming another agent: this agent hands work to that one.
         wires += [(name, value, "hands work to") for _, _, value in agent_settings(spec) if value in resources]
@@ -197,22 +155,15 @@ def drawing_for(
     cards = []
     for name in validated.order:
         spec = blueprint.resources[name]
-        label = kind_for(spec.kind).label
-        describe = CARD_DETAILS.get(spec.kind, lambda _: [])
+        kind = kind_for(spec.kind)
         change = plan.changes.get(name)
-        title = getattr(spec, "name", None)
-        if not title and isinstance(spec, McpConnectionSpec):
-            title = provider_name(spec)
-        if not title and isinstance(spec, WidgetKeySpec):
-            # The key's dashboard label defaults to "<agent name> widget" too.
-            title = f"{getattr(blueprint.resources[spec.agent], 'name', spec.agent)} widget"
         cards.append(Card(
             name=name,
             kind=spec.kind,
-            label=label,
-            title=str(title or name),
+            label=kind.label,
+            title=kind.title(name, spec, blueprint.resources),
             summary=spec.description or "",
-            details=describe(spec),
+            details=kind.card_details(spec),
             depth=depth[name],
             action=change.action.value if change else "create",
             changes=change.changes if change else (),

@@ -1,14 +1,16 @@
-"""The blueprint spec, `innomight/v1`: the structure of a blueprint document.
+"""The blueprint spec, `innomight/v1`: the parts of a blueprint document. The document itself, whose resources are
+read from the kinds, is `document.Blueprint`.
 
 Every field carries its description here. That text is the documentation: it reaches the JSON
 Schema, the generated reference and the Builder's catalog. Skill config is not defined here; it is
 generated from each skill's manifest (see `skills_schema.py`). See docs/LLD-solution-blueprints.md.
 """
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from src.blueprints.params import PARAM_TYPES
 from src.connectors.mcp.providers import PROVIDERS
 from src.knowledge.models import MAX_CRAWL_DEPTH, MAX_CRAWL_PAGES
 from src.skills.models import ActorKind
@@ -41,7 +43,7 @@ class Strict(BaseModel):
 class ParamSpec(Strict):
     """A value the person running the blueprint fills in."""
 
-    type: Literal["string", "text", "url", "boolean", "integer", "choice"] = Field(
+    type: Literal[tuple(PARAM_TYPES)] = Field(  # type: ignore[valid-type]
         "string",
         description="The kind of value expected. `text` is multi-line. `url` must start with http:// or https://.",
     )
@@ -196,11 +198,6 @@ class McpConnectionSpec(ResourceBase):
     name: str | None = Field(None, description="Label in the dashboard. Defaults to the provider's name.")
 
 
-ResourceSpec = Union[KnowledgeBaseSpec, AgentSpec, WidgetKeySpec, McpConnectionSpec]
-Resource = Annotated[ResourceSpec, Field(discriminator="kind")]
-RESOURCE_SPECS: tuple[type[ResourceBase], ...] = (KnowledgeBaseSpec, AgentSpec, WidgetKeySpec, McpConnectionSpec)
-
-
 class OutputSpec(Strict):
     """A value shown after a successful apply."""
 
@@ -214,26 +211,3 @@ class Metadata(Strict):
     )
     title: str = Field(description="One-line human name, shown in lists and the marketplace.")
     description: str | None = Field(None, description="What the solution does for the person who runs it, in plain words.")
-
-
-class Blueprint(Strict):
-    """A description of a solution on InnomightLabs: the resources to create and how they connect."""
-
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
-
-    api_version: Literal["innomight/v1"] = Field(
-        alias="apiVersion", description="Which version of the blueprint rules this document follows."
-    )
-    kind: Literal["Blueprint"] = Field(description="Always Blueprint. Marks the document type.")
-    metadata: Metadata = Field(description="Who the blueprint is and what it's for.")
-    params: dict[ResourceName, ParamSpec] = Field(
-        default_factory=dict,
-        description="Values the person running the blueprint fills in. Each becomes an input in the run form.",
-    )
-    resources: dict[ResourceName, Resource] = Field(
-        min_length=1,
-        description="Everything the blueprint creates. The key is the resource's local name, used for references.",
-    )
-    outputs: dict[ResourceName, OutputSpec] = Field(
-        default_factory=dict, description="Values shown after a successful apply, such as the embed snippet."
-    )
