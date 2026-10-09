@@ -212,6 +212,11 @@ Where the POC differs from the design below, and why:
   - **Param types are strategies** in `blueprints/params.py`, shared by the spec, the validator and the run form.
   - **One deploy path.** `blueprints/service.deploy_blueprint` validates, plans, rate-limits and applies, returning
     `Invalid`, `Blocked`, `RateLimited` or `Deployed`. The API route and Ada's `apply_blueprint` both use it.
+- **Refactor phase 2, 2026-10-09:**
+  - **References are one list per resource.** `ResourceKind.references`, in `blueprints/references.py`, covers
+    fields marked `x-ref-kind` and skill settings that name an agent (now marked `x-ref-kind: Agent` in the
+    schema). The validator and the drawing both read it.
+  - **Each kind's `observe` writes an existing resource back as its spec.** `export_agent` is built on it.
 - **Tests:**
   - `api/tests/test_blueprints_validator.py`, `test_blueprints_skills_schema.py`, `test_blueprints_apply.py` and
     `test_builder_ada.py`, plus an injected-architecture case in `test_chat_turn_run.py`.

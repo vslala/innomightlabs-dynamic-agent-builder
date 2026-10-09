@@ -13,14 +13,15 @@ from typing import Any, Literal, Optional, Protocol
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 import src.form_models as form_models
-from src.blueprints.spec import AVAILABLE_TO_DESCRIPTION, AgentSpec, SharedAudience
+from src.blueprints.spec import AVAILABLE_TO_DESCRIPTION, REF_KIND, SharedAudience
 from src.skills.models import LoadedSkill
 from src.skills.registry import SkillRegistry, get_skill_registry, is_secret_input
 
 STRICT = ConfigDict(extra="forbid")
 
-#: Option sources whose values are agents, so a blueprint may name an Agent resource there instead of an id.
-AGENT_OPTION_SOURCES = frozenset({"agents"})
+#: Option sources whose values are resources of a kind, so a blueprint may name one of its resources there instead
+#: of an id. The settings are references (see `references.py`).
+REFERENCE_OPTION_SOURCES: dict[str, str] = {"agents": "Agent"}
 
 
 @dataclass(frozen=True)
@@ -39,12 +40,18 @@ class SkillVariant:
         return [field.name for field in self.skill.manifest.form if field.name not in self.secret_fields]
 
     @property
+    def reference_fields(self) -> dict[str, str]:
+        """Settings that name a resource, by setting, with the kind it must be."""
+        return {
+            field.name: REFERENCE_OPTION_SOURCES[field.options_source.type]
+            for field in self.skill.manifest.form
+            if field.options_source and field.options_source.type in REFERENCE_OPTION_SOURCES
+        }
+
+    @property
     def agent_fields(self) -> list[str]:
         """Settings that name one of the person's agents: an Agent in the blueprint, or an agent id."""
-        return [
-            field.name for field in self.skill.manifest.form
-            if field.options_source and field.options_source.type in AGENT_OPTION_SOURCES
-        ]
+        return [name for name, kind in self.reference_fields.items() if kind == "Agent"]
 
     @property
     def required_secrets(self) -> list[form_models.FormInput]:
@@ -198,19 +205,6 @@ def supplied_by(field: form_models.FormInput, variant: SkillVariant) -> Supplier
     return next(rule.supplier for rule in SUPPLIER_RULES if rule.applies(field, variant))
 
 
-def agent_settings(spec: AgentSpec, registry: Optional[SkillRegistry] = None) -> list[tuple[int, str, str]]:
-    """(entry index, setting, value) for every skill setting on this agent that names an agent."""
-    variants = skill_variants(registry)
-    found = []
-    for index, entry in enumerate(spec.skills):
-        variant = variants.get(entry.id)
-        for field_name in variant.agent_fields if variant else []:
-            value = (entry.config or {}).get(field_name)
-            if isinstance(value, str) and value:
-                found.append((index, field_name, value))
-    return found
-
-
 def describe_field(field: form_models.FormInput) -> str:
     """The manifest's help text when it has one, otherwise the label."""
     return (field.attr or {}).get("help_text") or field.label
@@ -231,7 +225,13 @@ def config_field(field: form_models.FormInput) -> tuple[Any, Any]:
     required = not field.is_optional and field.value is None
     if not required:
         annotation = Optional[annotation]
-    return annotation, Field(... if required else field.value, title=field.label, description=description)
+    kind = REFERENCE_OPTION_SOURCES.get(field.options_source.type) if field.options_source else None
+    return annotation, Field(
+        ... if required else field.value,
+        title=field.label,
+        description=description,
+        json_schema_extra={REF_KIND: kind} if kind else None,
+    )
 
 
 def requirement_note(skill: LoadedSkill) -> str:

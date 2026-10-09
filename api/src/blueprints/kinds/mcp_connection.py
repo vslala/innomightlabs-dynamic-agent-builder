@@ -5,7 +5,7 @@ person connects it, through the card the system shows when Ada plans (`builder/c
 blueprint finds that connection and links agents to it. Applying the same blueprint again finds it again.
 """
 
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.kinds.base import (
@@ -58,6 +58,16 @@ class McpConnectionKind(LookupKind[McpConnectionSpec]):
     spec_model = McpConnectionSpec
     exposes = ("id", "name")
     feeds = "tools for"
+    export_name = "tools"
+
+    def observe(self, record: MCPConnection, names: Mapping[str, str]) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "id": record.mcp_id,
+            # A custom connection, or one whose preset has gone, is named by its id alone.
+            **({"provider": record.provider_key} if record.provider_key in PROVIDERS else {}),
+            "name": record.name,
+        }
 
     def title(self, name: str, spec: McpConnectionSpec, resources: dict[str, Any]) -> str:
         return spec.name or provider_name(spec)

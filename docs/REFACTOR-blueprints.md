@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress: phase 1 done |
+| Status | 🚧 In progress: phases 1 and 2 done |
 | Owner | InnomightLabs API |
 | Last reviewed | 2026-10-09 |
 | Scope | `api/src/blueprints/`, and the parts of `api/src/builder/` that call into it |
@@ -45,6 +45,35 @@
   follows `RESOURCE_KINDS`.
 - **Tests:** `test_blueprints_kinds.py` and `test_blueprints_params.py`, plus `test_deploying_says_why_it_didnt` in
   `test_blueprints_apply.py`.
+
+**Phase 2 (references and observe), 2026-10-09:**
+
+- **One reference walk** (`blueprints/references.py`). `ResourceKind.references(name, spec)` returns the fields
+  marked `x-ref-kind`, and `AgentKind` adds `skill_references`.
+  - A skill's agent settings are found the same way as any reference field. The manifest's option source maps to a
+    kind (`REFERENCE_OPTION_SOURCES = {"agents": "Agent"}`), and the variant's config field carries
+    `x-ref-kind`, so the published schema shows it too.
+  - Each `Reference` carries `path`, `target`, `kind`, `where` (how the place reads in a sentence), `removes`,
+    `may_be_id` (an account id is fine) and `outward_wire`.
+  - `validator.check_references` checks every reference the same way (missing, the resource itself, wrong kind,
+    removed) and orders the resources. The drawing's wires come from the same list.
+  - These are gone: `skills_schema.agent_settings`, the `isinstance(AgentSpec)` branch, and the second wire
+    source in `canvas._wires`.
+  - The messages are now shared: "'knowledge' is a KnowledgeBase, not an Agent.", "This skill can't name the
+    agent itself.", "'x' is being removed, so `knowledge_bases` can't use it."
+- **`observe(record, names)` per kind.** It writes what a kind stores back as its spec, with its id; `names` gives
+  the blueprint name of each linked resource by id.
+  - `export_agent` is now only orchestration: it finds the records (`AgentKind.linked`,
+    `WidgetKeyKind.for_agent`), names them from each kind's `export_name`, and calls `observe`.
+  - The per-field mapping lives in one place per kind.
+- **Not done yet, on purpose:**
+  - **`DIFF` field rules aren't declared yet.** Nothing reads them until the reconciler (phase 4), so declaring them
+    now would be unused metadata. They arrive with it.
+  - **`skill_config` and `pending_agents` stay.** They resolve names to ids from `variant.agent_fields`, which is
+    now derived from `reference_fields`.
+  - **`planner._title`, and the agent's `find_existing`, still read records directly.** Phase 4 builds "actual"
+    from `observe`.
+- **Tests:** `test_blueprints_references.py`.
 
 **Open for phase 3: write-ahead logging.** A command can run and the process die before its `Undo` is saved.
 Record "about to run X" first, with any ids we generate ourselves, and mark it done afterwards. The reaper checks
@@ -483,9 +512,9 @@ where noted.
 | Phase | Changes | Behaviour change |
 | --- | --- | --- |
 | 1. Tidy | P5's single registry, presentation methods, `ParamType`, `LookupKind`; `BlueprintService.deploy` | none |
-| 2. References and lens | P3; `observe()` per kind, with `export_agent` rebuilt on it; `DIFF` rules declared on the spec | none; the export round trip proves `observe` |
+| 2. References and lens | P3; `observe()` per kind, with `export_agent` rebuilt on it | none; the export round trip proves `observe` |
 | 3. Commands | P4: commands, reversibility classes, derived order, run-time capture, saved undo log and the reaper | undo no longer overwrites changes made after the plan; an interrupted apply is unwound |
-| 4. Reconciler, two-way | P2 with **before** = **actual**, which is what the planner does today, and `remove_*` still accepted as explicit removals | fixes the missing MCP check and the repeatable-skill removal |
+| 4. Reconciler, two-way | `DIFF` rules declared on the spec; P2 with **before** = **actual**, which is what the planner does today, and `remove_*` still accepted as explicit removals | fixes the missing MCP check and the repeatable-skill removal |
 | 5. Builder | P6: `Draft`, issue owners, `Requirement`, gates | none visible to Ada |
 | 6. Kits | P1 with KAN-68: the kit record and versions, **before** from the kit, drift reporting, the rename blocker, `innomight/v2` and `upgrade_v1`, with examples, the book and Ada's prompts migrated | omission removes within a kit |
 

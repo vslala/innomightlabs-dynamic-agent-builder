@@ -11,12 +11,13 @@ run after everything else has been applied, because they can't be undone.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, ClassVar, Generic, Literal, Optional, TypeVar
+from typing import Any, ClassVar, Generic, Literal, Mapping, Optional, TypeVar
 
 from fastapi import BackgroundTasks
 from pydantic import BaseModel
 
 from src.blueprints.issues import BlueprintIssue
+from src.blueprints.references import Reference, field_references
 
 
 class Action(str, Enum):
@@ -116,6 +117,14 @@ class ResourceKind(Generic[SpecT]):
     feeds: ClassVar[str] = ""
     #: Where it is in the dashboard, with `{id}`; empty when it has no page of its own.
     dashboard_path: ClassVar[str] = ""
+    #: The resource name it gets when an existing one is written out as a blueprint ("knowledge", "knowledge_2").
+    export_name: ClassVar[str]
+
+    def observe(self, record: Any, names: Mapping[str, str]) -> dict[str, Any]:
+        """The existing resource as a blueprint writes it, with its `id`: the one place a kind maps what it stores
+        back to its spec. `names` gives the blueprint name of each resource it links to, by id; links to
+        anything not in `names` are left out."""
+        raise NotImplementedError
 
     def title(self, name: str, spec: SpecT, resources: dict[str, Any]) -> str:
         """How this resource is named to people when the spec may not say."""
@@ -124,6 +133,10 @@ class ResourceKind(Generic[SpecT]):
     def card_details(self, spec: SpecT) -> list[str]:
         """The lines on its card in the blueprint drawing."""
         return []
+
+    def references(self, name: str, spec: SpecT) -> list[Reference]:
+        """Where this resource names others: its fields marked `x-ref-kind`."""
+        return list(field_references(name, spec))
 
     def page_sections(self) -> list[str]:
         """Extra Markdown for this kind's page in Ada's book, beyond the fields its spec model gives."""
