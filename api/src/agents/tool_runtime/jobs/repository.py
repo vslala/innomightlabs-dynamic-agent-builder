@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -7,16 +8,47 @@ from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
 from src.agents.tool_runtime.jobs.models import STALE_JOB_ERROR, ToolJob, ToolJobStatus
+from src.artifacts.storage import ArtifactStorage, owner_scope
 from src.config import settings
 from src.db import get_dynamodb_resource
 from src.utils.dynamodb import convert_floats_to_decimals
 
 
 
+#: A finished job's result stays on its DynamoDB item up to this size as JSON. A bigger one is kept in S3 instead,
+#: because DynamoDB refuses items over 400 KB: a large result (an invoked agent's research, a long script output)
+#: used to turn a job that had succeeded into a failure, and lose the result (KAN-67). The margin leaves room for
+#: the job's own arguments and context on the same item.
+INLINE_RESULT_MAX_BYTES = 200_000
+
+
+class ToolJobResultStore:
+    """Results too big for a job's item, as JSON in the conversation media bucket, under the owner's prefix."""
+
+    def __init__(self, storage: ArtifactStorage | None = None):
+        self._storage = storage
+
+    @property
+    def storage(self) -> ArtifactStorage:
+        # Made on first use: most results are small and never need S3.
+        if self._storage is None:
+            self._storage = ArtifactStorage()
+        return self._storage
+
+    def save(self, job: ToolJob, body: bytes) -> str:
+        key = f"users/{owner_scope(job.owner_email)}/tool-jobs/{job.job_id}/result.json"
+        self.storage.put_artifact(key=key, body=body, content_type="application/json")
+        return key
+
+    def load(self, key: str) -> Any:
+        return json.loads(self.storage.get_object_body(key))
+
+
 class ToolJobRepository:
-    def __init__(self):
+    def __init__(self, results: ToolJobResultStore | None = None):
         self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
+        self.results = results or ToolJobResultStore()
 
     def create(self, job: ToolJob) -> ToolJob:
         self.table.put_item(
@@ -52,20 +84,35 @@ class ToolJobRepository:
         )
 
     def mark_succeeded(self, job_id: str, result: Any) -> ToolJob:
+        """Keep the result whole: on the item when it fits, otherwise in S3 with the key on the item."""
+        body = json.dumps(result, default=str).encode("utf-8")
+        if len(body) <= INLINE_RESULT_MAX_BYTES:
+            stored, field = convert_floats_to_decimals(result), "result"
+        else:
+            job = self.find_by_id(job_id)
+            if not job:
+                raise ValueError("Tool job not found")
+            stored, field = self.results.save(job, body), "result_ref"
         return self._update_by_id(
             job_id,
             update_expression="SET #status = :status, completed_at = :completed_at, #result = :result, progress_message = :progress_message",
             condition_expression="#status IN (:queued_status, :running_status)",
-            names={"#status": "status", "#result": "result"},
+            names={"#status": "status", "#result": field},
             values={
                 ":status": ToolJobStatus.SUCCEEDED.value,
                 ":queued_status": ToolJobStatus.QUEUED.value,
                 ":running_status": ToolJobStatus.RUNNING.value,
                 ":completed_at": datetime.now(timezone.utc).isoformat(),
-                ":result": convert_floats_to_decimals(result),
+                ":result": stored,
                 ":progress_message": "Tool job completed.",
             },
         )
+
+    def with_result(self, job: ToolJob) -> ToolJob:
+        """The job with a result kept in S3 read back in."""
+        if job.result_ref and job.result is None:
+            return job.model_copy(update={"result": self.results.load(job.result_ref)})
+        return job
 
     def mark_failed(self, job_id: str, error: str) -> ToolJob:
         return self._update_by_id(

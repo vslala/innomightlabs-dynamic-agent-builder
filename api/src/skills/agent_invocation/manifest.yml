@@ -24,7 +24,7 @@ form:
       usage_context_max_chars: "500"
 actions:
   - name: invoke
-    description: Invoke an agent and return response text, runtime events, and saved message ids.
+    description: Invoke an agent and return its response text and saved message ids (and, in an automation, its tool calls).
     input_schema:
       type: object
       required: [prompt_template]
