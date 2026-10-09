@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Any, Literal, Mapping, Optional
 
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.kinds.base import (
@@ -47,6 +47,16 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
     exposes = ("id", "name", "crawl_job_id")
     feeds = "knowledge for"
     dashboard_path = "/dashboard/knowledge-bases/{id}"
+    export_name = "knowledge"
+
+    def observe(self, record: KnowledgeBase, names: Mapping[str, str]) -> dict[str, Any]:
+        resource: dict[str, Any] = {"kind": self.kind, "id": record.kb_id, "name": record.name}
+        if record.description:
+            resource["description"] = record.description
+        crawl = last_crawl(record.kb_id)
+        if crawl:
+            resource["crawl"] = crawl.model_dump()
+        return resource
 
     def card_details(self, spec: KnowledgeBaseSpec) -> list[str]:
         if not spec.crawl:

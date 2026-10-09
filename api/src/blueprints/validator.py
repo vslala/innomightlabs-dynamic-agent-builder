@@ -17,10 +17,9 @@ from src.blueprints.document import Blueprint
 from src.blueprints.kinds import KIND_NAMES, RESOURCE_KINDS, kind_for
 from src.blueprints.params import param_type
 from src.blueprints.parser import join_path, parse_yaml
-from src.blueprints.skills_schema import SkillVariant, agent_settings, skill_variants
+from src.blueprints.references import Reference
+from src.blueprints.skills_schema import SkillVariant, skill_variants
 from src.blueprints.spec import (
-    REF_KIND,
-    REMOVES,
     AgentSpec,
     CrawlSpec,
     Metadata,
@@ -280,56 +279,26 @@ def substitute(value: Any, params: dict[str, Any]) -> Any:
 
 
 def check_references(blueprint: Blueprint) -> tuple[list[BlueprintIssue], list[str]]:
-    """Reference fields (marked with x-ref-kind) must name a resource of the right kind. Returns the apply order."""
+    """Every reference a kind lists must name a resource of the right kind. Returns the apply order."""
     issues = []
     graph: dict[str, set[str]] = {}
     for name, resource in blueprint.resources.items():
         depends_on: set[str] = set()
-        for field_name, field_info in type(resource).model_fields.items():
-            extra = field_info.json_schema_extra
-            if not isinstance(extra, dict) or REF_KIND not in extra:
+        for reference in kind_for(resource.kind).references(name, resource):
+            referenced = blueprint.resources.get(reference.target)
+            if referenced is None:
+                if not reference.may_be_id:  # an id is checked against the account by the plan
+                    issues.append(BlueprintIssue(
+                        path=reference.path,
+                        message=f"'{reference.target}' is not a resource in this blueprint.",
+                        hint=did_you_mean(reference.target, blueprint.resources.keys()),
+                    ))
                 continue
-            value = getattr(resource, field_name)
-            targets = value if isinstance(value, list) else [value]
-            for index, target in enumerate(targets):
-                path = f"resources.{name}.{field_name}"
-                if isinstance(value, list):
-                    path = join_path(path, index)
-                referenced = blueprint.resources.get(target)
-                if referenced is None:
-                    issues.append(BlueprintIssue(
-                        path=path,
-                        message=f"'{target}' is not a resource in this blueprint.",
-                        hint=did_you_mean(target, blueprint.resources.keys()),
-                    ))
-                elif referenced.kind != extra[REF_KIND]:
-                    issues.append(BlueprintIssue(
-                        path=path,
-                        message=f"'{target}' is a {referenced.kind}, but `{field_name}` needs a {extra[REF_KIND]}.",
-                    ))
-                elif referenced.remove and not resource.remove and not extra.get(REMOVES):
-                    issues.append(BlueprintIssue(
-                        path=path,
-                        message=f"'{target}' is being removed, so `{field_name}` can't use it.",
-                        hint=f"Take '{target}' out of `{field_name}`, or don't remove it.",
-                    ))
-                else:
-                    depends_on.add(target)
-        if isinstance(resource, AgentSpec):
-            # A skill setting that names another Agent in the blueprint: that agent comes first.
-            for index, setting, value in agent_settings(resource):
-                path = f"resources.{name}.skills[{index}].config.{setting}"
-                referenced = blueprint.resources.get(value)
-                if referenced is None:
-                    continue  # an agent id, checked against the account by the plan
-                if value == name:
-                    issues.append(BlueprintIssue(path=path, message="An agent's skill can't name the agent itself."))
-                elif referenced.kind != "Agent":
-                    issues.append(BlueprintIssue(path=path, message=f"'{value}' is a {referenced.kind}, not an Agent."))
-                elif referenced.remove and not resource.remove:
-                    issues.append(BlueprintIssue(path=path, message=f"'{value}' is being removed, so this skill can't use it."))
-                else:
-                    depends_on.add(value)
+            problem = _reference_problem(name, resource, reference, referenced)
+            if problem:
+                issues.append(problem)
+            else:
+                depends_on.add(reference.target)
         graph[name] = depends_on
     try:
         order = list(TopologicalSorter(graph).static_order())
@@ -338,6 +307,32 @@ def check_references(blueprint: Blueprint) -> tuple[list[BlueprintIssue], list[s
         issues.append(BlueprintIssue(path="resources", message=f"These resources refer to each other in a loop: {cycle}."))
         order = []
     return issues, order
+
+
+def _a(word: str) -> str:
+    return f"an {word}" if word[:1].lower() in "aeiou" else f"a {word}"
+
+
+def _reference_problem(name: str, resource: Any, reference: Reference, referenced: Any) -> Optional[BlueprintIssue]:
+    if reference.target == name:
+        return BlueprintIssue(
+            path=reference.path,
+            message=f"{reference.where[:1].upper()}{reference.where[1:]} can't name the "
+            f"{kind_for(resource.kind).label.lower()} itself.",
+        )
+    if referenced.kind != reference.kind:
+        return BlueprintIssue(
+            path=reference.path,
+            message=f"'{reference.target}' is {_a(referenced.kind)}, not {_a(reference.kind)}.",
+            hint=f"{reference.where[:1].upper()}{reference.where[1:]} needs {_a(reference.kind)}.",
+        )
+    if referenced.remove and not resource.remove and not reference.removes:
+        return BlueprintIssue(
+            path=reference.path,
+            message=f"'{reference.target}' is being removed, so {reference.where} can't use it.",
+            hint=f"Stop naming '{reference.target}' there, or don't remove it.",
+        )
+    return None
 
 
 def check_removals(blueprint: Blueprint, variants: dict[str, SkillVariant]) -> list[BlueprintIssue]:

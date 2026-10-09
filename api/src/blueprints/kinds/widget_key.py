@@ -1,5 +1,5 @@
 from html import escape
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 from urllib.parse import urlsplit
 
 from src.apikeys.models import AgentApiKey
@@ -41,6 +41,22 @@ class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
     deletes = "the chat widget stops working on every site that uses this key"
     spec_model = WidgetKeySpec
     exposes = ("id", "public_key", "snippet")
+    export_name = "widget"
+
+    def observe(self, record: AgentApiKey, names: Mapping[str, str]) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "id": record.key_id,
+            "agent": names.get(record.agent_id, record.agent_id),
+            "name": record.name,
+            "allowed_origins": list(record.allowed_origins),
+            "allow_guests": record.allow_guests,
+        }
+
+    def for_agent(self, agent_id: str) -> list[AgentApiKey]:
+        """The agent's keys a blueprint can describe. A key that works on any site has no origins to write down; a
+        blueprint never makes those, so they're left alone."""
+        return [key for key in ApiKeyRepository().find_all_by_agent(agent_id) if key.allowed_origins]
 
     def title(self, name: str, spec: WidgetKeySpec, resources: dict[str, Any]) -> str:
         # The key's dashboard label defaults to "<agent name> widget" too.

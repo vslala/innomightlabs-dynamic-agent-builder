@@ -19,7 +19,7 @@ from typing import Any, Optional
 import yaml  # type: ignore[import-untyped,unused-ignore]
 
 import src.form_models as form_models
-from src.blueprints.skills_schema import AGENT_OPTION_SOURCES, SkillSetup, skill_variants
+from src.blueprints.skills_schema import REFERENCE_OPTION_SOURCES, SkillSetup, skill_variants
 from src.blueprints.validator import substitute
 from src.builder.models import BuilderSession, PendingInput
 from src.form_options import FormOptionsContext, hydrate_form_options
@@ -163,7 +163,7 @@ def _chat_input(
     if field.options_source:
         field = hydrate_form_options(form_models.Form(form_name="", submit_path="", form_inputs=[field]), context).form_inputs[0]
     options = [{"value": option.value, "label": option.label} for option in field.options or []]
-    if field.options_source and field.options_source.type in AGENT_OPTION_SOURCES:
+    if field.options_source and REFERENCE_OPTION_SOURCES.get(field.options_source.type) == "Agent":
         # Agents this blueprint is about to build can be chosen too; the blueprint names them.
         known = {option["value"] for option in options}
         options += [{"value": name, "label": f"{title} (in this build)"} for name, title in blueprint_agents if name not in known]

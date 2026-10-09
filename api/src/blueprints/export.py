@@ -10,16 +10,10 @@ from typing import Any, Optional
 import yaml  # type: ignore[import-untyped,unused-ignore]
 
 from src.agents.repository import AgentRepository
-from src.apikeys.repository import ApiKeyRepository
-from src.blueprints.kinds.knowledge_base import last_crawl
-from src.blueprints.skills_schema import skill_variants
+from src.blueprints.kinds import kind_for
+from src.blueprints.kinds.agent import AgentKind
+from src.blueprints.kinds.widget_key import WidgetKeyKind
 from src.blueprints.spec import API_VERSION
-from src.connectors.mcp.providers import PROVIDERS
-from src.connectors.mcp.repository import get_mcp_connection_repository
-from src.knowledge.models import KnowledgeBaseStatus
-from src.knowledge.repository import AgentKnowledgeBaseRepository, KnowledgeBaseRepository
-from src.skills.models import ActorKind
-from src.skills.repository import AgentSkillRepository
 
 
 def _slug(text: str) -> str:
@@ -31,101 +25,34 @@ def _numbered(base: str, index: int) -> str:
 
 
 def export_agent(agent_id: str, user_email: str) -> Optional[str]:
-    """The agent as blueprint YAML, or None if it isn't the person's.
-
-    Skills a blueprint can't describe (ones that need a secret to install) are left out; applying never removes
-    a skill, so they stay on the agent as they are.
-    """
+    """The agent as blueprint YAML, or None if it isn't the person's: the resources it links to, the agent, and its
+    widget keys, each written by its own kind's `observe`."""
     agent = AgentRepository().find_agent_by_id(agent_id, user_email)
     if agent is None:
         return None
+    agent_kind, widget_kind = AgentKind(), WidgetKeyKind()
 
-    resources: dict[str, Any] = {}
-    kb_names = []
-    kb_repo = KnowledgeBaseRepository()
-    links = AgentKnowledgeBaseRepository().find_kbs_for_agent(agent_id)
-    for index, kb in enumerate(kb for link in links if (kb := kb_repo.find_by_id(link.kb_id, user_email))):
-        if kb.status == KnowledgeBaseStatus.DELETED:
-            continue
-        name = _numbered("knowledge", index)
-        kb_names.append(name)
-        resource: dict[str, Any] = {"kind": "KnowledgeBase", "id": kb.kb_id, "name": kb.name}
-        if kb.description:
-            resource["description"] = kb.description
-        crawl = last_crawl(kb.kb_id)
-        if crawl:
-            resource["crawl"] = crawl.model_dump()
-        resources[name] = resource
+    # Each resource's blueprint name, by id, so the ones naming it can say so.
+    names: dict[str, str] = {}
+    counts: dict[str, int] = {}
+    records: list[tuple[str, str, Any]] = []
+    keys = [(widget_kind.kind, key.key_id, key) for key in widget_kind.for_agent(agent_id)]
+    for kind, resource_id, record in [
+        *agent_kind.linked(agent_id, user_email), (agent_kind.kind, agent_id, agent), *keys,
+    ]:
+        base = kind_for(kind).export_name
+        names[resource_id] = _numbered(base, counts.get(base, 0))
+        counts[base] = counts.get(base, 0) + 1
+        records.append((kind, names[resource_id], record))
 
-    connection_names = []
-    connections = get_mcp_connection_repository()
-    mcp_links = [link for link in connections.list_agent_connections(agent_id) if link.enabled]
-    for index, connection in enumerate(
-        connection for link in mcp_links if (connection := connections.find_connection(user_email, link.mcp_id))
-    ):
-        name = _numbered("tools", index)
-        connection_names.append(name)
-        resources[name] = {
-            "kind": "McpConnection",
-            "id": connection.mcp_id,
-            # A custom connection, or one whose preset has gone, is named by its id alone.
-            **({"provider": connection.provider_key} if connection.provider_key in PROVIDERS else {}),
-            "name": connection.name,
-        }
-
-    variants = skill_variants()
-    skills = []
-    for installed in AgentSkillRepository().list_by_agent(agent_id):
-        variant = variants.get(installed.skill_id)
-        if variant is None or variant.required_secrets:
-            continue
-        entry: dict[str, Any] = {"id": installed.skill_id}
-        config = {key: value for key, value in installed.config.items() if key in variant.config_fields}
-        if config:
-            entry["config"] = config
-        audience = [ActorKind(kind).value for kind in installed.available_to if ActorKind(kind) != ActorKind.OWNER]
-        if audience and variant.shareable:
-            entry["available_to"] = audience
-        if not installed.enabled:
-            entry["enabled"] = False
-        skills.append(entry)
-
-    agent_resource: dict[str, Any] = {
-        "kind": "Agent",
-        "id": agent.agent_id,
-        "name": agent.agent_name,
-        "provider": agent.agent_provider,
-        "instructions": agent.agent_persona,
-        "session_timeout_minutes": agent.session_timeout_minutes,
-    }
-    if agent.agent_model:
-        agent_resource["model"] = agent.agent_model
-    if agent.agent_description:
-        agent_resource["description"] = agent.agent_description
-    if kb_names:
-        agent_resource["knowledge_bases"] = kb_names
-    if connection_names:
-        agent_resource["mcp_connections"] = connection_names
-    if skills:
-        agent_resource["skills"] = skills
-    resources["agent"] = agent_resource
+    resources = {name: kind_for(kind).observe(record, names) for kind, name, record in records}
 
     outputs: dict[str, Any] = {"agent_id": {"description": "The agent in the dashboard.", "value": "{{ resources.agent.id }}"}}
-    # A key that works on any site has no origins to write down; a blueprint never makes those, so leave it alone.
-    for index, key in enumerate(key for key in ApiKeyRepository().find_all_by_agent(agent_id) if key.allowed_origins):
-        name = _numbered("widget", index)
-        resources[name] = {
-            "kind": "WidgetKey",
-            "id": key.key_id,
-            "agent": "agent",
-            "name": key.name,
-            "allowed_origins": list(key.allowed_origins),
-            "allow_guests": key.allow_guests,
-        }
-        outputs.setdefault("snippet", {
+    if keys:
+        outputs["snippet"] = {
             "description": "Paste this before </body> on every page of your site.",
-            "value": f"{{{{ resources.{name}.snippet }}}}",
-        })
+            "value": f"{{{{ resources.{names[keys[0][1]]}.snippet }}}}",
+        }
 
     document = {
         "apiVersion": API_VERSION,

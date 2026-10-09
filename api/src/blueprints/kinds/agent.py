@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from src.agents.models import Agent, CreateAgentRequest
 from src.agents.repository import AgentRepository
@@ -15,11 +15,13 @@ from src.blueprints.kinds.base import (
     PlanContext,
     Usage,
 )
+from src.blueprints.references import Reference, skill_references
 from src.blueprints.skills_schema import skill_variants
 from src.blueprints.spec import AgentSpec, SkillEntry
 from src.connectors.mcp.repository import get_mcp_connection_repository
 from src.connectors.mcp.service import get_mcp_connector_service
-from src.knowledge.repository import AgentKnowledgeBaseRepository
+from src.knowledge.models import KnowledgeBaseStatus
+from src.knowledge.repository import AgentKnowledgeBaseRepository, KnowledgeBaseRepository
 from src.settings.repository import get_provider_settings_repository
 from src.skills.models import ActorKind, AgentSkill
 from src.skills.identity import installed_skill_id_for
@@ -69,6 +71,23 @@ def _count(n: int, text: str) -> str:
     return text.format(n=n) + ("s" if n > 1 else "")
 
 
+def _skill_entry(installed: AgentSkill) -> Optional[dict[str, Any]]:
+    """An install as a blueprint's skill entry, or None for one a blueprint can't describe."""
+    variant = skill_variants().get(installed.skill_id)
+    if variant is None or variant.required_secrets:
+        return None
+    entry: dict[str, Any] = {"id": installed.skill_id}
+    config = {key: value for key, value in installed.config.items() if key in variant.config_fields}
+    if config:
+        entry["config"] = config
+    audience = [ActorKind(kind).value for kind in installed.available_to if ActorKind(kind) != ActorKind.OWNER]
+    if audience and variant.shareable:
+        entry["available_to"] = audience
+    if not installed.enabled:
+        entry["enabled"] = False
+    return entry
+
+
 def _audience(skill: AgentSkill) -> set[str]:
     return {ActorKind(kind).value for kind in skill.available_to}
 
@@ -92,6 +111,47 @@ class AgentKind(ManagedKind[AgentSpec]):
     exposes = ("id", "name")
     feeds = "chats through"
     dashboard_path = "/dashboard/agents/{id}"
+    export_name = "agent"
+
+    def linked(self, agent_id: str, user_email: str) -> list[tuple[str, str, Any]]:
+        """(kind, id, record) of every resource the agent links to, in link order."""
+        found: list[tuple[str, str, Any]] = []
+        kbs = KnowledgeBaseRepository()
+        for link in AgentKnowledgeBaseRepository().find_kbs_for_agent(agent_id):
+            kb = kbs.find_by_id(link.kb_id, user_email)
+            if kb is not None and kb.status != KnowledgeBaseStatus.DELETED:
+                found.append(("KnowledgeBase", kb.kb_id, kb))
+        connections = get_mcp_connection_repository()
+        for mcp_link in connections.list_agent_connections(agent_id):
+            connection = connections.find_connection(user_email, mcp_link.mcp_id) if mcp_link.enabled else None
+            if connection is not None:
+                found.append(("McpConnection", connection.mcp_id, connection))
+        return found
+
+    def observe(self, record: Agent, names: Mapping[str, str]) -> dict[str, Any]:
+        """Skills a blueprint can't describe (ones that need a secret to install) are left out; applying never
+        removes a skill, so they stay on the agent as they are."""
+        resource: dict[str, Any] = {
+            "kind": self.kind,
+            "id": record.agent_id,
+            "name": record.agent_name,
+            "provider": record.agent_provider,
+            "instructions": record.agent_persona,
+            "session_timeout_minutes": record.session_timeout_minutes,
+        }
+        if record.agent_model:
+            resource["model"] = record.agent_model
+        if record.agent_description:
+            resource["description"] = record.agent_description
+        linked = self.linked(record.agent_id, record.created_by)
+        for field_name, kind in (("knowledge_bases", "KnowledgeBase"), ("mcp_connections", "McpConnection")):
+            targets = [names[linked_id] for linked_kind, linked_id, _ in linked if linked_kind == kind and linked_id in names]
+            if targets:
+                resource[field_name] = targets
+        skills = [entry for skill in AgentSkillRepository().list_by_agent(record.agent_id) if (entry := _skill_entry(skill))]
+        if skills:
+            resource["skills"] = skills
+        return resource
 
     def card_details(self, spec: AgentSpec) -> list[str]:
         details = [f"Thinks with {spec.provider}" + (f" · {spec.model}" if spec.model else "")]
@@ -104,6 +164,10 @@ class AgentKind(ManagedKind[AgentSpec]):
         if spec.mcp_connections:
             details.append(_count(len(spec.mcp_connections), "Uses tools from {n} connection"))
         return details
+
+    def references(self, name: str, spec: AgentSpec) -> list[Reference]:
+        """Its links, and any skill setting that names another agent."""
+        return [*super().references(name, spec), *skill_references(name, spec.skills)]
 
     def find_existing(self, name: str, spec: AgentSpec, ctx: PlanContext) -> Optional[Existing]:
         repo = AgentRepository()

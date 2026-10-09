@@ -23,8 +23,6 @@ from src.artifacts.service import ArtifactService
 from src.blueprints.models import Deployment
 from src.blueprints.kinds import kind_for
 from src.blueprints.planner import Plan
-from src.blueprints.skills_schema import agent_settings
-from src.blueprints.spec import REF_KIND, REMOVES, AgentSpec
 from src.blueprints.validator import ValidatedBlueprint
 from src.skills.html_canvas.models import CANVAS_ARTIFACT_FILENAME
 
@@ -76,17 +74,14 @@ class BlueprintDrawing:
 def _wires(name: str, spec: Any, resources: dict[str, Any]) -> list[tuple[str, str, str]]:
     """How this resource connects to the others it names, each wire pointing the way the drawing reads."""
     wires: list[tuple[str, str, str]] = []
-    for field_name, info in type(spec).model_fields.items():
-        extra = info.json_schema_extra
+    for reference in kind_for(spec.kind).references(name, spec):
         # Things being disconnected aren't drawn as wires; the card lists them instead.
-        if not isinstance(extra, dict) or REF_KIND not in extra or extra.get(REMOVES):
+        if reference.removes or reference.target not in resources:
             continue
-        value = getattr(spec, field_name)
-        for target in value if isinstance(value, list) else [value]:
-            wires.append((target, name, kind_for(extra[REF_KIND]).feeds))
-    if isinstance(spec, AgentSpec):
-        # A skill setting naming another agent: this agent hands work to that one.
-        wires += [(name, value, "hands work to") for _, _, value in agent_settings(spec) if value in resources]
+        if reference.outward_wire:
+            wires.append((name, reference.target, reference.outward_wire))
+        else:
+            wires.append((reference.target, name, kind_for(reference.kind).feeds))
     return list(dict.fromkeys(wires))
 
 
