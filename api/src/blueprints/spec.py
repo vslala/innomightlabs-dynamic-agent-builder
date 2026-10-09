@@ -6,10 +6,12 @@ Schema, the generated reference and the Builder's catalog. Skill config is not d
 generated from each skill's manifest (see `skills_schema.py`). See docs/LLD-solution-blueprints.md.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from src.blueprints.diff import Each, Scalar
 from src.blueprints.params import PARAM_TYPES
 from src.connectors.mcp.providers import PROVIDERS
 from src.knowledge.models import MAX_CRAWL_DEPTH, MAX_CRAWL_PAGES
@@ -36,6 +38,30 @@ REF_KIND = "x-ref-kind"
 REMOVES = "x-removes"
 
 
+def origin_of(url: str) -> str | None:
+    """`https://example.com/about` → `https://example.com`; None for anything that isn't a web address."""
+    parts = urlsplit(url.strip())
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return None
+    return f"{parts.scheme}://{parts.netloc.lower()}"
+
+
+def origins_of(urls: list[str]) -> list[str]:
+    return sorted({origin for origin in map(origin_of, urls) if origin})
+
+
+def _switch(value: Any, spec: Any) -> str:
+    return f"switch to {spec.provider}" + (f" · {spec.model}" if spec.model else "")
+
+
+def _allowed_on(value: Any, spec: Any) -> str:
+    return "allow it on " + ", ".join(origins_of(spec.allowed_origins))
+
+
+def _guests(value: Any, spec: Any) -> str:
+    return "let guests chat with just an email" if value else "ask visitors to sign in"
+
+
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -57,15 +83,17 @@ class ParamSpec(Strict):
     )
 
 
+#: The `description` field's documentation, shared by the kinds that store it.
+DESCRIPTION = "What this resource is for. Stored as the resource's description where it has one."
+
+
 class ResourceBase(Strict):
     id: str | None = Field(
         None,
         description="An existing resource to update instead of creating a new one. Without it, a resource with the "
         "same name is updated if there is one, and otherwise a new one is created.",
     )
-    description: str | None = Field(
-        None, description="What this resource is for. Stored as the resource's description where it has one."
-    )
+    description: str | None = Field(None, description=DESCRIPTION)
     remove: bool = Field(
         False,
         description="Delete this existing resource from the account. Needs its `id`. It can't be undone: a "
@@ -94,9 +122,16 @@ class CrawlSpec(Strict):
 class KnowledgeBaseSpec(ResourceBase):
     """A searchable store of content an agent can answer from."""
 
+    description: Annotated[str | None, Scalar(record="description", omit_none=True, says="update its description")] = (
+        Field(None, description=DESCRIPTION)
+    )
     kind: Literal["KnowledgeBase"] = Field(description="Which kind of resource to create.")
-    name: str = Field(min_length=1, description="Name shown in the dashboard's knowledge base list.")
-    crawl: CrawlSpec | None = Field(
+    name: Annotated[str, Scalar(record="name", says="rename to '{value}'")] = Field(
+        min_length=1, description="Name shown in the dashboard's knowledge base list."
+    )
+    crawl: Annotated[
+        CrawlSpec | None, Scalar(omit_none=True, says="read {crawl.url} again, up to {crawl.max_pages} pages")
+    ] = Field(
         None, description="Fill the knowledge base by reading a website. Leave it out to create an empty knowledge base."
     )
 
@@ -116,37 +151,58 @@ class SkillEntry(Strict):
 class AgentSpec(ResourceBase):
     """An AI agent people can chat with in the dashboard, a widget or the API."""
 
+    description: Annotated[
+        str | None, Scalar(record="agent_description", omit_none=True, says="update its description")
+    ] = Field(None, description=DESCRIPTION)
     kind: Literal["Agent"] = Field(description="Which kind of resource to create.")
-    name: str = Field(
+    name: Annotated[str, Scalar(record="agent_name", says="rename to '{value}'")] = Field(
         min_length=1,
         description="The agent's name. Shown in the dashboard and as the widget title. "
         "Must not match one of your existing agents.",
     )
-    instructions: str = Field(
+    instructions: Annotated[
+        str, Scalar(record="agent_persona", normalise=str.strip, says="update its instructions")
+    ] = Field(
         min_length=1, description="Who the agent is and how it should behave. This is the agent's system persona."
     )
-    provider: str = Field(
+    provider: Annotated[str, Scalar(record="agent_provider", says=_switch, group="model")] = Field(
         description="The LLM provider the agent uses, such as Bedrock, OpenAI, Anthropic or Gemini. "
         "It must be set up in Settings > Provider Configuration."
     )
-    model: str | None = Field(
+    model: Annotated[str | None, Scalar(record="agent_model", omit_none=True, says=_switch, group="model")] = Field(
         None, description="Model id from that provider. Leave it out to use the provider's default model."
     )
-    knowledge_bases: list[ResourceName] = Field(
+    knowledge_bases: Annotated[
+        list[ResourceName],
+        Each(
+            adds="link knowledge base '{name}'",
+            removes="disconnect knowledge base '{title}'",
+            removals_from="remove_knowledge_bases",
+        ),
+    ] = Field(
         default_factory=list,
         description="Knowledge bases in this blueprint the agent can search when answering.",
         json_schema_extra={REF_KIND: "KnowledgeBase"},
     )
-    skills: list[SkillEntry] = Field(
-        default_factory=list, description="Skills to install on the agent, such as `lead_capture`."
-    )
+    skills: Annotated[
+        list[SkillEntry],
+        Each(
+            adds="add skill {label}",
+            changes="update skill {label}",
+            removes="uninstall skill {label}",
+            removals_from="remove_skills",
+        ),
+    ] = Field(default_factory=list, description="Skills to install on the agent, such as `lead_capture`.")
     remove_knowledge_bases: list[ResourceName] = Field(
         default_factory=list,
         description="Knowledge bases in this blueprint to disconnect from the agent. The knowledge bases "
         "themselves stay, with their content.",
         json_schema_extra={REF_KIND: "KnowledgeBase", REMOVES: True},
     )
-    mcp_connections: list[ResourceName] = Field(
+    mcp_connections: Annotated[
+        list[ResourceName],
+        Each(adds="give it the {title} tools", removes="take the {title} tools away", removals_from="remove_mcp_connections"),
+    ] = Field(
         default_factory=list,
         description="MCP connections in this blueprint whose tools the agent can use, such as web search.",
         json_schema_extra={REF_KIND: "McpConnection"},
@@ -162,7 +218,10 @@ class AgentSpec(ResourceBase):
         description="Skill ids to uninstall from the agent, with their settings and secrets. To only switch a "
         "skill off, list it under `skills` with `enabled: false` instead.",
     )
-    session_timeout_minutes: int | None = Field(
+    session_timeout_minutes: Annotated[
+        int | None,
+        Scalar(record="session_timeout_minutes", omit_none=True, says="start conversations fresh after {value} minutes"),
+    ] = Field(
         None, ge=0, description="Minutes of silence after which a conversation starts fresh. 0 means never."
     )
 
@@ -175,12 +234,17 @@ class WidgetKeySpec(ResourceBase):
         description="The agent in this blueprint that the widget talks to.",
         json_schema_extra={REF_KIND: "Agent"},
     )
-    name: str | None = Field(None, description='Label for the key in the dashboard. Defaults to "<agent name> widget".')
-    allowed_origins: list[str] = Field(
+    name: Annotated[str | None, Scalar(record="name", omit_none=True, says="rename to '{value}'")] = Field(
+        None, description='Label for the key in the dashboard. Defaults to "<agent name> widget".'
+    )
+    allowed_origins: Annotated[
+        list[str],
+        Scalar(record="allowed_origins", normalise=origins_of, unordered=True, says=_allowed_on),
+    ] = Field(
         min_length=1,
         description="Sites allowed to embed the widget. Each is reduced to its origin, such as https://example.com.",
     )
-    allow_guests: bool = Field(
+    allow_guests: Annotated[bool, Scalar(record="allow_guests", says=_guests)] = Field(
         False, description="Let visitors chat after giving only their email, without Google sign-in."
     )
 

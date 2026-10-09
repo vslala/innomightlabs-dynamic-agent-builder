@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress: phases 1 to 3 done |
+| Status | 🚧 In progress: phases 1 to 4 done |
 | Owner | InnomightLabs API |
 | Last reviewed | 2026-10-09 |
 | Scope | `api/src/blueprints/`, and the parts of `api/src/builder/` that call into it |
@@ -131,6 +131,42 @@
   - Changed: the tests that patched kind methods now patch commands (`CreateWidgetKey.run`, `SaveWidgetKey.run`,
     `UNDO_ACTIONS`). The failed-removal test is now two tests: a failed disconnect puts everything back, and a
     failed delete keeps the rest.
+
+**Phase 4 (reconciler, two-way), 2026-10-09:**
+
+- **Field rules live in `blueprints/diff.py`:** `Scalar` (`record`, `says`, `omit_none`, `normalise`, `unordered`,
+  `group`) and `Each` (`adds`, `changes`, `removes`, `removals_from`).
+  - They ride in each spec field's type metadata (`Annotated[str, Scalar(...)]`), not in `json_schema_extra`. So
+    the published schema is unchanged, and rules can hold functions (`normalise=str.strip`, `says=_switch`).
+  - `origin_of` and `origins_of` moved to `spec.py` so the widget's rule can use them.
+  - `description` is redeclared on the knowledge base and the agent, which store it, with the shared `DESCRIPTION`
+    text.
+- **The reconciler is `blueprints/reconcile.py`.** `reconcile(now, actual, before=None, ctx)` returns an
+  `Outcome`: `sets`, `added`, `changed`, `removed` and `drift`.
+  - The full three-way rule is implemented and tested, including drift and taking away an item left out. Until
+    Kits, the planner passes `before=None`, so actual stands in for it and every difference is work.
+  - Taking things away still comes only from each `Each.removals_from` list.
+  - `Context` supplies titles, the resources being deleted, and per-collection keys, `differs` and `named_by`.
+    The agent uses these for skill installs.
+- **Each match is observed once.** The planner calls `kind.observe(existing.record, names)` and stores it on
+  `Existing.observed`, which replaces the string-keyed `related` bag.
+  - `names` holds only the resources the blueprint matched, so links to anything else are invisible to the plan,
+    and never touched.
+- **The kinds' commands come from the outcome.** The hand-written field comparisons in the agent, knowledge base
+  and widget key are gone, along with `skill_changes`. Each kind maps the outcome to its commands: `Save…` with
+  `outcome.values(SpecModel)`, links and installs per item.
+- **One check for "kept and taken away".** The validator checks every `Each` field with a `removals_from` list.
+  This fixes the missing check for `mcp_connections` / `remove_mcp_connections`. The skill-specific hint about
+  `enabled: false` is gone.
+- **Repeatable skills:**
+  - Each install is matched, changed and taken away by its own key (`install_key`), and the reconciler can take
+    away one of two `send_email` installs.
+  - `remove_skills` names skills, so it still takes away every install of one. Removing a single install arrives
+    with Kits, where leaving that entry out is enough.
+- **Not done yet:**
+  - The rename blocker (Kits, phase 6).
+  - `planner._title` still reads the record's name for a resource being removed.
+- **Tests:** `test_blueprints_reconcile.py`.
 
 ## What's good and stays
 

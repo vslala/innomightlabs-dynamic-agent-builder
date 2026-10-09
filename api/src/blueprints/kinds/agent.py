@@ -18,6 +18,7 @@ from src.blueprints.kinds.base import (
     PlanContext,
     Usage,
 )
+from src.blueprints.reconcile import Context, Outcome, reconcile
 from src.blueprints.references import Reference, skill_references
 from src.blueprints.skills_schema import skill_variants
 from src.blueprints.spec import AgentSpec, SkillEntry
@@ -91,17 +92,40 @@ def _skill_entry(installed: AgentSkill) -> Optional[dict[str, Any]]:
     return entry
 
 
-def _audience(skill: AgentSkill) -> set[str]:
-    return {ActorKind(kind).value for kind in skill.available_to}
+def _entry(item: Any) -> SkillEntry:
+    """A skill entry, from the blueprint or as `observe` wrote an install."""
+    return item if isinstance(item, SkillEntry) else SkillEntry.model_validate(item)
 
 
-def skill_changes(entry: SkillEntry, config: dict[str, Any], installed: AgentSkill) -> bool:
+def _skill_key(item: Any, ids: dict[str, str]) -> str:
+    entry = _entry(item)
+    return install_key(entry, skill_config(entry, ids))
+
+
+def _skill_differs(item: Any, installed: Any, ids: dict[str, str]) -> bool:
     """Whether the entry asks for something different from the install. Config it doesn't mention is kept."""
-    wanted_audience = {ActorKind.OWNER.value, *entry.available_to}
+    entry, there = _entry(item), _entry(installed)
     return (
-        any(installed.config.get(key) != value for key, value in config.items())
-        or wanted_audience != _audience(installed)
-        or entry.enabled != installed.enabled
+        any(there.config.get(key) != value for key, value in skill_config(entry, ids).items())
+        or set(entry.available_to) != set(there.available_to)
+        or entry.enabled != there.enabled
+    )
+
+
+def _skill_uses(name: str, entry: SkillEntry) -> frozenset[str]:
+    """The agents a skill setting names, which must exist before it's installed."""
+    return frozenset(ref.target for ref in skill_references(name, [entry]))
+
+
+def _reconcile_context(ctx: PlanContext) -> Context:
+    ids = ctx.ids()
+    return Context(
+        titles={name: str(getattr(matched.record, "name", name)) for name, matched in ctx.matched.items()},
+        removing=frozenset(ctx.removing),
+        keys={"skills": lambda item: _skill_key(item, ids)},
+        differs={"skills": lambda item, installed: _skill_differs(item, installed, ids)},
+        # `remove_skills` names skills, so it takes away every install of one.
+        named_by={"skills": lambda listed, installed: _entry(installed).id == listed},
     )
 
 
@@ -415,30 +439,9 @@ class AgentKind(ManagedKind[AgentSpec]):
             agent = repo.find_agent_by_id(spec.id, ctx.user_email)
             if not agent:
                 raise NotFound(f"There's no agent with id '{spec.id}' in your account.")
-            matched_by = "id"
-        else:
-            agent = repo.find_by_name(spec.name, ctx.user_email)
-            if not agent:
-                return None
-            matched_by = "name"
-        installs = AgentSkillRepository().list_by_agent(agent.agent_id)
-        return Existing(
-            id=agent.agent_id,
-            record=agent,
-            matched_by=matched_by,  # type: ignore[arg-type]
-            related={
-                "kb_ids": {link.kb_id for link in AgentKnowledgeBaseRepository().find_kbs_for_agent(agent.agent_id)},
-                # By installed id, which for most skills is the skill id.
-                "skills": {skill.installed_skill_id or skill.skill_id: skill for skill in installs},
-                # Every install, since a repeatable skill can be on the agent more than once.
-                "installs": installs,
-                "mcp_ids": {
-                    link.mcp_id
-                    for link in get_mcp_connection_repository().list_agent_connections(agent.agent_id)
-                    if link.enabled
-                },
-            },
-        )
+            return Existing(id=agent.agent_id, record=agent, matched_by="id")
+        agent = repo.find_by_name(spec.name, ctx.user_email)
+        return Existing(id=agent.agent_id, record=agent, matched_by="name") if agent else None
 
     def applied(self, name: str, record: Agent) -> AppliedResource:
         return _applied(name, record)
@@ -446,8 +449,38 @@ class AgentKind(ManagedKind[AgentSpec]):
     def commands(self, name: str, spec: AgentSpec, existing: Optional[Existing], ctx: PlanContext) -> list[Command]:
         """Adds what's missing and changes what differs. Takes away only what `remove_*` names: links and skills
         the blueprint doesn't mention stay as they are."""
+        outcome = reconcile(spec, existing.observed if existing else None, ctx=_reconcile_context(ctx))
+        commands: list[Command] = [self._establish(name, spec, existing, outcome)]
+        for item in outcome.items("added", "knowledge_bases"):
+            commands.append(LinkKnowledgeBase(
+                resource=name, uses=frozenset({item.now}), knowledge_base=item.now, says=(item.says,)
+            ))
+        for item in outcome.items("removed", "knowledge_bases"):
+            commands.append(UnlinkKnowledgeBase(
+                resource=name, uses=frozenset({item.actual}), knowledge_base=item.actual, removal=item.says
+            ))
+        for item in outcome.items("added", "mcp_connections"):
+            commands.append(EnableTools(resource=name, uses=frozenset({item.now}), connection=item.now, says=(item.says,)))
+        for item in outcome.items("removed", "mcp_connections"):
+            commands.append(DisableTools(
+                resource=name, uses=frozenset({item.actual}), connection=item.actual, removal=item.says
+            ))
+        for item in outcome.items("added", "skills"):
+            commands.append(InstallSkill(resource=name, uses=_skill_uses(name, item.now), entry=item.now, says=(item.says,)))
+        for item in outcome.items("changed", "skills"):
+            commands.append(UpdateSkill(
+                resource=name, uses=_skill_uses(name, item.now), entry=item.now, installed_skill_id=item.key,
+                says=(item.says,),
+            ))
+        for item in outcome.items("removed", "skills"):
+            commands.append(UninstallSkill(
+                resource=name, agent_id=existing.id if existing else "", installed_skill_id=item.key, removal=item.says
+            ))
+        return commands
+
+    def _establish(self, name: str, spec: AgentSpec, existing: Optional[Existing], outcome: Outcome) -> Command:
         if existing is None:
-            create: Command = CreateAgent(resource=name, request=CreateAgentRequest(
+            return CreateAgent(resource=name, request=CreateAgentRequest(
                 agent_name=spec.name,
                 agent_architecture=BLUEPRINT_ARCHITECTURE,
                 agent_provider=spec.provider,
@@ -456,93 +489,10 @@ class AgentKind(ManagedKind[AgentSpec]):
                 agent_description=spec.description,
                 session_timeout_minutes=spec.session_timeout_minutes,
             ))
-            linked: set[str] = set()
-            mcp_ids: set[str] = set()
-            installed: dict[str, AgentSkill] = {}
-        else:
-            create = self._save_or_use(name, spec, existing.record)
-            linked, mcp_ids, installed = existing.related["kb_ids"], existing.related["mcp_ids"], existing.related["skills"]
-
-        commands = [create]
-        for kb_name in spec.knowledge_bases:
-            matched = ctx.matched.get(kb_name)
-            if matched is None or matched.id not in linked:
-                commands.append(LinkKnowledgeBase(
-                    resource=name, uses=frozenset({kb_name}), knowledge_base=kb_name,
-                    says=(f"link knowledge base '{kb_name}'",),
-                ))
-        for connection_name in spec.mcp_connections:
-            matched = ctx.matched.get(connection_name)
-            if matched is None or matched.id not in mcp_ids:
-                title = matched.record.name if matched else connection_name
-                commands.append(EnableTools(
-                    resource=name, uses=frozenset({connection_name}), connection=connection_name,
-                    says=(f"give it the {title} tools",),
-                ))
-        ids = ctx.ids()
-        for index, entry in enumerate(spec.skills):
-            uses = frozenset(ref.target for ref in skill_references(name, [entry]))
-            config = skill_config(entry, ids)
-            skill = installed.get(install_key(entry, config))
-            if skill is None:
-                commands.append(InstallSkill(resource=name, uses=uses, entry=entry, says=(f"add skill {_label(entry.id)}",)))
-            elif skill_changes(entry, config, skill):
-                commands.append(UpdateSkill(
-                    resource=name, uses=uses, entry=entry, installed_skill_id=skill.installed_skill_id or skill.skill_id,
-                    says=(f"update skill {_label(entry.id)}",),
-                ))
-        if existing is not None:
-            commands += self._removal_commands(name, spec, existing, ctx)
-        return commands
-
-    def _save_or_use(self, name: str, spec: AgentSpec, agent: Agent) -> Command:
-        fields: dict[str, Any] = {}
-        says = []
-        if spec.name != agent.agent_name:
-            fields["agent_name"] = spec.name
-            says.append(f"rename to '{spec.name}'")
-        if spec.instructions.strip() != agent.agent_persona.strip():
-            fields["agent_persona"] = spec.instructions
-            says.append("update its instructions")
-        if spec.provider != agent.agent_provider or (spec.model and spec.model != agent.agent_model):
-            fields["agent_provider"] = spec.provider
-            if spec.model:
-                fields["agent_model"] = spec.model
-            says.append(f"switch to {spec.provider}" + (f" · {spec.model}" if spec.model else ""))
-        if spec.description is not None and spec.description != agent.agent_description:
-            fields["agent_description"] = spec.description
-            says.append("update its description")
-        if spec.session_timeout_minutes is not None and spec.session_timeout_minutes != agent.session_timeout_minutes:
-            fields["session_timeout_minutes"] = spec.session_timeout_minutes
-            says.append(f"start conversations fresh after {spec.session_timeout_minutes} minutes")
+        fields = outcome.values(AgentSpec)
         if not fields:
-            return Use(resource=name, applied=_applied(name, agent))
-        return SaveAgent(resource=name, agent_id=agent.agent_id, fields=fields, says=tuple(says))
-
-    def _removal_commands(self, name: str, spec: AgentSpec, existing: Existing, ctx: PlanContext) -> list[Command]:
-        commands: list[Command] = []
-        for kb_name in spec.remove_knowledge_bases:
-            matched = ctx.matched.get(kb_name)
-            # A knowledge base being deleted in this blueprint is disconnected by its own delete.
-            if matched is not None and matched.id in existing.related["kb_ids"] and kb_name not in ctx.removing:
-                commands.append(UnlinkKnowledgeBase(
-                    resource=name, uses=frozenset({kb_name}), knowledge_base=kb_name,
-                    removal=f"disconnect knowledge base '{matched.record.name}'",
-                ))
-        for connection_name in spec.remove_mcp_connections:
-            matched = ctx.matched.get(connection_name)
-            if matched is not None and matched.id in existing.related["mcp_ids"]:
-                commands.append(DisableTools(
-                    resource=name, uses=frozenset({connection_name}), connection=connection_name,
-                    removal=f"take the {matched.record.name} tools away",
-                ))
-        for install in existing.related["installs"]:
-            if install.skill_id in spec.remove_skills:
-                commands.append(UninstallSkill(
-                    resource=name, agent_id=existing.id, installed_skill_id=install.installed_skill_id or install.skill_id,
-                    removal=f"uninstall skill {_label(install.skill_id)}",
-                ))
-        return commands
+            return Use(resource=name, applied=_applied(name, existing.record))
+        return SaveAgent(resource=name, agent_id=existing.id, fields=fields, says=outcome.says())
 
     def delete_commands(self, name: str, spec: AgentSpec, existing: Existing, removal: str) -> list[Command]:
         uses = frozenset(ref.target for ref in self.references(name, spec) if not ref.removes)
@@ -582,9 +532,9 @@ class AgentKind(ManagedKind[AgentSpec]):
                     hint="Leave `model` out to use the provider's default.",
                 ))
 
-        installed = change.existing.related["skills"] if change.existing else {}
-        service = SkillService()
         ids = ctx.ids()
+        installed = {_skill_key(entry, ids) for entry in (change.existing.observed.get("skills", []) if change.existing else [])}
+        service = SkillService()
         for index, entry in enumerate(spec.skills):
             config = skill_config(entry, ids)
             if install_key(entry, config) in installed:
