@@ -28,9 +28,11 @@ from src.agents.turns import ConversationTurn, ConversationTurnRepository, Conve
 from src.agents.turns import live_transcript, start_turn, stop_turn
 from src.agents.turns.transcript import TurnTranscript
 from src.builder.ada import ADA_AGENT_ID, GREETING, ada_agent, ada_architecture
+from src.builder.connections import start_connection
 from src.builder.models import BuilderSession, BuilderSessionResponse, CreateBuilderSessionRequest
 from src.builder.repository import BuilderSessionRepository
 from src.common.sse import sse_response
+from src.connectors.mcp.service import get_mcp_connector_service
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.form_options import FormOptionsContext, hydrate_form_options
@@ -49,6 +51,15 @@ SESSION_FORM_FIELDS = ("agent_provider", "agent_model")
 
 class BuilderMessageRequest(BaseModel):
     content: str
+
+
+class ConnectRequest(BaseModel):
+    provider: str
+
+
+class ConnectResponse(BaseModel):
+    #: Where to sign in, in a popup. None when the account is already connected.
+    authorize_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -150,6 +161,21 @@ async def send_message(
     response = sse_response(_stream(running.transcript, after_sequence=0))
     response.headers["X-Turn-Id"] = running.turn.turn_id
     return response
+
+
+@router.post("/{conversation_id}/connect", response_model=ConnectResponse)
+async def connect(
+    request: Request,
+    body: ConnectRequest,
+    target: Annotated[BuildTarget, Depends(resolve_build)],
+) -> ConnectResponse:
+    """The person's click on a Connect card. Their own action, never Ada's: installs the preset if needed and
+    returns the sign-in address."""
+    try:
+        authorize_url = await start_connection(get_mcp_connector_service(), request.state.user_email, body.provider)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return ConnectResponse(authorize_url=authorize_url)
 
 
 @router.get("/{conversation_id}/turns/active")

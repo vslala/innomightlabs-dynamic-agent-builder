@@ -7,6 +7,7 @@ from fastapi import BackgroundTasks
 
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
+from src.agents.service import AgentService
 from src.apikeys.repository import ApiKeyRepository
 from src.blueprints import router as blueprints_router
 from src.blueprints.catalog import example_yaml
@@ -19,8 +20,12 @@ from src.blueprints.planner import plan_blueprint
 from src.blueprints.repository import DeploymentRepository
 from src.blueprints.validator import validate_blueprint
 from src.config import settings
+from src.dream.models import DreamSettings
+from src.dream.repository import DreamRepository
+from src.dream.service import DreamService
 from src.knowledge.models import KnowledgeBaseStatus
 from src.knowledge.repository import AgentKnowledgeBaseRepository, KnowledgeBaseRepository
+from src.scheduler.repository import SchedulerRepository
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
@@ -179,7 +184,7 @@ def test_schema_and_reference_are_public(test_client):
 def test_catalog_lists_kinds_skills_and_readiness(test_client, auth_headers):
     body = test_client.get("/blueprints/catalog", headers=auth_headers).json()
 
-    assert [kind["kind"] for kind in body["kinds"]] == ["KnowledgeBase", "Agent", "WidgetKey"]
+    assert [kind["kind"] for kind in body["kinds"]] == ["KnowledgeBase", "McpConnection", "Agent", "WidgetKey"]
     lead_capture = next(skill for skill in body["skills"] if skill["id"] == "lead_capture")
     assert lead_capture["shareable"] is True
     assert lead_capture["ready"] is True
@@ -227,3 +232,36 @@ def test_apply_is_rate_limited(test_client, auth_headers, launched, monkeypatch)
     response = test_client.post("/blueprints/deployments", headers=auth_headers, json={"yaml": SITE_AGENT, "params": PARAMS})
     assert response.status_code == 429
     assert response.headers["Retry-After"] == "120"
+
+
+def test_a_failed_build_leaves_no_dream_schedule_behind(dynamodb_table, monkeypatch):
+    """Creating an agent joins it to the owner's nightly dream schedule; rolling it back must take that away too."""
+    monkeypatch.setattr(knowledge_base_kind, "launch_crawl", lambda job_id, *_: None)
+    monkeypatch.setattr(settings, "require_pinecone", lambda: None)
+    ProviderSettingsRepository().save(
+        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+    )
+    DreamRepository().save_settings(DreamSettings(
+        user_email=TEST_USER_EMAIL, enabled=True, provider_name="Bedrock", model_name="claude-sonnet"
+    ))
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("key service down")
+
+    monkeypatch.setattr(WidgetKeyKind, "apply", fail)
+    validated = validate_blueprint(SITE_AGENT, PARAMS)
+    created: list[str] = []
+    real_create = AgentService.create
+
+    def remember(self, request, user_email):
+        agent = real_create(self, request, user_email)
+        created.append(agent.agent_id)
+        return agent
+
+    monkeypatch.setattr(AgentService, "create", remember)
+    deployment = apply_blueprint(validated, plan_blueprint(validated, TEST_USER_EMAIL), TEST_USER_EMAIL)
+
+    assert deployment.status == DeploymentStatus.FAILED
+    [agent_id] = created
+    schedule_id = DreamService().schedule_id_for(agent_id, TEST_USER_EMAIL)
+    assert SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule_id) is None

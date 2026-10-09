@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v1.json
+apiVersion: innomight/v1
+kind: Blueprint
+metadata:
+  name: product-finder
+  title: Product finder quiz
+  description: A guided quiz on your website that asks visitors a few questions with clickable choices and recommends the products or plans that fit them, from your own catalogue pages.
+
+params:
+  site_url:
+    type: url
+    label: Your website or shop
+    description: Where your products or plans are described. The agent reads these pages to make its recommendations.
+  business_name:
+    type: string
+    label: Business name
+    description: Used in the agent's name.
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  catalogue:
+    kind: KnowledgeBase
+    description: Your products or plans, read from the website.
+    name: "{{ params.business_name }} catalogue"
+    crawl:
+      url: "{{ params.site_url }}"
+      mode: site
+      max_pages: 10
+
+  finder:
+    kind: Agent
+    description: Runs the quiz and recommends what fits.
+    name: "{{ params.business_name }} product finder"
+    provider: "{{ params.provider }}"
+    instructions: |
+      You help visitors to {{ params.business_name }} find the right product or plan. Ask one question at a time
+      with a form of clickable choices (use case, budget, size, must-haves), three or four questions in all. Then
+      recommend at most three options from the catalogue knowledge base, each with one line on why it fits and a
+      link. If nothing fits, say so and offer to take their details.
+    knowledge_bases: [catalogue]
+    skills:
+      - id: lead_capture
+        available_to: [visitor, guest]
+
+  widget:
+    kind: WidgetKey
+    description: The quiz widget on your site.
+    agent: finder
+    allowed_origins: ["{{ params.site_url }}"]
+    allow_guests: true
+
+outputs:
+  snippet:
+    description: Paste this before </body> on the pages where the quiz should appear.
+    value: "{{ resources.widget.snippet }}"

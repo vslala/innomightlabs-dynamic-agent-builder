@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from src.builder.skill_inputs import covers, missing_inputs
 from src.blueprints.catalog import EXAMPLES_DIR, blueprint_json_schema, example_yaml, reference_markdown
 from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
 from src.blueprints.validator import validate_blueprint
@@ -27,8 +28,15 @@ def issue_at(issues: list[BlueprintIssue], path: str) -> BlueprintIssue:
 
 @pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.yaml")), ids=lambda p: p.stem)
 def test_every_example_validates_against_the_real_skills(path):
-    validated = validate_blueprint(path.read_text(encoding="utf-8"))
-    assert validated.order
+    """Apart from skill settings the person gives: examples leave those out, and the system asks for them."""
+    text = path.read_text(encoding="utf-8")
+    missing = missing_inputs(text)
+    try:
+        validated = validate_blueprint(text)
+    except BlueprintInvalid as e:
+        assert missing and all(covers(missing, issue.path) for issue in e.issues), e.issues
+        return
+    assert validated.order and not missing
 
 
 def test_site_agent_resolves_params_and_orders_resources():

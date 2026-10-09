@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v1.json
+apiVersion: innomight/v1
+kind: Blueprint
+metadata:
+  name: inbox-helper
+  title: Gmail inbox helper
+  description: An assistant in your dashboard that reads your Gmail, summarises what needs you, and archives or marks the rest. Needs your Google account connected first.
+
+params:
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  helper:
+    kind: Agent
+    description: Works through your inbox with you.
+    name: Inbox helper
+    provider: "{{ params.provider }}"
+    instructions: |
+      You help the person stay on top of their Gmail. When asked, search the inbox, summarise what needs a reply or a
+      decision, and group the rest. Archive or mark messages read only after the person agrees. Never delete
+      anything unless they ask for that exact message.
+    skills:
+      - id: google_mail
+
+outputs:
+  agent_id:
+    description: Open the helper in the dashboard and ask what's waiting in your inbox.
+    value: "{{ resources.helper.id }}"

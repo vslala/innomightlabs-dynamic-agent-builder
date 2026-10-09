@@ -64,6 +64,7 @@ def plan_blueprint(validated: ValidatedBlueprint, user_email: str) -> Plan:
                                                 hint="Leave `id` out to create a new one."))
             existing = None
         if existing is None:
+            ctx.created.add(name)
             change = Change(action=Action.CREATE)
             summary = kind.describe(name, spec)
         else:

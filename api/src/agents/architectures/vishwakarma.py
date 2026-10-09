@@ -27,6 +27,7 @@ from src.agents.book import Book, pages_in_view
 from src.blueprints.book import blueprint_book
 from src.builder.models import BuilderSession
 from src.builder.repository import BuilderSessionRepository
+from src.builder.skill_inputs import absorb_submission
 from src.builder.tools import build_builder_tool_registry
 from src.config import settings
 from src.llm.conversation_strategy import FixedWindowStrategy
@@ -102,6 +103,8 @@ class VishwakarmaArchitecture(AgentArchitecture):
         session.turn += 1
         in_view = set(pages_in_view(session.opened_pages, session.turn, self.page_retention_turns))
         session.opened_pages = {page_id: at for page_id, at in session.opened_pages.items() if page_id in in_view}
+        # Answers to a skill-settings form go into the draft here, by the system, before Ada sees the turn.
+        absorb_submission(session, user_message)
         self.sessions.save(session)
         state = AgentTurnState(
             owner_email=owner_email,

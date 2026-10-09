@@ -68,6 +68,12 @@ class PlanContext:
     user_email: str
     #: Resources matched so far, by blueprint name, so later ones can resolve references to them.
     matched: dict[str, Existing] = field(default_factory=dict)
+    #: Resources planned so far that will be created, by blueprint name. They have no id until apply.
+    created: set[str] = field(default_factory=set)
+
+    def ids(self) -> dict[str, str]:
+        """Blueprint name → id, for everything matched so far."""
+        return {name: existing.id for name, existing in self.matched.items()}
 
 
 @dataclass
@@ -105,6 +111,10 @@ class ResourceKind(Generic[SpecT]):
     spec_model: ClassVar[type[BaseModel]]
     #: Attribute names `apply` fills in, listed in the catalog and checked in `outputs`.
     exposes: ClassVar[tuple[str, ...]]
+
+    def page_sections(self) -> list[str]:
+        """Extra Markdown for this kind's page in Ada's book, beyond the fields its spec model gives."""
+        return []
 
     def validate(self, name: str, spec: SpecT) -> list[BlueprintIssue]:
         """Checks that need nothing but the spec. Run with every validation."""

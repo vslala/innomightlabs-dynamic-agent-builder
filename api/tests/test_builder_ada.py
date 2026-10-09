@@ -321,7 +321,7 @@ def test_the_drawing_shows_each_resource_and_how_they_connect(account):
     assert [(card.name, card.label, card.depth) for card in drawing.cards] == [
         ("site_kb", "Knowledge base", 0), ("assistant", "Agent", 1), ("widget", "Chat widget", 2),
     ]
-    assert drawing.edges == [("site_kb", "assistant"), ("assistant", "widget")]
+    assert drawing.edges == [("site_kb", "assistant", "knowledge for"), ("assistant", "widget", "chats through")]
     assert drawing.cards[2].title == "Acme assistant widget"
     assert ("Business name", "Acme") in drawing.params
     page = render_drawing(drawing)

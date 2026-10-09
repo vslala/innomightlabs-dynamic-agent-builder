@@ -126,6 +126,170 @@ flowchart LR
   - how often she reopens them;
   - plan issues per build.
 
+**Skills by what they need before they work.** The book's skills come in four chapters, easiest first. A skill's
+tier is read from its manifest by a list of rules (`SETUP_RULES` in `blueprints/skills_schema.py`, one selection
+function `setup_for`), never listed per skill. The hardest need decides:
+
+| Tier | Rule | Skills today | What Ada does |
+| --- | --- | --- | --- |
+| `ready` | Nothing below applies | `agent_invocation` and `agent2agent_client` (their settings are Ada's), `file_system`, `html_canvas`, `image_generation`, `lead_capture`, `python_code_execution`, `rest_template` (its only secret is optional), `scheduler`, `upload_file` | Adds it, writing any settings that are hers |
+| `settings` | A required setting only the person knows | `send_email`, `wordpress_search` | Leaves those settings out; the system asks the person for them |
+| `account` | `requires_oauth` or `connectors` | `google_mail`, `google_drive`, `google_ads` | Adds it once the account is connected, otherwise sends them to Connectors |
+| `secrets` | A required secret | `aws_cli`, `riot_lol_api_client`, `league_insights_report` | Not buildable yet: sends them to the Skills tab (the setup panel, phase 1, will close this) |
+
+The `settings` tier is built end to end:
+
+- **Settings that name an agent.** A setting whose options are the person's agents (`options_source: agents`,
+  e.g. `agent_invocation.target_agent_id`) may name an Agent in the same blueprint instead of an id.
+  - The validator makes it a dependency, so that agent is built first. It rejects naming the agent itself, a
+    resource that isn't an Agent, or one being removed.
+  - The plan checks everything else about the install. `SkillService.check_install(pending_fields=...)` skips only
+    the ownership check for an agent that doesn't exist yet.
+  - Apply swaps the name for the new id (`skill_config(entry, ids)` in `kinds/agent.py`), and the drawing wires the
+    two agents.
+- **Skills installed more than once.** Entries match installs by installed id (`install_key`, via
+  `installed_skill_id_for`), so two `send_email` entries to different recipients are two installs. Before, they
+  collapsed into one.
+- **The system asks for settings, not Ada** (`api/src/builder/skill_inputs.py`). Ada writes `- id: send_email`
+  and plans. `plan_blueprint` does the rest, generically from the manifests:
+
+  ```mermaid
+  sequenceDiagram
+      participant A as Ada
+      participant T as plan_blueprint
+      participant P as Person
+      participant V as Vishwakarma turn
+      A->>T: plan (skill without config)
+      T->>T: fill earlier answers · missing_inputs(draft)
+      alt other validation issues
+          T-->>A: issues (fixed before the person is asked)
+      else a skill is missing settings
+          T-->>P: form "Set up Send Email for Acme assistant"<br/>from the manifest's fields
+          T-->>A: needs_input: say one line, stop
+          P->>V: form submission
+          V->>V: absorb_submission: validate with the manifest,<br/>keep on session.skill_inputs, fill the draft
+          A->>T: plan (no arguments)
+          Note over T: next skill's form, or…
+      end
+      T-->>P: the plan and approval form, as before
+  ```
+
+  *One skill at a time, in draft order. Issues about the missing settings are left out of what Ada sees; other
+  issues go to her first, so the person is only asked once the blueprint is sound.*
+
+  - **Who supplies a setting** is read from the manifest by `SUPPLIER_RULES` (`blueprints/skills_schema.py`):
+    - `attr.supplied_by` wins when the skill author sets it;
+    - otherwise a setting that names an agent, or is exposed to the runtime (e.g. "when should this agent be
+      invoked?"), is **Ada's**. It's the build's design, which she knows from the request;
+    - anything else is **the person's** (recipients, a site address).
+
+    *Learned the hard way.* Asking the person for every setting meant building a four-agent team produced four
+    "Set up Invoke Agent" forms asking which agent to pick, for agents they had just described to Ada. Now
+    `agent_invocation` is in the `ready` tier, and its page says "You write: `target_agent_id`,
+    `usage_description`".
+  - **Missing** means a required, non-secret person's setting (`SkillVariant.person_settings`) that the entry's
+    `config` lacks, for skills outside the `secrets` tier. A missing Ada's setting is an ordinary issue that goes
+    back to her with its page. Settings a recipe or a loaded agent already has are kept.
+  - **Forms say why.** The first field's help reads "Acme assistant will use Send Email: …", from the manifest.
+  - **A form the draft no longer needs** stops being waited on at the next plan.
+  - **The form** is built from the manifest's own `FormInput`s, through the Interactive Forms module, so the chat
+    renders it like any form. Option sources are hydrated. Agent pickers also offer the agents this build creates,
+    "(in this build)", by blueprint name. Entries of a repeatable skill get their own form, "(2)".
+  - **Answers** are taken at the start of the next turn, before Ada runs (`absorb_submission`, from the session's
+    `pending_input`). They're checked with `registry.validate_config`. A bad answer keeps the form pending with the
+    reason, shown on the form next time.
+  - **They outlive Ada's edits.** `session.skill_inputs` is keyed by `<agent>/<skill id>/<n>`, and every plan fills
+    the answers back in, so Ada resending her YAML doesn't lose them. `load_agent` clears them.
+  - **`plan_blueprint` takes no arguments** to plan the draft as it is.
+  - **Ada's prompt:** "Skill settings are not yours". Skill pages and examples have no `config`. Pages say what
+    the system will ask for, and `needs_input` tells her to say one line and stop.
+  - **Not in the chat: secrets.** A form submission is a chat message, so skills with required secrets stay in the
+    `secrets` tier until the secure setup panel ([§3](#3-setup-requirements)) exists.
+- **Recipes (Ada's ideas): ten**, one per kind of build that works today. Each is an example blueprint in
+  `api/src/blueprints/examples/`.
+
+  | Recipe | Uses |
+  | --- | --- |
+  | Website support agent | KB, `lead_capture`, widget |
+  | Documentation assistant | KB |
+  | Team of agents | two agents, `agent_invocation` naming the other |
+  | Lead qualifier with email alerts | KB, `lead_capture`, `send_email`, widget |
+  | Product finder quiz | KB, `lead_capture` choice forms, widget |
+  | WordPress blog companion | `wordpress_search`, widget |
+  | Data and report studio | `python_code_execution`, `html_canvas`, `upload_file` |
+  | Creative image studio | `image_generation`, `html_canvas` |
+  | Personal follow-up assistant | `scheduler`, `send_email` |
+  | Gmail inbox helper | `google_mail` (account tier) |
+
+  - Recipes leave skill settings out, as Ada does, so the system asks for them. The examples test accepts
+    validation issues only where `missing_inputs` covers them.
+  - Ideas are listed by file name. Add an order to `metadata` if the brainstorm list needs one.
+- **Still to do in this tier:** `agent2agent_client` also needs the account's A2A domain allowlist. The plan
+  reports it as a blocker (from `check_install`), but there's no way to build it yet; that's the consent surface in
+  [§3](#3-setup-requirements).
+- **Tests:** `api/tests/test_blueprints_skill_setup.py` and `api/tests/test_builder_skill_inputs.py`.
+
+**MCP connections (`McpConnection`), and Tavily web search.** Built ahead of the rest of
+[§2.2](#22-mcpconnection), and simpler: a blueprint never creates or stores a connection.
+
+- **Tavily preset:** `api/src/connectors/mcp/providers/tavily.py`, `https://mcp.tavily.com/mcp/`.
+  - Tavily's authorization server offers dynamic client registration (`/register`) with PKCE, so the preset is
+    `DiscoveredOAuth(register_client=True)`, like Atlassian. No API key or OAuth app is needed: the person signs in
+    to Tavily once.
+  - It appears on the Connectors page too.
+- **The spec:** `kind: McpConnection` with `provider` (an enum read from the preset catalog, `PROVIDERS`) or `id`,
+  and an optional `name`. Agents get `mcp_connections: [...]` and `remove_mcp_connections: [...]`.
+- **The kind** (`blueprints/kinds/mcp_connection.py`) only finds a connection on the account:
+  - by `id`, else the ready one for its provider;
+  - it is never "created";
+  - an unconnected provider is a plan blocker, a safety net, because the system asks first (below);
+  - `remove: true` is rejected, because the connection belongs to the whole account;
+  - its book page lists every provider and whether it can be connected from the chat (`page_sections`, a new kind
+    hook).
+- **The agent kind** links new connections (`enable_for_agent`), diffs them ("give it the Tavily tools"), takes
+  them away (`remove_mcp_connections`, "take the Tavily tools away"), rolls links back on failure, and exports them.
+- **The system connects, not Ada** (`api/src/builder/connections.py`):
+
+  ```mermaid
+  sequenceDiagram
+      participant A as Ada
+      participant T as plan_blueprint
+      participant C as Chat (ConnectAccountCard)
+      participant R as POST /builder/{id}/connect
+      participant P as Tavily (popup)
+      A->>T: plan (McpConnection provider: tavily)
+      T-->>C: connect_request → CONNECT_REQUEST event
+      T-->>A: needs_connection: say one line, stop
+      C->>R: person clicks "Connect Tavily"
+      R->>R: install_provider (DCR) or start_oauth
+      R-->>C: authorize_url
+      C->>P: window.open popup
+      P-->>C: /dashboard/oauth/done → postMessage(result), close
+      C->>A: "I've connected Tavily."
+      A->>T: plan (no arguments) → the plan, as before
+  ```
+
+  *The popup's return page sits inside the dashboard, so `OAuthReturn` completes the sign-in there, signed in, as
+  for every connect flow. The chat believes only messages from its own origin. If the provider cuts the popup's
+  link to the chat, the card's "I've signed in" button carries on, and the plan checks for itself.*
+
+  - The order is accounts first, then skill settings, then the plan.
+  - Only presets that need nothing typed in are connected from the chat. One that needs the person's own OAuth
+    app (GitHub, Canva, Google Ads) is left to the Connectors page, and the plan's blocker says so.
+- **SPA:**
+  - `spa/src/components/chat/ConnectAccountCard.tsx`;
+  - `spa/src/services/builder/connect.ts` (origin and type checks, tested);
+  - `spa/src/pages/dashboard/oauth/OAuthPopupDone.tsx` at `/dashboard/oauth/done`;
+  - `SSEEventType.CONNECT_REQUEST` and `BuilderApiService.connect`.
+- **Drawing:** an MCP card, a "tools for" wire, and "Uses tools from 1 connection" on the agent.
+- **Recipe:** `web-research-team` (Web research team): Tavily, a researcher that uses it, and a lead that
+  delegates and writes HTML reports.
+- **Not yet:**
+  - sharing a connection's tools with widget visitors (the sharing disclaimer is a consent step);
+  - custom MCP servers;
+  - the card isn't kept on the message, so after a reload, planning again shows it again.
+- **Tests:** `api/tests/test_blueprints_mcp.py`, `spa/src/services/builder/connect.test.ts`.
+
 ## Context and problem
 
 Ada's pipeline (validate, then plan, then approve, then apply) is sound, and it updates rather than duplicates (see

@@ -71,6 +71,22 @@ class UiFormRender:
         )
 
 
+class ConnectRequest:
+    """The system asking the person to connect an account; the chat shows a card with a Connect button."""
+
+    def interpret(self, payload: dict[str, Any]) -> InterpretedToolResult | None:
+        connect = payload.get("connect")
+        if payload.get("type") != "connect_request" or not isinstance(connect, dict):
+            return None
+        return InterpretedToolResult(
+            event=SSEEvent(
+                event_type=SSEEventType.CONNECT_REQUEST,
+                content=str(connect.get("title") or "Connect an account"),
+                connect=connect,
+            )
+        )
+
+
 class _CanvasArtifactPayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -157,6 +173,7 @@ class AuthRequiredCredential:
 #: contributes. A result can legitimately match more than one.
 INTERPRETERS: list[ToolResultInterpreter] = [
     UiFormRender(),
+    ConnectRequest(),
     CanvasArtifact(),
     AttachedCanvas(),
     AuthRequiredCredential(),

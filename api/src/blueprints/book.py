@@ -5,7 +5,8 @@ blueprint adds its page with no change here or in Ada's prompt:
 
 - `guide/blueprint`: the document's shape, from the `Blueprint` model.
 - `kind/<Kind>`: one per entry in `RESOURCE_KINDS`, from its spec model and the examples that use it.
-- `skill/<id>`: one per skill manifest, from the same variants the schema and the validator use.
+- `skill/<id>`: one per skill manifest, from the same variants the schema and the validator use. Skills come in
+  one chapter per `SkillSetup` tier (what they need before they work), easiest first.
 - `recipe/<name>`: one per example blueprint, which is also one of Ada's ideas.
 
 See docs/LLD-ada-capabilities.md.
@@ -23,7 +24,7 @@ from pydantic import BaseModel
 from src.agents.book import Book, Chapter, Page
 from src.blueprints.catalog import build_ideas, field_rows, markdown_table, skill_config_rows
 from src.blueprints.kinds import RESOURCE_KINDS, ResourceKind
-from src.blueprints.skills_schema import SkillVariant, requirement_note, skill_variants
+from src.blueprints.skills_schema import SkillSetup, SkillVariant, requirement_note, skill_variants
 from src.blueprints.spec import AVAILABLE_TO_DESCRIPTION, Blueprint, Metadata, OutputSpec, ParamSpec
 from src.skills.disclosure import summarize
 from src.skills.registry import SkillRegistry
@@ -129,6 +130,7 @@ def kind_page(kind: ResourceKind[Any]) -> Page:
         body += [f"### {nested.__name__}", *([purpose] if purpose else []), *markdown_table(field_rows(nested)), ""]
     if "skills" in model.model_fields:
         body += ["Each skill has its own page in the Skills chapter with its settings.", ""]
+    body += kind.page_sections()
     body += [f"Outputs can use: {', '.join(f'`{name}`' for name in kind.exposes)}.", ""]
     example = kind_example(kind.kind)
     if example:
@@ -154,43 +156,85 @@ class KindPages:
 # --- Skills ---------------------------------------------------------------------------------------------------
 
 
-def _required_secrets(variant: SkillVariant) -> list[str]:
-    manifest = variant.skill.manifest
-    return [
-        field.label
-        for field in manifest.form
-        if field.name in variant.secret_fields and not field.is_optional and field.value is None
-    ]
+#: Each tier's chapter: its title, and what Ada does with the skills in it.
+SKILL_CHAPTERS: dict[SkillSetup, tuple[str, str]] = {
+    SkillSetup.READY: (
+        "Skills: ready to use",
+        "Nothing to set up: add them to an Agent's `skills` and they work.",
+    ),
+    SkillSetup.SETTINGS: (
+        "Skills: need settings",
+        "Each needs settings only the person knows, listed on its page. Leave those out: when you plan, the system "
+        "asks the person in a form, one skill at a time, and puts their answers in the draft.",
+    ),
+    SkillSetup.ACCOUNT: (
+        "Skills: need a connected account",
+        "Each works through an account the person connects, such as a Google sign-in. One marked NOT READY isn't "
+        "connected: don't add it; tell them to connect it on the Connectors page, then add it.",
+    ),
+    SkillSetup.SECRETS: (
+        "Skills: need a secret (not buildable yet)",
+        "Each needs a secret such as an API key, which can't go in a blueprint. Don't add them; tell the person to "
+        "install them from the agent's Skills tab.",
+    ),
+}
 
 
 def skill_example(variant: SkillVariant) -> str:
+    """The settings Ada writes, and none of the person's: the system asks for those."""
     manifest = variant.skill.manifest
     lines = ["skills:", f"  - id: {manifest.id}"]
     if variant.shareable:
         lines.append("    available_to: [visitor]   # only if people other than you should use it")
-    required = [row for row in skill_config_rows(variant) if row["required"]]
-    if required:
+    if variant.builder_settings:
         lines.append("    config:")
-        for row in required:
-            lines.append(f"      {row['name']}: <{row['description'].split('.')[0]}>")
+        for field in variant.builder_settings:
+            value = "<an Agent's name in this blueprint>" if field.name in variant.agent_fields else f"<{field.label}>"
+            lines.append(f"      {field.name}: {value}")
     return "\n".join(lines)
 
 
 def skill_note(variant: SkillVariant, ready: bool) -> str:
-    required_secrets = _required_secrets(variant)
-    if required_secrets:
-        return (
-            f"Needs {', '.join(required_secrets)}, which can't go in a blueprint: don't add it; tell the person to "
-            "install it from the agent's Skills tab."
-        )
-    if not ready:
+    """Said in the index too, so Ada knows before opening the page."""
+    if variant.setup == SkillSetup.SECRETS:
+        return f"Needs {', '.join(field.label for field in variant.required_secrets)}: not buildable yet."
+    if not ready and variant.setup == SkillSetup.ACCOUNT:
         return "NOT READY: the person must connect an account first; don't add it, tell them."
+    if not ready:
+        return "NOT READY: it isn't available on InnomightLabs right now; don't add it."
     return ""
+
+
+def _settings_section(variant: SkillVariant) -> list[str]:
+    """Which settings Ada writes and which the system asks the person for, read from the manifest."""
+    lines = []
+    if variant.builder_settings:
+        names = ", ".join(f"`{field.name}` ({field.label})" for field in variant.builder_settings)
+        lines.append(
+            f"- You write: {names}. They come from what the person asked for. A setting naming an agent takes an "
+            "Agent in this blueprint by its resource name, or an agent id from list_my_agents."
+        )
+    if variant.person_settings and variant.setup != SkillSetup.SECRETS:
+        labels = ", ".join(field.label for field in variant.person_settings)
+        lines.append(
+            f"- The person gives: {labels}. Leave these out of `config`: when you plan, the system asks them in a "
+            "form. Don't ask for them yourself."
+        )
+    manifest = variant.skill.manifest
+    if manifest.repeatable:
+        lines.append("- It can be added more than once: list it again, and the person sets each one up.")
+    return ["### Settings", *lines, ""] if lines else []
 
 
 def skill_page(variant: SkillVariant, ready: bool = True) -> Page:
     manifest = variant.skill.manifest
-    body = [f"Add it to an agent's `skills` as `- id: {manifest.id}`.", "", manifest.description.strip(), ""]
+    title, _ = SKILL_CHAPTERS[variant.setup]
+    body = [
+        f"Add it to an agent's `skills` as `- id: {manifest.id}`. Setup: {title.split(': ', 1)[1]}.",
+        "",
+        manifest.description.strip(),
+        "",
+    ]
     requirements = requirement_note(variant.skill)
     if requirements:
         body += [requirements, ""]
@@ -198,6 +242,7 @@ def skill_page(variant: SkillVariant, ready: bool = True) -> Page:
         body += [f"`available_to`: {AVAILABLE_TO_DESCRIPTION}", ""]
     else:
         body += ["Only the owner can use it, so it takes no `available_to`.", ""]
+    body += _settings_section(variant)
     rows = skill_config_rows(variant)
     body += ["### Settings (`config`)", *(markdown_table(rows) if rows else ["None."]), ""]
     if variant.secret_fields:
@@ -222,17 +267,24 @@ def skill_page(variant: SkillVariant, ready: bool = True) -> Page:
 
 
 class SkillPages:
-    def __init__(self, registry: Optional[SkillRegistry] = None, ready: Optional[dict[str, bool]] = None):
+    """One tier's skills."""
+
+    def __init__(
+        self, setup: SkillSetup, registry: Optional[SkillRegistry] = None, ready: Optional[dict[str, bool]] = None
+    ):
+        self.setup = setup
         self.registry = registry
         self.ready = ready or {}
 
     def chapter(self) -> Chapter:
+        title, intro = SKILL_CHAPTERS[self.setup]
         return Chapter(
-            title="Skills",
-            intro="What an agent can do besides answering: put any of these in an Agent's `skills`.",
+            title=title,
+            intro=intro,
             pages=tuple(
                 skill_page(variant, self.ready.get(skill_id, True))
                 for skill_id, variant in skill_variants(self.registry).items()
+                if variant.setup == self.setup
             ),
         )
 
@@ -267,7 +319,8 @@ class RecipePages:
 
 def blueprint_book(registry: Optional[SkillRegistry] = None, ready: Optional[dict[str, bool]] = None) -> Book:
     """`ready` marks skills the person can't use yet (an account to connect), by skill id."""
-    return Book.from_sources([GuidePages(), KindPages(), SkillPages(registry, ready), RecipePages()])
+    skills = [SkillPages(setup, registry, ready) for setup in SkillSetup]
+    return Book.from_sources([GuidePages(), KindPages(), *skills, RecipePages()])
 
 
 # --- Issues point at pages ------------------------------------------------------------------------------------

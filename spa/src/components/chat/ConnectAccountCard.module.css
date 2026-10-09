@@ -1,0 +1,38 @@
+.card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  max-width: 460px;
+  margin: 8px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(103, 232, 249, 0.3);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(12, 58, 116, 0.55), rgba(8, 40, 79, 0.35));
+  animation: card-in 0.35s ease both;
+}
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  color: #67e8f9;
+  background: rgba(103, 232, 249, 0.12);
+}
+
+.body { min-width: 0; }
+.title { font-weight: 600; color: var(--text-primary); }
+.description { margin: 4px 0 0; font-size: 0.875rem; color: var(--text-secondary); }
+.error { margin: 6px 0 0; font-size: 0.875rem; color: #fb7185; }
+.actions { margin-top: 10px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card { animation: none; }
+}
