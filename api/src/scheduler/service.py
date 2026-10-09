@@ -7,7 +7,6 @@ from typing import Any
 
 from src.scheduler.backends import get_scheduler_backend
 from src.scheduler.backends.base import SchedulerBackend
-from src.scheduler.cron import ScheduleExpression, next_run_at, validate_schedule_expression
 from src.scheduler.models import (
     CreateScheduleRequest,
     Schedule,
@@ -17,6 +16,8 @@ from src.scheduler.models import (
 )
 from src.scheduler.repository import SchedulerRepository
 from src.scheduler.targets import TARGET_VALIDATORS
+from src.scheduler.cron import ScheduleExpressionError
+from src.scheduler.timing import timing_for
 
 
 class SchedulerValidationError(ValueError):
@@ -36,8 +37,6 @@ class SchedulerService:
 
     def create_schedule(self, body: CreateScheduleRequest, owner_email: str, created_by: str) -> Schedule:
         self._validate_target(body.target_type.value, body.target)
-        expression = ScheduleExpression(body.cron_expression, body.timezone)
-        validate_schedule_expression(expression)
         status = ScheduleStatus.ACTIVE if body.enabled else ScheduleStatus.PAUSED
         schedule_kwargs: dict[str, Any] = {}
         if body.schedule_id:
@@ -49,16 +48,17 @@ class SchedulerService:
             owner_email=owner_email,
             name=body.name,
             status=status,
-            cron_expression=body.cron_expression.strip(),
+            cron_expression=(body.cron_expression or "").strip(),
+            run_at=body.run_at,
             timezone=body.timezone or "UTC",
             target_type=body.target_type,
             target=body.target,
             source_type=body.source_type,
             source_ref=body.source_ref,
-            next_run_at=next_run_at(expression) if status == ScheduleStatus.ACTIVE else None,
             created_by=created_by,
             **schedule_kwargs,
         )
+        self._time(schedule)
         saved = self.repository.save_schedule(schedule)
         if saved.status == ScheduleStatus.ACTIVE:
             self.backend.upsert(saved)
@@ -73,8 +73,10 @@ class SchedulerService:
         schedule = self.get_schedule(schedule_id, owner_email)
         if body.name is not None:
             schedule.name = body.name
-        if body.cron_expression is not None:
-            schedule.cron_expression = body.cron_expression.strip()
+        if body.cron_expression:
+            schedule.cron_expression, schedule.run_at = body.cron_expression.strip(), None
+        if body.run_at is not None:
+            schedule.run_at, schedule.cron_expression = body.run_at, ""
         if body.timezone is not None:
             schedule.timezone = body.timezone or "UTC"
         if body.target is not None:
@@ -85,13 +87,7 @@ class SchedulerService:
         if body.enabled is not None:
             schedule.status = ScheduleStatus.ACTIVE if body.enabled else ScheduleStatus.PAUSED
 
-        expression = ScheduleExpression(schedule.cron_expression, schedule.timezone)
-        validate_schedule_expression(expression)
-        schedule.next_run_at = (
-            next_run_at(expression)
-            if schedule.status == ScheduleStatus.ACTIVE
-            else None
-        )
+        self._time(schedule)
         saved = self.repository.save_schedule(schedule)
         if saved.status == ScheduleStatus.ACTIVE:
             self.backend.upsert(saved)
@@ -101,6 +97,8 @@ class SchedulerService:
 
     def pause_schedule(self, schedule_id: str, owner_email: str) -> Schedule:
         schedule = self.get_schedule(schedule_id, owner_email)
+        if schedule.status == ScheduleStatus.COMPLETED:
+            return schedule  # already done; pausing would make it look as if it could run again
         schedule.status = ScheduleStatus.PAUSED
         schedule.next_run_at = None
         saved = self.repository.save_schedule(schedule)
@@ -109,9 +107,10 @@ class SchedulerService:
 
     def resume_schedule(self, schedule_id: str, owner_email: str) -> Schedule:
         schedule = self.get_schedule(schedule_id, owner_email)
-        expression = ScheduleExpression(schedule.cron_expression, schedule.timezone)
+        if schedule.status == ScheduleStatus.COMPLETED:
+            raise SchedulerValidationError("This schedule already ran once; make a new one")
         schedule.status = ScheduleStatus.ACTIVE
-        schedule.next_run_at = next_run_at(expression)
+        self._time(schedule)
         saved = self.repository.save_schedule(schedule)
         self.backend.resume(saved)
         return saved
@@ -132,13 +131,30 @@ class SchedulerService:
         return self.repository.list_schedules(owner_email)
 
     def mark_dispatched(self, schedule: Schedule, scheduled_for: datetime) -> Schedule:
+        """After a run, whatever its outcome: a one-time schedule is completed, a recurring one moves on."""
         schedule.last_run_at = datetime.now(timezone.utc)
+        timing = timing_for(schedule)
+        if schedule.status == ScheduleStatus.ACTIVE and timing.finishes_after_run:
+            schedule.status, schedule.next_run_at = ScheduleStatus.COMPLETED, None
+            saved = self.repository.save_schedule(schedule)
+            self.backend.delete(saved)
+            return saved
         if schedule.status == ScheduleStatus.ACTIVE:
-            schedule.next_run_at = next_run_at(
-                ScheduleExpression(schedule.cron_expression, schedule.timezone),
-                now=scheduled_for,
-            )
+            schedule.next_run_at = timing.next_run(schedule, scheduled_for)
         return self.repository.save_schedule(schedule)
+
+    def _time(self, schedule: Schedule) -> None:
+        """Checks the schedule's timing and sets when it next runs (nothing, unless it's active)."""
+        now = datetime.now(timezone.utc)
+        timing = timing_for(schedule)
+        if schedule.status != ScheduleStatus.ACTIVE:
+            schedule.next_run_at = None
+            return
+        try:
+            timing.validate(schedule, now)
+        except ScheduleExpressionError as exc:
+            raise SchedulerValidationError(str(exc)) from None
+        schedule.next_run_at = timing.next_run(schedule, now)
 
     def _validate_target(self, target_type: str, target: dict) -> None:
         try:

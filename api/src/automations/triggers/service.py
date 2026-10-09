@@ -7,7 +7,7 @@ from src.automations.models import (
     AutomationTriggerType,
 )
 from src.automations.triggers.models import ScheduleTriggerConfig
-from src.scheduler.models import CreateScheduleRequest, ScheduleTargetType, UpdateScheduleRequest
+from src.scheduler.models import CreateScheduleRequest, ScheduleStatus, ScheduleTargetType, UpdateScheduleRequest
 from src.scheduler.service import SchedulerService, SchedulerValidationError
 
 
@@ -34,12 +34,18 @@ class AutomationTriggerLifecycleService:
             "trigger_id": trigger.trigger_id,
         }
 
-        if self.scheduler_service.repository.find_schedule(owner_email, schedule_id):
+        existing = self.scheduler_service.repository.find_schedule(owner_email, schedule_id)
+        if existing and existing.status == ScheduleStatus.COMPLETED and existing.run_at == config.run_at:
+            # Its one run already happened. Saving or re-activating the automation mustn't run it again, or
+            # fail because the moment is now in the past; giving the trigger a new run_at schedules it again.
+            return
+        if existing:
             self.scheduler_service.update_schedule(
                 schedule_id,
                 UpdateScheduleRequest(
                     name=trigger.name,
-                    cron_expression=config.cron_expression,
+                    cron_expression=config.cron_expression or None,
+                    run_at=config.run_at,
                     timezone=config.timezone,
                     target=target,
                     source_ref=source_ref,
@@ -53,7 +59,8 @@ class AutomationTriggerLifecycleService:
             CreateScheduleRequest(
                 schedule_id=schedule_id,
                 name=trigger.name,
-                cron_expression=config.cron_expression,
+                cron_expression=config.cron_expression or None,
+                run_at=config.run_at,
                 timezone=config.timezone,
                 target_type=ScheduleTargetType.AUTOMATION_RUN,
                 target=target,

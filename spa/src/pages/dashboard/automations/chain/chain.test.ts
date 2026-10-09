@@ -41,7 +41,7 @@ import {
   openTokenQuery,
   parseTokenPaths,
 } from "../../../../components/forms/smartValueTokens";
-import { describeCron, describeStep } from "./actionSummary";
+import { describeCron, describeRunAt, describeStep, describeTrigger } from "./actionSummary";
 import {
   compileCondition,
   describeParsedCondition,
@@ -781,6 +781,18 @@ describe("summaries", () => {
     expect(describeCron("30 6 * * *")).toBe("Every day at 06:30");
     expect(describeCron("0 9 * * 1")).toBe("Every Monday at 09:00");
     expect(describeCron("*/5 * * * *")).toBe("*/5 * * * *");
+  });
+
+  it("describes a one-time schedule trigger by its moment", () => {
+    const trigger = (config: Record<string, unknown>) =>
+      ({ type: "schedule", config }) as unknown as Parameters<typeof describeTrigger>[0];
+    expect(describeTrigger(trigger({ run_at: "2026-10-10T09:00", cron_expression: "", timezone: "Europe/London" }))).toBe(
+      "Once on 2026-10-10 at 09:00 · Europe/London"
+    );
+    expect(describeTrigger(trigger({ cron_expression: "0 9 * * 1", run_at: "", timezone: "UTC" }))).toBe(
+      "Every Monday at 09:00 · UTC"
+    );
+    expect(describeRunAt("next tuesday")).toBe("Once at next tuesday");
   });
 });
 
