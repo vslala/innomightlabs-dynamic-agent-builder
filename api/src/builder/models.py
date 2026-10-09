@@ -6,6 +6,15 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
+class PendingInput(BaseModel):
+    """The skill-settings form the system showed and is waiting on. See src/builder/skill_inputs.py."""
+
+    key: str
+    label: str
+    #: Why the last answers weren't accepted, shown on the form when it's asked again.
+    error: Optional[str] = None
+
+
 class BuilderSession(BaseModel):
     """
     One conversation with Ada. Holds the draft between turns: chat history keeps only the messages,
@@ -28,6 +37,9 @@ class BuilderSession(BaseModel):
     turn: int = 0
     #: Book pages Ada has open, with the turn each was last opened in. See src/agents/book.py.
     opened_pages: dict[str, int] = Field(default_factory=dict)
+    #: Skill settings the person gave through the system's forms, by skill entry key; every plan fills them in.
+    skill_inputs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    pending_input: Optional[PendingInput] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 

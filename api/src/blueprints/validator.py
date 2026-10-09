@@ -15,7 +15,7 @@ from pydantic import BaseModel, ValidationError
 from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
 from src.blueprints.kinds import kind_for
 from src.blueprints.parser import join_path, parse_yaml
-from src.blueprints.skills_schema import SkillVariant, skill_variants
+from src.blueprints.skills_schema import SkillVariant, agent_settings, skill_variants
 from src.blueprints.spec import (
     REF_KIND,
     REMOVES,
@@ -340,6 +340,21 @@ def check_references(blueprint: Blueprint) -> tuple[list[BlueprintIssue], list[s
                     ))
                 else:
                     depends_on.add(target)
+        if isinstance(resource, AgentSpec):
+            # A skill setting that names another Agent in the blueprint: that agent comes first.
+            for index, setting, value in agent_settings(resource):
+                path = f"resources.{name}.skills[{index}].config.{setting}"
+                referenced = blueprint.resources.get(value)
+                if referenced is None:
+                    continue  # an agent id, checked against the account by the plan
+                if value == name:
+                    issues.append(BlueprintIssue(path=path, message="An agent's skill can't name the agent itself."))
+                elif referenced.kind != "Agent":
+                    issues.append(BlueprintIssue(path=path, message=f"'{value}' is a {referenced.kind}, not an Agent."))
+                elif referenced.remove and not resource.remove:
+                    issues.append(BlueprintIssue(path=path, message=f"'{value}' is being removed, so this skill can't use it."))
+                else:
+                    depends_on.add(value)
         graph[name] = depends_on
     try:
         order = list(TopologicalSorter(graph).static_order())
@@ -436,10 +451,7 @@ def check_skills(blueprint: Blueprint, data: dict[str, Any], variants: dict[str,
                         hint="Remove it, and set it on the agent's Skills tab after apply.",
                     ))
                     config.pop(secret)
-            required_secrets = [
-                field_def.label for field_def in manifest.form
-                if field_def.name in variant.secret_fields and not field_def.is_optional and field_def.value is None
-            ]
+            required_secrets = [field_def.label for field_def in variant.required_secrets]
             if required_secrets:
                 issues.append(BlueprintIssue(
                     path=f"{path}.id",

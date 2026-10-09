@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v1.json
+apiVersion: innomight/v1
+kind: Blueprint
+metadata:
+  name: lead-qualifier
+  title: Lead qualifier with email alerts
+  description: Chats with your website's visitors, asks qualifying questions in a short form, and emails your sales team the moment a promising lead comes in.
+
+params:
+  site_url:
+    type: url
+    label: Your website
+    description: The homepage the agent should learn from, and where the chat widget goes.
+  business_name:
+    type: string
+    label: Business name
+    description: Used in the agent's name and in how it introduces itself.
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  site_kb:
+    kind: KnowledgeBase
+    description: What the agent knows about your offer, read from the website.
+    name: "{{ params.business_name }} website"
+    crawl:
+      url: "{{ params.site_url }}"
+      mode: site
+      max_pages: 10
+
+  qualifier:
+    kind: Agent
+    description: Answers questions, qualifies visitors and alerts sales.
+    name: "{{ params.business_name }} lead qualifier"
+    provider: "{{ params.provider }}"
+    instructions: |
+      You are the website assistant for {{ params.business_name }}. Answer questions from the website knowledge base.
+      When a visitor shows interest, show a short form asking for their name, email, company, budget and timeline,
+      and register them as a lead. If they look like a good fit, email the sales team a two-line summary of who they
+      are and what they need.
+    knowledge_bases: [site_kb]
+    skills:
+      - id: lead_capture
+        available_to: [visitor, guest]
+      - id: send_email
+        available_to: [visitor, guest]
+
+  widget:
+    kind: WidgetKey
+    description: The chat widget on your site.
+    agent: qualifier
+    allowed_origins: ["{{ params.site_url }}"]
+    allow_guests: true
+
+outputs:
+  snippet:
+    description: Paste this before </body> on every page of your site.
+    value: "{{ resources.widget.snippet }}"
+  agent_id:
+    description: Open the agent in the dashboard to try it.
+    value: "{{ resources.qualifier.id }}"

@@ -9,12 +9,16 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from src.connectors.mcp.providers import PROVIDERS
 from src.knowledge.models import MAX_CRAWL_DEPTH, MAX_CRAWL_PAGES
 from src.skills.models import ActorKind
 
 API_VERSION = "innomight/v1"
 
 ResourceName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,39}$")]
+
+#: The MCP servers InnomightLabs has presets for, read from the preset catalog rather than listed again.
+McpProvider = Literal[tuple(PROVIDERS)]  # type: ignore[valid-type]
 
 #: Audiences a skill can be shared with, read from ActorKind rather than listed again.
 SharedAudience = Literal[tuple(kind.value for kind in ActorKind if kind is not ActorKind.OWNER)]  # type: ignore[valid-type]
@@ -140,6 +144,17 @@ class AgentSpec(ResourceBase):
         "themselves stay, with their content.",
         json_schema_extra={REF_KIND: "KnowledgeBase", REMOVES: True},
     )
+    mcp_connections: list[ResourceName] = Field(
+        default_factory=list,
+        description="MCP connections in this blueprint whose tools the agent can use, such as web search.",
+        json_schema_extra={REF_KIND: "McpConnection"},
+    )
+    remove_mcp_connections: list[ResourceName] = Field(
+        default_factory=list,
+        description="MCP connections in this blueprint to take away from the agent. The connection itself stays "
+        "on the account.",
+        json_schema_extra={REF_KIND: "McpConnection", REMOVES: True},
+    )
     remove_skills: list[str] = Field(
         default_factory=list,
         description="Skill ids to uninstall from the agent, with their settings and secrets. To only switch a "
@@ -168,9 +183,22 @@ class WidgetKeySpec(ResourceBase):
     )
 
 
-ResourceSpec = Union[KnowledgeBaseSpec, AgentSpec, WidgetKeySpec]
+class McpConnectionSpec(ResourceBase):
+    """A connection to an MCP server, such as Tavily web search, whose tools agents can use. It belongs to the
+    account, so one connection serves every agent linked to it."""
+
+    kind: Literal["McpConnection"] = Field(description="Which kind of resource to create.")
+    provider: McpProvider | None = Field(  # type: ignore[valid-type]
+        None,
+        description="Which ready-made MCP server to connect, such as `tavily`. If the account isn't connected to "
+        "it yet, the person signs in when you plan. Needed unless `id` names an existing connection.",
+    )
+    name: str | None = Field(None, description="Label in the dashboard. Defaults to the provider's name.")
+
+
+ResourceSpec = Union[KnowledgeBaseSpec, AgentSpec, WidgetKeySpec, McpConnectionSpec]
 Resource = Annotated[ResourceSpec, Field(discriminator="kind")]
-RESOURCE_SPECS: tuple[type[ResourceBase], ...] = (KnowledgeBaseSpec, AgentSpec, WidgetKeySpec)
+RESOURCE_SPECS: tuple[type[ResourceBase], ...] = (KnowledgeBaseSpec, AgentSpec, WidgetKeySpec, McpConnectionSpec)
 
 
 class OutputSpec(Strict):

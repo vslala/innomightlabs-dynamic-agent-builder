@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v1.json
+apiVersion: innomight/v1
+kind: Blueprint
+metadata:
+  name: report-studio
+  title: Data and report studio
+  description: An assistant in your dashboard that crunches data you paste or describe with real Python, then turns the results into interactive HTML reports and charts you can open and keep.
+
+params:
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  analyst:
+    kind: Agent
+    description: Runs the numbers and builds the reports.
+    name: Report studio
+    provider: "{{ params.provider }}"
+    instructions: |
+      You are a data analyst. When the person gives you data or a question, work it out with Python instead of
+      guessing, and show the key numbers. When a result is worth keeping, build a clean, self-contained HTML report
+      with charts, and save longer outputs as files. Keep explanations short and plain.
+    skills:
+      - id: python_code_execution
+      - id: html_canvas
+      - id: upload_file
+
+outputs:
+  agent_id:
+    description: Open the studio in the dashboard and give it some data.
+    value: "{{ resources.analyst.id }}"

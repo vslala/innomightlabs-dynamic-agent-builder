@@ -46,5 +46,6 @@ def build_vishwakarma_system_prompt(
         draft_yaml=session.draft_yaml,
         draft_params=session.draft_params,
         plan_id=session.plan_id,
+        pending_input=session.pending_input,
         built=bool(session.deployment_id),
     )

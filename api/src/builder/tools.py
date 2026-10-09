@@ -24,7 +24,9 @@ from src.blueprints.planner import plan_blueprint
 from src.blueprints.repository import DeploymentRepository
 from src.blueprints.validator import validate_blueprint
 from src.builder.canvas import drawing_for, save_blueprint_canvas
-from src.builder.models import BuilderSession
+from src.builder.connections import connect_request, missing_connections
+from src.builder.models import BuilderSession, PendingInput
+from src.builder.skill_inputs import SkillInput, covers, fill_inputs, input_form, missing_inputs
 from src.builder.repository import BuilderSessionRepository
 from src.agents.repository import AgentRepository
 from src.apikeys.repository import ApiKeyRepository
@@ -54,10 +56,15 @@ def _forms_schema() -> dict[str, Any]:
 BLUEPRINT_INPUT = {
     "type": "object",
     "properties": {
-        "yaml": {"type": "string", "description": "The whole blueprint as YAML text."},
-        "params": {"type": "object", "description": "Values for the blueprint's params, by param name."},
+        "yaml": {
+            "type": "string",
+            "description": "The whole blueprint as YAML text. Leave it out to plan the current draft as it is.",
+        },
+        "params": {
+            "type": "object",
+            "description": "Values for the blueprint's params, by param name. Leave it out to keep the draft's.",
+        },
     },
-    "required": ["yaml", "params"],
 }
 
 
@@ -107,7 +114,9 @@ def builder_tool_definitions() -> list[dict[str, Any]]:
             "name": "plan_blueprint",
             "description": (
                 "Save the blueprint as the current draft, validate it and plan it against the person's account. "
-                "Returns issues to fix, blockers to explain, or a plan with an approval form for the person."
+                "If a skill needs settings from the person, the system asks them in a form first. Returns issues "
+                "to fix, blockers to explain, a skill form the person is filling in, or a plan with an approval "
+                "form for the person."
             ),
             "parameters": BLUEPRINT_INPUT,
         },
@@ -224,16 +233,26 @@ class BuilderTools:
 
     async def plan(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
         session = self._session(state)
-        yaml = tool_input.get("yaml")
-        params = tool_input.get("params") or {}
-        if not isinstance(yaml, str) or not yaml.strip() or not isinstance(params, dict):
-            raise ValueError("plan_blueprint needs `yaml` (the whole blueprint) and `params` (an object).")
+        yaml = tool_input.get("yaml") or session.draft_yaml
+        params = tool_input["params"] if isinstance(tool_input.get("params"), dict) else session.draft_params
+        if not isinstance(yaml, str) or not yaml.strip():
+            raise ValueError("plan_blueprint needs `yaml`, the whole blueprint: there's no draft yet.")
+        # The person's answers to earlier skill forms, whatever Ada's YAML says.
+        yaml = fill_inputs(yaml, session.skill_inputs)
         session.draft_yaml, session.draft_params, session.plan_id = yaml, params, None
+        missing = missing_inputs(yaml, params)
+        if session.pending_input and all(item.key != session.pending_input.key for item in missing):
+            # The form it waited on isn't needed any more (the draft changed, or the setting is Ada's to write).
+            session.pending_input = None
 
         try:
             validated = validate_blueprint(yaml, params)
         except BlueprintInvalid as e:
-            issues = self._pointing_at_pages(session, e.issues, yaml)
+            # Settings the person hasn't given yet aren't Ada's to fix; anything else is, before they're asked.
+            other = [issue for issue in e.issues if not covers(missing, issue.path)]
+            if not other and missing:
+                return self._ask_for_settings(session, missing, state)
+            issues = self._pointing_at_pages(session, other, yaml)
             self.sessions.save(session)
             return json.dumps({
                 "ok": False,
@@ -243,6 +262,25 @@ class BuilderTools:
                     "your prompt. Don't show these to the person."
                 ),
             })
+
+        # Accounts first: the person signs in, then gives any settings, then sees the plan.
+        connections = missing_connections(yaml, state.owner_email)
+        if connections:
+            self.sessions.save(session)
+            need = connections[0]
+            return json.dumps({
+                **connect_request(need, state.conversation_id),
+                "ok": False,
+                "needs_connection": {"provider": need.title, "connections_left": len(connections)},
+                "next": (
+                    f"The system is asking the person to connect {need.title} with a card under your message. "
+                    "Say one short line about what it gives the agent, and stop. When they say it's connected, "
+                    "call plan_blueprint with no arguments."
+                ),
+            })
+        if missing:
+            return self._ask_for_settings(session, missing, state)
+        session.pending_input = None
 
         plan = plan_blueprint(validated, state.owner_email)
         steps = [step.model_dump() for step in plan.steps]
@@ -282,6 +320,25 @@ class BuilderTools:
                 "the steps. Nothing is built until they choose 'Apply this plan'."
                 + (" This plan also removes things, which can't be undone: name each one plainly so they know "
                    "before they approve." if plan.removals else "")
+            ),
+        })
+
+    def _ask_for_settings(self, session: BuilderSession, missing: list[SkillInput], state: AgentTurnState) -> str:
+        """The form for the first skill still missing settings. One skill at a time, in draft order."""
+        item = missing[0]
+        pending = session.pending_input
+        error = pending.error if pending is not None and pending.key == item.key else None
+        session.pending_input = PendingInput(key=item.key, label=item.label)
+        self.sessions.save(session)
+        context = {"agent_id": state.agent_id, "conversation_id": state.conversation_id}
+        return json.dumps({
+            **input_form(item, session.draft_yaml or "", session.draft_params, state.owner_email, context, error),
+            "ok": False,
+            "needs_input": {"skill": item.skill_name, "agent": item.agent_name, "skills_left": len(missing)},
+            "next": (
+                f"The system is asking the person for {item.skill_name}'s settings in a form under your message. "
+                "Say one short line, such as what the skill will do for them. Don't ask for these settings or "
+                "fill them in yourself. When their message is that form, call plan_blueprint with no arguments."
             ),
         })
 
@@ -362,6 +419,8 @@ class BuilderTools:
         if yaml is None:
             return json.dumps({"loaded": False, "reason": "There's no agent with that id. Call list_my_agents."})
         session.draft_yaml, session.draft_params, session.plan_id = yaml, {}, None
+        # Answers to skill forms belonged to the old draft's resources.
+        session.skill_inputs, session.pending_input = {}, None
         self.sessions.save(session)
         return json.dumps({
             "loaded": True,

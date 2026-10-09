@@ -23,6 +23,8 @@ class SSEEventType(str, Enum):
 
     # UI events
     UI_FORM_RENDER = "UI_FORM_RENDER"
+    # An account the person connects in their browser (a sign-in popup), shown as a card.
+    CONNECT_REQUEST = "CONNECT_REQUEST"
 
     # Canvas artifact events (agent-authored interactive HTML rendered inline in chat)
     CANVAS_ARTIFACT_READY = "CANVAS_ARTIFACT_READY"
@@ -69,6 +71,9 @@ class SSEEvent(BaseModel):
     submit_label: Optional[str] = None
     form_id: Optional[str] = None
     form_label: Optional[str] = None
+
+    # CONNECT_REQUEST: provider, title, description, conversation_id.
+    connect: Optional[dict] = None
 
     # Image generation events
     image_b64: Optional[str] = None

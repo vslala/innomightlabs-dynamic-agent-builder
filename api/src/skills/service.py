@@ -115,8 +115,12 @@ class SkillService:
         raw_config: dict[str, Any],
         enabled: bool = True,
         available_to: list[ActorKind] | None = None,
+        pending_fields: set[str] | None = None,
     ) -> tuple[LoadedSkill, dict[str, Any]]:
-        """Everything an install checks, without installing. Raises ValueError with a user-facing reason."""
+        """Everything an install checks, without installing. Raises ValueError with a user-facing reason.
+
+        `pending_fields` name settings whose value the same request is about to create (a blueprint's new agent),
+        so their options can't be checked yet; everything else is."""
         loaded = self.registry.get(skill_id)
         if not loaded:
             raise ValueError(f"Unknown skill: {skill_id}")
@@ -138,7 +142,7 @@ class SkillService:
                 f"{loaded.manifest.name} requires connected connector(s): {', '.join(missing_connectors)}"
             )
 
-        return loaded, self.validate_install_config(skill_id, user_email, raw_config)
+        return loaded, self.validate_install_config(skill_id, user_email, raw_config, pending_fields)
 
     def install_skill(
         self,
@@ -188,6 +192,7 @@ class SkillService:
         skill_id: str,
         user_email: str,
         raw_config: dict[str, Any],
+        pending_fields: set[str] | None = None,
     ) -> dict[str, Any]:
         loaded = self.registry.get(skill_id)
         if not loaded:
@@ -195,7 +200,7 @@ class SkillService:
 
         normalized = self.registry.validate_config(skill_id, raw_config)
         validate_form_options(
-            loaded.manifest.form,
+            [field for field in loaded.manifest.form if field.name not in (pending_fields or set())],
             normalized,
             FormOptionsContext(user_email=user_email),
         )

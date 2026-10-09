@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v1.json
+apiVersion: innomight/v1
+kind: Blueprint
+metadata:
+  name: agent-team
+  title: Team of agents
+  description: A lead agent you chat with in the dashboard that hands specialist work, such as research or writing, to a second agent and brings the answer back.
+
+params:
+  specialty:
+    type: string
+    label: What the specialist does
+    description: The work the lead agent should hand off, such as research or writing blog posts.
+    default: research
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  specialist:
+    kind: Agent
+    description: Does the specialist work the lead hands it.
+    name: "Specialist: {{ params.specialty }}"
+    provider: "{{ params.provider }}"
+    instructions: |
+      You are a specialist in {{ params.specialty }}.
+      You are given one task at a time by a lead agent. Do it thoroughly and reply with the finished work only.
+
+  lead:
+    kind: Agent
+    description: The agent you chat with. It decides when to hand work to the specialist.
+    name: Team lead
+    provider: "{{ params.provider }}"
+    instructions: |
+      You are the team lead. Talk with the person, work out what they need, and hand any {{ params.specialty }}
+      work to your specialist. Check what comes back, then give the person a clear, short answer.
+    skills:
+      - id: agent_invocation
+        config:
+          target_agent_id: specialist
+          usage_description: "Use for {{ params.specialty }} work: give the specialist one clear task at a time."
+
+outputs:
+  lead_id:
+    description: Open the team lead in the dashboard and give it a task.
+    value: "{{ resources.lead.id }}"

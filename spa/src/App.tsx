@@ -32,6 +32,7 @@ const Overview = lazyRoute(() => import('./pages/dashboard/Overview'), 'Overview
 const AgentsList = lazyRoute(() => import('./pages/dashboard/AgentsList'), 'AgentsList');
 const AgentCreate = lazyRoute(() => import('./pages/dashboard/AgentCreate'), 'AgentCreate');
 const BuildPage = lazyRoute(() => import('./pages/dashboard/build/BuildPage'), 'BuildPage');
+const OAuthPopupDone = lazyRoute(() => import('./pages/dashboard/oauth/OAuthPopupDone'), 'OAuthPopupDone');
 const BlueprintsPage = lazyRoute(() => import('./pages/dashboard/blueprints/BlueprintsPage'), 'BlueprintsPage');
 const AgentMarketplacePage = lazyRoute(() => import('./pages/dashboard/agent-marketplace/AgentMarketplacePage'), 'AgentMarketplacePage');
 const MarketplaceAgentDetail = lazyRoute(() => import('./pages/dashboard/agent-marketplace/MarketplaceAgentDetail'), 'MarketplaceAgentDetail');
@@ -166,6 +167,7 @@ function App() {
           <Route path="artifacts" element={<ArtifactsPage />} />
           <Route path="artifacts/:artifactId" element={<ArtifactOpenPage />} />
           <Route path="build" element={<BuildPage />} />
+          <Route path="oauth/done" element={<OAuthPopupDone />} />
           <Route path="blueprints" element={<BlueprintsPage />} />
           <Route path="knowledge-bases" element={<KnowledgeBases />} />
           <Route path="knowledge-bases/:kbId" element={<KnowledgeBaseDetail />} />

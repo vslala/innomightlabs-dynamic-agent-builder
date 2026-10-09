@@ -770,6 +770,11 @@ Common keys:
 - `expose_to_runtime`: set to `"true"` to render this installed config value in the runtime installed-skill context.
 - `usage_context_label`: label used when rendering an exposed usage context value. Defaults to the field `label`.
 - `usage_context_max_chars`: maximum rendered characters for an exposed value. Defaults to `600`.
+- `supplied_by`: `"builder"` or `"person"`: who gives this setting when Ada, the solution builder, adds the skill.
+  Ada writes `builder` settings from the person's request; the system asks the person for `person` settings in a
+  form. Usually left out, because it's inferred: a setting that names an agent (`options_source: agents`) or is
+  exposed to the runtime is `builder`, and anything else is `person`. Secrets are never asked in the chat either
+  way. See `api/src/blueprints/skills_schema.py` (`SUPPLIER_RULES`).
 
 Example:
 

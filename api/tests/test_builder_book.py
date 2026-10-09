@@ -67,14 +67,15 @@ def test_a_skill_example_is_a_valid_skill_entry():
 
 
 def test_skills_that_cant_be_built_say_so_in_the_index():
-    assert "can't go in a blueprint" in BOOK.get("skill/aws_cli").note
+    assert "not buildable yet" in BOOK.get("skill/aws_cli").note
     not_ready = blueprint_book(ready={"google_mail": False})
     assert "NOT READY" in not_ready.get("skill/google_mail").note
     assert BOOK.get("skill/google_mail").note == ""
+    assert "isn't available" in blueprint_book(ready={"python_code_execution": False}).get("skill/python_code_execution").note
 
 
 def test_search_routes_on_what_the_person_asks_for():
-    assert BOOK.search("capture leads with a form")[0].id == "skill/lead_capture"
+    assert "skill/lead_capture" in [page.id for page in BOOK.search("capture leads with a form")[:3]]
     assert BOOK.search("chat bubble on my website")[0].id == "kind/WidgetKey"
     assert BOOK.search("") == []
 

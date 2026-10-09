@@ -109,6 +109,8 @@ export const SSEEventType = {
   IMAGE_GENERATION_PARTIAL: "IMAGE_GENERATION_PARTIAL",
   IMAGE_GENERATION_COMPLETE: "IMAGE_GENERATION_COMPLETE",
   UI_FORM_RENDER: "UI_FORM_RENDER",
+  // An account to connect in a sign-in popup (Ada's builds), shown as a card.
+  CONNECT_REQUEST: "CONNECT_REQUEST",
   USER_MESSAGE_SAVED: "USER_MESSAGE_SAVED",
   ASSISTANT_MESSAGE_SAVED: "ASSISTANT_MESSAGE_SAVED",
   STREAM_COMPLETE: "STREAM_COMPLETE",
@@ -135,6 +137,8 @@ export interface SSEEvent {
   submit_label?: string;
   form_id?: string;
   form_label?: string;
+  // CONNECT_REQUEST
+  connect?: { provider: string; title: string; description: string; conversation_id: string };
   // Tool call event fields. tool_call_id correlates a TOOL_CALL_START with
   // its TOOL_CALL_RESULT -- tool_name alone isn't unique when the same tool
   // is called more than once in a turn.

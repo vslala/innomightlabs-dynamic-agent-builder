@@ -25,6 +25,11 @@ class BuilderApiService {
   async listSessions(): Promise<BuilderSession[]> {
     return httpClient.get<BuilderSession[]>("/builder/sessions");
   }
+
+  /** The person's click on a Connect card: the sign-in address for a popup, or null if already connected. */
+  async connect(conversationId: string, provider: string): Promise<{ authorize_url: string | null }> {
+    return httpClient.post<{ authorize_url: string | null }>(`/builder/${conversationId}/connect`, { provider });
+  }
 }
 
 export const builderApiService = new BuilderApiService();

@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v1.json
+apiVersion: innomight/v1
+kind: Blueprint
+metadata:
+  name: image-studio
+  title: Creative image studio
+  description: A creative partner in your dashboard that turns ideas into images and presents options side by side, for social posts, banners or mood boards. Needs a model that can make images.
+
+params:
+  brand:
+    type: string
+    label: Brand or project
+    description: What the images are for. It shapes the studio's style and its name.
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  studio:
+    kind: Agent
+    description: Makes and presents images.
+    name: "{{ params.brand }} image studio"
+    provider: "{{ params.provider }}"
+    instructions: |
+      You are the creative studio for {{ params.brand }}. Turn each idea into a clear image prompt, generate the
+      image, and offer one or two variations. When the person wants to compare options, lay them out side by side
+      in an HTML board. Keep the style consistent with {{ params.brand }}.
+    skills:
+      - id: image_generation
+      - id: html_canvas
+
+outputs:
+  agent_id:
+    description: Open the studio in the dashboard and describe an image.
+    value: "{{ resources.studio.id }}"

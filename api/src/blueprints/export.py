@@ -14,6 +14,8 @@ from src.apikeys.repository import ApiKeyRepository
 from src.blueprints.kinds.knowledge_base import last_crawl
 from src.blueprints.skills_schema import skill_variants
 from src.blueprints.spec import API_VERSION
+from src.connectors.mcp.providers import PROVIDERS
+from src.connectors.mcp.repository import get_mcp_connection_repository
 from src.knowledge.models import KnowledgeBaseStatus
 from src.knowledge.repository import AgentKnowledgeBaseRepository, KnowledgeBaseRepository
 from src.skills.models import ActorKind
@@ -55,14 +57,27 @@ def export_agent(agent_id: str, user_email: str) -> Optional[str]:
             resource["crawl"] = crawl.model_dump()
         resources[name] = resource
 
+    connection_names = []
+    connections = get_mcp_connection_repository()
+    mcp_links = [link for link in connections.list_agent_connections(agent_id) if link.enabled]
+    for index, connection in enumerate(
+        connection for link in mcp_links if (connection := connections.find_connection(user_email, link.mcp_id))
+    ):
+        name = _numbered("tools", index)
+        connection_names.append(name)
+        resources[name] = {
+            "kind": "McpConnection",
+            "id": connection.mcp_id,
+            # A custom connection, or one whose preset has gone, is named by its id alone.
+            **({"provider": connection.provider_key} if connection.provider_key in PROVIDERS else {}),
+            "name": connection.name,
+        }
+
     variants = skill_variants()
     skills = []
     for installed in AgentSkillRepository().list_by_agent(agent_id):
         variant = variants.get(installed.skill_id)
-        if variant is None or any(
-            field.name in variant.secret_fields and not field.is_optional and field.value is None
-            for field in variant.skill.manifest.form
-        ):
+        if variant is None or variant.required_secrets:
             continue
         entry: dict[str, Any] = {"id": installed.skill_id}
         config = {key: value for key, value in installed.config.items() if key in variant.config_fields}
@@ -89,6 +104,8 @@ def export_agent(agent_id: str, user_email: str) -> Optional[str]:
         agent_resource["description"] = agent.agent_description
     if kb_names:
         agent_resource["knowledge_bases"] = kb_names
+    if connection_names:
+        agent_resource["mcp_connections"] = connection_names
     if skills:
         agent_resource["skills"] = skills
     resources["agent"] = agent_resource

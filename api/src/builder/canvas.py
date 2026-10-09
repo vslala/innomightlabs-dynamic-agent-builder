@@ -10,6 +10,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from graphlib import TopologicalSorter
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
 
@@ -22,7 +23,9 @@ from src.artifacts.service import ArtifactService
 from src.blueprints.models import Deployment
 from src.blueprints.kinds import kind_for
 from src.blueprints.planner import Plan
-from src.blueprints.spec import REF_KIND, REMOVES, AgentSpec, KnowledgeBaseSpec, WidgetKeySpec
+from src.blueprints.skills_schema import agent_settings, skill_variants
+from src.blueprints.kinds.mcp_connection import provider_name
+from src.blueprints.spec import REF_KIND, REMOVES, AgentSpec, KnowledgeBaseSpec, McpConnectionSpec, WidgetKeySpec
 from src.blueprints.validator import ValidatedBlueprint
 from src.skills.html_canvas.models import CANVAS_ARTIFACT_FILENAME
 
@@ -42,6 +45,8 @@ class Card:
     kind: str
     label: str
     title: str
+    #: The resource's own `description`: what it's for, in the author's words.
+    summary: str
     details: list[str]
     #: Column in the drawing: how many references deep the resource sits.
     depth: int
@@ -60,8 +65,9 @@ class BlueprintDrawing:
     stage: Stage
     plan_id: str
     cards: list[Card]
-    #: (from, to) by resource name: `to` refers to `from`.
-    edges: list[tuple[str, str]]
+    #: (from, to, label) by resource name, in the direction the drawing reads: knowledge feeds an agent, an agent
+    #: hands work to another, an agent chats through a widget.
+    edges: list[tuple[str, str, str]]
     steps: list[str]
     params: list[tuple[str, str]]
     yaml_html: Markup
@@ -77,9 +83,13 @@ def _knowledge_base(spec: KnowledgeBaseSpec) -> list[str]:
 def _agent(spec: AgentSpec) -> list[str]:
     details = [f"Thinks with {spec.provider}" + (f" · {spec.model}" if spec.model else "")]
     if spec.skills:
-        details.append("Skills: " + ", ".join(entry.id.replace("_", " ") for entry in spec.skills))
+        variants = skill_variants()
+        names = [variants[entry.id].skill.manifest.name if entry.id in variants else entry.id for entry in spec.skills]
+        details.append("Skills: " + ", ".join(names))
     if spec.knowledge_bases:
         details.append(f"Answers from {len(spec.knowledge_bases)} knowledge base" + ("s" if len(spec.knowledge_bases) > 1 else ""))
+    if spec.mcp_connections:
+        details.append(f"Uses tools from {len(spec.mcp_connections)} connection" + ("s" if len(spec.mcp_connections) > 1 else ""))
     return details
 
 
@@ -89,23 +99,48 @@ def _widget_key(spec: WidgetKeySpec) -> list[str]:
     return details
 
 
+def _mcp_connection(spec: McpConnectionSpec) -> list[str]:
+    return [f"Tools from {provider_name(spec)}", "You sign in once; every linked agent can use it"]
+
+
+#: Each reference field's kind, and how its wire reads from that resource to the one naming it.
+WIRE_LABELS = {"KnowledgeBase": "knowledge for", "McpConnection": "tools for", "Agent": "chats through"}
+
 #: The lines on each kind's card. Labels come from the kinds themselves.
 CARD_DETAILS: dict[str, Callable[[Any], list[str]]] = {
+    "McpConnection": _mcp_connection,
     "KnowledgeBase": _knowledge_base,
     "Agent": _agent,
     "WidgetKey": _widget_key,
 }
 
 
-def _references(spec: Any) -> list[str]:
-    names: list[str] = []
+def _wires(name: str, spec: Any, resources: dict[str, Any]) -> list[tuple[str, str, str]]:
+    """How this resource connects to the others it names, each wire pointing the way the drawing reads."""
+    wires: list[tuple[str, str, str]] = []
     for field_name, info in type(spec).model_fields.items():
         extra = info.json_schema_extra
         # Things being disconnected aren't drawn as wires; the card lists them instead.
-        if isinstance(extra, dict) and REF_KIND in extra and not extra.get(REMOVES):
-            value = getattr(spec, field_name)
-            names += value if isinstance(value, list) else [value]
-    return names
+        if not isinstance(extra, dict) or REF_KIND not in extra or extra.get(REMOVES):
+            continue
+        value = getattr(spec, field_name)
+        for target in value if isinstance(value, list) else [value]:
+            wires.append((target, name, WIRE_LABELS.get(extra[REF_KIND], "")))
+    if isinstance(spec, AgentSpec):
+        # A skill setting naming another agent: this agent hands work to that one.
+        wires += [(name, value, "hands work to") for _, _, value in agent_settings(spec) if value in resources]
+    return list(dict.fromkeys(wires))
+
+
+def _columns(names: list[str], wires: list[tuple[str, str, str]]) -> dict[str, int]:
+    """Each resource's column: one right of everything wired into it."""
+    before: dict[str, set[str]] = {name: set() for name in names}
+    for source, target, _ in wires:
+        before[target].add(source)
+    column: dict[str, int] = {}
+    for name in TopologicalSorter(before).static_order():
+        column[name] = 1 + max((column[source] for source in before[name]), default=-1)
+    return column
 
 
 _YAML_KEY = re.compile(r"^(\s*)(- )?([A-Za-z_][\w-]*)(:)(.*)$")
@@ -157,17 +192,17 @@ def drawing_for(
     deployment: Optional[Deployment] = None,
 ) -> BlueprintDrawing:
     blueprint = validated.blueprint
-    depth: dict[str, int] = {}
-    cards, edges = [], []
+    edges = [wire for name in validated.order for wire in _wires(name, blueprint.resources[name], blueprint.resources)]
+    depth = _columns(validated.order, edges)
+    cards = []
     for name in validated.order:
         spec = blueprint.resources[name]
-        references = _references(spec)
-        depth[name] = 1 + max((depth[ref] for ref in references), default=-1)
-        edges += [(ref, name) for ref in references]
         label = kind_for(spec.kind).label
         describe = CARD_DETAILS.get(spec.kind, lambda _: [])
         change = plan.changes.get(name)
         title = getattr(spec, "name", None)
+        if not title and isinstance(spec, McpConnectionSpec):
+            title = provider_name(spec)
         if not title and isinstance(spec, WidgetKeySpec):
             # The key's dashboard label defaults to "<agent name> widget" too.
             title = f"{getattr(blueprint.resources[spec.agent], 'name', spec.agent)} widget"
@@ -176,6 +211,7 @@ def drawing_for(
             kind=spec.kind,
             label=label,
             title=str(title or name),
+            summary=spec.description or "",
             details=describe(spec),
             depth=depth[name],
             action=change.action.value if change else "create",

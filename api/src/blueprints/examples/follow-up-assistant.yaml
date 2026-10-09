@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v1.json
+apiVersion: innomight/v1
+kind: Blueprint
+metadata:
+  name: follow-up-assistant
+  title: Personal follow-up assistant
+  description: An assistant in your dashboard that remembers to come back to things. Ask it to check in later, and it wakes up at the right time and emails you a reminder or summary.
+
+params:
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  assistant:
+    kind: Agent
+    description: Keeps track of follow-ups and sends reminders.
+    name: Follow-up assistant
+    provider: "{{ params.provider }}"
+    instructions: |
+      You help the person follow through. When they mention something to come back to, offer to schedule a check-in
+      at a time that suits them. When you wake up for one, write a short reminder with what was agreed and the next
+      step, and email it to them.
+    skills:
+      - id: scheduler
+      - id: send_email
+
+outputs:
+  agent_id:
+    description: Open the assistant in the dashboard and tell it what to remind you about.
+    value: "{{ resources.assistant.id }}"

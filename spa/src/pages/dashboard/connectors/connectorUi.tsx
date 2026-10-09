@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Github, Megaphone, Palette, Plug, SquareKanban } from "lucide-react";
+import { Github, Globe, Megaphone, Palette, Plug, SquareKanban } from "lucide-react";
 
 import { Label } from "../../../components/ui";
 
@@ -8,6 +8,7 @@ const PROVIDER_ICONS: Record<string, typeof Plug> = {
   canva: Palette,
   github: Github,
   google_ads: Megaphone,
+  tavily: Globe,
 };
 
 export function ProviderIcon({ icon }: { icon: string }) {

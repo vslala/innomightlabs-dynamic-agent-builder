@@ -37,6 +37,8 @@ import {
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
 import { agentDisplayName, isAda, showsToolActivity } from "../../services/builder/ada";
+import { connectedMessage } from "../../services/builder/connect";
+import { ConnectAccountCard, type ConnectRequestPayload } from "../../components/chat/ConnectAccountCard";
 import { AdaWorking } from "../../components/chat/AdaWorking";
 import { adaStep } from "../../components/chat/adaSteps";
 import { chatService, type ActiveTurn } from "../../services/chat";
@@ -85,6 +87,7 @@ export function ConversationDetail() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [activeForm, setActiveForm] = useState<{ form: FormSchema; submitLabel?: string } | null>(null);
   const [pendingFormLabel, setPendingFormLabel] = useState<string | null>(null);
+  const [activeConnect, setActiveConnect] = useState<ConnectRequestPayload | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
   const [liveTokenUsage, setLiveTokenUsage] = useState<LiveTokenUsageUpdate | null>(null);
@@ -464,6 +467,10 @@ export function ConversationDetail() {
             submitLabel: event.submit_label || undefined,
           });
         }
+        break;
+
+      case SSEEventType.CONNECT_REQUEST:
+        if (event.connect) setActiveConnect(event.connect);
         break;
 
       case SSEEventType.CANVAS_ARTIFACT_READY:
@@ -1227,6 +1234,17 @@ export function ConversationDetail() {
                   extraNode={
                     <>
                       {adaWorkingStep && <AdaWorking step={adaWorkingStep} />}
+                      {activeConnect && (
+                        <ConnectAccountCard
+                          request={activeConnect}
+                          disabled={isSending}
+                          onConnected={() => {
+                            const title = activeConnect.title;
+                            setActiveConnect(null);
+                            void handleSendMessage(connectedMessage(title));
+                          }}
+                        />
+                      )}
                       {activeForm && (
                         <div
                           style={{

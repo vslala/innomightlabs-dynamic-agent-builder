@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v1.json
+apiVersion: innomight/v1
+kind: Blueprint
+metadata:
+  name: blog-companion
+  title: WordPress blog companion
+  description: A chat on your WordPress blog that searches your posts live and answers readers with links to the articles that cover their question.
+
+params:
+  blog_url:
+    type: url
+    label: Your blog
+    description: The address of your WordPress site, where the chat widget goes.
+  blog_name:
+    type: string
+    label: Blog name
+    description: Used in the companion's name.
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  companion:
+    kind: Agent
+    description: Answers readers from your posts.
+    name: "{{ params.blog_name }} companion"
+    provider: "{{ params.provider }}"
+    instructions: |
+      You are the reading companion for {{ params.blog_name }}. When a reader asks something, search the blog's posts
+      and answer briefly from what they say, always linking the posts you used. If no post covers it, say so and
+      suggest the closest ones.
+    skills:
+      - id: wordpress_search
+        available_to: [visitor, guest]
+
+  widget:
+    kind: WidgetKey
+    description: The chat on your blog.
+    agent: companion
+    allowed_origins: ["{{ params.blog_url }}"]
+    allow_guests: true
+
+outputs:
+  snippet:
+    description: Paste this into your theme's footer, or a "Custom HTML" widget, on your blog.
+    value: "{{ resources.widget.snippet }}"

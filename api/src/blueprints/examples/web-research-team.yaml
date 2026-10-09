@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://api.innomightlabs.com/blueprints/schema/v1.json
+apiVersion: innomight/v1
+kind: Blueprint
+metadata:
+  name: web-research-team
+  title: Web research team
+  description: A research lead you chat with in the dashboard, and a researcher that searches the live web and reads the pages through Tavily. You get a written report with linked sources. You sign in to Tavily once, no API key needed.
+
+params:
+  topic_area:
+    type: string
+    label: What you research
+    description: The kind of research the team does, such as market research, competitor news or technical topics.
+    default: general research
+  provider:
+    type: string
+    label: Model provider
+    description: A provider you've set up in Settings > Provider Configuration, such as Bedrock, OpenAI, Anthropic or Gemini.
+    default: Bedrock
+
+resources:
+  web_search:
+    kind: McpConnection
+    description: Live web search and page reading for the researcher.
+    provider: tavily
+
+  researcher:
+    kind: Agent
+    description: Searches the web, reads the sources and reports what they say.
+    name: Web researcher
+    provider: "{{ params.provider }}"
+    instructions: |
+      You research {{ params.topic_area }} on the live web. For each task, search with several queries, open and
+      read the most relevant pages, and compare what they say. Reply with the findings, each with the URL it
+      came from, and say plainly where sources disagree or where you couldn't find anything reliable. Never cite a
+      page you didn't read.
+    mcp_connections: [web_search]
+
+  lead:
+    kind: Agent
+    description: The agent you chat with. It plans the research, hands searches to the researcher and writes the report.
+    name: Research lead
+    provider: "{{ params.provider }}"
+    instructions: |
+      You lead a small research team for {{ params.topic_area }}. Agree the question and scope with the person,
+      then hand the web research to your researcher, one clear task at a time. Check what comes back, and write
+      a clean HTML report: a short summary, the findings with linked sources, what's uncertain, and next steps.
+    skills:
+      - id: agent_invocation
+        config:
+          target_agent_id: researcher
+          usage_description: "Use for any web research: give the researcher one clear question at a time."
+      - id: html_canvas
+
+outputs:
+  lead_id:
+    description: Open the research lead in the dashboard and give it a question.
+    value: "{{ resources.lead.id }}"

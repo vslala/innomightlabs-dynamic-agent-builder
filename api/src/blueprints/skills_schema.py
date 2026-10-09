@@ -7,16 +7,20 @@ authoring and early, precise errors.
 """
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from enum import Enum
+from typing import Any, Literal, Optional, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 import src.form_models as form_models
-from src.blueprints.spec import AVAILABLE_TO_DESCRIPTION, SharedAudience
+from src.blueprints.spec import AVAILABLE_TO_DESCRIPTION, AgentSpec, SharedAudience
 from src.skills.models import LoadedSkill
 from src.skills.registry import SkillRegistry, get_skill_registry, is_secret_input
 
 STRICT = ConfigDict(extra="forbid")
+
+#: Option sources whose values are agents, so a blueprint may name an Agent resource there instead of an id.
+AGENT_OPTION_SOURCES = frozenset({"agents"})
 
 
 @dataclass(frozen=True)
@@ -33,6 +37,178 @@ class SkillVariant:
     @property
     def config_fields(self) -> list[str]:
         return [field.name for field in self.skill.manifest.form if field.name not in self.secret_fields]
+
+    @property
+    def agent_fields(self) -> list[str]:
+        """Settings that name one of the person's agents: an Agent in the blueprint, or an agent id."""
+        return [
+            field.name for field in self.skill.manifest.form
+            if field.options_source and field.options_source.type in AGENT_OPTION_SOURCES
+        ]
+
+    @property
+    def required_secrets(self) -> list[form_models.FormInput]:
+        return [
+            field for field in self.skill.manifest.form
+            if field.name in self.secret_fields and not field.is_optional and field.value is None
+        ]
+
+    @property
+    def required_settings(self) -> list[form_models.FormInput]:
+        return [
+            field for field in self.skill.manifest.form
+            if field.name not in self.secret_fields and not field.is_optional and field.value is None
+        ]
+
+    @property
+    def builder_settings(self) -> list[form_models.FormInput]:
+        """Required settings Ada writes: the design of the build, which she knows from the request."""
+        return [field for field in self.required_settings if supplied_by(field, self) == Supplier.BUILDER]
+
+    @property
+    def person_settings(self) -> list[form_models.FormInput]:
+        """Required settings only the person knows; the system asks them in a form."""
+        return [field for field in self.required_settings if supplied_by(field, self) == Supplier.PERSON]
+
+    @property
+    def setup(self) -> "SkillSetup":
+        return setup_for(self)
+
+
+# --- What a skill needs before it can work ----------------------------------------------------------------
+
+
+class SkillSetup(str, Enum):
+    """What has to happen before a skill works, easiest first. Read from the manifest, never listed per skill."""
+
+    #: Nothing from the person: add it (with any settings Ada writes) and it works.
+    READY = "ready"
+    #: Settings only the person knows, such as recipients or a site address. The system asks them in a form.
+    SETTINGS = "settings"
+    #: An account the person connects (Google sign-in). Buildable once it's connected.
+    ACCOUNT = "account"
+    #: A secret such as an API key, which can't go in a blueprint yet.
+    SECRETS = "secrets"
+
+
+class SetupRule(Protocol):
+    setup: SkillSetup
+
+    def applies(self, variant: SkillVariant) -> bool: ...
+
+
+class NeedsSecrets:
+    setup = SkillSetup.SECRETS
+
+    def applies(self, variant: SkillVariant) -> bool:
+        return bool(variant.required_secrets)
+
+
+class NeedsAccount:
+    setup = SkillSetup.ACCOUNT
+
+    def applies(self, variant: SkillVariant) -> bool:
+        manifest = variant.skill.manifest
+        return manifest.requires_oauth or bool(manifest.connectors)
+
+
+class NeedsSettings:
+    setup = SkillSetup.SETTINGS
+
+    def applies(self, variant: SkillVariant) -> bool:
+        return bool(variant.person_settings)
+
+
+class NeedsNothing:
+    setup = SkillSetup.READY
+
+    def applies(self, variant: SkillVariant) -> bool:
+        return True
+
+
+#: The hardest need decides: a skill with settings and a secret is a secrets skill.
+SETUP_RULES: tuple[SetupRule, ...] = (NeedsSecrets(), NeedsAccount(), NeedsSettings(), NeedsNothing())
+
+
+def setup_for(variant: SkillVariant) -> SkillSetup:
+    return next(rule.setup for rule in SETUP_RULES if rule.applies(variant))
+
+
+# --- Who supplies a setting -------------------------------------------------------------------------------
+
+
+class Supplier(str, Enum):
+    #: Ada, from the person's request: which agent to call, when to use it. Asking would be asking them to design.
+    BUILDER = "builder"
+    #: The person: facts only they know, such as where emails go.
+    PERSON = "person"
+
+
+class SupplierRule(Protocol):
+    supplier: Supplier
+
+    def applies(self, field: form_models.FormInput, variant: SkillVariant) -> bool: ...
+
+
+class Declared:
+    """`attr.supplied_by` in the manifest, when the skill author says. It wins over every other rule."""
+
+    def __init__(self, supplier: Supplier):
+        self.supplier = supplier
+
+    def applies(self, field: form_models.FormInput, variant: SkillVariant) -> bool:
+        return (field.attr or {}).get("supplied_by") == self.supplier.value
+
+
+class NamesAnAgent:
+    """Which agent a skill works with is the shape of the build."""
+
+    supplier = Supplier.BUILDER
+
+    def applies(self, field: form_models.FormInput, variant: SkillVariant) -> bool:
+        return field.name in variant.agent_fields
+
+
+class GuidesTheModel:
+    """Text the agent reads at run time ("when should this agent be invoked?") is instructions, which Ada writes."""
+
+    supplier = Supplier.BUILDER
+
+    def applies(self, field: form_models.FormInput, variant: SkillVariant) -> bool:
+        return (field.attr or {}).get("expose_to_runtime") == "true"
+
+
+class EverythingElse:
+    supplier = Supplier.PERSON
+
+    def applies(self, field: form_models.FormInput, variant: SkillVariant) -> bool:
+        return True
+
+
+SUPPLIER_RULES: tuple[SupplierRule, ...] = (
+    Declared(Supplier.BUILDER),
+    Declared(Supplier.PERSON),
+    NamesAnAgent(),
+    GuidesTheModel(),
+    EverythingElse(),
+)
+
+
+def supplied_by(field: form_models.FormInput, variant: SkillVariant) -> Supplier:
+    return next(rule.supplier for rule in SUPPLIER_RULES if rule.applies(field, variant))
+
+
+def agent_settings(spec: AgentSpec, registry: Optional[SkillRegistry] = None) -> list[tuple[int, str, str]]:
+    """(entry index, setting, value) for every skill setting on this agent that names an agent."""
+    variants = skill_variants(registry)
+    found = []
+    for index, entry in enumerate(spec.skills):
+        variant = variants.get(entry.id)
+        for field_name in variant.agent_fields if variant else []:
+            value = (entry.config or {}).get(field_name)
+            if isinstance(value, str) and value:
+                found.append((index, field_name, value))
+    return found
 
 
 def describe_field(field: form_models.FormInput) -> str:

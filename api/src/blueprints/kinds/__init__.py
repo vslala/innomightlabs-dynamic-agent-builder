@@ -14,9 +14,10 @@ from src.blueprints.kinds.base import (
     Usage,
 )
 from src.blueprints.kinds.knowledge_base import KnowledgeBaseKind
+from src.blueprints.kinds.mcp_connection import McpConnectionKind
 from src.blueprints.kinds.widget_key import WidgetKeyKind
 
-RESOURCE_KINDS: tuple[ResourceKind, ...] = (KnowledgeBaseKind(), AgentKind(), WidgetKeyKind())
+RESOURCE_KINDS: tuple[ResourceKind, ...] = (KnowledgeBaseKind(), McpConnectionKind(), AgentKind(), WidgetKeyKind())
 
 
 def kind_for(name: str) -> ResourceKind:
