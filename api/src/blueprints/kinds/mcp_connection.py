@@ -106,13 +106,9 @@ class McpConnectionKind(LookupKind[McpConnectionSpec]):
     def describe(self, name: str, spec: McpConnectionSpec) -> str:
         return f"Use your {provider_name(spec)} connection"
 
-    def kept(self, name: str, change: Change) -> AppliedResource:
-        connection: MCPConnection = change.existing.record  # type: ignore[union-attr]
+    def applied(self, name: str, record: MCPConnection) -> AppliedResource:
         return AppliedResource(
-            name=name,
-            kind=self.kind,
-            id=connection.mcp_id,
-            attributes={"id": connection.mcp_id, "name": connection.name},
+            name=name, kind=self.kind, id=record.mcp_id, attributes={"id": record.mcp_id, "name": record.name}
         )
 
     def page_sections(self) -> list[str]:

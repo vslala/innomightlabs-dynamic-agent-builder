@@ -12,7 +12,8 @@ from src.blueprints.executor import apply_blueprint
 from src.blueprints.export import export_agent
 from src.blueprints.issues import BlueprintInvalid
 from src.blueprints.kinds import knowledge_base as knowledge_base_kind
-from src.blueprints.kinds.agent import AgentKind
+from src.blueprints.kinds.agent import UnlinkKnowledgeBase
+from src.blueprints.kinds.knowledge_base import DeleteKnowledgeBase
 from src.blueprints.models import DeploymentStatus
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.validator import validate_blueprint
@@ -174,7 +175,8 @@ def test_a_contradiction_is_an_issue():
     assert messages["resources.assistant.remove_skills[1]"].hint == "Did you mean 'lead_capture'?"
 
 
-def test_a_failed_removal_keeps_the_rest_and_says_so(dynamodb_table, monkeypatch):
+def test_a_failed_disconnect_puts_everything_back(dynamodb_table, monkeypatch):
+    """Disconnecting can be undone, so it runs before the commit point, and a failure undoes the whole apply."""
     agent_id, site_kb, docs_kb = agent_with_two_knowledge_bases()
     document = exported(agent_id)
     docs_name = kb_named(document, docs_kb)
@@ -186,12 +188,32 @@ def test_a_failed_removal_keeps_the_rest_and_says_so(dynamodb_table, monkeypatch
     def fail(*args, **kwargs):
         raise RuntimeError("links table down")
 
-    monkeypatch.setattr(AgentKind, "remove_parts", fail)
+    monkeypatch.setattr(UnlinkKnowledgeBase, "run", fail)
+    _, _, applied = build(yaml.safe_dump(document, sort_keys=False), {})
+    assert applied.status == DeploymentStatus.FAILED
+    assert applied.removed == []
+    assert "opening hours" not in AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL).agent_persona
+    assert linked(agent_id) == {site_kb, docs_kb}
+
+
+def test_a_failed_delete_keeps_the_rest_and_says_so(dynamodb_table, monkeypatch):
+    """Deleting can't be undone, so it runs after the commit point; a failure there leaves the rest applied."""
+    _, _, built = build(SITE_AGENT)
+    agent_id = built.resources["assistant"].id
+    document = exported(agent_id)
+    document["resources"]["agent"]["instructions"] += "\nMention the opening hours."
+    document["resources"]["agent"]["knowledge_bases"] = []
+    document["resources"]["knowledge"]["remove"] = True
+    document["outputs"].pop("crawl_job_id", None)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("vector store down")
+
+    monkeypatch.setattr(DeleteKnowledgeBase, "run", fail)
     _, _, applied = build(yaml.safe_dump(document, sort_keys=False), {})
     assert applied.status == DeploymentStatus.FAILED_PARTIAL
-    assert "a removal failed" in applied.error
+    assert "didn't finish: vector store down" in applied.error
     assert "opening hours" in AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL).agent_persona
-    assert linked(agent_id) == {site_kb, docs_kb}
 
 
 def test_the_approval_and_the_drawing_call_out_removals(dynamodb_table):

@@ -31,6 +31,33 @@ class DeploymentOutput(BaseModel):
     description: Optional[str] = None
 
 
+class JournalState(str, Enum):
+    #: About to run, or running. If the apply stopped here, the command may or may not have happened.
+    STARTED = "started"
+    DONE = "done"
+    UNDONE = "undone"
+    UNDO_FAILED = "undo_failed"
+
+
+class UndoRecord(BaseModel):
+    action: str
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
+class JournalEntry(BaseModel):
+    """One command of an apply, recorded before it runs, with how to undo it."""
+
+    command: str
+    resource: str
+    state: JournalState = JournalState.STARTED
+    #: None for a command that can't be undone, or has nothing to undo.
+    undo: Optional[UndoRecord] = None
+    #: It brought `resource` into being, so undoing it means the deployment no longer has it.
+    creates: bool = False
+    #: What it took away, in plain words.
+    removal: Optional[str] = None
+
+
 class Deployment(BaseModel):
     """
     What one blueprint apply created.
@@ -49,6 +76,10 @@ class Deployment(BaseModel):
     outputs: dict[str, DeploymentOutput] = Field(default_factory=dict)
     #: What was taken away, in plain words, in the order it happened.
     removed: list[str] = Field(default_factory=list)
+    #: Every command run so far, written before it runs, so an interrupted apply can still be put back.
+    journal: list[JournalEntry] = Field(default_factory=list)
+    #: Past the commit point: everything that can be undone has run, and only what can't is left.
+    committed: bool = False
     error: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None

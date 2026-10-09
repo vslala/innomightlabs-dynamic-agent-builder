@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress: phases 1 and 2 done |
+| Status | 🚧 In progress: phases 1 to 3 done |
 | Owner | InnomightLabs API |
 | Last reviewed | 2026-10-09 |
 | Scope | `api/src/blueprints/`, and the parts of `api/src/builder/` that call into it |
@@ -75,9 +75,62 @@
     from `observe`.
 - **Tests:** `test_blueprints_references.py`.
 
-**Open for phase 3: write-ahead logging.** A command can run and the process die before its `Undo` is saved.
-Record "about to run X" first, with any ids we generate ourselves, and mark it done afterwards. The reaper checks
-each half-finished entry against the account. Creates need their id chosen up front so that check is possible.
+**Phase 3 (commands), 2026-10-09:**
+
+- **Commands are in `blueprints/commands.py`.**
+  - `Command` declares a `reversibility` (`REVERSIBLE`, `COMPENSATABLE` or `IRREVERSIBLE`), and whether it
+    `establishes`, `creates` or `deletes` its resource.
+  - `prepare(ctx)` reads what its undo needs, with no side effects. `run(ctx)` does the work.
+  - An `Undo` is a registered action name plus arguments (`@undo_action`), so it can be saved and replayed after a
+    restart.
+- **Each kind emits its commands.** `ResourceKind.commands(name, spec, existing, ctx)` replaces `apply`,
+  `update`, `kept`, `start`, `differences`, `removals` and `remove_parts`, and `ManagedKind.delete_commands`
+  replaces `delete`.
+  - Each command carries what it `says` and any `removal`, and the planner builds the plan's wording from them. So
+    the wording and the work can't disagree.
+  - Exactly one command establishes each resource: `Create…`, `Save…` or `Use`.
+  - `rollback`, `restore`, `AppliedResource.cleanup`, `previous`, `needs_start` and the agent's nested
+    try/rollback are gone.
+- **The order is derived.** `command_order` runs one topological sort with three rules: create before use, detach
+  and delete dependents before a delete, and irreversible after `COMMIT`. Of the commands ready to run, the one
+  given first goes first.
+  - The plan holds the ordered list in `plan.commands`.
+  - A cycle becomes a plan blocker.
+- **Write-ahead undo log.**
+  - Each command's `JournalEntry` (with its undo) is saved on the deployment before the command runs, and marked
+    done after.
+  - Creates choose their id in `prepare`. `AgentService.create` takes `agent_id`, and knowledge bases and widget
+    keys are built with theirs. So the undo of a create that stopped part-way knows what to delete.
+  - Every undo copes with the command not having happened.
+- **Recovery.**
+  - While a deployment is `applying`, it's in gsi2 (`BlueprintApplying`, `updated_at`).
+  - `executor.recover_interrupted`, run by a new scheduler reaper (`BLUEPRINT_APPLY_REAPER_ID`), finds applies
+    not saved for `BLUEPRINT_APPLY_STALE_TIMEOUT_SECONDS` (900).
+    - Before the commit point, it unwinds the log.
+    - After it, it marks the apply `failed_partial` and says to apply again.
+  - The reaper runs every `BLUEPRINT_APPLY_REAPER_INTERVAL_SECONDS` (300). Both settings are in `settings.py` and
+    the Railway deploy script.
+- **The before-state is read when the command runs.**
+  - A `Save…` writes only the fields that differ, read fresh.
+  - Its undo puts back only those fields, as they were just before the write.
+  - A change the person makes between plan and apply survives an unwind.
+  - The design said the plan's snapshot would also detect "changed since the plan" and fail. That isn't done:
+    writing only the differing fields makes it unnecessary for now.
+- **Behaviour changes:**
+  - **Disconnecting a knowledge base and taking MCP tools away can be undone,** so they now run before the commit
+    point. A failure there puts back the whole apply (`failed`). Before, it left the rest applied
+    (`failed_partial`).
+  - **Uninstalling a skill and deleting a resource still run last** (irreversible).
+  - **Reading a site now runs after the commit point.** A failure to start a crawl no longer rolls back the build;
+    it's `failed_partial`. This removes the orphaned-crawl risk the blueprints LLD noted for blueprints with
+    several knowledge bases.
+  - **An agent record is saved only when its fields differ.** Before, it was saved on every update.
+- **Tests:**
+  - New: `test_blueprints_commands.py`, covering order, the commit point, journalling, recovery before and after
+    commit, the run-time before-state, and reaper registration.
+  - Changed: the tests that patched kind methods now patch commands (`CreateWidgetKey.run`, `SaveWidgetKey.run`,
+    `UNDO_ACTIONS`). The failed-removal test is now two tests: a failed disconnect puts everything back, and a
+    failed delete keeps the rest.
 
 ## What's good and stays
 

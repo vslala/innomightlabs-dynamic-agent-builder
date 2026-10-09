@@ -1,14 +1,16 @@
+from dataclasses import dataclass
 from html import escape
-from typing import Any, Mapping, Optional
+from typing import Any, ClassVar, Mapping, Optional
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from src.apikeys.models import AgentApiKey
 from src.apikeys.repository import ApiKeyRepository
+from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.kinds.base import (
     AppliedResource,
     ApplyContext,
-    Change,
     Existing,
     ManagedKind,
     NotFound,
@@ -34,6 +36,104 @@ def embed_snippet(public_key: str) -> str:
     return f'<script src="{escape(settings.embed_loader_url)}" data-api-key="{escape(public_key)}" async></script>'
 
 
+def _applied(name: str, key: AgentApiKey) -> AppliedResource:
+    return AppliedResource(
+        name=name,
+        kind="WidgetKey",
+        id=key.key_id,
+        attributes={"id": key.key_id, "public_key": key.public_key, "snippet": embed_snippet(key.public_key)},
+    )
+
+
+def _find(agent_id: str, key_id: str) -> Optional[AgentApiKey]:
+    return next((key for key in ApiKeyRepository().find_all_by_agent(agent_id) if key.key_id == key_id), None)
+
+
+# --- Commands -----------------------------------------------------------------------------------------------
+
+
+@dataclass(kw_only=True)
+class CreateWidgetKey(Command):
+    agent: str
+    key_name: Optional[str]
+    allowed_origins: list[str]
+    allow_guests: bool
+    #: Chosen when it's prepared, so the undo knows it even if the apply stops before the create returns.
+    key_id: str = ""
+
+    reversibility: ClassVar[Reversibility] = Reversibility.COMPENSATABLE
+    establishes: ClassVar[bool] = True
+    creates: ClassVar[bool] = True
+
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        self.key_id = self.key_id or str(uuid4())
+        return Undo("delete_widget_key", {"agent_id": ctx.applied[self.agent].id, "key_id": self.key_id})
+
+    def run(self, ctx: ApplyContext) -> None:
+        agent = ctx.applied[self.agent]
+        key = ApiKeyRepository().save(AgentApiKey(
+            key_id=self.key_id,
+            agent_id=agent.id,
+            name=self.key_name or f"{agent.attributes['name']} widget",
+            allowed_origins=self.allowed_origins,
+            allow_guests=self.allow_guests,
+            created_by=ctx.user_email,
+        ))
+        ctx.applied[self.resource] = _applied(self.resource, key)
+
+
+@undo_action("delete_widget_key")
+def _delete_widget_key(args: dict[str, Any], user_email: str) -> None:
+    ApiKeyRepository().delete_by_id(args["agent_id"], args["key_id"])
+
+
+@dataclass(kw_only=True)
+class SaveWidgetKey(Command):
+    """The same key, so the snippet already on the person's site keeps working."""
+
+    agent_id: str
+    key_id: str
+    fields: dict[str, Any]
+
+    establishes: ClassVar[bool] = True
+
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        current = _find(self.agent_id, self.key_id)
+        before = {key: getattr(current, key) for key in self.fields} if current else {}
+        return Undo("restore_widget_key", {"agent_id": self.agent_id, "key_id": self.key_id, "fields": before})
+
+    def run(self, ctx: ApplyContext) -> None:
+        ctx.applied[self.resource] = _applied(self.resource, _save_fields(self.agent_id, self.key_id, self.fields))
+
+
+def _save_fields(agent_id: str, key_id: str, fields: dict[str, Any]) -> AgentApiKey:
+    current = _find(agent_id, key_id)
+    if current is None:
+        raise RuntimeError("The widget key was deleted since the plan. Plan again.")
+    return ApiKeyRepository().save(current.model_copy(update=fields))
+
+
+@undo_action("restore_widget_key")
+def _restore_widget_key(args: dict[str, Any], user_email: str) -> None:
+    if args["fields"]:
+        _save_fields(args["agent_id"], args["key_id"], args["fields"])
+
+
+@dataclass(kw_only=True)
+class DeleteWidgetKey(Command):
+    agent_id: str
+    key_id: str
+
+    reversibility: ClassVar[Reversibility] = Reversibility.IRREVERSIBLE
+    deletes: ClassVar[bool] = True
+
+    def run(self, ctx: ApplyContext) -> None:
+        ApiKeyRepository().delete_by_id(self.agent_id, self.key_id)
+
+
+# --- The kind -----------------------------------------------------------------------------------------------
+
+
 class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
     kind = "WidgetKey"
     label = "Chat widget"
@@ -57,6 +157,9 @@ class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
         """The agent's keys a blueprint can describe. A key that works on any site has no origins to write down; a
         blueprint never makes those, so they're left alone."""
         return [key for key in ApiKeyRepository().find_all_by_agent(agent_id) if key.allowed_origins]
+
+    def applied(self, name: str, record: AgentApiKey) -> AppliedResource:
+        return _applied(name, record)
 
     def title(self, name: str, spec: WidgetKeySpec, resources: dict[str, Any]) -> str:
         # The key's dashboard label defaults to "<agent name> widget" too.
@@ -94,62 +197,45 @@ class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
             same = keys if len(keys) == 1 else [key for key in keys if key.name.endswith(" widget")]
         return Existing(id=same[0].key_id, record=same[0], matched_by="name") if len(same) == 1 else None
 
-    def differences(self, name: str, spec: WidgetKeySpec, existing: Existing, ctx: PlanContext) -> list[str]:
+    def commands(self, name: str, spec: WidgetKeySpec, existing: Optional[Existing], ctx: PlanContext) -> list[Command]:
+        if existing is None:
+            return [CreateWidgetKey(
+                resource=name,
+                uses=frozenset({spec.agent}),
+                agent=spec.agent,
+                key_name=spec.name,
+                allowed_origins=origins(spec),
+                allow_guests=spec.allow_guests,
+            )]
         key: AgentApiKey = existing.record
-        changes = []
+        fields: dict[str, Any] = {}
+        says = []
         if spec.name and spec.name != key.name:
-            changes.append(f"rename to '{spec.name}'")
+            fields["name"] = spec.name
+            says.append(f"rename to '{spec.name}'")
         if origins(spec) != sorted(key.allowed_origins):
-            changes.append("allow it on " + ", ".join(origins(spec)))
+            fields["allowed_origins"] = origins(spec)
+            says.append("allow it on " + ", ".join(origins(spec)))
         if spec.allow_guests != key.allow_guests:
-            changes.append("let guests chat with just an email" if spec.allow_guests else "ask visitors to sign in")
-        return changes
+            fields["allow_guests"] = spec.allow_guests
+            says.append("let guests chat with just an email" if spec.allow_guests else "ask visitors to sign in")
+        if not fields:
+            return [Use(resource=name, uses=frozenset({spec.agent}), applied=_applied(name, key))]
+        return [SaveWidgetKey(
+            resource=name,
+            uses=frozenset({spec.agent}),
+            agent_id=key.agent_id,
+            key_id=key.key_id,
+            fields=fields,
+            says=tuple(says),
+        )]
+
+    def delete_commands(self, name: str, spec: WidgetKeySpec, existing: Existing, removal: str) -> list[Command]:
+        key: AgentApiKey = existing.record
+        return [DeleteWidgetKey(
+            resource=name, uses=frozenset({spec.agent}), agent_id=key.agent_id, key_id=key.key_id, removal=removal
+        )]
 
     def describe(self, name: str, spec: WidgetKeySpec) -> str:
         guests = ", guests allowed" if spec.allow_guests else ""
         return f"Create a widget key for {spec.agent} on {', '.join(spec.allowed_origins)}{guests}"
-
-    def apply(self, name: str, spec: WidgetKeySpec, ctx: ApplyContext) -> AppliedResource:
-        agent = ctx.applied[spec.agent]
-        key = ApiKeyRepository().save(AgentApiKey(
-            agent_id=agent.id,
-            name=spec.name or f"{agent.attributes['name']} widget",
-            allowed_origins=origins(spec),
-            allow_guests=spec.allow_guests,
-            created_by=ctx.user_email,
-        ))
-        return self._applied(name, key)
-
-    def update(self, name: str, spec: WidgetKeySpec, change: Change, ctx: ApplyContext) -> AppliedResource:
-        previous: AgentApiKey = change.existing.record  # type: ignore[union-attr]
-        # The same key, so the snippet already on the person's site keeps working.
-        key = ApiKeyRepository().save(previous.model_copy(update={
-            "name": spec.name or previous.name,
-            "allowed_origins": origins(spec),
-            "allow_guests": spec.allow_guests,
-        }))
-        applied = self._applied(name, key)
-        applied.previous = previous
-        return applied
-
-    def kept(self, name: str, change: Change) -> AppliedResource:
-        return self._applied(name, change.existing.record)  # type: ignore[union-attr]
-
-    def _applied(self, name: str, key: AgentApiKey) -> AppliedResource:
-        return AppliedResource(
-            name=name,
-            kind=self.kind,
-            id=key.key_id,
-            attributes={"id": key.key_id, "public_key": key.public_key, "snippet": embed_snippet(key.public_key)},
-            cleanup={"agent_id": [key.agent_id]},
-        )
-
-    def delete(self, change: Change, ctx: ApplyContext) -> None:
-        key: AgentApiKey = change.existing.record  # type: ignore[union-attr]
-        ApiKeyRepository().delete_by_id(key.agent_id, key.key_id)
-
-    def rollback(self, applied: AppliedResource, ctx: ApplyContext) -> None:
-        ApiKeyRepository().delete_by_id(applied.cleanup["agent_id"][0], applied.id)
-
-    def restore(self, applied: AppliedResource, ctx: ApplyContext) -> None:
-        ApiKeyRepository().save(applied.previous)

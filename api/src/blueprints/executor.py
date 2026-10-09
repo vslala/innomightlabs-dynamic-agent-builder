@@ -1,20 +1,32 @@
-"""Applying a planned blueprint: create and update in dependency order, start crawls, then remove; roll back the
-creates and updates if one of them fails.
+"""Applying a planned blueprint: run its commands in order, each one's undo saved on the deployment before it runs.
 
-Removals come last because they can't be undone. If one fails, everything before it stays applied and the
-deployment says what's left; applying the same blueprint again finishes the job, since what's already gone is
-planned as done.
+Everything that can be undone runs first. If one of those fails, the saved undos are run, newest first, and the
+account is as it was. Then comes the commit point, and after it what can't be undone (deleting, reading a site).
+If one of those fails, everything before it stays applied and the deployment says what's left; applying the same
+blueprint again finishes the job, since what's already done is planned as done.
+
+An apply the process didn't finish (a restart part-way) is found by `recover_interrupted` and put back the same
+way, from its saved undos.
 """
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import BackgroundTasks
 
-from src.blueprints.kinds import Action, AppliedResource, ApplyContext, kind_for, managed_kind_for
+from src.blueprints.commands import COMMIT, Command, Undo, run_undo
+from src.blueprints.kinds import AppliedResource, ApplyContext
+from src.blueprints.models import (
+    DeployedResource,
+    Deployment,
+    DeploymentOutput,
+    DeploymentStatus,
+    JournalEntry,
+    JournalState,
+    UndoRecord,
+)
 from src.blueprints.planner import Plan
-from src.blueprints.models import DeployedResource, Deployment, DeploymentOutput, DeploymentStatus
 from src.blueprints.repository import DeploymentRepository
 from src.blueprints.validator import RESOURCE_REF, TEMPLATE, ValidatedBlueprint
 from src.config import settings
@@ -35,8 +47,8 @@ def apply_blueprint(
     background_tasks: BackgroundTasks | None = None,
     repository: DeploymentRepository | None = None,
 ) -> Deployment:
-    """Call only with a plan that has no blockers. Each resource is created, updated or kept as the plan says.
-    The deployment is recorded at every step, so a failure part-way still says what was touched."""
+    """Call only with a plan that has no blockers. The deployment is saved at every step, so a failure part-way
+    still says what was touched, and how to put it back."""
     repository = repository or DeploymentRepository()
     blueprint = validated.blueprint
     deployment = repository.save(Deployment(
@@ -47,91 +59,101 @@ def apply_blueprint(
         params=validated.params,
     ))
     ctx = ApplyContext(user_email=user_email, background_tasks=background_tasks)
-    # Created or updated, in order, so a failure undoes them in reverse.
-    touched: list[tuple[Action, AppliedResource]] = []
-    try:
-        for name in validated.order:
-            spec = blueprint.resources[name]
-            if spec.remove:
-                continue
-            change = plan.changes[name]
-            if change.action == Action.CREATE:
-                applied = managed_kind_for(spec.kind).apply(name, spec, ctx)
-            elif change.action == Action.UPDATE:
-                applied = managed_kind_for(spec.kind).update(name, spec, change, ctx)
+    for step in plan.commands:
+        if step is COMMIT:
+            deployment.committed = True
+            repository.save(deployment)
+            continue
+        assert isinstance(step, Command)
+        try:
+            _run(step, ctx, deployment, repository)
+        except Exception as e:
+            log.exception("Blueprint %s failed for %s at %s", blueprint.metadata.name, user_email, step.name)
+            reason = str(e) or type(e).__name__
+            if deployment.committed:
+                deployment.error = f"Everything that could be undone was applied, but this didn't finish: {reason}"
+                deployment.status = DeploymentStatus.FAILED_PARTIAL
             else:
-                applied = kind_for(spec.kind).kept(name, change)
-            ctx.applied[name] = applied
-            if change.action != Action.UNCHANGED:
-                touched.append((change.action, applied))
-            _record(deployment, applied)
-            repository.save(_touch(deployment))
-        for _, applied in touched:
-            managed_kind_for(applied.kind).start(applied, blueprint.resources[applied.name], ctx)
-            _record(deployment, applied)
-    except Exception as e:
-        log.exception("Blueprint %s failed for %s", blueprint.metadata.name, user_email)
-        deployment.error = str(e) or type(e).__name__
-        deployment.status = _undo(touched, ctx, deployment)
-        return repository.save(_touch(deployment))
-
-    try:
-        _remove(validated, plan, ctx, deployment)
-    except Exception as e:
-        log.exception("Removing parts of blueprint %s failed for %s", blueprint.metadata.name, user_email)
-        deployment.error = f"Everything else was applied, but a removal failed: {str(e) or type(e).__name__}"
-        deployment.status = DeploymentStatus.FAILED_PARTIAL
-        return repository.save(_touch(deployment))
+                deployment.error = reason
+                deployment.status = unwind(deployment)
+            return repository.save(deployment)
 
     deployment.outputs = {
         name: DeploymentOutput(value=_fill_outputs(output.value, ctx.applied), description=output.description)
         for name, output in blueprint.outputs.items()
     }
     deployment.status = DeploymentStatus.APPLIED
-    return repository.save(_touch(deployment))
+    return repository.save(deployment)
 
 
-def _remove(validated: ValidatedBlueprint, plan: Plan, ctx: ApplyContext, deployment: Deployment) -> None:
-    """Dependents first (a widget key before its agent), recording each removal as it happens."""
-    for name in reversed(validated.order):
-        change = plan.changes[name]
-        if not change.removals:
-            continue
-        spec = validated.blueprint.resources[name]
-        kind = managed_kind_for(spec.kind)
-        if change.action == Action.REMOVE:
-            kind.delete(change, ctx)
-        else:
-            kind.remove_parts(ctx.applied[name], spec, change, ctx)
-        deployment.removed += change.removals
+def _run(command: Command, ctx: ApplyContext, deployment: Deployment, repository: DeploymentRepository) -> None:
+    """Write ahead: the entry, with its undo, is saved before the command runs, then marked done."""
+    undo = command.prepare(ctx)
+    entry = JournalEntry(
+        command=command.name,
+        resource=command.resource,
+        undo=UndoRecord(action=undo.action, args=undo.args) if undo else None,
+        creates=command.creates,
+        removal=command.removal,
+    )
+    deployment.journal.append(entry)
+    repository.save(deployment)
+    command.run(ctx)
+    entry.state = JournalState.DONE
+    if command.resource in ctx.applied:
+        _record(deployment, ctx.applied[command.resource])
+    if command.removal:
+        deployment.removed.append(command.removal)
+    repository.save(deployment)
 
 
-def _undo(touched: list[tuple[Action, AppliedResource]], ctx: ApplyContext, deployment: Deployment) -> DeploymentStatus:
-    """Deletes what was created and puts back what was updated, newest first."""
+def unwind(deployment: Deployment) -> DeploymentStatus:
+    """Runs the saved undos, newest first, including the one for a command that may have stopped part-way. Returns
+    FAILED when everything was put back, FAILED_PARTIAL when an undo failed too."""
     status = DeploymentStatus.FAILED
-    for action, applied in reversed(touched):
-        kind = managed_kind_for(applied.kind)
+    for entry in reversed(deployment.journal):
+        if entry.state not in (JournalState.STARTED, JournalState.DONE):
+            continue
         try:
-            if action == Action.CREATE:
-                kind.rollback(applied, ctx)
-                deployment.resources.pop(applied.name, None)
-            else:
-                kind.restore(applied, ctx)
+            if entry.undo:
+                run_undo(Undo(entry.undo.action, entry.undo.args), deployment.user_email)
         except Exception:
-            log.exception("Undoing %s %s failed", applied.kind, applied.id)
+            log.exception("Undoing %s failed for deployment %s", entry.command, deployment.deployment_id)
+            entry.state = JournalState.UNDO_FAILED
             status = DeploymentStatus.FAILED_PARTIAL
+            continue
+        entry.state = JournalState.UNDONE
+        if entry.creates:
+            deployment.resources.pop(entry.resource, None)
+        if entry.removal in deployment.removed:
+            deployment.removed.remove(entry.removal)
     return status
+
+
+def recover_interrupted(repository: DeploymentRepository | None = None, *, now: datetime | None = None) -> int:
+    """Finishes applies the process stopped part-way through: puts back what it did if it hadn't reached the commit
+    point, and otherwise says what's left. Returns how many it found."""
+    repository = repository or DeploymentRepository()
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(seconds=settings.blueprint_apply_stale_timeout_seconds)
+    stale = repository.list_applying(updated_before=cutoff)
+    for deployment in stale:
+        if deployment.committed:
+            deployment.status = DeploymentStatus.FAILED_PARTIAL
+            deployment.error = (
+                "The build was interrupted after everything that could be undone was applied. "
+                "Apply the same blueprint again to finish it."
+            )
+        else:
+            deployment.status = unwind(deployment)
+            deployment.error = "The build was interrupted, so what it had done was put back."
+        repository.save(deployment)
+    return len(stale)
 
 
 def _record(deployment: Deployment, applied: AppliedResource) -> None:
     deployment.resources[applied.name] = DeployedResource(
         kind=applied.kind, id=applied.id, attributes=dict(applied.attributes)
     )
-
-
-def _touch(deployment: Deployment) -> Deployment:
-    deployment.updated_at = datetime.now(timezone.utc)
-    return deployment
 
 
 def _fill_outputs(text: str, applied: dict[str, AppliedResource]) -> str:

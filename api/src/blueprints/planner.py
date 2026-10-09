@@ -1,11 +1,12 @@
 """Planning a validated blueprint against what already exists: what it creates, updates, removes or leaves
-alone, and what stops it. No side effects."""
+alone, the commands that do it in the order they must run, and what stops it. No side effects."""
 
 from typing import Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.blueprints.commands import Command, OrderError, Step, command_order
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.kinds import Action, Change, Existing, ManagedKind, NotFound, PlanContext, kind_for, managed_kind_for
 from src.blueprints.validator import ValidatedBlueprint
@@ -33,6 +34,8 @@ class Plan(BaseModel):
     blockers: list[BlueprintIssue]
     #: What apply does with each resource, by name. Not part of any response.
     changes: dict[str, Change] = Field(default_factory=dict, exclude=True)
+    #: What apply runs, in order, with the commit point. Not part of any response.
+    commands: list[Step] = Field(default_factory=list, exclude=True)
 
     @property
     def ok(self) -> bool:
@@ -50,12 +53,15 @@ class Plan(BaseModel):
 def plan_blueprint(validated: ValidatedBlueprint, user_email: str) -> Plan:
     ctx = PlanContext(user_email=user_email)
     plan = Plan(steps=[], blockers=[])
+    commands: list[Command] = []
     agents = kb_pages = 0
     for name in validated.order:
         spec = validated.blueprint.resources[name]
         kind = kind_for(spec.kind)
         if spec.remove:
-            plan.steps.append(_removal_step(name, spec, managed_kind_for(spec.kind), ctx, plan))
+            step, removal = _removal(name, spec, managed_kind_for(spec.kind), ctx, plan)
+            plan.steps.append(step)
+            commands += removal
             continue
         try:
             existing = kind.find_existing(name, spec, ctx)
@@ -65,17 +71,21 @@ def plan_blueprint(validated: ValidatedBlueprint, user_email: str) -> Plan:
             existing = None
         if existing is None:
             ctx.created.add(name)
+        else:
+            ctx.matched[name] = existing
+        resource_commands = kind.commands(name, spec, existing, ctx)
+        commands += resource_commands
+        if existing is None:
             change = Change(action=Action.CREATE)
             summary = kind.describe(name, spec)
         else:
-            ctx.matched[name] = existing
-            differences = kind.differences(name, spec, existing, ctx)
-            removals = kind.removals(name, spec, existing, ctx)
+            differences = tuple(said for command in resource_commands for said in command.says)
+            removals = tuple(command.removal for command in resource_commands if command.removal)
             change = Change(
                 action=Action.UPDATE if differences or removals else Action.UNCHANGED,
                 existing=existing,
-                changes=tuple(differences),
-                removals=tuple(removals),
+                changes=differences,
+                removals=removals,
             )
             title = _title(name, spec, existing)
             summary = (
@@ -98,6 +108,11 @@ def plan_blueprint(validated: ValidatedBlueprint, user_email: str) -> Plan:
         agents += usage.agents
         kb_pages += usage.kb_pages
 
+    try:
+        plan.commands = command_order(commands)
+    except OrderError as e:
+        plan.blockers.append(BlueprintIssue(path="resources", message=f"These steps can't be put in order: {e}."))
+
     # Called directly: the subscription middleware only sees the HTTP routes, not blueprint applies.
     limits = RateLimitService()
     if agents:
@@ -112,7 +127,9 @@ def _title(name: str, spec: Any, existing: Existing) -> str:
     return getattr(spec, "name", None) or getattr(existing.record, "name", None) or name
 
 
-def _removal_step(name: str, spec: Any, kind: ManagedKind[Any], ctx: PlanContext, plan: Plan) -> PlanStep:
+def _removal(
+    name: str, spec: Any, kind: ManagedKind[Any], ctx: PlanContext, plan: Plan
+) -> tuple[PlanStep, list[Command]]:
     """A resource marked `remove`. Already gone counts as done, so applying the same blueprint again is a no-op."""
     try:
         existing = kind.find_existing(name, spec, ctx)
@@ -120,13 +137,16 @@ def _removal_step(name: str, spec: Any, kind: ManagedKind[Any], ctx: PlanContext
         existing = None
     if existing is None:
         plan.changes[name] = Change(action=Action.UNCHANGED)
-        return PlanStep(resource=name, kind=spec.kind, action=Action.UNCHANGED,
+        step = PlanStep(resource=name, kind=spec.kind, action=Action.UNCHANGED,
                         summary=f"{kind.label} '{spec.name or name}' is already gone")
+        return step, []
     ctx.matched[name] = existing
+    ctx.removing.add(name)
     removal = f"delete {kind.label.lower()} '{_title(name, spec, existing)}': {kind.deletes}"
     plan.changes[name] = Change(action=Action.REMOVE, existing=existing, removals=(removal,))
-    return PlanStep(resource=name, kind=spec.kind, action=Action.REMOVE, summary=removal[0].upper() + removal[1:],
+    step = PlanStep(resource=name, kind=spec.kind, action=Action.REMOVE, summary=removal[0].upper() + removal[1:],
                     removals=[removal], existing_id=existing.id)
+    return step, kind.delete_commands(name, spec, existing, removal)
 
 
 def _limit_issue(check) -> list[BlueprintIssue]:

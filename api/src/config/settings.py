@@ -98,6 +98,9 @@ class Settings:
     dream_planner_timeout_seconds: int = 150
     crawl_job_stale_timeout_seconds: int = 15 * 60
     crawl_job_reaper_interval_seconds: int = 5 * 60
+    #: A blueprint apply not saved for this long was interrupted; the reaper puts back what it did.
+    blueprint_apply_stale_timeout_seconds: int = 15 * 60
+    blueprint_apply_reaper_interval_seconds: int = 5 * 60
     # One chat turn keeps running after the browser leaves; these bound how long a
     # turn orphaned by a process restart can sit in `running` before the reaper
     # fails it. Deliberately not a wall-clock budget on the turn itself — see
@@ -493,6 +496,12 @@ class Settings:
             ),
             crawl_job_reaper_interval_seconds=int(
                 os.getenv("CRAWL_JOB_REAPER_INTERVAL_SECONDS", "300")
+            ),
+            blueprint_apply_stale_timeout_seconds=int(
+                os.getenv("BLUEPRINT_APPLY_STALE_TIMEOUT_SECONDS", "900")
+            ),
+            blueprint_apply_reaper_interval_seconds=int(
+                os.getenv("BLUEPRINT_APPLY_REAPER_INTERVAL_SECONDS", "300")
             ),
             mcp_oauth_redirect_uri=os.getenv(
                 "MCP_OAUTH_REDIRECT_URI",

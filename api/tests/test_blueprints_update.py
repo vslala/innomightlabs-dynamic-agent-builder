@@ -10,7 +10,7 @@ from src.blueprints.catalog import example_yaml
 from src.blueprints.executor import apply_blueprint
 from src.blueprints.export import export_agent, with_ids
 from src.blueprints.kinds import knowledge_base as knowledge_base_kind
-from src.blueprints.kinds.widget_key import WidgetKeyKind
+from src.blueprints.kinds.widget_key import SaveWidgetKey
 from src.blueprints.models import DeploymentStatus
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.validator import validate_blueprint
@@ -116,7 +116,7 @@ def test_a_failed_update_puts_things_back(launched, monkeypatch):
     def fail(*args, **kwargs):
         raise RuntimeError("key service down")
 
-    monkeypatch.setattr(WidgetKeyKind, "update", fail)
+    monkeypatch.setattr(SaveWidgetKey, "run", fail)
     edited = SITE_AGENT.replace("keep answers short and friendly.", "be terse.").replace(
         "allow_guests: true", "allow_guests: false"
     ).replace(

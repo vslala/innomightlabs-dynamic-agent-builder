@@ -31,6 +31,7 @@ DREAM_RUN_REAPER_ID = "internal:stale-dream-run-reaper"
 CHAT_TURN_REAPER_ID = "internal:stale-chat-turn-reaper"
 TOOL_JOB_REAPER_ID = "internal:stale-tool-job-reaper"
 WIDGET_GUEST_CLOSER_ID = "internal:widget-guest-session-closer"
+BLUEPRINT_APPLY_REAPER_ID = "internal:interrupted-blueprint-apply-reaper"
 
 
 class SchedulerRuntime:
@@ -63,6 +64,7 @@ class SchedulerRuntime:
             (self._reap_stale_chat_turns, settings.chat_turn_reaper_interval_seconds, CHAT_TURN_REAPER_ID),
             (self._reap_stale_tool_jobs, settings.tool_job_reaper_interval_seconds, TOOL_JOB_REAPER_ID),
             (self._close_ended_guest_sessions, settings.widget_guest_sweep_interval_seconds, WIDGET_GUEST_CLOSER_ID),
+            (self._recover_blueprint_applies, settings.blueprint_apply_reaper_interval_seconds, BLUEPRINT_APPLY_REAPER_ID),
         ):
             self.scheduler.add_job(
                 reaper,
@@ -130,6 +132,12 @@ class SchedulerRuntime:
 
     async def _reap_stale_tool_jobs(self) -> None:
         self._reap("tool job", self.tool_job_repository.fail_stale_jobs)
+
+    async def _recover_blueprint_applies(self) -> None:
+        # Imported here: blueprints load every resource kind, which the scheduler doesn't otherwise need.
+        from src.blueprints.executor import recover_interrupted
+
+        self._reap("blueprint apply", recover_interrupted)
 
     async def _close_ended_guest_sessions(self) -> None:
         from src.widget.guest_closer import GuestSessionCloser

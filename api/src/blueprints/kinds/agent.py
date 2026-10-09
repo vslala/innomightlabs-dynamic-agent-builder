@@ -1,8 +1,11 @@
-from typing import Any, Mapping, Optional
+from dataclasses import dataclass
+from typing import Any, ClassVar, Mapping, Optional
+from uuid import uuid4
 
 from src.agents.models import Agent, CreateAgentRequest
 from src.agents.repository import AgentRepository
 from src.agents.service import AgentService, validate_provider_model
+from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.kinds.base import (
     Action,
@@ -100,6 +103,243 @@ def skill_changes(entry: SkillEntry, config: dict[str, Any], installed: AgentSki
         or wanted_audience != _audience(installed)
         or entry.enabled != installed.enabled
     )
+
+
+def _applied(name: str, agent: Agent) -> AppliedResource:
+    return AppliedResource(
+        name=name, kind="Agent", id=agent.agent_id, attributes={"id": agent.agent_id, "name": agent.agent_name}
+    )
+
+
+def _label(skill_id: str) -> str:
+    return skill_id.replace("_", " ")
+
+
+# --- Commands -----------------------------------------------------------------------------------------------
+
+
+@dataclass(kw_only=True)
+class CreateAgent(Command):
+    request: CreateAgentRequest
+    #: Chosen when it's prepared, so the undo knows it even if the apply stops before the create returns.
+    agent_id: str = ""
+
+    reversibility: ClassVar[Reversibility] = Reversibility.COMPENSATABLE
+    establishes: ClassVar[bool] = True
+    creates: ClassVar[bool] = True
+
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        self.agent_id = self.agent_id or str(uuid4())
+        return Undo("delete_new_agent", {"agent_id": self.agent_id})
+
+    def run(self, ctx: ApplyContext) -> None:
+        agent = AgentService().create(self.request, ctx.user_email, agent_id=self.agent_id)
+        ctx.applied[self.resource] = _applied(self.resource, agent)
+
+
+@undo_action("delete_new_agent")
+def _delete_new_agent(args: dict[str, Any], user_email: str) -> None:
+    # The same delete as the dashboard's, so the dream schedule `create` added goes too, not left firing nightly.
+    if AgentRepository().find_agent_by_id(args["agent_id"], user_email):
+        AgentService().delete(args["agent_id"], user_email)
+
+
+@dataclass(kw_only=True)
+class SaveAgent(Command):
+    agent_id: str
+    fields: dict[str, Any]
+
+    establishes: ClassVar[bool] = True
+
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        current = AgentRepository().find_agent_by_id(self.agent_id, ctx.user_email)
+        before = {key: getattr(current, key) for key in self.fields} if current else {}
+        return Undo("restore_agent", {"agent_id": self.agent_id, "fields": before})
+
+    def run(self, ctx: ApplyContext) -> None:
+        ctx.applied[self.resource] = _applied(self.resource, _save_agent(self.agent_id, self.fields, ctx.user_email))
+
+
+def _save_agent(agent_id: str, fields: dict[str, Any], user_email: str) -> Agent:
+    current = AgentRepository().find_agent_by_id(agent_id, user_email)
+    if current is None:
+        raise RuntimeError("The agent was deleted since the plan. Plan again.")
+    return AgentRepository().save(current.model_copy(update=fields))
+
+
+@undo_action("restore_agent")
+def _restore_agent(args: dict[str, Any], user_email: str) -> None:
+    if args["fields"]:
+        _save_agent(args["agent_id"], args["fields"], user_email)
+
+
+@dataclass(kw_only=True)
+class LinkKnowledgeBase(Command):
+    knowledge_base: str
+
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        return Undo("unlink_knowledge_base", self._ids(ctx))
+
+    def run(self, ctx: ApplyContext) -> None:
+        ids = self._ids(ctx)
+        AgentKnowledgeBaseRepository().link(ids["agent_id"], ids["kb_id"], ctx.user_email)
+
+    def _ids(self, ctx: ApplyContext) -> dict[str, str]:
+        return {"agent_id": ctx.applied[self.resource].id, "kb_id": ctx.applied[self.knowledge_base].id}
+
+
+@dataclass(kw_only=True)
+class UnlinkKnowledgeBase(LinkKnowledgeBase):
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        return Undo("link_knowledge_base", self._ids(ctx))
+
+    def run(self, ctx: ApplyContext) -> None:
+        ids = self._ids(ctx)
+        AgentKnowledgeBaseRepository().unlink(ids["agent_id"], ids["kb_id"])
+
+
+@undo_action("unlink_knowledge_base")
+def _unlink_knowledge_base(args: dict[str, Any], user_email: str) -> None:
+    AgentKnowledgeBaseRepository().unlink(args["agent_id"], args["kb_id"])
+
+
+@undo_action("link_knowledge_base")
+def _link_knowledge_base(args: dict[str, Any], user_email: str) -> None:
+    AgentKnowledgeBaseRepository().link(args["agent_id"], args["kb_id"], user_email)
+
+
+@dataclass(kw_only=True)
+class EnableTools(Command):
+    connection: str
+
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        return Undo("disable_tools", self._ids(ctx))
+
+    def run(self, ctx: ApplyContext) -> None:
+        _enable_tools(self._ids(ctx), ctx.user_email)
+
+    def _ids(self, ctx: ApplyContext) -> dict[str, str]:
+        return {"agent_id": ctx.applied[self.resource].id, "mcp_id": ctx.applied[self.connection].id}
+
+
+@dataclass(kw_only=True)
+class DisableTools(EnableTools):
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        return Undo("enable_tools", self._ids(ctx))
+
+    def run(self, ctx: ApplyContext) -> None:
+        _disable_tools(self._ids(ctx), ctx.user_email)
+
+
+@undo_action("enable_tools")
+def _enable_tools(args: dict[str, Any], user_email: str) -> None:
+    get_mcp_connector_service().enable_for_agent(owner_email=user_email, agent_id=args["agent_id"], mcp_id=args["mcp_id"])
+
+
+@undo_action("disable_tools")
+def _disable_tools(args: dict[str, Any], user_email: str) -> None:
+    get_mcp_connector_service().disable_for_agent(owner_email=user_email, agent_id=args["agent_id"], mcp_id=args["mcp_id"])
+
+
+@dataclass(kw_only=True)
+class InstallSkill(Command):
+    entry: SkillEntry
+
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        config = skill_config(self.entry, _ids(ctx))
+        return Undo("uninstall_skill", {
+            "agent_id": ctx.applied[self.resource].id, "installed_skill_id": install_key(self.entry, config),
+        })
+
+    def run(self, ctx: ApplyContext) -> None:
+        SkillService().install_skill(
+            agent_id=ctx.applied[self.resource].id,
+            skill_id=self.entry.id,
+            user_email=ctx.user_email,
+            raw_config=skill_config(self.entry, _ids(ctx)),
+            enabled=self.entry.enabled,
+            available_to=skill_audience(self.entry),
+        )
+
+
+@undo_action("uninstall_skill")
+def _uninstall_skill(args: dict[str, Any], user_email: str) -> None:
+    SkillService().uninstall(agent_id=args["agent_id"], installed_skill_id=args["installed_skill_id"], user_email=user_email)
+
+
+@dataclass(kw_only=True)
+class UpdateSkill(Command):
+    entry: SkillEntry
+    installed_skill_id: str
+
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        agent_id = ctx.applied[self.resource].id
+        current = AgentSkillRepository().find_by_id(agent_id, self.installed_skill_id)
+        if current is None:
+            return None
+        return Undo("restore_skill", {
+            "agent_id": agent_id,
+            "installed_skill_id": self.installed_skill_id,
+            # Plain settings only: secrets are stored apart, and the update keeps them.
+            "enabled": current.enabled,
+            "config": dict(current.config),
+            "available_to": [ActorKind(kind).value for kind in current.available_to],
+        })
+
+    def run(self, ctx: ApplyContext) -> None:
+        config = skill_config(self.entry, _ids(ctx))
+        # Merges with the stored config, so secrets set on the Skills tab are kept.
+        SkillService().update_installed(
+            agent_id=ctx.applied[self.resource].id,
+            installed_skill_id=self.installed_skill_id,
+            enabled=self.entry.enabled,
+            raw_config=config or None,
+            available_to=[ActorKind.OWNER, *(skill_audience(self.entry) or [])],
+        )
+
+
+@undo_action("restore_skill")
+def _restore_skill(args: dict[str, Any], user_email: str) -> None:
+    SkillService().update_installed(
+        agent_id=args["agent_id"],
+        installed_skill_id=args["installed_skill_id"],
+        enabled=args["enabled"],
+        raw_config=args["config"] or None,
+        available_to=[ActorKind(kind) for kind in args["available_to"]],
+    )
+
+
+@dataclass(kw_only=True)
+class UninstallSkill(Command):
+    """Its settings and secrets go with it, so it can't be undone."""
+
+    agent_id: str
+    installed_skill_id: str
+
+    reversibility: ClassVar[Reversibility] = Reversibility.IRREVERSIBLE
+
+    def run(self, ctx: ApplyContext) -> None:
+        SkillService().uninstall(
+            agent_id=self.agent_id, installed_skill_id=self.installed_skill_id, user_email=ctx.user_email
+        )
+
+
+@dataclass(kw_only=True)
+class DeleteAgent(Command):
+    agent_id: str
+
+    reversibility: ClassVar[Reversibility] = Reversibility.IRREVERSIBLE
+    deletes: ClassVar[bool] = True
+
+    def run(self, ctx: ApplyContext) -> None:
+        AgentService().delete(self.agent_id, ctx.user_email)
+
+
+def _ids(ctx: ApplyContext) -> dict[str, str]:
+    return {name: resource.id for name, resource in ctx.applied.items()}
+
+
+# --- The kind -----------------------------------------------------------------------------------------------
 
 
 class AgentKind(ManagedKind[AgentSpec]):
@@ -200,56 +440,113 @@ class AgentKind(ManagedKind[AgentSpec]):
             },
         )
 
-    def differences(self, name: str, spec: AgentSpec, existing: Existing, ctx: PlanContext) -> list[str]:
-        agent: Agent = existing.record
-        changes = []
-        if spec.name != agent.agent_name:
-            changes.append(f"rename to '{spec.name}'")
-        if spec.instructions.strip() != agent.agent_persona.strip():
-            changes.append("update its instructions")
-        if spec.provider != agent.agent_provider or (spec.model and spec.model != agent.agent_model):
-            changes.append(f"switch to {spec.provider}" + (f" · {spec.model}" if spec.model else ""))
-        if spec.description is not None and spec.description != agent.agent_description:
-            changes.append("update its description")
-        if spec.session_timeout_minutes is not None and spec.session_timeout_minutes != agent.session_timeout_minutes:
-            changes.append(f"start conversations fresh after {spec.session_timeout_minutes} minutes")
-        linked = existing.related["kb_ids"]
+    def applied(self, name: str, record: Agent) -> AppliedResource:
+        return _applied(name, record)
+
+    def commands(self, name: str, spec: AgentSpec, existing: Optional[Existing], ctx: PlanContext) -> list[Command]:
+        """Adds what's missing and changes what differs. Takes away only what `remove_*` names: links and skills
+        the blueprint doesn't mention stay as they are."""
+        if existing is None:
+            create: Command = CreateAgent(resource=name, request=CreateAgentRequest(
+                agent_name=spec.name,
+                agent_architecture=BLUEPRINT_ARCHITECTURE,
+                agent_provider=spec.provider,
+                agent_model=spec.model,
+                agent_persona=spec.instructions,
+                agent_description=spec.description,
+                session_timeout_minutes=spec.session_timeout_minutes,
+            ))
+            linked: set[str] = set()
+            mcp_ids: set[str] = set()
+            installed: dict[str, AgentSkill] = {}
+        else:
+            create = self._save_or_use(name, spec, existing.record)
+            linked, mcp_ids, installed = existing.related["kb_ids"], existing.related["mcp_ids"], existing.related["skills"]
+
+        commands = [create]
         for kb_name in spec.knowledge_bases:
             matched = ctx.matched.get(kb_name)
             if matched is None or matched.id not in linked:
-                changes.append(f"link knowledge base '{kb_name}'")
+                commands.append(LinkKnowledgeBase(
+                    resource=name, uses=frozenset({kb_name}), knowledge_base=kb_name,
+                    says=(f"link knowledge base '{kb_name}'",),
+                ))
         for connection_name in spec.mcp_connections:
             matched = ctx.matched.get(connection_name)
-            if matched is None or matched.id not in existing.related["mcp_ids"]:
+            if matched is None or matched.id not in mcp_ids:
                 title = matched.record.name if matched else connection_name
-                changes.append(f"give it the {title} tools")
-        installed: dict[str, AgentSkill] = existing.related["skills"]
+                commands.append(EnableTools(
+                    resource=name, uses=frozenset({connection_name}), connection=connection_name,
+                    says=(f"give it the {title} tools",),
+                ))
         ids = ctx.ids()
-        for entry in spec.skills:
+        for index, entry in enumerate(spec.skills):
+            uses = frozenset(ref.target for ref in skill_references(name, [entry]))
             config = skill_config(entry, ids)
             skill = installed.get(install_key(entry, config))
             if skill is None:
-                changes.append(f"add skill {entry.id.replace('_', ' ')}")
+                commands.append(InstallSkill(resource=name, uses=uses, entry=entry, says=(f"add skill {_label(entry.id)}",)))
             elif skill_changes(entry, config, skill):
-                changes.append(f"update skill {entry.id.replace('_', ' ')}")
-        return changes
+                commands.append(UpdateSkill(
+                    resource=name, uses=uses, entry=entry, installed_skill_id=skill.installed_skill_id or skill.skill_id,
+                    says=(f"update skill {_label(entry.id)}",),
+                ))
+        if existing is not None:
+            commands += self._removal_commands(name, spec, existing, ctx)
+        return commands
 
-    def removals(self, name: str, spec: AgentSpec, existing: Existing, ctx: PlanContext) -> list[str]:
-        removals = []
-        linked = existing.related["kb_ids"]
+    def _save_or_use(self, name: str, spec: AgentSpec, agent: Agent) -> Command:
+        fields: dict[str, Any] = {}
+        says = []
+        if spec.name != agent.agent_name:
+            fields["agent_name"] = spec.name
+            says.append(f"rename to '{spec.name}'")
+        if spec.instructions.strip() != agent.agent_persona.strip():
+            fields["agent_persona"] = spec.instructions
+            says.append("update its instructions")
+        if spec.provider != agent.agent_provider or (spec.model and spec.model != agent.agent_model):
+            fields["agent_provider"] = spec.provider
+            if spec.model:
+                fields["agent_model"] = spec.model
+            says.append(f"switch to {spec.provider}" + (f" · {spec.model}" if spec.model else ""))
+        if spec.description is not None and spec.description != agent.agent_description:
+            fields["agent_description"] = spec.description
+            says.append("update its description")
+        if spec.session_timeout_minutes is not None and spec.session_timeout_minutes != agent.session_timeout_minutes:
+            fields["session_timeout_minutes"] = spec.session_timeout_minutes
+            says.append(f"start conversations fresh after {spec.session_timeout_minutes} minutes")
+        if not fields:
+            return Use(resource=name, applied=_applied(name, agent))
+        return SaveAgent(resource=name, agent_id=agent.agent_id, fields=fields, says=tuple(says))
+
+    def _removal_commands(self, name: str, spec: AgentSpec, existing: Existing, ctx: PlanContext) -> list[Command]:
+        commands: list[Command] = []
         for kb_name in spec.remove_knowledge_bases:
             matched = ctx.matched.get(kb_name)
-            if matched is not None and matched.id in linked:
-                removals.append(f"disconnect knowledge base '{matched.record.name}'")
+            # A knowledge base being deleted in this blueprint is disconnected by its own delete.
+            if matched is not None and matched.id in existing.related["kb_ids"] and kb_name not in ctx.removing:
+                commands.append(UnlinkKnowledgeBase(
+                    resource=name, uses=frozenset({kb_name}), knowledge_base=kb_name,
+                    removal=f"disconnect knowledge base '{matched.record.name}'",
+                ))
         for connection_name in spec.remove_mcp_connections:
             matched = ctx.matched.get(connection_name)
             if matched is not None and matched.id in existing.related["mcp_ids"]:
-                removals.append(f"take the {matched.record.name} tools away")
-        installed = {install.skill_id for install in existing.related["installs"]}
-        for skill_id in spec.remove_skills:
-            if skill_id in installed:
-                removals.append(f"uninstall skill {skill_id.replace('_', ' ')}")
-        return removals
+                commands.append(DisableTools(
+                    resource=name, uses=frozenset({connection_name}), connection=connection_name,
+                    removal=f"take the {matched.record.name} tools away",
+                ))
+        for install in existing.related["installs"]:
+            if install.skill_id in spec.remove_skills:
+                commands.append(UninstallSkill(
+                    resource=name, agent_id=existing.id, installed_skill_id=install.installed_skill_id or install.skill_id,
+                    removal=f"uninstall skill {_label(install.skill_id)}",
+                ))
+        return commands
+
+    def delete_commands(self, name: str, spec: AgentSpec, existing: Existing, removal: str) -> list[Command]:
+        uses = frozenset(ref.target for ref in self.references(name, spec) if not ref.removes)
+        return [DeleteAgent(resource=name, uses=uses, agent_id=existing.id, removal=removal)]
 
     def check(self, name: str, spec: AgentSpec, change: Change, ctx: PlanContext) -> list[BlueprintIssue]:
         path = f"resources.{name}"
@@ -317,175 +614,3 @@ class AgentKind(ManagedKind[AgentSpec]):
         if spec.skills:
             parts.append(f"with skills {', '.join(entry.id for entry in spec.skills)}")
         return ", ".join(parts)
-
-    def apply(self, name: str, spec: AgentSpec, ctx: ApplyContext) -> AppliedResource:
-        agent = AgentService().create(
-            CreateAgentRequest(
-                agent_name=spec.name,
-                agent_architecture=BLUEPRINT_ARCHITECTURE,
-                agent_provider=spec.provider,
-                agent_model=spec.model,
-                agent_persona=spec.instructions,
-                agent_description=spec.description,
-                session_timeout_minutes=spec.session_timeout_minutes,
-            ),
-            ctx.user_email,
-        )
-        applied = self._applied(name, agent)
-        try:
-            self._link_and_install(applied, spec, ctx, linked=set(), installed={}, mcp_ids=set())
-        except Exception:
-            self.rollback(applied, ctx)
-            raise
-        return applied
-
-    def update(self, name: str, spec: AgentSpec, change: Change, ctx: ApplyContext) -> AppliedResource:
-        existing = change.existing
-        assert existing is not None
-        previous: Agent = existing.record
-        updates: dict[str, Any] = {
-            "agent_name": spec.name,
-            "agent_persona": spec.instructions,
-            "agent_provider": spec.provider,
-        }
-        if spec.model is not None:
-            updates["agent_model"] = spec.model
-        if spec.description is not None:
-            updates["agent_description"] = spec.description
-        if spec.session_timeout_minutes is not None:
-            updates["session_timeout_minutes"] = spec.session_timeout_minutes
-        agent = AgentRepository().save(previous.model_copy(update=updates))
-        applied = self._applied(name, agent)
-        applied.previous = {"agent": previous, "skills": {}}
-        try:
-            self._link_and_install(
-                applied,
-                spec,
-                ctx,
-                linked=existing.related["kb_ids"],
-                installed=existing.related["skills"],
-                mcp_ids=existing.related["mcp_ids"],
-            )
-        except Exception:
-            self.restore(applied, ctx)
-            raise
-        return applied
-
-    def _link_and_install(
-        self,
-        applied: AppliedResource,
-        spec: AgentSpec,
-        ctx: ApplyContext,
-        *,
-        linked: set[str],
-        installed: dict[str, AgentSkill],
-        mcp_ids: set[str],
-    ) -> None:
-        """Adds what's missing and changes what differs. Never removes: links and skills the blueprint doesn't
-        mention stay as they are."""
-        links = AgentKnowledgeBaseRepository()
-        for kb_name in spec.knowledge_bases:
-            kb_id = ctx.applied[kb_name].id
-            if kb_id not in linked:
-                links.link(applied.id, kb_id, ctx.user_email)
-                applied.cleanup["knowledge_bases"].append(kb_id)
-        connectors = get_mcp_connector_service()
-        for connection_name in spec.mcp_connections:
-            mcp_id = ctx.applied[connection_name].id
-            if mcp_id not in mcp_ids:
-                connectors.enable_for_agent(owner_email=ctx.user_email, agent_id=applied.id, mcp_id=mcp_id)
-                applied.cleanup["mcp_connections"].append(mcp_id)
-        service = SkillService()
-        ids = {name: resource.id for name, resource in ctx.applied.items()}
-        for entry in spec.skills:
-            config = skill_config(entry, ids)
-            existing_skill = installed.get(install_key(entry, config))
-            if existing_skill is None:
-                new = service.install_skill(
-                    agent_id=applied.id,
-                    skill_id=entry.id,
-                    user_email=ctx.user_email,
-                    raw_config=config,
-                    enabled=entry.enabled,
-                    available_to=skill_audience(entry),
-                )
-                applied.cleanup["skills"].append(new.installed_skill_id or new.skill_id)
-            elif skill_changes(entry, config, existing_skill):
-                installed_skill_id = existing_skill.installed_skill_id or existing_skill.skill_id
-                # Merges with the stored config, so secrets set on the Skills tab are kept.
-                service.update_installed(
-                    agent_id=applied.id,
-                    installed_skill_id=installed_skill_id,
-                    enabled=entry.enabled,
-                    raw_config=config or None,
-                    available_to=[ActorKind.OWNER, *(skill_audience(entry) or [])],
-                )
-                applied.previous["skills"][installed_skill_id] = existing_skill
-
-    def remove_parts(self, applied: AppliedResource, spec: AgentSpec, change: Change, ctx: ApplyContext) -> None:
-        existing = change.existing
-        if existing is None:
-            return
-        links = AgentKnowledgeBaseRepository()
-        for kb_name in spec.remove_knowledge_bases:
-            # A knowledge base being deleted in this blueprint is disconnected by its own delete.
-            kb = ctx.applied.get(kb_name)
-            if kb is not None and kb.id in existing.related["kb_ids"]:
-                links.unlink(applied.id, kb.id)
-        connectors = get_mcp_connector_service()
-        for connection_name in spec.remove_mcp_connections:
-            connection = ctx.applied.get(connection_name)
-            if connection is not None and connection.id in existing.related["mcp_ids"]:
-                connectors.disable_for_agent(owner_email=ctx.user_email, agent_id=applied.id, mcp_id=connection.id)
-        service = SkillService()
-        for install in existing.related["installs"]:
-            if install.skill_id in spec.remove_skills:
-                service.uninstall(
-                    agent_id=applied.id,
-                    installed_skill_id=install.installed_skill_id or install.skill_id,
-                    user_email=ctx.user_email,
-                )
-
-    def delete(self, change: Change, ctx: ApplyContext) -> None:
-        AgentService().delete(change.existing.id, ctx.user_email)  # type: ignore[union-attr]
-
-    def kept(self, name: str, change: Change) -> AppliedResource:
-        return self._applied(name, change.existing.record)  # type: ignore[union-attr]
-
-    def _applied(self, name: str, agent: Agent) -> AppliedResource:
-        return AppliedResource(
-            name=name,
-            kind=self.kind,
-            id=agent.agent_id,
-            attributes={"id": agent.agent_id, "name": agent.agent_name},
-            cleanup={"knowledge_bases": [], "skills": [], "mcp_connections": []},
-        )
-
-    def _undo_additions(self, applied: AppliedResource, ctx: ApplyContext) -> None:
-        service = SkillService()
-        for installed_skill_id in applied.cleanup.get("skills", []):
-            service.uninstall(agent_id=applied.id, installed_skill_id=installed_skill_id, user_email=ctx.user_email)
-        links = AgentKnowledgeBaseRepository()
-        for kb_id in applied.cleanup.get("knowledge_bases", []):
-            links.unlink(applied.id, kb_id)
-        connectors = get_mcp_connector_service()
-        for mcp_id in applied.cleanup.get("mcp_connections", []):
-            connectors.disable_for_agent(owner_email=ctx.user_email, agent_id=applied.id, mcp_id=mcp_id)
-
-    def rollback(self, applied: AppliedResource, ctx: ApplyContext) -> None:
-        self._undo_additions(applied, ctx)
-        # The same delete as the dashboard's, so the dream schedule `create` added goes too, not left firing nightly.
-        AgentService().delete(applied.id, ctx.user_email)
-
-    def restore(self, applied: AppliedResource, ctx: ApplyContext) -> None:
-        self._undo_additions(applied, ctx)
-        service = SkillService()
-        for installed_skill_id, before in (applied.previous or {}).get("skills", {}).items():
-            service.update_installed(
-                agent_id=applied.id,
-                installed_skill_id=installed_skill_id,
-                enabled=before.enabled,
-                raw_config=dict(before.config) or None,
-                available_to=list(before.available_to),
-            )
-        AgentRepository().save(applied.previous["agent"])

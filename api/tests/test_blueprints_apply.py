@@ -13,8 +13,8 @@ from src.blueprints import service as blueprints_service
 from src.blueprints.catalog import example_yaml
 from src.blueprints.executor import apply_blueprint
 from src.blueprints.kinds import knowledge_base as knowledge_base_kind
-from src.blueprints.kinds.agent import AgentKind
-from src.blueprints.kinds.widget_key import WidgetKeyKind
+from src.blueprints.commands import UNDO_ACTIONS
+from src.blueprints.kinds.widget_key import CreateWidgetKey
 from src.blueprints.models import DeploymentStatus
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.repository import DeploymentRepository
@@ -96,7 +96,7 @@ def test_a_failure_rolls_everything_back(launched, monkeypatch):
     def fail(*args, **kwargs):
         raise RuntimeError("key service down")
 
-    monkeypatch.setattr(WidgetKeyKind, "apply", fail)
+    monkeypatch.setattr(CreateWidgetKey, "run", fail)
     validated, plan = planned()
     deployment = apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
 
@@ -110,8 +110,8 @@ def test_a_failure_rolls_everything_back(launched, monkeypatch):
 
 
 def test_a_failed_rollback_keeps_the_leftovers(launched, monkeypatch):
-    monkeypatch.setattr(WidgetKeyKind, "apply", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
-    monkeypatch.setattr(AgentKind, "rollback", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("stuck")))
+    monkeypatch.setattr(CreateWidgetKey, "run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setitem(UNDO_ACTIONS, "delete_new_agent", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("stuck")))
     validated, plan = planned()
     deployment = apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
 
@@ -248,13 +248,13 @@ def test_a_failed_build_leaves_no_dream_schedule_behind(dynamodb_table, monkeypa
     def fail(*args, **kwargs):
         raise RuntimeError("key service down")
 
-    monkeypatch.setattr(WidgetKeyKind, "apply", fail)
+    monkeypatch.setattr(CreateWidgetKey, "run", fail)
     validated = validate_blueprint(SITE_AGENT, PARAMS)
     created: list[str] = []
     real_create = AgentService.create
 
-    def remember(self, request, user_email):
-        agent = real_create(self, request, user_email)
+    def remember(self, request, user_email, **kwargs):
+        agent = real_create(self, request, user_email, **kwargs)
         created.append(agent.agent_id)
         return agent
 
