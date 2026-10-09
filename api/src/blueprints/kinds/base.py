@@ -1,12 +1,12 @@
 """What every resource kind provides. Each kind wraps existing services; none of them call HTTP routes.
 
 A blueprint is applied against what already exists: each resource is matched to an existing one (by `id`, else
-by name), compared with it, and then created, updated or left alone. Applying the same blueprint twice changes
-nothing the second time.
+by name), compared with it, and turned into commands (`commands.py`) that create it, change what differs, or keep
+it as it is. Applying the same blueprint twice changes nothing the second time.
 
 Removing is always explicit: leaving something out of a blueprint never removes it. A resource marked `remove`
-is deleted, and an update can take parts away (an agent's `remove_knowledge_bases`, `remove_skills`). Removals
-run after everything else has been applied, because they can't be undone.
+is deleted, and an update can take parts away (an agent's `remove_knowledge_bases`, `remove_skills`). What can't
+be undone runs after everything that can, whatever order the commands come in.
 """
 
 from dataclasses import dataclass, field
@@ -16,6 +16,7 @@ from typing import Any, ClassVar, Generic, Literal, Mapping, Optional, TypeVar
 from fastapi import BackgroundTasks
 from pydantic import BaseModel
 
+from src.blueprints.commands import Command, Use
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.references import Reference, field_references
 
@@ -56,12 +57,6 @@ class AppliedResource:
     id: str
     #: What `outputs` may reference as {{ resources.<name>.<attribute> }}.
     attributes: dict[str, str] = field(default_factory=dict)
-    #: Ids rollback needs beyond `id`, e.g. installed skills. Never shown.
-    cleanup: dict[str, list[str]] = field(default_factory=dict)
-    #: For an update: what to put back if a later step fails.
-    previous: Any = None
-    #: Whether `start` has work to do (a knowledge base whose crawl changed).
-    needs_start: bool = True
 
 
 @dataclass
@@ -71,6 +66,8 @@ class PlanContext:
     matched: dict[str, Existing] = field(default_factory=dict)
     #: Resources planned so far that will be created, by blueprint name. They have no id until apply.
     created: set[str] = field(default_factory=set)
+    #: Resources planned so far that will be deleted, by blueprint name.
+    removing: set[str] = field(default_factory=set)
 
     def ids(self) -> dict[str, str]:
         """Blueprint name → id, for everything matched so far."""
@@ -151,13 +148,11 @@ class ResourceKind(Generic[SpecT]):
         with the same name. None means it will be created."""
         return None
 
-    def differences(self, name: str, spec: SpecT, existing: Existing, ctx: PlanContext) -> list[str]:
-        """What updating `existing` to match the spec changes, in plain words. Empty means nothing to do."""
-        return []
-
-    def removals(self, name: str, spec: SpecT, existing: Existing, ctx: PlanContext) -> list[str]:
-        """What updating `existing` takes away, in plain words. Only what the spec explicitly names."""
-        return []
+    def commands(self, name: str, spec: SpecT, existing: Optional[Existing], ctx: PlanContext) -> list[Command]:
+        """What applying it does: create it when there's nothing `existing`, else change what differs from the spec,
+        or keep it as it is. Exactly one command establishes the resource. Each says what it changes or takes away,
+        which is what the plan shows."""
+        raise NotImplementedError
 
     def check(self, name: str, spec: SpecT, change: Change, ctx: PlanContext) -> list[BlueprintIssue]:
         """Checks against the owner's account (providers, connections, names). Run by the plan."""
@@ -170,14 +165,18 @@ class ResourceKind(Generic[SpecT]):
         """The plan's sentence for this resource when it isn't there yet."""
         raise NotImplementedError
 
-    def kept(self, name: str, change: Change) -> AppliedResource:
-        """An unchanged resource, so references to it and outputs about it still resolve."""
+    def applied(self, name: str, record: Any) -> AppliedResource:
+        """The resource as the commands after it see it: its id, and the attributes outputs may show."""
         raise NotImplementedError
 
 
 class LookupKind(ResourceKind[SpecT]):
     """A kind the account owns and a blueprint only uses, such as an MCP connection holding the person's sign-in.
     It's found and linked to, never created, changed or deleted by a blueprint."""
+
+    def commands(self, name: str, spec: SpecT, existing: Optional[Existing], ctx: PlanContext) -> list[Command]:
+        # Not there: `check` says so, and the plan is blocked, so nothing runs.
+        return [Use(resource=name, applied=self.applied(name, existing.record))] if existing else []
 
     def validate(self, name: str, spec: SpecT) -> list[BlueprintIssue]:
         if getattr(spec, "remove", False):
@@ -195,28 +194,6 @@ class ManagedKind(ResourceKind[SpecT]):
     #: What deleting one takes with it, in plain words, for the plan.
     deletes: ClassVar[str]
 
-    def apply(self, name: str, spec: SpecT, ctx: ApplyContext) -> AppliedResource:
-        """Create it."""
-        raise NotImplementedError
-
-    def update(self, name: str, spec: SpecT, change: Change, ctx: ApplyContext) -> AppliedResource:
-        """Change the existing resource to match the spec. Anything that can't be undone waits for `finalize`."""
-        raise NotImplementedError
-
-    def start(self, applied: AppliedResource, spec: SpecT, ctx: ApplyContext) -> None:
-        """Runs once every resource exists, so work that can't be undone (a crawl) starts last."""
-
-    def remove_parts(self, applied: AppliedResource, spec: SpecT, change: Change, ctx: ApplyContext) -> None:
-        """Take away what `removals` listed. Runs once everything else is applied."""
-
-    def delete(self, change: Change, ctx: ApplyContext) -> None:
-        """Delete the existing resource a `remove` matched. Runs once everything else is applied."""
-        raise NotImplementedError
-
-    def rollback(self, applied: AppliedResource, ctx: ApplyContext) -> None:
-        """Undo a create."""
-        raise NotImplementedError
-
-    def restore(self, applied: AppliedResource, ctx: ApplyContext) -> None:
-        """Undo an update, from `applied.previous`."""
+    def delete_commands(self, name: str, spec: SpecT, existing: Existing, removal: str) -> list[Command]:
+        """Delete the existing resource a `remove` matched. `removal` is how the plan says it."""
         raise NotImplementedError

@@ -217,6 +217,14 @@ Where the POC differs from the design below, and why:
     fields marked `x-ref-kind` and skill settings that name an agent (now marked `x-ref-kind: Agent` in the
     schema). The validator and the drawing both read it.
   - **Each kind's `observe` writes an existing resource back as its spec.** `export_agent` is built on it.
+- **Refactor phase 3, 2026-10-09: apply runs commands.**
+  - **Each kind emits small commands that say how to undo themselves** (`blueprints/commands.py`). The executor
+    runs them in a derived order: everything that can be undone first, then a commit point, then deletes and
+    crawls.
+  - **Each undo is saved on the deployment before its command runs.** A scheduler reaper puts back an apply
+    interrupted by a restart.
+  - **Disconnects now roll back with the rest of a failed apply.** A crawl that fails to start no longer rolls back
+    the build. This replaces the "Crawls start in `start()`" caveat above.
 - **Tests:**
   - `api/tests/test_blueprints_validator.py`, `test_blueprints_skills_schema.py`, `test_blueprints_apply.py` and
     `test_builder_ada.py`, plus an injected-architecture case in `test_chat_turn_run.py`.

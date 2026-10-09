@@ -1,5 +1,8 @@
-from typing import Any, Literal, Mapping, Optional
+from dataclasses import dataclass
+from typing import Any, ClassVar, Literal, Mapping, Optional
+from uuid import uuid4
 
+from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.kinds.base import (
     Action,
@@ -7,8 +10,8 @@ from src.blueprints.kinds.base import (
     ApplyContext,
     Change,
     Existing,
-    NotFound,
     ManagedKind,
+    NotFound,
     PlanContext,
     Usage,
 )
@@ -38,6 +41,112 @@ def last_crawl(kb_id: str) -> Optional[CrawlSpec]:
     )
 
 
+def _applied(name: str, kb: KnowledgeBase) -> AppliedResource:
+    return AppliedResource(name=name, kind="KnowledgeBase", id=kb.kb_id, attributes={"id": kb.kb_id, "name": kb.name})
+
+
+# --- Commands -----------------------------------------------------------------------------------------------
+
+
+@dataclass(kw_only=True)
+class CreateKnowledgeBase(Command):
+    kb_name: str
+    description: Optional[str]
+    #: Chosen when it's prepared, so the undo knows it even if the apply stops before the create returns.
+    kb_id: str = ""
+
+    reversibility: ClassVar[Reversibility] = Reversibility.COMPENSATABLE
+    establishes: ClassVar[bool] = True
+    creates: ClassVar[bool] = True
+
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        self.kb_id = self.kb_id or str(uuid4())
+        return Undo("delete_new_knowledge_base", {"kb_id": self.kb_id})
+
+    def run(self, ctx: ApplyContext) -> None:
+        kb = KnowledgeBaseRepository().save(
+            KnowledgeBase(kb_id=self.kb_id, name=self.kb_name, description=self.description, created_by=ctx.user_email)
+        )
+        ctx.applied[self.resource] = _applied(self.resource, kb)
+
+
+@undo_action("delete_new_knowledge_base")
+def _delete_new_knowledge_base(args: dict[str, Any], user_email: str) -> None:
+    # Crawls start only after the commit point, so a new knowledge base has no content to clean up.
+    if KnowledgeBaseRepository().find_by_id(args["kb_id"], user_email):
+        KnowledgeBaseRepository().soft_delete(args["kb_id"], user_email)
+
+
+@dataclass(kw_only=True)
+class SaveKnowledgeBase(Command):
+    kb_id: str
+    fields: dict[str, Any]
+
+    establishes: ClassVar[bool] = True
+
+    def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
+        current = KnowledgeBaseRepository().find_by_id(self.kb_id, ctx.user_email)
+        before = {key: getattr(current, key) for key in self.fields} if current else {}
+        return Undo("restore_knowledge_base", {"kb_id": self.kb_id, "fields": before})
+
+    def run(self, ctx: ApplyContext) -> None:
+        ctx.applied[self.resource] = _applied(self.resource, _save_fields(self.kb_id, self.fields, ctx.user_email))
+
+
+def _save_fields(kb_id: str, fields: dict[str, Any], user_email: str) -> KnowledgeBase:
+    current = KnowledgeBaseRepository().find_by_id(kb_id, user_email)
+    if current is None:
+        raise RuntimeError("The knowledge base was deleted since the plan. Plan again.")
+    return KnowledgeBaseRepository().save(current.model_copy(update=fields))
+
+
+@undo_action("restore_knowledge_base")
+def _restore_knowledge_base(args: dict[str, Any], user_email: str) -> None:
+    if args["fields"]:
+        _save_fields(args["kb_id"], args["fields"], user_email)
+
+
+@dataclass(kw_only=True)
+class StartCrawl(Command):
+    """Reading a site spends the plan's page allowance and can't be taken back, so it runs after the commit point."""
+
+    crawl: CrawlSpec
+
+    reversibility: ClassVar[Reversibility] = Reversibility.IRREVERSIBLE
+
+    def run(self, ctx: ApplyContext) -> None:
+        applied = ctx.applied[self.resource]
+        job = CrawlJobRepository().save(CrawlJob(
+            kb_id=applied.id,
+            config=CrawlConfig(
+                source_type=CRAWL_SOURCE[self.crawl.mode],
+                source_url=self.crawl.url,
+                max_pages=self.crawl.max_pages,
+                max_depth=self.crawl.max_depth,
+            ),
+            created_by=ctx.user_email,
+        ))
+        applied.attributes["crawl_job_id"] = job.job_id
+        launch_crawl(job.job_id, applied.id, ctx.user_email, ctx.background_tasks)
+
+
+@dataclass(kw_only=True)
+class DeleteKnowledgeBase(Command):
+    kb_id: str
+
+    reversibility: ClassVar[Reversibility] = Reversibility.IRREVERSIBLE
+    deletes: ClassVar[bool] = True
+
+    def run(self, ctx: ApplyContext) -> None:
+        # The same delete as the dashboard's: vectors and chunks go, and it's disconnected from every agent.
+        result = get_knowledge_base_service().soft_delete(self.kb_id, ctx.user_email)
+        if not result.success:
+            raise RuntimeError(result.error or "The knowledge base couldn't be deleted.")
+
+
+# --- The kind -----------------------------------------------------------------------------------------------
+
+
 class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
     kind = "KnowledgeBase"
     label = "Knowledge base"
@@ -57,6 +166,9 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
         if crawl:
             resource["crawl"] = crawl.model_dump()
         return resource
+
+    def applied(self, name: str, record: KnowledgeBase) -> AppliedResource:
+        return _applied(name, record)
 
     def card_details(self, spec: KnowledgeBaseSpec) -> list[str]:
         if not spec.crawl:
@@ -86,16 +198,37 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
         kb = same_name[0]
         return Existing(id=kb.kb_id, record=kb, matched_by="name", related={"crawl": last_crawl(kb.kb_id)})
 
-    def differences(self, name: str, spec: KnowledgeBaseSpec, existing: Existing, ctx: PlanContext) -> list[str]:
+    def commands(
+        self, name: str, spec: KnowledgeBaseSpec, existing: Optional[Existing], ctx: PlanContext
+    ) -> list[Command]:
+        if existing is None:
+            crawl = [StartCrawl(resource=name, crawl=spec.crawl)] if spec.crawl else []
+            return [CreateKnowledgeBase(resource=name, kb_name=spec.name, description=spec.description), *crawl]
         kb: KnowledgeBase = existing.record
-        changes = []
+        fields: dict[str, Any] = {}
+        says = []
         if spec.name != kb.name:
-            changes.append(f"rename to '{spec.name}'")
+            fields["name"] = spec.name
+            says.append(f"rename to '{spec.name}'")
         if spec.description is not None and spec.description != kb.description:
-            changes.append("update its description")
+            fields["description"] = spec.description
+            says.append("update its description")
+        commands: list[Command] = (
+            [SaveKnowledgeBase(resource=name, kb_id=kb.kb_id, fields=fields, says=tuple(says))]
+            if fields else [Use(resource=name, applied=_applied(name, kb))]
+        )
         if spec.crawl and spec.crawl != existing.related.get("crawl"):
-            changes.append(f"read {spec.crawl.url} again, up to {spec.crawl.max_pages} pages")
-        return changes
+            commands.append(StartCrawl(
+                resource=name,
+                crawl=spec.crawl,
+                says=(f"read {spec.crawl.url} again, up to {spec.crawl.max_pages} pages",),
+            ))
+        return commands
+
+    def delete_commands(
+        self, name: str, spec: KnowledgeBaseSpec, existing: Existing, removal: str
+    ) -> list[Command]:
+        return [DeleteKnowledgeBase(resource=name, kb_id=existing.id, removal=removal)]
 
     def check(self, name: str, spec: KnowledgeBaseSpec, change: Change, ctx: PlanContext) -> list[BlueprintIssue]:
         if not self._crawls(spec, change):
@@ -122,57 +255,3 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
         if spec.crawl:
             return f"Create knowledge base '{spec.name}' and read up to {spec.crawl.max_pages} pages from {spec.crawl.url}"
         return f"Create empty knowledge base '{spec.name}'"
-
-    def apply(self, name: str, spec: KnowledgeBaseSpec, ctx: ApplyContext) -> AppliedResource:
-        kb = KnowledgeBaseRepository().save(
-            KnowledgeBase(name=spec.name, description=spec.description, created_by=ctx.user_email)
-        )
-        return self._applied(name, kb, needs_start=bool(spec.crawl))
-
-    def update(self, name: str, spec: KnowledgeBaseSpec, change: Change, ctx: ApplyContext) -> AppliedResource:
-        previous: KnowledgeBase = change.existing.record  # type: ignore[union-attr]
-        updated = previous.model_copy(update={
-            "name": spec.name,
-            "description": spec.description if spec.description is not None else previous.description,
-        })
-        kb = KnowledgeBaseRepository().save(updated)
-        applied = self._applied(name, kb, needs_start=self._crawls(spec, change))
-        applied.previous = previous
-        return applied
-
-    def kept(self, name: str, change: Change) -> AppliedResource:
-        return self._applied(name, change.existing.record, needs_start=False)  # type: ignore[union-attr]
-
-    def _applied(self, name: str, kb: KnowledgeBase, *, needs_start: bool) -> AppliedResource:
-        return AppliedResource(
-            name=name, kind=self.kind, id=kb.kb_id, attributes={"id": kb.kb_id, "name": kb.name}, needs_start=needs_start
-        )
-
-    def start(self, applied: AppliedResource, spec: KnowledgeBaseSpec, ctx: ApplyContext) -> None:
-        if not spec.crawl or not applied.needs_start:
-            return
-        job = CrawlJobRepository().save(CrawlJob(
-            kb_id=applied.id,
-            config=CrawlConfig(
-                source_type=CRAWL_SOURCE[spec.crawl.mode],
-                source_url=spec.crawl.url,
-                max_pages=spec.crawl.max_pages,
-                max_depth=spec.crawl.max_depth,
-            ),
-            created_by=ctx.user_email,
-        ))
-        applied.attributes["crawl_job_id"] = job.job_id
-        launch_crawl(job.job_id, applied.id, ctx.user_email, ctx.background_tasks)
-
-    def delete(self, change: Change, ctx: ApplyContext) -> None:
-        # The same delete as the dashboard's: vectors and chunks go, and it's disconnected from every agent.
-        result = get_knowledge_base_service().soft_delete(change.existing.id, ctx.user_email)  # type: ignore[union-attr]
-        if not result.success:
-            raise RuntimeError(result.error or "The knowledge base couldn't be deleted.")
-
-    def rollback(self, applied: AppliedResource, ctx: ApplyContext) -> None:
-        # Crawls start only after every resource exists, so there are no vectors to clean up here.
-        KnowledgeBaseRepository().soft_delete(applied.id, ctx.user_email)
-
-    def restore(self, applied: AppliedResource, ctx: ApplyContext) -> None:
-        KnowledgeBaseRepository().save(applied.previous)

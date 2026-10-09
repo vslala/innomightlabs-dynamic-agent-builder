@@ -20,8 +20,11 @@ class AgentService:
     def __init__(self, repository: Optional[AgentRepository] = None) -> None:
         self.repository = repository or AgentRepository()
 
-    def create(self, request: CreateAgentRequest, user_email: str) -> Agent:
-        """Save a new agent. A `krishna-memgpt` agent joins the owner's dream schedule if they have one."""
+    def create(self, request: CreateAgentRequest, user_email: str, *, agent_id: Optional[str] = None) -> Agent:
+        """Save a new agent. A `krishna-memgpt` agent joins the owner's dream schedule if they have one.
+
+        `agent_id` lets a caller choose the id ahead, so it can undo the create even if it stops before this returns
+        (a blueprint apply records its undo first)."""
         agent = Agent(
             agent_name=request.agent_name,
             agent_architecture=request.agent_architecture,
@@ -32,6 +35,8 @@ class AgentService:
             agent_ollama_thinking=request.agent_ollama_thinking,
             created_by=user_email,
         )
+        if agent_id:
+            agent.agent_id = agent_id
         if request.session_timeout_minutes is not None:
             agent.session_timeout_minutes = request.session_timeout_minutes
 
