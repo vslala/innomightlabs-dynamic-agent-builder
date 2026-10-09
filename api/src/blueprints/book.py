@@ -26,6 +26,7 @@ from src.blueprints.catalog import build_ideas, field_rows, markdown_table, skil
 from src.blueprints.kinds import RESOURCE_KINDS, ResourceKind
 from src.blueprints.skills_schema import SkillSetup, SkillVariant, requirement_note, skill_variants
 from src.blueprints.document import Blueprint
+from src.blueprints.draft import Draft
 from src.blueprints.spec import AVAILABLE_TO_DESCRIPTION, Metadata, OutputSpec, ParamSpec
 from src.skills.disclosure import summarize
 from src.skills.registry import SkillRegistry
@@ -330,24 +331,21 @@ _SKILL_PATH = re.compile(r"^resources\.([^.\[]+)\.skills\[(\d+)\]")
 _RESOURCE_PATH = re.compile(r"^resources\.([^.\[]+)")
 
 
-def page_for_issue(path: str, blueprint_yaml: str, book: Book) -> Optional[str]:
+def page_for_issue(path: str, draft: Draft, book: Book) -> Optional[str]:
     """The page that explains the part of the blueprint an issue is about."""
-    try:
-        data = yaml.safe_load(blueprint_yaml)
-    except yaml.YAMLError:
+    if not draft.parsed:
         return GUIDE
-    resources = data.get("resources") if isinstance(data, dict) else None
-    resources = resources if isinstance(resources, dict) else {}
+    resources = draft.resources
     candidates: list[str] = []
     if skill := _SKILL_PATH.match(path):
         spec = resources.get(skill.group(1))
-        entries = spec.get("skills") if isinstance(spec, dict) else None
+        entries = spec.get("skills") if spec else None
         index = int(skill.group(2))
         if isinstance(entries, list) and index < len(entries) and isinstance(entries[index], dict):
             candidates.append(skill_page_id(str(entries[index].get("id"))))
     if resource := _RESOURCE_PATH.match(path):
         spec = resources.get(resource.group(1))
-        if isinstance(spec, dict):
+        if spec:
             candidates.append(kind_page_id(str(spec.get("kind"))))
     candidates.append(GUIDE)
     return next((page_id for page_id in candidates if book.get(page_id)), None)

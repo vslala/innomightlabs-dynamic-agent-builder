@@ -12,7 +12,8 @@ from src.blueprints.catalog import example_yaml
 from src.builder.ada import ada_agent
 from src.builder.models import BuilderSession, PendingInput
 from src.builder.repository import BuilderSessionRepository
-from src.builder.skill_inputs import absorb_submission, fill_inputs, missing_inputs, submitted_values
+from src.blueprints.draft import Draft
+from src.builder.skill_inputs import absorb_submission, missing_inputs, submitted_values
 from src.builder.tools import BuilderTools
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
@@ -60,24 +61,25 @@ def test_only_required_settings_the_draft_lacks_are_missing():
         {"id": "send_email", "config": {"to": "a@acme.example"}},
         {"id": "aws_cli"},  # needs a secret, so it's never asked in the chat
     )
-    [item] = missing_inputs(text, PARAMS)
+    [item] = missing_inputs(Draft(text), PARAMS)
     assert (item.key, item.skill_id, item.index) == ("assistant/send_email/0", "send_email", 1)
     assert [field.name for field in item.fields] == ["to"]
     assert item.label == "Set up Send Email for Acme assistant"
 
 
 def test_a_second_entry_of_the_same_skill_has_its_own_form():
-    labels = [item.label for item in missing_inputs(with_skills({"id": "send_email"}, {"id": "send_email"}))]
+    labels = [item.label for item in missing_inputs(Draft(with_skills({"id": "send_email"}, {"id": "send_email"})))]
     assert labels[1].endswith("assistant (2)")
 
 
 def test_answers_fill_in_only_what_the_draft_lacks():
     text = with_skills({"id": "send_email"})
-    filled = yaml.safe_load(fill_inputs(text, {"assistant/send_email/0": {"to": "a@acme.example"}}))
-    assert filled["resources"]["assistant"]["skills"][1]["config"] == {"to": "a@acme.example"}
-    # Multi-line text stays readable.
-    assert "instructions: |" in fill_inputs(text, {"assistant/send_email/0": {"to": "a@acme.example"}})
-    assert fill_inputs(text, {}) == text
+    answers = {"assistant/send_email/0": {"to": "a@acme.example"}}
+    filled = Draft(text).with_skill_settings(answers)
+    assert filled.data["resources"]["assistant"]["skills"][1]["config"] == {"to": "a@acme.example"}
+    # Multi-line text stays readable, and the draft it came from is left as it was.
+    assert "instructions: |" in filled.text
+    assert Draft(text).with_skill_settings({}).text == text
 
 
 def test_a_submission_is_read_only_for_its_own_form():

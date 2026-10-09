@@ -8,6 +8,7 @@ import yaml
 from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete
 from src.agents.architectures import vishwakarma
 from src.agents.book import open_pages, pages_in_view, turns_left
+from src.blueprints.draft import Draft
 from src.blueprints.book import GUIDE, blueprint_book, page_for_issue, skill_example
 from src.blueprints.catalog import example_names, example_yaml
 from src.blueprints.kinds import RESOURCE_KINDS
@@ -97,7 +98,7 @@ def test_opening_an_unknown_page_suggests_the_closest():
     ],
 )
 def test_an_issue_points_at_the_page_that_explains_it(path, page):
-    assert page_for_issue(path, SITE_AGENT, BOOK) == page
+    assert page_for_issue(path, Draft(SITE_AGENT), BOOK) == page
 
 
 # --- Retention ---------------------------------------------------------------------------------

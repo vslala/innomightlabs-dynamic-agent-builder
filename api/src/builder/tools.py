@@ -15,20 +15,20 @@ from typing import Any, Callable, Optional
 from src.agents.book import Book, open_pages
 from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_runtime import BoundTool, ToolCategory, ToolRegistry, ToolSpec
-from src.blueprints.approval import approval_form, approves, plan_id_for
+from src.blueprints.approval import approves
 from src.blueprints.book import blueprint_book, page_for_issue
-from src.blueprints.export import export_agent, with_ids
+from src.blueprints.draft import Draft
+from src.blueprints.export import export_agent
 from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
 from src.blueprints.kinds import kind_for
-from src.blueprints.planner import plan_blueprint
 from src.blueprints.models import DeploymentStatus
 from src.blueprints.repository import DeploymentRepository
 from src.blueprints.service import Blocked, Deployed, Invalid, RateLimited, deploy_blueprint
 from src.blueprints.validator import validate_blueprint
 from src.builder.canvas import drawing_for, save_blueprint_canvas
-from src.builder.connections import connect_request, missing_connections
-from src.builder.models import BuilderSession, PendingInput
-from src.builder.skill_inputs import SkillInput, covers, fill_inputs, input_form, missing_inputs
+from src.builder.models import BuilderSession
+from src.builder.plan_gates import PLAN_GATES, PlanAttempt
+from src.builder.requirements import REQUIREMENTS
 from src.builder.repository import BuilderSessionRepository
 from src.agents.repository import AgentRepository
 from src.apikeys.repository import ApiKeyRepository
@@ -159,13 +159,18 @@ def builder_tool_definitions() -> list[dict[str, Any]]:
     ]
 
 
+def _issue(issue: BlueprintIssue) -> dict[str, Any]:
+    """An issue as Ada reads it. Who owns it is the system's business: she only sees her own."""
+    return issue.model_dump(exclude_none=True, exclude={"owner"})
+
+
 def _not_deployed(outcome: Invalid | Blocked | RateLimited) -> dict[str, Any]:
     match outcome:
         case Invalid(issues=issues):
-            return {"issues": [issue.model_dump(exclude_none=True) for issue in issues]}
+            return {"issues": [_issue(issue) for issue in issues]}
         case Blocked(plan=plan):
             # The account changed since the plan: a name was taken, or a limit was reached.
-            return {"blockers": [issue.model_dump(exclude_none=True) for issue in plan.blockers]}
+            return {"blockers": [_issue(issue) for issue in plan.blockers]}
         case RateLimited():
             return {"reason": "Too many builds in the last hour. Try again later."}
 
@@ -220,15 +225,15 @@ class BuilderTools:
             "next": "Open the pages you need with open_pages." if pages else "Nothing matches; check the book index.",
         })
 
-    def _pointing_at_pages(
-        self, session: BuilderSession, issues: list[BlueprintIssue], yaml: str
+    def pointing_at_pages(
+        self, session: BuilderSession, issues: list[BlueprintIssue], draft: Draft
     ) -> list[dict[str, Any]]:
         """Each issue with the page that explains it. Those pages are opened, so the fix has them to hand."""
         book = self.book()
         described, pages = [], []
         for issue in issues:
-            row = issue.model_dump(exclude_none=True)
-            page_id = page_for_issue(issue.path, yaml, book)
+            row = _issue(issue)
+            page_id = page_for_issue(issue.path, draft, book)
             if page_id:
                 row["page"] = page_id
                 pages.append(page_id)
@@ -247,109 +252,20 @@ class BuilderTools:
         if not isinstance(yaml, str) or not yaml.strip():
             raise ValueError("plan_blueprint needs `yaml`, the whole blueprint: there's no draft yet.")
         # The person's answers to earlier skill forms, whatever Ada's YAML says.
-        yaml = fill_inputs(yaml, session.skill_inputs)
-        session.draft_yaml, session.draft_params, session.plan_id = yaml, params, None
-        missing = missing_inputs(yaml, params)
-        if session.pending_input and all(item.key != session.pending_input.key for item in missing):
-            # The form it waited on isn't needed any more (the draft changed, or the setting is Ada's to write).
-            session.pending_input = None
-
+        draft = Draft(yaml).with_skill_settings(session.skill_inputs)
+        session.draft_yaml, session.draft_params, session.plan_id = draft.text, params, None
+        needs = [(requirement, requirement.missing(draft, session, state.owner_email)) for requirement in REQUIREMENTS]
+        for requirement, missing in needs:
+            requirement.settle(session, missing)
         try:
-            validated = validate_blueprint(yaml, params)
+            validated, issues = validate_blueprint(draft.text, params), []
         except BlueprintInvalid as e:
-            # Settings the person hasn't given yet aren't Ada's to fix; anything else is, before they're asked.
-            other = [issue for issue in e.issues if not covers(missing, issue.path)]
-            if not other and missing:
-                return self._ask_for_settings(session, missing, state)
-            issues = self._pointing_at_pages(session, other, yaml)
-            self.sessions.save(session)
-            return json.dumps({
-                "ok": False,
-                "issues": issues,
-                "next": (
-                    "Fix every issue in the YAML and call plan_blueprint again. Each issue's `page` is now open in "
-                    "your prompt. Don't show these to the person."
-                ),
-            })
+            validated, issues = None, e.issues
 
-        # Accounts first: the person signs in, then gives any settings, then sees the plan.
-        connections = missing_connections(yaml, state.owner_email)
-        if connections:
-            self.sessions.save(session)
-            need = connections[0]
-            return json.dumps({
-                **connect_request(need, state.conversation_id),
-                "ok": False,
-                "needs_connection": {"provider": need.title, "connections_left": len(connections)},
-                "next": (
-                    f"The system is asking the person to connect {need.title} with a card under your message. "
-                    "Say one short line about what it gives the agent, and stop. When they say it's connected, "
-                    "call plan_blueprint with no arguments."
-                ),
-            })
-        if missing:
-            return self._ask_for_settings(session, missing, state)
-        session.pending_input = None
-
-        plan = plan_blueprint(validated, state.owner_email)
-        steps = [step.model_dump() for step in plan.steps]
-        if not plan.ok:
-            blockers = self._pointing_at_pages(session, plan.blockers, yaml)
-            self.sessions.save(session)
-            return json.dumps({
-                "ok": False,
-                "steps": steps,
-                "blockers": blockers,
-                "next": "Explain what blocks this in plain words and how to fix it, or change the draft and plan again.",
-            })
-
-        if not plan.changes_anything:
-            self.sessions.save(session)
-            return json.dumps({
-                "ok": True,
-                "nothing_to_change": True,
-                "steps": steps,
-                "next": "Everything already matches this draft. Tell the person there's nothing to change; don't ask them to approve.",
-            })
-
-        session.plan_id = plan_id_for(yaml, params)
+        attempt = PlanAttempt(self, session, state, draft, params, validated, issues, needs)
+        result = next(answer for gate in PLAN_GATES if (answer := gate.check(attempt)) is not None)
         self.sessions.save(session)
-        context = {"agent_id": state.agent_id, "conversation_id": state.conversation_id}
-        canvas = save_blueprint_canvas(drawing_for(validated, plan, stage="plan", plan_id=session.plan_id), state)
-        return json.dumps({
-            **approval_form(session.plan_id, plan, context),
-            **({"canvas": canvas} if canvas else {}),
-            "ok": True,
-            "plan_id": session.plan_id,
-            "steps": steps,
-            **({"removals": plan.removals} if plan.removals else {}),
-            "next": (
-                "The person can see the blueprint drawing (with the steps and the YAML) and the approval form "
-                "under your message. Describe what you'll build in two or three plain sentences; don't repeat "
-                "the steps. Nothing is built until they choose 'Apply this plan'."
-                + (" This plan also removes things, which can't be undone: name each one plainly so they know "
-                   "before they approve." if plan.removals else "")
-            ),
-        })
-
-    def _ask_for_settings(self, session: BuilderSession, missing: list[SkillInput], state: AgentTurnState) -> str:
-        """The form for the first skill still missing settings. One skill at a time, in draft order."""
-        item = missing[0]
-        pending = session.pending_input
-        error = pending.error if pending is not None and pending.key == item.key else None
-        session.pending_input = PendingInput(key=item.key, label=item.label)
-        self.sessions.save(session)
-        context = {"agent_id": state.agent_id, "conversation_id": state.conversation_id}
-        return json.dumps({
-            **input_form(item, session.draft_yaml or "", session.draft_params, state.owner_email, context, error),
-            "ok": False,
-            "needs_input": {"skill": item.skill_name, "agent": item.agent_name, "skills_left": len(missing)},
-            "next": (
-                f"The system is asking the person for {item.skill_name}'s settings in a form under your message. "
-                "Say one short line, such as what the skill will do for them. Don't ask for these settings or "
-                "fill them in yourself. When their message is that form, call plan_blueprint with no arguments."
-            ),
-        })
+        return json.dumps(result)
 
     def _latest_user_message(self, conversation_id: str) -> str:
         messages, _, _ = self.messages.find_by_conversation_newest_first(conversation_id, limit=10)
@@ -380,7 +296,7 @@ class BuilderTools:
 
         session.deployment_id, session.plan_id = deployment.deployment_id, None
         # The next change in this conversation updates what was just built, rather than building it again.
-        session.draft_yaml = with_ids(session.draft_yaml, {name: res.id for name, res in deployment.resources.items()})
+        session.draft_yaml = Draft(session.draft_yaml).pinned({name: res.id for name, res in deployment.resources.items()}).text
         self.sessions.save(session)
         canvas = save_blueprint_canvas(
             drawing_for(validated, plan, stage="built", plan_id=plan_id, deployment=deployment), state

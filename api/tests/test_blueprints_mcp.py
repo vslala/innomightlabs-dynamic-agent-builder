@@ -9,6 +9,7 @@ from fastapi import BackgroundTasks
 from src.agents.tool_results import interpret_tool_result
 from src.blueprints.catalog import example_yaml
 from src.blueprints.executor import apply_blueprint
+from src.blueprints.draft import Draft
 from src.blueprints.export import export_agent
 from src.blueprints.issues import BlueprintInvalid
 from src.blueprints.kinds import mcp_connection as mcp_kind
@@ -177,7 +178,8 @@ async def test_connecting_installs_once_then_signs_in_again(account, ready):  # 
 async def test_a_preset_needing_set_up_isnt_connected_from_the_chat(account, ready):  # noqa: F811
     with pytest.raises(ValueError, match="Connectors page"):
         await connections.start_connection(FakeService(), TEST_USER_EMAIL, "github")
-    assert connections.missing_connections(TEAM.replace("provider: tavily", "provider: github"), TEST_USER_EMAIL) == []
+    github = Draft(TEAM.replace("provider: tavily", "provider: github"))
+    assert connections.missing_connections(github, TEST_USER_EMAIL) == []
 
 
 def test_the_connect_route(test_client, auth_headers, session, monkeypatch):  # noqa: F811
