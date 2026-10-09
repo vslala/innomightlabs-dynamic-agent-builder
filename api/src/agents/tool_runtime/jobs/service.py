@@ -121,7 +121,7 @@ class ToolJobService:
         if actor_email != owner_email and job.actor_email != actor_email:
             raise ValueError("Tool job not found")
         job = self._fail_stale_job(job)
-        return job.to_status_payload()
+        return self.repository.with_result(job).to_status_payload()
 
     def _fail_stale_job(self, job: ToolJob) -> ToolJob:
         if not job.is_stale(now=datetime.now(timezone.utc)):

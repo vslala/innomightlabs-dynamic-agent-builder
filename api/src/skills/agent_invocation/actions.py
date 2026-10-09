@@ -8,6 +8,7 @@ from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import recorded_events
 from src.messages.repositories import get_message_repository
+from src.skills.agent_invocation.history import InvocationHistoryStore
 from src.skills.agent_invocation.models import InvokeAgentRequest
 from src.skills.models import ActorKind
 
@@ -55,23 +56,47 @@ async def invoke(
     if not invocation.success:
         raise ValueError(invocation.error or "Agent invocation failed")
 
-    return {
-        "response_text": invocation.response_text,
-        "events": recorded_events(invocation.events),
-        "message_ids": {
-            key: value
-            for key, value in {
-                "user_message_id": invocation.user_message_id,
-                "assistant_message_id": invocation.assistant_message_id,
-            }.items()
-            if value
-        },
+    message_ids = {
+        key: value
+        for key, value in {
+            "user_message_id": invocation.user_message_id,
+            "assistant_message_id": invocation.assistant_message_id,
+        }.items()
+        if value
     }
+    if _for_automation(context):
+        # An automation run's inspector shows the invoked agent's tool calls.
+        return {
+            "response_text": invocation.response_text,
+            "events": recorded_events(invocation.events),
+            "message_ids": message_ids,
+        }
+
+    # In a chat the calling agent needs only the answer: a researcher's dozen searches made this result too big
+    # to keep (KAN-67), and cost the caller context. The whole history goes to S3 for audit instead, named after
+    # this tool call, so the caller's tool-call audit record (same `tool_call_id`) leads straight to it.
+    tool_call_id = str(context.get("tool_call_id") or "").strip()
+    if tool_call_id:
+        InvocationHistoryStore().save(
+            owner_email=owner_email,
+            conversation_id=conversation_id,
+            tool_call_id=tool_call_id,
+            agent_id=agent.agent_id,
+            prompt=request.prompt_template,
+            response_text=invocation.response_text,
+            events=invocation.events,
+            message_ids=message_ids,
+        )
+    return {"response_text": invocation.response_text, "message_ids": message_ids}
+
+
+def _for_automation(context: dict[str, Any]) -> bool:
+    return context.get("orchestrator_type") == "automation"
 
 
 def _target_agent_id(request: InvokeAgentRequest, config: dict[str, Any], context: dict[str, Any]) -> str:
     """An automation step names its agent in the owner's own workflow. In a chat the model writes
     the arguments, so the agent the skill was installed for is the only one it can reach."""
-    if context.get("orchestrator_type") == "automation" and request.agent_id:
+    if _for_automation(context) and request.agent_id:
         return request.agent_id
     return str(config.get("target_agent_id") or "").strip()

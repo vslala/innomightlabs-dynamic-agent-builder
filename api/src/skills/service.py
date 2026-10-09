@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 import src.form_models as form_models
 from src.agents.tool_audit import ToolCallAuditMessage
+from src.agents.tool_execution import current_tool_call_id
 from src.agents.tool_runtime.jobs import ToolJobService
 from src.messages.models import Message
 from src.connectors.service import ConnectorService, connector_id_for_provider, get_connector_service
@@ -504,6 +505,8 @@ class SkillRuntimeService:
                 "actor_kind": actor_kind.value,
                 "conversation_id": conversation_id,
                 "user_message_id": user_message_id,
+                # Kept on an async job's context too, so the action still knows its call when it runs later.
+                "tool_call_id": current_tool_call_id.get(),
             }
             if run_async:
                 job = self.tool_job_service.start_skill_action_job(

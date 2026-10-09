@@ -45,6 +45,9 @@ class ToolJob(BaseModel):
     status: ToolJobStatus = ToolJobStatus.QUEUED
     progress_message: str | None = None
     result: Any | None = None
+    #: Where a result too big for this item is kept instead (an S3 key); `result` is then empty. See
+    #: ToolJobRepository.mark_succeeded.
+    result_ref: str | None = None
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: datetime | None = None

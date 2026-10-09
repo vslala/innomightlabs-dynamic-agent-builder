@@ -4,6 +4,47 @@ Date: 2026-06-28
 Status: Draft  
 Owner: InnomightLabs API
 
+## Implementation notes
+
+**Large results (KAN-67, 2026-10-09).** A job's result used to be written whole onto its DynamoDB item.
+DynamoDB refuses items over 400 KB, so a large result made `mark_succeeded` raise. The service then stored
+`ValidationException … Item size has exceeded the maximum allowed size` as the job's error, and the result was
+lost. Agents reported this as "result storage size exceeded".
+
+- **Where it was seen:** a research lead calling its researcher through `agent_invocation` as an async job. The
+  invoke result carried the researcher's whole tool-event log, including every Tavily search.
+- **Results now stay whole.** `ToolJobRepository.mark_succeeded` keeps a result on the item up to
+  `INLINE_RESULT_MAX_BYTES` (200 KB as JSON). That leaves room for the job's arguments and context. A bigger result
+  goes to the conversation media bucket at `users/{owner_scope}/tool-jobs/{job_id}/result.json`
+  (`ToolJobResultStore`), with the key stored as `result_ref`. `check_job_for_agent` reads it back
+  (`with_result`). Nothing is truncated.
+- **Invoke Agent returns its event log only to automations**, whose run inspector shows the invoked agent's tool
+  calls. In a chat, normal or background, the calling agent gets the answer and message ids. That keeps its
+  result, and its context, small.
+- **The full history is kept for audit, one file per tool call.**
+  - Every chat invocation writes the invoked agent's prompt, answer, message ids and every tool call, uncapped, to
+    `users/{owner_scope}/invocations/{conversation_id}/tool_audit_{tool_call_id}.json`
+    (`skills/agent_invocation/history.py`, `key_for`).
+  - `tool_call_id` is the id the calling agent's tool-call audit record keeps in DynamoDB, so record and file match
+    1:1. The key is worked out from the record, with no pointer in the result, and the calling agent's context
+    stays clean.
+  - The invoked agent's own message ids can't be used: in a chat they live in an in-memory store and never reach
+    DynamoDB. The audit record's own id doesn't exist until after the tool returns.
+  - The id reaches the action through `current_tool_call_id` (`agents/tool_execution.py`), a context variable the
+    router sets around each call. It isn't turn state, because a turn runs tools concurrently. `SkillRuntimeService`
+    copies it into the action context, which an async job stores, so a background invocation files under the right
+    id too.
+  - If saving fails, it's logged and the answer is still returned.
+- **Still open:**
+  - These S3 objects (`tool-jobs/` and `invocations/`) outlive the job's 7-day TTL and have no lifecycle rule yet.
+    Check that account deletion clears the owner's `users/{owner_scope}/` prefix.
+  - There's no dashboard view of an invocation's history yet; `key_for` finds it from an audit record.
+  - Nothing caps how much of a very large result is passed back to the model.
+- **Tests:** `api/tests/test_tool_job_results.py`. It proves the 400 KB limit in moto, then checks that a normal
+  result stays inline, a 450 KB one round-trips through S3, and Invoke Agent omits events in chats and keeps them
+  in automations. It also checks that a chat invocation's full history is filed under its tool call id, that a
+  failed save still returns the answer, and that concurrent tool calls each see their own id.
+
 ## Summary
 
 Extend the existing agent tool runtime so any skill action can be started asynchronously when the caller passes `async: true` to `execute_skill_action`.

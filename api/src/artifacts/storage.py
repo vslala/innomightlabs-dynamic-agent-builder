@@ -24,7 +24,7 @@ class ArtifactStorage:
         artifact_id: str,
         filename: str,
     ) -> str:
-        scope = hashlib.sha256(owner_email.strip().lower().encode("utf-8")).hexdigest()[:24]
+        scope = owner_scope(owner_email)
         date_prefix = datetime.now(timezone.utc).strftime("%Y/%m/%d")
         safe_filename = sanitize_filename(filename)
         return f"users/{scope}/artifacts/{date_prefix}/{artifact_id}/{safe_filename}"
@@ -63,6 +63,11 @@ class ArtifactStorage:
                 ExpiresIn=settings.conversation_media_presign_ttl_seconds,
             )
         )
+
+
+def owner_scope(owner_email: str) -> str:
+    """The per-user key prefix: stable, and doesn't put the email in object keys."""
+    return hashlib.sha256(owner_email.strip().lower().encode("utf-8")).hexdigest()[:24]
 
 
 def sanitize_filename(filename: str) -> str:

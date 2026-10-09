@@ -8,12 +8,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextvars import ContextVar
 from typing import Any
 
 from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_runtime import ToolExecutionOutcome, ToolRegistry
 
 log = logging.getLogger(__name__)
+
+#: The id of the tool call being run, the same `tool_call_id` the call's audit record keeps, so a tool can file
+#: what it produces under it. A context variable, not turn state: a turn runs several tools at once.
+current_tool_call_id: ContextVar[str | None] = ContextVar("current_tool_call_id", default=None)
 
 
 class ToolExecutionRouter:
@@ -29,6 +34,7 @@ class ToolExecutionRouter:
         state: AgentTurnState,
     ) -> ToolExecutionOutcome:
         """Never raises: a failure is a result the model gets to read and react to."""
+        call = current_tool_call_id.set(tool_use_id)
         try:
             tool = self._registry.get(tool_name)
             run = tool.run(tool_input, state)
@@ -58,6 +64,8 @@ class ToolExecutionRouter:
                 exc_info=True,
             )
             return ToolExecutionOutcome(result=f"Error: {str(e)}", success=False)
+        finally:
+            current_tool_call_id.reset(call)
 
 
 __all__ = ["ToolExecutionOutcome", "ToolExecutionRouter"]
