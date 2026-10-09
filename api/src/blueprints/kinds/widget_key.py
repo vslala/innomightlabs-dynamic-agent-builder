@@ -15,7 +15,7 @@ from src.blueprints.kinds.base import (
     NotFound,
     PlanContext,
 )
-from src.blueprints.reconcile import reconcile
+from src.blueprints.reconcile import Outcome
 from src.blueprints.spec import WidgetKeySpec, origin_of, origins_of
 from src.config import settings
 
@@ -175,8 +175,9 @@ class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
         ]
 
     def find_existing(self, name: str, spec: WidgetKeySpec, ctx: PlanContext) -> Optional[Existing]:
-        agent = ctx.matched.get(spec.agent)
-        keys = ApiKeyRepository().find_all_by_agent(agent.id) if agent else []
+        matched = ctx.matched.get(spec.agent)
+        agent_id = matched.id if matched else ctx.pinned.get(spec.agent)
+        keys = ApiKeyRepository().find_all_by_agent(agent_id) if agent_id else []
         if spec.id:
             key = next((key for key in keys if key.key_id == spec.id), None)
             if key is None:
@@ -189,7 +190,9 @@ class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
             same = keys if len(keys) == 1 else [key for key in keys if key.name.endswith(" widget")]
         return Existing(id=same[0].key_id, record=same[0], matched_by="name") if len(same) == 1 else None
 
-    def commands(self, name: str, spec: WidgetKeySpec, existing: Optional[Existing], ctx: PlanContext) -> list[Command]:
+    def commands(
+        self, name: str, spec: WidgetKeySpec, existing: Optional[Existing], outcome: Outcome, ctx: PlanContext
+    ) -> list[Command]:
         if existing is None:
             return [CreateWidgetKey(
                 resource=name,
@@ -200,7 +203,6 @@ class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
                 allow_guests=spec.allow_guests,
             )]
         key: AgentApiKey = existing.record
-        outcome = reconcile(spec, existing.observed)
         fields = outcome.values(WidgetKeySpec)
         if "allowed_origins" in fields:
             fields["allowed_origins"] = origins(spec)  # stored as origins, as compared

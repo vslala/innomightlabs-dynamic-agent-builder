@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
 from src.blueprints.issues import BlueprintIssue
-from src.blueprints.reconcile import reconcile
+from src.blueprints.reconcile import Outcome
 from src.blueprints.kinds.base import (
     Action,
     AppliedResource,
@@ -20,7 +20,7 @@ from src.blueprints.spec import CrawlSpec, KnowledgeBaseSpec
 from src.config import settings
 from src.knowledge.crawl_launch import launch_crawl
 from src.knowledge.models import CrawlConfig, CrawlJob, CrawlSourceType, KnowledgeBase, KnowledgeBaseStatus
-from src.knowledge.repository import CrawlJobRepository, KnowledgeBaseRepository
+from src.knowledge.repository import AgentKnowledgeBaseRepository, CrawlJobRepository, KnowledgeBaseRepository
 from src.knowledge.service import get_knowledge_base_service
 
 CRAWL_SOURCE = {"site": CrawlSourceType.URL, "sitemap": CrawlSourceType.SITEMAP}
@@ -200,12 +200,11 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
         return Existing(id=kb.kb_id, record=kb, matched_by="name")
 
     def commands(
-        self, name: str, spec: KnowledgeBaseSpec, existing: Optional[Existing], ctx: PlanContext
+        self, name: str, spec: KnowledgeBaseSpec, existing: Optional[Existing], outcome: Outcome, ctx: PlanContext
     ) -> list[Command]:
         if existing is None:
             crawl = [StartCrawl(resource=name, crawl=spec.crawl)] if spec.crawl else []
             return [CreateKnowledgeBase(resource=name, kb_name=spec.name, description=spec.description), *crawl]
-        outcome = reconcile(spec, existing.observed)
         kb: KnowledgeBase = existing.record
         fields = outcome.values(KnowledgeBaseSpec)
         says = tuple(change.says for change in outcome.sets if change.says and change.field != "crawl")
@@ -217,6 +216,18 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
             said = next(change.says for change in outcome.sets if change.field == "crawl")
             commands.append(StartCrawl(resource=name, crawl=spec.crawl, says=(said,) if said else ()))
         return commands
+
+    def delete_blockers(self, name: str, existing: Existing, kit_ids: set[str]) -> list[BlueprintIssue]:
+        outside = [link.agent_id for link in AgentKnowledgeBaseRepository().find_agents_for_kb(existing.id)
+                   if link.agent_id not in kit_ids]
+        if not outside:
+            return []
+        return [BlueprintIssue(
+            path=f"resources.{name}",
+            message=f"'{existing.record.name}' is also used by {len(outside)} agent(s) outside this kit, so it can't "
+            "be deleted with it.",
+            hint="Keep it in the blueprint, or disconnect it from those agents first.",
+        )]
 
     def delete_commands(
         self, name: str, spec: KnowledgeBaseSpec, existing: Existing, removal: str

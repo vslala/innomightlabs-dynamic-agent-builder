@@ -230,6 +230,13 @@ Where the POC differs from the design below, and why:
   - **`blueprints/reconcile.py` compares the spec with the resource as `observe` reads it,** and the kinds turn
     the outcome into commands. No kind compares fields by hand.
   - **"In both lists" is checked for every collection,** MCP connections included.
+- **Kits and `innomight/v2`, 2026-10-10.** Everything a blueprint builds is a kit: one name → id map, and every
+  apply is a version.
+  - **Removing is now by omission.** Within a kit, leaving out what the kit declared removes it. The explicit
+    `remove` fields are gone, and v1 documents are upgraded on read.
+  - **Rollback and removal** are planned and then confirmed by `plan_id` (`/kits` API, and the Build with Ada page).
+  - **This replaces** "Leaving a resource out of a blueprint never removes it" and the `remove` fields described
+    below. See [REFACTOR-blueprints.md](REFACTOR-blueprints.md), phase 6.
 - **Tests:**
   - `api/tests/test_blueprints_validator.py`, `test_blueprints_skills_schema.py`, `test_blueprints_apply.py` and
     `test_builder_ada.py`, plus an injected-architecture case in `test_chat_turn_run.py`.

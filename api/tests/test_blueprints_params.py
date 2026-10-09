@@ -40,7 +40,7 @@ def test_the_spec_offers_exactly_the_registered_types():
 
 def test_the_run_form_asks_for_each_type_its_own_way():
     blueprint = Blueprint.model_validate({
-        "apiVersion": "innomight/v1",
+        "apiVersion": "innomight/v2",
         "kind": "Blueprint",
         "metadata": {"name": "x", "title": "X"},
         "params": {

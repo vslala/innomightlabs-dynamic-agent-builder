@@ -23,7 +23,7 @@ class Blueprint(Strict):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    api_version: Literal["innomight/v1"] = Field(
+    api_version: Literal["innomight/v2"] = Field(
         alias="apiVersion", description="Which version of the blueprint rules this document follows."
     )
     kind: Literal["Blueprint"] = Field(description="Always Blueprint. Marks the document type.")
@@ -34,7 +34,9 @@ class Blueprint(Strict):
     )
     resources: dict[ResourceName, Resource] = Field(  # type: ignore[valid-type]
         min_length=1,
-        description="Everything the blueprint creates. The key is the resource's local name, used for references.",
+        description="Everything the solution is made of. The key is the resource's local name, used for references. "
+        "A resource an earlier version of this kit had and this one leaves out is removed, and so is a link or skill "
+        "it leaves out; what the kit never declared is never touched.",
     )
     outputs: dict[ResourceName, OutputSpec] = Field(
         default_factory=dict, description="Values shown after a successful apply, such as the embed snippet."

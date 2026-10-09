@@ -38,14 +38,6 @@ def test_fields_and_skill_settings_are_references_alike():
     assert lead.may_be_id and lead.outward_wire == "hands work to"
 
 
-def test_taking_away_is_marked_on_the_reference():
-    document = yaml.safe_load(SITE_AGENT)
-    document["resources"]["assistant"]["remove_knowledge_bases"] = ["site_kb"]
-    document["resources"]["assistant"]["knowledge_bases"] = []
-    refs = references_of(yaml.safe_dump(document, sort_keys=False), "assistant", SITE_PARAMS)
-    assert [(ref.path, ref.removes) for ref in refs] == [("resources.assistant.remove_knowledge_bases[0]", True)]
-
-
 def test_a_skill_setting_naming_an_agent_is_marked_in_the_published_schema():
     variant = skill_variants()["agent_invocation"]
     config_model = variant.model.model_fields["config"].annotation

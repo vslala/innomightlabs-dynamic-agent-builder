@@ -82,7 +82,7 @@ class McpConnectionKind(LookupKind[McpConnectionSpec]):
                 message="Say which MCP server to connect.",
                 hint=f"Set `provider` to one of: {', '.join(PROVIDERS)}.",
             )]
-        return super().validate(name, spec)
+        return []
 
     def find_existing(self, name: str, spec: McpConnectionSpec, ctx: PlanContext) -> Optional[Existing]:
         connection = connection_for(spec, ctx.user_email)

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress: phases 1 to 5 done; phase 6 (Kits) next |
+| Status | ✅ Implemented: phases 1 to 6 (Kits) |
 | Owner | InnomightLabs API |
 | Last reviewed | 2026-10-09 |
 | Scope | `api/src/blueprints/`, and the parts of `api/src/builder/` that call into it |
@@ -192,6 +192,61 @@
   yet. Before, a draft that was invalid only because of the person's settings asked for them first. The order now
   always matches the documented one: sign in, then settings, then the plan.
 - **Tests:** `test_builder_plan_gates.py`. The examples test now checks issue owners instead of `covers`.
+
+**Phase 6 (Kits), 2026-10-10:**
+
+- **Decision taken:** within a kit, leaving something out removes it, as P1 proposed. The document is
+  `innomight/v2`. It has no `remove`, `remove_knowledge_bases`, `remove_mcp_connections` or `remove_skills`, and
+  no `x-removes`, and `Each.removals_from` is gone.
+  - `blueprints/upgrade.py` reads v1 as v2: resources marked `remove` and the removal lists are dropped, which is
+    what a v1 document kept.
+  - The schema is at `/blueprints/schema/v2.json`. The examples, Ada's blueprint language and the drawing say v2.
+- **`blueprints/kits.py`:**
+  - `Kit` (pk `User#…`, sk `Kit#{kit_id}`) holds `resources`, the name → id map, plus `current_deployment_id`,
+    `current_version`, `versions`, `status` and `conversation_id`.
+  - Versions are deployments. `Deployment` gained `kit_id`, `version`, `action` (apply, rollback, remove),
+    `rolled_back_to` and `steps`.
+  - `pin` writes the kit's ids into a blueprint, so identity comes from the kit.
+  - `declared(kit, baseline)` is the next plan's `before`: the last version applied in full, its own ids stripped
+    and the kit's pinned. For an agent loaded from outside any kit, the export it was loaded as stands in.
+  - `plan_rollback` and `plan_kit_removal` return a `KitPlan` whose `plan_id` changes whenever the kit gets a
+    version. `record_version` updates the kit after a deployment.
+    - A failed apply that was put back isn't a version, and neither is an apply with nothing to change, though the
+      name map still updates.
+    - A partial one is a version, but `current` stays the last full one, so applying again retries what didn't
+      finish.
+    - A removal marks the kit `removed`.
+- **`blueprints/service.py`:** `deploy_blueprint(…, kit_id, baseline, conversation_id)` is the one deploy path, and
+  `apply_kit_plan` applies a rollback or removal only if its `plan_id` matches a fresh plan.
+- **The planner** takes `before`.
+  - What `before` declared and the blueprint leaves out is deleted, dependents first, after the commit point.
+  - A left-out resource that the plan finds again under a new name (by id, or by name) is renamed and carries on.
+  - A lookup kind left out (an MCP connection) stays on the account, but agents leaving it out stop using it.
+  - Links and installs left out are taken away through the reconciler's three-way rule.
+  - Drift is reported per step (`PlanStep.drift`).
+- **Blockers:**
+  - A name that changes kind.
+  - A knowledge base still linked to an agent outside the kit (`ManagedKind.delete_blockers`).
+  - A resource deleted and a new one of the same kind and name built in its place. This "looks renamed" check
+    catches knowledge bases, which aren't matched by a shared name.
+- **The drawing shows resources a plan deletes,** from `Plan.removed_specs`.
+- **The API:** `GET /kits`, `GET /kits/{id}` (resources and history), `POST /kits/{id}/rollback/plan`,
+  `POST /kits/{id}/rollback`, `POST /kits/{id}/removal/plan` and `POST /kits/{id}/remove`. `BlueprintRequest` takes
+  `kit_id`.
+- **Ada.** `BuilderSession` has `kit_id` and `baseline_yaml`.
+  - Her plans pin and compare against the kit, and her apply records the version.
+  - `load_agent` continues the agent's kit (its last version), or exports the agent as the baseline for a new kit.
+  - Her prompt says to take things away by leaving them out, and never to rename a built resource.
+- **SPA.** The Build with Ada page has "Your kits" and "Conversations" tabs.
+  - `/dashboard/build/kits/:kitId` shows what a kit holds (with dashboard links), a version timeline with "Roll
+    back to this", and "Remove kit".
+  - Both actions open `KitPlanDialog`, which shows the plan (steps, removals in red, drift, blockers) and applies
+    only that plan.
+  - Code: `services/kits/KitApiService.ts` and `pages/dashboard/build/kitView.ts`, with tests.
+- **Tests:**
+  - New: `test_blueprints_kits.py`, which replaces `test_blueprints_remove.py`.
+  - Changed: the MCP, Ada and reconciler tests now remove by omission.
+  - SPA: `kitView.test.ts` and `KitApiService.test.ts`.
 
 ## What's good and stays
 

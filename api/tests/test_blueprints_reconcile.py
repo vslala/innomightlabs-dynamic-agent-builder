@@ -7,20 +7,14 @@ import pytest
 from pydantic import BaseModel, Field
 
 from src.blueprints.diff import Each, Scalar
-from src.blueprints.issues import BlueprintInvalid
 from src.blueprints.reconcile import Context, reconcile
 from src.blueprints.spec import AgentSpec, WidgetKeySpec
-from src.blueprints.validator import validate_blueprint
-from src.blueprints.catalog import example_yaml
 
 
 class Thing(BaseModel):
     title: Annotated[str, Scalar(record="stored_title", says="rename to '{value}'")]
     note: Annotated[str | None, Scalar(record="note", omit_none=True)] = None
-    tags: Annotated[list[str], Each(adds="tag {name}", removes="untag {name}", removals_from="untag")] = Field(
-        default_factory=list
-    )
-    untag: list[str] = Field(default_factory=list)
+    tags: Annotated[list[str], Each(adds="tag {name}", removes="untag {name}")] = Field(default_factory=list)
 
 
 @pytest.mark.parametrize("before_same, actual_same", list(product([True, False], repeat=2)))
@@ -66,13 +60,16 @@ def test_items_are_added_and_taken_away_by_key(before, now, actual, added, remov
     assert [item.key for item in outcome.removed] == removed
 
 
-def test_the_removals_list_takes_away_without_memory():
-    outcome = reconcile(Thing(title="t", untag=["b"]), {"title": "t", "tags": ["a", "b"]})
-    assert [(item.key, item.says) for item in outcome.removed] == [("b", "untag b")]
+def test_without_memory_nothing_is_taken_away():
+    outcome = reconcile(Thing(title="t"), {"title": "t", "tags": ["a", "b"]})
+    assert outcome.removed == []
 
 
 def test_a_resource_being_deleted_isnt_also_disconnected():
-    outcome = reconcile(Thing(title="t", untag=["b"]), {"title": "t", "tags": ["b"]}, ctx=Context(removing=frozenset({"b"})))
+    outcome = reconcile(
+        Thing(title="t"), {"title": "t", "tags": ["b"]}, {"title": "t", "tags": ["b"]},
+        ctx=Context(removing=frozenset({"b"})),
+    )
     assert outcome.removed == []
 
 
@@ -100,13 +97,3 @@ def test_the_spec_declares_how_fields_change():
     widget = WidgetKeySpec(kind="WidgetKey", agent="a", allowed_origins=["https://B.example/page", "https://a.example"])
     same = {"allowed_origins": ["https://a.example", "https://b.example"], "allow_guests": False}
     assert reconcile(widget, same).sets == []
-
-
-def test_a_name_cant_be_kept_and_taken_away():
-    """One check for every collection with a removals list, including MCP connections, which used to be missed."""
-    text = (example_yaml("web-research-team") or "").replace(
-        "    mcp_connections: [web_search]\n", "    mcp_connections: [web_search]\n    remove_mcp_connections: [web_search]\n", 1
-    )
-    with pytest.raises(BlueprintInvalid) as raised:
-        validate_blueprint(text, {})
-    assert any("in both `mcp_connections` and `remove_mcp_connections`" in issue.message for issue in raised.value.issues)

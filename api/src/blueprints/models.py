@@ -54,8 +54,16 @@ class JournalEntry(BaseModel):
     undo: Optional[UndoRecord] = None
     #: It brought `resource` into being, so undoing it means the deployment no longer has it.
     creates: bool = False
+    #: It deletes `resource`.
+    deletes: bool = False
     #: What it took away, in plain words.
     removal: Optional[str] = None
+
+
+class DeploymentAction(str, Enum):
+    APPLY = "apply"
+    ROLLBACK = "rollback"
+    REMOVE = "remove"
 
 
 class Deployment(BaseModel):
@@ -80,6 +88,14 @@ class Deployment(BaseModel):
     journal: list[JournalEntry] = Field(default_factory=list)
     #: Past the commit point: everything that can be undone has run, and only what can't is left.
     committed: bool = False
+    #: The kit it's a version of, and which version; set once it changed something.
+    kit_id: Optional[str] = None
+    version: Optional[int] = None
+    action: DeploymentAction = DeploymentAction.APPLY
+    #: For a rollback, the version it went back to.
+    rolled_back_to: Optional[int] = None
+    #: The plan's steps, in plain words, so a kit's history says what each version did.
+    steps: list[str] = Field(default_factory=list)
     error: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
@@ -104,6 +120,8 @@ class DeploymentSummary(BaseModel):
 class BlueprintRequest(BaseModel):
     yaml: str
     params: Optional[dict[str, Any]] = None
+    #: Plan or apply as the next version of this kit. Without it, applying starts a new kit.
+    kit_id: Optional[str] = None
 
 
 class ValidateResponse(BaseModel):
@@ -119,3 +137,66 @@ class PlanResponse(BaseModel):
     blockers: list[BlueprintIssue] = Field(default_factory=list)
     #: Validation problems; when present there's no plan.
     issues: list[BlueprintIssue] = Field(default_factory=list)
+
+
+# --- Kits -----------------------------------------------------------------------------------------------------
+
+
+class KitSummary(BaseModel):
+    kit_id: str
+    title: str
+    description: Optional[str] = None
+    status: str
+    current_version: int
+    versions: int
+    #: How many of each kind it holds, by kind.
+    counts: dict[str, int] = Field(default_factory=dict)
+    conversation_id: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+class KitResourceView(BaseModel):
+    name: str
+    kind: str
+    id: str
+    title: str
+    #: The dashboard page for it, with no host; empty when it has none.
+    dashboard_path: str = ""
+
+
+class KitVersionView(BaseModel):
+    version: int
+    deployment_id: str
+    action: DeploymentAction
+    status: DeploymentStatus
+    #: What the kit declares now.
+    current: bool = False
+    rolled_back_to: Optional[int] = None
+    steps: list[str] = Field(default_factory=list)
+    removed: list[str] = Field(default_factory=list)
+    error: Optional[str] = None
+    created_at: datetime
+
+
+class KitDetail(KitSummary):
+    resources: list[KitResourceView] = Field(default_factory=list)
+    history: list[KitVersionView] = Field(default_factory=list)
+
+
+class KitPlanResponse(BaseModel):
+    ok: bool
+    plan_id: Optional[str] = None
+    steps: list[PlanStep] = Field(default_factory=list)
+    blockers: list[BlueprintIssue] = Field(default_factory=list)
+    removals: list[str] = Field(default_factory=list)
+
+
+class RollbackRequest(BaseModel):
+    version: int
+
+
+class ApplyKitPlanRequest(BaseModel):
+    plan_id: str
+    #: For a rollback, the version it goes back to.
+    version: Optional[int] = None

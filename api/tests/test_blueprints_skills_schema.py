@@ -73,7 +73,7 @@ form:
 """
 
 BLUEPRINT = """
-apiVersion: innomight/v1
+apiVersion: innomight/v2
 kind: Blueprint
 metadata: {name: notes-agent, title: Notes agent}
 resources:

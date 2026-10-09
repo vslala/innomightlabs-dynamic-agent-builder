@@ -229,6 +229,16 @@ The `settings` tier is built end to end:
   [§3](#3-setup-requirements).
 - **Tests:** `api/tests/test_blueprints_skill_setup.py` and `api/tests/test_builder_skill_inputs.py`.
 
+**Ada builds kits (2026-10-10).**
+
+- **Every build is a kit, and each change she applies is its next version.** The session keeps `kit_id`.
+  `load_agent` continues the kit an agent belongs to; an agent from outside any kit becomes one at its first apply
+  here, compared with what it was when loaded.
+- **She takes things away by leaving them out of the draft.** The plan names each removal before the person
+  approves.
+- **The person rolls back or removes a kit** on the Build with Ada page. See
+  [REFACTOR-blueprints.md](REFACTOR-blueprints.md), phase 6.
+
 **What the system asks the person, and how `plan_blueprint` answers (refactor phase 5, 2026-10-09).**
 
 - **`builder/requirements.py`.** Each `Requirement` has `missing(draft, …)`, `settle`, `ask` and `absorb`, and

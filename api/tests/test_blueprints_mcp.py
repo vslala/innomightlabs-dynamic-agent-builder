@@ -11,6 +11,7 @@ from src.blueprints.catalog import example_yaml
 from src.blueprints.executor import apply_blueprint
 from src.blueprints.draft import Draft
 from src.blueprints.export import export_agent
+from src.blueprints.service import Deployed, deploy_blueprint
 from src.blueprints.issues import BlueprintInvalid
 from src.blueprints.kinds import mcp_connection as mcp_kind
 from src.blueprints.planner import plan_blueprint
@@ -72,18 +73,10 @@ def test_the_providers_come_from_the_preset_catalog():
     assert any(issue.path == "resources.web_search.provider" for issue in raised.value.issues)
 
 
-@pytest.mark.parametrize(
-    "change, message",
-    [
-        ("    provider: tavily\n", "Say which MCP server to connect."),
-        ("    provider: tavily\n    id: m-1\n    remove: true\n", "can't delete this MCP connection"),
-    ],
-)
-def test_a_connection_needs_a_provider_and_cant_be_deleted(change, message):
-    text = TEAM.replace("    provider: tavily\n", change if "remove" in change else "")
+def test_a_connection_needs_a_provider():
     with pytest.raises(BlueprintInvalid) as raised:
-        validate_blueprint(text, {})
-    assert any(message in issue.message for issue in raised.value.issues)
+        validate_blueprint(TEAM.replace("    provider: tavily\n", ""), {})
+    assert any("Say which MCP server to connect." in issue.message for issue in raised.value.issues)
 
 
 # --- Plan and apply ----------------------------------------------------------------------------
@@ -119,15 +112,18 @@ def test_an_exported_agent_keeps_its_connection(account, ready):  # noqa: F811
 
 
 def test_taking_the_tools_away(account, ready):  # noqa: F811
+    """Leaving the connection out of the agent takes its tools away; leaving it out of the kit keeps the connection."""
     connection = tavily(ready)
-    _, built = build(TEAM)
-    researcher = built.resources["researcher"].id
-    exported = yaml.safe_load(export_agent(researcher, TEST_USER_EMAIL) or "")
-    exported["resources"]["agent"]["mcp_connections"] = []
-    exported["resources"]["agent"]["remove_mcp_connections"] = ["tools"]
+    first = deploy_blueprint(TEAM, {}, TEST_USER_EMAIL, BackgroundTasks())
+    assert isinstance(first, Deployed), first
+    researcher = first.deployment.resources["researcher"].id
+    document = yaml.safe_load(TEAM)
+    document["resources"]["researcher"]["mcp_connections"] = []
+    document["resources"].pop("web_search")
 
-    plan, applied = build(yaml.safe_dump(exported, sort_keys=False))
-    assert plan.removals == ["take the Tavily tools away"]
+    again = deploy_blueprint(yaml.safe_dump(document, sort_keys=False), {}, TEST_USER_EMAIL, kit_id=first.kit.kit_id)
+    assert isinstance(again, Deployed), again
+    assert again.plan.removals == ["take the Tavily tools away"]
     assert linked(researcher) == set()
     assert get_mcp_connection_repository().find_connection(TEST_USER_EMAIL, connection.mcp_id)  # the account keeps it
 
