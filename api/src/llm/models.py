@@ -4,6 +4,7 @@ LLM Models service - fetches available models from providers.
 
 import json
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from src.agents.image_generation.capabilities import image_capability_registry
 from src.crypto import decrypt
 from src.config import settings
 from src.llm.ollama import DISCOVERY_TIMEOUT_SECONDS, OllamaConnection
+from src.llm.providers.openai_api import OPENAI_API_BASE_URL
 from src.settings.models import ProviderSettings
 
 log = logging.getLogger(__name__)
@@ -24,6 +26,18 @@ log = logging.getLogger(__name__)
 #: How long one account's Codex model catalog is reused before asking again.
 OPENAI_CATALOG_TTL_SECONDS = 3600
 OPENAI_CATALOG_TIMEOUT_SECONDS = 10
+
+#: Fragments of the model ids `GET /v1/models` lists that cannot hold an agent's chat: the Responses
+#: API refuses audio, realtime, image, embedding, search and most codex models, and `-pro` models
+#: think for minutes, past the stream timeout. Checked against the live API on 2026-10-10.
+OPENAI_API_NON_CHAT_MARKERS = (
+    "audio", "realtime", "transcribe", "tts", "image", "search", "embedding", "moderation",
+    "instruct", "codex", "chat-latest", "live", "-pro",
+)
+#: Legacy models a funded account lists but the Responses API answers with `model_not_found`.
+OPENAI_API_REFUSED_MODELS = frozenset({"gpt-4", "gpt-4-turbo"})
+#: A chat family (`gpt-5.5`, `o4-mini`), not a dated snapshot of one (`gpt-4o-2024-08-06`, `gpt-3.5-turbo-0125`).
+OPENAI_API_CHAT_MODEL = re.compile(r"^(gpt-|o\d)(?!.*-\d{4}(-\d{2}-\d{2})?$)")
 
 
 class ModelInfo(BaseModel):
@@ -290,6 +304,39 @@ class ModelsService:
             capabilities=image_capability_registry.capabilities_for("OpenAI", slug),
         )
 
+    def get_openai_api_models(self, provider_settings: ProviderSettings) -> list[ModelInfo]:
+        """List the chat models the user's OpenAI API key can use, newest first.
+
+        `GET /v1/models` returns every model the key can reach, embeddings and speech included,
+        with no capability field, so chat models are picked by name. When the list can't be read
+        the configured `OPENAI_MODELS` are offered instead, so the picker is never empty.
+        """
+        try:
+            credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
+            response = httpx.get(
+                f"{OPENAI_API_BASE_URL}/models",
+                headers={"Authorization": f"Bearer {credentials['api_key']}", "Accept": "application/json"},
+                timeout=OPENAI_CATALOG_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            entries = response.json().get("data")
+            if not isinstance(entries, list):
+                raise ValueError("OpenAI /v1/models returned an unexpected payload shape")
+        except Exception as e:
+            log.warning("Falling back to configured OpenAI API models: %s", e)
+            entries = []
+
+        listed = sorted(
+            (entry for entry in entries if _is_openai_api_chat_model(entry)),
+            key=lambda entry: entry.get("created") if isinstance(entry.get("created"), int) else 0,
+            reverse=True,
+        )
+        slugs = [str(entry["id"]) for entry in listed] or [m.strip() for m in settings.openai_models if m.strip()]
+        return [
+            ModelInfo(model_id=slug, model_name=slug, display_name=f"[OpenAI API] {slug}", provider="openai_api")
+            for slug in slugs
+        ]
+
     def get_gemini_models(self, provider_settings: ProviderSettings) -> list[ModelInfo]:
         """Fetch Gemini models available to the user's API key."""
         from google import genai
@@ -411,6 +458,16 @@ def _is_listed_openai_model(entry: object) -> bool:
     )
 
 
+def _is_openai_api_chat_model(entry: object) -> bool:
+    model_id = entry.get("id") if isinstance(entry, dict) else None
+    return (
+        isinstance(model_id, str)
+        and bool(OPENAI_API_CHAT_MODEL.match(model_id))
+        and model_id not in OPENAI_API_REFUSED_MODELS
+        and not any(marker in model_id for marker in OPENAI_API_NON_CHAT_MARKERS)
+    )
+
+
 def _ollama_model_tag(model: object) -> str | None:
     name = model.get("name") if isinstance(model, dict) else None
     return name.strip() or None if isinstance(name, str) else None
@@ -438,6 +495,10 @@ PROVIDER_MODEL_SOURCES: tuple[ProviderModelSource, ...] = (
     ProviderModelSource(
         "OpenAI",
         lambda provider_settings: models_service.get_openai_models(provider_settings=provider_settings),
+    ),
+    ProviderModelSource(
+        "OpenAIAPI",
+        lambda provider_settings: models_service.get_openai_api_models(provider_settings=provider_settings),
     ),
     ProviderModelSource(
         "Gemini",

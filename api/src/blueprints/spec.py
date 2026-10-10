@@ -158,7 +158,8 @@ class AgentSpec(ResourceBase):
         min_length=1, description="Who the agent is and how it should behave. This is the agent's system persona."
     )
     provider: Annotated[str, Scalar(record="agent_provider", says=_switch, group="model")] = Field(
-        description="The LLM provider the agent uses, such as Bedrock, OpenAI, Anthropic or Gemini. "
+        description="The LLM provider the agent uses, such as Bedrock, OpenAI (ChatGPT sign-in), OpenAIAPI "
+        "(OpenAI API key), Anthropic or Gemini. "
         "It must be set up in Settings > Provider Configuration."
     )
     model: Annotated[str | None, Scalar(record="agent_model", omit_none=True, says=_switch, group="model")] = Field(

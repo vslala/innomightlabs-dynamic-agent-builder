@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.form_models import Form, FormInput, FormInputType, FormOptionsSource, SelectOption
+from src.form_models import Form, FormInput, FormInputType, FormOptionsFilter, FormOptionsSource, SelectOption
 from src.form_options import FormOptionSourceType
 from src.smart_suggestions.models import SmartSuggestionSettings
 
@@ -36,6 +36,7 @@ def build_smart_suggestion_settings_form(settings: SmartSuggestionSettings | Non
                 label="Model",
                 value=settings.model_name if settings else None,
                 options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODELS),
+                options_filter=FormOptionsFilter(field="provider_name"),
             ),
         ],
     )

@@ -111,7 +111,7 @@ def _agent_payload():
     return {
         "agent_architecture": "krishna-memgpt",
         "agent_provider": "Bedrock",
-        "agent_model": "anthropic.claude-3-sonnet-20240229-v1:0",
+        "agent_model": "claude-3-sonnet",
         "agent_persona": "Test persona",
     }
 

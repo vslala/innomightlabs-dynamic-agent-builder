@@ -19,6 +19,13 @@ export type FormValue = string | FileList | File[] | KeyValueFormValue | null;
 export interface SelectOption {
   value: string;
   label: string;
+  /** What the option belongs to, e.g. a model's provider. Read by `options_filter`. */
+  group?: string | null;
+}
+
+/** Offer only the options whose `group` is the current value of `field`. */
+export interface FormOptionsFilter {
+  field: string;
 }
 
 export interface FormOptionsSource {
@@ -52,6 +59,7 @@ export interface FormInput {
   values?: string[] | null;
   options?: SelectOption[] | null;  // For value/label pairs
   options_source?: FormOptionsSource | null;
+  options_filter?: FormOptionsFilter | null;
   validation?: FormInputValidation | null;
   smart_suggestion?: SmartSuggestionConfig | null;
   attr?: Record<string, string> | null;

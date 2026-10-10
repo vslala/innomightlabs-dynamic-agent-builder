@@ -68,7 +68,10 @@ def validate_form_options(
         if not resolver:
             continue
 
-        allowed = {option.value for option in resolver.resolve(context)}
+        options = resolver.resolve(context)
+        if input_def.options_filter:
+            options = input_def.options_filter.apply(options, values)
+        allowed = {option.value for option in options}
         if allowed and str(value) not in allowed:
             raise ValueError(f"Invalid value for {input_def.name}")
 
@@ -123,7 +126,7 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
     # transient outage doesn't silently drop it from the picker.
     providers = ["Bedrock"]
     model_options = [
-        SelectOption(value=model.model_name, label=model.display_name)
+        SelectOption(value=model.model_name, label=model.display_name, group="Bedrock")
         for model in models_service.get_bedrock_models()
     ]
 
@@ -138,7 +141,7 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
         providers.append(source.provider_name)
         try:
             model_options.extend(
-                SelectOption(value=model.model_name, label=model.display_name)
+                SelectOption(value=model.model_name, label=model.display_name, group=source.provider_name)
                 for model in source.load_models(provider_settings)
             )
         except Exception as e:

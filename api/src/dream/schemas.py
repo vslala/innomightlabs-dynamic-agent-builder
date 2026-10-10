@@ -5,6 +5,7 @@ from src.form_models import (
     Form,
     FormInput,
     FormInputType,
+    FormOptionsFilter,
     FormOptionsSource,
     SelectOption,
     SmartSuggestionConfig,
@@ -20,7 +21,7 @@ def build_dream_settings_form(settings: DreamSettings | None = None) -> Form:
         form_inputs=[
             FormInput(input_type=FormInputType.SELECT, name="enabled", label="Nightly dreaming", value="true" if settings and settings.enabled else "false", options=[SelectOption(value="true", label="Enabled"), SelectOption(value="false", label="Disabled")]),
             FormInput(input_type=FormInputType.SELECT, name="provider_name", label="Provider", value=settings.provider_name if settings else None, options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODEL_PROVIDERS)),
-            FormInput(input_type=FormInputType.SEARCH, name="model_name", label="Model", value=settings.model_name if settings else None, options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODELS)),
+            FormInput(input_type=FormInputType.SEARCH, name="model_name", label="Model", value=settings.model_name if settings else None, options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODELS), options_filter=FormOptionsFilter(field="provider_name")),
             FormInput(
                 input_type=FormInputType.TEXT,
                 name="cron_expression",
