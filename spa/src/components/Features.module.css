@@ -75,7 +75,9 @@
 }
 
 .icon {
-  font-size: 1.75rem;
+  width: 28px;
+  height: 28px;
+  color: var(--gradient-start);
 }
 
 .cardTitle {

@@ -1,4 +1,12 @@
+import { Cpu, ShieldCheck, Undo2 } from 'lucide-react';
+import { IlaDemo } from './landing/IlaDemo';
 import styles from './Hero.module.css';
+
+const promises = [
+  { icon: ShieldCheck, text: 'You approve every plan' },
+  { icon: Undo2, text: 'Roll back any version' },
+  { icon: Cpu, text: 'Runs on your own model provider' },
+];
 
 export function Hero() {
   return (
@@ -9,48 +17,46 @@ export function Hero() {
         <div className={`${styles.orb} ${styles.orb3}`} />
       </div>
 
-      <div className={styles.content}>
-        <div className={styles.badge}>
-          <span className={styles.badgeDot} />
-          Now Live
+      <div className={styles.layout}>
+        <div className={styles.content}>
+          <div className={styles.badge}>
+            <span className={styles.badgeDot} />
+            Meet Ila, your solution builder
+          </div>
+
+          <h1 className={styles.title}>
+            Tell Ila what you need.
+            <br />
+            <span className="gradient-text">She builds it, you ship it.</span>
+          </h1>
+
+          <p className={styles.subtitle}>
+            InnomightLabs is one place to build and deliver AI solutions: assistants that know your business, chat
+            widgets for your website, and agents that do the work. Describe the outcome, approve Ila's plan, and
+            everything she builds arrives as one kit you can change or roll back.
+          </p>
+
+          <div className={styles.cta}>
+            <a href="/pricing" className={styles.primaryBtn}>
+              Start building free
+            </a>
+            <a href="#how-it-works" className={styles.secondaryBtn}>
+              See how it works
+            </a>
+          </div>
+
+          <ul className={styles.promises}>
+            {promises.map(({ icon: Icon, text }) => (
+              <li key={text}>
+                <Icon aria-hidden="true" />
+                {text}
+              </li>
+            ))}
+          </ul>
         </div>
 
-        <h1 className={styles.title}>
-          Build <span className="gradient-text">Dynamic Agents</span>
-          <br />
-          with Long Term Memory
-        </h1>
-
-        <p className={styles.subtitle}>
-          Create intelligent AI agents that remember, learn, and evolve.
-          Our platform enables you to build agents with persistent memory,
-          custom tools, and seamless integrations.
-        </p>
-
-        <div className={styles.cta}>
-          <a href="/pricing" className={styles.primaryBtn}>
-            Start Free
-          </a>
-          <a href="#features" className={styles.secondaryBtn}>
-            Learn More
-          </a>
-        </div>
-
-        <div className={styles.stats}>
-          <div className={styles.stat}>
-            <span className={styles.statNumber}>10x</span>
-            <span className={styles.statLabel}>Faster Development</span>
-          </div>
-          <div className={styles.statDivider} />
-          <div className={styles.stat}>
-            <span className={styles.statNumber}>100%</span>
-            <span className={styles.statLabel}>Customizable</span>
-          </div>
-          <div className={styles.statDivider} />
-          <div className={styles.stat}>
-            <span className={styles.statNumber}>Infinite</span>
-            <span className={styles.statLabel}>Memory</span>
-          </div>
+        <div className={styles.demo}>
+          <IlaDemo />
         </div>
       </div>
     </section>

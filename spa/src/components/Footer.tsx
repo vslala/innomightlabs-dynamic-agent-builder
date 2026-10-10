@@ -16,7 +16,7 @@ export function Footer() {
             />
             <span className={styles.logo}>InnoMight Labs</span>
           </div>
-          <p className={styles.tagline}>Building the future of intelligent AI agents.</p>
+          <p className={styles.tagline}>One place to build and deliver AI solutions.</p>
         </div>
 
         <div className={styles.divider} />

@@ -3,27 +3,27 @@ import styles from './HowItWorks.module.css';
 const steps = [
   {
     number: '01',
-    title: 'Define Your Agent',
+    title: 'Describe it',
     description:
-      'Start by defining your agent\'s personality, capabilities, and goals using our intuitive builder interface.',
+      'Tell Ila what you need, or start from one of her ideas. She asks only what she can\'t work out herself, like where lead emails should go.',
   },
   {
     number: '02',
-    title: 'Configure Memory',
+    title: 'Review the plan',
     description:
-      'Set up memory blocks to store context, user preferences, and learned information that persists across sessions.',
+      'Ila draws the plan: every agent, knowledge base, skill and widget she will create or change. Nothing happens until you approve it.',
   },
   {
     number: '03',
-    title: 'Add Custom Tools',
+    title: 'Get a kit',
     description:
-      'Extend your agent\'s capabilities by integrating custom tools, APIs, and external services.',
+      'The build either finishes or puts everything back. What Ila builds becomes a kit, with a version you can always return to.',
   },
   {
     number: '04',
-    title: 'Deploy & Scale',
+    title: 'Ship and improve',
     description:
-      'Deploy your agent with a single click and scale automatically based on demand.',
+      'Embed the widget on your site or use the API. Come back to Ila to change it; every change is a new version.',
   },
 ];
 
@@ -34,13 +34,12 @@ export function HowItWorks() {
         <div className={styles.header}>
           <span className={styles.tag}>How It Works</span>
           <h2 className={styles.title}>
-            From idea to production
+            From a sentence
             <br />
-            <span className="gradient-text">in minutes</span>
+            <span className="gradient-text">to a live solution</span>
           </h2>
           <p className={styles.subtitle}>
-            Building intelligent agents has never been easier. Follow these
-            simple steps to create your first agent.
+            No canvas to wire up and no settings to hunt for. Talk to Ila, check her plan, and ship.
           </p>
         </div>
 
