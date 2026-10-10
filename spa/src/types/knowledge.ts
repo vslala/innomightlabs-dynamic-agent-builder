@@ -75,6 +75,9 @@ export type CrawledPageStatus = "pending" | "success" | "failed" | "skipped";
 // Knowledge Base
 // =============================================================================
 
+/** How the caller reaches it: their own, shared with them, or (admins) metadata only. */
+export type KnowledgeBaseAccess = "owner" | "shared" | "admin";
+
 export interface KnowledgeBase {
   kb_id: string;
   name: string;
@@ -84,9 +87,12 @@ export interface KnowledgeBase {
   total_chunks: number;
   total_vectors: number;
   status: KnowledgeBaseStatus;
+  account_id: string;
+  owner_id: string;
   created_by: string;
   created_at: string;
   updated_at: string;
+  access: KnowledgeBaseAccess;
 }
 
 export interface ContentUploadResponse {

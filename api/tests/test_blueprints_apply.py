@@ -104,7 +104,7 @@ def test_a_failure_rolls_everything_back(launched, monkeypatch):
     assert deployment.error == "key service down"
     assert deployment.resources == {}
     assert AgentRepository().find_by_name(*owner_ids(TEST_USER_EMAIL), "Acme assistant") is None
-    [kb] = KnowledgeBaseRepository().find_all_by_user(TEST_USER_EMAIL, include_deleted=True)
+    [kb] = KnowledgeBaseRepository().list_owned(*owner_ids(TEST_USER_EMAIL), include_deleted=True)
     assert kb.status == KnowledgeBaseStatus.DELETED
     assert launched == []
 

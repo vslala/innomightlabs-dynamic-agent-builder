@@ -106,7 +106,7 @@ class CrawlContext:
     """Context for a crawl job execution."""
     job: CrawlJob
     kb: KnowledgeBase
-    user_email: str
+    account_id: str
 
     # Repositories
     job_repo: CrawlJobRepository = field(default_factory=CrawlJobRepository)
@@ -184,10 +184,10 @@ class CrawlerWorker:
 
     Usage:
         worker = CrawlerWorker()
-        await worker.run(job_id, kb_id, user_email)
+        await worker.run(job_id, kb_id, account_id)
 
     Or with event streaming:
-        async for event in worker.run_with_events(job_id, kb_id, user_email):
+        async for event in worker.run_with_events(job_id, kb_id, account_id):
             yield event.to_sse()
     """
 
@@ -216,7 +216,7 @@ class CrawlerWorker:
         self,
         job_id: str,
         kb_id: str,
-        user_email: str,
+        account_id: str,
         timeout_ms: int = DEFAULT_LAMBDA_TIMEOUT_MS,
     ) -> CrawlJob:
         """
@@ -225,7 +225,7 @@ class CrawlerWorker:
         Args:
             job_id: The crawl job ID
             kb_id: The knowledge base ID
-            user_email: The user who owns the KB
+            account_id: The account the KB is in
             timeout_ms: Lambda timeout in milliseconds
 
         Returns:
@@ -236,13 +236,13 @@ class CrawlerWorker:
         def collect_event(event: CrawlEvent):
             events.append(event)
 
-        return await self._execute(job_id, kb_id, user_email, timeout_ms, collect_event)
+        return await self._execute(job_id, kb_id, account_id, timeout_ms, collect_event)
 
     async def run_with_events(
         self,
         job_id: str,
         kb_id: str,
-        user_email: str,
+        account_id: str,
         timeout_ms: int = DEFAULT_LAMBDA_TIMEOUT_MS,
     ) -> AsyncIterator[CrawlEvent]:
         """
@@ -251,7 +251,7 @@ class CrawlerWorker:
         Args:
             job_id: The crawl job ID
             kb_id: The knowledge base ID
-            user_email: The user who owns the KB
+            account_id: The account the KB is in
             timeout_ms: Lambda timeout in milliseconds
 
         Yields:
@@ -265,7 +265,7 @@ class CrawlerWorker:
 
         async def run_job():
             try:
-                await self._execute(job_id, kb_id, user_email, timeout_ms, queue_event)
+                await self._execute(job_id, kb_id, account_id, timeout_ms, queue_event)
             finally:
                 job_done.set()
 
@@ -287,7 +287,7 @@ class CrawlerWorker:
         self,
         job_id: str,
         kb_id: str,
-        user_email: str,
+        account_id: str,
         timeout_ms: int,
         event_callback: Callable[[CrawlEvent], None],
     ) -> CrawlJob:
@@ -305,7 +305,7 @@ class CrawlerWorker:
             log.info("Did not start crawl job %s because its status is %s", job_id, job.status.value)
             return job
 
-        kb = kb_repo.find_by_id(kb_id, user_email)
+        kb = kb_repo.find_in_account(account_id, kb_id)
         if not kb:
             raise ValueError(f"Knowledge base {kb_id} not found")
 
@@ -313,7 +313,7 @@ class CrawlerWorker:
         ctx = CrawlContext(
             job=job,
             kb=kb,
-            user_email=user_email,
+            account_id=account_id,
             start_time_ms=int(time.time() * 1000),
             timeout_ms=timeout_ms,
             event_callback=event_callback,
@@ -575,7 +575,7 @@ class CrawlerWorker:
         # Save crawled page record
         page = CrawledPage(
             job_id=job_id,
-            created_by=ctx.user_email,
+            created_by=ctx.kb.owner_id,
             url=url,
             status=CrawledPageStatus.SUCCESS,
             page_metadata=PageMetadata(
@@ -715,8 +715,8 @@ class CrawlerWorker:
 
         # Update KB stats
         ctx.kb_repo.update_stats(
+            ctx.account_id,
             ctx.kb.kb_id,
-            ctx.user_email,
             total_pages=ctx.successful_count,
             total_chunks=ctx.total_chunks,
             total_vectors=ctx.total_embeddings,
@@ -769,9 +769,9 @@ class CrawlerWorker:
         log.info(f"Crawl job {job.job_id} checkpointed at index {ctx.current_url_index}")
 
         # Self-invoke Lambda to continue processing
-        self._invoke_continuation(job.job_id, ctx.kb.kb_id, ctx.user_email)
+        self._invoke_continuation(job.job_id, ctx.kb.kb_id, ctx.account_id)
 
-    def _invoke_continuation(self, job_id: str, kb_id: str, user_email: str) -> None:
+    def _invoke_continuation(self, job_id: str, kb_id: str, account_id: str) -> None:
         """Invoke Lambda asynchronously to continue crawl from checkpoint."""
         running_in_lambda = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
         if not running_in_lambda and settings.async_job_backend != "lambda":
@@ -785,7 +785,7 @@ class CrawlerWorker:
             "crawl_job": {
                 "job_id": job_id,
                 "kb_id": kb_id,
-                "user_email": user_email,
+                "account_id": account_id,
             }
         }
 

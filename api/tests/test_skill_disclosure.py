@@ -331,7 +331,7 @@ def test_turn_prompt_carries_the_schema_of_an_action_used_last_turn(registry, dy
     architecture = KrishnaMemGPTArchitecture(message_repository=InMemoryMessageRepository())
     architecture.provider_settings_repo = _FakeProviderSettingsRepository()
     architecture.skill_runtime = _runtime(registry, "big_skill", agent_id=agent.agent_id)
-    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
+    architecture._get_linked_kb_ids = lambda agent: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: CoreMemorySnapshot(block_defs=[], blocks={})
     conversation = Conversation(title="Ads", agent_id=agent.agent_id, **conversation_fields(OWNER))
 

@@ -38,6 +38,11 @@ def agent_fields(email: str = TEST_USER_EMAIL) -> dict:
     return {"account_id": owner.account_id, "owner_id": owner.user_id, "created_by": owner.user_id}
 
 
+def kb_fields(email: str = TEST_USER_EMAIL) -> dict:
+    """The ownership fields a `KnowledgeBase(...)` built in a test needs: like an agent's."""
+    return agent_fields(email)
+
+
 def conversation_fields(email: str = TEST_USER_EMAIL) -> dict:
     """What a `Conversation(...)` built in a test needs: started by `email`, in their personal account."""
     owner = owner_for(email)

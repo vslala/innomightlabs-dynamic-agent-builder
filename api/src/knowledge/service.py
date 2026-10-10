@@ -68,7 +68,7 @@ class KnowledgeBaseService:
             self._pinecone = get_pinecone_client(validate=False)
         return self._pinecone
 
-    def soft_delete(self, kb_id: str, user_email: str) -> DeleteResult:
+    def soft_delete(self, kb: KnowledgeBase) -> DeleteResult:
         """
         Soft delete a knowledge base with full cleanup.
 
@@ -76,24 +76,17 @@ class KnowledgeBaseService:
         1. Marks the KB as deleted with a TTL for auto-expiration (30 days)
         2. Immediately deletes all content chunks from DynamoDB
         3. Immediately deletes the Pinecone namespace (all vectors)
-        4. Unlinks the KB from all agents
+        4. Unlinks the KB from all agents, and forgets its shares
 
         The KB record itself remains for 30 days to handle orphan cleanup,
-        then DynamoDB TTL auto-deletes it.
-
-        Args:
-            kb_id: Knowledge base ID
-            user_email: User email (owner)
+        then DynamoDB TTL auto-deletes it. Callers have found the KB and
+        checked the caller may delete it.
 
         Returns:
             DeleteResult with operation details
         """
+        kb_id = kb.kb_id
         result = DeleteResult(success=False, kb_id=kb_id)
-
-        kb = self.kb_repo.find_by_id(kb_id, user_email)
-        if not kb:
-            result.error = f"Knowledge base {kb_id} not found"
-            return result
 
         if kb.status == KnowledgeBaseStatus.DELETED:
             result.error = f"Knowledge base {kb_id} is already deleted"
@@ -115,7 +108,14 @@ class KnowledgeBaseService:
             log.error(f"Failed to unlink agents for KB {kb_id}: {e}", exc_info=True)
 
         try:
-            self._mark_as_deleted(kb, user_email)
+            from src.iam.shares import ShareService
+
+            ShareService().forget_resource(kb.account_id, "knowledge-base", kb_id)
+        except Exception as e:
+            log.error(f"Failed to forget shares of KB {kb_id}: {e}", exc_info=True)
+
+        try:
+            self._mark_as_deleted(kb)
             result.success = True
         except Exception as e:
             log.error(f"Failed to mark KB {kb_id} as deleted: {e}", exc_info=True)
@@ -133,7 +133,6 @@ class KnowledgeBaseService:
     async def ingest_text_content(
         self,
         kb: KnowledgeBase,
-        user_email: str,
         filename: str,
         content: str,
         metadata: Optional[str] = None,
@@ -143,7 +142,6 @@ class KnowledgeBaseService:
 
         Args:
             kb: Knowledge base
-            user_email: Owner email
             filename: Original filename
             content: Text content
             metadata: Optional metadata to include in context
@@ -261,7 +259,7 @@ class KnowledgeBaseService:
 
         return unlinked
 
-    def _mark_as_deleted(self, kb: KnowledgeBase, user_email: str) -> None:
+    def _mark_as_deleted(self, kb: KnowledgeBase) -> None:
         """Mark the KB as deleted with TTL."""
         now = datetime.now(timezone.utc)
         ttl_time = now + timedelta(days=SOFT_DELETE_TTL_DAYS)

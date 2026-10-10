@@ -3,11 +3,13 @@ Repository for Knowledge Base, CrawlJob, and related entities.
 
 Uses DynamoDB single table design with the following access patterns:
 
-KnowledgeBase:
-    - List all KBs for a user: Query pk=User#{email}, sk begins_with KnowledgeBase#
-    - Get KB by ID: GetItem pk=User#{email}, sk=KnowledgeBase#{kb_id}
+KnowledgeBase (in its account, with an owner_id; see docs/LLD-shared-accounts-and-iam.md):
+    - List the account's KBs: Query pk=Account#{account_id}, sk begins_with KnowledgeBase#
+    - Get KB by ID: GetItem pk=Account#{account_id}, sk=KnowledgeBase#{kb_id}
     - Create/Update KB: PutItem
     - Delete KB (soft): UpdateItem to set status=deleted
+
+    Finding a KB is not authorizing its use: routes check the caller (`src/knowledge/access.py`).
 
 CrawlJob:
     - List jobs for KB: Query pk=KnowledgeBase#{kb_id}, sk begins_with CrawlJob#
@@ -65,52 +67,46 @@ class KnowledgeBaseRepository:
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, kb: KnowledgeBase) -> KnowledgeBase:
-        """Save a knowledge base (create or update)."""
-        existing = self.find_by_id(kb.kb_id, kb.created_by)
+        """Create or update; an update keeps the original created_at."""
+        existing = self.find_in_account(kb.account_id, kb.kb_id)
 
         if existing:
             kb.created_at = existing.created_at
             kb.updated_at = datetime.now(timezone.utc)
 
         self.table.put_item(Item=kb.to_dynamo_item())
-        log.info(f"Saved knowledge base {kb.kb_id} for user {kb.created_by}")
+        log.info(f"Saved knowledge base {kb.kb_id} in account {kb.account_id}")
         return kb
 
-    def find_by_id(self, kb_id: str, user_email: str) -> Optional[KnowledgeBase]:
-        """Find a knowledge base by ID."""
-        response = self.table.get_item(
-            Key={
-                "pk": f"User#{user_email}",
-                "sk": f"KnowledgeBase#{kb_id}",
-            }
-        )
-        item = response.get("Item")
-        if item:
-            return KnowledgeBase.from_dynamo_item(item)
-        return None
+    def find_in_account(self, account_id: str, kb_id: str) -> Optional[KnowledgeBase]:
+        item = self.table.get_item(Key={"pk": f"Account#{account_id}", "sk": f"KnowledgeBase#{kb_id}"}).get("Item")
+        return KnowledgeBase.from_dynamo_item(item) if item else None
 
-    def find_all_by_user(self, user_email: str, include_deleted: bool = False) -> list[KnowledgeBase]:
-        """Find all knowledge bases for a user."""
-        response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"User#{user_email}")
-            & Key("sk").begins_with("KnowledgeBase#")
-        )
-
-        items = response.get("Items", [])
+    def list_in_account(self, account_id: str, include_deleted: bool = False) -> list[KnowledgeBase]:
+        """Every knowledge base in the account, whoever owns it; callers filter to what the caller may see."""
+        query: dict[str, Any] = {
+            "KeyConditionExpression": Key("pk").eq(f"Account#{account_id}") & Key("sk").begins_with("KnowledgeBase#")
+        }
+        items: list[dict[str, Any]] = []
+        while True:
+            response = self.table.query(**query)
+            items.extend(response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                break
+            query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
         kbs = [KnowledgeBase.from_dynamo_item(item) for item in items]
+        return kbs if include_deleted else [kb for kb in kbs if kb.status != KnowledgeBaseStatus.DELETED]
 
-        if not include_deleted:
-            kbs = [kb for kb in kbs if kb.status != KnowledgeBaseStatus.DELETED]
+    def list_owned(self, account_id: str, owner_id: str, include_deleted: bool = False) -> list[KnowledgeBase]:
+        """The knowledge bases one member owns in an account."""
+        return [kb for kb in self.list_in_account(account_id, include_deleted) if kb.owner_id == owner_id]
 
-        log.info(f"Found {len(kbs)} knowledge bases for user {user_email}")
-        return kbs
-
-    def soft_delete(self, kb_id: str, user_email: str) -> bool:
+    def soft_delete(self, account_id: str, kb_id: str) -> bool:
         """Soft delete a knowledge base by setting status to deleted."""
         try:
             self.table.update_item(
                 Key={
-                    "pk": f"User#{user_email}",
+                    "pk": f"Account#{account_id}",
                     "sk": f"KnowledgeBase#{kb_id}",
                 },
                 UpdateExpression="SET #status = :status, updated_at = :updated_at",
@@ -126,12 +122,12 @@ class KnowledgeBaseRepository:
             log.error(f"Failed to soft delete knowledge base {kb_id}: {e}", exc_info=True)
             return False
 
-    def update_stats(self, kb_id: str, user_email: str, total_pages: int, total_chunks: int, total_vectors: int) -> bool:
+    def update_stats(self, account_id: str, kb_id: str, total_pages: int, total_chunks: int, total_vectors: int) -> bool:
         """Update knowledge base statistics after a crawl."""
         try:
             self.table.update_item(
                 Key={
-                    "pk": f"User#{user_email}",
+                    "pk": f"Account#{account_id}",
                     "sk": f"KnowledgeBase#{kb_id}",
                 },
                 UpdateExpression="SET total_pages = :pages, total_chunks = :chunks, total_vectors = :vectors, updated_at = :updated_at",

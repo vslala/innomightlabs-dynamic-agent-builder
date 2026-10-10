@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from src.common import outbound
+from tests.mock_data import kb_fields
 
 
 def _infos(*addresses: str) -> list[tuple]:
@@ -75,7 +76,7 @@ def test_a_crawl_is_bounded(test_client, auth_headers):
     from src.knowledge.repository import KnowledgeBaseRepository
     from tests.mock_data import TEST_USER_EMAIL
 
-    kb = KnowledgeBaseRepository().save(KnowledgeBase(name="KB", description="", created_by=TEST_USER_EMAIL))
+    kb = KnowledgeBaseRepository().save(KnowledgeBase(name="KB", description="", **kb_fields(TEST_USER_EMAIL)))
     response = test_client.post(
         f"/knowledge-bases/{kb.kb_id}/crawl-jobs?auto_start=false",
         json={"source_type": "sitemap", "source_url": "https://example.com/sitemap.xml", "max_pages": 100000},

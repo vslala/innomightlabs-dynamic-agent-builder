@@ -372,6 +372,60 @@ through the principal, and leaves the suite green.
   - `test_agent_access.py` covers a member's chat on a shared agent being invisible to its owner and to
     admins, and a conversation staying in the account it was started in.
 
+**Slice 3: knowledge bases (done)**
+- **Keys.** A `KnowledgeBase` is at `Account#{aid}/KnowledgeBase#{id}`, with `account_id` and `owner_id`.
+  `created_by` is a user_id, for audit only.
+  - Children don't move, because none of them named the owner: crawl jobs, steps, pages, chunks, uploads
+    and agent links.
+  - Pinecone namespaces are `kb_{id}`, so nothing is re-embedded.
+  - `created_by` on crawl jobs, pages and uploads, and `linked_by` on agent links, become user_ids.
+  - There is no global index. Every reader knows the account: the request, the agent, or the crawl
+    payload. A just-created KB is crawled straight away, so strongly consistent reads matter.
+- **Repository.** It provides `find_in_account`, `list_in_account`, `list_owned`,
+  `soft_delete(account_id, kb_id)` and `update_stats(account_id, kb_id, ...)`. `KnowledgeBaseService.
+  soft_delete(kb)` takes the KB its caller already authorized, and forgets its shares.
+- **Route helpers** in `api/src/knowledge/access.py`:
+  - `require_kb` and `kb_with(action)`;
+  - `access_to` and `visible_kbs` for the list, with `access` on each response;
+  - `readable_by_agent(agent, kb_ids)`;
+  - `owned_kb(kb_id, email)` for blueprints, kits and the clean-up script, in the personal account.
+
+  The module registers the `knowledge-base` share resolver, so the KAN-78 share routes work for KBs.
+- **Actions per route.**
+
+  | Route | Action |
+  | --- | --- |
+  | create | `knowledge:Create` |
+  | get | `knowledge:Describe` (the response is metadata only, so admins see all of it) |
+  | update, content-upload form, upload | `knowledge:Update` |
+  | delete | `knowledge:Delete` |
+  | start, run, run-stream or cancel a crawl | `knowledge:Crawl` |
+  | crawl jobs, job, stream, steps, pages, search, uploads | `knowledge:Get` |
+- **Agents read as their owner.** Each link is checked again when it is read: at chat time
+  (`krishna_memgpt`), in `/agents/{id}/knowledge-search`, and in the linked list.
+  - A linked KB is searched only while it is live, in the agent's account, and readable by the agent's
+    owner. The owner either owns it or has a share with `knowledge:Get`.
+  - Revoking a share therefore stops the reads at once, though the link stays.
+  - If the owner has left the account, the agent reads nothing there.
+  - Linking needs `agents:Update` on the agent and `knowledge:Get` on the KB for the caller.
+- **Crawl payload.** The async crawl payload (`crawl_job`), the in-process launcher and the worker carry
+  `account_id` instead of `user_email`.
+  - A crawl continuation queued by the old code is refused (400 `Invalid crawl_job payload`). In-flight
+    Lambda crawls at deploy time need restarting from the dashboard. Deploy happens alongside the
+    migration anyway.
+- **Lambdas and scripts.**
+  - Account deletion finds the person's KBs in their personal account, as it does agents.
+  - It also fixes sk prefixes that never matched (`Chunk#`, `Step#`, `Page#`, and the link's
+    `KnowledgeBase#`), and deletes uploads. The Pinecone namespace is still not deleted there.
+  - `cleanup_ila_builds.py` uses `owned_kb`.
+- **SPA.** `KnowledgeBase` gains `account_id`, `owner_id` and `access`. The list shows "Shared with you"
+  or "Admin view".
+- **Tests.**
+  - `kb_fields(email)` builds KB ownership.
+  - `tests/test_knowledge_access.py` covers private by default, read-only sharing, admin metadata-only
+    access, isolation across accounts, an agent reading a shared KB only while the share lasts, and
+    deletion forgetting shares.
+
 ## Context and problem
 
 ### How it works today

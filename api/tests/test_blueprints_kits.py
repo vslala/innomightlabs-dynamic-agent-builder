@@ -25,7 +25,7 @@ from src.knowledge.service import KnowledgeBaseService
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.repository import AgentSkillRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, kb_fields, owner_ids
 
 SITE_AGENT = example_yaml("site-agent") or ""
 PARAMS = {"site_url": "https://acme.example", "business_name": "Acme"}
@@ -88,7 +88,7 @@ def test_the_first_build_is_a_kit_and_each_change_a_version():
 def test_leaving_out_a_link_takes_it_away_but_never_what_the_kit_didnt_declare():
     kit = deploy(SITE_AGENT).kit
     agent_id, site_kb = kit.resources["assistant"].id, kit.resources["site_kb"].id
-    docs = KnowledgeBaseRepository().save(KnowledgeBase(name="Docs", created_by=TEST_USER_EMAIL))
+    docs = KnowledgeBaseRepository().save(KnowledgeBase(name="Docs", **kb_fields(TEST_USER_EMAIL)))
     AgentKnowledgeBaseRepository().link(agent_id, docs.kb_id, TEST_USER_EMAIL)  # from the dashboard
 
     without = edited(SITE_AGENT, lambda r: r["assistant"].update(knowledge_bases=[]))
@@ -96,7 +96,7 @@ def test_leaving_out_a_link_takes_it_away_but_never_what_the_kit_didnt_declare()
     step = next(step for step in result.plan.steps if step.resource == "assistant")
     assert step.removals == ["disconnect knowledge base 'Acme website'"]
     assert linked(agent_id) == {docs.kb_id}  # the kit never declared Docs
-    assert KnowledgeBaseRepository().find_by_id(site_kb, TEST_USER_EMAIL).status != KnowledgeBaseStatus.DELETED
+    assert KnowledgeBaseRepository().find_in_account(owner_ids(TEST_USER_EMAIL)[0], site_kb).status != KnowledgeBaseStatus.DELETED
 
 
 def test_one_of_two_installs_of_a_skill_can_go():
@@ -158,7 +158,7 @@ def test_renaming_a_resource_carries_it_on():
 def test_a_rename_that_would_rebuild_a_resource_is_asked_about():
     """Knowledge bases aren't matched by a shared name, so a renamed one with no id would be deleted and rebuilt."""
     kit = deploy(SITE_AGENT).kit
-    KnowledgeBaseRepository().save(KnowledgeBase(name="Acme website", created_by=TEST_USER_EMAIL))  # same name
+    KnowledgeBaseRepository().save(KnowledgeBase(name="Acme website", **kb_fields(TEST_USER_EMAIL)))  # same name
     renamed = SITE_AGENT.replace("  site_kb:\n", "  pages:\n").replace("[site_kb]", "[pages]").replace(
         "resources.site_kb.", "resources.pages."
     )
@@ -219,7 +219,7 @@ def test_removing_a_kit_deletes_everything_it_holds():
     assert isinstance(result, Deployed) and result.deployment.status == DeploymentStatus.APPLIED
     assert (result.kit.status, result.kit.resources) == (KitStatus.REMOVED, {})
     assert AgentRepository().get(agent_id) is None
-    assert KnowledgeBaseRepository().find_by_id(kb_id, TEST_USER_EMAIL).status == KnowledgeBaseStatus.DELETED
+    assert KnowledgeBaseRepository().find_in_account(owner_ids(TEST_USER_EMAIL)[0], kb_id).status == KnowledgeBaseStatus.DELETED
     with pytest.raises(KitError, match="removed"):
         plan_kit_removal(TEST_USER_EMAIL, kit.kit_id)
 

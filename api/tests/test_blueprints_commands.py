@@ -25,7 +25,7 @@ from src.knowledge.repository import KnowledgeBaseRepository
 from src.scheduler.runtime import BLUEPRINT_APPLY_REAPER_ID, SchedulerRuntime
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, owner_ids
 
 SITE_AGENT = example_yaml("site-agent") or ""
 PARAMS = {"site_url": "https://acme.example/about", "business_name": "Acme"}
@@ -153,7 +153,7 @@ def test_an_interrupted_apply_is_put_back_by_the_reaper(account, monkeypatch):
     assert "put back" in recovered.error
     assert recovered.resources == {}
     assert AgentRepository().get(agent_id) is None
-    [kb] = KnowledgeBaseRepository().find_all_by_user(TEST_USER_EMAIL, include_deleted=True)
+    [kb] = KnowledgeBaseRepository().list_owned(*owner_ids(TEST_USER_EMAIL), include_deleted=True)
     assert kb.status == KnowledgeBaseStatus.DELETED
     assert account == []  # it never got as far as reading the site
 

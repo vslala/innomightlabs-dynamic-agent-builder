@@ -5,9 +5,10 @@ from datetime import datetime, timedelta, timezone
 import jwt
 
 from src.agents.architectures.krishna_memgpt import KrishnaMemGPTArchitecture
+from src.agents.models import Agent
 from src.knowledge.models import KnowledgeBase
 from src.knowledge.repository import AgentKnowledgeBaseRepository, KnowledgeBaseRepository
-from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for
+from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for, kb_fields, agent_fields
 
 
 def _headers_for(email: str) -> dict[str, str]:
@@ -17,7 +18,7 @@ def _headers_for(email: str) -> dict[str, str]:
 
 
 def _kb(owner: str) -> str:
-    return KnowledgeBaseRepository().save(KnowledgeBase(name="KB", description="", created_by=owner)).kb_id
+    return KnowledgeBaseRepository().save(KnowledgeBase(name="KB", description="", **kb_fields(owner))).kb_id
 
 
 def test_nobody_else_can_link_list_or_unlink_on_your_agent(test_client, auth_headers):
@@ -38,7 +39,9 @@ def test_the_agent_never_searches_a_knowledge_base_its_owner_does_not_own(dynamo
     own_kb = _kb(TEST_USER_EMAIL)
     foreign_kb = _kb(TEST_USER_EMAIL_2)
     links = AgentKnowledgeBaseRepository()
-    links.link("agent-1", own_kb, TEST_USER_EMAIL)
-    links.link("agent-1", foreign_kb, TEST_USER_EMAIL_2)
+    links.link("agent-1", own_kb, user_id_for(TEST_USER_EMAIL))
+    links.link("agent-1", foreign_kb, user_id_for(TEST_USER_EMAIL_2))
+    agent = Agent(agent_id="agent-1", agent_name="A", agent_architecture="krishna-memgpt", agent_provider="Bedrock",
+                  agent_persona="x", **agent_fields(TEST_USER_EMAIL))
 
-    assert KrishnaMemGPTArchitecture()._get_linked_kb_ids("agent-1", TEST_USER_EMAIL) == [own_kb]
+    assert KrishnaMemGPTArchitecture()._get_linked_kb_ids(agent) == [own_kb], "the other one is in another account"

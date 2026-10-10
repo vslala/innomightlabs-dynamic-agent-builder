@@ -44,7 +44,7 @@ from src.builder.models import ILA_AGENT_ID  # noqa: E402
 from src.config import settings  # noqa: E402
 from src.db import get_dynamodb_resource  # noqa: E402
 from src.knowledge.models import KnowledgeBaseStatus  # noqa: E402
-from src.knowledge.repository import KnowledgeBaseRepository  # noqa: E402
+from src.knowledge.access import owned_kb  # noqa: E402
 from src.knowledge.service import get_knowledge_base_service  # noqa: E402
 
 
@@ -128,9 +128,8 @@ def _built(account: AccountFindings, resource: dict[str, Any]) -> None:
 
 def report(owner: str, account: AccountFindings) -> None:
     agents = AgentRepository()
-    kbs = KnowledgeBaseRepository()
     live_agents = [a for a in (owned_agent(i, owner, agents) for i in sorted(account.agents)) if a]
-    live_kbs = [k for k in (kbs.find_by_id(i, owner) for i in sorted(account.knowledge_bases))
+    live_kbs = [k for k in (owned_kb(i, owner) for i in sorted(account.knowledge_bases))
                 if k and k.status != KnowledgeBaseStatus.DELETED]
     print(f"\n{owner}")
     print(f"  Ila conversations: {len(account.conversations)} (builder sessions: {len(account.sessions)})")
@@ -157,9 +156,9 @@ def delete(table, owner: str, account: AccountFindings) -> list[str]:
             problems.append(f"agent {agent_id}: {e}")
     for kb_id in sorted(account.knowledge_bases):
         try:
-            kb = KnowledgeBaseRepository().find_by_id(kb_id, owner)
+            kb = owned_kb(kb_id, owner)
             if kb and kb.status != KnowledgeBaseStatus.DELETED:
-                result = get_knowledge_base_service().soft_delete(kb_id, owner)
+                result = get_knowledge_base_service().soft_delete(kb)
                 if not result.success:
                     problems.append(f"knowledge base {kb_id}: {result.error}")
         except Exception as e:

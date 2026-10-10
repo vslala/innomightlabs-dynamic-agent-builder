@@ -3,6 +3,7 @@ from typing import Any, ClassVar, Mapping, Optional
 from uuid import uuid4
 
 from src.accounts.owner import personal_owner
+from src.knowledge.access import owned_kb
 from src.agents.access import owner_of
 from src.agents.models import Agent, CreateAgentRequest
 from src.agents.repository import AgentRepository
@@ -28,7 +29,7 @@ from src.blueprints.spec import AgentSpec, SkillEntry
 from src.connectors.mcp.repository import get_mcp_connection_repository
 from src.connectors.mcp.service import get_mcp_connector_service
 from src.knowledge.models import KnowledgeBaseStatus
-from src.knowledge.repository import AgentKnowledgeBaseRepository, KnowledgeBaseRepository
+from src.knowledge.repository import AgentKnowledgeBaseRepository
 from src.settings.repository import get_provider_settings_repository
 from src.skills.models import ActorKind, AgentSkill
 from src.skills.identity import installed_skill_id_for
@@ -215,7 +216,7 @@ class LinkKnowledgeBase(Command):
 
     def run(self, ctx: ApplyContext) -> None:
         ids = self._ids(ctx)
-        AgentKnowledgeBaseRepository().link(ids["agent_id"], ids["kb_id"], ctx.user_email)
+        AgentKnowledgeBaseRepository().link(ids["agent_id"], ids["kb_id"], personal_owner(ctx.user_email).user_id)
 
     def _ids(self, ctx: ApplyContext) -> dict[str, str]:
         return {"agent_id": ctx.applied[self.resource].id, "kb_id": ctx.applied[self.knowledge_base].id}
@@ -244,7 +245,7 @@ def _unlink_knowledge_base(args: dict[str, Any], user_email: str) -> None:
 
 @undo_action("link_knowledge_base")
 def _link_knowledge_base(args: dict[str, Any], user_email: str) -> None:
-    AgentKnowledgeBaseRepository().link(args["agent_id"], args["kb_id"], user_email)
+    AgentKnowledgeBaseRepository().link(args["agent_id"], args["kb_id"], personal_owner(user_email).user_id)
 
 
 @dataclass(kw_only=True)
@@ -403,9 +404,8 @@ class AgentKind(ManagedKind[AgentSpec]):
     def linked(self, agent_id: str, user_email: str) -> list[tuple[str, str, Any]]:
         """(kind, id, record) of every resource the agent links to, in link order."""
         found: list[tuple[str, str, Any]] = []
-        kbs = KnowledgeBaseRepository()
         for link in AgentKnowledgeBaseRepository().find_kbs_for_agent(agent_id):
-            kb = kbs.find_by_id(link.kb_id, user_email)
+            kb = owned_kb(link.kb_id, user_email)
             if kb is not None and kb.status != KnowledgeBaseStatus.DELETED:
                 found.append(("KnowledgeBase", kb.kb_id, kb))
         connections = get_mcp_connection_repository()

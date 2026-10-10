@@ -24,7 +24,7 @@ from src.knowledge.repository import KnowledgeBaseRepository
 from src.knowledge.service import KnowledgeBaseService
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversation_fields, conversations_of
+from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversation_fields, conversations_of, owner_ids
 
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "cleanup_ila_builds.py"
 
@@ -67,7 +67,7 @@ def test_ila_builds_are_removed_and_the_persons_own_things_stay(dynamodb_table, 
     assert script.delete(table, TEST_USER_EMAIL, account) == []
 
     assert AgentRepository().get(built.deployment.resources["assistant"].id) is None
-    kb = KnowledgeBaseRepository().find_by_id(built.deployment.resources["site_kb"].id, TEST_USER_EMAIL)
+    kb = KnowledgeBaseRepository().find_in_account(owner_ids(TEST_USER_EMAIL)[0], built.deployment.resources["site_kb"].id)
     assert kb.status == KnowledgeBaseStatus.DELETED
     assert ConversationRepository().find_by_id(ila_chat.conversation_id, conversations_of(TEST_USER_EMAIL)) is None
     assert BuilderSessionRepository().find(TEST_USER_EMAIL, ila_chat.conversation_id) is None

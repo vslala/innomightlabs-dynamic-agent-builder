@@ -51,7 +51,7 @@ def build(text: str = SITE_AGENT, params: dict | None = None):
 def counts() -> tuple[int, int]:
     return (
         len(AgentRepository().list_owned(*owner_ids(TEST_USER_EMAIL))),
-        len(KnowledgeBaseRepository().find_all_by_user(TEST_USER_EMAIL)),
+        len(KnowledgeBaseRepository().list_owned(*owner_ids(TEST_USER_EMAIL))),
     )
 
 

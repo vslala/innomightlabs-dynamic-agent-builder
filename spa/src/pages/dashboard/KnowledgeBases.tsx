@@ -17,10 +17,13 @@ import {
   LoadingState,
   ErrorState,
   EmptyState,
+  Pill,
 } from "../../components/ui";
 import { FieldGroup, Grid, Inline, Page, PageActions, PageBody, PageDescription, PageHeader, Stack } from "../../components/layout";
 import { knowledgeApiService } from "../../services/knowledge";
-import type { KnowledgeBase } from "../../types/knowledge";
+import type { KnowledgeBase, KnowledgeBaseAccess } from "../../types/knowledge";
+
+const ACCESS_BADGES: Partial<Record<KnowledgeBaseAccess, string>> = { shared: "Shared with you", admin: "Admin view" };
 
 export function KnowledgeBases() {
   const navigate = useNavigate();
@@ -164,6 +167,9 @@ export function KnowledgeBases() {
                           {kb.name}
                         </h3>
                       </Link>
+                      {ACCESS_BADGES[kb.access] && (
+                        <Pill size="sm" variant="secondary">{ACCESS_BADGES[kb.access]}</Pill>
+                      )}
                       <p className="line-clamp-2 text-sm leading-relaxed text-[var(--text-muted)]">
                         {kb.description || "No description"}
                       </p>

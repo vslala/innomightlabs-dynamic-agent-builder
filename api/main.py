@@ -240,7 +240,7 @@ def handler(event, context):
         "crawl_job": {
             "job_id": "...",
             "kb_id": "...",
-            "user_email": "..."
+            "account_id": "..."
         }
     }
 
@@ -274,15 +274,15 @@ def _handle_crawl_job(crawl_job: dict, context):
 
     job_id = crawl_job.get("job_id")
     kb_id = crawl_job.get("kb_id")
-    user_email = crawl_job.get("user_email")
+    account_id = crawl_job.get("account_id")
 
     if (
         not isinstance(job_id, str)
         or not isinstance(kb_id, str)
-        or not isinstance(user_email, str)
+        or not isinstance(account_id, str)
         or not job_id
         or not kb_id
-        or not user_email
+        or not account_id
     ):
         log.error(f"Invalid crawl_job payload: {crawl_job}")
         return {"statusCode": 400, "body": "Invalid crawl_job payload"}
@@ -302,7 +302,7 @@ def _handle_crawl_job(crawl_job: dict, context):
         asyncio.run(crawler.run(
             job_id=job_id,
             kb_id=kb_id,
-            user_email=user_email,
+            account_id=account_id,
             timeout_ms=timeout_ms,
         ))
 

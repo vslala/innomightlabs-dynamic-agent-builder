@@ -17,7 +17,7 @@ from src.knowledge.models import (
 from src.knowledge.repository import CrawlJobRepository, KnowledgeBaseRepository
 from src.knowledge.run_state import CrawlJobStateService, CrawlJobStoppedError
 from src.crawler.worker import CrawlerWorker
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, kb_fields
 
 
 def _crawl_job(
@@ -208,7 +208,7 @@ async def test_fail_job_snapshots_resume_checkpoint():
 @pytest.mark.asyncio
 async def test_retrying_failed_job_clears_stale_error_message(dynamodb_table, monkeypatch):
     kb_repo = KnowledgeBaseRepository()
-    kb = KnowledgeBase(name="Test KB", created_by=TEST_USER_EMAIL)
+    kb = KnowledgeBase(name="Test KB", **kb_fields(TEST_USER_EMAIL))
     kb_repo.save(kb)
 
     job_repo = CrawlJobRepository()
@@ -220,7 +220,7 @@ async def test_retrying_failed_job_clears_stale_error_message(dynamodb_table, mo
     monkeypatch.setattr(CrawlerWorker, "_discover_urls", AsyncMock(return_value=None))
     monkeypatch.setattr(CrawlerWorker, "_process_urls", AsyncMock(return_value=None))
 
-    await CrawlerWorker().run(job.job_id, kb.kb_id, TEST_USER_EMAIL)
+    await CrawlerWorker().run(job.job_id, kb.kb_id, kb.account_id)
 
     saved = job_repo.find_by_id(job.job_id, kb.kb_id)
     assert saved is not None
