@@ -230,7 +230,7 @@ def test_a_change_judged_on_a_stale_state_is_not_saved(account, iam):
     iam.create_group(account, ADMIN, "Support")
 
     with pytest.raises(IamError) as conflict:
-        iam._commit(stale, put=[{"pk": f"Account#{account}", "sk": "Group#late", "group_id": "late",
+        iam.commit(stale, put=[{"pk": f"Account#{account}", "sk": "Group#late", "group_id": "late",
                                  "name": "Late", "created_by": ADMIN, "created_at": "now"}])
     assert code_of(conflict) == "CONFLICT"
     assert [g.name for g in iam.state(account, ADMIN).groups.values()] == ["Support"]

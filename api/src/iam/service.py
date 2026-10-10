@@ -109,7 +109,7 @@ class IamService:
         state = self._allowed(account_id, caller, "iam:ManageGroups")
         self._unique_name(name, [group.name for group in state.groups.values()], "group")
         group = Group(name=name, description=description, created_by=caller)
-        self._commit(state, put=[group.item(account_id)])
+        self.commit(state, put=[group.item(account_id)])
         return group
 
     def update_group(self, account_id: str, caller: str, group_id: str,
@@ -121,7 +121,7 @@ class IamService:
         changed = Group(name=group.name if name is None else name,
                         description=group.description if description is None else description,
                         created_by=group.created_by, group_id=group.group_id, created_at=group.created_at)
-        self._commit(state, put=[changed.item(account_id)])
+        self.commit(state, put=[changed.item(account_id)])
         return changed
 
     def delete_group(self, account_id: str, caller: str, group_id: str) -> None:
@@ -132,7 +132,7 @@ class IamService:
         keys = [group.item(account_id), *(a.item(account_id) for a in attachments)]
         for user_id in state.members_of(group_id):
             keys += group_membership_items(account_id, group_id, user_id)
-        self._commit(state, delete=keys)
+        self.commit(state, delete=keys)
 
     def add_to_group(self, account_id: str, caller: str, group_id: str, user_id: str) -> None:
         """Joining a group grants its policies, so the caller must hold them, as when attaching."""
@@ -145,13 +145,13 @@ class IamService:
             named = state.resolve(attachment.policy)
             if named:
                 self._within_grants(state, caller, named.document)
-        self._commit(state, put=group_membership_items(account_id, group_id, user_id))
+        self.commit(state, put=group_membership_items(account_id, group_id, user_id))
 
     def remove_from_group(self, account_id: str, caller: str, group_id: str, user_id: str) -> None:
         state = self._allowed(account_id, caller, "iam:ManageGroups")
         if (group_id, user_id) not in state.group_members:
             return
-        self._commit(state, delete=group_membership_items(account_id, group_id, user_id))
+        self.commit(state, delete=group_membership_items(account_id, group_id, user_id))
 
     # Policies
 
@@ -163,7 +163,7 @@ class IamService:
         version = PolicyVersion(version=1, document=parse_policy(document), created_by=caller)
         policy = CustomPolicy(name=name, description=description, created_by=caller,
                               default_version=1, latest_version=1, versions={1: version})
-        self._commit(state, put=[policy.item(account_id), version.item(account_id, policy.policy_id)])
+        self.commit(state, put=[policy.item(account_id), version.item(account_id, policy.policy_id)])
         return policy
 
     def create_version(self, account_id: str, caller: str, policy_ref: str, document: dict[str, Any],
@@ -184,7 +184,7 @@ class IamService:
             policy_id=policy.policy_id, created_at=policy.created_at,
         )
         self._judge_policy_change(state, caller, policy, changed)
-        self._commit(
+        self.commit(
             state,
             put=[changed.item(account_id), version.item(account_id, policy.policy_id)],
             delete=[old.item(account_id, policy.policy_id) for old in dropped],
@@ -203,7 +203,7 @@ class IamService:
             policy_id=policy.policy_id, created_at=policy.created_at,
         )
         self._judge_policy_change(state, caller, policy, changed)
-        self._commit(state, put=[changed.item(account_id)])
+        self.commit(state, put=[changed.item(account_id)])
         return changed
 
     def delete_policy(self, account_id: str, caller: str, policy_ref: str) -> None:
@@ -211,7 +211,7 @@ class IamService:
         policy = find_policy(state, policy_ref)
         if any(attachment.policy == policy.ref for attachment in state.attachments.values()):
             raise IamError(409, "POLICY_ATTACHED", "Detach the policy everywhere before deleting it")
-        self._commit(state, delete=[policy.item(account_id),
+        self.commit(state, delete=[policy.item(account_id),
                                     *(version.item(account_id, policy.policy_id) for version in policy.versions.values())])
 
     # Attachments
@@ -231,7 +231,7 @@ class IamService:
         if attachment.sk in state.attachments:
             return state.attachments[attachment.sk]
         self._within_grants(state, caller, named.document)
-        self._commit(state, put=[attachment.item(account_id)])
+        self.commit(state, put=[attachment.item(account_id)])
         return attachment
 
     def detach(self, account_id: str, caller: str, principal_type: PrincipalType, principal_id: str,
@@ -241,7 +241,7 @@ class IamService:
         sk = Attachment(principal_type=principal_type, principal_id=principal_id, policy=policy, attached_by="").sk
         if sk not in state.attachments:
             return
-        self._commit(state, delete=[state.attachments[sk].item(account_id)])
+        self.commit(state, delete=[state.attachments[sk].item(account_id)])
 
     # Members
 
@@ -260,7 +260,7 @@ class IamService:
                 *(attachment.item(account_id) for attachment in attachments)]
         for group_id in groups:
             keys += group_membership_items(account_id, group_id, user_id)
-        self._commit(state, delete=keys)
+        self.commit(state, delete=keys)
         log.info("Removed member %s from account %s", user_id, account_id)
 
     # The rules
@@ -287,7 +287,7 @@ class IamService:
             return
         self._within_grants(state, caller, after.document)
 
-    def _commit(self, state: AccountIam, **change: Any) -> None:
+    def commit(self, state: AccountIam, **change: Any) -> None:
         try:
             self.repository.commit(state, **change)
         except ConcurrentChange as error:

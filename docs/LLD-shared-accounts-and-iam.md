@@ -184,6 +184,45 @@
   transfer plan.
 - **Not yet.** Audit events for these writes come with KAN-87.
 
+### KAN-78: shares (backend done; resolvers and SPA with KAN-80 and KAN-79)
+
+- **Where it lives.** `api/src/iam/shares.py` holds the presets, `ResourceShare`, `ShareRepository`,
+  `ShareService` and `RESOLVERS`. `api/src/iam/shares_router.py` serves
+  `GET /{collection}/{id}/shares` and `PUT|DELETE /{collection}/{id}/shares/{members|groups}/{id}`, for
+  `agents`, `knowledge-bases`, `automations` and `kits`.
+  - The routes are registered as literal paths for each type. A single `/{collection}/...` route would
+    answer 422 for the resources' own routes instead of letting them through.
+- **Keys follow this LLD, not the ticket.** Shares use `Share#{type}#{rid}#{member|group}#{id}`, so
+  listing a type never returns shares, plus the gsi2 reverse key for "shared with me".
+- **Finding resources.** `RESOLVERS` maps each shareable type to a function `(account_id, id) ->
+  ResourceRef` that carries the owner.
+  - The map stays empty until resources live in accounts. **KAN-80 registers the real resolvers**, so
+    until then the share routes answer 404.
+  - The tests register a stand-in resolver.
+- **Rules.**
+  - Sharing needs `{service}:Share` on the resource. A caller who can't even `Describe` the resource
+    gets 404.
+  - Every granted action must be one the sharer can do on that resource, whether through ownership, a
+    policy or a share (`ESCALATION` lists what's missing).
+  - Advanced mode may pick any action on the resource's type except `Create`, `List` and `Transfer`.
+  - Presets follow the table above.
+  - Grantees must be members or groups of the account.
+  - Sharing again replaces the grantee's access.
+  - Conversations and MCP connections can't be shared (`NOT_SHAREABLE`).
+- **Writes.** Share and revoke go through `IamService.commit`, so each one bumps `authz_version` and is
+  judged on the state it changes. `ShareService.forget_resource` deletes a resource's shares, and
+  KAN-80's delete routes call it.
+- **Evaluation.**
+  - `Principal.can` reads the shares that reach the caller, their own and their groups', with one
+    BatchGet on exact keys. It does so only when no policy decided.
+  - Shares aren't cached, so a revoke takes effect on the next request.
+  - Leaving a group drops that group's shares, because the group list comes from the principal's version.
+- **Not yet.**
+  - The escalation guard for *policies* still ignores the caller's shares and ownership (see KAN-77).
+  - Run-as-owner and account quota for shared chats belong with KAN-80 and KAN-86.
+  - The Share dialog, "Shared with me" and the shared badges in the SPA need the account context
+    (KAN-79) and account-keyed resources (KAN-80).
+
 ## Context and problem
 
 ### How it works today

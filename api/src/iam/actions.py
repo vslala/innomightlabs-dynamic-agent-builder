@@ -73,6 +73,11 @@ RESOURCE_TYPES: frozenset[str] = frozenset(action.resource_type for action in CA
 _DESCRIBE: dict[str, str] = {
     action.resource_type: action.name for action in CATALOG.values() if action.name.endswith(":Describe")
 }
+_SHARE: dict[str, str] = {
+    action.resource_type: action.name for action in CATALOG.values() if action.name.endswith(":Share")
+}
+# Agents, knowledge bases, automations and kits; conversations and MCP connections stay private
+SHAREABLE_TYPES: frozenset[str] = frozenset(_SHARE)
 
 
 def expand(pattern: str) -> frozenset[str]:
@@ -83,3 +88,8 @@ def expand(pattern: str) -> frozenset[str]:
 def describe_action_for(resource_type: str) -> str:
     """The action that lets a caller know a resource exists (`agents:Describe` for an agent)."""
     return _DESCRIBE[resource_type]
+
+
+def share_action_for(resource_type: str) -> str:
+    """The action that lets a caller share a resource (`agents:Share` for an agent)."""
+    return _SHARE[resource_type]

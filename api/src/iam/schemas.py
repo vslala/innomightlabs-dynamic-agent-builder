@@ -1,6 +1,6 @@
 """Request and response bodies for /iam."""
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -93,3 +93,21 @@ class EffectivePolicyResponse(BaseModel):
 class ValidateResponse(BaseModel):
     valid: bool
     errors: list[str]
+
+
+class ShareRequest(_Request):
+    """A preset, or (advanced) the actions to grant, each one the sharer holds."""
+
+    preset: Optional[Literal["viewer", "user", "editor"]] = None
+    actions: Optional[list[str]] = Field(default=None, min_length=1)
+
+
+class ShareResponse(BaseModel):
+    resource_type: str
+    resource_id: str
+    grantee_type: str
+    grantee_id: str
+    actions: list[str]
+    preset: Optional[str]
+    granted_by: str
+    granted_at: str

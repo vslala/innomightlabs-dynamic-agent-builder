@@ -13,6 +13,7 @@ from .actions import ACCOUNT, ResourceRef, describe_action_for
 from .engine import Decision, NamedPolicy, evaluate
 from .repository import IamRepository
 from .service import IamError
+from .shares import ShareRepository
 
 
 @dataclass(frozen=True)
@@ -24,8 +25,12 @@ class Principal:
     policies: tuple[NamedPolicy, ...]
 
     def can(self, action: str, resource: ResourceRef = ResourceRef(ACCOUNT)) -> Decision:
-        # Shares (KAN-78) are consulted here once they exist
-        return evaluate(self.user_id, action, resource, self.policies)
+        """Shares are read only when no policy decided: never for what the caller owns."""
+        return evaluate(
+            self.user_id, action, resource, self.policies,
+            lambda: [share.as_grant() for share in
+                     ShareRepository().for_principal(self.account_id, resource, self.user_id, self.group_ids)],
+        )
 
     def require(self, action: str, resource: ResourceRef = ResourceRef(ACCOUNT)) -> None:
         decision = self.can(action, resource)
