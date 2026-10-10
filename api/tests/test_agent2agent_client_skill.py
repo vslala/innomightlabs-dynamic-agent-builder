@@ -26,6 +26,7 @@ from src.skills.agent2agent_client.oauth import (
 )
 from src.skills.agent2agent_client.references import decode_agent_ref, encode_agent_ref
 from src.skills.registry import SkillRegistry
+from tests.mock_data import account_for
 
 
 class FakeA2AHttpClient:
@@ -504,8 +505,8 @@ def test_registry_config_allows_localhost_for_phase_one_testing():
 @pytest.mark.asyncio
 async def test_send_message_uses_install_time_api_key(monkeypatch):
     class FakePolicy:
-        def validate_urls_for_user(self, *, user_email: str, urls: list[str]) -> None:
-            assert user_email == "owner@example.com"
+        def validate_urls_for_account(self, *, account_id: str, urls: list[str]) -> None:
+            assert account_id == account_for("owner@example.com")
             assert "https://registry.test/a2a/agents/mail" in urls
 
     agent_ref = encode_agent_ref(
@@ -560,7 +561,7 @@ async def test_send_message_uses_install_time_api_key(monkeypatch):
             "registry_urls": "https://registry.test/a2a/agents",
             "default_credentials": {"https://registry.test": "pk_live_test"},
         },
-        context={"owner_email": "owner@example.com"},
+        context={"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"},
     )
 
     assert result["ok"] is True
@@ -572,8 +573,8 @@ async def test_send_message_uses_install_time_api_key(monkeypatch):
 @pytest.mark.asyncio
 async def test_send_message_missing_api_key_returns_credential_setup_link(monkeypatch):
     class FakePolicy:
-        def validate_urls_for_user(self, *, user_email: str, urls: list[str]) -> None:
-            assert user_email == "owner@example.com"
+        def validate_urls_for_account(self, *, account_id: str, urls: list[str]) -> None:
+            assert account_id == account_for("owner@example.com")
 
     agent_ref = encode_agent_ref(
         AgentRef(
@@ -624,6 +625,7 @@ async def test_send_message_missing_api_key_returns_credential_setup_link(monkey
         context={
             "agent_id": "agent-123",
             "installed_skill_id": "agent2agent_client:test",
+            "account_id": account_for("owner@example.com"),
             "owner_email": "owner@example.com",
         },
     )
@@ -640,8 +642,8 @@ async def test_send_message_missing_api_key_returns_credential_setup_link(monkey
 @pytest.mark.asyncio
 async def test_send_message_returns_remote_oauth_authorization_url(monkeypatch, dynamodb_table):
     class FakePolicy:
-        def validate_urls_for_user(self, *, user_email: str, urls: list[str]) -> None:
-            assert user_email == "owner@example.com"
+        def validate_urls_for_account(self, *, account_id: str, urls: list[str]) -> None:
+            assert account_id == account_for("owner@example.com")
 
     agent_ref = encode_agent_ref(
         AgentRef(
@@ -704,6 +706,7 @@ async def test_send_message_returns_remote_oauth_authorization_url(monkeypatch, 
         context={
             "agent_id": "agent-123",
             "installed_skill_id": "agent2agent_client:test",
+            "account_id": account_for("owner@example.com"),
             "owner_email": "owner@example.com",
             "return_to": "http://localhost:5173/dashboard/agents/agent-123/skills",
         },
@@ -757,6 +760,7 @@ def test_agent2agent_oauth_callback_stores_access_and_refresh_tokens(test_client
     )
     session = create_state_session(
         user_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         agent_id="agent-123",
         installed_skill_id="agent2agent_client:test",
         service_url="https://registry.test/a2a/agents/calendar",
@@ -788,7 +792,7 @@ def test_agent2agent_oauth_callback_stores_access_and_refresh_tokens(test_client
     assert response.status_code == 307
     assert handoff_result(test_client, response, "owner@example.com")["a2a_oauth"] == ["success"]
     record = A2ARemoteOAuthRepository().find(
-        owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         installed_skill_id="agent2agent_client:test",
         target_origin="https://registry.test",
     )
@@ -802,8 +806,8 @@ def test_agent2agent_oauth_callback_stores_access_and_refresh_tokens(test_client
 @pytest.mark.asyncio
 async def test_send_message_refreshes_saved_remote_oauth_token(monkeypatch, dynamodb_table):
     class FakePolicy:
-        def validate_urls_for_user(self, *, user_email: str, urls: list[str]) -> None:
-            assert user_email == "owner@example.com"
+        def validate_urls_for_account(self, *, account_id: str, urls: list[str]) -> None:
+            assert account_id == account_for("owner@example.com")
 
     async def fake_refresh_access_token(*, provider, refresh_token: str):
         assert provider.token_url == "https://registry.test/oauth/token"
@@ -834,7 +838,7 @@ async def test_send_message_refreshes_saved_remote_oauth_token(monkeypatch, dyna
     )
     A2ARemoteOAuthRepository().save(
         A2ARemoteOAuthCredentialRecord(
-            owner_email="owner@example.com",
+            account_id=account_for("owner@example.com"),
             agent_id="agent-123",
             installed_skill_id="agent2agent_client:test",
             target_origin="https://registry.test",
@@ -898,6 +902,7 @@ async def test_send_message_refreshes_saved_remote_oauth_token(monkeypatch, dyna
         context={
             "agent_id": "agent-123",
             "installed_skill_id": "agent2agent_client:test",
+            "account_id": account_for("owner@example.com"),
             "owner_email": "owner@example.com",
         },
     )

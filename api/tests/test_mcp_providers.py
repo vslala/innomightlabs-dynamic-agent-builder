@@ -27,6 +27,7 @@ from tests.test_mcp_connectors import (
     FakeOAuthMCPClient,
     make_agent,
 )
+from tests.mock_data import account_for
 
 OWNER = "owner@example.com"
 RETURN_TO = "http://localhost:5173/dashboard/connectors"
@@ -79,7 +80,7 @@ async def _complete_sign_in(
         return tokens
 
     monkeypatch.setattr("src.connectors.mcp.service.exchange_code_for_tokens", fake_exchange)
-    await service.complete_oauth(owner_email=OWNER, mcp_id=mcp_id, code="code", code_verifier="verifier")
+    await service.complete_oauth(account_id=account_for(OWNER), mcp_id=mcp_id, code="code", code_verifier="verifier")
 
 
 # --- Preset contract --------------------------------------------------------------------------
@@ -136,7 +137,7 @@ async def test_github_install_signs_in_with_the_users_client(monkeypatch: pytest
     service, repository, client = _service()
 
     installed = await service.install_provider(
-        OWNER, "github", MCPProviderInstallRequest(inputs=GITHUB_INPUTS, return_to=RETURN_TO)
+        account_for(OWNER), "github", MCPProviderInstallRequest(inputs=GITHUB_INPUTS, return_to=RETURN_TO), user_email=OWNER
     )
 
     assert installed.connection.provider_key == "github"
@@ -152,14 +153,14 @@ async def test_github_install_signs_in_with_the_users_client(monkeypatch: pytest
 
     # GitHub OAuth App tokens have no expiry and no refresh token.
     await _complete_sign_in(service, monkeypatch, installed.connection.mcp_id, {"access_token": "gho_1"})
-    assert service.get_connection(OWNER, installed.connection.mcp_id).setup_state == "ready"
+    assert service.get_connection(account_for(OWNER), installed.connection.mcp_id).setup_state == "ready"
 
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=installed.connection.mcp_id)
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=installed.connection.mcp_id)
+    listed = await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER)
 
     assert "error" not in listed["connectors"][0]
     assert client.auth_headers == [{"X-MCP-Readonly": "true", "Authorization": "Bearer gho_1"}]
-    stored = repository.find_connection(OWNER, installed.connection.mcp_id)
+    stored = repository.find_connection(account_for(OWNER), installed.connection.mcp_id)
     assert stored is not None and stored.server_url == ""
 
 
@@ -172,7 +173,7 @@ async def test_atlassian_installs_in_one_click_with_dcr(monkeypatch: pytest.Monk
     _fake_discovery(monkeypatch, calls, registered=True)
     service, _repository, client = _service()
 
-    installed = await service.install_provider(OWNER, "atlassian", MCPProviderInstallRequest(return_to=RETURN_TO))
+    installed = await service.install_provider(account_for(OWNER), "atlassian", MCPProviderInstallRequest(return_to=RETURN_TO), user_email=OWNER)
 
     assert calls == [{"server_url": "https://mcp.atlassian.com/v2/mcp", "register_client": True}]
     assert installed.authorize_url is not None
@@ -186,8 +187,8 @@ async def test_atlassian_installs_in_one_click_with_dcr(monkeypatch: pytest.Monk
         installed.connection.mcp_id,
         {"access_token": "atl-token", "refresh_token": "atl-refresh", "expires_in": 3600},
     )
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=installed.connection.mcp_id)
-    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=installed.connection.mcp_id)
+    await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER)
 
     assert client.auth_headers == [{"Authorization": "Bearer atl-token"}]
 
@@ -198,7 +199,7 @@ async def test_atlassian_install_fails_when_registration_fails(monkeypatch: pyte
     service, repository, _client = _service()
 
     with pytest.raises(ValueError, match="did not register"):
-        await service.install_provider(OWNER, "atlassian", MCPProviderInstallRequest(return_to=RETURN_TO))
+        await service.install_provider(account_for(OWNER), "atlassian", MCPProviderInstallRequest(return_to=RETURN_TO), user_email=OWNER)
 
     assert repository.connections == {}
 
@@ -213,12 +214,13 @@ async def test_canva_discovers_endpoints_but_uses_the_users_client(monkeypatch: 
     service, _repository, _client = _service()
 
     installed = await service.install_provider(
-        OWNER,
+        account_for(OWNER),
         "canva",
         MCPProviderInstallRequest(
             inputs={"oauth_client_id": "canva-client", "oauth_client_secret": "canva-secret"},
             return_to=RETURN_TO,
         ),
+        user_email=OWNER,
     )
 
     assert calls == [{"server_url": "https://mcp.canva.com/mcp", "register_client": False}]
@@ -235,17 +237,18 @@ async def test_install_rejects_unknown_missing_and_invalid_inputs() -> None:
 
     with pytest.raises(ValueError, match="Unknown"):
         await service.install_provider(
-            OWNER, "github", MCPProviderInstallRequest(inputs={**GITHUB_INPUTS, "bogus": "1"}, return_to=RETURN_TO)
+            account_for(OWNER), "github", MCPProviderInstallRequest(inputs={**GITHUB_INPUTS, "bogus": "1"}, return_to=RETURN_TO), user_email=OWNER
         )
     with pytest.raises(ValueError, match="needs"):
         await service.install_provider(
-            OWNER, "github", MCPProviderInstallRequest(inputs={"oauth_client_id": "x"}, return_to=RETURN_TO)
+            account_for(OWNER), "github", MCPProviderInstallRequest(inputs={"oauth_client_id": "x"}, return_to=RETURN_TO), user_email=OWNER
         )
     with pytest.raises(ValueError, match="must be one of"):
         await service.install_provider(
-            OWNER,
+            account_for(OWNER),
             "github",
             MCPProviderInstallRequest(inputs={**GITHUB_INPUTS, "allow_writes": "maybe"}, return_to=RETURN_TO),
+            user_email=OWNER,
         )
 
     assert repository.connections == {}
@@ -258,11 +261,11 @@ async def test_install_rejects_unknown_missing_and_invalid_inputs() -> None:
 async def test_secret_inputs_are_never_returned() -> None:
     service, _repository, _client = _service()
     installed = await service.install_provider(
-        OWNER, "github", MCPProviderInstallRequest(inputs={**GITHUB_INPUTS, "toolsets": "repos"}, return_to=RETURN_TO)
+        account_for(OWNER), "github", MCPProviderInstallRequest(inputs={**GITHUB_INPUTS, "toolsets": "repos"}, return_to=RETURN_TO), user_email=OWNER
     )
     mcp_id = installed.connection.mcp_id
 
-    form = service.connection_settings_form(OWNER, mcp_id)
+    form = service.connection_settings_form(account_for(OWNER), mcp_id)
     values = {field.name: field.value for field in form.form_inputs}
 
     assert installed.connection.inputs == {"oauth_client_id": "gh-client", "toolsets": "repos"}
@@ -275,19 +278,19 @@ async def test_secret_inputs_are_never_returned() -> None:
 async def test_settings_update_keeps_blank_secrets() -> None:
     service, repository, _client = _service()
     installed = await service.install_provider(
-        OWNER, "github", MCPProviderInstallRequest(inputs=GITHUB_INPUTS, return_to=RETURN_TO)
+        account_for(OWNER), "github", MCPProviderInstallRequest(inputs=GITHUB_INPUTS, return_to=RETURN_TO), user_email=OWNER
     )
     mcp_id = installed.connection.mcp_id
 
     await service.update_connection(
-        OWNER,
+        account_for(OWNER),
         mcp_id,
         MCPConnectionUpdateRequest(
             inputs={"oauth_client_id": "gh-client-2", "oauth_client_secret": "", "allow_writes": "yes"}
         ),
     )
 
-    stored = repository.find_connection(OWNER, mcp_id)
+    stored = repository.find_connection(account_for(OWNER), mcp_id)
     assert stored is not None
     assert ProviderInstallSecrets.of(stored).inputs == {
         "oauth_client_id": "gh-client-2",
@@ -300,12 +303,12 @@ async def test_settings_update_keeps_blank_secrets() -> None:
 async def test_catalog_installs_reject_connection_config_changes() -> None:
     service, _repository, _client = _service()
     installed = await service.install_provider(
-        OWNER, "github", MCPProviderInstallRequest(inputs=GITHUB_INPUTS, return_to=RETURN_TO)
+        account_for(OWNER), "github", MCPProviderInstallRequest(inputs=GITHUB_INPUTS, return_to=RETURN_TO), user_email=OWNER
     )
 
     with pytest.raises(ValueError, match="configured by their provider"):
         await service.update_connection(
-            OWNER,
+            account_for(OWNER),
             installed.connection.mcp_id,
             MCPConnectionUpdateRequest.model_validate({"server_url": "https://evil.example/mcp"}),
         )
@@ -315,33 +318,33 @@ async def test_catalog_installs_reject_connection_config_changes() -> None:
 async def test_custom_connections_reject_inputs() -> None:
     service, repository, _client = _service()
     connection = repository.save_connection(
-        MCPConnection(owner_email=OWNER, name="Custom", server_url="https://mcp.example", encrypted_auth_config="x")
+        MCPConnection(account_id=account_for(OWNER), name="Custom", server_url="https://mcp.example", encrypted_auth_config="x")
     )
 
     with pytest.raises(ValueError, match="catalog connectors"):
-        await service.update_connection(OWNER, connection.mcp_id, MCPConnectionUpdateRequest(inputs={"a": "b"}))
+        await service.update_connection(account_for(OWNER), connection.mcp_id, MCPConnectionUpdateRequest(inputs={"a": "b"}))
 
 
 @pytest.mark.asyncio
 async def test_setup_state_reports_missing_required_inputs() -> None:
     service, repository, _client = _service()
     installed = await service.install_provider(
-        OWNER, "github", MCPProviderInstallRequest(inputs=GITHUB_INPUTS, return_to=RETURN_TO)
+        account_for(OWNER), "github", MCPProviderInstallRequest(inputs=GITHUB_INPUTS, return_to=RETURN_TO), user_email=OWNER
     )
     # Simulates a preset gaining a required input after this install was saved.
-    stored = repository.find_connection(OWNER, installed.connection.mcp_id)
+    stored = repository.find_connection(account_for(OWNER), installed.connection.mcp_id)
     assert stored is not None
     stored.encrypted_auth_config = ProviderInstallSecrets(inputs={"oauth_client_id": "gh-client"}).encrypted()
 
-    assert service.get_connection(OWNER, installed.connection.mcp_id).setup_state == "needs_input"
+    assert service.get_connection(account_for(OWNER), installed.connection.mcp_id).setup_state == "needs_input"
 
 
 @pytest.mark.asyncio
 async def test_provider_listing_counts_installs() -> None:
     service, _repository, _client = _service()
-    await service.install_provider(OWNER, "github", MCPProviderInstallRequest(inputs=GITHUB_INPUTS, return_to=RETURN_TO))
+    await service.install_provider(account_for(OWNER), "github", MCPProviderInstallRequest(inputs=GITHUB_INPUTS, return_to=RETURN_TO), user_email=OWNER)
 
-    listed = {provider.key: provider for provider in service.list_providers(OWNER)}
+    listed = {provider.key: provider for provider in service.list_providers(account_for(OWNER))}
 
     assert listed["github"].installed_count == 1
     assert listed["github"].has_sign_in is True
@@ -351,7 +354,7 @@ async def test_provider_listing_counts_installs() -> None:
 
 def test_rows_without_provider_key_stay_custom() -> None:
     item = MCPConnection(
-        owner_email=OWNER, name="Custom", server_url="https://mcp.example", encrypted_auth_config="x"
+        account_id=account_for(OWNER), name="Custom", server_url="https://mcp.example", encrypted_auth_config="x"
     ).to_dynamo_item()
     item.pop("provider_key")
 

@@ -666,7 +666,7 @@ class AutomationService:
         if not loaded.manifest.automation.enabled:
             raise AutomationValidationError(f"{loaded.manifest.name} is not available for automations")
         if validate_connectors:
-            missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.email)
+            missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.account_id)
             if missing:
                 raise AutomationValidationError(
                     f"{loaded.manifest.name} requires connected connectors: {', '.join(missing)}"
@@ -760,9 +760,9 @@ class AutomationService:
                 continue
             connector_statuses = [
                 AutomationSkillConnectorResponse(**status.model_dump())
-                for status in self.connector_service.statuses_for_manifest(loaded.manifest, owner.email)
+                for status in self.connector_service.statuses_for_manifest(loaded.manifest, owner.account_id)
             ]
-            missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.email)
+            missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.account_id)
             disabled_reason = None
             available = enabled.enabled and not missing and loaded.manifest.automation.enabled
             if not loaded.manifest.automation.enabled:
@@ -802,9 +802,9 @@ class AutomationService:
                 continue
             connector_statuses = [
                 AutomationSkillConnectorResponse(**status.model_dump())
-                for status in self.connector_service.statuses_for_manifest(loaded.manifest, owner.email)
+                for status in self.connector_service.statuses_for_manifest(loaded.manifest, owner.account_id)
             ]
-            missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.email)
+            missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.account_id)
             if missing:
                 disabled_reason = "Missing connected connectors: " + ", ".join(missing)
             elif loaded.manifest.form:
@@ -818,7 +818,7 @@ class AutomationService:
                         loaded.manifest.id,
                         f"/automations/{automation_id}/skills?skill_id={loaded.manifest.id}",
                     ),
-                    FormOptionsContext(user_email=owner.email, owner=owner),
+                    FormOptionsContext(owner=owner),
                 )
                 install_form = form.model_dump(mode="json", exclude_none=True)
             for action in loaded.manifest.actions:
@@ -853,7 +853,7 @@ class AutomationService:
         if loaded:
             connectors = [
                 AutomationSkillConnectorResponse(**status.model_dump())
-                for status in self.connector_service.statuses_for_manifest(loaded.manifest, owner.email)
+                for status in self.connector_service.statuses_for_manifest(loaded.manifest, owner.account_id)
             ]
         return AutomationSkillResponse(
             installed_skill_id=item.installed_skill_id or item.skill_id,
@@ -963,7 +963,7 @@ class AutomationService:
             return None
         if loaded.manifest.form:
             return None
-        if self.connector_service.missing_required_connectors(loaded.manifest, owner.email):
+        if self.connector_service.missing_required_connectors(loaded.manifest, owner.account_id):
             return None
 
         return self.repo.save_skill(

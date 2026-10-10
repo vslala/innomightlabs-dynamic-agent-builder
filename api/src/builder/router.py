@@ -22,7 +22,7 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
 import src.form_models as form_models
-from src.iam.dependencies import get_owner
+from src.iam.dependencies import get_owner, get_principal
 from src.agents.schemas import get_create_agent_form
 from src.agents.service import validate_provider_model
 from src.agents.turns import ConversationTurn, ConversationTurnRepository, ConversationTurnResponse
@@ -39,6 +39,7 @@ from src.conversations.repository import ConversationRepository
 from src.form_options import FormOptionsContext, hydrate_form_options
 from src.messages.models import Message
 from src.messages.repositories import get_message_repository
+from src.settings.access import settings_manager
 from src.settings.repository import get_provider_settings_repository
 from src.skills.models import ActorKind
 
@@ -96,24 +97,24 @@ async def session_form(request: Request) -> form_models.Form:
     inputs = [field for field in get_create_agent_form().form_inputs if field.name in SESSION_FORM_FIELDS]
     form = form_models.Form(form_name="Build with Ila", submit_path="/builder/sessions", form_inputs=inputs)
     owner = get_owner(request)
-    return hydrate_form_options(form, FormOptionsContext(user_email=owner.email, owner=owner))
+    return hydrate_form_options(form, FormOptionsContext(owner=owner))
 
 
 @router.post("/sessions", response_model=BuilderSessionResponse, status_code=status.HTTP_201_CREATED)
 async def create_session(request: Request, body: CreateBuilderSessionRequest) -> BuilderSessionResponse:
     user_email: str = request.state.user_email
+    owner = get_owner(request)
     model = body.agent_model or None
     try:
-        validate_provider_model(user_email, body.agent_provider, model)
+        validate_provider_model(owner, body.agent_provider, model)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Choose a provider and model you've set up.")
-    if not get_provider_settings_repository().find_by_provider(user_email, body.agent_provider):
+        raise HTTPException(status_code=400, detail="Choose a provider and model your account has set up.")
+    if not get_provider_settings_repository().find_by_provider(owner.account_id, body.agent_provider):
         raise HTTPException(
             status_code=400,
-            detail=f"Set up {body.agent_provider} in Settings > Provider Configuration first.",
+            detail=f"An account admin needs to set up {body.agent_provider} in Settings > Provider Configuration first.",
         )
 
-    owner = get_owner(request)
     conversation = ConversationRepository().save(Conversation(
         title="Building with Ila", agent_id=ILA_AGENT_ID, account_id=owner.account_id, created_by=owner.user_id,
     ))
@@ -174,9 +175,12 @@ async def connect(
     target: Annotated[BuildTarget, Depends(resolve_build)],
 ) -> ConnectResponse:
     """The person's click on a Connect card. Their own action, never Ila's: installs the preset if needed and
-    returns the sign-in address."""
+    returns the sign-in address. The connection becomes the account's, so it takes an admin."""
+    principal = settings_manager(get_principal(request))
     try:
-        authorize_url = await start_connection(get_mcp_connector_service(), request.state.user_email, body.provider)
+        authorize_url = await start_connection(
+            get_mcp_connector_service(), principal.account_id, request.state.user_email, body.provider
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return ConnectResponse(authorize_url=authorize_url)

@@ -33,7 +33,7 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.registry import get_skill_registry
-from tests.mock_data import TEST_USER_EMAIL, owner_ids, conversation_fields, conversations_of, session_fields, turn_owner_fields
+from tests.mock_data import account_for, TEST_USER_EMAIL, owner_ids, conversation_fields, conversations_of, session_fields, turn_owner_fields
 from tests.mock_data import test_owner as _test_owner
 
 TEST_OWNER = _test_owner()
@@ -50,7 +50,7 @@ def account(monkeypatch, dynamodb_table) -> list[str]:
     monkeypatch.setattr(knowledge_base_kind, "launch_crawl", lambda job_id, *_: launched.append(job_id))
     monkeypatch.setattr(settings, "require_pinecone", lambda: None)
     ProviderSettingsRepository().save(
-        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+        ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )
     return launched
 

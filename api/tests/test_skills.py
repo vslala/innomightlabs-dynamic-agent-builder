@@ -16,7 +16,7 @@ from src.skills.lead_capture.forms import parse_custom_inputs
 from src.skills.lifecycle import SkillLifecycleRunner
 from src.skills.service import SkillRuntimeService, SkillService
 from src.skills.models import ActorKind
-from tests.mock_data import agent_fields, conversation_fields, owner_ids
+from tests.mock_data import owner_for, account_for, agent_fields, conversation_fields, owner_ids
 
 
 def _create_agent_for_user(user_email: str) -> Agent:
@@ -81,7 +81,7 @@ def test_list_skills_catalog_reports_google_drive_connected(test_client, auth_he
     repo = ProviderSettingsRepository()
     repo.save(
         ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleDrive",
             encrypted_credentials="encrypted",
             auth_type="oauth",
@@ -174,7 +174,7 @@ def test_agent_skill_uninstall_runs_skill_delete_lifecycle(dynamodb_table):
     service.install_skill(
         agent_id=agent.agent_id,
         skill_id="wordpress_search",
-        user_email=TEST_USER_EMAIL,
+        owner=owner_for(TEST_USER_EMAIL),
         raw_config={
             "site_url": "https://example.com",
             "username": "admin",
@@ -185,7 +185,7 @@ def test_agent_skill_uninstall_runs_skill_delete_lifecycle(dynamodb_table):
     deleted = service.uninstall(
         agent_id=agent.agent_id,
         installed_skill_id="wordpress_search",
-        user_email=TEST_USER_EMAIL,
+        owner=owner_for(TEST_USER_EMAIL),
     )
 
     assert deleted is True
@@ -237,7 +237,7 @@ def test_google_drive_install_succeeds_when_provider_connected(test_client, auth
     repo = ProviderSettingsRepository()
     repo.save(
         ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleDrive",
             encrypted_credentials="encrypted",
             auth_type="oauth",
@@ -341,7 +341,7 @@ def test_oauth_skill_uninstall_keeps_provider_settings_by_default(test_client, a
     repo = ProviderSettingsRepository()
     repo.save(
         ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleMail",
             encrypted_credentials="encrypted",
             auth_type="oauth",
@@ -361,7 +361,7 @@ def test_oauth_skill_uninstall_keeps_provider_settings_by_default(test_client, a
         headers=auth_headers,
     )
     assert delete_resp.status_code == 204
-    assert repo.find_by_provider(TEST_USER_EMAIL, "GoogleMail") is not None
+    assert repo.find_by_provider(account_for(TEST_USER_EMAIL), "GoogleMail") is not None
 
 
 def test_oauth_skill_uninstall_can_disconnect_provider_settings(test_client, auth_headers, dynamodb_table):
@@ -370,7 +370,7 @@ def test_oauth_skill_uninstall_can_disconnect_provider_settings(test_client, aut
     repo = ProviderSettingsRepository()
     repo.save(
         ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleMail",
             encrypted_credentials="encrypted",
             auth_type="oauth",
@@ -390,7 +390,7 @@ def test_oauth_skill_uninstall_can_disconnect_provider_settings(test_client, aut
         headers=auth_headers,
     )
     assert delete_resp.status_code == 204
-    assert repo.find_by_provider(TEST_USER_EMAIL, "GoogleMail") is None
+    assert repo.find_by_provider(account_for(TEST_USER_EMAIL), "GoogleMail") is None
 
 
 def test_execute_skill_action_requires_nested_arguments(test_client, auth_headers, dynamodb_table, monkeypatch):
@@ -431,6 +431,7 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
                     "query": "pricing",
                 },
                 agent_id=agent.agent_id,
+                account_id=account_for(TEST_USER_EMAIL),
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
@@ -452,6 +453,7 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
                 "arguments": {"query": "pricing"},
             },
             agent_id=agent.agent_id,
+            account_id=account_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
@@ -495,6 +497,7 @@ def test_skill_runtime_passes_user_message_id_to_actions(test_client, auth_heade
                 "arguments": {"prompt": "A product mockup"},
             },
             agent_id=agent.agent_id,
+            account_id=account_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
@@ -553,6 +556,7 @@ def test_image_generation_skill_action_uses_agent_turn_service(monkeypatch):
             context={
                 "agent_id": "agent-1",
                 "conversation_id": "conversation-1",
+                "account_id": account_for("owner@example.com"),
                 "owner_email": "owner@example.com",
                 "actor_email": "actor@example.com",
                 "user_message_id": "user-message-1",
@@ -562,7 +566,6 @@ def test_image_generation_skill_action_uses_agent_turn_service(monkeypatch):
 
     assert captured["agent_id"] == "agent-1"
     assert captured["conversation_id"] == "conversation-1"
-    assert captured["owner_email"] == "owner@example.com"
     assert captured["actor_email"] == "actor@example.com"
     assert captured["user_message_id"] == "user-message-1"
     assert captured["request"].prompt == "A clean SaaS dashboard hero image"
@@ -622,6 +625,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
                     "agent_id": agent.agent_id,
                     "conversation_id": conversation.conversation_id,
                     "user_message": user_message,
+                    "account_id": account_for(owner_email),
                     "owner_email": owner_email,
                     "actor_email": actor_email,
                     "actor_id": actor_id,
@@ -655,6 +659,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
                 },
             },
             agent_id=source_agent.agent_id,
+            account_id=account_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
@@ -673,6 +678,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
         "agent_id": target_agent.agent_id,
         "conversation_id": conversation.conversation_id,
         "user_message": "Summarize the lead",
+        "account_id": account_for(TEST_USER_EMAIL),
         "owner_email": TEST_USER_EMAIL,
         "actor_email": TEST_USER_EMAIL,
         "actor_id": TEST_USER_EMAIL,
@@ -687,6 +693,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
                 tool_name="load_skill",
                 tool_input={"skill_id": "agent_invocation"},
                 agent_id=source_agent.agent_id,
+                account_id=account_for(TEST_USER_EMAIL),
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
@@ -764,6 +771,7 @@ def test_scheduler_skill_creates_conversation_bound_schedule(test_client, auth_h
                 },
             },
             agent_id=agent.agent_id,
+            account_id=account_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
@@ -824,6 +832,7 @@ def test_scheduler_skill_without_schedule_id_updates_existing_conversation_sched
                     },
                 },
                 agent_id=agent.agent_id,
+                account_id=account_for(TEST_USER_EMAIL),
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
@@ -1026,6 +1035,7 @@ def test_repeatable_skill_base_id_requires_unambiguous_instance(test_client, aut
                 tool_name="load_skill",
                 tool_input={"skill_id": "agent_invocation"},
                 agent_id=source_agent.agent_id,
+                account_id=account_for(TEST_USER_EMAIL),
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
@@ -1138,6 +1148,7 @@ def test_send_email_uses_configured_recipients_only(
                 },
             },
             agent_id=agent.agent_id,
+            account_id=account_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,

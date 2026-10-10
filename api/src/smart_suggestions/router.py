@@ -8,7 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
 
 from src.form_models import Form
+from src.accounts.owner import Owner
 from src.form_options import FormOptionsContext, hydrate_form_options, validate_form_options
+from src.iam.dependencies import get_owner, get_principal
+from src.iam.principal import Principal
+from src.settings.access import settings_manager
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.smart_suggestions.models import (
     SmartSuggestionRequest,
@@ -40,19 +44,19 @@ router = APIRouter(
 
 @router.get("/settings", response_model=SmartSuggestionSettingsResponse)
 async def get_settings(
-    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     repository: Annotated[
         SmartSuggestionSettingsRepository,
         Depends(get_smart_suggestion_settings_repository),
     ],
 ) -> SmartSuggestionSettingsResponse:
-    user_email: str = request.state.user_email
-    return SmartSuggestionSettingsResponse.from_settings(repository.find_by_user(user_email))
+    """The account's settings; any member may read them."""
+    return SmartSuggestionSettingsResponse.from_settings(repository.find_in_account(principal.account_id))
 
 
 @router.get("/settings/schema", response_model=Form, response_model_exclude_none=True)
 async def get_settings_schema(
-    request: Request,
+    owner: Annotated[Owner, Depends(get_owner)],
     repository: Annotated[
         SmartSuggestionSettingsRepository,
         Depends(get_smart_suggestion_settings_repository),
@@ -62,12 +66,11 @@ async def get_settings_schema(
         Depends(get_provider_settings_repository),
     ],
 ) -> Form:
-    user_email: str = request.state.user_email
-    form = build_smart_suggestion_settings_form(repository.find_by_user(user_email))
+    form = build_smart_suggestion_settings_form(repository.find_in_account(owner.account_id))
     return hydrate_form_options(
         form,
         FormOptionsContext(
-            user_email=user_email,
+            owner=owner,
             provider_settings_repository=provider_settings_repository,
         ),
     )
@@ -77,6 +80,7 @@ async def get_settings_schema(
 async def save_settings(
     request: Request,
     body: SmartSuggestionSettingsRequest,
+    principal: Annotated[Principal, Depends(settings_manager)],
     repository: Annotated[
         SmartSuggestionSettingsRepository,
         Depends(get_smart_suggestion_settings_repository),
@@ -86,7 +90,6 @@ async def save_settings(
         Depends(get_provider_settings_repository),
     ],
 ) -> SmartSuggestionSettingsResponse:
-    user_email: str = request.state.user_email
     form = build_smart_suggestion_settings_form()
     values = {
         "enabled": "true" if body.enabled else "false",
@@ -98,7 +101,7 @@ async def save_settings(
             form.form_inputs,
             values,
             FormOptionsContext(
-                user_email=user_email,
+                owner=get_owner(request),
                 provider_settings_repository=provider_settings_repository,
             ),
         )
@@ -106,7 +109,8 @@ async def save_settings(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     settings = SmartSuggestionSettings(
-        user_email=user_email,
+        account_id=principal.account_id,
+        updated_by=principal.user_id,
         enabled=body.enabled,
         provider_name=body.provider_name if body.enabled else None,
         model_name=body.model_name if body.enabled else None,
@@ -117,13 +121,12 @@ async def save_settings(
 
 @router.post("", response_model=SmartSuggestionResponse)
 async def create_suggestion(
-    request: Request,
     body: SmartSuggestionRequest,
+    principal: Annotated[Principal, Depends(get_principal)],
     service: Annotated[SmartSuggestionService, Depends(get_smart_suggestion_service)],
 ) -> SmartSuggestionResponse:
-    user_email: str = request.state.user_email
     try:
-        return await service.suggest(user_email=user_email, request=body)
+        return await service.suggest(account_id=principal.account_id, request=body)
     except SmartSuggestionNotConfiguredError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except SmartSuggestionError as exc:

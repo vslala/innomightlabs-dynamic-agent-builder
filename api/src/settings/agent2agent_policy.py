@@ -79,17 +79,19 @@ class Agent2AgentPolicy:
     ) -> None:
         self.repository = repository or get_agent2agent_settings_repository()
 
-    def settings_for_user(self, user_email: str) -> Agent2AgentSettings:
-        return self.repository.find_by_user(user_email) or Agent2AgentSettings(user_email=user_email)
+    def settings_for_account(self, account_id: str) -> Agent2AgentSettings:
+        return self.repository.find_in_account(account_id) or Agent2AgentSettings(account_id=account_id)
 
     def save_settings(
         self,
         *,
-        user_email: str,
+        account_id: str,
+        updated_by: str,
         request: Agent2AgentSettingsRequest,
     ) -> Agent2AgentSettings:
         settings = Agent2AgentSettings(
-            user_email=user_email,
+            account_id=account_id,
+            updated_by=updated_by,
             allowed_origins=[
                 Agent2AgentAllowedOrigin(origin=origin, label=label or None)
                 for origin, label in request.allowed_origins.items()
@@ -97,12 +99,12 @@ class Agent2AgentPolicy:
         )
         return self.repository.save(settings)
 
-    def validate_urls_for_user(self, *, user_email: str, urls: list[str]) -> None:
-        settings = self.settings_for_user(user_email)
+    def validate_urls_for_account(self, *, account_id: str, urls: list[str]) -> None:
+        settings = self.settings_for_account(account_id)
         allowed = {item.origin for item in settings.allowed_origins}
         if not allowed:
             raise Agent2AgentPolicyError(
-                "No Agent2Agent allowed origins are configured. Add trusted origins in User Settings before installing or using this skill."
+                "No Agent2Agent allowed origins are configured. Ask an account admin to add trusted origins in Settings before installing or using this skill."
             )
 
         denied = [url for url in urls if normalize_origin(url) not in allowed]

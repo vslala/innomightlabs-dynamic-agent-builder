@@ -37,7 +37,7 @@ PROVIDER_TO_CONNECTOR_ID = {
 
 
 class ConnectorService:
-    """User-level connector status backed by existing ProviderSettings records."""
+    """The account's connector status, backed by its ProviderSettings records."""
 
     def __init__(self, provider_settings_repository: Optional[ProviderSettingsRepository] = None):
         self.provider_settings_repository = provider_settings_repository or get_provider_settings_repository()
@@ -45,29 +45,29 @@ class ConnectorService:
     def get_definition(self, connector_id: str) -> ConnectorDefinition | None:
         return CONNECTORS.get(connector_id)
 
-    def list_statuses(self, user_email: str) -> list[ConnectorStatus]:
+    def list_statuses(self, account_id: str) -> list[ConnectorStatus]:
         return [
             ConnectorStatus(
                 connector_id=definition.connector_id,
                 provider_name=definition.provider_name,
                 display_name=definition.display_name,
-                connected=self.is_connected(user_email, definition.connector_id),
+                connected=self.is_connected(account_id, definition.connector_id),
                 connect_path=f"/connectors/{definition.connector_id}/start",
                 icon=definition.icon,
             )
             for definition in CONNECTORS.values()
         ]
 
-    def is_connected(self, user_email: str, connector_id: str) -> bool:
+    def is_connected(self, account_id: str, connector_id: str) -> bool:
         definition = self.get_definition(connector_id)
         if not definition:
             return False
         return self.provider_settings_repository.find_by_provider(
-            user_email,
+            account_id,
             definition.provider_name,
         ) is not None
 
-    def get_status(self, user_email: str, connector_id: str) -> ConnectorStatus | None:
+    def get_status(self, account_id: str, connector_id: str) -> ConnectorStatus | None:
         definition = self.get_definition(connector_id)
         if not definition:
             return None
@@ -75,7 +75,7 @@ class ConnectorService:
             connector_id=definition.connector_id,
             provider_name=definition.provider_name,
             display_name=definition.display_name,
-            connected=self.is_connected(user_email, connector_id),
+            connected=self.is_connected(account_id, connector_id),
             connect_path=definition.connect_path,
             icon=definition.icon,
         )
@@ -83,7 +83,7 @@ class ConnectorService:
     def statuses_for_manifest(
         self,
         manifest: SkillManifest,
-        user_email: str | None,
+        account_id: str | None,
     ) -> list[SkillConnectorStatus]:
         statuses: list[SkillConnectorStatus] = []
         for dependency in manifest.connectors:
@@ -95,8 +95,8 @@ class ConnectorService:
                     provider_name=provider_name,
                     required=dependency.required,
                     connected=(
-                        self.is_connected(user_email, dependency.connector_id)
-                        if user_email
+                        self.is_connected(account_id, dependency.connector_id)
+                        if account_id
                         else False
                     ),
                     connect_path=definition.connect_path if definition else None,
@@ -107,11 +107,11 @@ class ConnectorService:
     def missing_required_connectors(
         self,
         manifest: SkillManifest,
-        user_email: str,
+        account_id: str,
     ) -> list[str]:
         missing: list[str] = []
         for dependency in manifest.connectors:
-            if dependency.required and not self.is_connected(user_email, dependency.connector_id):
+            if dependency.required and not self.is_connected(account_id, dependency.connector_id):
                 missing.append(dependency.connector_id)
         return missing
 

@@ -527,7 +527,7 @@ class AutomationMarketplaceService:
             raise ValueError(f"Unknown skill: {skill.skill_id}")
         form = hydrate_form_options(
             self.automation_service.skill_registry.install_form(skill.skill_id, ""),
-            FormOptionsContext(user_email=owner.email, owner=owner),
+            FormOptionsContext(owner=owner),
         )
         return MarketplaceAutomationSkillImportForm(
             template_skill_key=skill.template_skill_key,

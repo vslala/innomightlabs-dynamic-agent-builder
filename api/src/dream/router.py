@@ -11,6 +11,7 @@ from src.agents.access import owner_of, require_agent
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.iam.dependencies import get_owner, get_principal
+from src.iam.principal import Principal
 from src.config import settings as app_settings
 from src.dream.models import DreamSettings, DreamSettingsRequest
 from src.dream.repository import DreamRepository, get_dream_repository
@@ -19,6 +20,7 @@ from src.dream.service import DreamService, get_dream_service
 from src.form_models import Form
 from src.form_options import FormOptionsContext, hydrate_form_options, validate_form_options
 from src.scheduler.cron import ScheduleExpression, ScheduleExpressionError, validate_schedule_expression
+from src.settings.access import settings_manager
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 
 security = HTTPBearer()
@@ -38,10 +40,11 @@ async def get_status() -> dict[str, bool]:
 
 @router.get("/dream/settings", response_model=DreamSettings | None)
 async def get_settings(
-    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     repository: Annotated[DreamRepository, Depends(get_dream_repository)],
 ) -> DreamSettings | None:
-    return repository.find_settings(request.state.user_email)
+    """The account's dream settings; any member may read them."""
+    return repository.find_settings(principal.account_id)
 
 
 @router.get("/dream/settings/forms/configure", response_model=Form, response_model_exclude_none=True)
@@ -50,9 +53,10 @@ async def get_settings_form(
     repository: Annotated[DreamRepository, Depends(get_dream_repository)],
     provider_settings_repository: Annotated[ProviderSettingsRepository, Depends(get_provider_settings_repository)],
 ) -> Form:
+    owner = get_owner(request)
     return hydrate_form_options(
-        build_dream_settings_form(repository.find_settings(request.state.user_email)),
-        FormOptionsContext(user_email=request.state.user_email, provider_settings_repository=provider_settings_repository),
+        build_dream_settings_form(repository.find_settings(owner.account_id)),
+        FormOptionsContext(owner=owner, provider_settings_repository=provider_settings_repository),
     )
 
 
@@ -60,6 +64,7 @@ async def get_settings_form(
 async def save_settings(
     request: Request,
     body: DreamSettingsRequest,
+    principal: Annotated[Principal, Depends(settings_manager)],
     repository: Annotated[DreamRepository, Depends(get_dream_repository)],
     service: Annotated[DreamService, Depends(get_dream_service)],
     provider_settings_repository: Annotated[ProviderSettingsRepository, Depends(get_provider_settings_repository)],
@@ -69,16 +74,17 @@ async def save_settings(
         validate_form_options(
             build_dream_settings_form().form_inputs,
             {"enabled": str(body.enabled).lower(), "provider_name": body.provider_name or "", "model_name": body.model_name or ""},
-            FormOptionsContext(user_email=request.state.user_email, provider_settings_repository=provider_settings_repository),
+            FormOptionsContext(owner=get_owner(request), provider_settings_repository=provider_settings_repository),
         )
     except (ScheduleExpressionError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    dream_settings = DreamSettings(user_email=request.state.user_email, **body.model_dump())
+    dream_settings = DreamSettings(account_id=principal.account_id, updated_by=principal.user_id, **body.model_dump())
     saved = repository.save_settings(dream_settings)
-    principal = get_principal(request)
-    for agent in AgentRepository().list_owned(principal.account_id, principal.user_id):
+    # Every memory agent in the account dreams on these settings, scheduled as its owner over the owner's chats
+    for agent in AgentRepository().list_in_account(principal.account_id):
         if agent.agent_architecture == "krishna-memgpt":
-            service.ensure_schedule(agent.agent_id, request.state.user_email, get_owner(request), saved)
+            owner = owner_of(agent)
+            service.ensure_schedule(agent.agent_id, owner.email, owner, saved)
     return saved
 
 
@@ -113,7 +119,7 @@ async def run_now(
 ):
     agent = _agent_or_404(agent_id, request)
     background_tasks.add_task(
-        # The caller's memory, dreamt on the agent owner's provider settings
+        # The caller's memory, dreamt on the agent's account's settings and provider
         service.dream, agent_id=agent_id, user_id=request.state.user_email,
         owner_email=owner_of(agent).email, mode="manual",
     )

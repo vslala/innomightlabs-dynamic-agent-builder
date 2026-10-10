@@ -25,17 +25,17 @@ from src.connectors.mcp.service import get_mcp_connector_service
 
 def is_ready(connection: MCPConnection) -> bool:
     """Signed in, with every input the preset needs, and switched on."""
-    response = get_mcp_connector_service().get_connection(connection.owner_email, connection.mcp_id)
+    response = get_mcp_connector_service().get_connection(connection.account_id, connection.mcp_id)
     return connection.enabled and response.setup_state == "ready"
 
 
-def connection_for(spec: McpConnectionSpec, user_email: str) -> Optional[MCPConnection]:
+def connection_for(spec: McpConnectionSpec, account_id: str) -> Optional[MCPConnection]:
     """The account's connection this spec means: the one with its id, else the ready one for its provider (by name
     when there's more than one)."""
     repository = get_mcp_connection_repository()
     if spec.id:
-        return repository.find_connection(user_email, spec.id)
-    same = [connection for connection in repository.list_connections(user_email) if connection.provider_key == spec.provider]
+        return repository.find_connection(account_id, spec.id)
+    same = [connection for connection in repository.list_connections(account_id) if connection.provider_key == spec.provider]
     if spec.name:
         same = [connection for connection in same if connection.name == spec.name] or same
     ready = [connection for connection in same if is_ready(connection)]
@@ -85,7 +85,7 @@ class McpConnectionKind(LookupKind[McpConnectionSpec]):
         return []
 
     def find_existing(self, name: str, spec: McpConnectionSpec, ctx: PlanContext) -> Optional[Existing]:
-        connection = connection_for(spec, ctx.owner.email)
+        connection = connection_for(spec, ctx.owner.account_id)
         if connection is None:
             if spec.id:
                 raise NotFound(f"There's no MCP connection with id '{spec.id}' in your account.")
@@ -99,7 +99,7 @@ class McpConnectionKind(LookupKind[McpConnectionSpec]):
             return [BlueprintIssue(
                 path=f"resources.{name}.provider",
                 message=f"{provider_name(spec)} isn't connected to your account yet.",
-                hint="Connect it from the card in this chat, or on the Connectors page.",
+                hint="An account admin can connect it from the card in this chat, or on the Connectors page.",
             )]
         return []
 

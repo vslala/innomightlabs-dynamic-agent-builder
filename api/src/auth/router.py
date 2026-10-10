@@ -16,6 +16,7 @@ from ..config import settings
 from ..agents.repository import AgentRepository
 from ..identity import EmailTaken, Identity, IdentityRepository
 from ..settings.models import ProviderSettings, ProviderSettingsResponse
+from ..settings.access import may_manage_settings, settings_manager
 from ..settings.repository import ProviderSettingsRepository
 from .oauth_providers import CognitoOAuthProvider, GoogleOAuthProvider, OAuthProvider
 from .openai_oauth import (
@@ -267,6 +268,7 @@ async def start_openai_oauth(request: Request):
     user_email = getattr(request.state, "user_email", None)
     if not user_email:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    principal = settings_manager(get_principal(request))
 
     nonce, code_verifier = generate_pkce_bundle()
     code_challenge = generate_code_challenge(code_verifier)
@@ -276,6 +278,7 @@ async def start_openai_oauth(request: Request):
         nonce=nonce,
         code_verifier=code_verifier,
         user_email=user_email,
+        account_id=principal.account_id,
         return_to=f"{settings.frontend_url}/dashboard/settings",
         expires_at=now_ts + OPENAI_PKCE_TTL_SECONDS,
     )
@@ -315,16 +318,19 @@ async def complete_openai_oauth(
                 status_code=400,
                 detail="OpenAI OAuth callback does not match the currently signed-in user.",
             )
+        if not may_manage_settings(request.state.user_id, session.account_id):
+            raise HTTPException(status_code=403, detail="Only an account admin can connect OpenAI.")
 
         credentials = await build_credentials_from_auth_code(
             code=code,
             code_verifier=session.code_verifier,
         )
         provider_settings = ProviderSettings(
-            user_email=user_email,
+            account_id=session.account_id,
             provider_name="OpenAI",
             encrypted_credentials="",
             auth_type="oauth",
+            updated_by=request.state.user_id,
         )
         saved = save_credentials(provider_settings, provider_settings_repository, credentials)
         return ProviderSettingsResponse(
@@ -356,13 +362,16 @@ async def _start_google_skill_oauth(
         raise HTTPException(status_code=401, detail="Unauthorized")
     if body.skill_id != flow.skill_id:
         raise HTTPException(status_code=400, detail=f"Unsupported skill for {flow.display_name} OAuth")
-    # The skill will run on the owner's Google account, so only the owner connects it
-    require_own_agent(get_principal(request), body.agent_id, "skills:Install", agent_repository)
-    return _google_skill_authorize(flow, user_email=user_email, agent_id=body.agent_id, return_to=body.return_to)
+    principal = get_principal(request)
+    require_own_agent(principal, body.agent_id, "skills:Install", agent_repository)
+    # The Google account becomes the account's, which every member's agents then use: an admin connects it
+    settings_manager(principal)
+    return _google_skill_authorize(flow, user_email=user_email, account_id=principal.account_id,
+                                   agent_id=body.agent_id, return_to=body.return_to)
 
 
 def _google_skill_authorize(
-    flow: GoogleSkillOAuthFlow, *, user_email: str, agent_id: str, return_to: str
+    flow: GoogleSkillOAuthFlow, *, user_email: str, account_id: str, agent_id: str, return_to: str
 ) -> SkillOAuthStartResponse:
     try:
         return_to = safe_return_to(return_to)
@@ -370,6 +379,7 @@ def _google_skill_authorize(
         raise HTTPException(status_code=400, detail=str(e))
     session = flow.create_state_session(
         user_email=user_email,
+        account_id=account_id,
         agent_id=agent_id,
         skill_id=flow.skill_id,
         return_to=return_to,
@@ -404,13 +414,17 @@ def _handoff_return_to(return_to: str | None, fallback: str) -> str:
 
 
 async def complete_google_skill_oauth(
-    flow: GoogleSkillOAuthFlow, *, state: str | None, code: str | None, error: str | None, user_email: str
+    flow: GoogleSkillOAuthFlow, *, state: str | None, code: str | None, error: str | None, user_email: str,
+    user_id: str,
 ) -> dict[str, str]:
-    """Store the credentials, if the signed-in user started this flow. Returns the page's result parameters."""
+    """Store the credentials in the account the flow was started for, if the signed-in user started it and may
+    still manage that account's settings. Returns the page's result parameters."""
     session = flow.decode_state_session(state)
     status_param = flow.callback_status_param
     if not session or session.user_email != user_email:
         return {"skill_oauth": "error", status_param: "error", "reason": "invalid_state"}
+    if not may_manage_settings(user_id, session.account_id):
+        return {"skill_oauth": "error", status_param: "error", "reason": "not_allowed"}
 
     result = {"skill_oauth": "success", status_param: "success", "agent_id": session.agent_id, "skill_id": session.skill_id}
     failure = {**result, "skill_oauth": "error", status_param: "error"}
@@ -424,10 +438,11 @@ async def complete_google_skill_oauth(
     try:
         credentials = await flow.build_credentials_from_auth_code(code)
         provider_settings = ProviderSettings(
-            user_email=session.user_email,
+            account_id=session.account_id,
             provider_name=flow.provider_name,
             encrypted_credentials="",
             auth_type="oauth",
+            updated_by=user_id,
         )
         flow.save_credentials(provider_settings, provider_settings_repository, credentials)
         return result

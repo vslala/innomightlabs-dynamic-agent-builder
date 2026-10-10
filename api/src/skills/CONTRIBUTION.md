@@ -219,16 +219,19 @@ The catalog exposes `oauth_start_path`, and the SPA starts OAuth generically fro
 
 OAuth implementation guidelines:
 
-- Store encrypted credentials in `ProviderSettings` using the provider name.
+- Store encrypted credentials in `ProviderSettings` using the provider name. They belong to the account: an
+  account admin connects them (`settings:Manage`), and every member's agents use them.
 - Include refresh token support when the provider supports it.
 - Keep provider-specific OAuth helpers in the skill folder when possible, for example `src/skills/google_mail/oauth.py`.
 - Use the least privilege scope that supports the skill actions.
 - On uninstall, decide whether provider credentials should remain connected or be explicitly disconnected by user choice.
 
-Runtime actions should load credentials by provider name and owner email from context, for example:
+Runtime actions should load credentials by provider name and the agent's account from context, for example:
 
 ```python
-repo.find_by_provider(owner_email, "GoogleMail")
+from src.skills.runtime_context import account_of
+
+repo.find_by_provider(account_of(context), "GoogleMail")
 ```
 
 ## 8. Skill-Owned API Routes

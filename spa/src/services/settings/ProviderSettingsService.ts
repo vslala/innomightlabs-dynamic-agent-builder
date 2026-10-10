@@ -1,5 +1,5 @@
 /**
- * Provider Settings Service - manages user's LLM provider configurations.
+ * Provider Settings Service - the account's LLM provider configurations, which its admins manage.
  */
 
 import { httpClient } from "../http/client";

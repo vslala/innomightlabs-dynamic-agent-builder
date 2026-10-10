@@ -32,6 +32,7 @@ from src.skills.agent2agent_client.oauth import (
 )
 from src.iam.dependencies import get_principal
 from src.iam.principal import Principal
+from src.settings.access import may_manage_settings, settings_manager
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
 
 log = logging.getLogger(__name__)
@@ -70,6 +71,8 @@ async def start_a2a_remote_oauth(
 ) -> A2ARemoteOAuthStartResponse:
     user_email: str = request.state.user_email
     require_own_agent(principal, body.agent_id, "skills:Install", agent_repo)
+    # The remote agent's tokens become the account's, like its other connections: an admin signs in
+    settings_manager(principal)
 
     installed = skill_repo.find_by_id(body.agent_id, body.installed_skill_id)
     if not installed or installed.skill_id != "agent2agent_client" or not installed.enabled:
@@ -99,6 +102,7 @@ async def start_a2a_remote_oauth(
 
         session = create_state_session(
             user_email=user_email,
+            account_id=principal.account_id,
             agent_id=body.agent_id,
             installed_skill_id=body.installed_skill_id,
             service_url=service_url,
@@ -133,13 +137,16 @@ async def a2a_remote_oauth_callback(
 
 
 async def complete_a2a_remote_oauth(
-    *, state: str | None, code: str | None, error: str | None, user_email: str
+    *, state: str | None, code: str | None, error: str | None, user_email: str, user_id: str
 ) -> dict[str, str]:
-    """Store the remote agent's tokens, if the signed-in user started this flow. Returns the page's result parameters."""
+    """Store the remote agent's tokens in the account, if the signed-in user started this flow and may still manage
+    that account's settings. Returns the page's result parameters."""
     session = decode_state_session(state)
     if not session or session.is_expired() or session.user_email != user_email:
         return {"a2a_oauth": "error", "reason": "invalid_state"}
     failure = {"a2a_oauth": "error", "installed_skill_id": session.installed_skill_id}
+    if not may_manage_settings(user_id, session.account_id):
+        return {**failure, "reason": "Only an account admin can connect a remote agent"}
     if error:
         return {**failure, "reason": "Sign-in was cancelled"}
     if not code:
@@ -154,7 +161,7 @@ async def complete_a2a_remote_oauth(
         credentials = build_credentials(tokens, default_scope=session.provider.scope)
         get_a2a_remote_oauth_repository().save(
             A2ARemoteOAuthCredentialRecord(
-                owner_email=session.user_email,
+                account_id=session.account_id,
                 agent_id=session.agent_id,
                 installed_skill_id=session.installed_skill_id,
                 target_origin=session.target_origin,

@@ -89,9 +89,9 @@ class AccountDeletionHandler:
             f"User#{user_email}", "ApiKey#"
         )
 
-        # 9. Delete Provider Settings
+        # 9. Delete Provider Settings: the personal account's, as for agents (KAN-83 handles shared accounts)
         counts["provider_settings"] = self._delete_items_by_pattern(
-            f"User#{user_email}", "ProviderSettings#"
+            f"Account#{personal_account_id(user_id)}", "ProviderSettings#"
         )
 
         # 9b. Delete refresh tokens issued to other apps that share this login

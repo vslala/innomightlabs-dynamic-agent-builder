@@ -16,7 +16,7 @@ from src.smart_suggestions.strategies import (
     SmartSuggestionError,
     _extract_json_object,
 )
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, account_for
 
 
 def test_schedule_trigger_cron_field_declares_smart_suggestion():
@@ -165,7 +165,7 @@ def test_smart_suggestion_settings_round_trip(
     assert response.json()["is_configured"] is True
 
     repository = SmartSuggestionSettingsRepository()
-    saved = repository.find_by_user(TEST_USER_EMAIL)
+    saved = repository.find_in_account(account_for(TEST_USER_EMAIL))
     assert saved is not None
     assert saved.enabled is True
     assert saved.provider_name == "Bedrock"
@@ -194,8 +194,8 @@ def test_smart_suggestion_endpoint_delegates_to_service(
     auth_headers: dict,
 ):
     class FakeSmartSuggestionService:
-        async def suggest(self, *, user_email: str, request: SmartSuggestionRequest) -> SmartSuggestionResponse:
-            assert user_email == TEST_USER_EMAIL
+        async def suggest(self, *, account_id: str, request: SmartSuggestionRequest) -> SmartSuggestionResponse:
+            assert account_id == account_for(TEST_USER_EMAIL)
             assert request.suggestion_type == "cron_expression"
             assert request.context["timezone"] == "UTC"
             return SmartSuggestionResponse(

@@ -51,10 +51,10 @@ class AgentMarketplaceService:
         template = self._published_template(template_id)
         return template.to_detail_response()
 
-    def get_import_plan(self, *, template_id: str, user_email: str) -> MarketplaceImportPlanResponse:
+    def get_import_plan(self, *, template_id: str, owner: Owner) -> MarketplaceImportPlanResponse:
         template = self._published_template(template_id)
         skill_forms = [
-            self._skill_import_form(skill, user_email)
+            self._skill_import_form(skill, owner)
             for skill in template.skills
         ]
         return MarketplaceImportPlanResponse(
@@ -78,13 +78,12 @@ class AgentMarketplaceService:
         request: ImportMarketplaceAgentRequest,
     ) -> ImportMarketplaceAgentResponse:
         """A new agent from a template, owned by the importer in their active account."""
-        user_email = owner.email
         template = self._published_template(template_id)
-        self._validate_skill_configs(template, request.skill_configs, user_email)
+        self._validate_skill_configs(template, request.skill_configs, owner)
 
         provider = request.agent_provider if template.allow_model_override and request.agent_provider else template.agent_provider
         model = request.agent_model if template.allow_model_override and request.agent_model else template.agent_model
-        validate_provider_model(user_email, provider, model)
+        validate_provider_model(owner, provider, model)
 
         agent = Agent(
             agent_name=(request.agent_name or template.agent_name).strip(),
@@ -106,7 +105,7 @@ class AgentMarketplaceService:
                     self.skill_service.install_skill(
                         agent_id=saved_agent.agent_id,
                         skill_id=skill.skill_id,
-                        user_email=user_email,
+                        owner=owner,
                         raw_config=config,
                         enabled=skill.enabled_on_import,
                     )
@@ -116,7 +115,7 @@ class AgentMarketplaceService:
                 self.skill_service.uninstall(
                     agent_id=saved_agent.agent_id,
                     installed_skill_id=installed_skill.installed_skill_id,
-                    user_email=user_email,
+                    owner=owner,
                 )
             self.agent_repository.delete(saved_agent.account_id, saved_agent.agent_id)
             raise
@@ -205,7 +204,7 @@ class AgentMarketplaceService:
                 return latest
         return template
 
-    def _skill_import_form(self, skill: MarketplaceAgentSkillTemplate, user_email: str) -> MarketplaceSkillImportForm:
+    def _skill_import_form(self, skill: MarketplaceAgentSkillTemplate, owner: Owner) -> MarketplaceSkillImportForm:
         loaded = self.skill_service.registry.get(skill.skill_id)
         if not loaded:
             raise ValueError(f"Unknown skill: {skill.skill_id}")
@@ -214,14 +213,14 @@ class AgentMarketplaceService:
             skill_id=skill.skill_id,
             skill_name=loaded.manifest.name,
             required=skill.required,
-            form=self.skill_service.get_install_schema(skill.skill_id, "", user_email),
+            form=self.skill_service.get_install_schema(skill.skill_id, "", owner),
         )
 
     def _validate_skill_configs(
         self,
         template: MarketplaceAgentTemplate,
         skill_configs: dict[str, dict[str, Any]],
-        user_email: str,
+        owner: Owner,
     ) -> None:
         template_skill_keys = {skill.template_skill_key for skill in template.skills}
         unknown = set(skill_configs) - template_skill_keys
@@ -233,7 +232,7 @@ class AgentMarketplaceService:
                 raise ValueError(f"Missing config for {skill.display_name or skill.skill_id}")
             self.skill_service.validate_install_config(
                 skill.skill_id,
-                user_email,
+                owner,
                 self._merged_skill_config(skill, skill_configs),
             )
 

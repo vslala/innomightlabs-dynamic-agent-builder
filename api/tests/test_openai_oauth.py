@@ -13,7 +13,7 @@ from src.auth.openai_oauth import (
     extract_account_id_from_access_token,
 )
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL
 
 
 class TestOpenAIOAuth:
@@ -67,7 +67,7 @@ class TestOpenAIOAuth:
         assert payload["is_configured"] is True
 
         repo = ProviderSettingsRepository()
-        saved = repo.find_by_provider(TEST_USER_EMAIL, "OpenAI")
+        saved = repo.find_by_provider(account_for(TEST_USER_EMAIL), "OpenAI")
         assert saved is not None
         assert saved.auth_type == "oauth"
 
@@ -113,6 +113,7 @@ class TestOpenAIOAuth:
             nonce="nonce-test",
             code_verifier="test-verifier",
             user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             return_to="http://localhost:5173/dashboard/settings",
             expires_at=int((datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()),
         )

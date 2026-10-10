@@ -49,7 +49,7 @@ def _agent_form() -> Form:
 def test_krishna_mini_agent_options_only_include_mini_agents():
     form = hydrate_form_options(
         _agent_form(),
-        FormOptionsContext(user_email="owner@example.com", owner=OWNER, agent_repository=FakeAgentRepository()),
+        FormOptionsContext(owner=OWNER, agent_repository=FakeAgentRepository()),
     )
 
     options = form.form_inputs[0].options or []
@@ -57,7 +57,7 @@ def test_krishna_mini_agent_options_only_include_mini_agents():
 
 
 def test_krishna_mini_agent_options_validation_rejects_other_architectures():
-    context = FormOptionsContext(user_email="owner@example.com", owner=OWNER, agent_repository=FakeAgentRepository())
+    context = FormOptionsContext(owner=OWNER, agent_repository=FakeAgentRepository())
 
     validate_form_options(_agent_form().form_inputs, {"agent_id": "mini-1"}, context)
 

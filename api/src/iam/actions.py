@@ -53,8 +53,6 @@ CATALOG: dict[str, Action] = {
         # "create your own" wildcards (`*:Create` on `*`) must not reach into someone else's agent.
         *_service("skills", "agent", metadata=[], contents=["Install", "Configure", "Uninstall"]),
         *_service("apikeys", "agent", metadata=["ListKeys"], contents=["CreateKey", "RevokeKey"]),
-        *_service("mcp", "mcp-connection",
-                  metadata=["Create", "List", "Describe", "Delete"], contents=["Get", "Update", "Link"]),
         # Conversations belong to one member and are never shared in v1, so there is no Share
         *_service("conversations", "conversation", metadata=["List", "Describe", "Delete"], contents=["Read"]),
         *_service("iam", ACCOUNT, metadata=[
@@ -64,6 +62,9 @@ CATALOG: dict[str, Action] = {
         *_service("billing", ACCOUNT, metadata=["View", "Manage"], contents=[]),
         *_service("audit", ACCOUNT, metadata=["Read"], contents=[]),
         *_service("account", ACCOUNT, metadata=["Update", "Delete"], contents=[]),
+        # The account's credentials and settings: provider keys, MCP connections, A2A, dream, smart suggestions.
+        # Admins manage them; every member's agents use them.
+        *_service("settings", ACCOUNT, metadata=["Manage"], contents=[]),
     ]
 }
 
@@ -76,7 +77,7 @@ _DESCRIBE: dict[str, str] = {
 _SHARE: dict[str, str] = {
     action.resource_type: action.name for action in CATALOG.values() if action.name.endswith(":Share")
 }
-# Agents, knowledge bases, automations and kits; conversations and MCP connections stay private
+# Agents, knowledge bases, automations and kits; conversations stay private
 SHAREABLE_TYPES: frozenset[str] = frozenset(_SHARE)
 
 

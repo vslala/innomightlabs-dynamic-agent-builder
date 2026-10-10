@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from src.automations.models import AutomationRun, AutomationRunStatus
 from src.automations.repository import AutomationRepository
-from tests.mock_data import AUTOMATION_CREATE_REQUEST
+from tests.mock_data import account_for, AUTOMATION_CREATE_REQUEST
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from tests.mock_data import TEST_USER_EMAIL
@@ -205,7 +205,7 @@ def test_automation_skills_and_action_catalog(test_client, auth_headers, dynamod
 
     ProviderSettingsRepository().save(
         ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleMail",
             encrypted_credentials="encrypted",
             auth_type="oauth",
@@ -213,7 +213,7 @@ def test_automation_skills_and_action_catalog(test_client, auth_headers, dynamod
     )
     ProviderSettingsRepository().save(
         ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleDrive",
             encrypted_credentials="encrypted",
             auth_type="oauth",

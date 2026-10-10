@@ -271,10 +271,10 @@ through the principal, and leaves the suite green.
 - **Interim rule for flows still keyed by email.** Until slice 5, blueprints, kits, Ila's sessions and automations
   were implicitly personal, acting through `personal_owner(email)` in the person's personal account. Slices 4 and 5
   replaced that with the real `Owner`.
-  - `personal_owner` remains only as the fallback for form agent pickers whose caller passes no owner (skill
-    install forms). It goes with slice 6.
-- **Agent pickers on forms** list the owner's agents in the given owner's account, or in the personal
-  account when no owner is given.
+  - `personal_owner` remained only as the fallback for form agent pickers whose caller passed no owner (skill
+    install forms). Slice 6 removed it.
+- **Agent pickers on forms** list the owner's agents in the given owner's account. Since slice 6 every caller
+  passes the owner.
 
 **Slice 1: agents (done)**
 - **Keys.** `Agent` is at `Account#{aid}/Agent#{id}`, with `account_id` and `owner_id`. `created_by` is a
@@ -538,7 +538,7 @@ through the principal, and leaves the suite green.
     metadata-only access with removal as the owner, isolation across accounts, and sessions being the member's
     own.
 
-**Slice 6: account settings and credentials (in progress)**
+**Slice 6: account settings and credentials (done)**
 - **Design change (agreed 2026-10-11).** Provider keys, MCP connections and the other settings that cost money or
   reach outside belong to the **account**, not to each member. Think of an organisation: the account's admins
   connect the LLM providers and MCP servers, the account pays for them, and members' agents use them. This replaces
@@ -567,6 +567,54 @@ through the principal, and leaves the suite green.
   account** (`agent.account_id`), whoever its owner is. A shared agent no longer depends on one member's keys, and
   a transferred agent keeps working.
 - **Skill installs** record the installer's user_id in `installed_by` (audit only).
+- **Code.**
+  - `api/src/settings/access.py`: `MANAGE_SETTINGS`, the `settings_manager` dependency, and `may_manage_settings(user_id,
+    account_id)` for OAuth flows that finish in a later request. `GET /settings/access` returns `can_manage`, so the SPA
+    offers edit controls only to those who hold it. It asks IAM, so an admin through a group counts.
+  - Repositories take an `account_id` instead of an email: `ProviderSettingsRepository.find_by_provider(account_id,
+    name)` and `find_all_in_account`, `DreamRepository.find_settings(account_id)`,
+    `SmartSuggestionSettingsRepository.find_in_account`, `Agent2AgentSettingsRepository.find_in_account`,
+    `MCPConnectionRepository` (all methods), `A2ARemoteOAuthRepository.find(account_id=...)`. The default agent uses
+    `find_for_member(account_id, user_id)`.
+  - `FormOptionsContext` takes an `Owner` (no `user_email`): agent pickers list the owner's agents, provider and model
+    pickers the owner's account's providers. `validate_provider_model(owner, ...)`. `personal_owner` is gone.
+  - `SkillService` methods take the agent owner's `Owner` instead of `user_email`. A skill's OAuth connection,
+    connectors and A2A trust are checked in the owner's account.
+- **Runtime.**
+  - `open_provider_session(agent, ...)` reads `agent.account_id`; image generation, dream runs and Ila do the same.
+  - The skill runtime context gains `account_id` (the agent's). `src/skills/runtime_context.py: account_of(context)` is
+    how Google Mail, Drive and Ads, and the A2A client, find the account's credentials.
+  - The MCP runtime and an agent's MCP links take the agent's `account_id`.
+  - Saving dream settings schedules every memory agent in the account, each as its owner over the owner's chats.
+- **Connecting.**
+  - Saving or deleting a provider key, OpenAI sign-in, Google Mail, Drive and Ads, MCP create, install, update, delete,
+    sign-in, runtime restart and tool refresh, the A2A remote sign-in, and Ila's Connect card all need
+    `settings:Manage`.
+  - OAuth state carries `account_id`. Completing a flow checks that the person who started it still may manage that
+    account's settings, and stores the credentials there.
+  - Uninstalling a skill with `disconnect_oauth` needs `settings:Manage` too.
+  - Linking a connection to an agent, and sharing its tools with widget, A2A and API callers, stay with the agent's
+    owner (`own_agent_with`), as installing skills does.
+- **Catalog.** The per-connection `mcp` service is removed; no route used it. `settings` is added, and
+  `AdministratorAccess` gains `settings:*`.
+- **Account deletion** deletes the personal account's provider settings (they were the person's `User#` ones).
+- **SPA.** Settings and Connectors hide the controls that change the account's settings from members, and say who
+  manages them (`useCanManageSettings`, `SettingsAccessService`). The default agent stays each member's.
+- **Migration (KAN-81).**
+  - `ProviderSettings`, `Agent2AgentSettings`, `DreamSettings`, `SmartSuggestionSettings`, `MCPConnection#`,
+    `MCPToolCatalog#` and `A2ARemoteOAuthCredential#` move from `User#{email}` to `Account#{personal_aid}` (same sort
+    key), with `account_id` replacing `user_email` / `owner_email`.
+  - `DefaultAgentPreference` moves to `Account#{personal_aid}#Member#{uid}` with `account_id` and `user_id`.
+  - `AgentMCPConnection` (under `Agent#{id}`) gets the agent's `account_id` in place of `owner_email`.
+  - `AgentSkill.installed_by` becomes the user_id.
+- **Tests.** `account_for(email)` in `tests/mock_data.py`. `tests/test_account_settings_access.py` covers:
+  - only admins connect providers and MCP servers, and members see them;
+  - a promoted admin may manage them;
+  - a member's agent runs on the account's provider, not on the member's personal one;
+  - members link the account's connections to their own agents;
+  - dream, smart-suggestion and A2A settings are admin-written and member-read;
+  - the default agent is per member;
+  - nothing crosses accounts.
 
 ## Context and problem
 

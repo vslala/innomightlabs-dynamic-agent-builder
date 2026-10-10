@@ -18,6 +18,7 @@ class SkillRuntime(Protocol):
         tool_name: str,
         tool_input: dict[str, Any],
         agent_id: str,
+        account_id: str,
         owner_email: str,
         actor_email: str,
         actor_id: str,
@@ -42,7 +43,7 @@ class MCPRuntime(Protocol):
     async def list_runtime_tools(
         self,
         *,
-        owner_email: str,
+        account_id: str,
         agent_id: str,
         caller: MCPCaller,
         mcp_id: str | None = None,
@@ -52,7 +53,7 @@ class MCPRuntime(Protocol):
     async def call_runtime_tool(
         self,
         *,
-        owner_email: str,
+        account_id: str,
         agent_id: str,
         caller: MCPCaller,
         mcp_id: str,
@@ -83,6 +84,7 @@ async def run_skill_tool(
         tool_name=tool_name,
         tool_input=tool_input,
         agent_id=state.agent_id,
+        account_id=state.account_id,
         owner_email=state.owner_email,
         actor_email=state.actor_email,
         actor_id=state.actor_id,
@@ -100,7 +102,7 @@ async def list_mcp_tools(
 ) -> str:
     del tool_name
     result = await _required(mcp_runtime).list_runtime_tools(
-        owner_email=state.owner_email,
+        account_id=state.account_id,
         agent_id=state.agent_id,
         caller=_mcp_caller(state),
         mcp_id=tool_input.get("mcp_id") or None,
@@ -118,7 +120,7 @@ async def call_mcp_tool(
     # mcp_id, tool_name and arguments are all required by CallMCPToolInput,
     # which has already validated this input. The runtime decides what this caller may use.
     result = await _required(mcp_runtime).call_runtime_tool(
-        owner_email=state.owner_email,
+        account_id=state.account_id,
         agent_id=state.agent_id,
         caller=_mcp_caller(state),
         mcp_id=tool_input["mcp_id"],

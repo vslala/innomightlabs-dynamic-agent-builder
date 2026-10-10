@@ -38,7 +38,7 @@ def test_marketplace_publish_import_and_secret_stripping(test_client: TestClient
     skill_service.install_skill(
         agent_id=agent.agent_id,
         skill_id="wordpress_search",
-        user_email=TEST_USER_EMAIL,
+        owner=owner_for(TEST_USER_EMAIL),
         raw_config={
             "site_url": "https://example.com",
             "username": "admin",

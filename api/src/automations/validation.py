@@ -189,7 +189,7 @@ class SkillActionValidator:
             raise AutomationValidationError(
                 "skill_action references a skill that is not available for automations"
             )
-        missing = self.connector_service.missing_required_connectors(loaded.manifest, ctx.owner.email)
+        missing = self.connector_service.missing_required_connectors(loaded.manifest, ctx.owner.account_id)
         if missing:
             raise AutomationValidationError(
                 "skill_action requires connected connectors: " + ", ".join(missing)

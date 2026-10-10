@@ -24,7 +24,7 @@ from src.knowledge.repository import KnowledgeBaseRepository
 from src.knowledge.service import KnowledgeBaseService
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversation_fields, conversations_of, owner_ids, session_fields
+from tests.mock_data import account_for, TEST_USER_EMAIL, agent_fields, conversation_fields, conversations_of, owner_ids, session_fields
 from tests.mock_data import test_owner as _test_owner
 
 TEST_OWNER = _test_owner()
@@ -47,7 +47,7 @@ def test_ila_builds_are_removed_and_the_persons_own_things_stay(dynamodb_table, 
     monkeypatch.setattr(KnowledgeBaseService, "_delete_pinecone_namespace", lambda self, kb_id: 0)
     monkeypatch.setattr(settings, "conversation_media_bucket", "")
     ProviderSettingsRepository().save(
-        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+        ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )
     built = deploy_blueprint(example_yaml("site-agent") or "", {"site_url": "https://acme.example", "business_name": "Acme"},
                              TEST_OWNER, BackgroundTasks())

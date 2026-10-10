@@ -16,7 +16,7 @@ from src.blueprints.validator import validate_blueprint
 from src.config import settings
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL
 from tests.mock_data import test_owner as _test_owner
 
 TEST_OWNER = _test_owner()
@@ -58,7 +58,7 @@ def account(monkeypatch, dynamodb_table) -> None:
     monkeypatch.setattr(knowledge_base_kind, "launch_crawl", lambda *_: None)
     monkeypatch.setattr(settings, "require_pinecone", lambda: None)
     ProviderSettingsRepository().save(
-        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+        ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )
 
 

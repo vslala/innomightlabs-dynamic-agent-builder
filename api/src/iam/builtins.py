@@ -27,7 +27,7 @@ MEMBER_ACCESS = _policy("MemberAccess", {
 # metadata only, and reaches contents only through ownership or a share.
 ADMINISTRATOR_ACCESS = _policy("AdministratorAccess", {
     "Sid": "RunTheAccount", "Effect": "Allow",
-    "Action": ["iam:*", "billing:*", "audit:*", "account:*",
+    "Action": ["iam:*", "billing:*", "audit:*", "account:*", "settings:*",
                "*:Create", "*:List", "*:Describe", "*:Transfer", "*:Delete"],
     "Resource": "*",
 })

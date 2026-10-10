@@ -42,7 +42,7 @@ class AccountConnection:
     it, so there's no answer to take in."""
 
     def missing(self, draft: Draft, session: BuilderSession, user_email: str) -> list[Any]:
-        return list(missing_connections(draft, user_email))
+        return list(missing_connections(draft, session.account_id))
 
     def settle(self, session: BuilderSession, missing: list[Any]) -> None:
         pass

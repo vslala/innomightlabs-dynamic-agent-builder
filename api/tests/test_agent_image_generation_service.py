@@ -74,7 +74,7 @@ class FakeAgentImageGenerationService(AgentImageGenerationService):
             ),
         )
 
-    def _validate_and_load_provider_settings(self, agent, owner_email):
+    def _validate_and_load_provider_settings(self, agent):
         return SimpleNamespace()
 
     async def _load_credentials(self, provider_name, provider_settings):
@@ -94,7 +94,6 @@ async def test_stream_for_agent_turn_completion_includes_signed_image_url():
         async for event in service.stream_for_agent_turn(
             agent_id="agent-1",
             conversation_id="conversation-1",
-            owner_email="owner@example.com",
             actor_email="actor@example.com",
             user_message_id="user-message-1",
             request=GenerateImageRequest(prompt="maze", output_format="png"),

@@ -13,7 +13,7 @@ from src.conversations.models import Conversation
 from src.memory.snapshot import CoreMemorySnapshot
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
-from tests.mock_data import agent_fields, conversation_fields
+from tests.mock_data import account_for, agent_fields, conversation_fields
 
 
 class FakeMessageRepository:
@@ -511,6 +511,7 @@ def test_krishna_memgpt_builds_tool_definitions_from_command_registry():
 
     state = AgentTurnState(
         owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         actor_email="owner@example.com",
         actor_id="owner@example.com",
         actor_kind=ActorKind.OWNER,

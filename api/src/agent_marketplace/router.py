@@ -57,7 +57,7 @@ async def get_marketplace_agent_import_plan(
     service: Annotated[AgentMarketplaceService, Depends(get_agent_marketplace_service)],
 ) -> MarketplaceImportPlanResponse:
     try:
-        return service.get_import_plan(template_id=template_id, user_email=request.state.user_email)
+        return service.get_import_plan(template_id=template_id, owner=get_owner(request))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.google_mail.models import GoogleMailCredentials
 from src.skills.google_mail.oauth import GoogleMailOAuthState, encode_state_session
-from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2
+from tests.mock_data import account_for, TEST_USER_EMAIL, TEST_USER_EMAIL_2
 from tests.oauth_handoff import handoff_result, owner_headers
 
 ATTACKER = TEST_USER_EMAIL_2
@@ -20,6 +20,7 @@ def _attackers_state() -> str:
         GoogleMailOAuthState(
             nonce="nonce",
             user_email=ATTACKER,
+            account_id=account_for(ATTACKER),
             agent_id="attacker-agent",
             skill_id="google_mail",
             return_to="http://localhost:5173/dashboard/agents/attacker-agent/skills",
@@ -41,8 +42,8 @@ def test_a_victim_completing_an_attackers_consent_link_stores_nothing(test_clien
     )
 
     assert handoff_result(test_client, callback, TEST_USER_EMAIL)["reason"] == ["invalid_state"]
-    assert ProviderSettingsRepository().find_by_provider(ATTACKER, "GoogleMail") is None
-    assert ProviderSettingsRepository().find_by_provider(TEST_USER_EMAIL, "GoogleMail") is None
+    assert ProviderSettingsRepository().find_by_provider(account_for(ATTACKER), "GoogleMail") is None
+    assert ProviderSettingsRepository().find_by_provider(account_for(TEST_USER_EMAIL), "GoogleMail") is None
 
 
 def test_the_callback_itself_stores_nothing(test_client: TestClient, monkeypatch):

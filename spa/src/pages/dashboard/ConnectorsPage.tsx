@@ -27,6 +27,7 @@ import {
   LoadingState,
   StatusBadge,
 } from "../../components/ui";
+import { useCanManageSettings } from "../../hooks/useCanManageSettings";
 import { connectorApiService } from "../../services/connectors";
 import type { ConnectorStatus, MCPConnection, MCPProvider, MCPSetupState } from "../../types/connectors";
 import { CustomMCPDialog } from "./connectors/CustomMCPDialog";
@@ -89,6 +90,8 @@ export function ConnectorsPage() {
   const [mcpNotice, setMCPNotice] = useState<string | null>(null);
   // Bumped after a runtime (re)start elsewhere on the page so runtime badges refetch their status.
   const [runtimeVersion, setRuntimeVersion] = useState(0);
+  // Connections are the account's: its admins add and change them, every member's agents use them
+  const canManage = useCanManageSettings() === true;
 
   const loadConnectors = async () => {
     setLoading(true);
@@ -214,12 +217,20 @@ export function ConnectorsPage() {
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
-          <Button onClick={() => setCustomDialog({ editing: null })}>
-            <Plus className="h-4 w-4" />
-            Custom MCP
-          </Button>
+          {canManage && (
+            <Button onClick={() => setCustomDialog({ editing: null })}>
+              <Plus className="h-4 w-4" />
+              Custom MCP
+            </Button>
+          )}
         </div>
       </div>
+
+      {!canManage && (
+        <p style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
+          These connections are your account's. Its admins add and change them; you can enable them on your agents.
+        </p>
+      )}
 
       {error && <div style={{ color: "var(--error)", fontSize: "0.875rem" }}>{error}</div>}
       {mcpError && <div style={{ color: "var(--error)", fontSize: "0.875rem" }}>{mcpError}</div>}
@@ -268,18 +279,20 @@ export function ConnectorsPage() {
                             ? "This account can be used by enabled skills in agents and automations."
                             : "Connect this account to make dependent skills available in agents and automations."}
                         </p>
-                        <Button
-                          onClick={() => void startConnection(connector)}
-                          disabled={connectingId === connector.connector_id}
-                          variant={connector.connected ? "outline" : "default"}
-                        >
-                          {connector.connected ? <RefreshCw className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
-                          {connectingId === connector.connector_id
-                            ? "Opening..."
-                            : connector.connected
-                              ? "Reconnect"
-                              : "Connect"}
-                        </Button>
+                        {canManage && (
+                          <Button
+                            onClick={() => void startConnection(connector)}
+                            disabled={connectingId === connector.connector_id}
+                            variant={connector.connected ? "outline" : "default"}
+                          >
+                            {connector.connected ? <RefreshCw className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+                            {connectingId === connector.connector_id
+                              ? "Opening..."
+                              : connector.connected
+                                ? "Reconnect"
+                                : "Connect"}
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -288,19 +301,21 @@ export function ConnectorsPage() {
             </>
           ) : (
             <div style={{ display: "grid", gap: "2rem" }}>
-              <section>
-                <SectionHeader
-                  icon={<Plug className="h-5 w-5" />}
-                  title="MCP providers"
-                  description="Ready-made connectors configured by InnoMight Labs. Install one and supply only your own credentials."
-                />
-                <MCPProviderCatalog providers={providers} onInstalled={reloadMCP} onError={setMCPError} />
-              </section>
+              {canManage && (
+                <section>
+                  <SectionHeader
+                    icon={<Plug className="h-5 w-5" />}
+                    title="MCP providers"
+                    description="Ready-made connectors configured by InnoMight Labs. Install one and supply only your account's credentials."
+                  />
+                  <MCPProviderCatalog providers={providers} onInstalled={reloadMCP} onError={setMCPError} />
+                </section>
+              )}
 
               <section>
                 <SectionHeader
                   icon={<Server className="h-5 w-5" />}
-                  title="Your MCP connectors"
+                  title="The account's MCP connectors"
                   description="Installed providers and custom servers. Enable them per agent from the agent settings."
                 />
                 {mcpConnections.length === 0 ? (
@@ -315,13 +330,17 @@ export function ConnectorsPage() {
                             No MCP connectors yet
                           </h2>
                           <p style={{ color: "var(--text-muted)", marginTop: "0.375rem" }}>
-                            Install a provider above, or add a custom remote or hosted MCP server.
+                            {canManage
+                              ? "Install a provider above, or add a custom remote or hosted MCP server."
+                              : "Your account's admins haven't added any yet."}
                           </p>
                         </div>
-                        <Button onClick={() => setCustomDialog({ editing: null })}>
-                          <Plus className="h-4 w-4" />
-                          Add custom MCP server
-                        </Button>
+                        {canManage && (
+                          <Button onClick={() => setCustomDialog({ editing: null })}>
+                            <Plus className="h-4 w-4" />
+                            Add custom MCP server
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -332,6 +351,7 @@ export function ConnectorsPage() {
                         key={`${connection.mcp_id}-${runtimeVersion}`}
                         connection={connection}
                         provider={providerFor(connection)}
+                        canManage={canManage}
                         signingIn={startingMCPOAuthId === connection.mcp_id}
                         deleting={deletingMCPId === connection.mcp_id}
                         onSignIn={() => void startMCPOAuth(connection)}
@@ -383,6 +403,7 @@ export function ConnectorsPage() {
 function MCPConnectionCard({
   connection,
   provider,
+  canManage,
   signingIn,
   deleting,
   onSignIn,
@@ -391,6 +412,7 @@ function MCPConnectionCard({
 }: {
   connection: MCPConnection;
   provider: MCPProvider | null;
+  canManage: boolean;
   signingIn: boolean;
   deleting: boolean;
   onSignIn: () => void;
@@ -437,10 +459,10 @@ function MCPConnectionCard({
           {isStdio && (
             <MCPRuntimeStatus
               mcpId={connection.mcp_id}
-              canStart={connection.enabled && connection.setup_state === "ready" && (connection.auth_type !== "oauth" || connection.oauth_connected)}
+              canStart={canManage && connection.enabled && connection.setup_state === "ready" && (connection.auth_type !== "oauth" || connection.oauth_connected)}
             />
           )}
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          {canManage && <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
             {connection.auth_type === "oauth" && (
               <Button variant={connection.oauth_connected ? "outline" : "default"} onClick={onSignIn} disabled={signingIn}>
                 <KeyRound className="h-4 w-4" />
@@ -455,7 +477,7 @@ function MCPConnectionCard({
               <Trash2 className="h-4 w-4" />
               {deleting ? "Deleting..." : connection.provider_key ? "Uninstall" : "Delete"}
             </Button>
-          </div>
+          </div>}
         </div>
       </CardContent>
     </Card>

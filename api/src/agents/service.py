@@ -46,7 +46,7 @@ class AgentService:
 
         saved_agent = self.repository.save(agent)
         if saved_agent.agent_architecture == "krishna-memgpt":
-            dream_settings = DreamRepository().find_settings(owner.email)
+            dream_settings = DreamRepository().find_settings(owner.account_id)
             if dream_settings:
                 DreamService().ensure_schedule(saved_agent.agent_id, owner.email, owner, dream_settings)
         log.info(f"Created agent '{saved_agent.agent_name}' (id={saved_agent.agent_id}) for {owner.user_id}")
@@ -69,13 +69,13 @@ class AgentService:
         log.info(f"Deleted agent {agent_id} from account {agent.account_id}")
 
 
-def validate_provider_model(user_email: str, provider: str, model: Optional[str]) -> None:
-    """Raises ValueError when the provider or model isn't one the create-agent form offers this user."""
+def validate_provider_model(owner: Owner, provider: str, model: Optional[str]) -> None:
+    """Raises ValueError when the provider or model isn't one the create-agent form offers in the owner's account."""
     values = {"agent_provider": provider}
     if model:
         values["agent_model"] = model
     validate_form_options(
         get_create_agent_form().form_inputs,
         values,
-        FormOptionsContext(user_email=user_email),
+        FormOptionsContext(owner=owner),
     )

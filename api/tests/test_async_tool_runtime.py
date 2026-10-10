@@ -21,7 +21,7 @@ from src.agents.tool_runtime.jobs.service import ToolJobService
 from src.skills.service import SkillRuntimeService
 from src.tools.native.handlers import NativeToolHandler
 
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL
 from tests.test_skills import _create_agent_for_user
 from src.skills.models import ActorKind
 
@@ -121,7 +121,7 @@ def test_tool_job_repository_persists_status_and_ttl(dynamodb_table):
             installed_skill_id="demo",
             action="run",
             arguments={"score": 1.5},
-            context={"owner_email": TEST_USER_EMAIL},
+            context={"account_id": account_for(TEST_USER_EMAIL), "owner_email": TEST_USER_EMAIL},
         )
     )
 
@@ -208,6 +208,7 @@ def test_skill_runtime_starts_async_job_without_storing_decrypted_config(
                 "async": True,
             },
             agent_id=agent.agent_id,
+            account_id=account_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,

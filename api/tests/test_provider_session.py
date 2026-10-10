@@ -31,12 +31,12 @@ def _agent(provider: str = "Anthropic", thinking: str | None = None) -> Agent:
 
 
 class NoSettingsRepo:
-    def find_by_provider(self, owner_email, provider_name):
+    def find_by_provider(self, account_id, provider_name):
         return None
 
 
 class SettingsRepo:
-    def find_by_provider(self, owner_email, provider_name):
+    def find_by_provider(self, account_id, provider_name):
         return object()
 
 
@@ -44,7 +44,6 @@ async def test_open_provider_session_raises_when_the_provider_is_not_configured(
     with pytest.raises(ProviderNotConfigured) as caught:
         await open_provider_session(
             _agent(provider="Bedrock"),
-            owner_email="owner@example.com",
             provider_settings_repo=NoSettingsRepo(),
         )
 
@@ -68,12 +67,10 @@ async def test_open_provider_session_applies_the_thinking_override_only_for_olla
 
     ollama = await open_provider_session(
         _agent(provider="Ollama", thinking="enabled"),
-        owner_email="owner@example.com",
         provider_settings_repo=SettingsRepo(),
     )
     anthropic = await open_provider_session(
         _agent(provider="Anthropic", thinking="enabled"),
-        owner_email="owner@example.com",
         provider_settings_repo=SettingsRepo(),
     )
 

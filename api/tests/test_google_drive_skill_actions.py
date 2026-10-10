@@ -5,6 +5,7 @@ import sys
 import types
 
 from src.skills.google_drive.actions import delete, read, search
+from tests.mock_data import account_for
 
 
 class FakeResponse:
@@ -78,7 +79,7 @@ def test_google_drive_search_returns_compact_results(monkeypatch):
     monkeypatch.setattr("src.skills.google_drive.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_drive.actions.httpx.AsyncClient", lambda timeout=20.0: fake_client)
 
-    result = asyncio.run(search({"query": "roadmap"}, {}, {"owner_email": "owner@example.com"}))
+    result = asyncio.run(search({"query": "roadmap"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
     assert "Google Drive results:" in result
     assert "[file-1] Roadmap" in result
     assert "type=file" in result
@@ -133,7 +134,7 @@ def test_google_drive_search_supports_children_mode_and_folder_filter(monkeypatc
                 "order_by": "name",
             },
             {},
-            {"owner_email": "owner@example.com"},
+            {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"},
         )
     )
 
@@ -211,7 +212,7 @@ def test_google_drive_search_children_retries_with_shortcut_target_and_drive_id(
                 "entry_type": "files",
             },
             {},
-            {"owner_email": "owner@example.com"},
+            {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"},
         )
     )
 
@@ -246,7 +247,7 @@ def test_google_drive_search_children_ignores_parent_metadata_404_after_empty_li
                 "entry_type": "files",
             },
             {},
-            {"owner_email": "owner@example.com"},
+            {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"},
         )
     )
 
@@ -317,7 +318,7 @@ def test_google_drive_search_children_recursive_finds_nested_files(monkeypatch):
                 "recursive": True,
             },
             {},
-            {"owner_email": "owner@example.com"},
+            {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"},
         )
     )
 
@@ -369,7 +370,7 @@ def test_google_drive_search_children_diagnostics_includes_parent_resolution(mon
                 "diagnostics": True,
             },
             {},
-            {"owner_email": "owner@example.com"},
+            {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"},
         )
     )
 
@@ -388,7 +389,7 @@ def test_google_drive_search_requires_parent_for_children_mode(monkeypatch):
     monkeypatch.setattr("src.skills.google_drive.actions._get_access_token", fake_access_token)
 
     try:
-        asyncio.run(search({"mode": "children"}, {}, {"owner_email": "owner@example.com"}))
+        asyncio.run(search({"mode": "children"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
         assert False, "expected parent_folder_id requirement"
     except ValueError as exc:
         assert "parent_folder_id is required when mode=children" in str(exc)
@@ -419,7 +420,7 @@ def test_google_drive_read_supports_google_doc_export(monkeypatch):
     monkeypatch.setattr("src.skills.google_drive.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_drive.actions.httpx.AsyncClient", lambda timeout=30.0: fake_client)
 
-    result = asyncio.run(read({"file_id": "doc-1"}, {}, {"owner_email": "owner@example.com"}))
+    result = asyncio.run(read({"file_id": "doc-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
     assert "Hello from Google Docs" in result
     assert "content_truncated=False" in result
 
@@ -449,7 +450,7 @@ def test_google_drive_read_supports_text_download(monkeypatch):
     monkeypatch.setattr("src.skills.google_drive.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_drive.actions.httpx.AsyncClient", lambda timeout=30.0: fake_client)
 
-    result = asyncio.run(read({"file_id": "txt-1"}, {}, {"owner_email": "owner@example.com"}))
+    result = asyncio.run(read({"file_id": "txt-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
     assert "plain text body" in result
 
 
@@ -488,7 +489,7 @@ def test_google_drive_read_supports_pdf(monkeypatch):
     monkeypatch.setattr("src.skills.google_drive.actions.httpx.AsyncClient", lambda timeout=30.0: fake_client)
     monkeypatch.setitem(sys.modules, "pypdf", types.SimpleNamespace(PdfReader=FakePdfReader))
 
-    result = asyncio.run(read({"file_id": "pdf-1"}, {}, {"owner_email": "owner@example.com"}))
+    result = asyncio.run(read({"file_id": "pdf-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
     assert "pdf text" in result
 
 
@@ -517,7 +518,7 @@ def test_google_drive_read_rejects_unsupported_binary(monkeypatch):
     monkeypatch.setattr("src.skills.google_drive.actions.httpx.AsyncClient", lambda timeout=30.0: fake_client)
 
     try:
-        asyncio.run(read({"file_id": "bin-1"}, {}, {"owner_email": "owner@example.com"}))
+        asyncio.run(read({"file_id": "bin-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
         assert False, "expected unsupported binary error"
     except ValueError as exc:
         assert "Unsupported Google Drive file type" in str(exc)
@@ -554,6 +555,6 @@ def test_google_drive_delete_moves_file_to_trash(monkeypatch):
     monkeypatch.setattr("src.skills.google_drive.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_drive.actions.httpx.AsyncClient", lambda timeout=20.0: fake_client)
 
-    result = asyncio.run(delete({"file_id": "file-2"}, {}, {"owner_email": "owner@example.com"}))
+    result = asyncio.run(delete({"file_id": "file-2"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
     assert "Moved Google Drive file to trash" in result
     assert fake_client.patch_calls[0]["json"] == {"trashed": True}

@@ -15,7 +15,11 @@ class SmartSuggestionType:
 
 
 class SmartSuggestionSettings(BaseModel):
-    user_email: str
+    """The account's: which of its providers drafts suggestions for every member. Admins manage it."""
+
+    account_id: str
+    #: The user_id of whoever last changed it, for audit
+    updated_by: str | None = None
     enabled: bool = False
     provider_name: str | None = None
     model_name: str | None = None
@@ -30,7 +34,7 @@ class SmartSuggestionSettings(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"User#{self.user_email}"
+        return f"Account#{self.account_id}"
 
     @property
     def sk(self) -> str:
@@ -40,7 +44,8 @@ class SmartSuggestionSettings(BaseModel):
         return {
             "pk": self.pk,
             "sk": self.sk,
-            "user_email": self.user_email,
+            "account_id": self.account_id,
+            "updated_by": self.updated_by,
             "enabled": self.enabled,
             "provider_name": self.provider_name,
             "model_name": self.model_name,
@@ -52,7 +57,8 @@ class SmartSuggestionSettings(BaseModel):
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "SmartSuggestionSettings":
         return cls(
-            user_email=item["user_email"],
+            account_id=item["account_id"],
+            updated_by=item.get("updated_by"),
             enabled=bool(item.get("enabled", False)),
             provider_name=item.get("provider_name"),
             model_name=item.get("model_name"),

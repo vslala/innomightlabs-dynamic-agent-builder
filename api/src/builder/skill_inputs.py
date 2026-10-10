@@ -131,7 +131,7 @@ def input_form(
     blueprint_agents = [
         (name, _name(resource, name, params)) for name, resource in draft.kept("Agent") if name != item.resource
     ]
-    options_context = FormOptionsContext(user_email=owner.email, owner=owner)
+    options_context = FormOptionsContext(owner=owner)
     inputs = [_chat_input(field, blueprint_agents, options_context) for field in item.fields]
     if inputs:
         # Say what the skill is for, so the person knows why they're being asked.

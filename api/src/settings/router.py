@@ -1,8 +1,9 @@
 """
-Settings router for managing user provider configurations.
+Settings router: the account's provider configurations and A2A trust settings, which admins manage and every
+member's agents use, and a member's default agent.
 """
 
-from fastapi import APIRouter, Depends, Request, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, ValidationError
 from typing import Annotated
@@ -14,6 +15,7 @@ from src.agents.access import require_agent
 from src.agents.repository import AgentRepository
 from src.iam.dependencies import get_principal
 from src.iam.principal import Principal
+from src.settings.access import MANAGE_SETTINGS, settings_manager
 from src.settings.agent2agent_policy import (
     Agent2AgentPolicy,
     Agent2AgentPolicyError,
@@ -66,6 +68,11 @@ class SetDefaultAgentRequest(BaseModel):
     agent_id: str
 
 
+class SettingsAccessResponse(BaseModel):
+    """Whether the caller may change the account's settings and credentials, so pages can offer the controls."""
+    can_manage: bool
+
+
 def get_agent2agent_policy() -> Agent2AgentPolicy:
     return Agent2AgentPolicy()
 
@@ -79,13 +86,17 @@ def _to_agent2agent_response(settings) -> Agent2AgentSettingsResponse:
     )
 
 
+@router.get("/access", response_model=SettingsAccessResponse)
+async def get_settings_access(principal: Annotated[Principal, Depends(get_principal)]) -> SettingsAccessResponse:
+    return SettingsAccessResponse(can_manage=principal.can(MANAGE_SETTINGS).allowed)
+
+
 @router.get("/agent2agent", response_model=Agent2AgentSettingsResponse)
 async def get_agent2agent_settings(
-    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     policy: Annotated[Agent2AgentPolicy, Depends(get_agent2agent_policy)],
 ) -> Agent2AgentSettingsResponse:
-    user_email: str = request.state.user_email
-    return _to_agent2agent_response(policy.settings_for_user(user_email))
+    return _to_agent2agent_response(policy.settings_for_account(principal.account_id))
 
 
 @router.get("/agent2agent/schema", response_model=form_models.Form, response_model_exclude_none=True)
@@ -95,14 +106,14 @@ async def get_agent2agent_settings_form() -> form_models.Form:
 
 @router.put("/agent2agent", response_model=Agent2AgentSettingsResponse)
 async def save_agent2agent_settings(
-    request: Request,
     body: dict,
+    principal: Annotated[Principal, Depends(settings_manager)],
     policy: Annotated[Agent2AgentPolicy, Depends(get_agent2agent_policy)],
 ) -> Agent2AgentSettingsResponse:
-    user_email: str = request.state.user_email
     try:
         settings_request = Agent2AgentSettingsRequest.model_validate(body)
-        saved = policy.save_settings(user_email=user_email, request=settings_request)
+        saved = policy.save_settings(account_id=principal.account_id, updated_by=principal.user_id,
+                                     request=settings_request)
     except (Agent2AgentPolicyError, ValidationError) as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return _to_agent2agent_response(saved)
@@ -110,19 +121,15 @@ async def save_agent2agent_settings(
 
 @router.get("/providers", response_model=list[ProviderWithStatus])
 async def list_providers(
-    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     repo: Annotated[ProviderSettingsRepository, Depends(get_provider_settings_repository)],
 ) -> list[ProviderWithStatus]:
     """
     List all supported providers with their configuration status.
 
-    Returns each provider's form schema and whether the user has configured it.
+    Returns each provider's form schema and whether the account has configured it. Any member may look.
     """
-    user_email: str = request.state.user_email
-
-    # Get user's configured providers
-    user_settings = repo.find_all_by_user(user_email)
-    configured_providers = {s.provider_name for s in user_settings}
+    configured_providers = {s.provider_name for s in repo.find_all_in_account(principal.account_id)}
 
     # Build response with all providers
     result = []
@@ -139,16 +146,15 @@ async def list_providers(
 
 @router.get("/providers/{provider_name}", response_model=ProviderSettingsResponse)
 async def get_provider_settings(
-    request: Request,
     provider_name: str,
+    principal: Annotated[Principal, Depends(get_principal)],
     repo: Annotated[ProviderSettingsRepository, Depends(get_provider_settings_repository)],
 ) -> ProviderSettingsResponse:
     """
-    Get user's configuration status for a specific provider.
+    Get the account's configuration status for a specific provider.
 
     Note: Actual credentials are not returned for security.
     """
-    user_email: str = request.state.user_email
 
     # Validate provider name
     if provider_name not in SUPPORTED_PROVIDERS:
@@ -157,7 +163,7 @@ async def get_provider_settings(
             detail=f"Unknown provider: {provider_name}. Supported: {SUPPORTED_PROVIDERS}"
         )
 
-    settings = repo.find_by_provider(user_email, provider_name)
+    settings = repo.find_by_provider(principal.account_id, provider_name)
 
     if settings:
         return ProviderSettingsResponse(
@@ -175,17 +181,16 @@ async def get_provider_settings(
 
 @router.post("/providers/{provider_name}", response_model=ProviderSettingsResponse, status_code=status.HTTP_201_CREATED)
 async def save_provider_settings(
-    request: Request,
     provider_name: str,
     body: dict,
+    principal: Annotated[Principal, Depends(settings_manager)],
     repo: Annotated[ProviderSettingsRepository, Depends(get_provider_settings_repository)],
 ) -> ProviderSettingsResponse:
     """
-    Save or update provider credentials.
+    Save or update the account's provider credentials (admins only).
 
     The credentials are encrypted before storage.
     """
-    user_email: str = request.state.user_email
 
     # Validate provider name
     schema = get_provider_schema(provider_name)
@@ -224,13 +229,12 @@ async def save_provider_settings(
 
     # Save settings
     settings = ProviderSettings(
-        user_email=user_email,
+        account_id=principal.account_id,
         provider_name=provider_name,
         encrypted_credentials=encrypted_credentials,
+        updated_by=principal.user_id,
     )
     saved = repo.save(settings)
-
-    log.info(f"Saved provider settings for {provider_name} for user {user_email}")
 
     return ProviderSettingsResponse(
         provider_name=provider_name,
@@ -242,14 +246,13 @@ async def save_provider_settings(
 
 @router.delete("/providers/{provider_name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_provider_settings(
-    request: Request,
     provider_name: str,
+    principal: Annotated[Principal, Depends(settings_manager)],
     repo: Annotated[ProviderSettingsRepository, Depends(get_provider_settings_repository)],
 ) -> None:
     """
-    Delete provider configuration.
+    Delete the account's provider configuration (admins only).
     """
-    user_email: str = request.state.user_email
 
     # Validate provider name
     if provider_name not in SUPPORTED_PROVIDERS:
@@ -258,31 +261,28 @@ async def delete_provider_settings(
             detail=f"Unknown provider: {provider_name}. Supported: {SUPPORTED_PROVIDERS}"
         )
 
-    success = repo.delete(user_email, provider_name)
+    success = repo.delete(principal.account_id, provider_name)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete provider settings"
         )
 
-    log.info(f"Deleted provider settings for {provider_name} for user {user_email}")
-
 
 @router.get("/default-agent", response_model=DefaultAgentPreferenceResponse)
 async def get_default_agent(
-    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     repo: Annotated[DefaultAgentPreferenceRepository, Depends(get_default_agent_preference_repository)],
 ) -> DefaultAgentPreferenceResponse:
     """
-    Get the user's default-agent preference.
+    Get the member's default-agent preference in this account.
 
     Returns the raw stored agent_id with no server-side existence check —
     callers (e.g. the conversation-start screen, which already has the
     user's agent list) are responsible for treating a stale/deleted agent_id
     as unset.
     """
-    user_email: str = request.state.user_email
-    preference = repo.find_by_user(user_email)
+    preference = repo.find_for_member(principal.account_id, principal.user_id)
     if not preference:
         return DefaultAgentPreferenceResponse()
 
@@ -291,27 +291,23 @@ async def get_default_agent(
 
 @router.put("/default-agent", response_model=DefaultAgentPreferenceResponse)
 async def set_default_agent(
-    request: Request,
     body: SetDefaultAgentRequest,
     repo: Annotated[DefaultAgentPreferenceRepository, Depends(get_default_agent_preference_repository)],
     principal: Annotated[Principal, Depends(get_principal)],
 ) -> DefaultAgentPreferenceResponse:
     """Set the user's default agent: one they may chat with, their own or shared with them."""
-    user_email: str = request.state.user_email
     require_agent(principal, body.agent_id, "agents:Chat", agent_repository)
 
-    saved = repo.save(DefaultAgentPreference(user_email=user_email, agent_id=body.agent_id))
-    log.info(f"Set default agent to {body.agent_id} for user {user_email}")
+    saved = repo.save(DefaultAgentPreference(account_id=principal.account_id, user_id=principal.user_id,
+                                             agent_id=body.agent_id))
 
     return DefaultAgentPreferenceResponse(agent_id=saved.agent_id, updated_at=saved.updated_at)
 
 
 @router.delete("/default-agent", status_code=status.HTTP_204_NO_CONTENT)
 async def clear_default_agent(
-    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     repo: Annotated[DefaultAgentPreferenceRepository, Depends(get_default_agent_preference_repository)],
 ) -> None:
-    """Clear the user's default-agent preference."""
-    user_email: str = request.state.user_email
-    repo.delete(user_email)
-    log.info(f"Cleared default agent for user {user_email}")
+    """Clear the member's default-agent preference."""
+    repo.delete(principal.account_id, principal.user_id)

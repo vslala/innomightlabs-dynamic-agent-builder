@@ -13,7 +13,11 @@ from src.utils.dynamodb import convert_decimals
 
 
 class DreamSettings(BaseModel):
-    user_email: str
+    """The account's: how every memory agent in it dreams, on which of its providers. Admins manage it."""
+
+    account_id: str
+    #: The user_id of whoever last changed it, for audit
+    updated_by: str | None = None
     enabled: bool = False
     provider_name: str | None = None
     model_name: str | None = None
@@ -35,7 +39,7 @@ class DreamSettings(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"User#{self.user_email}"
+        return f"Account#{self.account_id}"
 
     @property
     def sk(self) -> str:

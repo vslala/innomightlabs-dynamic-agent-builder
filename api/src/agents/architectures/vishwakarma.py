@@ -136,7 +136,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
 
         yield SSEEvent(event_type=SSEEventType.LIFECYCLE_NOTIFICATION, content="Loading provider configuration...")
         provider_session = await open_provider_session(
-            agent, owner_email=owner_email, provider_settings_repo=self.provider_settings_repo
+            agent, provider_settings_repo=self.provider_settings_repo
         )
 
         # 2. Context, then the prompt: the book's index and open pages, the rules and the draft.
@@ -144,7 +144,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
             self.message_repo.find_by_conversation(conversation.conversation_id),
             session_timeout_minutes=agent.session_timeout_minutes,
         )
-        book = self._book(owner_email)
+        book = self._book(agent.account_id)
         context: list[dict[str, Any]] = [
             {"role": "system", "content": self._prompt(book, session, conversation.context)},
             *history,
@@ -205,10 +205,10 @@ class VishwakarmaArchitecture(AgentArchitecture):
             message_id=assistant_msg.message_id,
         )
 
-    def _book(self, owner_email: str) -> Book:
+    def _book(self, account_id: str) -> Book:
         ready = {
             item.skill_id: item.available and item.oauth_connected is not False
-            for item in self.skill_service.list_catalog(owner_email)
+            for item in self.skill_service.list_catalog(account_id)
         }
         return blueprint_book(ready=ready)
 

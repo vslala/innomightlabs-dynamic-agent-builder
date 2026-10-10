@@ -14,7 +14,7 @@ from src.llm.models import find_model_source, models_service
 from src.llm.providers import get_llm_provider
 from src.llm.providers.openai_api import OpenAIAPIProvider
 from src.settings.models import ProviderSettings
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL
 
 
 class FakeStreamResponse:
@@ -197,7 +197,7 @@ MODELS_PAYLOAD = {
 
 def _provider_settings(**credentials) -> ProviderSettings:
     return ProviderSettings(
-        user_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
         provider_name="OpenAIAPI",
         encrypted_credentials=encrypt(json.dumps(credentials or {"api_key": "sk-test"})),
     )

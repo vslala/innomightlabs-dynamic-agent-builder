@@ -11,7 +11,7 @@ from src.crypto import encrypt
 from src.llm import models as llm_models
 from src.llm.models import ModelsService
 from src.settings.models import ProviderSettings
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL
 
 CATALOG = {
     "models": [
@@ -38,7 +38,7 @@ def _provider_settings(account_id: str | None = "acct-1") -> ProviderSettings:
         account_id=account_id,
     )
     return ProviderSettings(
-        user_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
         provider_name="OpenAI",
         encrypted_credentials=encrypt(credentials.model_dump_json()),
         auth_type="oauth",
@@ -108,7 +108,7 @@ def test_falls_back_to_the_configured_models(monkeypatch, payload, status_code):
 def test_unreadable_credentials_fall_back_without_a_request(monkeypatch):
     seen = _catalog_response(monkeypatch)
     broken = ProviderSettings(
-        user_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
         provider_name="OpenAI",
         encrypted_credentials="not-encrypted",
         auth_type="oauth",

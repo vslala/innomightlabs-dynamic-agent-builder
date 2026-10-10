@@ -5,7 +5,7 @@ from src.dream.models import DreamCursor, DreamSettings
 from src.dream.window import DreamWindowBuilder
 from src.messages.models import Message
 from src.messages.repositories.in_memory import InMemoryMessageRepository
-from tests.mock_data import conversation_fields, conversations_of
+from tests.mock_data import account_for, conversation_fields, conversations_of
 
 
 OWNER = "owner@example.com"
@@ -75,7 +75,7 @@ def build_window(
         agent_id=AGENT_ID,
         partition=conversations_of(OWNER),
         session_timeout_minutes=timeout_minutes,
-        settings=DreamSettings(user_email=OWNER, backfill_days=backfill_days),
+        settings=DreamSettings(account_id=account_for(OWNER), backfill_days=backfill_days),
         cursor=cursor,
         now=NOW,
     )

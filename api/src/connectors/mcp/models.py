@@ -448,14 +448,14 @@ class MCPCatalogTool(BaseModel):
 class MCPToolCatalog(BaseModel):
     """The tools a connector offered when we last asked, kept so the owner can choose which to share."""
 
-    owner_email: str
+    account_id: str
     mcp_id: str
     tools: list[MCPCatalogTool]
     fetched_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def pk(self) -> str:
-        return f"User#{self.owner_email}"
+        return f"Account#{self.account_id}"
 
     @property
     def sk(self) -> str:
@@ -469,7 +469,7 @@ class MCPToolCatalog(BaseModel):
             "pk": self.pk,
             "sk": self.sk,
             "entity_type": "MCPToolCatalog",
-            "owner_email": self.owner_email,
+            "account_id": self.account_id,
             "mcp_id": self.mcp_id,
             "tools": [tool.model_dump() for tool in self.tools],
             "fetched_at": self.fetched_at.isoformat(),
@@ -583,7 +583,7 @@ class MCPToolCallRequest(BaseModel):
 
 class MCPConnection(BaseModel):
     mcp_id: str = Field(default_factory=lambda: str(uuid4()))
-    owner_email: str
+    account_id: str
     name: str
     server_url: str
     transport: MCPTransport = MCPTransport.STREAMABLE_HTTP
@@ -597,7 +597,7 @@ class MCPConnection(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"User#{self.owner_email}"
+        return f"Account#{self.account_id}"
 
     @property
     def sk(self) -> str:
@@ -609,7 +609,7 @@ class MCPConnection(BaseModel):
             "sk": self.sk,
             "entity_type": "MCPConnection",
             "mcp_id": self.mcp_id,
-            "owner_email": self.owner_email,
+            "account_id": self.account_id,
             "name": self.name,
             "server_url": self.server_url,
             "transport": self.transport.value,
@@ -625,7 +625,7 @@ class MCPConnection(BaseModel):
     def from_dynamo_item(cls, item: dict[str, Any]) -> "MCPConnection":
         return cls(
             mcp_id=item["mcp_id"],
-            owner_email=item["owner_email"],
+            account_id=item["account_id"],
             name=item["name"],
             server_url=item["server_url"],
             transport=MCPTransport(item.get("transport", MCPTransport.STREAMABLE_HTTP.value)),
@@ -652,7 +652,7 @@ class MCPConnection(BaseModel):
 
 class AgentMCPConnection(BaseModel):
     agent_id: str
-    owner_email: str
+    account_id: str
     mcp_id: str
     enabled: bool = True
     sharing: MCPSharing = Field(default_factory=MCPSharing)
@@ -712,7 +712,7 @@ class AgentMCPConnection(BaseModel):
             "sk": self.sk,
             "entity_type": "AgentMCPConnection",
             "agent_id": self.agent_id,
-            "owner_email": self.owner_email,
+            "account_id": self.account_id,
             "mcp_id": self.mcp_id,
             "enabled": self.enabled,
             "sharing": self.sharing.model_dump(mode="json"),
@@ -724,7 +724,7 @@ class AgentMCPConnection(BaseModel):
     def from_dynamo_item(cls, item: dict[str, Any]) -> "AgentMCPConnection":
         return cls(
             agent_id=item["agent_id"],
-            owner_email=item["owner_email"],
+            account_id=item["account_id"],
             mcp_id=item["mcp_id"],
             enabled=bool(item.get("enabled", True)),
             # Links saved before sharing existed have none, which means owner-only.

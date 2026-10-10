@@ -592,7 +592,6 @@ async def generate_image(
         result = await AgentImageGenerationService().generate_for_widget(
             agent=agent,
             conversation=conversation,
-            owner_email=owner_email,
             actor_email=owner_email,
             request=GenerateImageRequest(
                 prompt=body.prompt,
@@ -653,7 +652,6 @@ async def generate_image_stream(
             async for event in AgentImageGenerationService().stream_for_widget(
                 agent=agent,
                 conversation=conversation,
-                owner_email=owner_email,
                 actor_email=owner_email,
                 request=GenerateImageRequest(
                     prompt=body.prompt,

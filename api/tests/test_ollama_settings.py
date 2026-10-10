@@ -10,14 +10,14 @@ from src.crypto import encrypt
 from src.llm.models import find_model_source, models_service
 from src.settings.models import ProviderSettings
 from src.settings.schemas import SUPPORTED_PROVIDERS
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL
 
 ENDPOINT_URL = "http://ollama.test:11434"
 
 
 def _provider_settings(**credentials) -> ProviderSettings:
     return ProviderSettings(
-        user_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
         provider_name="Ollama",
         encrypted_credentials=encrypt(json.dumps(credentials)),
     )

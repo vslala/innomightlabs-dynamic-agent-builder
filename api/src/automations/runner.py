@@ -433,7 +433,7 @@ class AutomationRunner:
                 input_data=base_input,
                 error="Skill is not available",
             )
-        missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.email)
+        missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.account_id)
         if missing:
             return self._failed_node_result(
                 ctx,

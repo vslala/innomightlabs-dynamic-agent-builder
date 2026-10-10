@@ -6,24 +6,29 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from src.accounts.owner import member_partition
+
 
 class ProviderSettings(BaseModel):
     """
-    User's configuration for an LLM provider (e.g., Bedrock, OpenAI).
+    The account's configuration for a provider: an LLM (Bedrock, OpenAI, ...) or an OAuth connection (Google
+    Mail, Drive, Ads). Admins set it up; every member's agents use it, and the account pays for it.
 
     Stores encrypted credentials for the provider.
     """
-    user_email: str
+    account_id: str
     provider_name: str  # "Bedrock", "OpenAI", etc.
     encrypted_credentials: str  # JSON string of encrypted credentials
     auth_type: str = "api_key"  # "api_key" | "oauth"
+    #: The user_id of whoever last connected or changed it, for audit
+    updated_by: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
     @property
     def pk(self) -> str:
-        """Partition key: User#{user_email}"""
-        return f"User#{self.user_email}"
+        """Partition key: Account#{account_id}"""
+        return f"Account#{self.account_id}"
 
     @property
     def sk(self) -> str:
@@ -35,10 +40,11 @@ class ProviderSettings(BaseModel):
         return {
             "pk": self.pk,
             "sk": self.sk,
-            "user_email": self.user_email,
+            "account_id": self.account_id,
             "provider_name": self.provider_name,
             "encrypted_credentials": self.encrypted_credentials,
             "auth_type": self.auth_type,
+            "updated_by": self.updated_by,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "entity_type": "ProviderSettings",
@@ -48,10 +54,11 @@ class ProviderSettings(BaseModel):
     def from_dynamo_item(cls, item: dict[str, Any]) -> "ProviderSettings":
         """Create ProviderSettings from DynamoDB item"""
         return cls(
-            user_email=item["user_email"],
+            account_id=item["account_id"],
             provider_name=item["provider_name"],
             encrypted_credentials=item["encrypted_credentials"],
             auth_type=item.get("auth_type", "api_key"),
+            updated_by=item.get("updated_by"),
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
         )
@@ -73,16 +80,17 @@ class Agent2AgentAllowedOrigin(BaseModel):
 
 
 class Agent2AgentSettings(BaseModel):
-    """User-level Agent2Agent outbound trust settings."""
+    """The account's Agent2Agent outbound trust settings."""
 
-    user_email: str
+    account_id: str
+    updated_by: Optional[str] = None
     allowed_origins: list[Agent2AgentAllowedOrigin] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
     @property
     def pk(self) -> str:
-        return f"User#{self.user_email}"
+        return f"Account#{self.account_id}"
 
     @property
     def sk(self) -> str:
@@ -92,7 +100,8 @@ class Agent2AgentSettings(BaseModel):
         return {
             "pk": self.pk,
             "sk": self.sk,
-            "user_email": self.user_email,
+            "account_id": self.account_id,
+            "updated_by": self.updated_by,
             "allowed_origins": [
                 origin.model_dump(mode="json", exclude_none=True)
                 for origin in self.allowed_origins
@@ -105,7 +114,8 @@ class Agent2AgentSettings(BaseModel):
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "Agent2AgentSettings":
         return cls(
-            user_email=item["user_email"],
+            account_id=item["account_id"],
+            updated_by=item.get("updated_by"),
             allowed_origins=[
                 Agent2AgentAllowedOrigin.model_validate(origin)
                 for origin in item.get("allowed_origins", [])
@@ -124,16 +134,17 @@ class Agent2AgentSettingsResponse(BaseModel):
 
 
 class DefaultAgentPreference(BaseModel):
-    """User's preferred agent to preselect when starting a new conversation."""
+    """A member's preferred agent to preselect when starting a new conversation, in one account."""
 
-    user_email: str
+    account_id: str
+    user_id: str
     agent_id: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
     @property
     def pk(self) -> str:
-        return f"User#{self.user_email}"
+        return member_partition(self.account_id, self.user_id)
 
     @property
     def sk(self) -> str:
@@ -143,7 +154,8 @@ class DefaultAgentPreference(BaseModel):
         return {
             "pk": self.pk,
             "sk": self.sk,
-            "user_email": self.user_email,
+            "account_id": self.account_id,
+            "user_id": self.user_id,
             "agent_id": self.agent_id,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
@@ -153,7 +165,8 @@ class DefaultAgentPreference(BaseModel):
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "DefaultAgentPreference":
         return cls(
-            user_email=item["user_email"],
+            account_id=item["account_id"],
+            user_id=item["user_id"],
             agent_id=item["agent_id"],
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,

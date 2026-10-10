@@ -47,11 +47,11 @@ def own_agent_with(action: str) -> Callable[..., Agent]:
 
 def require_own_agent(principal: Principal, agent_id: str, action: str,
                       repository: Optional[AgentRepository] = None) -> Agent:
-    """As `require_agent`, and the caller must own it: for connecting the owner's own accounts (skill
-    OAuth, MCP connections) to the agent, which runs on the owner's credentials."""
+    """As `require_agent`, and the caller must own it: for wiring the account's connections (skill OAuth, MCP
+    connections) into the agent, as only the owner installs its skills."""
     agent = require_agent(principal, agent_id, action, repository)
     if agent.owner_id != principal.user_id:
-        raise HTTPException(status_code=403, detail="Only the agent's owner can connect their own accounts to it")
+        raise HTTPException(status_code=403, detail="Only the agent's owner can connect accounts to it")
     return agent
 
 

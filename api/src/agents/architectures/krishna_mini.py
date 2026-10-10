@@ -93,7 +93,6 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         )
         session = await open_provider_session(
             agent,
-            owner_email=owner_email,
             provider_settings_repo=self.provider_settings_repo,
         )
 

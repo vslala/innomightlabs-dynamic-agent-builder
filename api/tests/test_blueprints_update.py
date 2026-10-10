@@ -21,7 +21,7 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.repository import AgentSkillRepository
-from tests.mock_data import TEST_USER_EMAIL, owner_ids
+from tests.mock_data import account_for, TEST_USER_EMAIL, owner_ids
 from tests.mock_data import test_owner as _test_owner
 
 TEST_OWNER = _test_owner()
@@ -40,7 +40,7 @@ def launched(monkeypatch, dynamodb_table) -> list[str]:
     # Superuser: the free tier's single agent would otherwise block the second build in some tests.
     monkeypatch.setattr(settings, "is_superuser_email", lambda email: True)
     ProviderSettingsRepository().save(
-        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+        ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )
     return calls
 

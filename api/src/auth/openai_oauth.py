@@ -43,6 +43,8 @@ class OpenAIOAuthState(BaseModel):
     nonce: str
     code_verifier: str
     user_email: str
+    #: The account the connection is for: its credentials are the account's
+    account_id: str
     return_to: str
     expires_at: int
 
@@ -292,7 +294,8 @@ def save_credentials(
     credentials: OpenAICredentials,
 ) -> ProviderSettings:
     updated_settings = ProviderSettings(
-        user_email=provider_settings.user_email,
+        account_id=provider_settings.account_id,
+        updated_by=provider_settings.updated_by,
         provider_name=provider_settings.provider_name,
         encrypted_credentials=encrypt(credentials.model_dump_json()),
         auth_type="oauth",

@@ -30,7 +30,7 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.repository import AgentSkillRepository
-from tests.mock_data import TEST_USER_EMAIL, agent_fields, owner_ids
+from tests.mock_data import account_for, TEST_USER_EMAIL, agent_fields, owner_ids
 from tests.mock_data import test_owner as _test_owner
 
 TEST_OWNER = _test_owner()
@@ -47,7 +47,7 @@ def launched(monkeypatch, dynamodb_table) -> list[tuple[str, str]]:
     monkeypatch.setattr(knowledge_base_kind, "launch_crawl", lambda job_id, kb_id, *_: calls.append((job_id, kb_id)))
     monkeypatch.setattr(settings, "require_pinecone", lambda: None)
     ProviderSettingsRepository().save(
-        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+        ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )
     return calls
 
@@ -243,10 +243,10 @@ def test_a_failed_build_leaves_no_dream_schedule_behind(dynamodb_table, monkeypa
     monkeypatch.setattr(knowledge_base_kind, "launch_crawl", lambda job_id, *_: None)
     monkeypatch.setattr(settings, "require_pinecone", lambda: None)
     ProviderSettingsRepository().save(
-        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+        ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )
     DreamRepository().save_settings(DreamSettings(
-        user_email=TEST_USER_EMAIL, enabled=True, provider_name="Bedrock", model_name="claude-sonnet"
+        account_id=account_for(TEST_USER_EMAIL), enabled=True, provider_name="Bedrock", model_name="claude-sonnet"
     ))
 
     def fail(*args, **kwargs):

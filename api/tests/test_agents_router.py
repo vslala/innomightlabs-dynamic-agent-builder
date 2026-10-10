@@ -13,6 +13,7 @@ from src.settings.repository import ProviderSettingsRepository
 from src.config.settings import DEFAULT_OPENAI_MODELS
 from src.public_api.keys import SecretKeyRepository
 from tests.mock_data import (
+    account_for,
     user_id_for,
     TEST_USER_EMAIL,
     TEST_USER_EMAIL_2,
@@ -187,7 +188,7 @@ class TestAgentsRouter:
         repo = ProviderSettingsRepository()
         repo.save(
             ProviderSettings(
-                user_email=TEST_USER_EMAIL,
+                account_id=account_for(TEST_USER_EMAIL),
                 provider_name="OpenAI",
                 encrypted_credentials="encrypted",
                 auth_type="oauth",

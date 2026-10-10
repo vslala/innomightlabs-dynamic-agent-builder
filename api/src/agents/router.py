@@ -144,7 +144,6 @@ async def get_create_agent_schema(
     return hydrate_form_options(
         get_create_agent_form(),
         FormOptionsContext(
-            user_email=owner.email,
             owner=owner,
             provider_settings_repository=providers_settings_repo,
         ),
@@ -182,18 +181,18 @@ async def create_agent(
         log.info(f"Agent '{create_request.agent_name}' already exists for {owner.user_id}, returning existing")
         return existing_agent.to_response()
 
-    _require_provider_model(owner.email, create_request.agent_provider, create_request.agent_model)
+    _require_provider_model(owner, create_request.agent_provider, create_request.agent_model)
     return AgentService(repo).create(create_request, owner).to_response()
 
 
-def _require_provider_model(user_email: str, provider: str, model: str | None) -> None:
+def _require_provider_model(owner: Owner, provider: str, model: str | None) -> None:
     try:
-        validate_provider_model(user_email, provider, model or None)
+        validate_provider_model(owner, provider, model or None)
     except ValueError:
         offered = f"{model} on {provider}" if model else provider
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{offered} isn't available. Choose a provider you've set up in Settings, and one of its models.",
+            detail=f"{offered} isn't available. Choose a provider your account has set up in Settings, and one of its models.",
         )
 
 
@@ -221,7 +220,6 @@ async def get_update_agent_schema(
     return hydrate_form_options(
         get_update_agent_form(agent_id),
         FormOptionsContext(
-            user_email=owner.email,
             owner=owner,
             provider_settings_repository=providers_settings_repo,
         ),
@@ -325,10 +323,10 @@ async def update_agent(
     Password fields are automatically encrypted based on the form schema.
 
     This endpoint is idempotent - calling with same data returns same result.
-    Needs `agents:Update`. Models and dream settings are the owner's, whoever edits the agent.
+    Needs `agents:Update`. Models and dream settings are the agent's account's, whoever edits the agent.
     """
     agent = require_agent(principal, agent_id, "agents:Update", repo)
-    owner_email = owner_of(agent).email
+    owner = owner_of(agent)
 
     # Get valid field names from schema
     valid_fields = {field.name for field in UPDATE_AGENT_FORM.form_inputs}
@@ -344,7 +342,7 @@ async def update_agent(
     provider = filtered_data.get("agent_provider", agent.agent_provider)
     model = filtered_data.get("agent_model", agent.agent_model)
     if (provider, model) != (agent.agent_provider, agent.agent_model):
-        _require_provider_model(owner_email, provider, model)
+        _require_provider_model(owner, provider, model)
 
     # Encrypt secret fields based on form schema
     encrypted_data = encrypt_secret_fields(UPDATE_AGENT_FORM, filtered_data)
@@ -355,11 +353,11 @@ async def update_agent(
 
     saved_agent = repo.save(agent)
     dream_service = DreamService()
-    dream_settings = DreamRepository().find_settings(owner_email)
+    dream_settings = DreamRepository().find_settings(saved_agent.account_id)
     if saved_agent.agent_architecture == "krishna-memgpt" and dream_settings:
-        dream_service.ensure_schedule(saved_agent.agent_id, owner_email, owner_of(saved_agent), dream_settings)
+        dream_service.ensure_schedule(saved_agent.agent_id, owner.email, owner, dream_settings)
     elif saved_agent.agent_architecture != "krishna-memgpt":
-        dream_service.delete_schedule(saved_agent.agent_id, owner_email, owner_of(saved_agent))
+        dream_service.delete_schedule(saved_agent.agent_id, owner.email, owner)
     log.info(f"Updated agent '{saved_agent.agent_name}' (id={saved_agent.agent_id}) by {principal.user_id}")
 
     return saved_agent.to_response()
@@ -538,7 +536,6 @@ async def generate_image(
         return await service.generate_for_dashboard(
             agent=target.agent,
             conversation=target.conversation,
-            owner_email=owner_of(target.agent).email,
             actor_email=target.caller.email,
             request=body,
         )
@@ -559,14 +556,12 @@ async def generate_image_stream(
     service: Annotated[AgentImageGenerationService, Depends(get_agent_image_generation_service)],
 ):
     """Explicitly generate an image with an agent and stream preview/final events."""
-    owner_email = owner_of(target.agent).email
 
     async def event_stream():
         try:
             async for event in service.stream_for_dashboard(
                 agent=target.agent,
                 conversation=target.conversation,
-                owner_email=owner_email,
                 actor_email=target.caller.email,
                 request=body,
             ):

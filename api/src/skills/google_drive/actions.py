@@ -7,6 +7,7 @@ import httpx
 
 from src.auth.google_drive_oauth import ensure_valid_google_drive_credentials
 from src.settings.repository import ProviderSettingsRepository
+from src.skills.runtime_context import account_of
 
 from collections import deque
 
@@ -48,19 +49,11 @@ COMMON_FILE_PARAMS = {
 }
 
 
-def _require_owner_email(context: dict[str, Any]) -> str:
-    owner_email = str(context.get("owner_email", "")).strip()
-    if not owner_email:
-        raise ValueError("Missing skill runtime owner context")
-    return owner_email
-
-
 async def _get_access_token(context: dict[str, Any]) -> str:
-    owner_email = _require_owner_email(context)
     repo = ProviderSettingsRepository()
-    provider_settings = repo.find_by_provider(owner_email, "GoogleDrive")
+    provider_settings = repo.find_by_provider(account_of(context), "GoogleDrive")
     if not provider_settings:
-        raise ValueError("Google Drive account is not connected for the agent owner")
+        raise ValueError("Google Drive is not connected for this account. An account admin can connect it from the Connectors page.")
 
     credentials = await ensure_valid_google_drive_credentials(provider_settings, repo)
     return credentials.access_token

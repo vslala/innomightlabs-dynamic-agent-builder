@@ -23,7 +23,7 @@ from src.scheduler.repository import SchedulerRepository
 from src.scheduler.service import SchedulerService
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL, agent_fields
+from tests.mock_data import account_for, TEST_USER_EMAIL, agent_fields
 from tests.mock_data import test_owner as _test_owner
 
 TEST_OWNER = _test_owner()
@@ -271,7 +271,7 @@ def test_validate_skill_action_accepts_enabled_skill_with_connector(dynamodb_tab
     automation = make_service().create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
     ProviderSettingsRepository().save(
         ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleMail",
             encrypted_credentials="encrypted",
             auth_type="oauth",

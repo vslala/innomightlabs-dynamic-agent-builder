@@ -120,12 +120,13 @@ class DreamService:
         ):
             return self._finish(run, DreamRunStatus.SKIPPED, "another dream run is already active")
         try:
-            dream_settings = self.dream_repository.find_settings(owner_email)
+            agent = self.agent_repository.get(agent_id)
+            # The agent's account's settings and provider, whoever owns the agent
+            dream_settings = self.dream_repository.find_settings(agent.account_id) if agent else None
             if not app_settings.dream_enabled or not dream_settings or (not dream_settings.enabled and mode != "manual"):
                 return self._finish(run, DreamRunStatus.SKIPPED, "dreaming is disabled")
             if not dream_settings.provider_name or not dream_settings.model_name:
                 return self._finish(run, DreamRunStatus.SKIPPED, "dream model is not configured")
-            agent = self.agent_repository.get(agent_id)
             if not agent or agent.agent_architecture != "krishna-memgpt":
                 return self._finish(run, DreamRunStatus.SKIPPED, "agent does not support core memory")
 
@@ -146,7 +147,7 @@ class DreamService:
             if not window.sessions:
                 return self._finish(run, DreamRunStatus.SKIPPED, "no_new_sessions")
 
-            provider_settings = self.provider_settings_repository.find_by_provider(owner_email, dream_settings.provider_name)
+            provider_settings = self.provider_settings_repository.find_by_provider(agent.account_id, dream_settings.provider_name)
             if not provider_settings:
                 return self._finish(run, DreamRunStatus.FAILED, f"provider '{dream_settings.provider_name}' is not configured")
             credentials = await load_provider_credentials(

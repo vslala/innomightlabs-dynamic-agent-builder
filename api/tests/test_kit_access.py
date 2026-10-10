@@ -26,7 +26,7 @@ PARAMS = {"site_url": "https://acme.example", "business_name": "Acme"}
 
 @pytest.fixture
 def account(dynamodb_table, monkeypatch) -> str:
-    """Owned by ADMIN; Alice and Bob are members with MemberAccess, as after accepting invites."""
+    """Owned by ADMIN, with Bedrock set up; Alice and Bob are members with MemberAccess, as after accepting invites."""
     monkeypatch.setattr(knowledge_base_kind, "launch_crawl", lambda job_id, *_: None)
     monkeypatch.setattr(settings, "require_pinecone", lambda: None)
     monkeypatch.setattr(KnowledgeBaseService, "_delete_pinecone_namespace", lambda self, kb_id: 0)
@@ -36,9 +36,10 @@ def account(dynamodb_table, monkeypatch) -> str:
         dynamodb_table.put_item(Item=Member(account_id=created.account_id, user_id=identity.user_id,
                                             email=email, name=identity.name).to_dynamo_item())
         IamService().attach(created.account_id, user_id_for(ADMIN_EMAIL), "member", identity.user_id, "MemberAccess")
-        ProviderSettingsRepository().save(
-            ProviderSettings(user_email=email, provider_name="Bedrock", encrypted_credentials="{}")
-        )
+    # The account's provider, which its members build on
+    ProviderSettingsRepository().save(
+        ProviderSettings(account_id=created.account_id, provider_name="Bedrock", encrypted_credentials="{}")
+    )
     return created.account_id
 
 

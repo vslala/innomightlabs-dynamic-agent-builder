@@ -25,7 +25,7 @@ from src.knowledge.repository import KnowledgeBaseRepository
 from src.scheduler.runtime import BLUEPRINT_APPLY_REAPER_ID, SchedulerRuntime
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL, owner_ids
+from tests.mock_data import account_for, TEST_USER_EMAIL, owner_ids
 from tests.mock_data import test_owner as _test_owner
 
 TEST_OWNER = _test_owner()
@@ -102,7 +102,7 @@ def account(monkeypatch, dynamodb_table) -> list[str]:
     monkeypatch.setattr(settings, "require_pinecone", lambda: None)
     monkeypatch.setattr(settings, "is_superuser_email", lambda email: True)
     ProviderSettingsRepository().save(
-        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+        ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )
     return launched
 

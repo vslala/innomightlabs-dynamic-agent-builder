@@ -10,7 +10,7 @@ from src.agents.repository import AgentRepository
 from src.dream.models import DreamRun, DreamRunStatus
 from src.dream.repository import DreamRepository
 from src.dream.service import get_dream_service
-from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for, agent_fields
+from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, account_for, user_id_for, agent_fields
 
 
 def _headers_for(email: str) -> dict[str, str]:
@@ -40,7 +40,7 @@ def _save_agent(repository: AgentRepository, *, owner_email: str, agent_id: str)
     return repository.save(agent)
 
 
-def test_settings_are_user_scoped_and_invalid_cron_is_rejected(
+def test_settings_are_the_accounts_and_invalid_cron_is_rejected(
     test_client: TestClient, auth_headers: dict[str, str]
 ):
     assert test_client.get("/dream/settings", headers=auth_headers).json() is None
@@ -60,7 +60,7 @@ def test_settings_are_user_scoped_and_invalid_cron_is_rejected(
     )
 
     assert saved.status_code == 200
-    assert saved.json()["user_email"] == TEST_USER_EMAIL
+    assert saved.json()["account_id"] == account_for(TEST_USER_EMAIL)
     assert saved.json()["cron_expression"] == "15 2 * * *"
     assert test_client.get("/dream/settings", headers=_headers_for(TEST_USER_EMAIL_2)).json() is None
 

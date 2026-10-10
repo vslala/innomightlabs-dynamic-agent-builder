@@ -170,7 +170,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
         session = await open_provider_session(
             agent,
-            owner_email=state.owner_email,
             provider_settings_repo=self.provider_settings_repo,
         )
 
@@ -353,7 +352,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         """The owner gets every enabled connector; anyone else only what the owner shared with them."""
         try:
             return self.mcp_connector_service.list_agent_connections(
-                owner_email=state.owner_email,
+                account_id=state.account_id,
                 agent_id=state.agent_id,
                 actor_kind=state.actor_kind,
                 enabled_only=True,

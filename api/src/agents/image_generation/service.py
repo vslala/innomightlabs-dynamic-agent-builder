@@ -78,17 +78,15 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
     ) -> GenerateImageResponse:
         """The route has authorized the caller for this agent and conversation. The image is made on
-        the agent owner's provider settings."""
+        the agent's account's provider settings."""
         context = AgentConversationContext(agent=agent, conversation=conversation)
         result = await self._generate(
             agent=context.agent,
             conversation=context.conversation,
-            owner_email=owner_email,
             actor_email=actor_email,
             request=request,
         )
@@ -104,14 +102,12 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
     ) -> AsyncIterator[SSEEvent]:
         async for event in self._stream_generate(
             agent=agent,
             conversation=conversation,
-            owner_email=owner_email,
             actor_email=actor_email,
             request=request,
             dashboard_urls=True,
@@ -123,14 +119,12 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
     ) -> GenerateImageResponse:
         return await self._generate(
             agent=agent,
             conversation=conversation,
-            owner_email=owner_email,
             actor_email=actor_email,
             request=request,
         )
@@ -140,13 +134,12 @@ class AgentImageGenerationService:
         *,
         agent_id: str,
         conversation_id: str,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
         user_message_id: str | None = None,
     ) -> GenerateImageResponse:
         context = self._load_agent_turn_context(agent_id=agent_id, conversation_id=conversation_id)
-        provider_settings = self._validate_and_load_provider_settings(context.agent, owner_email)
+        provider_settings = self._validate_and_load_provider_settings(context.agent)
         credentials = await self._load_credentials(context.agent.agent_provider, provider_settings)
         provider = self.provider_factory.get(context.agent.agent_provider)
         generated_images = await provider.generate(
@@ -175,7 +168,6 @@ class AgentImageGenerationService:
         *,
         agent_id: str,
         conversation_id: str,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
         user_message_id: str | None = None,
@@ -184,7 +176,6 @@ class AgentImageGenerationService:
         async for event in self._stream_generate_existing_turn(
             agent=context.agent,
             conversation=context.conversation,
-            owner_email=owner_email,
             actor_email=actor_email,
             request=request,
             user_message_id=user_message_id or "",
@@ -196,14 +187,12 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
     ) -> AsyncIterator[SSEEvent]:
         async for event in self._stream_generate(
             agent=agent,
             conversation=conversation,
-            owner_email=owner_email,
             actor_email=actor_email,
             request=request,
             dashboard_urls=False,
@@ -215,11 +204,10 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
     ) -> GenerateImageResponse:
-        provider_settings = self._validate_and_load_provider_settings(agent, owner_email)
+        provider_settings = self._validate_and_load_provider_settings(agent)
 
         user_msg = Message(
             conversation_id=conversation.conversation_id,
@@ -257,12 +245,11 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
         dashboard_urls: bool,
     ) -> AsyncIterator[SSEEvent]:
-        provider_settings = self._validate_and_load_provider_settings(agent, owner_email)
+        provider_settings = self._validate_and_load_provider_settings(agent)
 
         user_msg = Message(
             conversation_id=conversation.conversation_id,
@@ -352,12 +339,11 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
         user_message_id: str,
     ) -> AsyncIterator[SSEEvent]:
-        provider_settings = self._validate_and_load_provider_settings(agent, owner_email)
+        provider_settings = self._validate_and_load_provider_settings(agent)
 
         yield SSEEvent(
             event_type=SSEEventType.IMAGE_GENERATION_STARTED,
@@ -524,7 +510,7 @@ class AgentImageGenerationService:
 
         return AgentConversationContext(agent=agent, conversation=conversation)
 
-    def _validate_and_load_provider_settings(self, agent: Agent, owner_email: str):
+    def _validate_and_load_provider_settings(self, agent: Agent):
         if not image_capability_registry.supports(
             agent.agent_provider,
             agent.agent_model,
@@ -534,8 +520,9 @@ class AgentImageGenerationService:
                 "This agent's selected model does not support image generation."
             )
 
+        # The agent's account's provider, whoever asks
         provider_settings = self.provider_settings_repo.find_by_provider(
-            owner_email,
+            agent.account_id,
             agent.agent_provider,
         )
         if not provider_settings:

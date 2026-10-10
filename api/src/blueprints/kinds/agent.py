@@ -277,12 +277,12 @@ class DisableTools(EnableTools):
 
 @undo_action("enable_tools")
 def _enable_tools(args: dict[str, Any], owner: Owner) -> None:
-    get_mcp_connector_service().enable_for_agent(owner_email=owner.email, agent_id=args["agent_id"], mcp_id=args["mcp_id"])
+    get_mcp_connector_service().enable_for_agent(account_id=owner.account_id, agent_id=args["agent_id"], mcp_id=args["mcp_id"])
 
 
 @undo_action("disable_tools")
 def _disable_tools(args: dict[str, Any], owner: Owner) -> None:
-    get_mcp_connector_service().disable_for_agent(owner_email=owner.email, agent_id=args["agent_id"], mcp_id=args["mcp_id"])
+    get_mcp_connector_service().disable_for_agent(account_id=owner.account_id, agent_id=args["agent_id"], mcp_id=args["mcp_id"])
 
 
 @dataclass(kw_only=True)
@@ -299,7 +299,7 @@ class InstallSkill(Command):
         SkillService().install_skill(
             agent_id=ctx.applied[self.resource].id,
             skill_id=self.entry.id,
-            user_email=ctx.owner.email,
+            owner=ctx.owner,
             raw_config=skill_config(self.entry, _ids(ctx)),
             enabled=self.entry.enabled,
             available_to=skill_audience(self.entry),
@@ -308,7 +308,7 @@ class InstallSkill(Command):
 
 @undo_action("uninstall_skill")
 def _uninstall_skill(args: dict[str, Any], owner: Owner) -> None:
-    SkillService().uninstall(agent_id=args["agent_id"], installed_skill_id=args["installed_skill_id"], user_email=owner.email)
+    SkillService().uninstall(agent_id=args["agent_id"], installed_skill_id=args["installed_skill_id"], owner=owner)
 
 
 @dataclass(kw_only=True)
@@ -336,6 +336,7 @@ class UpdateSkill(Command):
         SkillService().update_installed(
             agent_id=ctx.applied[self.resource].id,
             installed_skill_id=self.installed_skill_id,
+            owner=ctx.owner,
             enabled=self.entry.enabled,
             raw_config=config or None,
             available_to=[ActorKind.OWNER, *(skill_audience(self.entry) or [])],
@@ -347,6 +348,7 @@ def _restore_skill(args: dict[str, Any], owner: Owner) -> None:
     SkillService().update_installed(
         agent_id=args["agent_id"],
         installed_skill_id=args["installed_skill_id"],
+        owner=owner,
         enabled=args["enabled"],
         raw_config=args["config"] or None,
         available_to=[ActorKind(kind) for kind in args["available_to"]],
@@ -364,7 +366,7 @@ class UninstallSkill(Command):
 
     def run(self, ctx: ApplyContext) -> None:
         SkillService().uninstall(
-            agent_id=self.agent_id, installed_skill_id=self.installed_skill_id, user_email=ctx.owner.email
+            agent_id=self.agent_id, installed_skill_id=self.installed_skill_id, owner=ctx.owner
         )
 
 
@@ -408,7 +410,7 @@ class AgentKind(ManagedKind[AgentSpec]):
                 found.append(("KnowledgeBase", kb.kb_id, kb))
         connections = get_mcp_connection_repository()
         for mcp_link in connections.list_agent_connections(agent_id):
-            connection = connections.find_connection(owner.email, mcp_link.mcp_id) if mcp_link.enabled else None
+            connection = connections.find_connection(owner.account_id, mcp_link.mcp_id) if mcp_link.enabled else None
             if connection is not None:
                 found.append(("McpConnection", connection.mcp_id, connection))
         return found
@@ -540,20 +542,20 @@ class AgentKind(ManagedKind[AgentSpec]):
                 hint="Choose a different name.",
             ))
 
-        provider_ready = get_provider_settings_repository().find_by_provider(ctx.owner.email, spec.provider)
+        provider_ready = get_provider_settings_repository().find_by_provider(ctx.owner.account_id, spec.provider)
         try:
-            validate_provider_model(ctx.owner.email, spec.provider, None)
+            validate_provider_model(ctx.owner, spec.provider, None)
         except ValueError:
             provider_ready = None
         if not provider_ready:
             issues.append(BlueprintIssue(
                 path=f"{path}.provider",
                 message=f"The provider '{spec.provider}' isn't set up on your account.",
-                hint="Set it up in Settings > Provider Configuration, or choose a provider you've already set up.",
+                hint="An account admin can set it up in Settings > Provider Configuration, or choose one already set up.",
             ))
         elif spec.model:
             try:
-                validate_provider_model(ctx.owner.email, spec.provider, spec.model)
+                validate_provider_model(ctx.owner, spec.provider, spec.model)
             except ValueError:
                 issues.append(BlueprintIssue(
                     path=f"{path}.model",
@@ -571,7 +573,7 @@ class AgentKind(ManagedKind[AgentSpec]):
             try:
                 service.check_install(
                     skill_id=entry.id,
-                    user_email=ctx.owner.email,
+                    owner=ctx.owner,
                     raw_config=config,
                     enabled=entry.enabled,
                     available_to=skill_audience(entry),

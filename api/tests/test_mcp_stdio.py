@@ -23,6 +23,7 @@ from src.connectors.mcp.providers.base import ProviderInstall
 from src.connectors.mcp.resolved import StdioTarget
 from src.connectors.mcp.service import MCPConnectorService
 from src.connectors.mcp.sidecar import StdioMCPSidecarClient
+from tests.mock_data import account_for
 from tests.test_mcp_connectors import (
     OWNER_CALLER,
     FakeAgentRepository,
@@ -136,7 +137,7 @@ async def _sign_in(service: MCPConnectorService, monkeypatch: pytest.MonkeyPatch
         return tokens
 
     monkeypatch.setattr("src.connectors.mcp.service.exchange_code_for_tokens", fake_exchange)
-    await service.complete_oauth(owner_email=OWNER, mcp_id=mcp_id, code="code", code_verifier="verifier")
+    await service.complete_oauth(account_id=account_for(OWNER), mcp_id=mcp_id, code="code", code_verifier="verifier")
 
 
 # --- Create validation ------------------------------------------------------------------------
@@ -230,7 +231,7 @@ def test_unknown_oauth_delivery_is_rejected() -> None:
 def test_stdio_response_hides_secret_and_file_values(sidecar: FakeSidecar) -> None:
     service, _repository = _service(sidecar)
 
-    created = service.create_connection(OWNER, _stdio_request())
+    created = service.create_connection(account_for(OWNER), _stdio_request())
 
     assert created.transport == MCPTransport.STDIO
     assert created.server_url == ""
@@ -249,12 +250,12 @@ def test_stdio_response_hides_secret_and_file_values(sidecar: FakeSidecar) -> No
 @pytest.mark.asyncio
 async def test_stdio_runtime_ensures_the_server_then_talks_to_the_facade(sidecar: FakeSidecar) -> None:
     service, _repository = _service(sidecar)
-    created = service.create_connection(OWNER, _stdio_request())
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=created.mcp_id)
+    created = service.create_connection(account_for(OWNER), _stdio_request())
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=created.mcp_id)
 
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
+    listed = await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER)
     called = await service.call_runtime_tool(
-        owner_email=OWNER,
+        account_id=account_for(OWNER),
         agent_id="agent-1",
         caller=OWNER_CALLER,
         mcp_id=created.mcp_id,
@@ -287,13 +288,13 @@ async def test_stdio_runtime_ensures_the_server_then_talks_to_the_facade(sidecar
 @pytest.mark.asyncio
 async def test_a_server_that_is_not_running_surfaces_why(sidecar: FakeSidecar) -> None:
     service, _repository = _service(sidecar)
-    created = service.create_connection(OWNER, _stdio_request())
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=created.mcp_id)
+    created = service.create_connection(account_for(OWNER), _stdio_request())
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=created.mcp_id)
 
     sidecar.state = "starting"
-    starting = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
+    starting = await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER)
     sidecar.state = "failed"
-    failed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
+    failed = await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER)
 
     assert "still starting" in starting["connectors"][0]["error"]
     assert "exited with code 1" in failed["connectors"][0]["error"]
@@ -303,11 +304,11 @@ async def test_a_server_that_is_not_running_surfaces_why(sidecar: FakeSidecar) -
 @pytest.mark.asyncio
 async def test_delete_and_disable_stop_the_hosted_process(sidecar: FakeSidecar) -> None:
     service, _repository = _service(sidecar)
-    disabled = service.create_connection(OWNER, _stdio_request())
-    deleted = service.create_connection(OWNER, _stdio_request())
+    disabled = service.create_connection(account_for(OWNER), _stdio_request())
+    deleted = service.create_connection(account_for(OWNER), _stdio_request())
 
-    await service.update_connection(OWNER, disabled.mcp_id, MCPConnectionUpdateRequest(enabled=False))
-    await service.delete_connection(OWNER, deleted.mcp_id)
+    await service.update_connection(account_for(OWNER), disabled.mcp_id, MCPConnectionUpdateRequest(enabled=False))
+    await service.delete_connection(account_for(OWNER), deleted.mcp_id)
 
     assert sidecar.deleted == [disabled.mcp_id, deleted.mcp_id]
 
@@ -316,15 +317,15 @@ async def test_delete_and_disable_stop_the_hosted_process(sidecar: FakeSidecar) 
 async def test_remote_connections_never_touch_the_sidecar(sidecar: FakeSidecar) -> None:
     service, _repository = _service(sidecar)
     created = service.create_connection(
-        OWNER,
+        account_for(OWNER),
         MCPConnectionCreateRequest.model_validate(
             {"name": "Remote", "server_url": "https://remote.example/mcp", "auth_type": "none"}
         ),
     )
 
     with pytest.raises(ValueError, match="Only hosted stdio"):
-        await service.runtime_status(OWNER, created.mcp_id)
-    await service.delete_connection(OWNER, created.mcp_id)
+        await service.runtime_status(account_for(OWNER), created.mcp_id)
+    await service.delete_connection(account_for(OWNER), created.mcp_id)
 
     assert sidecar.deleted == []
 
@@ -332,16 +333,16 @@ async def test_remote_connections_never_touch_the_sidecar(sidecar: FakeSidecar) 
 @pytest.mark.asyncio
 async def test_runtime_status_and_restart(sidecar: FakeSidecar) -> None:
     service, _repository = _service(sidecar)
-    created = service.create_connection(OWNER, _stdio_request())
+    created = service.create_connection(account_for(OWNER), _stdio_request())
 
-    stopped = await service.runtime_status(OWNER, created.mcp_id)
+    stopped = await service.runtime_status(account_for(OWNER), created.mcp_id)
     sidecar.status_response = {
         "server_id": created.mcp_id,
         "state": "failed",
         "stderr_tail": "boom\nAuthorization: Bearer ya29.secret-token\nbye",
     }
-    failed = await service.runtime_status(OWNER, created.mcp_id)
-    restarted = await service.restart_runtime(OWNER, created.mcp_id)
+    failed = await service.runtime_status(account_for(OWNER), created.mcp_id)
+    restarted = await service.restart_runtime(account_for(OWNER), created.mcp_id)
 
     assert stopped.state == "stopped"
     assert failed.stderr_tail == "boom\nAuthorization: Bearer [REDACTED]\nbye"
@@ -349,9 +350,9 @@ async def test_runtime_status_and_restart(sidecar: FakeSidecar) -> None:
     assert sidecar.deleted == [created.mcp_id]
     assert sidecar.ensured[-1]["wait_seconds"] == 0
 
-    await service.update_connection(OWNER, created.mcp_id, MCPConnectionUpdateRequest(enabled=False))
+    await service.update_connection(account_for(OWNER), created.mcp_id, MCPConnectionUpdateRequest(enabled=False))
     with pytest.raises(ValueError, match="Enable"):
-        await service.restart_runtime(OWNER, created.mcp_id)
+        await service.restart_runtime(account_for(OWNER), created.mcp_id)
 
 
 # --- Updates ----------------------------------------------------------------------------------
@@ -360,10 +361,10 @@ async def test_runtime_status_and_restart(sidecar: FakeSidecar) -> None:
 @pytest.mark.asyncio
 async def test_update_keeps_blank_env_values_by_name(sidecar: FakeSidecar) -> None:
     service, _repository = _service(sidecar)
-    created = service.create_connection(OWNER, _stdio_request())
+    created = service.create_connection(account_for(OWNER), _stdio_request())
 
     await service.update_connection(
-        OWNER,
+        account_for(OWNER),
         created.mcp_id,
         MCPConnectionUpdateRequest.model_validate(
             {
@@ -377,8 +378,8 @@ async def test_update_keeps_blank_env_values_by_name(sidecar: FakeSidecar) -> No
             }
         ),
     )
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=created.mcp_id)
-    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=created.mcp_id)
+    await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER)
 
     assert sidecar.ensured[-1]["spec"]["env"] == {
         "GOOGLE_ADS_DEVELOPER_TOKEN": "dev-token",
@@ -396,7 +397,7 @@ async def test_access_token_env_delivers_the_token_and_restarts_on_refresh(
 ) -> None:
     service, _repository = _service(sidecar)
     created = service.create_connection(
-        OWNER,
+        account_for(OWNER),
         MCPConnectionCreateRequest.model_validate(
             {
                 "name": "Token env",
@@ -408,22 +409,22 @@ async def test_access_token_env_delivers_the_token_and_restarts_on_refresh(
         ),
     )
     assert created.oauth_connected is False
-    authorize = parse_qs(urlparse(service.start_oauth(owner_email=OWNER, mcp_id=created.mcp_id, return_to=RETURN_TO)).query)
+    authorize = parse_qs(urlparse(service.start_oauth(account_id=account_for(OWNER), mcp_id=created.mcp_id, return_to=RETURN_TO, user_email=OWNER)).query)
     assert "resource" not in authorize
 
     await _sign_in(service, monkeypatch, created.mcp_id, {"access_token": "token-1", "refresh_token": "r", "expires_in": 200})
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=created.mcp_id)
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=created.mcp_id)
 
     async def fake_refresh(**_: Any) -> dict[str, Any]:
         return {"access_token": "token-2", "expires_in": 3600}
 
     monkeypatch.setattr("src.connectors.mcp.service.refresh_access_token", fake_refresh)
-    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
+    await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER)
 
     # 200s left is inside the 300s buffer of AccessTokenEnv, so the process gets the refreshed token.
     assert sidecar.ensured[-1]["spec"]["env"] == {"ACCESS_TOKEN": "token-2"}
-    assert service.get_connection(OWNER, created.mcp_id).oauth_connected is True
-    assert service.get_connection(OWNER, created.mcp_id).oauth_delivery is not None
+    assert service.get_connection(account_for(OWNER), created.mcp_id).oauth_connected is True
+    assert service.get_connection(account_for(OWNER), created.mcp_id).oauth_delivery is not None
 
 
 @pytest.mark.asyncio
@@ -433,7 +434,7 @@ async def test_google_ads_preset_hands_the_server_an_authorized_user_file(
     service, _repository = _service(sidecar)
 
     installed = await service.install_provider(
-        OWNER,
+        account_for(OWNER),
         "google_ads",
         MCPProviderInstallRequest(
             inputs={
@@ -443,6 +444,7 @@ async def test_google_ads_preset_hands_the_server_an_authorized_user_file(
             },
             return_to=RETURN_TO,
         ),
+        user_email=OWNER,
     )
     assert installed.authorize_url is not None
     query = parse_qs(urlparse(installed.authorize_url).query)
@@ -455,8 +457,8 @@ async def test_google_ads_preset_hands_the_server_an_authorized_user_file(
     await _sign_in(
         service, monkeypatch, installed.connection.mcp_id, {"access_token": "ya29", "refresh_token": "1//r", "expires_in": 3599}
     )
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=installed.connection.mcp_id)
-    await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=installed.connection.mcp_id)
+    await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER)
 
     spec = sidecar.ensured[-1]["spec"]
     assert spec["package"] == "google_ads"

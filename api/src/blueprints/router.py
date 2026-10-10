@@ -67,7 +67,7 @@ async def get_reference() -> str:
 @router.get("/catalog")
 async def get_catalog(request: Request) -> dict[str, Any]:
     ready = {item.skill_id: item.available and item.oauth_connected is not False
-             for item in get_skill_service().list_catalog(get_owner(request).email)}
+             for item in get_skill_service().list_catalog(get_owner(request).account_id)}
     return catalog(ready=ready)
 
 

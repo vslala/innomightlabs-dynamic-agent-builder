@@ -1,4 +1,4 @@
-"""Repository for user-level smart suggestion settings."""
+"""Repository for the account's smart suggestion settings."""
 
 from __future__ import annotations
 
@@ -15,17 +15,17 @@ class SmartSuggestionSettingsRepository:
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, suggestion_settings: SmartSuggestionSettings) -> SmartSuggestionSettings:
-        existing = self.find_by_user(suggestion_settings.user_email)
+        existing = self.find_in_account(suggestion_settings.account_id)
         if existing:
             suggestion_settings.created_at = existing.created_at
             suggestion_settings.updated_at = datetime.now(timezone.utc)
         self.table.put_item(Item=suggestion_settings.to_dynamo_item())
         return suggestion_settings
 
-    def find_by_user(self, user_email: str) -> SmartSuggestionSettings | None:
+    def find_in_account(self, account_id: str) -> SmartSuggestionSettings | None:
         response = self.table.get_item(
             Key={
-                "pk": f"User#{user_email}",
+                "pk": f"Account#{account_id}",
                 "sk": "SmartSuggestionSettings",
             }
         )

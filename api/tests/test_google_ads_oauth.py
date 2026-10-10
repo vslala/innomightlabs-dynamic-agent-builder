@@ -13,7 +13,7 @@ from src.crypto import decrypt
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.google_ads.models import GoogleAdsCredentials
 from src.skills.google_ads.oauth import GoogleAdsOAuthState, encode_state_session
-from tests.mock_data import TEST_USER_EMAIL, agent_fields
+from tests.mock_data import account_for, TEST_USER_EMAIL, agent_fields
 from tests.oauth_handoff import handoff_result
 
 
@@ -34,6 +34,7 @@ def _state(**overrides) -> str:
     values = {
         "nonce": "nonce",
         "user_email": TEST_USER_EMAIL,
+        "account_id": account_for(TEST_USER_EMAIL),
         "agent_id": "agent-1",
         "skill_id": "google_ads",
         "return_to": "http://localhost:5173/dashboard/agents/agent-1/skills",
@@ -93,7 +94,7 @@ class TestGoogleAdsOAuth:
         assert params["google_ads_oauth"] == ["success"]
         assert params["skill_id"] == ["google_ads"]
 
-        saved = ProviderSettingsRepository().find_by_provider(TEST_USER_EMAIL, "GoogleAds")
+        saved = ProviderSettingsRepository().find_by_provider(account_for(TEST_USER_EMAIL), "GoogleAds")
         assert saved is not None and saved.auth_type == "oauth"
         credentials = json.loads(decrypt(saved.encrypted_credentials))
         assert credentials["access_token"] == "ads-access-token"

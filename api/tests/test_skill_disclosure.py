@@ -25,7 +25,7 @@ from src.skills.registry import SkillRegistry
 from src.skills.repository import AgentSkillRepository
 from src.skills.service import SkillRuntimeService, SkillService
 from src.skills.models import ActorKind
-from tests.mock_data import agent_fields, conversation_fields
+from tests.mock_data import account_for, agent_fields, conversation_fields
 
 OWNER = "owner@example.com"
 
@@ -179,6 +179,7 @@ def _load(runtime: SkillRuntimeService, **tool_input) -> dict:
                 tool_name="load_skill",
                 tool_input=tool_input,
                 agent_id="agent-1",
+                account_id=account_for(OWNER),
                 owner_email=OWNER,
                 actor_email=OWNER,
                 actor_id=OWNER,

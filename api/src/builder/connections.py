@@ -39,15 +39,15 @@ class ConnectionNeed:
     description: str
 
 
-def missing_connections(draft: Draft, user_email: str) -> list[ConnectionNeed]:
-    """Every MCP connection in the draft that the person can connect from the chat and hasn't yet."""
+def missing_connections(draft: Draft, account_id: str) -> list[ConnectionNeed]:
+    """Every MCP connection in the draft that can be connected from the chat and the account hasn't yet."""
     needs = []
     for name, raw in draft.kept("McpConnection"):
         try:
             spec = McpConnectionSpec.model_validate(raw)
         except ValidationError:
             continue  # the validator reports it to Ila
-        connection = connection_for(spec, user_email)
+        connection = connection_for(spec, account_id)
         if connection is not None and is_ready(connection):
             continue
         preset = PROVIDERS.get(spec.provider or (connection.provider_key if connection else "") or "")
@@ -72,22 +72,25 @@ def connect_request(need: ConnectionNeed, conversation_id: str) -> dict[str, Any
     }
 
 
-async def start_connection(service: MCPConnectorService, user_email: str, provider_key: str) -> Optional[str]:
+async def start_connection(
+    service: MCPConnectorService, account_id: str, user_email: str, provider_key: str
+) -> Optional[str]:
     """The address to sign in at, installing the preset first if the account has no connection for it yet.
-    None when it's already connected."""
+    None when it's already connected. The caller has checked the person may manage the account's settings."""
     provider = get_provider(provider_key)
     if provider.missing_inputs({}):
         raise ValueError(f"{provider.display_name} needs setting up on the Connectors page first.")
     return_to = settings.frontend_url.rstrip("/") + POPUP_RETURN_PATH
     existing = [
-        connection for connection in get_mcp_connection_repository().list_connections(user_email)
+        connection for connection in get_mcp_connection_repository().list_connections(account_id)
         if connection.provider_key == provider_key
     ]
     if any(is_ready(connection) for connection in existing):
         return None
     if existing:
-        return service.start_oauth(owner_email=user_email, mcp_id=existing[0].mcp_id, return_to=return_to)
+        return service.start_oauth(account_id=account_id, user_email=user_email, mcp_id=existing[0].mcp_id,
+                                   return_to=return_to)
     installed = await service.install_provider(
-        user_email, provider_key, MCPProviderInstallRequest(inputs={}, return_to=return_to)
+        account_id, provider_key, MCPProviderInstallRequest(inputs={}, return_to=return_to), user_email=user_email
     )
     return installed.authorize_url

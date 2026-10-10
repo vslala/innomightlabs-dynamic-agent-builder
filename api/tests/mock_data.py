@@ -26,6 +26,11 @@ def owner_for(email: str):
     return Owner(account_id=personal_account_id(user_id), user_id=user_id, email=email)
 
 
+def account_for(email: str = TEST_USER_EMAIL) -> str:
+    """The person's personal account: where tests keep the settings and credentials it holds."""
+    return owner_for(email).account_id
+
+
 def owner_ids(email: str = TEST_USER_EMAIL) -> tuple[str, str]:
     """(account_id, user_id) of the seeded person, for repository calls that take an owner."""
     owner = owner_for(email)
