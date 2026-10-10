@@ -38,6 +38,8 @@ from src.agents.access import owned_agent  # noqa: E402
 from src.agents.repository import AgentRepository  # noqa: E402
 from src.agents.service import AgentService  # noqa: E402
 from src.artifacts.storage import ArtifactStorage  # noqa: E402
+from src.conversations.repository import ConversationRepository  # noqa: E402
+from src.identity import IdentityRepository  # noqa: E402
 from src.builder.models import ILA_AGENT_ID  # noqa: E402
 from src.config import settings  # noqa: E402
 from src.db import get_dynamodb_resource  # noqa: E402
@@ -79,6 +81,11 @@ def partition(table, pk: str) -> list[dict[str, Any]]:
 
 
 def owner_of(item: dict[str, Any]) -> str:
+    """The owner's email. Builder records are still keyed by it; Ila's conversations live in the member's
+    partition and name them by user_id."""
+    if item.get("entity_type") == "Conversation":
+        identity = IdentityRepository().get(str(item["created_by"]))
+        return identity.email if identity else str(item["created_by"])
     return str(item["pk"]).split("#", 1)[1]
 
 
@@ -169,7 +176,9 @@ def delete(table, owner: str, account: AccountFindings) -> list[str]:
 
     for conversation_id in sorted(account.conversations):
         _delete_rows(table, partition(table, f"CONVERSATION#{conversation_id}"))
-        _delete_rows(table, [{"pk": f"USER#{owner}", "sk": f"CONVERSATION#{conversation_id}"}])
+        conversation = ConversationRepository().get(conversation_id)
+        if conversation:
+            _delete_rows(table, [{"pk": conversation.pk, "sk": conversation.sk}])
     _delete_rows(table, [*account.sessions, *account.deployments, *account.kits])
     return problems
 

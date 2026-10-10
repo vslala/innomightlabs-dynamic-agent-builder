@@ -396,7 +396,7 @@ def resolve_chat_target(
     agent = require_agent(principal, agent_id, "agents:Chat", agent_repo)
 
     # A conversation belongs to whoever started it, even on someone else's agent
-    conversation = ConversationRepository().find_by_id(conversation_id, caller.email)
+    conversation = ConversationRepository().find_by_id(conversation_id, caller.member_pk)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     if conversation.agent_id != agent_id:

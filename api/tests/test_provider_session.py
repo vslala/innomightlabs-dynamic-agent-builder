@@ -15,7 +15,7 @@ from src.agents.provider_session import ProviderNotConfigured, open_provider_ses
 from src.conversations.models import Conversation
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
-from tests.mock_data import agent_fields
+from tests.mock_data import agent_fields, conversation_fields
 
 
 def _agent(provider: str = "Anthropic", thinking: str | None = None) -> Agent:
@@ -117,7 +117,7 @@ def _turn_args():
     return {
         "agent": agent,
         "conversation": Conversation(
-            title="c", agent_id=agent.agent_id, created_by="owner@example.com"
+            title="c", agent_id=agent.agent_id, **conversation_fields("owner@example.com")
         ),
         "user_message": "hi",
         "owner_email": "owner@example.com",

@@ -15,7 +15,7 @@ from src.messages.repositories.base import MessageRepository
 class ConversationLister(Protocol):
     """The one conversation-repository call DreamWindowBuilder needs."""
 
-    def find_all_by_user(self, owner_email: str) -> list["Conversation"]:
+    def find_all_by_user(self, partition: str) -> list["Conversation"]:
         ...
 
 
@@ -46,7 +46,7 @@ class DreamWindowBuilder:
         self,
         *,
         agent_id: str,
-        owner_email: str,
+        partition: str,
         session_timeout_minutes: int,
         settings: DreamSettings,
         cursor: DreamCursor | None,
@@ -71,7 +71,7 @@ class DreamWindowBuilder:
             start = cursor.last_session_ended_at
         end = now - timedelta(minutes=max(session_timeout_minutes, 0))
         sessions: list[DreamSession] = []
-        for conversation in self.conversation_repository.find_all_by_user(owner_email):
+        for conversation in self.conversation_repository.find_all_by_user(partition):
             if conversation.agent_id != agent_id or isinstance(conversation, AutomationConversation):
                 continue
             if not self.message_repository.has_messages_after(conversation.conversation_id, start):

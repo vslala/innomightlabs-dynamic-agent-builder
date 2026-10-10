@@ -135,7 +135,8 @@ class DreamService:
                 message_repository=self.message_repository,
                 page_size=app_settings.dream_message_page_size,
             ).build(
-                agent_id=agent_id, owner_email=owner_email,
+                # The owner's own chats with the agent
+                agent_id=agent_id, partition=agent.owner_partition,
                 session_timeout_minutes=agent.session_timeout_minutes,
                 settings=dream_settings, cursor=cursor, requested_mode=mode,
             )

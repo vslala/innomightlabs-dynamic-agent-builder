@@ -31,6 +31,7 @@ from src.agents.image_generation.service import (
     ImageGenerationNotSupportedError,
 )
 from src.agents.access import owner_of
+from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.apikeys.models import AgentApiKey
 from src.auth.google_oauth import GoogleOAuth
@@ -109,8 +110,7 @@ def get_wordpress_ai_conversation(
     request: Request,
     context: dict[str, Any],
     api_key: AgentApiKey,
-    agent_id: str,
-    owner_email: str,
+    agent: Agent,
 ):
     """Load or create the owner conversation for a WordPress AI Client request."""
     from src.conversations.models import Conversation
@@ -139,14 +139,15 @@ def get_wordpress_ai_conversation(
     identity_hash = hashlib.sha256(conversation_identity.encode("utf-8")).hexdigest()[:16]
     conversation_id = f"wordpress-ai-client-{api_key.agent_id}-{identity_hash}"
     conversation_repo = ConversationRepository()
-    conversation = conversation_repo.find_by_id(conversation_id, owner_email)
+    conversation = conversation_repo.find_by_id(conversation_id, agent.owner_partition)
     if not conversation:
         conversation = conversation_repo.save(
             Conversation(
                 conversation_id=conversation_id,
                 title=title,
-                agent_id=agent_id,
-                created_by=owner_email,
+                agent_id=agent.agent_id,
+                account_id=agent.account_id,
+                created_by=agent.owner_id,
             )
         )
 
@@ -527,8 +528,7 @@ async def generate_text(
         request=request,
         context=body.context,
         api_key=api_key,
-        agent_id=agent.agent_id,
-        owner_email=owner_email,
+        agent=agent,
     )
 
     architecture = get_agent_architecture(agent.agent_architecture)
@@ -585,8 +585,7 @@ async def generate_image(
         request=request,
         context=body.context,
         api_key=api_key,
-        agent_id=agent.agent_id,
-        owner_email=owner_email,
+        agent=agent,
     )
 
     try:
@@ -646,8 +645,7 @@ async def generate_image_stream(
         request=request,
         context=body.context,
         api_key=api_key,
-        agent_id=agent.agent_id,
-        owner_email=owner_email,
+        agent=agent,
     )
 
     async def event_stream():
@@ -865,7 +863,8 @@ async def send_message(
                 conversation_id=conversation.conversation_id,
                 title=conversation.title,
                 agent_id=conversation.agent_id,
-                created_by=visitor.email,  # Use visitor email
+                account_id=agent.account_id,
+                created_by=visitor.email,  # Never saved: the visitor's chat is the WidgetConversation
             )
 
             async for event in architecture.handle_message(  # pyright: ignore[reportGeneralTypeIssues]

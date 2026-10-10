@@ -13,7 +13,7 @@ from src.conversations.models import Conversation
 from src.memory.snapshot import CoreMemorySnapshot
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
-from tests.mock_data import agent_fields
+from tests.mock_data import agent_fields, conversation_fields
 
 
 class FakeMessageRepository:
@@ -186,7 +186,7 @@ async def test_krishna_memgpt_saves_tool_call_as_system_message(monkeypatch):
     conversation = Conversation(
         title="Audit",
         agent_id=agent.agent_id,
-        created_by="owner@example.com",
+        **conversation_fields("owner@example.com"),
     )
 
     events = [
@@ -267,7 +267,7 @@ async def test_krishna_memgpt_unwraps_call_mcp_tool_for_display(monkeypatch):
     conversation = Conversation(
         title="Audit",
         agent_id=agent.agent_id,
-        created_by="owner@example.com",
+        **conversation_fields("owner@example.com"),
     )
 
     events = [
@@ -343,7 +343,7 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
     conversation = Conversation(
         title="Audit",
         agent_id=agent.agent_id,
-        created_by="owner@example.com",
+        **conversation_fields("owner@example.com"),
     )
 
     events = [
@@ -399,7 +399,7 @@ async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_a_record_of_wha
     conversation = Conversation(
         title="Audit",
         agent_id=agent.agent_id,
-        created_by="owner@example.com",
+        **conversation_fields("owner@example.com"),
     )
 
     events = [
@@ -473,7 +473,7 @@ async def test_krishna_memgpt_attaches_canvas_artifact_to_assistant_message(monk
     conversation = Conversation(
         title="Canvas",
         agent_id=agent.agent_id,
-        created_by="owner@example.com",
+        **conversation_fields("owner@example.com"),
     )
 
     events = [

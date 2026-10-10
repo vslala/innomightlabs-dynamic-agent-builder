@@ -33,7 +33,7 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.registry import get_skill_registry
-from tests.mock_data import TEST_USER_EMAIL, owner_ids
+from tests.mock_data import TEST_USER_EMAIL, owner_ids, conversation_fields, conversations_of
 
 SITE_AGENT = example_yaml("site-agent") or ""
 PARAMS = {"site_url": "https://acme.example", "business_name": "Acme"}
@@ -54,7 +54,7 @@ def account(monkeypatch, dynamodb_table) -> list[str]:
 @pytest.fixture
 def session(account) -> BuilderSession:
     conversation = ConversationRepository().save(
-        Conversation(title="Building with Ila", agent_id=ILA_AGENT_ID, created_by=TEST_USER_EMAIL)
+        Conversation(title="Building with Ila", agent_id=ILA_AGENT_ID, **conversation_fields(TEST_USER_EMAIL))
     )
     return BuilderSessionRepository().save(
         BuilderSession(conversation_id=conversation.conversation_id, user_email=TEST_USER_EMAIL, provider="Bedrock")
@@ -200,7 +200,7 @@ async def test_a_turn_runs_ila_with_only_her_tools(session, monkeypatch):
 
     monkeypatch.setattr(vishwakarma, "run_agentic_tool_loop", fake_loop)
     monkeypatch.setattr(vishwakarma, "open_provider_session", fake_provider_session)
-    conversation = ConversationRepository().find_by_id(session.conversation_id, TEST_USER_EMAIL)
+    conversation = ConversationRepository().find_by_id(session.conversation_id, conversations_of(TEST_USER_EMAIL))
 
     events = [event async for event in vishwakarma.VishwakarmaArchitecture().handle_message(
         agent=ila_agent(session),
@@ -234,7 +234,7 @@ async def test_a_turn_runs_ila_with_only_her_tools(session, monkeypatch):
 
 
 async def test_a_conversation_without_a_session_is_refused(account):
-    conversation = ConversationRepository().save(Conversation(title="x", agent_id=ILA_AGENT_ID, created_by=TEST_USER_EMAIL))
+    conversation = ConversationRepository().save(Conversation(title="x", agent_id=ILA_AGENT_ID, **conversation_fields(TEST_USER_EMAIL)))
     session = BuilderSession(conversation_id=conversation.conversation_id, user_email=TEST_USER_EMAIL, provider="Bedrock")
 
     events = [event async for event in vishwakarma.VishwakarmaArchitecture().handle_message(
@@ -274,7 +274,7 @@ def test_a_session_starts_with_adas_greeting(test_client, auth_headers, account)
     assert created.status_code == 201, created.text
     conversation_id = created.json()["conversation_id"]
 
-    conversation = ConversationRepository().find_by_id(conversation_id, TEST_USER_EMAIL)
+    conversation = ConversationRepository().find_by_id(conversation_id, conversations_of(TEST_USER_EMAIL))
     assert conversation.agent_id == ILA_AGENT_ID
     [greeting] = get_message_repository().find_by_conversation(conversation_id)
     assert (greeting.role, greeting.content) == ("assistant", GREETING)

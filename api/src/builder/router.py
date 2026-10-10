@@ -22,6 +22,7 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
 import src.form_models as form_models
+from src.iam.dependencies import get_owner
 from src.agents.schemas import get_create_agent_form
 from src.agents.service import validate_provider_model
 from src.agents.turns import ConversationTurn, ConversationTurnRepository, ConversationTurnResponse
@@ -69,9 +70,9 @@ class BuildTarget:
 
 
 def resolve_build(request: Request, conversation_id: str) -> BuildTarget:
-    user_email: str = request.state.user_email
-    session = BuilderSessionRepository().find(user_email, conversation_id)
-    conversation = ConversationRepository().find_by_id(conversation_id, user_email)
+    owner = get_owner(request)
+    session = BuilderSessionRepository().find(owner.email, conversation_id)
+    conversation = ConversationRepository().find_by_id(conversation_id, owner.member_pk)
     if session is None or conversation is None:
         raise HTTPException(status_code=404, detail="Building session not found")
     return BuildTarget(session=session, conversation=conversation)
@@ -111,9 +112,10 @@ async def create_session(request: Request, body: CreateBuilderSessionRequest) ->
             detail=f"Set up {body.agent_provider} in Settings > Provider Configuration first.",
         )
 
-    conversation = ConversationRepository().save(
-        Conversation(title="Building with Ila", agent_id=ILA_AGENT_ID, created_by=user_email)
-    )
+    owner = get_owner(request)
+    conversation = ConversationRepository().save(Conversation(
+        title="Building with Ila", agent_id=ILA_AGENT_ID, account_id=owner.account_id, created_by=owner.user_id,
+    ))
     session = BuilderSessionRepository().save(BuilderSession(
         conversation_id=conversation.conversation_id,
         user_email=user_email,

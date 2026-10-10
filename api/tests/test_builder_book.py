@@ -21,7 +21,7 @@ from src.config import settings
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, conversations_of
 from tests.test_builder_ila import PARAMS, SITE_AGENT, account, session, turn_state  # noqa: F401
 
 BOOK = blueprint_book()
@@ -176,7 +176,7 @@ async def _turn(session, monkeypatch, *, open_ids=()):  # noqa: F811
 
     monkeypatch.setattr(vishwakarma, "run_agentic_tool_loop", fake_loop)
     monkeypatch.setattr(vishwakarma, "open_provider_session", fake_provider_session)
-    conversation = ConversationRepository().find_by_id(session.conversation_id, TEST_USER_EMAIL)
+    conversation = ConversationRepository().find_by_id(session.conversation_id, conversations_of(TEST_USER_EMAIL))
     async for _ in vishwakarma.VishwakarmaArchitecture().handle_message(
         agent=ila_agent(session),
         conversation=conversation,

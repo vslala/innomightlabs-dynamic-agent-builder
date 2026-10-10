@@ -18,7 +18,7 @@ from src.dream.planner import DreamPlanningResult
 from src.dream.service import DreamService
 from src.memory.models import CoreMemory, MemoryBlockDefinition
 from src.messages.models import Message
-from tests.mock_data import agent_fields
+from tests.mock_data import agent_fields, conversation_fields
 
 
 OWNER = "owner@example.com"
@@ -156,7 +156,7 @@ def no_op() -> DreamAction:
 
 def build_service(repository, memory, planner, messages: list[Message]) -> DreamService:
     conversation = Conversation(
-        conversation_id="conversation-1", title="Dream test", agent_id=AGENT_ID, created_by=OWNER
+        conversation_id="conversation-1", title="Dream test", agent_id=AGENT_ID, **conversation_fields(OWNER)
     )
     return DreamService(
         dream_repository=cast(Any, repository),

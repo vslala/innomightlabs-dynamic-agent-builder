@@ -8,6 +8,11 @@ accounts yet (KAN-80, one type at a time) is still keyed by it.
 from dataclasses import dataclass
 
 
+def member_partition(account_id: str, user_id: str) -> str:
+    """A member's private partition in an account: their conversations, and what else is theirs alone."""
+    return f"Account#{account_id}#Member#{user_id}"
+
+
 @dataclass(frozen=True)
 class Owner:
     account_id: str
@@ -20,7 +25,7 @@ class Owner:
 
     @property
     def member_pk(self) -> str:
-        return f"Account#{self.account_id}#Member#{self.user_id}"
+        return member_partition(self.account_id, self.user_id)
 
 
 def personal_owner(email: str) -> Owner:

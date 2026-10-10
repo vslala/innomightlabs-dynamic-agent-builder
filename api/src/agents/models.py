@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 from uuid import uuid4
 
+from src.accounts.owner import member_partition
 from src.agents.image_generation.capabilities import image_capability_registry
 from src.iam.actions import ResourceRef
 
@@ -80,6 +81,12 @@ class Agent(BaseModel):
     @property
     def resource_ref(self) -> ResourceRef:
         return ResourceRef("agent", self.agent_id, self.owner_id)
+
+    @property
+    def owner_partition(self) -> str:
+        """The owner's own partition in the agent's account: where conversations it holds as its owner live
+        (A2A, WordPress, scheduled messages)."""
+        return member_partition(self.account_id, self.owner_id)
 
     @property
     def sk(self) -> str:

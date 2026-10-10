@@ -5,7 +5,7 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query
 
-from src.agents.access import agent_with, owner_of
+from src.agents.access import agent_with
 from src.agents.models import Agent
 
 from src.analytics.models import (
@@ -65,7 +65,7 @@ async def get_agent_overview(
     sources: Optional[str] = Query(default=None),
 ) -> AnalyticsOverviewResponse:
     return service.get_overview(
-        owner_email=owner_of(agent).email,
+        partition=agent.owner_partition,
         agent_id=agent.agent_id,
         from_at=from_at,
         to_at=to_at,
@@ -86,7 +86,7 @@ async def get_agent_timeseries(
     sources: Optional[str] = Query(default=None),
 ) -> AnalyticsTimeseriesResponse:
     return service.get_timeseries(
-        owner_email=owner_of(agent).email,
+        partition=agent.owner_partition,
         agent_id=agent.agent_id,
         metric=metric,
         bucket=bucket,

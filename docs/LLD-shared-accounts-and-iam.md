@@ -315,8 +315,8 @@ through the principal, and leaves the suite green.
   - A member chatting with a shared agent is a new actor kind, `member`. Skills and MCP tools reach them
     only if the owner opted that audience in, the same way as visitors and API keys. The SPA audience
     picker offers it.
-  - Their conversation and memory are still keyed by their own email until the conversations and memory
-    slices.
+  - Their conversation is their own (slice 2). Their memory is still keyed by their email until the
+    memory slice.
 - **Middleware.** The analytics special case in `AuthMiddleware` is gone; the analytics routes authorize
   through the principal. Rate limits stay per person until KAN-86, and count the agents a person owns
   across all their accounts.
@@ -330,6 +330,47 @@ through the principal, and leaves the suite green.
   - `tests/test_agent_access.py` covers private by default, a User share, run-as-owner with the `member`
     actor kind, admin metadata-only access, isolation across accounts, secret keys acting as the owner,
     and deletion forgetting shares.
+
+**Slice 2: conversations (done)**
+- **Keys.** A conversation is at `Account#{aid}#Member#{uid}/CONVERSATION#{id}`, with `account_id`, and
+  `created_by` is the starter's user_id. `member_partition(account_id, user_id)` builds the partition,
+  and `Owner.member_pk` and `Agent.owner_partition` both use it.
+  - Messages, tool audit and turns stay under `CONVERSATION#{id}`. They never named the owner.
+  - The dead `gsi1_*` attributes are gone. A gsi2 entry `Conversation#{id}` / `Conversation` replaces
+    them.
+- **Repository.** Methods take the partition instead of an email: `find_by_id(id, partition)`,
+  `find_all_by_user(partition)`, `find_all_by_user_paginated(partition, ...)` and `delete_by_id(id,
+  partition)`.
+  - `get(id)` finds a conversation by id alone, through gsi2. It is only for work already running inside
+    the conversation: skill actions (agent invocation), scheduled messages and image generation.
+  - Those paths used to look up by the owner's email, so they missed a member's conversation on a shared
+    agent. They now find it.
+- **Whose partition, per path.**
+
+  | Path | Partition |
+  | --- | --- |
+  | dashboard `/conversations`, agent chat routes | the caller's (`get_principal` / `get_owner`) |
+  | Ila (builder) | the caller's (her sessions stay email-keyed until slice 5) |
+  | A2A, WordPress AI client | the agent owner's (`agent.owner_partition`) |
+  | `/v1` | `ApiConversation.partition_for(agent.account_id, key_id, end_user_id)` |
+  | automation runs | the owner's in their personal account (`personal_owner`, interim until slice 4) |
+  | dream, analytics (dashboard source) | the agent owner's, so only the owner's own chats count, as before |
+- **Departure from the re-key table.** `/v1` conversations were going to stay at
+  `USER#secret-key:...`. Instead they move into the agent's account as a pseudo-member,
+  `Account#{aid}#Member#secret-key:{key_id}[:{end_user}]`, so that no partition names a person outside
+  an account. The scoping is unchanged: per key, and per end user within a key.
+- **No admin reach.** An admin can't list or open a member's conversations. Conversation contents are
+  not metadata.
+- **Lambdas and scripts.**
+  - Account deletion clears the person's conversations in their personal account, including every row
+    under each conversation (audit and turns, which were missed before).
+  - `cleanup_ila_builds.py` finds the owner of an Ila conversation through its `created_by` user_id.
+  - `scripts/delete_user_account.py` already queried the wrong prefix (`User#`), and is left for KAN-83.
+- **Tests.**
+  - `conversation_fields(email)` and `conversations_of(email)` build test ownership.
+  - `test_conversations_repository.py` covers isolation between members of one account, and `get`.
+  - `test_agent_access.py` covers a member's chat on a shared agent being invisible to its owner and to
+    admins, and a conversation staying in the account it was started in.
 
 ## Context and problem
 
@@ -962,7 +1003,7 @@ The rule for each type:
 | Schedule | `User#{email}` | `Account#{aid}` | follows its agent or automation |
 | Marketplace templates | global `MarketplaceAgent` | unchanged; `publisher_user_email` becomes `publisher_user_id` + `publisher_account_id` | the catalog is global |
 | Conversation | `USER#{email}` | `Account#{aid}#Member#{uid}` | private-only |
-| `/v1` conversation | `USER#secret-key:{key_id}[:{end_user}]` | unchanged | already scoped to the key |
+| `/v1` conversation | `USER#secret-key:{key_id}[:{end_user}]` | `Account#{aid}#Member#secret-key:{key_id}[:{end_user}]` (see KAN-80 slice 2) | already scoped to the key; now inside the agent's account |
 | Provider settings, A2A settings, default-agent preference, dream settings, smart-suggestion settings | `User#{email}` | `Account#{aid}#Member#{uid}` | belong to the person, within this account |
 | MCP connection, tool catalog, A2A client OAuth | `User#{email}` | `Account#{aid}#Member#{uid}` | personal credentials (KAN-89 adds account-level ones) |
 | Artifact (+ S3 `users/{scope}/artifacts/…`) | `User#{email}` | `Account#{aid}#Member#{uid}`; S3 `accounts/{aid}/members/{uid}/artifacts/…` | private-only |

@@ -23,8 +23,16 @@ class ConversationRepository:
     Repository for Conversation entity using DynamoDB single table design.
 
     Key Structure:
-        pk: USER#{created_by_email}      - Partition by user for efficient queries
-        sk: CONVERSATION#{conversation_id}  - Unique conversation identifier
+        pk: Account#{account_id}#Member#{user_id}  - The partition of the member who started it
+        sk: CONVERSATION#{conversation_id}         - Unique conversation identifier
+
+        gsi2: Conversation#{conversation_id} / Conversation
+
+    Requests name the partition (`Owner.member_pk`, `Agent.owner_partition` or
+    `ApiConversation.partition_for(...)`), so a caller only reaches the
+    conversations of the member, or key, they act as. Conversation ids are
+    global, so work running inside a turn (skill actions, schedules it set up,
+    image generation) finds the conversation by id alone with `get`.
 
     Access Patterns:
         - save: PutItem (create or update)
@@ -59,7 +67,7 @@ class ConversationRepository:
         If conversation_id exists, updates the existing record.
         Otherwise, creates a new record.
         """
-        existing = self.find_by_id(conversation.conversation_id, conversation.created_by)
+        existing = self.find_by_id(conversation.conversation_id, conversation.pk)
 
         if existing:
             # Update: preserve created_at, update updated_at
@@ -67,7 +75,7 @@ class ConversationRepository:
             conversation.updated_at = datetime.now(timezone.utc)
 
         self.table.put_item(Item=conversation.to_dynamo_item())
-        log.info(f"Saved conversation {conversation.conversation_id} for user {conversation.created_by}")
+        log.info(f"Saved conversation {conversation.conversation_id} in {conversation.pk}")
         return conversation
 
     def touch(self, conversation: Conversation) -> None:
@@ -98,34 +106,30 @@ class ConversationRepository:
         conversation.context = context
         conversation.updated_at = updated_at
 
-    def find_by_id(self, conversation_id: str, created_by: str) -> Optional[Conversation]:
-        """
-        Find a conversation by ID and creator email.
-
-        Args:
-            conversation_id: The unique conversation identifier
-            created_by: The email of the user who created the conversation
-
-        Returns:
-            Conversation if found, None otherwise
-        """
-        response = self.table.get_item(
-            Key={
-                "pk": f"USER#{created_by}",
-                "sk": f"CONVERSATION#{conversation_id}",
-            }
+    def get(self, conversation_id: str) -> Optional[Conversation]:
+        """The conversation with this id, whoever's it is: for work already running inside it, never for a
+        request naming an id. The index is eventually consistent, so a just-created one may not show yet."""
+        response = self.table.query(
+            IndexName="gsi2",
+            KeyConditionExpression=(
+                Key("gsi2_pk").eq(f"Conversation#{conversation_id}") & Key("gsi2_sk").eq("Conversation")
+            ),
         )
+        items = response.get("Items", [])
+        return self._from_dynamo_item(items[0]) if items else None
+
+    def find_by_id(self, conversation_id: str, partition: str) -> Optional[Conversation]:
+        """The conversation with this id in this member's partition, or None."""
+        response = self.table.get_item(Key={"pk": partition, "sk": f"CONVERSATION#{conversation_id}"})
         item = response.get("Item")
         if item:
             return self._from_dynamo_item(item)
         return None
 
-    def _query_all(self, created_by: str) -> list[dict]:
-        """Every conversation item in the user's partition, following DynamoDB's 1 MB pages."""
+    def _query_all(self, partition: str) -> list[dict]:
+        """Every conversation item in the member's partition, following DynamoDB's 1 MB pages."""
         query = {
-            "KeyConditionExpression": (
-                Key("pk").eq(f"USER#{created_by}") & Key("sk").begins_with("CONVERSATION#")
-            )
+            "KeyConditionExpression": Key("pk").eq(partition) & Key("sk").begins_with("CONVERSATION#")
         }
         items: list[dict] = []
         while True:
@@ -135,27 +139,19 @@ class ConversationRepository:
                 return items
             query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
-    def find_all_by_user(self, created_by: str) -> list[Conversation]:
-        """
-        Find all conversations for a specific user.
-
-        Args:
-            created_by: The email of the user
-
-        Returns:
-            List of conversations for the user, sorted by last activity desc
-        """
-        conversations = [self._from_dynamo_item(item) for item in self._query_all(created_by)]
+    def find_all_by_user(self, partition: str) -> list[Conversation]:
+        """Every conversation in the member's partition, most recently active first."""
+        conversations = [self._from_dynamo_item(item) for item in self._query_all(partition)]
 
         # Sort by last activity descending (most recently updated/created first)
         conversations.sort(key=lambda c: c.updated_at or c.created_at, reverse=True)
 
-        log.info(f"Found {len(conversations)} conversations for user {created_by}")
+        log.info(f"Found {len(conversations)} conversations in {partition}")
         return conversations
 
     def find_all_by_user_paginated(
         self,
-        created_by: str,
+        partition: str,
         limit: int = 10,
         cursor: Optional[str] = None,
         keep: Optional[Callable[[Conversation], bool]] = None,
@@ -167,7 +163,7 @@ class ConversationRepository:
         created first).
 
         Args:
-            created_by: The email of the user
+            partition: The member's partition
             limit: Maximum number of items to return
             cursor: Base64 encoded cursor for pagination (offset index)
             keep: Which conversations to list. Applied before paging, so every page is full.
@@ -175,7 +171,7 @@ class ConversationRepository:
         Returns:
             Tuple of (conversations, next_cursor, has_more)
         """
-        conversations = [self._from_dynamo_item(item) for item in self._query_all(created_by)]
+        conversations = [self._from_dynamo_item(item) for item in self._query_all(partition)]
         if keep is not None:
             conversations = [conversation for conversation in conversations if keep(conversation)]
 
@@ -197,39 +193,25 @@ class ConversationRepository:
             next_cursor = base64.b64encode(json.dumps(cursor_data).encode("utf-8")).decode("utf-8")
 
         log.info(
-            f"Found {len(paginated)} conversations for user {created_by} "
+            f"Found {len(paginated)} conversations in {partition} "
             f"(offset={offset}, limit={limit}, has_more={has_more})"
         )
 
         return paginated, next_cursor, has_more
 
-    def delete_by_id(self, conversation_id: str, created_by: str) -> bool:
-        """
-        Delete a conversation by ID.
-
-        Args:
-            conversation_id: The unique conversation identifier
-            created_by: The email of the user who created the conversation
-
-        Returns:
-            True if deleted successfully, False otherwise
-        """
+    def delete_by_id(self, conversation_id: str, partition: str) -> bool:
+        """Delete the conversation with this id in this member's partition. False if the delete failed."""
         try:
-            self.table.delete_item(
-                Key={
-                    "pk": f"USER#{created_by}",
-                    "sk": f"CONVERSATION#{conversation_id}",
-                }
-            )
-            log.info(f"Deleted conversation {conversation_id} for user {created_by}")
+            self.table.delete_item(Key={"pk": partition, "sk": f"CONVERSATION#{conversation_id}"})
+            log.info(f"Deleted conversation {conversation_id} in {partition}")
             return True
         except Exception as e:
             log.error(f"Failed to delete conversation {conversation_id}: {e}", exc_info=True)
             return False
 
-    def exists(self, conversation_id: str, created_by: str) -> bool:
+    def exists(self, conversation_id: str, partition: str) -> bool:
         """Check if a conversation exists."""
-        return self.find_by_id(conversation_id, created_by) is not None
+        return self.find_by_id(conversation_id, partition) is not None
 
 
 def _decode_offset(cursor: Optional[str]) -> int:

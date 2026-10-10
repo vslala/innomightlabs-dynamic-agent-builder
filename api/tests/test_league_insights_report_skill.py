@@ -24,7 +24,7 @@ from src.skills.league_insights_report.report_agent import generate_report_html_
 from src.skills.league_insights_report.report_data import build_report_payload
 from src.skills.league_insights_report.riot_client import RiotClient, RiotAccount, RiotApiError
 from src.skills.registry import SkillRegistry
-from tests.mock_data import TEST_USER_EMAIL, agent_fields
+from tests.mock_data import TEST_USER_EMAIL, agent_fields, user_id_for
 
 
 SAFE_HTML = """<!doctype html>
@@ -205,7 +205,7 @@ def test_report_agent_uses_in_memory_repository(monkeypatch, dynamodb_table):
     assert result == SAFE_HTML
     assert captured["repository_name"] == "in_memory"
     assert captured["architecture_name"] == "krishna-mini"
-    assert captured["kwargs"]["conversation"].created_by == TEST_USER_EMAIL
+    assert captured["kwargs"]["conversation"].created_by == user_id_for(TEST_USER_EMAIL), "held as the agent's owner"
 
 
 def test_generate_match_report_multi_match_creates_artifact(monkeypatch):

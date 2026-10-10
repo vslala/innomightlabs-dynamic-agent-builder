@@ -54,7 +54,7 @@ class AgentScheduledMessageExecutor:
         if not agent:
             raise ValueError("Scheduled agent was not found")
 
-        conversation = self.conversation_repository.find_by_id(conversation_id, schedule.owner_email)
+        conversation = self.conversation_repository.get(conversation_id)
         if not conversation:
             raise ValueError("Scheduled conversation was not found")
         if conversation.agent_id != agent.agent_id:

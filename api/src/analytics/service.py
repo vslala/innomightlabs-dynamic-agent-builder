@@ -45,7 +45,8 @@ WIDGET_PAGE_SIZE = 100
 @dataclass
 class AnalyticsContext:
     agent_id: str
-    owner_email: str
+    #: Whose dashboard chats count: the agent owner's partition
+    partition: str
     window: AnalyticsWindow
     timezone: ZoneInfo
     sources: list[AnalyticsSource]
@@ -84,7 +85,7 @@ class AnalyticsService:
     def get_overview(
         self,
         *,
-        owner_email: str,
+        partition: str,
         agent_id: str,
         from_at: Optional[datetime],
         to_at: Optional[datetime],
@@ -92,7 +93,7 @@ class AnalyticsService:
         sources: Optional[list[AnalyticsSource]],
     ) -> AnalyticsOverviewResponse:
         context = self._build_context(
-            owner_email=owner_email,
+            partition=partition,
             agent_id=agent_id,
             from_at=from_at,
             to_at=to_at,
@@ -138,7 +139,7 @@ class AnalyticsService:
     def get_timeseries(
         self,
         *,
-        owner_email: str,
+        partition: str,
         agent_id: str,
         metric: TimeseriesMetric,
         bucket: TimeseriesBucket,
@@ -148,7 +149,7 @@ class AnalyticsService:
         sources: Optional[list[AnalyticsSource]],
     ) -> AnalyticsTimeseriesResponse:
         context = self._build_context(
-            owner_email=owner_email,
+            partition=partition,
             agent_id=agent_id,
             from_at=from_at,
             to_at=to_at,
@@ -184,7 +185,7 @@ class AnalyticsService:
     def _build_context(
         self,
         *,
-        owner_email: str,
+        partition: str,
         agent_id: str,
         from_at: Optional[datetime],
         to_at: Optional[datetime],
@@ -198,7 +199,7 @@ class AnalyticsService:
         selected_sources = sources or [AnalyticsSource.DASHBOARD, AnalyticsSource.WIDGET]
         context = AnalyticsContext(
             agent_id=agent_id,
-            owner_email=owner_email,
+            partition=partition,
             timezone=timezone,
             sources=selected_sources,
             conversation_records=[],
@@ -219,7 +220,7 @@ class AnalyticsService:
         window_to = context.window.to_at
 
         if AnalyticsSource.DASHBOARD in context.sources:
-            conversations = self.conversation_repository.find_all_by_user(context.owner_email)
+            conversations = self.conversation_repository.find_all_by_user(context.partition)
             for conversation in conversations:
                 if context.conversations_scanned >= MAX_CONVERSATIONS_SCANNED:
                     self._truncate(context, "conversation scan limit reached")

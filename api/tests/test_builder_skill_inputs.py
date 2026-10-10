@@ -18,7 +18,7 @@ from src.builder.tools import BuilderTools
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
-from tests.mock_data import TEST_USER_EMAIL, agent_fields
+from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversations_of
 from tests.test_builder_ila import PARAMS, account, session, turn_state  # noqa: F401
 
 SITE_AGENT = example_yaml("site-agent") or ""
@@ -193,7 +193,7 @@ async def test_the_turn_takes_the_answers_before_ila_sees_it(session, monkeypatc
 
     monkeypatch.setattr(vishwakarma, "run_agentic_tool_loop", fake_loop)
     monkeypatch.setattr(vishwakarma, "open_provider_session", fake_provider_session)
-    conversation = ConversationRepository().find_by_id(session.conversation_id, TEST_USER_EMAIL)
+    conversation = ConversationRepository().find_by_id(session.conversation_id, conversations_of(TEST_USER_EMAIL))
     async for _ in vishwakarma.VishwakarmaArchitecture().handle_message(
         agent=ila_agent(session), conversation=conversation,
         user_message=submission(label, to="sales@acme.example"),

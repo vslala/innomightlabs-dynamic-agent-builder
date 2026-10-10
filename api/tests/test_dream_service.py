@@ -19,7 +19,7 @@ from src.dream.planner import DreamPlanningResult
 from src.dream.service import DreamService
 from src.memory.models import CoreMemory, MemoryBlockDefinition
 from src.messages.models import Message
-from tests.mock_data import agent_fields
+from tests.mock_data import agent_fields, conversation_fields, conversations_of
 
 
 OWNER = "owner@example.com"
@@ -110,8 +110,8 @@ class FakeConversationRepository:
     def __init__(self, conversations) -> None:
         self.conversations = conversations
 
-    def find_all_by_user(self, owner_email: str):
-        assert owner_email == OWNER
+    def find_all_by_user(self, partition: str):
+        assert partition == conversations_of(OWNER), "the owner's own chats with the agent"
         return self.conversations
 
 
@@ -188,7 +188,7 @@ def settings(**overrides) -> DreamSettings:
 def conversation_and_messages(*, message_contents: list[str], gap_minutes: int = 1):
     started = datetime.now(timezone.utc) - timedelta(hours=3)
     conversation = Conversation(
-        conversation_id="conversation-1", title="Dream test", agent_id=AGENT_ID, created_by=OWNER
+        conversation_id="conversation-1", title="Dream test", agent_id=AGENT_ID, **conversation_fields(OWNER)
     )
     messages = [
         Message(

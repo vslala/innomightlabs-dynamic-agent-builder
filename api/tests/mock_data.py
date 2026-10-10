@@ -37,6 +37,17 @@ def agent_fields(email: str = TEST_USER_EMAIL) -> dict:
     owner = owner_for(email)
     return {"account_id": owner.account_id, "owner_id": owner.user_id, "created_by": owner.user_id}
 
+
+def conversation_fields(email: str = TEST_USER_EMAIL) -> dict:
+    """What a `Conversation(...)` built in a test needs: started by `email`, in their personal account."""
+    owner = owner_for(email)
+    return {"account_id": owner.account_id, "created_by": owner.user_id}
+
+
+def conversations_of(email: str = TEST_USER_EMAIL) -> str:
+    """The partition a seeded person's conversations live in, in their personal account."""
+    return owner_for(email).member_pk
+
 # Agent creation request data
 AGENT_CREATE_REQUEST = {
     "agent_name": "Test Agent",

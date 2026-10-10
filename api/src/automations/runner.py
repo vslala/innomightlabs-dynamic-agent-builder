@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, TypeVar
 
+from src.accounts.owner import personal_owner
 from src.agents.access import owned_agent
 from src.agents.architectures import get_agent_architecture
 from src.agents.repository import AgentRepository
@@ -144,11 +145,15 @@ class AutomationRunner:
             },
             created_by=user_email,
         )
+        # Automations are still keyed by their owner's email and so personal (KAN-80 moves them):
+        # the run's conversation lives in the owner's partition of their personal account
+        owner = personal_owner(user_email)
         conversation = AutomationConversation(
             title=f"Automation Run: {graph.automation.title}",
             description="Workflow execution",
             agent_id=first_agent_id,
-            created_by=user_email,
+            account_id=owner.account_id,
+            created_by=owner.user_id,
             automation_id=graph.automation.automation_id,
             automation_run_id=run.run_id,
         )
@@ -181,11 +186,15 @@ class AutomationRunner:
             },
             created_by=user_email,
         )
+        # Automations are still keyed by their owner's email and so personal (KAN-80 moves them):
+        # the run's conversation lives in the owner's partition of their personal account
+        owner = personal_owner(user_email)
         conversation = AutomationConversation(
             title=f"Scheduled Automation Run: {graph.automation.title}",
             description="Scheduled workflow execution",
             agent_id=first_agent_id,
-            created_by=user_email,
+            account_id=owner.account_id,
+            created_by=owner.user_id,
             automation_id=graph.automation.automation_id,
             automation_run_id=run.run_id,
         )
@@ -219,7 +228,7 @@ class AutomationRunner:
         if not run.conversation_id:
             raise AutomationValidationError("Run is missing conversation")
 
-        conversation = self.conversation_repo.find_by_id(run.conversation_id, user_email)
+        conversation = self.conversation_repo.find_by_id(run.conversation_id, personal_owner(user_email).member_pk)
         if not isinstance(conversation, AutomationConversation):
             raise AutomationValidationError("Run conversation not found")
 

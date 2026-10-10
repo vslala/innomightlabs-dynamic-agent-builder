@@ -16,7 +16,7 @@ from src.skills.lead_capture.forms import parse_custom_inputs
 from src.skills.lifecycle import SkillLifecycleRunner
 from src.skills.service import SkillRuntimeService, SkillService
 from src.skills.models import ActorKind
-from tests.mock_data import agent_fields
+from tests.mock_data import agent_fields, conversation_fields
 
 
 def _create_agent_for_user(user_email: str) -> Agent:
@@ -583,7 +583,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
         Conversation(
             title="Agent skill invocation",
             agent_id=source_agent.agent_id,
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
     )
 
@@ -738,7 +738,7 @@ def test_scheduler_skill_creates_conversation_bound_schedule(test_client, auth_h
         Conversation(
             title="Scheduler skill",
             agent_id=agent.agent_id,
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
     )
 
@@ -799,7 +799,7 @@ def test_scheduler_skill_without_schedule_id_updates_existing_conversation_sched
         Conversation(
             title="Scheduler skill duplicate guard",
             agent_id=agent.agent_id,
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
     )
     install_resp = test_client.post(
@@ -854,7 +854,7 @@ def test_scheduler_skill_accepts_agent_id_argument_for_automation_context(dynamo
         Conversation(
             title="Automation scheduler",
             agent_id=agent.agent_id,
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
     )
 

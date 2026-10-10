@@ -29,7 +29,7 @@ from src.scheduler.repository import ScheduleRunAlreadyExists, SchedulerReposito
 from src.scheduler import runtime as scheduler_runtime_module
 from src.scheduler.runtime import CRAWL_JOB_REAPER_ID, DREAM_RUN_REAPER_ID, SchedulerRuntime
 from src.scheduler.service import SchedulerService
-from tests.mock_data import TEST_USER_EMAIL, agent_fields
+from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversation_fields
 
 
 class FakeSchedulerBackend:
@@ -349,7 +349,7 @@ async def test_scheduler_dispatcher_invokes_agent_message_target(dynamodb_table,
     conversation = Conversation(
         title="Scheduled conversation",
         agent_id=agent.agent_id,
-        created_by=TEST_USER_EMAIL,
+        **conversation_fields(TEST_USER_EMAIL),
     )
     ConversationRepository().save(conversation)
     schedule = service.create_schedule(

@@ -145,12 +145,7 @@ class AgentImageGenerationService:
         request: GenerateImageRequest,
         user_message_id: str | None = None,
     ) -> GenerateImageResponse:
-        context = self._load_agent_turn_context(
-            agent_id=agent_id,
-            conversation_id=conversation_id,
-            owner_email=owner_email,
-            actor_email=actor_email,
-        )
+        context = self._load_agent_turn_context(agent_id=agent_id, conversation_id=conversation_id)
         provider_settings = self._validate_and_load_provider_settings(context.agent, owner_email)
         credentials = await self._load_credentials(context.agent.agent_provider, provider_settings)
         provider = self.provider_factory.get(context.agent.agent_provider)
@@ -185,12 +180,7 @@ class AgentImageGenerationService:
         request: GenerateImageRequest,
         user_message_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
-        context = self._load_agent_turn_context(
-            agent_id=agent_id,
-            conversation_id=conversation_id,
-            owner_email=owner_email,
-            actor_email=actor_email,
-        )
+        context = self._load_agent_turn_context(agent_id=agent_id, conversation_id=conversation_id)
         async for event in self._stream_generate_existing_turn(
             agent=context.agent,
             conversation=context.conversation,
@@ -518,17 +508,14 @@ class AgentImageGenerationService:
         *,
         agent_id: str,
         conversation_id: str,
-        owner_email: str,
-        actor_email: str,
     ) -> AgentConversationContext:
         # The agent of the running turn, found by its id
         agent = self.agent_repo.get(agent_id)
         if not agent:
             raise ImageGenerationNotFoundError("Agent not found")
 
-        conversation = self.conversation_repo.find_by_id(conversation_id, actor_email)
-        if not conversation and actor_email != owner_email:
-            conversation = self.conversation_repo.find_by_id(conversation_id, owner_email)
+        # The conversation of the running turn, whoever started it (the owner, or a member on a shared agent)
+        conversation = self.conversation_repo.get(conversation_id)
         if not conversation:
             raise ImageGenerationNotFoundError("Conversation not found")
 

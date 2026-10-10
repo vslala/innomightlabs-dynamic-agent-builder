@@ -4,7 +4,7 @@ Conversations API router.
 
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from src.agents.image_generation.storage import ConversationMediaStorage
@@ -19,6 +19,7 @@ from src.conversations.models import (
 )
 from src.builder.models import ILA_AGENT_ID
 from src.conversations.repository import ConversationRepository
+from src.accounts.owner import member_partition
 from src.iam.dependencies import get_principal
 from src.iam.principal import Principal
 from src.messages.models import Message, MessageResponse
@@ -34,12 +35,12 @@ message_repository = get_message_repository("dynamodb")
 message_response_factory = MessageResponseFactory()
 
 
-def get_user_email(request: Request) -> str:
-    """Extract user email from request state (set by auth middleware)."""
-    user_email = getattr(request.state, "user_email", None)
-    if not user_email:
-        raise HTTPException(status_code=401, detail="User not authenticated")
-    return str(user_email)
+def own_partition(principal: Annotated[Principal, Depends(get_principal)]) -> str:
+    """The caller's own conversations in the account they act in: nobody else's, even an admin's."""
+    return member_partition(principal.account_id, principal.user_id)
+
+
+Partition = Annotated[str, Depends(own_partition)]
 
 
 def validate_agent(agent_id: str, principal: Principal) -> None:
@@ -82,9 +83,7 @@ def find_visible_messages_newest_first(
 
 
 @router.post("/", response_model=ConversationResponse, status_code=201)
-async def create_conversation(
-    request: Request, body: CreateConversationRequest, principal: Annotated[Principal, Depends(get_principal)]
-):
+async def create_conversation(body: CreateConversationRequest, principal: Annotated[Principal, Depends(get_principal)]):
     """
     Create a new conversation.
 
@@ -93,8 +92,6 @@ async def create_conversation(
     - **agent_id**: ID of the agent to manage this conversation (must exist and belong to user)
     - **context**: Optional context sent to the agent on every turn
     """
-    user_email = get_user_email(request)
-
     validate_agent(body.agent_id, principal)
 
     # Create conversation
@@ -102,7 +99,8 @@ async def create_conversation(
         title=body.title,
         description=body.description,
         agent_id=body.agent_id,
-        created_by=user_email,
+        account_id=principal.account_id,
+        created_by=principal.user_id,
         context=body.context,
     )
 
@@ -112,7 +110,7 @@ async def create_conversation(
 
 @router.get("/", response_model=Paginated[ConversationResponse])
 async def list_conversations(
-    request: Request,
+    partition: Partition,
     limit: int = Query(default=10, ge=1, le=100, description="Number of items per page"),
     cursor: Optional[str] = Query(default=None, description="Pagination cursor"),
     include_automation: bool = Query(
@@ -126,7 +124,6 @@ async def list_conversations(
     Returns conversations ordered by last activity (most recently updated or
     created first). Supports cursor-based pagination.
     """
-    user_email = get_user_email(request)
 
     def keep(conversation: Conversation) -> bool:
         # Building with Ila has its own page; her conversations aren't chats with the person's agents.
@@ -135,7 +132,7 @@ async def list_conversations(
         return include_automation or getattr(conversation, "conversation_type", "chat") != "automation"
 
     conversations, next_cursor, has_more = conversation_repository.find_all_by_user_paginated(
-        created_by=user_email, limit=limit, cursor=cursor, keep=keep
+        partition, limit=limit, cursor=cursor, keep=keep
     )
 
     return Paginated[ConversationResponse](
@@ -146,13 +143,12 @@ async def list_conversations(
 
 
 @router.get("/{conversation_id}", response_model=ConversationResponse)
-async def get_conversation(request: Request, conversation_id: str):
+async def get_conversation(conversation_id: str, partition: Partition):
     """
     Get a specific conversation by ID.
     """
-    user_email = get_user_email(request)
 
-    conversation = conversation_repository.find_by_id(conversation_id, user_email)
+    conversation = conversation_repository.find_by_id(conversation_id, partition)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -161,7 +157,7 @@ async def get_conversation(request: Request, conversation_id: str):
 
 @router.get("/{conversation_id}/messages", response_model=Paginated[MessageResponse])
 async def get_messages(
-    request: Request,
+    partition: Partition,
     conversation_id: str,
     limit: int = Query(default=20, ge=1, le=100, description="Number of messages per page"),
     cursor: Optional[str] = Query(default=None, description="Pagination cursor for older messages"),
@@ -175,10 +171,9 @@ async def get_messages(
     The frontend should reverse the returned messages for display
     (oldest at top, newest at bottom).
     """
-    user_email = get_user_email(request)
 
     # Verify conversation exists and belongs to user
-    conversation = conversation_repository.find_by_id(conversation_id, user_email)
+    conversation = conversation_repository.find_by_id(conversation_id, partition)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -197,7 +192,7 @@ async def get_messages(
 
 @router.get("/{conversation_id}/tool-audit", response_model=Paginated[MessageResponse])
 async def get_tool_audit(
-    request: Request,
+    partition: Partition,
     conversation_id: str,
     limit: int = Query(default=20, ge=1, le=100, description="Audit rows per page"),
     cursor: Optional[str] = Query(default=None, description="Pagination cursor for older rows"),
@@ -208,9 +203,8 @@ async def get_tool_audit(
     `/messages` because nothing renders it -- this is for inspecting what an
     agent actually called and what came back.
     """
-    user_email = get_user_email(request)
 
-    conversation = conversation_repository.find_by_id(conversation_id, user_email)
+    conversation = conversation_repository.find_by_id(conversation_id, partition)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -229,15 +223,14 @@ async def get_tool_audit(
 
 @router.get("/{conversation_id}/messages/{message_id}/images/{image_id}")
 async def get_message_image(
-    request: Request,
+    partition: Partition,
     conversation_id: str,
     message_id: str,
     image_id: str,
 ):
     """Return generated image bytes for an authenticated conversation owner."""
-    user_email = get_user_email(request)
 
-    conversation = conversation_repository.find_by_id(conversation_id, user_email)
+    conversation = conversation_repository.find_by_id(conversation_id, partition)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -267,7 +260,7 @@ async def get_message_image(
 
 @router.put("/{conversation_id}", response_model=ConversationResponse)
 async def update_conversation(
-    request: Request, conversation_id: str, body: UpdateConversationRequest,
+    conversation_id: str, body: UpdateConversationRequest, partition: Partition,
     principal: Annotated[Principal, Depends(get_principal)],
 ):
     """
@@ -278,10 +271,9 @@ async def update_conversation(
     - **agent_id**: New agent ID (optional, must exist and belong to user)
     - **context**: New conversation context (optional)
     """
-    user_email = get_user_email(request)
 
     # Find existing conversation
-    conversation = conversation_repository.find_by_id(conversation_id, user_email)
+    conversation = conversation_repository.find_by_id(conversation_id, partition)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -305,16 +297,15 @@ async def update_conversation(
 
 
 @router.delete("/{conversation_id}", status_code=204)
-async def delete_conversation(request: Request, conversation_id: str):
+async def delete_conversation(conversation_id: str, partition: Partition):
     """
     Delete a conversation.
 
     This will permanently delete the conversation and all its messages.
     """
-    user_email = get_user_email(request)
 
     # Check if conversation exists
-    conversation = conversation_repository.find_by_id(conversation_id, user_email)
+    conversation = conversation_repository.find_by_id(conversation_id, partition)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -336,7 +327,7 @@ async def delete_conversation(request: Request, conversation_id: str):
         )
 
     # Delete conversation
-    deleted = conversation_repository.delete_by_id(conversation_id, user_email)
+    deleted = conversation_repository.delete_by_id(conversation_id, partition)
     if not deleted:
         raise HTTPException(status_code=500, detail="Failed to delete conversation")
 

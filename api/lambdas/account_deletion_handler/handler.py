@@ -31,6 +31,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 
 from src.accounts.models import personal_account_id
+from src.accounts.owner import member_partition
 from src.identity.models import email_index_key
 
 logging.basicConfig(level=logging.INFO)
@@ -51,13 +52,12 @@ class AccountDeletionHandler:
         log.info(f"Starting account deletion for {user_email}")
         counts = {}
 
-        # 1. Delete Messages (by conversation)
-        counts["messages"] = self._delete_messages_for_user(user_email)
+        # 1. Delete Messages (by conversation), in the personal account until KAN-83 handles every account
+        conversations = member_partition(personal_account_id(user_id), user_id)
+        counts["messages"] = self._delete_messages_for_user(conversations)
 
         # 2. Delete Conversations
-        counts["conversations"] = self._delete_items_by_pattern(
-            f"USER#{user_email}", "CONVERSATION#"
-        )
+        counts["conversations"] = self._delete_items_by_pattern(conversations, "CONVERSATION#")
 
         # 3. Delete Agents and related data
         agent_ids = self._get_agent_ids_for_user(user_id)
@@ -311,7 +311,7 @@ class AccountDeletionHandler:
 
         return count
 
-    def _delete_messages_for_user(self, user_email: str) -> int:
+    def _delete_messages_for_user(self, partition: str) -> int:
         count = 0
         # Get all conversation IDs for the user
         conversation_ids = []
@@ -319,7 +319,7 @@ class AccountDeletionHandler:
             last_evaluated_key = None
             while True:
                 query_params = {
-                    "KeyConditionExpression": Key("pk").eq(f"USER#{user_email}") & Key("sk").begins_with("CONVERSATION#")
+                    "KeyConditionExpression": Key("pk").eq(partition) & Key("sk").begins_with("CONVERSATION#")
                 }
                 if last_evaluated_key:
                     query_params["ExclusiveStartKey"] = last_evaluated_key
@@ -337,11 +337,11 @@ class AccountDeletionHandler:
                 if not last_evaluated_key:
                     break
         except Exception as e:
-            log.error(f"Error getting conversation IDs for {user_email}: {e}")
+            log.error(f"Error getting conversation IDs in {partition}: {e}")
 
-        # Delete messages for each conversation
+        # Delete each conversation's partition: messages, tool audit and turns
         for conv_id in conversation_ids:
-            count += self._delete_items_by_pattern(f"CONVERSATION#{conv_id}", "MESSAGE#")
+            count += self._delete_items_by_pattern(f"CONVERSATION#{conv_id}", "")
 
         return count
 

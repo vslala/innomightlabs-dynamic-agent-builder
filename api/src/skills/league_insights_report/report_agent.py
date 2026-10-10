@@ -31,7 +31,8 @@ async def generate_report_html_with_agent(
         agent_id=agent.agent_id,
         title="Temporary report generation",
         description="In-memory report generation session",
-        created_by=owner_email,
+        account_id=agent.account_id,
+        created_by=agent.owner_id,
     )
     architecture = get_agent_architecture(
         agent.agent_architecture,

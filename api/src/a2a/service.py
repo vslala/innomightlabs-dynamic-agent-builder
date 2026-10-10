@@ -48,7 +48,7 @@ from src.apikeys.models import AgentApiKey
 from src.config import settings
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
-from src.llm.events import SSEEvent, SSEEventType
+from src.llm.events import SSEEventType
 from src.skills.repository import AgentSkillRepository
 from src.skills.models import ActorKind
 from src.common.pagination import InvalidCursor
@@ -428,10 +428,7 @@ class A2AInvocationService:
         return task
 
     def _resolve_conversation(self, *, task: A2ATask, agent: Agent) -> Conversation:
-        conversation = self.conversation_repository.find_by_id(
-            task.conversation_id,
-            task.owner_email,
-        )
+        conversation = self.conversation_repository.find_by_id(task.conversation_id, agent.owner_partition)
         if conversation:
             if conversation.agent_id != agent.agent_id:
                 raise ValueError("A2A context is bound to a different agent")
@@ -442,7 +439,8 @@ class A2AInvocationService:
             title=f"A2A: {agent.agent_name}",
             description=f"Agent2Agent context {task.context_id}",
             agent_id=agent.agent_id,
-            created_by=task.owner_email,
+            account_id=agent.account_id,
+            created_by=agent.owner_id,
         )
         self.conversation_repository.save(conversation)
         return conversation

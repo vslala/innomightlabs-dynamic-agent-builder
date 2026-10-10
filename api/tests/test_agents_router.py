@@ -18,6 +18,7 @@ from tests.mock_data import (
     TEST_USER_EMAIL_2,
     AGENT_CREATE_REQUEST,
     CONVERSATION_CREATE_REQUEST,
+    conversation_fields,
 )
 
 
@@ -410,7 +411,7 @@ class TestChatTurnEndpoints:
         foreign = Conversation(
             title="Belongs to another agent",
             agent_id="some-other-agent",
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
         ConversationRepository().save(foreign)
 

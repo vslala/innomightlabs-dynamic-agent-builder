@@ -13,7 +13,7 @@ from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
-from tests.mock_data import agent_fields
+from tests.mock_data import agent_fields, conversation_fields, conversations_of
 
 OWNER = "owner@example.com"
 
@@ -29,7 +29,7 @@ def _agent(name: str = "Test Agent") -> Agent:
 
 
 def _seeded_conversation(agent: Agent) -> Conversation:
-    conversation = Conversation(title="Test Conversation", agent_id=agent.agent_id, created_by=OWNER)
+    conversation = Conversation(title="Test Conversation", agent_id=agent.agent_id, **conversation_fields(OWNER))
     return ConversationRepository().save(conversation)
 
 
@@ -133,7 +133,7 @@ async def test_turn_completes_after_subscriber_disconnects(dynamodb_table, monke
     assert saved_turn.status == ConversationTurnStatus.SUCCEEDED
     assert saved_turn.assistant_message_id == f"assistant-{conversation.conversation_id}"
 
-    saved_conversation = ConversationRepository().find_by_id(conversation.conversation_id, OWNER)
+    saved_conversation = ConversationRepository().find_by_id(conversation.conversation_id, conversations_of(OWNER))
     assert saved_conversation is not None
     assert saved_conversation.updated_at is not None
 
@@ -366,7 +366,7 @@ async def test_conversation_is_touched_even_when_the_turn_fails(dynamodb_table, 
     _patch_architecture(monkeypatch, FailingArchitecture())
     agent = _agent()
     conversation = _seeded_conversation(agent)
-    before = ConversationRepository().find_by_id(conversation.conversation_id, OWNER)
+    before = ConversationRepository().find_by_id(conversation.conversation_id, conversations_of(OWNER))
     assert before is not None and before.updated_at is None
 
     running = start_turn(
@@ -386,7 +386,7 @@ async def test_conversation_is_touched_even_when_the_turn_fails(dynamodb_table, 
     assert saved_turn is not None
     assert saved_turn.status == ConversationTurnStatus.FAILED
 
-    after = ConversationRepository().find_by_id(conversation.conversation_id, OWNER)
+    after = ConversationRepository().find_by_id(conversation.conversation_id, conversations_of(OWNER))
     assert after is not None
     assert after.updated_at is not None
 
@@ -413,7 +413,7 @@ async def test_turn_does_not_clobber_a_rename_made_while_it_was_running(
     )
 
     repo = ConversationRepository()
-    renamed = repo.find_by_id(conversation.conversation_id, OWNER)
+    renamed = repo.find_by_id(conversation.conversation_id, conversation.pk)
     assert renamed is not None
     renamed.title = "Renamed mid-turn"
     repo.save(renamed)
@@ -421,7 +421,7 @@ async def test_turn_does_not_clobber_a_rename_made_while_it_was_running(
     architecture.resume.set()
     await asyncio.wait_for(running.task, timeout=2)
 
-    final = repo.find_by_id(conversation.conversation_id, OWNER)
+    final = repo.find_by_id(conversation.conversation_id, conversation.pk)
     assert final is not None
     assert final.title == "Renamed mid-turn"
 

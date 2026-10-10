@@ -140,3 +140,33 @@ def test_deleting_an_agent_forgets_its_shares(test_client, account, alices_agent
     test_client.delete(f"/agents/{alices_agent}", headers=alice)
 
     assert ShareRepository().on_resource(account, "agent", alices_agent) == []
+
+
+def test_a_conversation_on_a_shared_agent_is_the_members_alone(test_client, account, alices_agent):
+    """Sharing an agent shares chatting with it, not anyone's chats: not with its owner, not with an admin."""
+    bob = as_(BOB_EMAIL, account)
+    test_client.put(f"/agents/{alices_agent}/shares/members/{BOB}", headers=as_(ALICE_EMAIL, account),
+                    json={"preset": "user"})
+    conversation_id = test_client.post("/conversations/", headers=bob,
+                                       json={"title": "Bob's", "agent_id": alices_agent}).json()["conversation_id"]
+
+    def listed_conversations(email: str) -> set[str]:
+        page = test_client.get("/conversations/", headers=as_(email, account)).json()
+        return {c["conversation_id"] for c in page["items"]}
+
+    assert conversation_id in listed_conversations(BOB_EMAIL)
+    for other in (ALICE_EMAIL, ADMIN_EMAIL):
+        assert conversation_id not in listed_conversations(other)
+        assert test_client.get(f"/conversations/{conversation_id}", headers=as_(other, account)).status_code == 404
+        assert test_client.delete(f"/conversations/{conversation_id}", headers=as_(other, account)).status_code == 404
+    assert test_client.get(f"/conversations/{conversation_id}", headers=bob).status_code == 200
+
+
+def test_a_conversation_stays_in_the_account_it_was_started_in(test_client, account, alices_agent):
+    conversation_id = test_client.post("/conversations/", headers=as_(ALICE_EMAIL, account),
+                                       json={"title": "Team", "agent_id": alices_agent}).json()["conversation_id"]
+    personal = owner_headers(ALICE_EMAIL)
+
+    assert conversation_id not in {c["conversation_id"] for c in test_client.get("/conversations/", headers=personal)
+                                   .json()["items"]}
+    assert test_client.get(f"/conversations/{conversation_id}", headers=personal).status_code == 404

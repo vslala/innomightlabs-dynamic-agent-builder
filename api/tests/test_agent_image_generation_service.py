@@ -10,7 +10,7 @@ from src.agents.image_generation.service import (
 from src.agents.models import Agent
 from src.conversations.models import Conversation
 from src.llm.events import SSEEventType
-from tests.mock_data import agent_fields
+from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversation_fields
 
 
 class FakeMessageRepository:
@@ -55,7 +55,7 @@ class FakeProviderFactory:
 
 
 class FakeAgentImageGenerationService(AgentImageGenerationService):
-    def _load_agent_turn_context(self, *, agent_id, conversation_id, owner_email, actor_email):
+    def _load_agent_turn_context(self, *, agent_id, conversation_id):
         return AgentConversationContext(
             agent=Agent(
                 agent_id=agent_id,
@@ -64,13 +64,13 @@ class FakeAgentImageGenerationService(AgentImageGenerationService):
                 agent_provider="OpenAI",
                 agent_model="gpt-5.4",
                 agent_persona="Generate images.",
-                **agent_fields(owner_email),
+                **agent_fields(TEST_USER_EMAIL),
             ),
             conversation=Conversation(
                 conversation_id=conversation_id,
                 title="Image conversation",
                 agent_id=agent_id,
-                created_by=actor_email,
+                **conversation_fields(TEST_USER_EMAIL),
             ),
         )
 

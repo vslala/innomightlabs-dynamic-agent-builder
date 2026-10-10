@@ -35,7 +35,8 @@ async def invoke(
     if not agent:
         raise ValueError("Agent not found")
 
-    conversation = ConversationRepository().find_by_id(conversation_id, owner_email)
+    # The conversation of the running turn, found by its id
+    conversation = ConversationRepository().get(conversation_id)
     if not isinstance(conversation, Conversation):
         raise ValueError("Conversation not found")
 

@@ -18,7 +18,7 @@ from src.automations.service import AutomationGraph
 from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
-from tests.mock_data import TEST_USER_EMAIL, agent_fields
+from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversations_of
 from src.skills.models import ActorKind
 
 
@@ -145,7 +145,7 @@ async def test_runner_invokes_agent_and_stores_run_context(dynamodb_table, monke
         "user_message_id": "user-message-1",
         "assistant_message_id": "assistant-message-1",
     }
-    conversation = ConversationRepository().find_by_id(run.conversation_id, TEST_USER_EMAIL)
+    conversation = ConversationRepository().find_by_id(run.conversation_id, conversations_of(TEST_USER_EMAIL))
     assert isinstance(conversation, AutomationConversation)
     assert conversation.automation_run_id == run.run_id
 

@@ -8,6 +8,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from src.accounts.owner import member_partition
+
 
 class CreateConversationRequest(BaseModel):
     """Request model for creating a conversation."""
@@ -57,7 +59,9 @@ class Conversation(BaseModel):
     title: str
     description: Optional[str] = None
     agent_id: str
-    created_by: str  # User email who created this conversation
+    account_id: str
+    #: The user_id of the member who started it: a conversation is theirs alone, even on a shared agent
+    created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
     #: Sent to the LLM on every turn, so it never has to live in the message history.
@@ -65,8 +69,8 @@ class Conversation(BaseModel):
 
     @property
     def pk(self) -> str:
-        """Partition key: USER#{created_by} - allows querying all conversations by user."""
-        return f"USER#{self.created_by}"
+        """The partition of the member who started it, so their conversations list with one query."""
+        return member_partition(self.account_id, self.created_by)
 
     @property
     def sk(self) -> str:
@@ -82,15 +86,15 @@ class Conversation(BaseModel):
             "title": self.title,
             "description": self.description,
             "agent_id": self.agent_id,
+            "account_id": self.account_id,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "context": self.context,
             "entity_type": "Conversation",
             "conversation_type": "chat",
-            # GSI for sorting by created_at (reverse chronological)
-            "gsi1_pk": self.pk,
-            "gsi1_sk": f"CONVERSATION#{self.created_at.isoformat()}#{self.conversation_id}",
+            "gsi2_pk": f"Conversation#{self.conversation_id}",
+            "gsi2_sk": "Conversation",
         }
 
     @classmethod
@@ -101,6 +105,7 @@ class Conversation(BaseModel):
             title=item["title"],
             description=item.get("description"),
             agent_id=item["agent_id"],
+            account_id=item["account_id"],
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=(
@@ -168,6 +173,7 @@ class AutomationConversation(Conversation):
             title=item["title"],
             description=item.get("description"),
             agent_id=item["agent_id"],
+            account_id=item["account_id"],
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=(
@@ -182,11 +188,11 @@ class AutomationConversation(Conversation):
 class ApiConversation(Conversation):
     """Conversation created through the public /v1 API with a secret key.
 
-    Stored under the key's own pseudo-owner partition rather than the agent
-    owner's, so a busy integration never floods the owner's dashboard list and
-    one key can never load another key's conversations. A conversation started
-    for an end user gets that end user's own partition within the key, the way
-    each dashboard user has theirs.
+    Stored under the key's own pseudo-member partition in the agent's account
+    rather than the agent owner's, so a busy integration never floods the
+    owner's dashboard list and one key can never load another key's
+    conversations. A conversation started for an end user gets that end user's
+    own partition within the key, the way each member has theirs.
     """
 
     api_key_id: str
@@ -199,10 +205,16 @@ class ApiConversation(Conversation):
         return f"{owner}:{end_user_id}" if end_user_id else owner
 
     @classmethod
+    def partition_for(cls, account_id: str, api_key_id: str, end_user_id: Optional[str] = None) -> str:
+        """Where this key's conversations, or this end user's of it, live in the agent's account."""
+        return member_partition(account_id, cls.owner_for(api_key_id, end_user_id))
+
+    @classmethod
     def start(
         cls,
         *,
         api_key_id: str,
+        account_id: str,
         agent_id: str,
         title: str,
         end_user_id: Optional[str] = None,
@@ -210,6 +222,7 @@ class ApiConversation(Conversation):
     ) -> "ApiConversation":
         return cls(
             api_key_id=api_key_id,
+            account_id=account_id,
             agent_id=agent_id,
             title=title,
             end_user_id=end_user_id,
@@ -240,6 +253,7 @@ class ApiConversation(Conversation):
             title=item["title"],
             description=item.get("description"),
             agent_id=item["agent_id"],
+            account_id=item["account_id"],
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=(
