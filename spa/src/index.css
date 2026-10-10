@@ -28,6 +28,8 @@ html {
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  /* Inter's capital I with serifs, so "Ila" doesn't read as "lla". */
+  font-feature-settings: "cv08";
   background: var(--bg-dark);
   color: var(--text-primary);
   line-height: 1.6;
