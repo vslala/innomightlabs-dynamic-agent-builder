@@ -61,9 +61,9 @@ export function BuildPage() {
       <header className={styles.header}>
         <Hammer className={styles.headerIcon} aria-hidden="true" />
         <div>
-          <h2 className={styles.title}>Build with Ada</h2>
+          <h2 className={styles.title}>Build with Ila</h2>
           <p className={styles.subtitle}>
-            Tell Ada what you need, and she'll set it up for you: an agent for your website, a knowledge base from
+            Tell Ila what you need, and she'll set it up for you: an agent for your website, a knowledge base from
             your site, a chat widget. She shows you the plan and builds only when you approve it.
           </p>
         </div>
@@ -82,7 +82,7 @@ export function BuildPage() {
           </PanelHeader>
           <PanelBody className={styles.stack}>
             <p className={styles.note}>
-              Ada runs on one of your providers, like your own agents do. Choose the model she should think with.
+              Ila runs on one of your providers, like your own agents do. Choose the model she should think with.
             </p>
             {form && (
               <SchemaForm
@@ -108,7 +108,7 @@ export function BuildPage() {
               <TabsContent value="kits">
                 {kits === null ? null : kits.length === 0 ? (
                   <p className={styles.note}>
-                    No kits yet. Everything Ada builds for you becomes a kit: its agents, knowledge bases and widgets,
+                    No kits yet. Everything Ila builds for you becomes a kit: its agents, knowledge bases and widgets,
                     kept together so you can change, roll back or remove them as one.
                   </p>
                 ) : (
@@ -134,7 +134,7 @@ export function BuildPage() {
               </TabsContent>
               <TabsContent value="conversations">
                 {sessions.length === 0 ? (
-                  <p className={styles.note}>Nothing yet. Your conversations with Ada will appear here.</p>
+                  <p className={styles.note}>Nothing yet. Your conversations with Ila will appear here.</p>
                 ) : (
                   <ul className={styles.sessions}>
                     {sessions.map((session) => (

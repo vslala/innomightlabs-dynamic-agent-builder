@@ -16,7 +16,7 @@ from src.conversations.models import (
     CreateConversationRequest,
     UpdateConversationRequest,
 )
-from src.builder.models import ADA_AGENT_ID
+from src.builder.models import ILA_AGENT_ID
 from src.conversations.repository import ConversationRepository
 from src.messages.models import Message, MessageResponse
 from src.messages.repositories import get_message_repository
@@ -130,8 +130,8 @@ async def list_conversations(
     user_email = get_user_email(request)
 
     def keep(conversation: Conversation) -> bool:
-        # Building with Ada has its own page; her conversations aren't chats with the person's agents.
-        if conversation.agent_id == ADA_AGENT_ID:
+        # Building with Ila has its own page; her conversations aren't chats with the person's agents.
+        if conversation.agent_id == ILA_AGENT_ID:
             return False
         return include_automation or getattr(conversation, "conversation_type", "chat") != "automation"
 

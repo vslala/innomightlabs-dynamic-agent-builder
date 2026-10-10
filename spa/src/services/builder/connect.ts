@@ -1,6 +1,6 @@
 /**
- * Connecting an account from Ada's chat: the sign-in runs in a popup, and the popup tells the chat how it went.
- * See docs/LLD-ada-capabilities.md.
+ * Connecting an account from Ila's chat: the sign-in runs in a popup, and the popup tells the chat how it went.
+ * See docs/LLD-ila-capabilities.md.
  */
 
 /** The message the popup's return page posts to the chat window. */
@@ -26,7 +26,7 @@ export function connectOutcome(event: { origin: string; data: unknown }, ownOrig
   return succeeded ? "connected" : "failed";
 }
 
-/** What the chat says for the person once they're connected. Ada plans again on it; the plan checks for itself. */
+/** What the chat says for the person once they're connected. Ila plans again on it; the plan checks for itself. */
 export function connectedMessage(title: string): string {
   return `I've connected ${title.replace(/^Connect\s+/, "")}.`;
 }

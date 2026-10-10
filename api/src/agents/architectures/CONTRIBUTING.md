@@ -25,7 +25,7 @@ Changes should be made at the appropriate seam. This reduces merge conflicts and
 
 ### 4) Not every architecture is selectable
 `krishna-mini` and `krishna-memgpt` are in `factory.py`, so agents can be created with them. `vishwakarma`
-(Ada, the solution builder) is not: it runs one product workflow, and `src/builder/` creates it explicitly and
+(Ila, the solution builder) is not: it runs one product workflow, and `src/builder/` creates it explicitly and
 passes it to `start_turn(architecture=...)`. Its prompt lives in `prompt_templates/vishwakarma/` and its tools in
 `src/builder/tools.py` (`ToolCategory.BUILDER`). See `docs/LLD-solution-blueprints.md`.
 

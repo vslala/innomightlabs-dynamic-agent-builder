@@ -1,4 +1,4 @@
-"""What `plan_blueprint` tells Ada, decided by a list of gates.
+"""What `plan_blueprint` tells Ila, decided by a list of gates.
 
 Each gate looks at the attempt and either answers (issues to fix, something to ask the person, blockers, nothing
 to change, or the plan to approve) or lets the next one look. The first answer is the tool's result. The last gate
@@ -42,7 +42,7 @@ class PlanAttempt:
 
     @property
     def author_issues(self) -> list[BlueprintIssue]:
-        """Issues Ada fixes. The person's settings aren't hers: the system asks for them."""
+        """Issues Ila fixes. The person's settings aren't hers: the system asks for them."""
         return [issue for issue in self.issues if issue.owner == IssueOwner.AUTHOR]
 
     @property
@@ -66,7 +66,7 @@ class PlanGate(Protocol):
 
 
 class AuthorIssues:
-    """Ada fixes her own issues before the person is asked anything."""
+    """Ila fixes her own issues before the person is asked anything."""
 
     def check(self, attempt: PlanAttempt) -> Optional[dict[str, Any]]:
         issues = attempt.author_issues or ([] if attempt.needs_person else attempt.issues)

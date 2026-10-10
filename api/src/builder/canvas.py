@@ -1,4 +1,4 @@
-"""The blueprint document Ada shows: a drawing of what she'll build, the steps, and the YAML.
+"""The blueprint document Ila shows: a drawing of what she'll build, the steps, and the YAML.
 
 Rendered twice in a build: as a draft awaiting approval when she plans, and stamped "built" with the outputs
 when she applies. It's an ordinary canvas artifact, so the chat shows it inline and keeps it on the message.
@@ -211,7 +211,7 @@ def save_blueprint_canvas(drawing: BlueprintDrawing, state: AgentTurnState) -> O
                 agent_id=state.agent_id,
                 conversation_id=state.conversation_id,
                 message_id=state.user_message_id,
-                metadata={"source": "ada", "stage": drawing.stage, "plan_id": drawing.plan_id},
+                metadata={"source": "ila", "stage": drawing.stage, "plan_id": drawing.plan_id},
             ),
         )
     except Exception:

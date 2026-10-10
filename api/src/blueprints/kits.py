@@ -67,7 +67,7 @@ class Kit(BaseModel):
     current_version: int = 0
     #: How many versions it has, counting ones that only partly applied.
     versions: int = 0
-    #: The conversation with Ada it was built in, if any.
+    #: The conversation with Ila it was built in, if any.
     conversation_id: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None

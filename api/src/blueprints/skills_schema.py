@@ -69,7 +69,7 @@ class SkillVariant:
 
     @property
     def builder_settings(self) -> list[form_models.FormInput]:
-        """Required settings Ada writes: the design of the build, which she knows from the request."""
+        """Required settings Ila writes: the design of the build, which she knows from the request."""
         return [field for field in self.required_settings if supplied_by(field, self) == Supplier.BUILDER]
 
     @property
@@ -88,7 +88,7 @@ class SkillVariant:
 class SkillSetup(str, Enum):
     """What has to happen before a skill works, easiest first. Read from the manifest, never listed per skill."""
 
-    #: Nothing from the person: add it (with any settings Ada writes) and it works.
+    #: Nothing from the person: add it (with any settings Ila writes) and it works.
     READY = "ready"
     #: Settings only the person knows, such as recipients or a site address. The system asks them in a form.
     SETTINGS = "settings"
@@ -145,7 +145,7 @@ def setup_for(variant: SkillVariant) -> SkillSetup:
 
 
 class Supplier(str, Enum):
-    #: Ada, from the person's request: which agent to call, when to use it. Asking would be asking them to design.
+    #: Ila, from the person's request: which agent to call, when to use it. Asking would be asking them to design.
     BUILDER = "builder"
     #: The person: facts only they know, such as where emails go.
     PERSON = "person"
@@ -177,7 +177,7 @@ class NamesAnAgent:
 
 
 class GuidesTheModel:
-    """Text the agent reads at run time ("when should this agent be invoked?") is instructions, which Ada writes."""
+    """Text the agent reads at run time ("when should this agent be invoked?") is instructions, which Ila writes."""
 
     supplier = Supplier.BUILDER
 

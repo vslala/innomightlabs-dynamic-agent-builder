@@ -32,7 +32,7 @@ def example_yaml(name: str) -> Optional[str]:
 
 @dataclass(frozen=True)
 class BuildIdea:
-    """Something Ada can offer to build: an example blueprint and how it describes itself."""
+    """Something Ila can offer to build: an example blueprint and how it describes itself."""
 
     name: str
     title: str

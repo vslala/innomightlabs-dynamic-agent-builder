@@ -1,7 +1,7 @@
 """MCP connections in a blueprint: a ready-made server (a preset), such as Tavily web search, that agents use.
 
 A connection belongs to the account and holds the person's sign-in, so a blueprint never creates one: the
-person connects it, through the card the system shows when Ada plans (`builder/connections.py`), and the
+person connects it, through the card the system shows when Ila plans (`builder/connections.py`), and the
 blueprint finds that connection and links agents to it. Applying the same blueprint again finds it again.
 """
 

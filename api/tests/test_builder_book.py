@@ -1,4 +1,4 @@
-"""Ada's blueprint book: pages generated from the code, an index in her prompt, and pages kept open for a few turns."""
+"""Ila's blueprint book: pages generated from the code, an index in her prompt, and pages kept open for a few turns."""
 
 import json
 
@@ -14,7 +14,7 @@ from src.blueprints.catalog import example_names, example_yaml
 from src.blueprints.kinds import RESOURCE_KINDS
 from src.blueprints.skills_schema import skill_variants
 from src.blueprints.validator import validate_blueprint
-from src.builder.ada import ada_agent
+from src.builder.ila import ila_agent
 from src.builder.repository import BuilderSessionRepository
 from src.builder.tools import BuilderTools
 from src.config import settings
@@ -22,7 +22,7 @@ from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
 from tests.mock_data import TEST_USER_EMAIL
-from tests.test_builder_ada import PARAMS, SITE_AGENT, account, session, turn_state  # noqa: F401
+from tests.test_builder_ila import PARAMS, SITE_AGENT, account, session, turn_state  # noqa: F401
 
 BOOK = blueprint_book()
 
@@ -123,7 +123,7 @@ def test_a_retention_of_zero_still_shows_the_page_in_its_own_turn():
     assert pages_in_view(opened, 5, retention=0) == []
 
 
-# --- Ada's tools -------------------------------------------------------------------------------
+# --- Ila's tools -------------------------------------------------------------------------------
 
 
 async def test_open_pages_records_the_pages_on_the_session(session):  # noqa: F811
@@ -156,7 +156,7 @@ async def test_plan_issues_open_the_pages_that_explain_them(session):  # noqa: F
 
 
 async def _turn(session, monkeypatch, *, open_ids=()):  # noqa: F811
-    """Run one Ada turn; the fake model opens `open_ids`. Returns the prompts it saw."""
+    """Run one Ila turn; the fake model opens `open_ids`. Returns the prompts it saw."""
     prompts: list[str] = []
 
     async def fake_loop(**kwargs):
@@ -178,7 +178,7 @@ async def _turn(session, monkeypatch, *, open_ids=()):  # noqa: F811
     monkeypatch.setattr(vishwakarma, "open_provider_session", fake_provider_session)
     conversation = ConversationRepository().find_by_id(session.conversation_id, TEST_USER_EMAIL)
     async for _ in vishwakarma.VishwakarmaArchitecture().handle_message(
-        agent=ada_agent(session),
+        agent=ila_agent(session),
         conversation=conversation,
         user_message="Hi",
         owner_email=TEST_USER_EMAIL,
@@ -197,7 +197,7 @@ PAGE_HEADING = "# Chat widget (`kind/WidgetKey`"
 async def test_an_opened_page_leaves_the_prompt_after_the_configured_turns(
     session, monkeypatch, retention, turns_shown  # noqa: F811
 ):
-    monkeypatch.setattr(settings, "ada_page_retention_turns", retention)
+    monkeypatch.setattr(settings, "ila_page_retention_turns", retention)
     first = await _turn(session, monkeypatch, open_ids=["kind/WidgetKey"])
     assert PAGE_HEADING not in first[0]
     assert PAGE_HEADING in first[1]  # opened mid-turn: in the refreshed prompt straight away

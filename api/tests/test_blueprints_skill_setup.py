@@ -60,7 +60,7 @@ def build(text: str, params: dict | None = None):
         ("html_canvas", SkillSetup.READY),
         ("rest_template", SkillSetup.READY),  # its only secret is optional
         ("send_email", SkillSetup.SETTINGS),
-        ("agent_invocation", SkillSetup.READY),  # its settings are the build's design, which Ada writes
+        ("agent_invocation", SkillSetup.READY),  # its settings are the build's design, which Ila writes
         ("wordpress_search", SkillSetup.SETTINGS),
         ("google_mail", SkillSetup.ACCOUNT),
         ("google_ads", SkillSetup.ACCOUNT),
@@ -80,7 +80,7 @@ def test_every_skill_is_in_one_chapter_easiest_first():
     assert sorted(pages) == sorted(f"skill/{skill_id}" for skill_id in skill_variants())
 
 
-def test_a_page_says_which_settings_ada_writes_and_which_the_person_gives():
+def test_a_page_says_which_settings_ila_writes_and_which_the_person_gives():
     invoke = blueprint_book().get("skill/agent_invocation").body
     assert "You write: `target_agent_id` (Agent), `usage_description`" in invoke
     assert "The person gives" not in invoke

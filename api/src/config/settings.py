@@ -139,8 +139,8 @@ class Settings:
     blueprint_apply_limit: int = 10
     #: The iframe widget loader that embed snippets point at.
     embed_loader_url: str = "https://cdn.innomightlabs.com/embed.js"
-    #: Turns a book page Ada opens stays in her prompt, the turn it's opened in included.
-    ada_page_retention_turns: int = 3
+    #: Turns a book page Ila opens stays in her prompt, the turn it's opened in included.
+    ila_page_retention_turns: int = 3
     mcp_oauth_redirect_uri: str = ""
     cli_runner_base_url: str = ""
     cli_runner_shared_token: str = ""
@@ -486,7 +486,7 @@ class Settings:
             blueprint_max_bytes=int(os.getenv("BLUEPRINT_MAX_BYTES", str(64 * 1024))),
             blueprint_apply_limit=int(os.getenv("BLUEPRINT_APPLY_LIMIT", "10")),
             embed_loader_url=os.getenv("EMBED_LOADER_URL", "https://cdn.innomightlabs.com/embed.js"),
-            ada_page_retention_turns=int(os.getenv("ADA_PAGE_RETENTION_TURNS", "3")),
+            ila_page_retention_turns=int(os.getenv("ILA_PAGE_RETENTION_TURNS", "3")),
             widget_guest_max_message_chars=int(os.getenv("WIDGET_GUEST_MAX_MESSAGE_CHARS", "2000")),
             dream_message_page_size=int(os.getenv("DREAM_MESSAGE_PAGE_SIZE", "200")),
             dream_chunk_max_words=int(os.getenv("DREAM_CHUNK_MAX_WORDS", "6000")),

@@ -60,7 +60,7 @@ class TurnRequest:
     actor_kind: ActorKind
     api_key_id: str | None = None
     #: Runs the turn instead of the agent's own architecture, for agents that aren't in the
-    #: factory (Ada, the solution builder).
+    #: factory (Ila, the solution builder).
     architecture: AgentArchitecture | None = None
 
 

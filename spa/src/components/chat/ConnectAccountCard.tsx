@@ -16,7 +16,7 @@ export interface ConnectRequestPayload {
 type Stage = "idle" | "starting" | "signing_in" | "failed";
 
 /**
- * The system asking the person to connect an account (Tavily, Atlassian…) before Ada's plan. The sign-in runs in
+ * The system asking the person to connect an account (Tavily, Atlassian…) before Ila's plan. The sign-in runs in
  * a popup so the chat stays open; the popup's return page posts the result back (see OAuthPopupDone).
  */
 export function ConnectAccountCard({

@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Removes everything building with Ada has left in the table, so kits start from nothing.
+Removes everything building with Ila has left in the table, so kits start from nothing.
 
 For each account it finds:
-- Ada's conversations (agent_id = innomightlabs-ada) and their builder sessions, with every row in each
+- Ila's conversations (agent_id = innomightlabs-ila) and their builder sessions, with every row in each
   conversation's partition (messages, tool audit, turns) and the canvases drawn in them;
 - the agents and knowledge bases blueprints built (from deployment and kit records), deleted the way the dashboard
   deletes them (an agent takes its widget keys, secret keys and dream schedule; a knowledge base its content), plus
   every row left in each agent's partition (skills, links);
 - the deployment and kit records.
 
-MCP connections stay: they belong to the account, not to a build. So do Ada's token usage records (billing history).
+MCP connections stay: they belong to the account, not to a build. So do Ila's token usage records (billing history).
 
 Usage:
-    uv run python scripts/cleanup_ada_builds.py                 # dry run: lists what would go
-    uv run python scripts/cleanup_ada_builds.py --user a@b.com  # one account only
-    uv run python scripts/cleanup_ada_builds.py --apply         # delete
+    uv run python scripts/cleanup_ila_builds.py                 # dry run: lists what would go
+    uv run python scripts/cleanup_ila_builds.py --user a@b.com  # one account only
+    uv run python scripts/cleanup_ila_builds.py --apply         # delete
 
 Uses the API's own settings (DYNAMODB_TABLE, DYNAMODB_ENDPOINT, AWS credentials, Pinecone, the media bucket).
 Against production, run it through `railway run` so they come from the service, never from a file.
@@ -37,7 +37,7 @@ from boto3.dynamodb.conditions import Attr, Key  # noqa: E402
 from src.agents.repository import AgentRepository  # noqa: E402
 from src.agents.service import AgentService  # noqa: E402
 from src.artifacts.storage import ArtifactStorage  # noqa: E402
-from src.builder.models import ADA_AGENT_ID  # noqa: E402
+from src.builder.models import ILA_AGENT_ID  # noqa: E402
 from src.config import settings  # noqa: E402
 from src.db import get_dynamodb_resource  # noqa: E402
 from src.knowledge.models import KnowledgeBaseStatus  # noqa: E402
@@ -83,8 +83,8 @@ def owner_of(item: dict[str, Any]) -> str:
 
 def find(table, only_user: str | None) -> dict[str, AccountFindings]:
     found: dict[str, AccountFindings] = defaultdict(AccountFindings)
-    ada_conversation = Attr("entity_type").eq("Conversation") & Attr("agent_id").eq(ADA_AGENT_ID)
-    for item in scan(table, Attr("entity_type").is_in(["BuilderSession", "BlueprintDeployment", "Kit"]) | ada_conversation):
+    ila_conversation = Attr("entity_type").eq("Conversation") & Attr("agent_id").eq(ILA_AGENT_ID)
+    for item in scan(table, Attr("entity_type").is_in(["BuilderSession", "BlueprintDeployment", "Kit"]) | ila_conversation):
         owner = owner_of(item)
         if only_user and owner != only_user:
             continue
@@ -125,7 +125,7 @@ def report(owner: str, account: AccountFindings) -> None:
     live_kbs = [k for k in (kbs.find_by_id(i, owner) for i in sorted(account.knowledge_bases))
                 if k and k.status != KnowledgeBaseStatus.DELETED]
     print(f"\n{owner}")
-    print(f"  Ada conversations: {len(account.conversations)} (builder sessions: {len(account.sessions)})")
+    print(f"  Ila conversations: {len(account.conversations)} (builder sessions: {len(account.sessions)})")
     print(f"  canvases drawn in them: {len(account.artifacts)}")
     print(f"  agents built: {len(live_agents)} still there of {len(account.agents)}")
     for agent in live_agents:

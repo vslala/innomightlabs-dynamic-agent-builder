@@ -268,7 +268,7 @@ def test_a_failed_build_leaves_no_dream_schedule_behind(dynamodb_table, monkeypa
 
 
 def test_deploying_says_why_it_didnt(launched):
-    """The API and Ada both deploy through deploy_blueprint, and each outcome is its own type."""
+    """The API and Ila both deploy through deploy_blueprint, and each outcome is its own type."""
     invalid = blueprints_service.deploy_blueprint("kind: Blueprint", {}, TEST_USER_EMAIL)
     assert isinstance(invalid, blueprints_service.Invalid) and invalid.issues
 

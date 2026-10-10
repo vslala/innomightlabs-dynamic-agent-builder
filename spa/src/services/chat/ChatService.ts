@@ -8,7 +8,7 @@ import type {
   GenerateImageResponse,
   SSEEvent,
 } from "../../types/message";
-import { chatPath } from "../builder/ada";
+import { chatPath } from "../builder/ila";
 
 const AUTH_TOKEN_KEY = "auth_token";
 const TURN_ID_HEADER = "X-Turn-Id";

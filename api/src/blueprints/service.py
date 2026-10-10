@@ -1,9 +1,9 @@
 """Deploying a blueprint: validate it, plan it against its kit, and apply it within the rate limit, recording the
 result as the kit's next version.
 
-The dashboard's API, Ada, and a kit's rollback and removal all deploy through here, so none of them can skip a step.
+The dashboard's API, Ila, and a kit's rollback and removal all deploy through here, so none of them can skip a step.
 Each outcome is its own type, and the caller turns it into its own kind of answer (an HTTP status, or a tool result
-for Ada).
+for Ila).
 """
 
 from dataclasses import dataclass
@@ -89,7 +89,7 @@ def deploy_blueprint(
     conversation_id: Optional[str] = None,
 ) -> DeployOutcome:
     """Validates, plans against the kit and applies: a new kit without `kit_id`, its next version with it. The
-    dashboard's API and Ada both deploy through here, so neither can skip a step."""
+    dashboard's API and Ila both deploy through here, so neither can skip a step."""
     try:
         kit = active_kit(owner_email, kit_id) if kit_id else None
         text = pin(yaml, kit)

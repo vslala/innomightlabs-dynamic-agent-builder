@@ -28,8 +28,8 @@ export function OAuthPopupDone() {
       {!canClose && (
         <p style={{ marginTop: "0.5rem", color: "var(--text-secondary)" }}>
           {succeeded
-            ? "You can close this window and go back to your chat with Ada."
-            : "Close this window and try again from your chat with Ada."}
+            ? "You can close this window and go back to your chat with Ila."
+            : "Close this window and try again from your chat with Ila."}
         </p>
       )}
     </div>

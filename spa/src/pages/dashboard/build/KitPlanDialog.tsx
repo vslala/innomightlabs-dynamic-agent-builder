@@ -110,7 +110,7 @@ export function KitPlanDialog({
             {drift.length > 0 && (
               <div className={styles.drift}>
                 <p className={styles.driftTitle}>
-                  <Pencil aria-hidden="true" /> Changed outside Ada, and kept
+                  <Pencil aria-hidden="true" /> Changed outside Ila, and kept
                 </p>
                 <ul>
                   {drift.map((line) => (

@@ -138,7 +138,7 @@ export function KitDetailPage() {
         {kit.conversation_id && (
           <Button asChild variant="outline" size="sm">
             <Link to={`/dashboard/conversations/${kit.conversation_id}`}>
-              <MessageSquare aria-hidden="true" /> Continue with Ada
+              <MessageSquare aria-hidden="true" /> Continue with Ila
             </Link>
           </Button>
         )}
@@ -250,7 +250,7 @@ export function KitDetailPage() {
 function BackLink() {
   return (
     <Link to="/dashboard/build" className={styles.back}>
-      <ArrowLeft aria-hidden="true" /> Build with Ada
+      <ArrowLeft aria-hidden="true" /> Build with Ila
     </Link>
   );
 }

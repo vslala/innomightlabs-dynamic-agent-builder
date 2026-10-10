@@ -1,6 +1,6 @@
 """A blueprint document as it's written, valid or not.
 
-Ada's draft is often invalid while she works on it, so the code that reads it before validation (which skill
+Ila's draft is often invalid while she works on it, so the code that reads it before validation (which skill
 settings the person still has to give, which accounts to connect, which book page explains an issue) can't use the
 validated model. `Draft` is the one place that knows the document's raw shape; everything else asks it.
 """

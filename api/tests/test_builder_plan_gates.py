@@ -1,4 +1,4 @@
-"""What plan_blueprint tells Ada is decided by gates in order; issues say who fixes them; and everything the system
+"""What plan_blueprint tells Ila is decided by gates in order; issues say who fixes them; and everything the system
 asks the person goes through one list of requirements."""
 
 import json
@@ -13,7 +13,7 @@ from src.builder.plan_gates import PLAN_GATES, AuthorIssues, AwaitApproval, Bloc
 from src.builder.requirements import REQUIREMENTS, AccountConnection, SkillSettings, absorb_answers
 from src.builder.tools import BuilderTools
 from tests.mock_data import TEST_USER_EMAIL
-from tests.test_builder_ada import PARAMS, account, session, turn_state  # noqa: F401
+from tests.test_builder_ila import PARAMS, account, session, turn_state  # noqa: F401
 
 SITE_AGENT = example_yaml("site-agent") or ""
 
@@ -46,7 +46,7 @@ def test_a_missing_setting_only_the_person_knows_is_theirs_to_settle():
     assert all(owner == IssueOwner.AUTHOR for path, owner in owners.items() if "skills[2]" in path)
 
 
-async def test_ada_fixes_her_own_issues_before_the_person_is_asked(session):  # noqa: F811
+async def test_ila_fixes_her_own_issues_before_the_person_is_asked(session):  # noqa: F811
     text = with_skills({"id": "send_email"}).replace("agent: assistant", "agent: assistnt")
     result = await plan(session, {"yaml": text, "params": PARAMS})
     assert result["ok"] is False and "needs_input" not in result

@@ -1,15 +1,15 @@
-"""The blueprint book: everything Ada can build, as pages she opens when she needs them.
+"""The blueprint book: everything Ila can build, as pages she opens when she needs them.
 
 Every page is generated from the code that defines it, so a new resource kind, skill manifest or example
-blueprint adds its page with no change here or in Ada's prompt:
+blueprint adds its page with no change here or in Ila's prompt:
 
 - `guide/blueprint`: the document's shape, from the `Blueprint` model.
 - `kind/<Kind>`: one per entry in `RESOURCE_KINDS`, from its spec model and the examples that use it.
 - `skill/<id>`: one per skill manifest, from the same variants the schema and the validator use. Skills come in
   one chapter per `SkillSetup` tier (what they need before they work), easiest first.
-- `recipe/<name>`: one per example blueprint, which is also one of Ada's ideas.
+- `recipe/<name>`: one per example blueprint, which is also one of Ila's ideas.
 
-See docs/LLD-ada-capabilities.md.
+See docs/LLD-ila-capabilities.md.
 """
 
 from __future__ import annotations
@@ -158,7 +158,7 @@ class KindPages:
 # --- Skills ---------------------------------------------------------------------------------------------------
 
 
-#: Each tier's chapter: its title, and what Ada does with the skills in it.
+#: Each tier's chapter: its title, and what Ila does with the skills in it.
 SKILL_CHAPTERS: dict[SkillSetup, tuple[str, str]] = {
     SkillSetup.READY: (
         "Skills: ready to use",
@@ -183,7 +183,7 @@ SKILL_CHAPTERS: dict[SkillSetup, tuple[str, str]] = {
 
 
 def skill_example(variant: SkillVariant) -> str:
-    """The settings Ada writes, and none of the person's: the system asks for those."""
+    """The settings Ila writes, and none of the person's: the system asks for those."""
     manifest = variant.skill.manifest
     lines = ["skills:", f"  - id: {manifest.id}"]
     if variant.shareable:
@@ -197,7 +197,7 @@ def skill_example(variant: SkillVariant) -> str:
 
 
 def skill_note(variant: SkillVariant, ready: bool) -> str:
-    """Said in the index too, so Ada knows before opening the page."""
+    """Said in the index too, so Ila knows before opening the page."""
     if variant.setup == SkillSetup.SECRETS:
         return f"Needs {', '.join(field.label for field in variant.required_secrets)}: not buildable yet."
     if not ready and variant.setup == SkillSetup.ACCOUNT:
@@ -208,7 +208,7 @@ def skill_note(variant: SkillVariant, ready: bool) -> str:
 
 
 def _settings_section(variant: SkillVariant) -> list[str]:
-    """Which settings Ada writes and which the system asks the person for, read from the manifest."""
+    """Which settings Ila writes and which the system asks the person for, read from the manifest."""
     lines = []
     if variant.builder_settings:
         names = ", ".join(f"`{field.name}` ({field.label})" for field in variant.builder_settings)

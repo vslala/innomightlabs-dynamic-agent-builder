@@ -1,4 +1,4 @@
-# Ada: Building With Everything InnomightLabs Offers
+# Ila: Building With Everything InnomightLabs Offers
 
 | Field | Value |
 | --- | --- |
@@ -6,18 +6,22 @@
 | Owner | InnomightLabs API / SPA |
 | Last reviewed | 2026-10-08 |
 | Scope | `api/src/blueprints/` (new kinds, setup requirements), `api/src/builder/` (setup vault, routes, tools, specialists), `api/src/agents/prompt_templates/vishwakarma/`, small extractions in `api/src/automations/`, `api/src/connectors/mcp/`, `api/src/settings/`; SPA `SetupPanel`, OAuth popup route, chat wiring |
-| Depends on | [Solution Blueprints](LLD-solution-blueprints.md) (parent: spec, plan/apply, Ada on Vishwakarma, idempotent updates), [Automations module](../api/docs/LLD-automations-module.md), [Unified skill automation actions](../api/docs/LLD-unified-skill-automation-actions.md), [MCP connector machinery](LLD-mcp-connector-machinery.md), [MCP sharing](LLD-mcp-sharing-for-widget-a2a-api.md) |
+| Depends on | [Solution Blueprints](LLD-solution-blueprints.md) (parent: spec, plan/apply, Ila on Vishwakarma, idempotent updates), [Automations module](../api/docs/LLD-automations-module.md), [Unified skill automation actions](../api/docs/LLD-unified-skill-automation-actions.md), [MCP connector machinery](LLD-mcp-connector-machinery.md), [MCP sharing](LLD-mcp-sharing-for-widget-a2a-api.md) |
 | Tracker | — |
 | Replaces | — |
 
-> **Summary:** Ada can build a knowledge base, an agent with skills that need no secrets, and a widget key. That is
+> **Name:** the builder was called Ada until 2026-10-10. She was renamed Ila (from the Mahabharata: ancestor of the
+> Lunar dynasty; "speech", "earth") because Ada is the name of an AI customer-service company (ada.cx). Her agent id is
+> now `innomightlabs-ila` and the setting `ILA_PAGE_RETENTION_TURNS`.
+
+> **Summary:** Ila can build a knowledge base, an agent with skills that need no secrets, and a widget key. That is
 > a small slice of the product. This LLD extends her, module by module and skill by skill, until she can build with
 > every skill, automation and feature InnomightLabs offers. Three things make that possible:
 >
 > - **More resource kinds**: `Automation`, `McpConnection`, `SecretKey`, plus new fields on `Agent` and
 >   `KnowledgeBase`.
 > - **Setup requirements**: what a build needs from the person (an API key, a Google sign-in, consent to widen
->   access, a file). The plan works these out from the manifests and kinds, never from Ada's words. Each one is
+>   access, a file). The plan works these out from the manifests and kinds, never from Ila's words. Each one is
 >   shown on the surface its input calls for: a masked modal for secrets, a popup window for OAuth, a side panel for
 >   consent and uploads. Secrets go from that surface straight to the API. They never pass through the model or the
 >   chat history.
@@ -30,10 +34,10 @@
 ## Implementation notes
 
 **Built first: the blueprint book** (it replaces the "describe on demand" idea in [§4.2](#42-describe-on-demand)
-and comes before phase 1). Ada no longer carries the whole catalog in her prompt. She reads what she can build like
+and comes before phase 1). Ila no longer carries the whole catalog in her prompt. She reads what she can build like
 a book: an **index** is always in her prompt, and she **opens pages** when she needs them. An opened page stays in
 her prompt for a configurable number of turns. Adding a resource kind, a skill manifest or an example blueprint
-adds a page, and Ada can use it with no prompt change. It covers the same resources as before (3 kinds, every
+adds a page, and Ila can use it with no prompt change. It covers the same resources as before (3 kinds, every
 skill, 2 recipes), so it can be tested on its own before more resources arrive.
 
 ```mermaid
@@ -45,7 +49,7 @@ flowchart LR
         R[RecipePages<br/>example blueprints]
     end
     B[Book<br/>agents/book.py: index · open · search]
-    subgraph Ada["Vishwakarma turn"]
+    subgraph Ila["Vishwakarma turn"]
         P[prompt: index + open pages]
         T[open_pages · search_book]
         PL[plan_blueprint]
@@ -84,7 +88,7 @@ flowchart LR
   - Each kind now declares `use_when` (`kinds/base.py`), in the words a person would ask with. The index routes on
     it.
   - Skills use their manifest description. A manifest `use_when` field can come later if routing needs it.
-- **Ada's tools:** `open_pages(page_ids)` (up to 6 per call) and `search_book(query)` come first in the list.
+- **Ila's tools:** `open_pages(page_ids)` (up to 6 per call) and `search_book(query)` come first in the list.
   - `open_pages` marks the prompt stale, so pages opened in a turn show up in that turn's next model call.
 - **Issues point at pages.** Every issue and blocker from `plan_blueprint` carries the `page` that explains it,
   found by `page_for_issue`:
@@ -93,12 +97,12 @@ flowchart LR
   - anything else gives `guide/blueprint`.
 
   Those pages are opened automatically, so the fix has them to hand.
-- **Retention.** `BuilderSession.turn` counts Ada's turns, and `BuilderSession.opened_pages` maps a page id to the
+- **Retention.** `BuilderSession.turn` counts Ila's turns, and `BuilderSession.opened_pages` maps a page id to the
   turn it was last opened in.
   - Each turn increments `turn` and drops pages older than the retention.
   - A page is shown while `turn - opened_at < retention`, so the turn it's opened in counts as one.
   - Opening it again restarts the count. Each page is labelled "open for N more turns" or "closes after this turn".
-  - **Configurable:** `ADA_PAGE_RETENTION_TURNS` (`settings.ada_page_retention_turns`, default 3, minimum
+  - **Configurable:** `ILA_PAGE_RETENTION_TURNS` (`settings.ila_page_retention_turns`, default 3, minimum
     effectively 1). It's read at use, so it can be changed between tries. `VishwakarmaArchitecture` also takes
     `page_retention_turns=` for tests and experiments.
 - **Prompt:**
@@ -108,7 +112,7 @@ flowchart LR
   - `ideas.j2` is gone: the recipes chapter is the ideas.
   - The workflow's DRAFT step says to open the recipe, kind and skill pages first.
   - `ANCHOR_TOOL_CALL_DISCIPLINE` says to open a page before writing what it describes.
-- **Size.** Ada's system prompt with an empty draft is about 1,770 words with no pages open. It was about 2,550
+- **Size.** Ila's system prompt with an empty draft is about 1,770 words with no pages open. It was about 2,550
   with the old catalog. A typical build opens a recipe, the Agent kind and one skill, which comes to about 2,630
   words, but those are full pages rather than one-line summaries. Today's catalog is small, so the saving here is
   modest. It grows with every resource added, because a new page costs one index line until it's opened.
@@ -122,7 +126,7 @@ flowchart LR
   - retention as pure functions;
   - across real turns of the architecture at retention 1, 2 and 3.
 - **Still to try:** real models, small ones included, at different retention values. Watch:
-  - whether Ada opens pages before writing;
+  - whether Ila opens pages before writing;
   - how often she reopens them;
   - plan issues per build.
 
@@ -130,9 +134,9 @@ flowchart LR
 tier is read from its manifest by a list of rules (`SETUP_RULES` in `blueprints/skills_schema.py`, one selection
 function `setup_for`), never listed per skill. The hardest need decides:
 
-| Tier | Rule | Skills today | What Ada does |
+| Tier | Rule | Skills today | What Ila does |
 | --- | --- | --- | --- |
-| `ready` | Nothing below applies | `agent_invocation` and `agent2agent_client` (their settings are Ada's), `file_system`, `html_canvas`, `image_generation`, `lead_capture`, `python_code_execution`, `rest_template` (its only secret is optional), `scheduler`, `upload_file` | Adds it, writing any settings that are hers |
+| `ready` | Nothing below applies | `agent_invocation` and `agent2agent_client` (their settings are Ila's), `file_system`, `html_canvas`, `image_generation`, `lead_capture`, `python_code_execution`, `rest_template` (its only secret is optional), `scheduler`, `upload_file` | Adds it, writing any settings that are hers |
 | `settings` | A required setting only the person knows | `send_email`, `wordpress_search` | Leaves those settings out; the system asks the person for them |
 | `account` | `requires_oauth` or `connectors` | `google_mail`, `google_drive`, `google_ads` | Adds it once the account is connected, otherwise sends them to Connectors |
 | `secrets` | A required secret | `aws_cli`, `riot_lol_api_client`, `league_insights_report` | Not buildable yet: sends them to the Skills tab (the setup panel, phase 1, will close this) |
@@ -150,12 +154,12 @@ The `settings` tier is built end to end:
 - **Skills installed more than once.** Entries match installs by installed id (`install_key`, via
   `installed_skill_id_for`), so two `send_email` entries to different recipients are two installs. Before, they
   collapsed into one.
-- **The system asks for settings, not Ada** (`api/src/builder/skill_inputs.py`). Ada writes `- id: send_email`
+- **The system asks for settings, not Ila** (`api/src/builder/skill_inputs.py`). Ila writes `- id: send_email`
   and plans. `plan_blueprint` does the rest, generically from the manifests:
 
   ```mermaid
   sequenceDiagram
-      participant A as Ada
+      participant A as Ila
       participant T as plan_blueprint
       participant P as Person
       participant V as Vishwakarma turn
@@ -174,38 +178,38 @@ The `settings` tier is built end to end:
       T-->>P: the plan and approval form, as before
   ```
 
-  *One skill at a time, in draft order. Issues about the missing settings are left out of what Ada sees; other
+  *One skill at a time, in draft order. Issues about the missing settings are left out of what Ila sees; other
   issues go to her first, so the person is only asked once the blueprint is sound.*
 
   - **Who supplies a setting** is read from the manifest by `SUPPLIER_RULES` (`blueprints/skills_schema.py`):
     - `attr.supplied_by` wins when the skill author sets it;
     - otherwise a setting that names an agent, or is exposed to the runtime (e.g. "when should this agent be
-      invoked?"), is **Ada's**. It's the build's design, which she knows from the request;
+      invoked?"), is **Ila's**. It's the build's design, which she knows from the request;
     - anything else is **the person's** (recipients, a site address).
 
     *Learned the hard way.* Asking the person for every setting meant building a four-agent team produced four
-    "Set up Invoke Agent" forms asking which agent to pick, for agents they had just described to Ada. Now
+    "Set up Invoke Agent" forms asking which agent to pick, for agents they had just described to Ila. Now
     `agent_invocation` is in the `ready` tier, and its page says "You write: `target_agent_id`,
     `usage_description`".
   - **Missing** means a required, non-secret person's setting (`SkillVariant.person_settings`) that the entry's
-    `config` lacks, for skills outside the `secrets` tier. A missing Ada's setting is an ordinary issue that goes
+    `config` lacks, for skills outside the `secrets` tier. A missing Ila's setting is an ordinary issue that goes
     back to her with its page. Settings a recipe or a loaded agent already has are kept.
   - **Forms say why.** The first field's help reads "Acme assistant will use Send Email: …", from the manifest.
   - **A form the draft no longer needs** stops being waited on at the next plan.
   - **The form** is built from the manifest's own `FormInput`s, through the Interactive Forms module, so the chat
     renders it like any form. Option sources are hydrated. Agent pickers also offer the agents this build creates,
     "(in this build)", by blueprint name. Entries of a repeatable skill get their own form, "(2)".
-  - **Answers** are taken at the start of the next turn, before Ada runs (`requirements.absorb_answers`, which for
+  - **Answers** are taken at the start of the next turn, before Ila runs (`requirements.absorb_answers`, which for
     settings is `absorb_submission`, from the session's `pending_input`). They're checked with `registry.validate_config`. A bad answer keeps the form pending with the
     reason, shown on the form next time.
-  - **They outlive Ada's edits.** `session.skill_inputs` is keyed by `<agent>/<skill id>/<n>`, and every plan fills
-    the answers back in, so Ada resending her YAML doesn't lose them. `load_agent` clears them.
+  - **They outlive Ila's edits.** `session.skill_inputs` is keyed by `<agent>/<skill id>/<n>`, and every plan fills
+    the answers back in, so Ila resending her YAML doesn't lose them. `load_agent` clears them.
   - **`plan_blueprint` takes no arguments** to plan the draft as it is.
-  - **Ada's prompt:** "Skill settings are not yours". Skill pages and examples have no `config`. Pages say what
+  - **Ila's prompt:** "Skill settings are not yours". Skill pages and examples have no `config`. Pages say what
     the system will ask for, and `needs_input` tells her to say one line and stop.
   - **Not in the chat: secrets.** A form submission is a chat message, so skills with required secrets stay in the
     `secrets` tier until the secure setup panel ([§3](#3-setup-requirements)) exists.
-- **Recipes (Ada's ideas): ten**, one per kind of build that works today. Each is an example blueprint in
+- **Recipes (Ila's ideas): ten**, one per kind of build that works today. Each is an example blueprint in
   `api/src/blueprints/examples/`.
 
   | Recipe | Uses |
@@ -221,7 +225,7 @@ The `settings` tier is built end to end:
   | Personal follow-up assistant | `scheduler`, `send_email` |
   | Gmail inbox helper | `google_mail` (account tier) |
 
-  - Recipes leave skill settings out, as Ada does, so the system asks for them. The examples test accepts
+  - Recipes leave skill settings out, as Ila does, so the system asks for them. The examples test accepts
     only validation issues the validator marks as the person's (`IssueOwner.PERSON`).
   - Ideas are listed by file name. Add an order to `metadata` if the brainstorm list needs one.
 - **Still to do in this tier:** `agent2agent_client` also needs the account's A2A domain allowlist. The plan
@@ -229,14 +233,14 @@ The `settings` tier is built end to end:
   [§3](#3-setup-requirements).
 - **Tests:** `api/tests/test_blueprints_skill_setup.py` and `api/tests/test_builder_skill_inputs.py`.
 
-**Ada builds kits (2026-10-10).**
+**Ila builds kits (2026-10-10).**
 
 - **Every build is a kit, and each change she applies is its next version.** The session keeps `kit_id`.
   `load_agent` continues the kit an agent belongs to; an agent from outside any kit becomes one at its first apply
   here, compared with what it was when loaded.
 - **She takes things away by leaving them out of the draft.** The plan names each removal before the person
   approves.
-- **The person rolls back or removes a kit** on the Build with Ada page. See
+- **The person rolls back or removes a kit** on the Build with Ila page. See
   [REFACTOR-blueprints.md](REFACTOR-blueprints.md), phase 6.
 
 **What the system asks the person, and how `plan_blueprint` answers (refactor phase 5, 2026-10-09).**
@@ -247,7 +251,7 @@ The `settings` tier is built end to end:
 - **`builder/plan_gates.py`.** `plan_blueprint` runs `PLAN_GATES`: `AuthorIssues`, `NeedsPerson`, `Blocked`,
   `NothingToChange` and `AwaitApproval`. The first gate that answers gives the tool result.
 - **Issues carry an owner** (`BlueprintIssue.owner`). The validator marks a missing required person's setting as
-  `PERSON`, and Ada only sees `AUTHOR` issues. This replaces filtering issues by path (`covers`), and the owner isn't
+  `PERSON`, and Ila only sees `AUTHOR` issues. This replaces filtering issues by path (`covers`), and the owner isn't
   in her tool results.
 - **The draft is read once,** through `blueprints/draft.Draft`. It holds the skill entries and their keys,
   `with_skill_settings` (was `fill_inputs`) and `pinned` (was `export.with_ids`).
@@ -273,11 +277,11 @@ The `settings` tier is built end to end:
     hook).
 - **The agent kind** links new connections (`enable_for_agent`), diffs them ("give it the Tavily tools"), takes
   them away (`remove_mcp_connections`, "take the Tavily tools away"), rolls links back on failure, and exports them.
-- **The system connects, not Ada** (`api/src/builder/connections.py`):
+- **The system connects, not Ila** (`api/src/builder/connections.py`):
 
   ```mermaid
   sequenceDiagram
-      participant A as Ada
+      participant A as Ila
       participant T as plan_blueprint
       participant C as Chat (ConnectAccountCard)
       participant R as POST /builder/{id}/connect
@@ -317,7 +321,7 @@ The `settings` tier is built end to end:
 
 ## Context and problem
 
-Ada's pipeline (validate, then plan, then approve, then apply) is sound, and it updates rather than duplicates (see
+Ila's pipeline (validate, then plan, then approve, then apply) is sound, and it updates rather than duplicates (see
 the parent LLD, "Applying updates what exists"). What she can build is the limit:
 
 | Capability | Today | Why |
@@ -338,7 +342,7 @@ the parent LLD, "Applying updates what exists"). What she can build is the limit
 Every ❌ and ⚠️ falls into one of two gaps:
 
 1. **No kind for it.** The blueprint can't describe it.
-2. **It needs the person.** A secret, a browser sign-in, consent, or a file. Ada can't write these into YAML, must
+2. **It needs the person.** A secret, a browser sign-in, consent, or a file. Ila can't write these into YAML, must
    not see them, and must not ask for them in chat.
 
 Today the chat can't close the second gap safely:
@@ -354,9 +358,9 @@ Today the chat can't close the second gap safely:
 
 **Goals**
 
-1. **Coverage.** Ada can build with every skill, every automation feature, and every configurable feature listed in
+1. **Coverage.** Ila can build with every skill, every automation feature, and every configurable feature listed in
    [§1](#1-capability-coverage). A coverage test fails when a new skill or kind arrives without a path.
-2. **Setup is the tool's job, not Ada's.** Ada names what to build. The plan works out what the person must supply,
+2. **Setup is the tool's job, not Ila's.** Ila names what to build. The plan works out what the person must supply,
    from the manifests (field input types, `requires_oauth`, `connectors`) and the kinds. The input type decides the
    surface: `password` gives a masked modal, `key_value` secret gives a key/value modal, OAuth gives a popup window,
    consent and uploads use a side panel.
@@ -372,10 +376,10 @@ Today the chat can't close the second gap safely:
 - **Implicit deletion.** Leaving something out of a blueprint never removes it. Explicit removal (disconnect,
   uninstall, `remove: true`) is built; see the parent's "Removing, explicitly". New kinds implement `removals`,
   `remove_parts` and `delete` like the existing three.
-- **Payments.** Ada links to the upgrade page when a quota blocks; she never starts a checkout.
+- **Payments.** Ila links to the upgrade page when a quota blocks; she never starts a checkout.
 - **Read-only or system features** (analytics, artifacts, system email, contact forms). There's nothing to build.
-- **Marketplace publishing from Ada.** It comes later; see [Later](#later).
-- **Server-side widget theming.** Appearance stays client-side; Ada only writes it into the snippet.
+- **Marketplace publishing from Ila.** It comes later; see [Later](#later).
+- **Server-side widget theming.** Appearance stays client-side; Ila only writes it into the snippet.
 - **Automation conditions and foreach** in v1 of the `Automation` kind. Foreach isn't implemented in automations
   yet either (`api/docs/LLD-automation-foreach-construct.md` is a draft).
 
@@ -389,7 +393,7 @@ flowchart LR
         OP[/oauth/popup route/]
     end
     subgraph Builder["api/src/builder/"]
-        T[Ada's tools<br/>edit_draft · describe · plan · apply]
+        T[Ila's tools<br/>edit_draft · describe · plan · apply]
         SR[setup routes<br/>/builder/{cid}/setup]
         V[(BuilderSetup items<br/>encrypted, TTL)]
         SPC[specialists<br/>phase 4]
@@ -433,11 +437,11 @@ flowchart LR
 ```
 
 *Green is new, blue is existing (some extended), dashed is the conditional phase 4. Secret values only travel on the
-`SetupPanel → setup routes → vault → kinds` edges; none of them go through Ada's tools or the chat.*
+`SetupPanel → setup routes → vault → kinds` edges; none of them go through Ila's tools or the chat.*
 
 ### 1. Capability coverage
 
-Each row is something InnomightLabs offers and how Ada builds it. "Setup" is what the person supplies, and on which
+Each row is something InnomightLabs offers and how Ila builds it. "Setup" is what the person supplies, and on which
 surface ([§3](#3-setup-requirements)).
 
 **Skills.** Every row comes from that skill's `manifest.yml`. Nothing here is a second definition; the coverage test
@@ -450,7 +454,7 @@ derives the same table.
 | `agent_invocation` | `Agent.skills` (orchestrators), `Automation` agent steps | — | `target_agent_id` may now be a blueprint reference ([§2.4](#24-agent-additions)) |
 | `wordpress_search` | `Agent.skills` | Optional secret modal (`app_password`, `cf_bypass_token`) | Optional, so not a gate: the setup can be done now or skipped |
 | `rest_template` | `Agent.skills` | Optional key/value secret modal (`secrets`) | The prompt refers to the names (`{{ name }}`), never the values |
-| `aws_cli` | `Agent.skills` | **Required** secret modal (access key, secret key) | `command_policy_yaml` stays plain config, so Ada can write a policy; `parse_policy` validates it at plan |
+| `aws_cli` | `Agent.skills` | **Required** secret modal (access key, secret key) | `command_policy_yaml` stays plain config, so Ila can write a policy; `parse_policy` validates it at plan |
 | `riot_lol_api_client` | `Agent.skills` | Required secret modal (`riot_api_key`) | |
 | `league_insights_report` | `Agent.skills` | Required secret modal (`riot_api_key`) | `report_agent_id` must be a `krishna-mini` agent, so `AgentSpec` gains `architecture` ([§2.4](#24-agent-additions)) |
 | `google_mail`, `google_drive` | `Agent.skills` | OAuth popup (GoogleMail / GoogleDrive) | Per user: once connected, every agent can use it |
@@ -473,9 +477,9 @@ derives the same table.
 | /v1 secret key | `SecretKey` (new) | **Reveal** side panel, after apply, shown once |
 | A2A caller secret | `SecretKey` with `for: a2a` (new) | Reveal side panel, after apply |
 | Automation (manual or schedule; agent and skill steps) | `Automation` (new) | Whatever its skills need, as for agents |
-| Dream (memory schedule) | — | Per account, not per agent. Ada mentions it and links to Settings. A later account-level kind, if wanted |
+| Dream (memory schedule) | — | Per account, not per agent. Ila mentions it and links to Settings. A later account-level kind, if wanted |
 | Smart suggestions, default agent | — | Account preferences; not part of a build |
-| Marketplace import | — | Ada loads a template as a draft instead (later) |
+| Marketplace import | — | Ila loads a template as a draft instead (later) |
 | Subscription, payments | — | Quota blockers link to the upgrade page |
 
 ### 2. New kinds and fields
@@ -643,7 +647,7 @@ resources:
 
 ### 3. Setup requirements
 
-This is what the person must supply for the build to work. **The plan derives them; Ada never declares them.** She
+This is what the person must supply for the build to work. **The plan derives them; Ila never declares them.** She
 can't add a requirement, skip one, or mark one done.
 
 #### 3.1 Where they come from
@@ -751,7 +755,7 @@ items are deleted in the same apply, whether it succeeds or fails.*
 sequenceDiagram
     participant P as Person
     participant UI as SetupPanel (SPA)
-    participant A as Ada
+    participant A as Ila
     participant T as plan_blueprint
     participant S as /builder/{cid}/setup
     participant O as OAuth provider
@@ -775,7 +779,7 @@ sequenceDiagram
 ```
 
 *The `<setup_complete/>` message carries no values and proves nothing. Apply re-plans and reads the setup state
-from the server, so a fake message only makes Ada plan again.*
+from the server, so a fake message only makes Ila plan again.*
 
 - **Plan result.** When before-apply requirements are pending, `plan_blueprint` returns these and **no approval
   form**:
@@ -819,7 +823,7 @@ from the server, so a fake message only makes Ada plan again.*
   - If the popup is blocked, the card falls back to a link that opens in a new tab; the panel polls
     `GET /builder/{cid}/setup` when the window regains focus.
 - **After-apply requirements** (uploads, reveal, OAuth on a new MCP connection) are returned by `apply_blueprint`
-  the same way. Ada's "run and test" step waits for them: "Drop your price list into the panel; I'll tell you when
+  the same way. Ila's "run and test" step waits for them: "Drop your price list into the panel; I'll tell you when
   it's read."
 
 #### 3.4 The vault and apply
@@ -850,10 +854,10 @@ from the server, so a fake message only makes Ada plan again.*
     stored required secret.
   - Consent items are applied by their kinds (allowlist origins, MCP sharing, A2A).
   - The executor deletes consumed vault items in a `finally`.
-- **Ada sees only status.** The model never receives a value: tools return requirement titles and states, and
+- **Ila sees only status.** The model never receives a value: tools return requirement titles and states, and
   `GET /builder/{cid}/setup` is an HTTP route, not a tool.
 
-### 4. Keeping Ada's context small
+### 4. Keeping Ila's context small
 
 The catalog grows with this LLD:
 
@@ -874,7 +878,7 @@ New tools replace "send the whole YAML":
 - `draft.j2` shows a **compact outline**:
   - every resource's name, kind and id;
   - the full YAML of the resources edited in the last two turns only.
-- `get_draft(resource?)` returns a resource's full YAML when Ada needs it.
+- `get_draft(resource?)` returns a resource's full YAML when Ila needs it.
 
 #### 4.2 Describe on demand
 
@@ -890,20 +894,20 @@ New tools replace "send the whole YAML":
 
   The same manifests feed both views, so there's still one source.
 - **Described items are pinned.** The `BuilderSession` keeps the names described in it, and their references stay
-  in the prompt for the session. Turns don't carry tool results, so without this Ada would describe the same thing
+  in the prompt for the session. Turns don't carry tool results, so without this Ila would describe the same thing
   again every turn. This works like `_recent_skill_actions` in `krishna_memgpt.py:319-335`, but per session.
 - **Ideas** remain the example blueprints. Each new kind ships one: weekly digest (Automation), GitHub triage agent
   (McpConnection), API backend (SecretKey).
 
 #### 4.3 Specialists (sub-agents), only if measured
 
-If the measures above still leave Ada's prompt too large, or a small model can't write automations, she gets
+If the measures above still leave Ila's prompt too large, or a small model can't write automations, she gets
 specialists. A specialist is a focused sub-agent that writes one resource and returns it. It never talks to the
 person.
 
 ```mermaid
 sequenceDiagram
-    participant A as Ada (orchestrator)
+    participant A as Ila (orchestrator)
     participant D as delegate tool
     participant S as Specialist (automation designer)
     A->>D: delegate(specialist="automation", goal, resource="weekly_digest", context_refs=[writer])
@@ -915,14 +919,14 @@ sequenceDiagram
 ```
 
 *Specialists can only edit their own fragment, validate and describe. They can't plan, apply, show forms or touch
-setup, so approval and secrets stay with Ada and the person.*
+setup, so approval and secrets stay with Ila and the person.*
 
 - **What a specialist is:** a `Specialist` dataclass with:
   - `name`;
   - prompt sections (`vishwakarma/specialists/<name>/`);
   - a tool subset (`describe`, `edit_fragment`, `validate_fragment`);
   - an output schema.
-- **How it runs:** it runs `run_agentic_tool_loop` with buffered events on Ada's provider session, like
+- **How it runs:** it runs `run_agentic_tool_loop` with buffered events on Ila's provider session, like
   `handle_message_buffered` (`agents/architectures/base.py:146`), and with an in-memory message list, so nothing is
   persisted.
 - **Not reused:** `agent_invocation` isn't, because it targets the owner's stored agents and persists their
@@ -934,8 +938,8 @@ setup, so approval and secrets stay with Ada and the person.*
 - **Limits:**
   - Specialist tokens count toward the person's token usage (`token_usage/`).
   - Each delegation has a step cap.
-  - Ada's `AdaWorking` tile shows "Designing your automation…".
-- **Decision gate:** measure first ([Validation](#validation)). Adopt specialists for a kind only when Ada alone
+  - Ila's `IlaWorking` tile shows "Designing your automation…".
+- **Decision gate:** measure first ([Validation](#validation)). Adopt specialists for a kind only when Ila alone
   fails its eval cases with the target small model, or a typical prompt for that kind is over budget (8k words, the
   current `max_context_words`).
 
@@ -1106,7 +1110,7 @@ the order: each phase unlocks a set of rows in [§1](#1-capability-coverage).
 | `test_blueprints_setup.py` | Each `SkillNeed` strategy; satisfied by stored secret, vault, `ProviderSettings`; deterministic ids; blank values dropped |
 | `test_blueprints_coverage.py` | Every manifest in the live registry maps to a path. A secret field gets a `SecretFields` requirement; `requires_oauth`/`connectors` get `OAuthConnection`; every `FormInputType` used by a secret field has a surface. This fails when a new skill or input type arrives without one, which is the "nothing left behind" guarantee |
 | `test_builder_setup_routes.py` | Owner only; values validated by the manifest; never returned; expiry checked in code; reveal reads once; skip only optional |
-| `test_builder_ada.py` | Pending required setup → no approval form; `<setup_complete/>` without state changes nothing; apply merges vault secrets and deletes them on success and on failure; no tool result contains a value |
+| `test_builder_ila.py` | Pending required setup → no approval form; `<setup_complete/>` without state changes nothing; apply merges vault secrets and deletes them on success and on failure; no tool result contains a value |
 | `test_blueprints_automation.py` | Compile steps to a graph; smart values pass, unknown roots fail; STRICT validation issues map to step paths; schedule synced on create, update and restore; rollback deletes schedules; twice-applied is unchanged; export → plan unchanged |
 | `test_blueprints_mcp.py`, `test_blueprints_secret_key.py` | Matching, after-apply OAuth and reveal, sharing consent, no plaintext in attributes or outputs |
 | Existing `test_blueprints_*` | Unchanged behaviour for the three existing kinds |
@@ -1118,7 +1122,7 @@ the order: each phase unlocks a set of rows in [§1](#1-capability-coverage).
 - `OAuthPopup` posts and closes.
 - A form submission never includes setup values (unit test on `handleFormSubmit`).
 
-**Ada evals** (`api/tests/evals/ada/`, run by hand, not in CI):
+**Ila evals** (`api/tests/evals/ila/`, run by hand, not in CI):
 
 - Scripted conversations, one per row of [§1](#1-capability-coverage). For example: "build me an agent that reads my
   Gmail and drafts replies", "email me a weekly digest", "let my site's visitors search GitHub issues".
@@ -1126,7 +1130,7 @@ the order: each phase unlocks a set of rows in [§1](#1-capability-coverage).
 - Recorded per case:
   - plan reached;
   - issues per plan;
-  - whether Ada ever asked for a secret in chat (must be zero);
+  - whether Ila ever asked for a secret in chat (must be zero);
   - prompt words per turn;
   - tool calls per build.
 - These numbers make the phase 5 decision.
@@ -1140,15 +1144,15 @@ the order: each phase unlocks a set of rows in [§1](#1-capability-coverage).
 
 | Decision | Chosen | Rejected, and why |
 | --- | --- | --- |
-| Who decides what the person must supply | The plan, from manifests and kinds | **Ada declares it in YAML:** she could forget one, invent one, or be talked into skipping one. The manifest already says which fields are secret |
+| Who decides what the person must supply | The plan, from manifests and kinds | **Ila declares it in YAML:** she could forget one, invent one, or be talked into skipping one. The manifest already says which fields are secret |
 | Where secrets go before apply | Encrypted vault item per session, 24h TTL | **Install the skill disabled first, then PATCH the secret:** `install_skill` validates required fields even when disabled, and it splits apply into steps the person sees half-done. **Secrets in the chat form:** stored in plaintext history and sent to the model |
 | Collecting secrets | `SetupPanel` posting to `/builder/{cid}/setup` | **Extend `render_custom_form` with `password`:** its submission is a chat message. Its manifest already forbids sensitive data |
 | OAuth | Popup and `postMessage` | **Full-page redirect** (today's pattern): tears down the chat mid-build. **New tab with polling only:** kept as the popup-blocked fallback |
 | Provider not set up | A setup requirement | **A blocker** (today): a dead end in the very first build for a new account |
 | Automation shape | Trigger plus a list of steps, compiled to the graph | **The raw graph in YAML:** node and edge ids are noise for a model, and the dashboard is a chain already |
 | `{{ }}` clash | Mark smart-value fields with `x-smart-values` | **A different delimiter for params:** breaks every existing blueprint and diverges from the marketplace's `{{ inputs.* }}` |
-| Context | Edit by resource and describe on demand first; specialists only if measured | **Specialists now:** more moving parts and more tokens before we know where Ada actually struggles |
-| Sub-agent mechanism | In-memory specialists on Ada's session | **`agent_invocation`:** targets stored user agents, persists transcripts, owner-only |
+| Context | Edit by resource and describe on demand first; specialists only if measured | **Specialists now:** more moving parts and more tokens before we know where Ila actually struggles |
+| Sub-agent mechanism | In-memory specialists on Ila's session | **`agent_invocation`:** targets stored user agents, persists transcripts, owner-only |
 
 ## Later
 
@@ -1157,13 +1161,13 @@ the order: each phase unlocks a set of rows in [§1](#1-capability-coverage).
 - **Automation conditions** (`when:` on a step, compiled to a condition node), then foreach once the automation
   module has it.
 - **Account-level kinds:** Dream settings, the A2A allowlist as a resource rather than a consent card.
-- **Publish to the marketplace from Ada:** a built deployment becomes a blueprint template, with the secrets turned
+- **Publish to the marketplace from Ila:** a built deployment becomes a blueprint template, with the secrets turned
   into setup requirements for whoever imports it. The same machinery runs without an LLM.
 - **Server-side widget appearance**, if customers want to restyle without editing their site.
 
 ## Related documentation
 
-- [Solution Blueprints](LLD-solution-blueprints.md): the parent design, Ada, and idempotent updates
+- [Solution Blueprints](LLD-solution-blueprints.md): the parent design, Ila, and idempotent updates
 - [Automations module](../api/docs/LLD-automations-module.md), [Smart values](../spa/docs/LLD-automation-smart-values.md),
   [Unified skill automation actions](../api/docs/LLD-unified-skill-automation-actions.md)
 - [MCP connector machinery](LLD-mcp-connector-machinery.md), [MCP provider catalog](LLD-mcp-provider-catalog.md),

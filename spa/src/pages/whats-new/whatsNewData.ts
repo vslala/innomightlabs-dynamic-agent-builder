@@ -16,20 +16,20 @@ export interface ChangeLogEntry {
 export const changeLogEntries: ChangeLogEntry[] = [
   {
     date: "2026-10-10",
-    title: "Build with Ada, and kits",
+    title: "Build with Ila, and kits",
     summary:
-      "Ada, InnomightLabs' solution builder, sets up what you describe in a chat: agents, knowledge bases, skills, tools and chat widgets. Everything she builds is kept together as a kit you can change, roll back or remove as one.",
+      "Ila, InnomightLabs' solution builder, sets up what you describe in a chat: agents, knowledge bases, skills, tools and chat widgets. Everything she builds is kept together as a kit you can change, roll back or remove as one.",
     items: [
       {
-        title: "Build with Ada",
+        title: "Build with Ila",
         description:
-          "Tell Ada what you need, or pick one of her ideas, such as a website support agent, a lead qualifier with email alerts, a web research team or a report studio. She shows you a drawing of the plan and builds only when you approve it.",
+          "Tell Ila what you need, or pick one of her ideas, such as a website support agent, a lead qualifier with email alerts, a web research team or a report studio. She shows you a drawing of the plan and builds only when you approve it.",
         category: "new",
       },
       {
         title: "Kits",
         description:
-          "Everything one build creates is a kit, listed on the Build with Ada page with what it holds. Each change you approve is a new version, and Ada only ever changes or removes what the kit itself built, never the things you added yourself.",
+          "Everything one build creates is a kit, listed on the Build with Ila page with what it holds. Each change you approve is a new version, and Ila only ever changes or removes what the kit itself built, never the things you added yourself.",
         category: "new",
       },
       {
@@ -45,15 +45,15 @@ export const changeLogEntries: ChangeLogEntry[] = [
         category: "new",
       },
       {
-        title: "Ada asks only what you know",
+        title: "Ila asks only what you know",
         description:
-          "When a skill needs something only you can tell her, such as where lead emails should go, the chat shows a short form for it. Ada writes the rest of the setup herself.",
+          "When a skill needs something only you can tell her, such as where lead emails should go, the chat shows a short form for it. Ila writes the rest of the setup herself.",
         category: "new",
       },
       {
         title: "Web search for your agents",
         description:
-          "Agents can search and read the web through Tavily. Ada asks you to connect it from a card in the chat, and you sign in once for every agent that uses it.",
+          "Agents can search and read the web through Tavily. Ila asks you to connect it from a card in the chat, and you sign in once for every agent that uses it.",
         category: "new",
       },
       {
@@ -63,9 +63,9 @@ export const changeLogEntries: ChangeLogEntry[] = [
         category: "improved",
       },
       {
-        title: "Ada's conversations stay on her page",
+        title: "Ila's conversations stay on her page",
         description:
-          "Building with Ada no longer fills your conversations list; her conversations are on the Build with Ada page.",
+          "Building with Ila no longer fills your conversations list; her conversations are on the Build with Ila page.",
         category: "improved",
       },
     ],
