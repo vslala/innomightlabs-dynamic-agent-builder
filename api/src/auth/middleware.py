@@ -158,6 +158,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
         request.state.auth_token = token
+        request.state.identity = user
         request.state.user_id = user.user_id
         # Resources stay keyed by email until they move into accounts (KAN-80). It is read from the
         # identity, never from the token.

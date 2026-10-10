@@ -128,6 +128,10 @@ class CreateAccountRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
 
+class ActiveAccountRequest(BaseModel):
+    account_id: str = Field(min_length=1)
+
+
 class AccountResponse(BaseModel):
     account_id: str
     name: str
@@ -142,3 +146,5 @@ class MembershipResponse(BaseModel):
     access_summary: str
     membership_status: str
     joined_at: str
+    # The account requests act in when they don't name one with X-Account-Id
+    active: bool = False

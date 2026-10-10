@@ -8,6 +8,7 @@ import { ToolActivitySummary } from "./ToolActivitySummary";
 import { AccordionPanel, MarkdownRenderer } from "../ui";
 import { SubmittedFormMessage } from "./SubmittedFormMessage";
 import { isSubmittedFormMessage } from "./submittedFormParser";
+import { authHeaders } from "../../services/http";
 import type { AttachmentInfo, Message, MessageCanvasArtifact, MessageImage, ToolActivity } from "../../types/message";
 
 interface ChatStreamRendererProps {
@@ -81,9 +82,9 @@ function ImagePreview({ image }: { image: MessageImage }) {
           return;
         }
 
-        const token = localStorage.getItem("auth_token");
+        
         const response = await fetch(image.url, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          headers: authHeaders(),
         });
 
         if (!response.ok) {

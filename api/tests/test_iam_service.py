@@ -360,10 +360,3 @@ def test_someone_outside_the_account_gets_nothing(account, test_client: TestClie
 
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "NOT_A_MEMBER"
-
-
-def test_the_account_must_be_named(account, test_client: TestClient):
-    response = test_client.get("/iam/actions", headers=owner_headers(TEST_USER_EMAIL))
-
-    assert response.status_code == 400
-    assert response.json()["detail"]["code"] == "ACCOUNT_REQUIRED"

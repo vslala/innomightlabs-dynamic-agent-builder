@@ -223,6 +223,40 @@
   - The Share dialog, "Shared with me" and the shared badges in the SPA need the account context
     (KAN-79) and account-keyed resources (KAN-80).
 
+### KAN-79: account context (done)
+
+- **Where the account is resolved.** `get_principal` (`api/src/iam/dependencies.py`) resolves it, not
+  the middleware.
+  - The middleware keeps the `Identity` it already loads on `request.state.identity`.
+  - The first dependency that needs the principal resolves the account and caches the principal on
+    `request.state.principal`.
+  - Routes that don't use it, such as `/auth/*`, public routes and routes not yet converted by KAN-80,
+    pay for no extra reads and ignore the header.
+- **Which account.** The order is: `X-Account-Id`; then `Identity.last_account_id`; then the oldest
+  active membership.
+  - An account named in the header that the caller isn't an active member of is refused with 403
+    `NOT_A_MEMBER`.
+  - The fallbacks quietly skip accounts the caller has left, or whose membership is suspended.
+  - With no membership at all, the response is 403 `NO_ACCOUNT`.
+  - Membership status is read on every request, so a suspension applies at once.
+- **API.** `PUT /accounts/active {account_id}` checks the membership and sets `Identity.last_account_id`.
+  `GET /accounts` marks the account requests act in with `active`.
+- **No `authorize(action, resource_fn)` factory.** The ticket asked for one, but routes call
+  `principal.require(action, resource.resource_ref)` after loading the resource, as
+  [Enforcement in routes](#enforcement-in-routes) decides.
+- **SPA.**
+  - `services/http/client.ts` keeps the tab's account in `localStorage.active_account_id`.
+    `authHeaders()` adds `X-Account-Id` next to the token. It is used by the client and by the direct
+    `fetch` calls: chat streams, image blobs and canvas HTML.
+  - `components/dashboard/AccountSwitcher.tsx` sits in the dashboard header on every page and shows the
+    account name and the caller's access (Owner, Admin or Member).
+  - On load it pins the tab to its account, so a switch on another device doesn't move a running tab.
+  - Switching calls `PUT /accounts/active` and reloads `/dashboard`, so nothing fetched for the previous
+    account stays on screen.
+  - Signing in or out clears the tab's choice.
+- **Waiting on KAN-80.** "Lists show only the active account's resources" depends on resources moving
+  into accounts.
+
 ## Context and problem
 
 ### How it works today

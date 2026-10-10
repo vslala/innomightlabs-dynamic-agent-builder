@@ -2,7 +2,7 @@
  * Authentication service for managing user auth state.
  */
 
-import { httpClient } from "../http";
+import { httpClient, setActiveAccountId } from "../http";
 
 const AUTH_TOKEN_KEY = "auth_token";
 
@@ -43,6 +43,7 @@ class AuthService {
    */
   removeToken(): void {
     localStorage.removeItem(AUTH_TOKEN_KEY);
+    setActiveAccountId(null);
   }
 
   /**

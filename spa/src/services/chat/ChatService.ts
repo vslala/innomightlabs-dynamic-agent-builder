@@ -9,8 +9,8 @@ import type {
   SSEEvent,
 } from "../../types/message";
 import { chatPath } from "../builder/ila";
+import { authHeaders } from "../http";
 
-const AUTH_TOKEN_KEY = "auth_token";
 const TURN_ID_HEADER = "X-Turn-Id";
 const FOLLOW_TURN_MAX_ATTEMPTS = 3;
 const FOLLOW_TURN_RETRY_DELAY_MS = 500;
@@ -45,23 +45,18 @@ class ChatService {
     this.baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
   }
 
-  private getAuthToken(): string | null {
-    return localStorage.getItem(AUTH_TOKEN_KEY);
-  }
-
   async generateImage(
     agentId: string,
     conversationId: string,
     request: GenerateImageRequest
   ): Promise<GenerateImageResponse> {
-    const token = this.getAuthToken();
     const url = `${this.baseUrl}/agents/${agentId}/${conversationId}/generate-image`;
 
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authHeaders(),
       },
       body: JSON.stringify(request),
     });
@@ -82,7 +77,6 @@ class ChatService {
   ): Promise<void> {
     const { onEvent, onError, onComplete, signal } = options;
 
-    const token = this.getAuthToken();
     const url = `${this.baseUrl}/agents/${agentId}/${conversationId}/generate-image-stream`;
 
     try {
@@ -90,7 +84,7 @@ class ChatService {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...authHeaders(),
         },
         body: JSON.stringify(request),
         signal,
@@ -140,7 +134,6 @@ class ChatService {
     options: ChatStreamOptions
   ): Promise<void> {
     const { onEvent, onError, onComplete, onTurnStarted, onConflict, signal } = options;
-    const token = this.getAuthToken();
 
     const url = `${this.baseUrl}${chatPath(agentId, conversationId)}/send-message`;
 
@@ -160,7 +153,7 @@ class ChatService {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...authHeaders(),
         },
         body: JSON.stringify(body),
         signal,
@@ -204,9 +197,8 @@ class ChatService {
 
   /** The turn still running for this conversation, if any — for reattaching on mount. */
   async getActiveTurn(agentId: string, conversationId: string): Promise<ActiveTurn | null> {
-    const token = this.getAuthToken();
     const response = await fetch(`${this.baseUrl}${chatPath(agentId, conversationId)}/turns/active`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: authHeaders(),
     });
 
     if (!response.ok) {
@@ -229,7 +221,6 @@ class ChatService {
     options: ChatStreamOptions
   ): Promise<void> {
     const { onEvent, onError, onComplete, signal } = options;
-    const token = this.getAuthToken();
     let afterSequence = 0;
 
     for (let attempt = 1; attempt <= FOLLOW_TURN_MAX_ATTEMPTS; attempt++) {
@@ -237,7 +228,7 @@ class ChatService {
 
       try {
         const response = await fetch(url, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: authHeaders(),
           signal,
         });
 
@@ -271,12 +262,11 @@ class ChatService {
 
   /** Stop an in-progress turn. A 404 means it already finished — not an error. */
   async stopTurn(agentId: string, conversationId: string, turnId: string): Promise<void> {
-    const token = this.getAuthToken();
     const response = await fetch(
       `${this.baseUrl}${chatPath(agentId, conversationId)}/turns/${turnId}/stop`,
       {
         method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: authHeaders(),
       }
     );
 

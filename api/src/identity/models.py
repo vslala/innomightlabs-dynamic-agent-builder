@@ -36,6 +36,8 @@ class Identity:
     updated_at: Optional[str] = None
     password_hash: Optional[str] = None
     password_salt: Optional[str] = None
+    # The account a request acts in when it doesn't name one (KAN-79)
+    last_account_id: Optional[str] = None
     ttl: Optional[int] = None
 
     def __post_init__(self) -> None:
@@ -78,6 +80,7 @@ class Identity:
             updated_at=item.get("updated_at"),
             password_hash=item.get("password_hash"),
             password_salt=item.get("password_salt"),
+            last_account_id=item.get("last_account_id"),
             ttl=int(item["ttl"]) if item.get("ttl") is not None else None,
         )
 

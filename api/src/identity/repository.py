@@ -87,6 +87,9 @@ class IdentityRepository:
     def update_stripe_customer_id(self, user_id: str, customer_id: str) -> None:
         self._set(user_id, stripe_customer_id=customer_id)
 
+    def set_last_account(self, user_id: str, account_id: str) -> None:
+        self._set(user_id, last_account_id=account_id)
+
     def mark_inactive(self, user_id: str) -> None:
         self._set(user_id, status=IdentityStatus.INACTIVE.value, deletion_requested_at=_now())
 
