@@ -26,6 +26,7 @@ from tests.mock_data import (
     DYNAMODB_TABLE_SCHEMA,
     TEST_USER_EMAIL,
     TEST_USER_EMAIL_2,
+    user_id_for,
 )
 
 
@@ -49,10 +50,10 @@ def dynamodb_table(mock_aws_context):
     # Wait for table to be active
     table.meta.client.get_waiter('table_exists').wait(TableName=DYNAMODB_TABLE_NAME)
     # Owner tokens are only accepted for users that exist.
-    from src.users import User, UserRepository
+    from src.identity import Identity, IdentityRepository
 
     for email in (TEST_USER_EMAIL, TEST_USER_EMAIL_2, "someone-else@example.com", "owner@example.com"):
-        UserRepository().create_or_update(User(email=email, name="Test User"))
+        IdentityRepository().create(Identity(email=email, name="Test User", user_id=user_id_for(email), email_verified=True))
     return table
 
 
@@ -95,7 +96,7 @@ def auth_headers():
     token = jwt.encode(
         {
             "aud": "owner",
-            "sub": TEST_USER_EMAIL,
+            "sub": user_id_for(TEST_USER_EMAIL),
             "name": "Test User",
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
             "iat": datetime.now(timezone.utc),

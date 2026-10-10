@@ -133,7 +133,7 @@ def _send_invoice_email(user_email: str, invoice_url: str) -> None:
 
 
 def _is_user_record(image: dict[str, Any]) -> bool:
-    return image.get("sk") == "User#Metadata"
+    return image.get("sk") == "Identity#Metadata"
 
 
 def _is_subscription_record(image: dict[str, Any]) -> bool:

@@ -7,12 +7,12 @@ import jwt
 from src.agents.architectures.krishna_memgpt import KrishnaMemGPTArchitecture
 from src.knowledge.models import KnowledgeBase
 from src.knowledge.repository import AgentKnowledgeBaseRepository, KnowledgeBaseRepository
-from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL, TEST_USER_EMAIL_2
+from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for
 
 
 def _headers_for(email: str) -> dict[str, str]:
     now = datetime.now(timezone.utc)
-    token = jwt.encode({"aud": "owner", "sub": email, "iat": now, "exp": now + timedelta(hours=1)}, "test-secret")
+    token = jwt.encode({"aud": "owner", "sub": user_id_for(email), "iat": now, "exp": now + timedelta(hours=1)}, "test-secret")
     return {"Authorization": f"Bearer {token}"}
 
 

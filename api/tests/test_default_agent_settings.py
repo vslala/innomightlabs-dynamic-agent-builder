@@ -3,7 +3,7 @@
 from fastapi.testclient import TestClient
 
 from src.agents.models import Agent
-from tests.mock_data import AGENT_CREATE_REQUEST, AGENT_CREATE_REQUEST_2, TEST_USER_EMAIL, TEST_USER_EMAIL_2
+from tests.mock_data import AGENT_CREATE_REQUEST, AGENT_CREATE_REQUEST_2, TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for
 
 
 def _create_agent(test_client: TestClient, auth_headers: dict, request: dict | None = None) -> str:
@@ -85,7 +85,7 @@ class TestDefaultAgentSettingsRouter:
         other_user_token = jwt.encode(
             {
                 "aud": "owner",
-                "sub": TEST_USER_EMAIL_2,
+                "sub": user_id_for(TEST_USER_EMAIL_2),
                 "name": "Other User",
                 "exp": datetime.now(timezone.utc) + timedelta(hours=1),
                 "iat": datetime.now(timezone.utc),

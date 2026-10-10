@@ -2,9 +2,16 @@
 Reusable mock data for tests.
 """
 
+from uuid import NAMESPACE_URL, uuid5
+
 # Test user data
 TEST_USER_EMAIL = "testuser@example.com"
 TEST_USER_EMAIL_2 = "otheruser@example.com"
+
+
+def user_id_for(email: str) -> str:
+    """The user_id conftest gives the identity it seeds for this email, so tests can sign tokens for it."""
+    return str(uuid5(NAMESPACE_URL, f"identity:{email}"))
 
 # Agent creation request data
 AGENT_CREATE_REQUEST = {

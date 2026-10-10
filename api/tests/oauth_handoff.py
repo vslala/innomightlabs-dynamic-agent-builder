@@ -5,12 +5,12 @@ from urllib.parse import parse_qs, urlparse
 
 import jwt
 
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, user_id_for
 
 
 def owner_headers(email: str = TEST_USER_EMAIL) -> dict[str, str]:
     now = datetime.now(timezone.utc)
-    token = jwt.encode({"aud": "owner", "sub": email, "iat": now, "exp": now + timedelta(hours=1)}, "test-secret")
+    token = jwt.encode({"aud": "owner", "sub": user_id_for(email), "iat": now, "exp": now + timedelta(hours=1)}, "test-secret")
     return {"Authorization": f"Bearer {token}"}
 
 

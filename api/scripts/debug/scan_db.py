@@ -66,7 +66,7 @@ def main():
                 print(f"  Period: {item.get('current_period_start')} - {item.get('current_period_end')}")
 
             # Show user details
-            elif "User#Metadata" in sk:
+            elif "Identity#Metadata" in sk:
                 print(f"  Name: {item.get('name')}, Stripe: {item.get('stripe_customer_id')}")
 
             print()

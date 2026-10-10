@@ -11,8 +11,7 @@ from typing import Any
 
 from ..config import settings
 from ..agents.repository import AgentRepository
-from ..users import User, UserRepository
-from ..users.models import UserStatus
+from ..identity import EmailTaken, Identity, IdentityRepository
 from ..settings.models import ProviderSettings, ProviderSettingsResponse
 from ..settings.repository import ProviderSettingsRepository
 from .oauth_providers import CognitoOAuthProvider, GoogleOAuthProvider, OAuthProvider
@@ -75,7 +74,7 @@ import logging
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-user_repository = UserRepository()
+identity_repository = IdentityRepository()
 provider_settings_repository = ProviderSettingsRepository()
 agent_repository = AgentRepository()
 OPENAI_PKCE_TTL_SECONDS = 600
@@ -241,9 +240,9 @@ class LoginSessionResponse(BaseModel):
 @router.post("/session", response_model=LoginSessionResponse)
 async def redeem_login_code(body: LoginCodeRequest) -> LoginSessionResponse:
     """Trade the one-time code from /login-success for a session token, so the token never sits in a URL."""
-    email = redeem_app_login_code(body.code, DEFAULT_APP)
-    user = user_repository.get_by_email(email) if email else None
-    if not user or user.status in (UserStatus.INACTIVE.value, UserStatus.PENDING_DELETION.value):
+    user_id = redeem_app_login_code(body.code, DEFAULT_APP)
+    user = identity_repository.get(user_id) if user_id else None
+    if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Invalid or expired login code")
     return LoginSessionResponse(token=create_access_token(user))
 
@@ -535,7 +534,6 @@ async def _oauth_callback(
         provider = _get_provider(provider_name)
         tokens = await provider.exchange_code_for_tokens(code)
         access_token = tokens.get("access_token")
-        refresh_token = tokens.get("refresh_token")
 
         if not access_token:
             raise HTTPException(status_code=400, detail="Failed to get access token")
@@ -552,18 +550,10 @@ async def _oauth_callback(
         if not _email_verified(user_info):
             return _redirect_auth_error("email_not_verified", app)
 
-        # Check if user exists (for welcome email)
-        existing_user = user_repository.get_by_email(email)
-        is_new_user = existing_user is None
-
-        # Create or update user in DynamoDB
-        user = User(
-            email=email,
-            name=name or email.split("@")[0],
-            picture=picture,
-            refresh_token=refresh_token,
-        )
-        user = user_repository.create_or_update(user)
+        name = name or email.split("@")[0]
+        user, is_new_user = identity_repository.find_or_create(email, name, picture=picture, email_verified=True)
+        if not is_new_user:
+            identity_repository.update_profile(user.user_id, name=name, picture=picture, email_verified=True)
 
         # The welcome email is InnomightLabs-branded, so other apps send their own
         if is_new_user and app == DEFAULT_APP:
@@ -571,7 +561,7 @@ async def _oauth_callback(
 
         # Every app redeems a one-time code (our SPA at /auth/session, other apps' backends at
         # /auth/token); the token never touches the browser URL.
-        login_code = create_login_code(user.email, app)
+        login_code = create_login_code(user.user_id, app)
         return forget_nonce(
             RedirectResponse(url=f"{frontend_url_for(app)}/login-success?{urlencode({'code': login_code})}")
         )
@@ -625,10 +615,11 @@ async def oauth_callback_cognito(
 
 @router.get("/me")
 async def get_current_user_info(
-    user: User = Depends(get_user_for_any_app),
+    user: Identity = Depends(get_user_for_any_app),
 ):
     """Get current authenticated user info."""
     return {
+        "user_id": user.user_id,
         "email": user.email,
         "name": user.name,
         "picture": user.picture,
@@ -684,32 +675,23 @@ async def local_signup(payload: LocalSignupRequest):
     # Create email from username using example.com (RFC 2606 reserved domain)
     email = f"{payload.username}@example.com"
 
-    # Check if user already exists
-    existing_user = user_repository.get_by_email(email)
-    if existing_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Username already taken"
-        )
-
     # Hash password
     hashed_password, salt = _hash_password(payload.password)
 
     # Calculate TTL: 7 days from now (Unix timestamp in seconds)
     ttl_timestamp = int(time.time() + (7 * 24 * 60 * 60))
 
-    # Create user in DynamoDB with TTL for auto-expiration
-    user = User(
-        email=email,
-        name=payload.username,
-        picture=None,
-        refresh_token=None,
-        password_hash=hashed_password,
-        password_salt=salt,
-        ttl=ttl_timestamp,
-    )
-
-    user = user_repository.create_or_update(user)
+    # The identity and its email index both expire with the TTL
+    try:
+        user = identity_repository.create(Identity(
+            email=email,
+            name=payload.username,
+            password_hash=hashed_password,
+            password_salt=salt,
+            ttl=ttl_timestamp,
+        ))
+    except EmailTaken:
+        raise HTTPException(status_code=400, detail="Username already taken")
 
     # Generate JWT token
     jwt_token = create_access_token(user)
@@ -738,7 +720,7 @@ async def local_login(payload: LocalLoginRequest):
     email = f"{payload.username}@example.com"
 
     # Get user from database
-    user = user_repository.get_by_email(email)
+    user = identity_repository.find_by_email(email)
     if not user:
         raise HTTPException(
             status_code=401,

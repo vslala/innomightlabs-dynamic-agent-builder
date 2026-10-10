@@ -15,7 +15,7 @@ Deletion order (child entities first):
 11. Subscriptions
 12. Usage Records (monthly + active + events)
 13. Email Events
-14. User record
+14. Identity (with its refresh tokens) and its email index entry
 
 Lambda Configuration:
 - Timeout: 900 seconds (15 minutes)
@@ -30,6 +30,8 @@ from typing import Dict, List
 import boto3
 from boto3.dynamodb.conditions import Key
 
+from src.identity.models import email_index_key
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
@@ -43,7 +45,8 @@ class AccountDeletionHandler:
         dynamodb = boto3.resource("dynamodb", **kwargs)
         self.table = dynamodb.Table(os.getenv("DYNAMODB_TABLE", ""))
 
-    def delete_user_entities(self, user_email: str) -> Dict[str, int]:
+    def delete_user_entities(self, user_id: str, user_email: str) -> Dict[str, int]:
+        """Resources are still keyed by the owner's email until they move into accounts (KAN-80)."""
         log.info(f"Starting account deletion for {user_email}")
         counts = {}
 
@@ -95,7 +98,7 @@ class AccountDeletionHandler:
 
         # 9b. Delete refresh tokens issued to other apps that share this login
         counts["refresh_tokens"] = self._delete_items_by_pattern(
-            f"User#{user_email}", "RefreshToken#"
+            f"Identity#{user_id}", "RefreshToken#"
         )
 
         # 10. Delete Subscriptions
@@ -119,8 +122,8 @@ class AccountDeletionHandler:
             f"EmailEvent#{user_email}", ""
         )
 
-        # 13. Delete User record
-        counts["user"] = self._delete_user_record(user_email)
+        # 13. Delete the identity and free its email
+        counts["identity"] = self._delete_identity(user_id, user_email)
 
         log.info(f"Completed account deletion for {user_email}: {counts}")
         return counts
@@ -346,18 +349,18 @@ class AccountDeletionHandler:
 
         return count
 
-    def _delete_user_record(self, user_email: str) -> int:
+    def _delete_identity(self, user_id: str, user_email: str) -> int:
         try:
+            self.table.delete_item(Key={"pk": f"Identity#{user_id}", "sk": "Identity#Metadata"})
             self.table.delete_item(
-                Key={
-                    "pk": f"User#{user_email}",
-                    "sk": "User#Metadata"
-                }
+                Key=email_index_key(user_email),
+                ConditionExpression="user_id = :uid",
+                ExpressionAttributeValues={":uid": user_id},
             )
-            log.info(f"Deleted user record for {user_email}")
+            log.info(f"Deleted identity {user_id} ({user_email})")
             return 1
         except Exception as e:
-            log.error(f"Error deleting user record for {user_email}: {e}")
+            log.error(f"Error deleting identity {user_id} ({user_email}): {e}")
             return 0
 
 
@@ -367,20 +370,22 @@ def handler(event, context):
 
     Expected event format:
     {
+        "user_id": "3f0c…",
         "user_email": "user@example.com"
     }
     """
+    user_id = event.get("user_id")
     user_email = event.get("user_email")
 
-    if not user_email:
+    if not user_id or not user_email:
         log.error(f"Invalid event payload: {event}")
         return {
             "statusCode": 400,
-            "body": "Missing user_email in event payload"
+            "body": "Missing user_id or user_email in event payload"
         }
 
     deletion_handler = AccountDeletionHandler()
-    counts = deletion_handler.delete_user_entities(user_email)
+    counts = deletion_handler.delete_user_entities(user_id, user_email)
 
     return {
         "statusCode": 200,

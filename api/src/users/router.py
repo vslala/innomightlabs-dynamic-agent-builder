@@ -8,7 +8,7 @@ import boto3
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .repository import UserRepository
+from ..identity import IdentityRepository
 from ..payments.subscriptions.repository import SubscriptionRepository
 from ..payments.stripe.service import StripeService
 from ..config import settings
@@ -32,17 +32,18 @@ async def delete_account(request: Request):
     2. Cancel Stripe subscription immediately
     3. Trigger background cascade deletion via Lambda
     """
+    user_id = getattr(request.state, "user_id", None)
     user_email = getattr(request.state, "user_email", None)
-    if not user_email:
+    if not user_id or not user_email:
         raise HTTPException(401, "Not authenticated")
 
-    user_repo = UserRepository()
     subscription_repo = SubscriptionRepository()
 
     # Mark user as INACTIVE
-    success = user_repo.mark_inactive(user_email)
-    if not success:
-        log.error(f"Failed to mark user {user_email} as inactive")
+    try:
+        IdentityRepository().mark_inactive(user_id)
+    except Exception:
+        log.exception(f"Failed to mark user {user_email} as inactive")
         raise HTTPException(500, "Failed to initiate account deletion")
 
     log.info(f"Marked user {user_email} as INACTIVE")
@@ -72,7 +73,7 @@ async def delete_account(request: Request):
         lambda_client.invoke(
             FunctionName=function_name,
             InvocationType="Event",
-            Payload=json.dumps({"user_email": user_email}).encode("utf-8")
+            Payload=json.dumps({"user_id": user_id, "user_email": user_email}).encode("utf-8")
         )
         log.info(f"Triggered account deletion Lambda for {user_email}")
     except Exception as e:

@@ -7,13 +7,16 @@ import { httpClient } from "../http";
 const AUTH_TOKEN_KEY = "auth_token";
 
 export interface UserInfo {
+  userId: string;
   email: string;
   name: string;
   picture?: string;
 }
 
 export interface TokenPayload {
+  /** The user_id. The email is a display-only claim. */
   sub: string;
+  email: string;
   name: string;
   picture?: string;
   exp: number;
@@ -82,7 +85,8 @@ class AuthService {
     try {
       const payload = this.decodeToken(token);
       return {
-        email: payload.sub,
+        userId: payload.sub,
+        email: payload.email,
         name: payload.name,
         picture: payload.picture,
       };
@@ -95,7 +99,8 @@ class AuthService {
    * Fetch current user info from backend (validates token server-side).
    */
   async getCurrentUser(): Promise<UserInfo> {
-    return httpClient.get<UserInfo>("/auth/me");
+    const me = await httpClient.get<{ user_id: string; email: string; name: string; picture?: string }>("/auth/me");
+    return { userId: me.user_id, email: me.email, name: me.name, picture: me.picture };
   }
 
   /**

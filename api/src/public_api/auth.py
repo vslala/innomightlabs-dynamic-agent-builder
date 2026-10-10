@@ -10,8 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.public_api.keys import SECRET_KEY_PREFIX, AgentSecretKey, SecretKeyRepository, hash_secret
-from src.users import UserRepository
-from src.users.models import UserStatus
+from src.identity import IdentityRepository
 
 log = logging.getLogger(__name__)
 
@@ -48,8 +47,8 @@ def require_secret_key(
     if key.agent_id != agent_id:
         raise HTTPException(status_code=403, detail="This API key is not valid for this agent")
 
-    owner = UserRepository().get_by_email(key.created_by)
-    if not owner or owner.status in (UserStatus.INACTIVE.value, UserStatus.PENDING_DELETION.value):
+    owner = IdentityRepository().find_by_email(key.created_by)
+    if not owner or not owner.is_active:
         raise HTTPException(status_code=401, detail="Invalid API key", headers={"WWW-Authenticate": "Bearer"})
 
     agent = AgentRepository().find_agent_by_id(key.agent_id, key.created_by)

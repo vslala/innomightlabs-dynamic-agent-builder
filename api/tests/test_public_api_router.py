@@ -117,10 +117,10 @@ class TestAuthentication:
         assert test_client.get(api.base, headers=api.headers).status_code == 401
 
     def test_a_deactivated_owners_keys_stop_working(self, test_client: TestClient, api):
-        from src.users import UserRepository
-        from tests.mock_data import TEST_USER_EMAIL
+        from src.identity import IdentityRepository
+        from tests.mock_data import TEST_USER_EMAIL, user_id_for
 
-        UserRepository().mark_inactive(TEST_USER_EMAIL)
+        IdentityRepository().mark_inactive(user_id_for(TEST_USER_EMAIL))
 
         assert test_client.get(api.base, headers=api.headers).status_code == 401
 

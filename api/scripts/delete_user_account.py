@@ -81,10 +81,13 @@ class UserAccountDeleter:
             "webhook_events": [],
         }
 
-        # 1. Find User record
-        print(f"  • Scanning User record...")
-        user_items = self._query_items(f"User#{self.email}")
-        all_data["user"].extend(user_items)
+        # 1. Find the identity (with its refresh tokens) and its email index entry
+        print(f"  • Scanning Identity...")
+        index_items = self._query_items(f"Email#{self.email.strip().lower()}")
+        all_data["user"].extend(index_items)
+        for index in index_items:
+            all_data["user"].extend(self._query_items(f"Identity#{index['user_id']}"))
+        all_data["user"].extend(self._query_items(f"User#{self.email}"))
 
         # 2. Find Conversations
         print(f"  • Scanning Conversations...")

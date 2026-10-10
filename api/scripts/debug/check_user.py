@@ -14,22 +14,23 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.users.repository import UserRepository
+from src.identity import IdentityRepository
 from src.db import get_dynamodb_resource
 from src.config import settings
 
 
 def check_user(email: str):
     """Check if user exists and display details."""
-    repo = UserRepository()
+    repo = IdentityRepository()
 
     print(f"Checking user: {email}")
     print("=" * 60)
 
-    user = repo.get_by_email(email)
+    user = repo.find_by_email(email)
 
     if user:
         print("✓ User found:")
+        print(f"  User id: {user.user_id}")
         print(f"  Email: {user.email}")
         print(f"  Name: {user.name}")
         print(f"  Stripe Customer ID: {user.stripe_customer_id or 'None'}")
@@ -60,8 +61,8 @@ def list_all_users():
     response = table.scan(
         FilterExpression="begins_with(pk, :pk_prefix) AND begins_with(sk, :sk_prefix)",
         ExpressionAttributeValues={
-            ":pk_prefix": "USER#",
-            ":sk_prefix": "USER#"
+            ":pk_prefix": "Identity#",
+            ":sk_prefix": "Identity#Metadata"
         }
     )
 
@@ -75,7 +76,7 @@ def list_all_users():
             stripe_id = user.get("stripe_customer_id", "")
             status = user.get("status", "active")
 
-            print(f"  • {email}")
+            print(f"  • {email} ({user.get('user_id')})")
             print(f"    Name: {name}")
             print(f"    Status: {status}")
             print(f"    Created: {created}")

@@ -8,8 +8,7 @@ from fastapi.testclient import TestClient
 
 from src.auth import app_tokens
 from src.auth.apps import NONCE_COOKIE, create_state
-from src.users import UserRepository
-from src.users.models import UserStatus
+from src.identity import IdentityRepository, IdentityStatus
 
 EMAIL = "new.user@example.com"
 BIDSIGNAL = ("bidsignal", "bidsignal-secret")
@@ -58,7 +57,9 @@ def test_a_login_code_is_exchanged_for_short_lived_tokens(test_client: TestClien
     body = response.json()
     claims = jwt.decode(body["access_token"], "test-secret", algorithms=["HS256"], audience="app:bidsignal")
     assert response.status_code == 200
-    assert body["email"] == claims["sub"] == EMAIL
+    identity = IdentityRepository().find_by_email(EMAIL)
+    assert body["user_id"] == claims["sub"] == identity.user_id
+    assert body["email"] == claims["email"] == EMAIL
     assert body["expires_in"] == 3600
     assert claims["exp"] - time.time() < 3600 + 5
     assert body["refresh_token"]
@@ -114,7 +115,7 @@ def test_signing_in_again_replaces_the_refresh_token(test_client: TestClient, mo
 
 def test_an_expired_refresh_token_is_refused(test_client: TestClient, monkeypatch):
     tokens = exchange(test_client, login_code(test_client, monkeypatch)).json()
-    app_tokens.repository.put_refresh_token(EMAIL, "bidsignal", app_tokens._hash(tokens["refresh_token"]), int(time.time()) - 1)
+    app_tokens.repository.put_refresh_token(tokens["user_id"], "bidsignal", app_tokens._hash(tokens["refresh_token"]), int(time.time()) - 1)
 
     assert refresh(test_client, tokens["refresh_token"]).status_code == 401
 
@@ -130,10 +131,10 @@ def test_a_revoked_refresh_token_is_refused(test_client: TestClient, monkeypatch
 
 def test_a_deactivated_account_cannot_refresh(test_client: TestClient, monkeypatch):
     tokens = exchange(test_client, login_code(test_client, monkeypatch)).json()
-    UserRepository().mark_inactive(EMAIL)
+    IdentityRepository().mark_inactive(tokens["user_id"])
 
     assert refresh(test_client, tokens["refresh_token"]).status_code == 401
-    assert UserRepository().get_by_email(EMAIL).status == UserStatus.INACTIVE.value
+    assert IdentityRepository().get(tokens["user_id"]).status == IdentityStatus.INACTIVE.value
 
 
 def test_an_app_cannot_revoke_another_apps_refresh_token(test_client: TestClient, monkeypatch):
@@ -164,7 +165,7 @@ def test_a_refresh_token_is_refused_for_an_unknown_user(test_client: TestClient)
 
 def test_a_deactivated_account_cannot_redeem_a_login_code(test_client: TestClient, monkeypatch):
     code = login_code(test_client, monkeypatch)
-    UserRepository().mark_inactive(EMAIL)
+    IdentityRepository().mark_inactive(IdentityRepository().find_by_email(EMAIL).user_id)
 
     assert exchange(test_client, code).status_code == 401
 
@@ -183,16 +184,22 @@ def test_account_deletion_removes_refresh_tokens(dynamodb_table, monkeypatch):
     monkeypatch.setenv("DYNAMODB_TABLE", dynamodb_table.name)
     monkeypatch.setenv("AWS_REGION", "us-east-1")
     monkeypatch.delenv("DYNAMODB_ENDPOINT", raising=False)
-    app_tokens.repository.put_refresh_token(EMAIL, "bidsignal", "hash-1", int(time.time()) + 60)
-    app_tokens.repository.put_refresh_token(EMAIL, "other", "hash-2", int(time.time()) + 60)
-    app_tokens.repository.put_refresh_token("someone.else@example.com", "bidsignal", "hash-3", int(time.time()) + 60)
+    from src.identity import Identity
 
-    counts = AccountDeletionHandler().delete_user_entities(EMAIL)
+    user = IdentityRepository().create(Identity(email=EMAIL, name="New User"))
+    app_tokens.repository.put_refresh_token(user.user_id, "bidsignal", "hash-1", int(time.time()) + 60)
+    app_tokens.repository.put_refresh_token(user.user_id, "other", "hash-2", int(time.time()) + 60)
+    app_tokens.repository.put_refresh_token("someone-else", "bidsignal", "hash-3", int(time.time()) + 60)
+
+    counts = AccountDeletionHandler().delete_user_entities(user.user_id, EMAIL)
 
     assert counts["refresh_tokens"] == 2
-    assert app_tokens.repository.get_refresh_token(EMAIL, "bidsignal") is None
-    assert app_tokens.repository.get_refresh_token(EMAIL, "other") is None
-    assert app_tokens.repository.get_refresh_token("someone.else@example.com", "bidsignal") is not None
+    assert counts["identity"] == 1
+    assert app_tokens.repository.get_refresh_token(user.user_id, "bidsignal") is None
+    assert app_tokens.repository.get_refresh_token(user.user_id, "other") is None
+    assert app_tokens.repository.get_refresh_token("someone-else", "bidsignal") is not None
+    assert IdentityRepository().get(user.user_id) is None
+    assert IdentityRepository().find_by_email(EMAIL) is None, "the email is free to sign up again"
 
 
 def test_an_app_token_reads_auth_me_and_nothing_else(test_client: TestClient, monkeypatch):

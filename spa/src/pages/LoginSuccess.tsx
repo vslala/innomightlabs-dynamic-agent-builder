@@ -52,7 +52,7 @@ export function LoginSuccess() {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         const userInfo = {
-          email: payload.sub,
+          email: payload.email,
           name: payload.name,
           picture: payload.picture,
         };

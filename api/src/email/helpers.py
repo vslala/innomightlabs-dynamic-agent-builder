@@ -3,7 +3,7 @@ import logging
 from typing import TYPE_CHECKING, Optional, Dict
 
 from src.config import settings
-from src.users import UserRepository
+from src.identity import IdentityRepository
 from .service import EmailService
 from .pending_email import (
     PendingEmailRepository,
@@ -66,8 +66,8 @@ async def send_welcome_email_safe(user_email: str) -> None:
         user_email: New user's email address
     """
     try:
-        user_repo = UserRepository()
-        user = user_repo.get_by_email(user_email)
+        user_repo = IdentityRepository()
+        user = user_repo.find_by_email(user_email)
         if not user:
             log.warning(f"Cannot send welcome email: user {user_email} not found")
             return
@@ -115,8 +115,8 @@ async def send_subscription_confirmed_email_safe(
         current_period_end: Unix timestamp string for next charge date
     """
     try:
-        user_repo = UserRepository()
-        user = user_repo.get_by_email(user_email)
+        user_repo = IdentityRepository()
+        user = user_repo.find_by_email(user_email)
         if not user:
             log.warning(f"Cannot send subscription confirmed email: user {user_email} not found")
             return
@@ -183,8 +183,8 @@ async def send_payment_failed_email_safe(
         currency: Currency code (e.g., 'usd')
     """
     try:
-        user_repo = UserRepository()
-        user = user_repo.get_by_email(user_email)
+        user_repo = IdentityRepository()
+        user = user_repo.find_by_email(user_email)
         if not user:
             log.warning(f"Cannot send payment failed email: user {user_email} not found")
             return
@@ -248,8 +248,8 @@ async def send_subscription_upgraded_email_safe(
         current_period_end: Unix timestamp string for next charge date
     """
     try:
-        user_repo = UserRepository()
-        user = user_repo.get_by_email(user_email)
+        user_repo = IdentityRepository()
+        user = user_repo.find_by_email(user_email)
         if not user:
             log.warning(f"Cannot send subscription upgraded email: user {user_email} not found")
             return
@@ -314,8 +314,8 @@ async def send_subscription_cancelled_email_safe(
         current_period_end: Unix timestamp string for when access ends
     """
     try:
-        user_repo = UserRepository()
-        user = user_repo.get_by_email(user_email)
+        user_repo = IdentityRepository()
+        user = user_repo.find_by_email(user_email)
         if not user:
             log.warning(f"Cannot send subscription cancelled email: user {user_email} not found")
             return

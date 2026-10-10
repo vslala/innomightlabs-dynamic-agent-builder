@@ -6,7 +6,7 @@ import stripe
 
 from src.config import settings
 from src.payments.subscriptions import Subscription, SubscriptionRepository
-from src.users import UserRepository
+from src.identity import IdentityRepository
 from .models import (
     StripeCheckoutSession,
     StripeEvent,
@@ -72,13 +72,10 @@ def _persist_subscription(subscription: StripeSubscriptionData) -> None:
         return
 
     repo = SubscriptionRepository()
-    user_repo = UserRepository()
-    existing = user_repo.get_by_email(user_email)
-    if existing and customer_id:
-        user_repo.update_stripe_customer_id(user_email, customer_id)
-    elif not existing:
-        from src.users import User
-        user_repo.create_or_update(User(email=user_email, name=user_email.split("@")[0], stripe_customer_id=customer_id))
+    identity_repo = IdentityRepository()
+    identity, created = identity_repo.find_or_create(user_email, user_email.split("@")[0], stripe_customer_id=customer_id)
+    if customer_id and not created:
+        identity_repo.update_stripe_customer_id(identity.user_id, customer_id)
 
     subscription_record = Subscription(
         subscription_id=subscription.id,

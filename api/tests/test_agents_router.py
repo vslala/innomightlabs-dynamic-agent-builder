@@ -13,6 +13,7 @@ from src.settings.repository import ProviderSettingsRepository
 from src.config.settings import DEFAULT_OPENAI_MODELS
 from src.public_api.keys import SecretKeyRepository
 from tests.mock_data import (
+    user_id_for,
     TEST_USER_EMAIL,
     TEST_USER_EMAIL_2,
     AGENT_CREATE_REQUEST,
@@ -26,7 +27,7 @@ def _headers_for(email: str) -> dict[str, str]:
     import jwt
 
     now = datetime.now(timezone.utc)
-    token = jwt.encode({"aud": "owner", "sub": email, "iat": now, "exp": now + timedelta(hours=1)}, "test-secret")
+    token = jwt.encode({"aud": "owner", "sub": user_id_for(email), "iat": now, "exp": now + timedelta(hours=1)}, "test-secret")
     return {"Authorization": f"Bearer {token}"}
 
 

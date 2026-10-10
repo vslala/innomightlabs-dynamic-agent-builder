@@ -10,14 +10,14 @@ from src.agents.repository import AgentRepository
 from src.dream.models import DreamRun, DreamRunStatus
 from src.dream.repository import DreamRepository
 from src.dream.service import get_dream_service
-from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2
+from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for
 
 
 def _headers_for(email: str) -> dict[str, str]:
     token = jwt.encode(
         {
             "aud": "owner",
-            "sub": email,
+            "sub": user_id_for(email),
             "name": "Test User",
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
             "iat": datetime.now(timezone.utc),

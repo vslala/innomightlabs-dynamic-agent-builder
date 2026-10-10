@@ -5,7 +5,7 @@ from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from ..config import settings
-from ..users import User, UserRepository
+from ..identity import Identity, IdentityRepository
 
 security = HTTPBearer()
 
@@ -20,10 +20,12 @@ def app_audience(app: str) -> str:
     return f"app:{app}"
 
 
-def create_access_token(user: User, lifetime: timedelta | None = None, audience: str = OWNER_AUDIENCE) -> str:
+def create_access_token(user: Identity, lifetime: timedelta | None = None, audience: str = OWNER_AUDIENCE) -> str:
+    """`sub` is the user_id. `email` is for display only: nothing may authorize by it."""
     payload = {
         "aud": audience,
-        "sub": user.email,
+        "sub": user.user_id,
+        "email": user.email,
         "name": user.name,
         "picture": user.picture,
         "exp": datetime.now(timezone.utc) + (lifetime or timedelta(hours=settings.jwt_expiration_hours)),
@@ -49,27 +51,21 @@ def decode_access_token(token: str, audiences: list[str] | None = None) -> dict[
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> User:
+) -> Identity:
     return _user_for(decode_access_token(credentials.credentials))
 
 
 async def get_user_for_any_app(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> User:
+) -> Identity:
     """Also accepts the tokens issued to apps sharing this login. Only /auth/me takes those."""
     audiences = [OWNER_AUDIENCE, *(app_audience(app) for app in settings.auth_app_urls)]
     return _user_for(decode_access_token(credentials.credentials, audiences))
 
 
-def _user_for(payload: dict[str, Any]) -> User:
-    email = payload.get("sub")
-    if not email:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
-
-    user_repo = UserRepository()
-    user = user_repo.get_by_email(email)
-
+def _user_for(payload: dict[str, Any]) -> Identity:
+    user_id = payload.get("sub")
+    user = IdentityRepository().get(str(user_id)) if user_id else None
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-
     return user
