@@ -62,12 +62,14 @@
 
 - **New module.** `api/src/accounts/` (models, repository, service, router) holds `Account`, `Member`,
   `GET /accounts` and `POST /accounts`.
-- **One transaction per account.** `AccountRepository.create` writes four items in one
+- **One transaction per account.** `AccountRepository.create` writes three items in one
   `TransactWriteItems`:
   - the Account;
   - its first Member;
-  - an `Attachment#member#{uid}#AdministratorAccess` item;
   - the `OwnedAccountCount` increment.
+
+  (The first version also attached `AdministratorAccess` to the creator. That attachment was dropped in
+  KAN-77, when the account owner became an admin by definition.)
 
   The increment has no condition yet. KAN-85 adds `n < :max` together with its setting, the rate limit and
   `ACCOUNT_LIMIT_REACHED`, so every account created before then is already counted.
@@ -83,11 +85,11 @@
 - **`GET /accounts`** returns `[{account_id, name, access_summary, membership_status, joined_at}]`.
   `access_summary` is `admin` when `AdministratorAccess` is attached directly, and `member` otherwise,
   until KAN-77 brings custom policies and groups.
-- **Removing a member** (`AccountService.remove_member`) deletes the member's attachments, both halves of
+- **Removing a member** (`AccountService.remove_member`; moved to `IamService.remove_member` in KAN-77) deletes the member's attachments, both halves of
   each group membership and then the Member item, and finally bumps `authz_version`.
   - The Member goes last, so a failure part way leaves fewer permissions, never stale ones waiting for a
     re-invite.
-  - Permission checks, the last-admin rule, shares and resource transfer stay with KAN-77, KAN-78 and
+  - Permission checks, protecting the owner, shares and resource transfer stay with KAN-77, KAN-78 and
     KAN-83.
 - **Not yet.** `Identity.last_account_id` and `PUT /accounts/active` come with the account context
   (KAN-79). The account-deletion Lambda doesn't remove memberships yet; that is KAN-83.
@@ -123,6 +125,64 @@
 - **Built-ins.** The policy names come from the LLD, which wins over the ticket's wording:
   - the view-only policy is `ViewOnlyAccess` (the ticket says `ReadOnlyAccess`);
   - the condition is `iml:ResourceOwner` / `${iml:PrincipalId}`.
+
+### KAN-77: IAM storage and API (done)
+
+- **Where it lives.** `api/src/iam/`:
+  - `models.py`: `Group`, `CustomPolicy`, `PolicyVersion`, `Attachment`, and `AccountIam`, a snapshot of
+    one account's permissions;
+  - `repository.py`: `load` and `commit`;
+  - `guard.py`: the escalation guard, pure;
+  - `service.py`: every IAM write;
+  - `principal.py`: `Principal` and the cached loader;
+  - `dependencies.py`, `router.py` and `schemas.py`: the HTTP layer.
+- **One write path.**
+  - Every change loads `AccountIam` and checks the caller's action against that fresh state.
+  - Grants are judged with the escalation guard.
+  - `IamRepository.commit` then writes the change and `authz_version + 1` in one transaction, on the
+    condition `authz_version = :seen`.
+  - So a change is always judged on the state it actually changes. If another change lands in between,
+    the second gets 409 `CONFLICT` and retries.
+- **The escalation guard is conservative.** It allows a grant only through the caller's unconditional
+  Allows that are at least as broad as the grant, and any Deny of theirs that could touch the grant blocks
+  it.
+  - Allows conditioned on ownership always pass, because they grant only what `OwnerAccess` already gives.
+  - A specific `type/id` doesn't yet count the caller's ownership or shares, which arrive with KAN-80 and
+    KAN-78. The guard can therefore wrongly refuse a grant, never wrongly allow one.
+  - **Adding someone to a group is guarded like attaching**, because it grants the group's policies.
+- **The account owner is fixed, like AWS's root user (a design change, decided 2026-10-10).** This
+  replaces the last-admin rule. The person who creates an account owns it and always has the most power
+  in it; it is theirs.
+  - `Account.owner_id` starts as the creator. Only an explicit transfer of ownership (KAN-83) changes it.
+  - The owner holds `OwnerAccess` and `AdministratorAccess` because they own the account, not through an
+    attachment.
+  - Policies from the owner's groups add to the owner's power and never take from it: their Deny
+    statements are dropped for the owner. Groups therefore stay useful for sharing with the owner.
+  - The owner can't be removed, and policies can't be attached to or detached from them (both refused
+    with `ACCOUNT_OWNER`).
+  - So the account always has an admin. The last-admin rule, `LAST_ADMIN` and its after-state checks
+    are removed.
+  - `GET /accounts` reports `access_summary: "owner"`, and `GET /iam/members` flags `is_owner`.
+- **Policies.**
+  - A custom policy is referred to as `custom:{policy_id}`, and routes accept either that or the bare id.
+  - Writing a policy is guarded only by `iam:ManagePolicies`: an unattached policy grants nothing.
+  - What is guarded is attaching a policy, and changing the default version of one that is attached.
+  - Documents are stored as JSON text and capped at 6144 characters, IAM's limit for managed policies.
+  - Names are unique per account, ignoring case, and can't reuse a built-in name.
+  - An attached policy can't be deleted (409 `POLICY_ATTACHED`).
+  - `OwnerAccess` can't be attached (400 `IMPLICIT_POLICY`).
+- **Deleting a group** also deletes its memberships and attachments, within the rules above.
+- **Account context for now.** `get_principal` requires the `X-Account-Id` header and returns 400
+  `ACCOUNT_REQUIRED` without it. KAN-79 moves this into the middleware and adds the fallbacks.
+  - Every request reads the account's version and the caller's membership. On a cache miss it loads the
+    whole `AccountIam`.
+  - The cache is keyed `(account, member, authz_version)` and sized by `settings.authz_cache_size`
+    (env `AUTHZ_CACHE_SIZE`, default 1024). Like the other tuning defaults, it is not set in the deploy
+    script.
+- **Membership routes.** `GET /iam/members` is added. `IamService.remove_member` enforces
+  `iam:ManageMembers` and refuses the owner, but the `DELETE /iam/members/{uid}` route waits for KAN-83's
+  transfer plan.
+- **Not yet.** Audit events for these writes come with KAN-87.
 
 ## Context and problem
 
@@ -205,7 +265,10 @@ an agent, knowledge base, automation, kit, conversation and so on.*
 - **Identity:** a person. It has an immutable `user_id` (uuid4), a verified email used to sign in, a
   profile and a status. One email maps to exactly one identity.
 - **Account:** the unit that owns resources and holds billing, quotas and seats. Every existing user
-  becomes the admin of a personal account.
+  becomes the owner of a personal account.
+- **Account owner:** the person who created the account, like AWS's root user. They are always its admin,
+  nothing can be detached from them or denied to them, and they can't be removed. Only an explicit
+  transfer of ownership changes who it is.
 - **Member:** a membership linking an identity to an account. **It has no role field.** "Admin" and
   "Member" are the built-in policies `AdministratorAccess` and `MemberAccess` attached to the membership,
   so there is one mechanism instead of two.
@@ -361,7 +424,7 @@ stored per account, so improving one improves it everywhere.
 | --- | --- | --- |
 | `OwnerAccess` | **Implicitly, to every member.** It cannot be detached. | Allow `*` on `*` when `iml:ResourceOwner == ${iml:PrincipalId}`. This is what makes resources private by default and makes a shared account feel like today's personal one. |
 | `MemberAccess` | By default, to people who accept an invite | Allow `*:Create`, `*:List`, `iam:ListMembers`, `iam:ListGroups` on `*`. Members can create their own resources, see the directory so they can share, and see lists, which are filtered to what they own or was shared with them. |
-| `AdministratorAccess` | To the creator of an account, and to anyone an admin promotes | Allow `iam:*`, `billing:*`, `audit:*`, `account:*`, `*:Create`, `*:List`, `*:Describe`, `*:Transfer`, `*:Delete` on `*`. **It includes no contents actions**, which is how admins see metadata only. |
+| `AdministratorAccess` | Held implicitly by the account owner; attached to anyone an admin promotes | Allow `iam:*`, `billing:*`, `audit:*`, `account:*`, `*:Create`, `*:List`, `*:Describe`, `*:Transfer`, `*:Delete` on `*`. **It includes no contents actions**, which is how admins see metadata only. |
 | `ViewOnlyAccess` | Optional | Allow `*:List`, `*:Describe`, `iam:List*` on `*` (the same idea as AWS's ViewOnlyAccess). |
 
 An admin who owns a resource can still do everything with it through `OwnerAccess`. "Metadata only"
@@ -585,10 +648,9 @@ attachments or shares.
        own. Only the owner can share contents.
      - Admins can still build the "Support group may chat with two agents" setup when they own those
        agents, or when the owner shares the agents with the group.
-2. **The last-admin rule.** After any change (detach, remove, suspend, leave, group change, a new Deny),
-   at least one active member must still be allowed `iam:AttachPolicies` and `iam:ManageMembers` on `*`.
-   The service checks this by evaluating every member against the account after the change; there are
-   only a few members, so this is cheap. Otherwise the change is rejected with 409 `LAST_ADMIN`.
+2. **The owner is out of reach.** The account owner can't be removed, suspended, attached to or
+   detached from, and their groups' Denies don't apply to them (`ACCOUNT_OWNER`). The account therefore
+   always has an admin. This replaced the original last-admin rule; see the KAN-77 implementation notes.
 3. **Invalidation.** Every write increments `Account.authz_version` in the same `TransactWriteItems`
    as the change.
 4. **Audit.** Every write appends an `AuditEvent` in the same transaction (see [Audit log](#audit-log)).
@@ -676,8 +738,8 @@ stateDiagram-v2
 - **The limit:** `settings.max_owned_accounts_per_email` (env `MAX_OWNED_ACCOUNTS_PER_EMAIL`). **The
   default value is an open decision** (see [Open questions](#open-questions)); the epic asks us not to
   pick an arbitrary number.
-- **The counter:** `Identity#{uid}/OwnedAccountCount`. `POST /accounts` writes the Account, the Member,
-  the `AdministratorAccess` attachment and a conditional increment
+- **The counter:** `Identity#{uid}/OwnedAccountCount`. `POST /accounts` writes the Account (owned by the
+  caller), the Member and a conditional increment
   (`ConditionExpression: attribute_not_exists(n) OR n < :max`) in one `TransactWriteItems`. N+1
   concurrent creates therefore produce exactly N accounts.
 - **Decrements:** on account deletion, or when ownership of the account moves to another person.
@@ -721,7 +783,7 @@ All of this is in the existing single table (`dynamic-agent-builder-main`) and t
 | Email index | `Email#{normalized_email}` | `Email#Identity` | none | `user_id`, written with `attribute_not_exists(pk)` in the same transaction as the Identity |
 | Refresh token | `Identity#{uid}` | `RefreshToken#{app}` | none | moved from `User#{email}` (`api/src/auth/app_tokens.py:62`) |
 | Owned-account counter | `Identity#{uid}` | `OwnedAccountCount` | none | `n` |
-| Account | `Account#{aid}` | `Account#Metadata` | `StripeCustomer#{cid}` / `Account` | name, `created_by`, status, `authz_version`, `stripe_customer_id`, `over_seat_limit` |
+| Account | `Account#{aid}` | `Account#Metadata` | `StripeCustomer#{cid}` / `Account` | name, `created_by`, `owner_id`, status, `authz_version`, `stripe_customer_id`, `over_seat_limit` |
 | Member | `Account#{aid}` | `Member#{uid}` | `Identity#{uid}` / `Membership#{aid}` | status, `joined_at`, `invited_by`, display email and name (denormalized for lists) |
 | Group | `Account#{aid}` | `Group#{gid}` | none | name, description |
 | Group membership | `Account#{aid}` | `GroupMember#{gid}#{uid}` | none | written together with `Member#{uid}#Group#{gid}` so it can be read in either direction |
@@ -791,7 +853,7 @@ carries:
 | `GET /iam/audit` | `audit:Read` | the audit log |
 
 Errors use the existing `{detail: {code, message}}` shape. New codes: `NOT_A_MEMBER`, `ACCESS_DENIED`,
-`LAST_ADMIN`, `ESCALATION`, `SEAT_LIMIT`, `ACCOUNT_LIMIT_REACHED`, `INVITE_INVALID`,
+`ACCOUNT_OWNER`, `ESCALATION`, `SEAT_LIMIT`, `ACCOUNT_LIMIT_REACHED`, `INVITE_INVALID`,
 `INVITE_EMAIL_MISMATCH`, `MIGRATION_PENDING`.
 
 ### Settings
@@ -814,7 +876,7 @@ These go in `api/src/config/settings.py`, each with a default in code that env c
 | Identity | new `api/src/identity/` (models, repository); `api/src/auth/router.py` `_oauth_callback`, `/auth/local/*`; `api/src/auth/jwt_utils.py`; `api/src/auth/app_tokens.py` | user_id, email index, JWT `sub` | [KAN-74](https://vslala007.atlassian.net/browse/KAN-74) |
 | Accounts | new `api/src/accounts/` (models, repository, service, router) | Account, Member, personal account, account limit, invites | [KAN-75](https://vslala007.atlassian.net/browse/KAN-75), [KAN-82](https://vslala007.atlassian.net/browse/KAN-82), [KAN-85](https://vslala007.atlassian.net/browse/KAN-85) |
 | Engine | new `api/src/iam/actions.py`, `policy.py` (pydantic document and validator), `builtins.py`, `engine.py` | catalog, policy grammar, `evaluate` | [KAN-76](https://vslala007.atlassian.net/browse/KAN-76) |
-| IAM storage and API | `api/src/iam/repository.py`, `service.py` (escalation guard, last admin, audit), `router.py` | groups, policies, versions, attachments | [KAN-77](https://vslala007.atlassian.net/browse/KAN-77) |
+| IAM storage and API | `api/src/iam/repository.py`, `service.py` (escalation guard, the account owner, audit), `router.py` | groups, policies, versions, attachments | [KAN-77](https://vslala007.atlassian.net/browse/KAN-77) |
 | Shares | `api/src/iam/shares.py` (presets, repository) + a Share router per resource type | sharing | [KAN-78](https://vslala007.atlassian.net/browse/KAN-78) |
 | Context | `api/src/auth/middleware.py` (build the Principal), `api/src/iam/principal.py`, `dependencies.py`; `spa/src/services/http/client.ts` (header), an account switcher in the dashboard header | active account | [KAN-79](https://vslala007.atlassian.net/browse/KAN-79) |
 | Enforcement | every owner-scoped repository and router (see [Re-keyed resources](#re-keyed-resources)); `api/src/public_api/auth.py`, `api/src/widget/router.py`, `api/src/a2a/oauth.py` | `require()` everywhere, account keys | [KAN-80](https://vslala007.atlassian.net/browse/KAN-80) |
@@ -829,8 +891,8 @@ These go in `api/src/config/settings.py`, each with a default in code that env c
 
 - leaves every account;
 - deletes the accounts where the identity is the only member;
-- refuses, with 409, while the identity is the last admin of an account that has other members, until
-  admin rights or ownership move to someone else.
+- refuses, with 409, while the identity owns an account that has other members, until ownership moves
+  to someone else.
 
 The Lambda payload becomes `{user_id}`, and the cascade in `api/scripts/delete_user_account.py` is
 updated to the new keys.
@@ -958,12 +1020,13 @@ comes last.*
   `Transfer` and `Delete` on it.
 - Unknown actions, resource types and conditions are rejected by the validator.
 
-**Escalation and last admin** (`api/tests/test_iam_service.py`):
+**Escalation and the account owner** (`api/tests/test_iam_service.py`):
 
 - A member cannot attach `AdministratorAccess` to themselves or to a group they are in.
 - An admin cannot attach `conversations:Read` on `conversation/*` to anyone.
 - A sharer cannot grant `Update` while holding only `User`.
-- Removing, suspending or denying the last admin returns `LAST_ADMIN`.
+- Removing the owner, or attaching to or detaching from them, returns `ACCOUNT_OWNER`. A Deny on a group
+  the owner is in doesn't apply to them.
 - Every IAM write increments `authz_version` and emits exactly one audit event.
 
 **Isolation** (`api/tests/test_cross_account_isolation.py`, `test_cross_member_isolation.py`):

@@ -3,6 +3,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.accounts import Account, AccountRepository, AccountService, Member, personal_account_id
+from src.iam.models import Attachment, group_membership_items
+from src.iam.service import IamService
 from src.identity import Identity, IdentityRepository
 from tests.mock_data import TEST_USER_EMAIL
 from tests.oauth_handoff import owner_headers
@@ -35,25 +37,23 @@ def owned_account_count(table, user_id: str) -> int:
 
 
 def join(table, account: Account, person: Identity, *policies: str, groups: tuple[str, ...] = ()) -> None:
-    """Stands in for accepting an invite (KAN-82) and for the IAM module's attachments and groups (KAN-77)."""
-    pk = f"Account#{account.account_id}"
+    """Stands in for accepting an invite (KAN-82), with attachments and groups written directly."""
     table.put_item(Item=Member(account_id=account.account_id, user_id=person.user_id, email=person.email,
                                name=person.name, invited_by=account.created_by).to_dynamo_item())
     for policy in policies:
-        table.put_item(Item={"pk": pk, "sk": f"Attachment#member#{person.user_id}#{policy}", "policy": policy})
+        table.put_item(Item=Attachment("member", person.user_id, policy, attached_by=account.created_by)
+                       .item(account.account_id))
     for group_id in groups:
-        table.put_item(Item={"pk": pk, "sk": f"Member#{person.user_id}#Group#{group_id}"})
-        table.put_item(Item={"pk": pk, "sk": f"GroupMember#{group_id}#{person.user_id}"})
+        for item in group_membership_items(account.account_id, group_id, person.user_id):
+            table.put_item(Item=item)
 
 
-def test_the_creator_is_the_only_member_and_an_admin(accounts, ada, dynamodb_table):
+def test_the_creator_owns_the_account_and_is_its_only_member(accounts, ada, dynamodb_table):
     account = accounts.create_account(ada, "Ada's lab")
 
-    assert keys_in(dynamodb_table, account.account_id) == {
-        "Account#Metadata",
-        f"Member#{ada.user_id}",
-        f"Attachment#member#{ada.user_id}#AdministratorAccess",
-    }
+    assert account.owner_id == ada.user_id
+    assert keys_in(dynamodb_table, account.account_id) == {"Account#Metadata", f"Member#{ada.user_id}"}, \
+        "owning the account makes them its admin; nothing is attached"
     member = AccountRepository().get_member(account.account_id, ada.user_id)
     assert (member.email, member.name, member.status) == (ada.email, ada.name, "active")
     assert AccountRepository().get(account.account_id) == account
@@ -73,7 +73,7 @@ def test_one_person_belongs_to_several_independent_accounts(accounts, ada, grace
 
     listed = {(entry.name, entry.access_summary) for entry in accounts.list_accounts(ada.user_id)}
 
-    assert listed == {("Ada's lab", "admin"), ("Grace's lab", "member")}
+    assert listed == {("Ada's lab", "owner"), ("Grace's lab", "member")}
     assert [entry.account_id for entry in accounts.list_accounts(grace.user_id)] == [graces.account_id]
     assert owned_account_count(dynamodb_table, ada.user_id) == 1, "joining an account doesn't count as owning one"
     assert own.account_id != graces.account_id
@@ -85,21 +85,14 @@ def test_removing_a_member_leaves_the_person_and_their_other_accounts(accounts, 
     join(dynamodb_table, graces, ada, "MemberAccess", "custom:p1", groups=("g1", "g2"))
     before = AccountRepository().get(graces.account_id)
 
-    accounts.remove_member(graces.account_id, ada.user_id)
+    IamService().remove_member(graces.account_id, grace.user_id, ada.user_id)
 
-    assert keys_in(dynamodb_table, graces.account_id) == {
-        "Account#Metadata",
-        f"Member#{grace.user_id}",
-        f"Attachment#member#{grace.user_id}#AdministratorAccess",
-    }, "the membership, its attachments and its groups are gone; Grace's are not"
+    assert keys_in(dynamodb_table, graces.account_id) == {"Account#Metadata", f"Member#{grace.user_id}"}, \
+        "the membership, its attachments and its groups are gone; Grace's are not"
     assert AccountRepository().get(graces.account_id).authz_version == before.authz_version + 1
     assert IdentityRepository().get(ada.user_id) == ada
     assert [entry.account_id for entry in accounts.list_accounts(ada.user_id)] == [own.account_id]
-    assert keys_in(dynamodb_table, own.account_id) == {
-        "Account#Metadata",
-        f"Member#{ada.user_id}",
-        f"Attachment#member#{ada.user_id}#AdministratorAccess",
-    }
+    assert keys_in(dynamodb_table, own.account_id) == {"Account#Metadata", f"Member#{ada.user_id}"}
 
 
 def test_a_person_without_an_account_gets_one_personal_account(accounts, ada, dynamodb_table):
@@ -108,7 +101,7 @@ def test_a_person_without_an_account_gets_one_personal_account(accounts, ada, dy
 
     assert created is not None and created.account_id == personal_account_id(ada.user_id)
     assert again is None
-    assert [(entry.name, entry.access_summary) for entry in accounts.list_accounts(ada.user_id)] == [("Personal", "admin")]
+    assert [(entry.name, entry.access_summary) for entry in accounts.list_accounts(ada.user_id)] == [("Personal", "owner")]
 
 
 def test_a_member_of_another_account_gets_no_personal_account(accounts, ada, grace, dynamodb_table):
@@ -155,7 +148,7 @@ def test_creating_and_listing_accounts_over_http(test_client: TestClient):
     assert created.status_code == 201, created.text
     assert created.json()["name"] == "Side project"
     assert [(entry["account_id"], entry["access_summary"]) for entry in listed.json()] == [
-        (created.json()["account_id"], "admin")
+        (created.json()["account_id"], "owner")
     ]
 
 
@@ -167,3 +160,9 @@ def test_an_account_needs_a_name(test_client: TestClient):
 
 def test_accounts_require_sign_in(test_client: TestClient):
     assert test_client.get("/accounts").status_code == 401
+
+
+def test_a_member_given_administrator_access_is_listed_as_an_admin(accounts, ada, grace, dynamodb_table):
+    join(dynamodb_table, accounts.create_account(grace, "Grace's lab"), ada, "AdministratorAccess")
+
+    assert [entry.access_summary for entry in accounts.list_accounts(ada.user_id)] == ["admin"]

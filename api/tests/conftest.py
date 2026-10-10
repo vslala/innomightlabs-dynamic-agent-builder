@@ -34,8 +34,11 @@ from tests.mock_data import (
 def mock_aws_context():
     """Create a mocked AWS context for all tests."""
     from src.db import reset_dynamodb_connections
+    from src.iam.principal import principal_cache
 
     reset_dynamodb_connections()
+    # Ids are reused between tests (deterministic user and personal-account ids, versions from 1)
+    principal_cache.clear()
     with mock_aws():
         yield
     reset_dynamodb_connections()

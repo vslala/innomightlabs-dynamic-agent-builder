@@ -82,6 +82,11 @@ class Statement(BaseModel):
     def model_post_init(self, __context: Any) -> None:
         self._expanded = frozenset().union(*(expand(pattern) for pattern in self.actions))
 
+    @property
+    def expanded_actions(self) -> frozenset[str]:
+        """Every concrete action the statement's patterns name."""
+        return self._expanded
+
     def matches(self, action: str, resource: ResourceRef, principal_id: str) -> bool:
         if action not in self._expanded:
             return False

@@ -1,8 +1,8 @@
 """Accounts and memberships. See docs/LLD-shared-accounts-and-iam.md.
 
 An account owns resources, billing and quotas. A membership links an identity to an account and has no
-role: what a member may do comes from the policies attached to it, so the creator is made an admin by
-attaching `AdministratorAccess`.
+role: what a member may do comes from the policies attached to it. The one exception is the account's
+owner, its creator, who is always its admin, like AWS's root user (see `iam.models.AccountIam`).
 """
 
 from dataclasses import asdict, dataclass, field
@@ -41,12 +41,18 @@ def _now() -> str:
 class Account:
     name: str
     created_by: str
+    # The account's owner: always an admin, never removed. Starts as the creator; only an explicit
+    # transfer of ownership changes it.
+    owner_id: str = ""
     account_id: str = field(default_factory=lambda: str(uuid4()))
     status: str = AccountStatus.ACTIVE.value
     # Bumped on every permission change, so cached permissions for the old version are never used
     authz_version: int = 1
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
+
+    def __post_init__(self) -> None:
+        self.owner_id = self.owner_id or self.created_by
 
     @property
     def pk(self) -> str:
@@ -64,6 +70,7 @@ class Account:
         return cls(
             name=item["name"],
             created_by=item["created_by"],
+            owner_id=item.get("owner_id", item["created_by"]),
             account_id=item["account_id"],
             status=item.get("status", AccountStatus.ACTIVE.value),
             authz_version=int(item.get("authz_version", 1)),
@@ -115,19 +122,6 @@ class Member:
         )
 
 
-def member_attachment_item(account_id: str, user_id: str, policy: str, attached_by: str) -> dict[str, Any]:
-    """A policy attached to a member. The IAM module (KAN-77) owns attachments; accounts only write the first."""
-    return {
-        "pk": f"Account#{account_id}",
-        "sk": f"Attachment#member#{user_id}#{policy}",
-        "principal_type": "member",
-        "principal_id": user_id,
-        "policy": policy,
-        "attached_by": attached_by,
-        "attached_at": _now(),
-    }
-
-
 class CreateAccountRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -144,7 +138,7 @@ class AccountResponse(BaseModel):
 class MembershipResponse(BaseModel):
     account_id: str
     name: str
-    # "admin" or "member" until custom policies arrive (KAN-77)
+    # "owner", "admin" (AdministratorAccess attached directly) or "member"
     access_summary: str
     membership_status: str
     joined_at: str

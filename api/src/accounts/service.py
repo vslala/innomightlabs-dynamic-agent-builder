@@ -15,12 +15,12 @@ class AccountService:
         self.repository = repository or AccountRepository()
 
     def create_account(self, creator: Identity, name: str, account_id: Optional[str] = None) -> Account:
-        """A new account with the creator as its only member and admin."""
+        """A new account, owned by its creator and with them as its only member."""
         account = Account(name=name, created_by=creator.user_id)
         if account_id:
             account.account_id = account_id
-        admin = Member(account_id=account.account_id, user_id=creator.user_id, email=creator.email, name=creator.name)
-        self.repository.create(account, admin)
+        owner = Member(account_id=account.account_id, user_id=creator.user_id, email=creator.email, name=creator.name)
+        self.repository.create(account, owner)
         log.info("Created account %s for %s", account.account_id, creator.user_id)
         return account
 
@@ -46,17 +46,18 @@ class AccountService:
             account = accounts.get(member.account_id)
             if account is None:
                 continue
-            policies = self.repository.member_policies(member.account_id, user_id)
             listed.append(MembershipResponse(
                 account_id=account.account_id,
                 name=account.name,
-                access_summary="admin" if ADMINISTRATOR_ACCESS in policies else "member",
+                access_summary=self._access_summary(account, user_id),
                 membership_status=member.status,
                 joined_at=member.joined_at,
             ))
         return sorted(listed, key=lambda membership: membership.joined_at)
 
-    def remove_member(self, account_id: str, user_id: str) -> None:
-        """Removal only; who may remove whom (and the last-admin rule) belongs to the IAM service (KAN-77)."""
-        self.repository.remove_member(account_id, user_id)
-        log.info("Removed member %s from account %s", user_id, account_id)
+    def _access_summary(self, account: Account, user_id: str) -> str:
+        if account.owner_id == user_id:
+            return "owner"
+        if ADMINISTRATOR_ACCESS in self.repository.member_policies(account.account_id, user_id):
+            return "admin"
+        return "member"

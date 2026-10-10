@@ -118,6 +118,10 @@ class Settings:
     widget_guest_max_lifetime_hours: int = 24
     widget_guest_sweep_interval_seconds: int = 120
     widget_guest_sweep_batch: int = 100
+
+    # Shared accounts. See docs/LLD-shared-accounts-and-iam.md.
+    #: Members' resolved permissions kept in-process, keyed by (account, member, authz_version).
+    authz_cache_size: int = 1024
     widget_guest_email_dns_timeout_seconds: int = 3
     widget_guest_transcript_attempts: int = 3
     widget_guest_transcript_max_chars: int = 100000
@@ -473,6 +477,7 @@ class Settings:
             widget_guest_max_lifetime_hours=int(os.getenv("WIDGET_GUEST_MAX_LIFETIME_HOURS", "24")),
             widget_guest_sweep_interval_seconds=int(os.getenv("WIDGET_GUEST_SWEEP_INTERVAL_SECONDS", "120")),
             widget_guest_sweep_batch=int(os.getenv("WIDGET_GUEST_SWEEP_BATCH", "100")),
+            authz_cache_size=int(os.getenv("AUTHZ_CACHE_SIZE", "1024")),
             widget_guest_email_dns_timeout_seconds=int(os.getenv("WIDGET_GUEST_EMAIL_DNS_TIMEOUT_SECONDS", "3")),
             widget_guest_transcript_attempts=int(os.getenv("WIDGET_GUEST_TRANSCRIPT_ATTEMPTS", "3")),
             widget_guest_transcript_max_chars=int(os.getenv("WIDGET_GUEST_TRANSCRIPT_MAX_CHARS", "100000")),
