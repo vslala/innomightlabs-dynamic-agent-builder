@@ -6,7 +6,7 @@ import base64
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 from ..db import get_dynamodb_resource
 from boto3.dynamodb.conditions import Key
@@ -154,7 +154,11 @@ class ConversationRepository:
         return conversations
 
     def find_all_by_user_paginated(
-        self, created_by: str, limit: int = 10, cursor: Optional[str] = None
+        self,
+        created_by: str,
+        limit: int = 10,
+        cursor: Optional[str] = None,
+        keep: Optional[Callable[[Conversation], bool]] = None,
     ) -> Tuple[list[Conversation], Optional[str], bool]:
         """
         Find conversations for a user with pagination.
@@ -166,11 +170,14 @@ class ConversationRepository:
             created_by: The email of the user
             limit: Maximum number of items to return
             cursor: Base64 encoded cursor for pagination (offset index)
+            keep: Which conversations to list. Applied before paging, so every page is full.
 
         Returns:
             Tuple of (conversations, next_cursor, has_more)
         """
         conversations = [self._from_dynamo_item(item) for item in self._query_all(created_by)]
+        if keep is not None:
+            conversations = [conversation for conversation in conversations if keep(conversation)]
 
         # Sort by last activity descending (most recently updated/created first)
         conversations.sort(key=lambda c: c.updated_at or c.created_at, reverse=True)

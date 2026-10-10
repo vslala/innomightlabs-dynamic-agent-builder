@@ -16,6 +16,7 @@ from src.conversations.models import (
     CreateConversationRequest,
     UpdateConversationRequest,
 )
+from src.builder.models import ADA_AGENT_ID
 from src.conversations.repository import ConversationRepository
 from src.messages.models import Message, MessageResponse
 from src.messages.repositories import get_message_repository
@@ -128,15 +129,15 @@ async def list_conversations(
     """
     user_email = get_user_email(request)
 
+    def keep(conversation: Conversation) -> bool:
+        # Building with Ada has its own page; her conversations aren't chats with the person's agents.
+        if conversation.agent_id == ADA_AGENT_ID:
+            return False
+        return include_automation or getattr(conversation, "conversation_type", "chat") != "automation"
+
     conversations, next_cursor, has_more = conversation_repository.find_all_by_user_paginated(
-        created_by=user_email, limit=limit, cursor=cursor
+        created_by=user_email, limit=limit, cursor=cursor, keep=keep
     )
-    if not include_automation:
-        conversations = [
-            conversation
-            for conversation in conversations
-            if getattr(conversation, "conversation_type", "chat") != "automation"
-        ]
 
     return Paginated[ConversationResponse](
         items=[c.to_response() for c in conversations],

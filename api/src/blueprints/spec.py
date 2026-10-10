@@ -18,8 +18,6 @@ from src.knowledge.models import MAX_CRAWL_DEPTH, MAX_CRAWL_PAGES
 from src.skills.models import ActorKind
 
 API_VERSION = "innomight/v2"
-#: Earlier documents still read, upgraded by `upgrade.py` (stored kit versions are replayed on rollback).
-OLDER_VERSIONS = ("innomight/v1",)
 
 ResourceName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,39}$")]
 

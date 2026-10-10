@@ -273,19 +273,6 @@ def test_a_kit_that_isnt_the_persons_cant_be_deployed_to():
     assert isinstance(blocked, Blocked)
 
 
-# --- v1 documents ----------------------------------------------------------------------------------
-
-
-def test_a_v1_document_is_read_as_what_it_keeps():
-    v1 = SITE_AGENT.replace("apiVersion: innomight/v2", "apiVersion: innomight/v1").replace(
-        "  widget:\n    kind: WidgetKey\n", "  widget:\n    kind: WidgetKey\n    remove: true\n    id: key-1\n"
-    ).replace("    knowledge_bases: [site_kb]\n", "    knowledge_bases: [site_kb]\n    remove_skills: [html_canvas]\n")
-    document = yaml.safe_load(v1)
-    document["outputs"].pop("snippet", None)
-    validated = validate_blueprint(yaml.safe_dump(document, sort_keys=False), PARAMS)
-    assert set(validated.blueprint.resources) == {"site_kb", "assistant"}
-
-
 # --- Over HTTP ---------------------------------------------------------------------------------------
 
 
