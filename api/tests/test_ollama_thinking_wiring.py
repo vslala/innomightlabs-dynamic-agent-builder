@@ -7,6 +7,7 @@ from src.agents.models import Agent
 from src.conversations.models import Conversation
 from src.memory.snapshot import CoreMemorySnapshot
 from src.skills.models import ActorKind
+from tests.mock_data import agent_fields
 
 
 class FakeMessageRepository:
@@ -67,7 +68,7 @@ def _ollama_agent(thinking_mode) -> Agent:
         agent_model="qwen3:8b",
         agent_persona="Helpful",
         agent_ollama_thinking=thinking_mode,
-        created_by="owner@example.com",
+        **agent_fields("owner@example.com"),
     )
 
 

@@ -2,7 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from src.accounts import AccountService, Member
+from src.accounts import AccountService, Member, personal_account_id
 from src.identity import IdentityRepository
 from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for
 from tests.oauth_handoff import owner_headers
@@ -12,8 +12,8 @@ ME, OTHER = user_id_for(TEST_USER_EMAIL), user_id_for(TEST_USER_EMAIL_2)
 
 @pytest.fixture
 def two_accounts(dynamodb_table) -> tuple[str, str]:
-    """I own one account and am a member of another person's."""
-    mine = AccountService().create_account(IdentityRepository().get(ME), "Mine").account_id
+    """I own my personal account and am a member of another person's."""
+    mine = personal_account_id(ME)
     theirs = AccountService().create_account(IdentityRepository().get(OTHER), "Theirs").account_id
     me = IdentityRepository().get(ME)
     dynamodb_table.put_item(Item=Member(account_id=theirs, user_id=ME, email=me.email, name=me.name,
@@ -28,7 +28,7 @@ def active(test_client: TestClient, headers: dict[str, str]) -> list[str]:
 def test_requests_act_in_the_oldest_account_until_another_is_chosen(test_client, two_accounts):
     mine, theirs = two_accounts
     headers = owner_headers(TEST_USER_EMAIL)
-    assert active(test_client, headers) == ["Mine"]
+    assert active(test_client, headers) == ["Personal"]
 
     switched = test_client.put("/accounts/active", headers=headers, json={"account_id": theirs})
 
@@ -41,7 +41,7 @@ def test_the_header_names_the_account_for_one_request(test_client, two_accounts)
     mine, theirs = two_accounts
     test_client.put("/accounts/active", headers=owner_headers(TEST_USER_EMAIL), json={"account_id": theirs})
 
-    assert active(test_client, {**owner_headers(TEST_USER_EMAIL), "X-Account-Id": mine}) == ["Mine"]
+    assert active(test_client, {**owner_headers(TEST_USER_EMAIL), "X-Account-Id": mine}) == ["Personal"]
 
 
 def test_a_forged_header_gets_nothing(test_client, two_accounts):
@@ -75,5 +75,5 @@ def test_an_account_left_since_is_skipped(test_client, two_accounts, dynamodb_ta
 
     dynamodb_table.delete_item(Key={"pk": f"Account#{theirs}", "sk": f"Member#{ME}"})
 
-    assert active(test_client, owner_headers(TEST_USER_EMAIL)) == ["Mine"]
+    assert active(test_client, owner_headers(TEST_USER_EMAIL)) == ["Personal"]
     assert test_client.get("/iam/actions", headers=owner_headers(TEST_USER_EMAIL)).status_code == 200

@@ -124,7 +124,7 @@ class DreamService:
                 return self._finish(run, DreamRunStatus.SKIPPED, "dreaming is disabled")
             if not dream_settings.provider_name or not dream_settings.model_name:
                 return self._finish(run, DreamRunStatus.SKIPPED, "dream model is not configured")
-            agent = self.agent_repository.find_agent_by_id(agent_id, owner_email)
+            agent = self.agent_repository.get(agent_id)
             if not agent or agent.agent_architecture != "krishna-memgpt":
                 return self._finish(run, DreamRunStatus.SKIPPED, "agent does not support core memory")
 

@@ -25,7 +25,7 @@ from tests.mock_data import (
     DYNAMODB_TABLE_NAME,
     DYNAMODB_TABLE_SCHEMA,
     TEST_USER_EMAIL,
-    TEST_USER_EMAIL_2,
+    SEEDED_EMAILS,
     user_id_for,
 )
 
@@ -52,11 +52,16 @@ def dynamodb_table(mock_aws_context):
     table = dynamodb.Table(DYNAMODB_TABLE_NAME)
     # Wait for table to be active
     table.meta.client.get_waiter('table_exists').wait(TableName=DYNAMODB_TABLE_NAME)
-    # Owner tokens are only accepted for users that exist.
+    # Owner tokens are only accepted for users that exist, and every user has their personal account,
+    # which requests act in when they don't name one.
+    from src.accounts import AccountService, personal_account_id
     from src.identity import Identity, IdentityRepository
 
-    for email in (TEST_USER_EMAIL, TEST_USER_EMAIL_2, "someone-else@example.com", "owner@example.com"):
-        IdentityRepository().create(Identity(email=email, name="Test User", user_id=user_id_for(email), email_verified=True))
+    for email in SEEDED_EMAILS:
+        identity = IdentityRepository().create(
+            Identity(email=email, name="Test User", user_id=user_id_for(email), email_verified=True)
+        )
+        AccountService().create_account(identity, "Personal", account_id=personal_account_id(identity.user_id))
     return table
 
 

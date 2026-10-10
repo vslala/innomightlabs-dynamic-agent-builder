@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from fastapi.testclient import TestClient
 
-from tests.mock_data import TEST_USER_EMAIL, user_id_for
+from tests.mock_data import TEST_USER_EMAIL, user_id_for, agent_fields
 
 
 def _token(**claims) -> str:
@@ -31,7 +31,7 @@ def test_the_email_claim_is_never_trusted(test_client: TestClient, agent_reposit
     from src.agents.models import Agent
 
     agent_repository.save(Agent(agent_name="Theirs", agent_architecture="krishna-mini", agent_provider="Bedrock",
-                                agent_persona="p", created_by="otheruser@example.com"))
+                                agent_persona="p", **agent_fields("otheruser@example.com")))
     token = _token(aud="owner", sub=user_id_for(TEST_USER_EMAIL), email="otheruser@example.com")
 
     response = _get_agents(test_client, token)

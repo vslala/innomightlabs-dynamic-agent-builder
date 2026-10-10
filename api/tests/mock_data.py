@@ -9,9 +9,33 @@ TEST_USER_EMAIL = "testuser@example.com"
 TEST_USER_EMAIL_2 = "otheruser@example.com"
 
 
+#: conftest seeds an identity, and its personal account, for each of these
+SEEDED_EMAILS = (TEST_USER_EMAIL, TEST_USER_EMAIL_2, "someone-else@example.com", "owner@example.com")
+
+
 def user_id_for(email: str) -> str:
     """The user_id conftest gives the identity it seeds for this email, so tests can sign tokens for it."""
     return str(uuid5(NAMESPACE_URL, f"identity:{email}"))
+
+
+def owner_for(email: str):
+    """The seeded person with this email, in their personal account: whose agents tests create."""
+    from src.accounts import Owner, personal_account_id
+
+    user_id = user_id_for(email)
+    return Owner(account_id=personal_account_id(user_id), user_id=user_id, email=email)
+
+
+def owner_ids(email: str = TEST_USER_EMAIL) -> tuple[str, str]:
+    """(account_id, user_id) of the seeded person, for repository calls that take an owner."""
+    owner = owner_for(email)
+    return owner.account_id, owner.user_id
+
+
+def agent_fields(email: str = TEST_USER_EMAIL) -> dict:
+    """The ownership fields an `Agent(...)` built in a test needs: owned by `email`, in their personal account."""
+    owner = owner_for(email)
+    return {"account_id": owner.account_id, "owner_id": owner.user_id, "created_by": owner.user_id}
 
 # Agent creation request data
 AGENT_CREATE_REQUEST = {

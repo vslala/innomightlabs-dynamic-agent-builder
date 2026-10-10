@@ -32,7 +32,7 @@ from src.automations.models import (
 )
 from src.automations.repository import AutomationRepository
 from src.form_models import Form, FormInput, FormInputType, FormOptionsSource
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 
 
 def _service(repo: AutomationRepository | None = None) -> AutomationMarketplaceService:
@@ -505,7 +505,7 @@ def test_automation_marketplace_import_plan_hydrates_agent_options(dynamodb_tabl
             agent_architecture="krishna-mini",
             agent_provider="Bedrock",
             agent_persona="Research.",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
     )
     template = AutomationMarketplaceRepository().save(

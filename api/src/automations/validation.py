@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Protocol
 
+from src.agents.access import owned_agent
 from src.agents.repository import AgentRepository
 from src.automations.aliases import alias_errors
 from src.automations.errors import AutomationValidationError
@@ -142,7 +143,7 @@ class InvokeAgentActionValidator:
             raise AutomationValidationError("invoke_agent action requires agent_id")
         if not prompt_template or not isinstance(prompt_template, str):
             raise AutomationValidationError("invoke_agent action requires prompt_template")
-        if not self.agent_repo.find_agent_by_id(agent_id, ctx.user_email):
+        if not owned_agent(agent_id, ctx.user_email, self.agent_repo):
             raise AutomationValidationError("invoke_agent action references an unknown agent")
 
 

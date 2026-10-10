@@ -17,7 +17,7 @@ from src.config import settings
 from src.crypto import decrypt, encrypt
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 from tests.oauth_handoff import handoff_result
 
 
@@ -29,7 +29,7 @@ def _create_agent_for_user(user_email: str) -> Agent:
         agent_provider="Bedrock",
         agent_model="claude-3-7-sonnet",
         agent_persona="Helpful",
-        created_by=user_email,
+        **agent_fields(user_email),
     )
     return repo.save(agent)
 

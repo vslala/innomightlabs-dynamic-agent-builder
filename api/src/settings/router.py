@@ -10,7 +10,10 @@ import json
 import logging
 
 import src.form_models as form_models
+from src.agents.access import require_agent
 from src.agents.repository import AgentRepository
+from src.iam.dependencies import get_principal
+from src.iam.principal import Principal
 from src.settings.agent2agent_policy import (
     Agent2AgentPolicy,
     Agent2AgentPolicyError,
@@ -291,15 +294,11 @@ async def set_default_agent(
     request: Request,
     body: SetDefaultAgentRequest,
     repo: Annotated[DefaultAgentPreferenceRepository, Depends(get_default_agent_preference_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> DefaultAgentPreferenceResponse:
-    """Set the user's default agent. The agent must exist and belong to the user."""
+    """Set the user's default agent: one they may chat with, their own or shared with them."""
     user_email: str = request.state.user_email
-
-    if not agent_repository.find_agent_by_id(body.agent_id, user_email):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agent '{body.agent_id}' not found or does not belong to you",
-        )
+    require_agent(principal, body.agent_id, "agents:Chat", agent_repository)
 
     saved = repo.save(DefaultAgentPreference(user_email=user_email, agent_id=body.agent_id))
     log.info(f"Set default agent to {body.agent_id} for user {user_email}")

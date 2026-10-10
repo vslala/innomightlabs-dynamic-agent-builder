@@ -4,6 +4,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from src.accounts.owner import Owner, personal_owner
+from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.form_models import Form, FormInput, SelectOption
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
@@ -21,6 +23,8 @@ class FormOptionSourceType:
 @dataclass
 class FormOptionsContext:
     user_email: str
+    # The member whose agents fill agent pickers; without one, the person's personal account
+    owner: Owner | None = None
     provider_settings_repository: ProviderSettingsRepository | None = None
     agent_repository: AgentRepository | None = None
     cache: dict[str, object] = field(default_factory=dict)
@@ -76,21 +80,23 @@ def validate_form_options(
             raise ValueError(f"Invalid value for {input_def.name}")
 
 
+def _owned_agents(context: FormOptionsContext) -> list[Agent]:
+    # Flows still keyed by email (skills, automations, Ila) are personal until they move into accounts
+    owner = context.owner or personal_owner(context.user_email)
+    repo = context.agent_repository or AgentRepository()
+    return repo.list_owned(owner.account_id, owner.user_id)
+
+
 class AgentsOptionsResolver:
     def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
-        repo = context.agent_repository or AgentRepository()
-        return [
-            SelectOption(value=agent.agent_id, label=agent.agent_name)
-            for agent in repo.find_all_by_created_by(context.user_email)
-        ]
+        return [SelectOption(value=agent.agent_id, label=agent.agent_name) for agent in _owned_agents(context)]
 
 
 class KrishnaMiniAgentsOptionsResolver:
     def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
-        repo = context.agent_repository or AgentRepository()
         return [
             SelectOption(value=agent.agent_id, label=agent.agent_name)
-            for agent in repo.find_all_by_created_by(context.user_email)
+            for agent in _owned_agents(context)
             if agent.agent_architecture == "krishna-mini"
         ]
 

@@ -21,7 +21,7 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.repository import AgentSkillRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, owner_ids
 
 SITE_AGENT = example_yaml("site-agent") or ""
 DOCS = example_yaml("docs-assistant") or ""
@@ -50,7 +50,7 @@ def build(text: str = SITE_AGENT, params: dict | None = None):
 
 def counts() -> tuple[int, int]:
     return (
-        len(AgentRepository().find_all_by_created_by(TEST_USER_EMAIL)),
+        len(AgentRepository().list_owned(*owner_ids(TEST_USER_EMAIL))),
         len(KnowledgeBaseRepository().find_all_by_user(TEST_USER_EMAIL)),
     )
 
@@ -88,7 +88,7 @@ def test_an_edited_blueprint_updates_the_same_resources(launched):
     assert actions["widget"] == ("update", ["ask visitors to sign in"])
 
     assert second.resources["assistant"].id == agent_id
-    agent = AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL)
+    agent = AgentRepository().get(agent_id)
     assert "opening hours" in agent.agent_persona
     assert {skill.skill_id for skill in AgentSkillRepository().list_by_agent(agent_id)} == {"lead_capture", "html_canvas"}
     [updated_key] = ApiKeyRepository().find_all_by_agent(agent_id)
@@ -112,7 +112,7 @@ def test_changing_the_crawl_reads_the_site_again(launched):
 def test_a_failed_update_puts_things_back(launched, monkeypatch):
     _, first = build()
     agent_id = first.resources["assistant"].id
-    before = AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL).agent_persona
+    before = AgentRepository().get(agent_id).agent_persona
 
     def fail(*args, **kwargs):
         raise RuntimeError("key service down")
@@ -127,7 +127,7 @@ def test_a_failed_update_puts_things_back(launched, monkeypatch):
     _, failed = build(edited)
 
     assert failed.status == DeploymentStatus.FAILED
-    assert AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL).agent_persona == before
+    assert AgentRepository().get(agent_id).agent_persona == before
     skills = {skill.skill_id: skill for skill in AgentSkillRepository().list_by_agent(agent_id)}
     assert set(skills) == {"lead_capture"}
     assert set(skills["lead_capture"].available_to) == {ActorKind.OWNER, ActorKind.VISITOR, ActorKind.GUEST}

@@ -33,7 +33,7 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.registry import get_skill_registry
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, owner_ids
 
 SITE_AGENT = example_yaml("site-agent") or ""
 PARAMS = {"site_url": "https://acme.example", "business_name": "Acme"}
@@ -145,7 +145,7 @@ async def test_apply_needs_the_person_to_approve_the_current_plan(session):
     assert json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))["applied"] is False
     say(session, "user", approval(plan_id))
     assert json.loads(await tools.apply("apply_blueprint", {"plan_id": "other"}, state))["applied"] is False
-    assert AgentRepository().find_by_name("Acme assistant", TEST_USER_EMAIL) is None
+    assert AgentRepository().find_by_name(*owner_ids(TEST_USER_EMAIL), "Acme assistant") is None
 
 
 async def test_approved_plan_is_built_and_its_status_reported(session, account):
@@ -158,7 +158,7 @@ async def test_approved_plan_is_built_and_its_status_reported(session, account):
     assert built["applied"] is True, built
     assert "pk_live_" in built["outputs"]["snippet"]["value"]
     agent_id = built["resources"]["assistant"]["id"]
-    assert AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL).agent_name == "Acme assistant"
+    assert AgentRepository().get(agent_id).agent_name == "Acme assistant"
     stored = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id)
     assert stored.deployment_id and stored.plan_id is None
     assert len(account) == 1

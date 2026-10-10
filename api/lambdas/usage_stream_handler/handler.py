@@ -24,6 +24,14 @@ def _deserialize(image: Optional[dict[str, Any]]) -> dict[str, Any]:
     return {key: deserializer.deserialize(value) for key, value in image.items()}
 
 
+def _owner_email(agent_image: dict) -> str | None:
+    from src.identity import IdentityRepository
+
+    owner_id = agent_image.get("owner_id")
+    identity = IdentityRepository().get(owner_id) if owner_id else None
+    return identity.email if identity else None
+
+
 def _period_key(iso_date: str) -> str:
     try:
         dt = datetime.fromisoformat(iso_date)
@@ -181,7 +189,9 @@ def handler(event, context):  # noqa: ARG001
         if entity_type not in {"Agent", "Message", "CrawledPage"}:
             continue
 
-        user_email = image.get("created_by")
+        # Usage stays per person (by email) until billing moves to accounts (KAN-86). An agent records
+        # its owner by user_id.
+        user_email = _owner_email(image) if entity_type == "Agent" else image.get("created_by")
         if not user_email:
             continue
 

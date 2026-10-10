@@ -13,6 +13,7 @@ from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
+from tests.mock_data import agent_fields
 
 OWNER = "owner@example.com"
 
@@ -23,7 +24,7 @@ def _agent(name: str = "Test Agent") -> Agent:
         agent_architecture="fake",
         agent_provider="Bedrock",
         agent_persona="Helpful",
-        created_by=OWNER,
+        **agent_fields(OWNER),
     )
 
 

@@ -12,7 +12,7 @@ from src.skills.agent_invocation.actions import _target_agent_id
 from src.skills.agent_invocation.models import InvokeAgentRequest
 from src.skills.models import ActorKind
 from src.skills.service import SkillRuntimeService
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 
 
 def _agent() -> Agent:
@@ -23,7 +23,7 @@ def _agent() -> Agent:
             agent_provider="Bedrock",
             agent_model="claude-3-7-sonnet",
             agent_persona="Helpful",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
     )
 

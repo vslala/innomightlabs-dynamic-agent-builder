@@ -47,7 +47,8 @@ class TestAgentsRouter:
         assert data["agent_name"] == AGENT_CREATE_REQUEST["agent_name"]
         assert data["agent_provider"] == AGENT_CREATE_REQUEST["agent_provider"]
         assert data["agent_persona"] == AGENT_CREATE_REQUEST["agent_persona"]
-        assert data["created_by"] == TEST_USER_EMAIL
+        assert data["created_by"] == data["owner_id"] == user_id_for(TEST_USER_EMAIL)
+        assert data["access"] == "owner"
         assert "agent_id" in data
         # API key should NOT be in response
         assert "agent_provider_api_key" not in data
@@ -145,12 +146,13 @@ class TestAgentsRouter:
 
     def test_get_update_schema(self, test_client: TestClient, auth_headers: dict):
         """Test getting the update form schema."""
-        response = test_client.get("/agents/update-schema/test-id", headers=auth_headers)
+        agent_id = test_client.post("/agents", json=AGENT_CREATE_REQUEST, headers=auth_headers).json()["agent_id"]
+        response = test_client.get(f"/agents/update-schema/{agent_id}", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
         assert data["form_name"] == "Update Agent Form"
-        assert data["submit_path"] == "/agents/test-id"
+        assert data["submit_path"] == f"/agents/{agent_id}"
         # Update schema should not have agent_name field
         field_names = [f["name"] for f in data["form_inputs"]]
         assert "agent_name" not in field_names
@@ -191,7 +193,8 @@ class TestAgentsRouter:
             )
         )
 
-        response = test_client.get("/agents/update-schema/test-id", headers=auth_headers)
+        agent_id = test_client.post("/agents", json=AGENT_CREATE_REQUEST, headers=auth_headers).json()["agent_id"]
+        response = test_client.get(f"/agents/update-schema/{agent_id}", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()

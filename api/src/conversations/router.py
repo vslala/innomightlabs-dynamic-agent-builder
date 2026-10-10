@@ -2,12 +2,13 @@
 Conversations API router.
 """
 
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from src.agents.image_generation.storage import ConversationMediaStorage
+from src.agents.access import require_agent
 from src.agents.repository import AgentRepository
 from src.common.pagination import Paginated
 from src.conversations.models import (
@@ -18,6 +19,8 @@ from src.conversations.models import (
 )
 from src.builder.models import ILA_AGENT_ID
 from src.conversations.repository import ConversationRepository
+from src.iam.dependencies import get_principal
+from src.iam.principal import Principal
 from src.messages.models import Message, MessageResponse
 from src.messages.repositories import get_message_repository
 from src.messages.responses import MessageResponseFactory
@@ -39,14 +42,9 @@ def get_user_email(request: Request) -> str:
     return str(user_email)
 
 
-def validate_agent(agent_id: str, user_email: str) -> None:
-    """Validate that agent exists and belongs to the user."""
-    agent = agent_repository.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Agent '{agent_id}' not found or does not belong to you",
-        )
+def validate_agent(agent_id: str, principal: Principal) -> None:
+    """The caller may chat with the agent: their own, or one shared with them."""
+    require_agent(principal, agent_id, "agents:Chat", agent_repository)
 
 
 def find_visible_messages_newest_first(
@@ -84,7 +82,9 @@ def find_visible_messages_newest_first(
 
 
 @router.post("/", response_model=ConversationResponse, status_code=201)
-async def create_conversation(request: Request, body: CreateConversationRequest):
+async def create_conversation(
+    request: Request, body: CreateConversationRequest, principal: Annotated[Principal, Depends(get_principal)]
+):
     """
     Create a new conversation.
 
@@ -95,8 +95,7 @@ async def create_conversation(request: Request, body: CreateConversationRequest)
     """
     user_email = get_user_email(request)
 
-    # Validate agent exists and belongs to user
-    validate_agent(body.agent_id, user_email)
+    validate_agent(body.agent_id, principal)
 
     # Create conversation
     conversation = Conversation(
@@ -268,7 +267,8 @@ async def get_message_image(
 
 @router.put("/{conversation_id}", response_model=ConversationResponse)
 async def update_conversation(
-    request: Request, conversation_id: str, body: UpdateConversationRequest
+    request: Request, conversation_id: str, body: UpdateConversationRequest,
+    principal: Annotated[Principal, Depends(get_principal)],
 ):
     """
     Update a conversation.
@@ -287,7 +287,7 @@ async def update_conversation(
 
     # Validate new agent if provided
     if body.agent_id is not None:
-        validate_agent(body.agent_id, user_email)
+        validate_agent(body.agent_id, principal)
         conversation.agent_id = body.agent_id
 
     # Update fields if provided

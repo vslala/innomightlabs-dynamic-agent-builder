@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from src.agents.access import owned_agent
 from src.agents.architectures import get_agent_architecture
 from src.agents.repository import AgentRepository
 from src.conversations.models import Conversation
@@ -20,7 +21,7 @@ async def generate_report_html_with_agent(
     agent_repository: AgentRepository | None = None,
 ) -> str:
     repo = agent_repository or AgentRepository()
-    agent = repo.find_agent_by_id(agent_id, owner_email)
+    agent = owned_agent(agent_id, owner_email, repo)
     if not agent:
         raise ValueError("Report agent not found")
     if agent.agent_architecture != "krishna-mini":

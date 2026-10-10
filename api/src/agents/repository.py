@@ -22,79 +22,75 @@ class AgentRepository:
     Repository for Agent entity using DynamoDB single table design.
 
     Key Structure:
-        pk: User#{created_by_email}  - Partition by user for efficient queries
-        sk: Agent#{agent_id}         - Unique agent identifier
+        pk: Account#{account_id}   the account, which shares agents among its members
+        sk: Agent#{agent_id}
+        gsi2: Agent#{agent_id} / Agent   agent ids are global, so credentials, schedules and
+              automations find an agent by id alone and act as its account and owner
 
-    Access Patterns:
-        - save: PutItem (create or update)
-        - find_agent_by_id: GetItem by pk + sk
-        - find_all_by_created_by: Query by pk with sk prefix "Agent#"
-        - delete_by_id: DeleteItem by pk + sk
+    Finding an agent is not authorizing its use: dashboard routes check the caller's permissions
+    (`principal.require`), credentials are bound to the agent they were issued for.
     """
+
+    GSI2_NAME = "gsi2"
 
     def __init__(self):
         self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, agent: Agent) -> Agent:
-        """
-        Save an agent (create or update).
-
-        If agent_id exists, updates the existing record.
-        Otherwise, creates a new record.
-        """
-        existing = self.find_agent_by_id(agent.agent_id, agent.created_by)
-
+        """Create or update; an update keeps the original created_at."""
+        existing = self.find_in_account(agent.account_id, agent.agent_id)
         if existing:
-            # Update: preserve created_at, update updated_at
             agent.created_at = existing.created_at
             agent.updated_at = datetime.now(timezone.utc)
 
         self.table.put_item(Item=agent.to_dynamo_item())
-        log.info(f"Saved agent {agent.agent_id} for user {agent.created_by}")
+        log.info(f"Saved agent {agent.agent_id} in account {agent.account_id}")
         return agent
 
-    def find_agent_by_id(self, agent_id: str, created_by: str) -> Optional[Agent]:
-        """
-        Find an agent by ID and creator email.
-
-        Args:
-            agent_id: The unique agent identifier
-            created_by: The email of the user who created the agent
-
-        Returns:
-            Agent if found, None otherwise
-        """
-        response = self.table.get_item(
-            Key={
-                "pk": f"User#{created_by}",
-                "sk": f"Agent#{agent_id}",
-            }
-        )
-        item = response.get("Item")
-        if item:
-            return Agent.from_dynamo_item(item)
-        return None
-
-    def find_all_by_created_by(self, created_by: str) -> list[Agent]:
-        """
-        Find all agents created by a specific user.
-
-        Args:
-            created_by: The email of the user
-
-        Returns:
-            List of agents created by the user
-        """
+    def get(self, agent_id: str) -> Optional[Agent]:
+        """The agent with this id, in whatever account. The index is eventually consistent: right after
+        a write, read it in its account with `find_in_account`."""
         response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"User#{created_by}") & Key("sk").begins_with("Agent#")
+            IndexName=self.GSI2_NAME,
+            KeyConditionExpression=Key("gsi2_pk").eq(f"Agent#{agent_id}") & Key("gsi2_sk").eq("Agent"),
         )
-
         items = response.get("Items", [])
-        agents = [Agent.from_dynamo_item(item) for item in items]
+        return Agent.from_dynamo_item(items[0]) if items else None
 
-        log.info(f"Found {len(agents)} agents for user {created_by}")
-        return agents
+    def find_in_account(self, account_id: str, agent_id: str) -> Optional[Agent]:
+        item = self.table.get_item(Key={"pk": f"Account#{account_id}", "sk": f"Agent#{agent_id}"}).get("Item")
+        return Agent.from_dynamo_item(item) if item else None
+
+    def list_in_account(self, account_id: str) -> list[Agent]:
+        """Every agent in the account, whoever owns it; callers filter to what the caller may see."""
+        items: list[dict[str, Any]] = []
+        query: dict[str, Any] = {
+            "KeyConditionExpression": Key("pk").eq(f"Account#{account_id}") & Key("sk").begins_with("Agent#"),
+        }
+        while True:
+            response = self.table.query(**query)
+            items.extend(response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                break
+            query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+        return [Agent.from_dynamo_item(item) for item in items]
+
+    def list_owned(self, account_id: str, owner_id: str) -> list[Agent]:
+        return [agent for agent in self.list_in_account(account_id) if agent.owner_id == owner_id]
+
+    def find_by_name(self, account_id: str, owner_id: str, agent_name: str) -> Optional[Agent]:
+        """Names are unique per owner within an account (creating an agent is idempotent on its name)."""
+        return next((agent for agent in self.list_owned(account_id, owner_id) if agent.agent_name == agent_name), None)
+
+    def delete(self, account_id: str, agent_id: str) -> bool:
+        try:
+            self.table.delete_item(Key={"pk": f"Account#{account_id}", "sk": f"Agent#{agent_id}"})
+            log.info(f"Deleted agent {agent_id} from account {account_id}")
+            return True
+        except Exception as e:
+            log.error(f"Failed to delete agent {agent_id}: {e}", exc_info=True)
+            return False
 
     def list_agent2agent_enabled(
         self,
@@ -154,50 +150,3 @@ class AgentRepository:
             exclusive_start_key = response.get("LastEvaluatedKey")
             if not exclusive_start_key:
                 return None
-
-    def find_by_name(self, agent_name: str, created_by: str) -> Optional[Agent]:
-        """
-        Find an agent by name for a specific user.
-
-        Used for idempotency check - agent_name is unique per user.
-
-        Args:
-            agent_name: The name of the agent
-            created_by: The email of the user who created the agent
-
-        Returns:
-            Agent if found, None otherwise
-        """
-        response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"User#{created_by}") & Key("sk").begins_with("Agent#"),
-            FilterExpression=Attr("agent_name").eq(agent_name)
-        )
-
-        items = response.get("Items", [])
-        if items:
-            return Agent.from_dynamo_item(items[0])
-        return None
-
-    def delete_by_id(self, agent_id: str, created_by: str) -> bool:
-        """
-        Delete an agent by ID.
-
-        Args:
-            agent_id: The unique agent identifier
-            created_by: The email of the user who created the agent
-
-        Returns:
-            True if deleted successfully, False otherwise
-        """
-        try:
-            self.table.delete_item(
-                Key={
-                    "pk": f"User#{created_by}",
-                    "sk": f"Agent#{agent_id}",
-                }
-            )
-            log.info(f"Deleted agent {agent_id} for user {created_by}")
-            return True
-        except Exception as e:
-            log.error(f"Failed to delete agent {agent_id}: {e}", exc_info=True)
-            return False

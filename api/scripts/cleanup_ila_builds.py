@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from boto3.dynamodb.conditions import Attr, Key  # noqa: E402
 
+from src.agents.access import owned_agent  # noqa: E402
 from src.agents.repository import AgentRepository  # noqa: E402
 from src.agents.service import AgentService  # noqa: E402
 from src.artifacts.storage import ArtifactStorage  # noqa: E402
@@ -121,7 +122,7 @@ def _built(account: AccountFindings, resource: dict[str, Any]) -> None:
 def report(owner: str, account: AccountFindings) -> None:
     agents = AgentRepository()
     kbs = KnowledgeBaseRepository()
-    live_agents = [a for a in (agents.find_agent_by_id(i, owner) for i in sorted(account.agents)) if a]
+    live_agents = [a for a in (owned_agent(i, owner, agents) for i in sorted(account.agents)) if a]
     live_kbs = [k for k in (kbs.find_by_id(i, owner) for i in sorted(account.knowledge_bases))
                 if k and k.status != KnowledgeBaseStatus.DELETED]
     print(f"\n{owner}")
@@ -141,8 +142,9 @@ def delete(table, owner: str, account: AccountFindings) -> list[str]:
     problems: list[str] = []
     for agent_id in sorted(account.agents):
         try:
-            if AgentRepository().find_agent_by_id(agent_id, owner):
-                AgentService().delete(agent_id, owner)
+            agent = owned_agent(agent_id, owner)
+            if agent:
+                AgentService().delete(agent, owner)
             _delete_rows(table, partition(table, f"Agent#{agent_id}"))
         except Exception as e:  # keep going: report everything that failed at the end
             problems.append(f"agent {agent_id}: {e}")

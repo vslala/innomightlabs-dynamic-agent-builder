@@ -6,7 +6,7 @@ from src.accounts import Account, AccountRepository, AccountService, Member, per
 from src.iam.models import Attachment, group_membership_items
 from src.iam.service import IamService
 from src.identity import Identity, IdentityRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, user_id_for
 from tests.oauth_handoff import owner_headers
 from tests.test_identity import EMAIL, SignsIn, sign_in
 
@@ -148,7 +148,8 @@ def test_creating_and_listing_accounts_over_http(test_client: TestClient):
     assert created.status_code == 201, created.text
     assert created.json()["name"] == "Side project"
     assert [(entry["account_id"], entry["access_summary"]) for entry in listed.json()] == [
-        (created.json()["account_id"], "owner")
+        (personal_account_id(user_id_for(TEST_USER_EMAIL)), "owner"),
+        (created.json()["account_id"], "owner"),
     ]
 
 

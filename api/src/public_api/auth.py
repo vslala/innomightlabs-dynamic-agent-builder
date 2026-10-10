@@ -23,10 +23,8 @@ class PublicApiCaller:
 
     key: AgentSecretKey
     agent: Agent
-
-    @property
-    def owner_email(self) -> str:
-        return self.key.created_by
+    # The agent owner's: the key uses their provider settings, connections and conversations
+    owner_email: str
 
 
 def require_secret_key(
@@ -47,17 +45,18 @@ def require_secret_key(
     if key.agent_id != agent_id:
         raise HTTPException(status_code=403, detail="This API key is not valid for this agent")
 
-    owner = IdentityRepository().find_by_email(key.created_by)
-    if not owner or not owner.is_active:
-        raise HTTPException(status_code=401, detail="Invalid API key", headers={"WWW-Authenticate": "Bearer"})
-
-    agent = AgentRepository().find_agent_by_id(key.agent_id, key.created_by)
+    agent = AgentRepository().get(key.agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+    # The key acts as the agent's owner; a deactivated owner's keys stop working
+    owner = IdentityRepository().get(agent.owner_id)
+    if not owner or not owner.is_active:
+        raise HTTPException(status_code=401, detail="Invalid API key", headers={"WWW-Authenticate": "Bearer"})
 
     try:
         repo.record_request(key.agent_id, key.key_id)
     except Exception:
         log.exception("Failed to record request for secret key %s", key.key_id)
 
-    return PublicApiCaller(key=key, agent=agent)
+    return PublicApiCaller(key=key, agent=agent, owner_email=owner.email)

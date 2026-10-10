@@ -31,6 +31,7 @@ from src.builder.models import BuilderSession
 from src.builder.plan_gates import PLAN_GATES, PlanAttempt
 from src.builder.requirements import REQUIREMENTS
 from src.builder.repository import BuilderSessionRepository
+from src.accounts.owner import personal_owner
 from src.agents.repository import AgentRepository
 from src.apikeys.repository import ApiKeyRepository
 from src.config import settings
@@ -328,7 +329,9 @@ class BuilderTools:
 
     async def list_agents(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
         agents = []
-        for agent in AgentRepository().find_all_by_created_by(state.owner_email):
+        # Ila builds in the person's personal account, where kits live until they move into accounts
+        owner = personal_owner(state.owner_email)
+        for agent in AgentRepository().list_owned(owner.account_id, owner.user_id):
             agents.append({
                 "agent_id": agent.agent_id,
                 "name": agent.agent_name,

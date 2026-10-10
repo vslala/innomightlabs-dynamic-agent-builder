@@ -9,6 +9,7 @@ from fastapi.security import HTTPBearer
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
+from src.agents.access import require_own_agent
 from src.agents.repository import AgentRepository
 from src.auth.oauth_handoff import handoff_redirect, safe_return_to
 from src.config import settings
@@ -29,6 +30,8 @@ from src.skills.agent2agent_client.oauth import (
     exchange_code_for_tokens,
     generate_code_challenge,
 )
+from src.iam.dependencies import get_principal
+from src.iam.principal import Principal
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
 
 log = logging.getLogger(__name__)
@@ -63,11 +66,10 @@ async def start_a2a_remote_oauth(
     body: A2ARemoteOAuthStartRequest,
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
     skill_repo: Annotated[AgentSkillRepository, Depends(get_agent_skill_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> A2ARemoteOAuthStartResponse:
     user_email: str = request.state.user_email
-    agent = agent_repo.find_agent_by_id(body.agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    require_own_agent(principal, body.agent_id, "skills:Install", agent_repo)
 
     installed = skill_repo.find_by_id(body.agent_id, body.installed_skill_id)
     if not installed or installed.skill_id != "agent2agent_client" or not installed.enabled:

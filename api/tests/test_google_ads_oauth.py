@@ -13,7 +13,7 @@ from src.crypto import decrypt
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.google_ads.models import GoogleAdsCredentials
 from src.skills.google_ads.oauth import GoogleAdsOAuthState, encode_state_session
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 from tests.oauth_handoff import handoff_result
 
 
@@ -25,7 +25,7 @@ def _create_agent_for_user(user_email: str) -> Agent:
             agent_provider="Bedrock",
             agent_model="claude-3-7-sonnet",
             agent_persona="Helpful",
-            created_by=user_email,
+            **agent_fields(user_email),
         )
     )
 

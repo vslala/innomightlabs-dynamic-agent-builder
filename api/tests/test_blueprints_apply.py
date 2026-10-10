@@ -30,7 +30,7 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.repository import AgentSkillRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields, owner_ids
 
 SITE_AGENT = example_yaml("site-agent") or ""
 PARAMS = {"site_url": "https://acme.example/about", "business_name": "Acme"}
@@ -69,7 +69,7 @@ def test_apply_creates_the_whole_solution(launched):
     kb_id = deployment.resources["site_kb"].id
     agent_id = deployment.resources["assistant"].id
 
-    agent = AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL)
+    agent = AgentRepository().get(agent_id)
     assert agent.agent_name == "Acme assistant"
     assert agent.agent_architecture == "krishna-memgpt"
     assert AgentKnowledgeBaseRepository().exists(agent_id, kb_id)
@@ -103,7 +103,7 @@ def test_a_failure_rolls_everything_back(launched, monkeypatch):
     assert deployment.status == DeploymentStatus.FAILED
     assert deployment.error == "key service down"
     assert deployment.resources == {}
-    assert AgentRepository().find_by_name("Acme assistant", TEST_USER_EMAIL) is None
+    assert AgentRepository().find_by_name(*owner_ids(TEST_USER_EMAIL), "Acme assistant") is None
     [kb] = KnowledgeBaseRepository().find_all_by_user(TEST_USER_EMAIL, include_deleted=True)
     assert kb.status == KnowledgeBaseStatus.DELETED
     assert launched == []
@@ -130,7 +130,7 @@ def test_an_agent_with_the_same_name_is_updated_not_duplicated(launched):
         agent_architecture="krishna-mini",
         agent_provider="Bedrock",
         agent_persona="Existing.",
-        created_by=TEST_USER_EMAIL,
+        **agent_fields(TEST_USER_EMAIL),
     ))
     _, plan = planned()
     agent_step = next(step for step in plan.steps if step.resource == "assistant")
@@ -146,9 +146,9 @@ def test_another_agent_already_called_the_new_name_blocks(launched):
     for name in ("Acme assistant", "Taken name"):
         AgentRepository().save(Agent(
             agent_name=name, agent_architecture="krishna-memgpt", agent_provider="Bedrock",
-            agent_persona="Existing.", created_by=TEST_USER_EMAIL,
+            agent_persona="Existing.", **agent_fields(TEST_USER_EMAIL),
         ))
-    target = AgentRepository().find_by_name("Acme assistant", TEST_USER_EMAIL)
+    target = AgentRepository().find_by_name(*owner_ids(TEST_USER_EMAIL), "Acme assistant")
     renamed = SITE_AGENT.replace("    kind: Agent\n", f"    kind: Agent\n    id: {target.agent_id}\n").replace(
         'name: "{{ params.business_name }} assistant"', "name: Taken name"
     )

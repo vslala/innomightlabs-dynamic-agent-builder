@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.agents.access import owned_agent
 from src.agents.architectures import get_agent_architecture
-from src.agents.repository import AgentRepository
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import recorded_events
@@ -31,7 +31,7 @@ async def invoke(
     if not conversation_id:
         raise ValueError("Missing automation conversation context")
 
-    agent = AgentRepository().find_agent_by_id(target_agent_id, owner_email)
+    agent = owned_agent(target_agent_id, owner_email)
     if not agent:
         raise ValueError("Agent not found")
 

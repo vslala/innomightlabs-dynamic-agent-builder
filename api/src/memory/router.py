@@ -12,7 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
+from src.agents.access import require_agent
 from src.agents.repository import AgentRepository
+from src.iam.dependencies import get_principal
+from src.iam.principal import Principal
 from .models import MemoryBlockDefinition
 from .repository import MemoryRepository
 
@@ -75,6 +78,7 @@ async def list_memory_blocks(
     agent_id: str,
     memory_repo: Annotated[MemoryRepository, Depends(get_memory_repository)],
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> list[MemoryBlockResponse]:
     """
     List all memory blocks for an agent.
@@ -83,10 +87,8 @@ async def list_memory_blocks(
     """
     user_id: str = request.state.user_email
 
-    # Verify agent ownership
-    agent = agent_repo.find_agent_by_id(agent_id, user_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    # A member keeps their own memory with any agent they may chat with
+    require_agent(principal, agent_id, "agents:Chat", agent_repo)
 
     # Get block definitions
     block_defs = memory_repo.get_block_definitions(agent_id, user_id)
@@ -136,6 +138,7 @@ async def create_memory_block(
     body: CreateMemoryBlockRequest,
     memory_repo: Annotated[MemoryRepository, Depends(get_memory_repository)],
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> MemoryBlockResponse:
     """
     Create a custom memory block for an agent.
@@ -145,10 +148,8 @@ async def create_memory_block(
     """
     user_id: str = request.state.user_email
 
-    # Verify agent ownership
-    agent = agent_repo.find_agent_by_id(agent_id, user_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    # A member keeps their own memory with any agent they may chat with
+    require_agent(principal, agent_id, "agents:Chat", agent_repo)
 
     # Check if block already exists
     existing = memory_repo.get_block_definition(agent_id, user_id, body.name)
@@ -196,6 +197,7 @@ async def delete_memory_block(
     block_name: str,
     memory_repo: Annotated[MemoryRepository, Depends(get_memory_repository)],
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> None:
     """
     Delete a custom memory block.
@@ -205,10 +207,8 @@ async def delete_memory_block(
     """
     user_id: str = request.state.user_email
 
-    # Verify agent ownership
-    agent = agent_repo.find_agent_by_id(agent_id, user_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    # A member keeps their own memory with any agent they may chat with
+    require_agent(principal, agent_id, "agents:Chat", agent_repo)
 
     # Check if it's a default block
     block_def = memory_repo.get_block_definition(agent_id, user_id, block_name)
@@ -230,6 +230,7 @@ async def get_memory_block_content(
     block_name: str,
     memory_repo: Annotated[MemoryRepository, Depends(get_memory_repository)],
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> MemoryBlockContentResponse:
     """
     Get the content (lines) of a memory block.
@@ -238,10 +239,8 @@ async def get_memory_block_content(
     """
     user_id: str = request.state.user_email
 
-    # Verify agent ownership
-    agent = agent_repo.find_agent_by_id(agent_id, user_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    # A member keeps their own memory with any agent they may chat with
+    require_agent(principal, agent_id, "agents:Chat", agent_repo)
 
     # Get block definition
     block_def = memory_repo.get_block_definition(agent_id, user_id, block_name)
@@ -276,6 +275,7 @@ async def update_memory_block_content(
     body: UpdateMemoryBlockContentRequest,
     memory_repo: Annotated[MemoryRepository, Depends(get_memory_repository)],
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> MemoryBlockContentResponse:
     """
     Update the content (lines) of a custom memory block.
@@ -284,10 +284,8 @@ async def update_memory_block_content(
     """
     user_id: str = request.state.user_email
 
-    # Verify agent ownership
-    agent = agent_repo.find_agent_by_id(agent_id, user_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    # A member keeps their own memory with any agent they may chat with
+    require_agent(principal, agent_id, "agents:Chat", agent_repo)
 
     # Get block definition
     block_def = memory_repo.get_block_definition(agent_id, user_id, block_name)

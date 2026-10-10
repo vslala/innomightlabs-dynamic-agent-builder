@@ -2,6 +2,7 @@ from typing import Optional
 
 from fastapi import Request
 
+from ..accounts.owner import Owner
 from ..accounts.repository import AccountRepository
 from ..identity import Identity, IdentityRepository
 from .principal import Principal, load_principal
@@ -24,6 +25,12 @@ def get_principal(request: Request) -> Principal:
     principal = load_principal(identity.user_id, named) if named else _fallback(identity)
     request.state.principal = principal
     return principal
+
+
+def get_owner(request: Request) -> Owner:
+    """The caller as the owner of what they create, in the account the request acts in."""
+    principal = get_principal(request)
+    return Owner(account_id=principal.account_id, user_id=principal.user_id, email=_identity(request).email)
 
 
 def _identity(request: Request) -> Identity:

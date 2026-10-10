@@ -1,4 +1,4 @@
-import { Bot, Check, Globe, KeyRound } from "lucide-react";
+import { Bot, Check, Globe, KeyRound, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { cn } from "../../../../lib/utils";
@@ -6,7 +6,7 @@ import type { MCPAudience } from "../../../../types/connectors";
 import { SHAREABLE_AUDIENCES } from "../audiences";
 import styles from "./MCPSharingDialog.module.css";
 
-const ICONS: Record<MCPAudience, LucideIcon> = { visitor: Globe, api: KeyRound, a2a: Bot };
+const ICONS: Record<MCPAudience, LucideIcon> = { member: Users, visitor: Globe, api: KeyRound, a2a: Bot };
 
 interface AudiencePickerProps {
   selected: MCPAudience[];

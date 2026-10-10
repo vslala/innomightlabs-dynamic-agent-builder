@@ -11,7 +11,7 @@ from src.messages.models import Message
 from src.messages.repositories import get_message_repository
 from src.widget.models import WidgetConversation
 from src.widget.repository import WidgetConversationRepository
-from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2
+from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, agent_fields
 
 
 def create_agent(agent_id: str, owner_email: str = TEST_USER_EMAIL) -> Agent:
@@ -21,7 +21,7 @@ def create_agent(agent_id: str, owner_email: str = TEST_USER_EMAIL) -> Agent:
         agent_architecture="krishna-mini",
         agent_provider="Bedrock",
         agent_persona="Test persona",
-        created_by=owner_email,
+        **agent_fields(owner_email),
     )
     return AgentRepository().save(agent)
 

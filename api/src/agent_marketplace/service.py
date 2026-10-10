@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import src.form_models as form_models
 from src.agent_marketplace.models import (
     ArchiveMarketplaceAgentResponse,
     ImportMarketplaceAgentRequest,
@@ -20,6 +19,7 @@ from src.agent_marketplace.models import (
     PublishMarketplaceAgentResponse,
 )
 from src.agent_marketplace.repository import AgentMarketplaceRepository, get_agent_marketplace_repository
+from src.accounts.owner import Owner
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.agents.service import validate_provider_model
@@ -74,9 +74,11 @@ class AgentMarketplaceService:
         self,
         *,
         template_id: str,
-        user_email: str,
+        owner: Owner,
         request: ImportMarketplaceAgentRequest,
     ) -> ImportMarketplaceAgentResponse:
+        """A new agent from a template, owned by the importer in their active account."""
+        user_email = owner.email
         template = self._published_template(template_id)
         self._validate_skill_configs(template, request.skill_configs, user_email)
 
@@ -91,7 +93,9 @@ class AgentMarketplaceService:
             agent_model=model,
             agent_persona=template.agent_persona,
             agent_description=template.agent_description,
-            created_by=user_email,
+            account_id=owner.account_id,
+            owner_id=owner.user_id,
+            created_by=owner.user_id,
         )
         saved_agent = self.agent_repository.save(agent)
         installed: list[AgentSkill] = []
@@ -114,7 +118,7 @@ class AgentMarketplaceService:
                     installed_skill_id=installed_skill.installed_skill_id,
                     user_email=user_email,
                 )
-            self.agent_repository.delete_by_id(saved_agent.agent_id, user_email)
+            self.agent_repository.delete(saved_agent.account_id, saved_agent.agent_id)
             raise
 
         self.repository.increment_import_count(template.template_id)
@@ -134,11 +138,13 @@ class AgentMarketplaceService:
     def publish_agent(
         self,
         *,
-        user_email: str,
+        owner: Owner,
         request: PublishMarketplaceAgentRequest,
     ) -> PublishMarketplaceAgentResponse:
-        agent = self.agent_repository.find_agent_by_id(request.agent_id, user_email)
-        if not agent:
+        """Only an agent's owner publishes it."""
+        user_email = owner.email
+        agent = self.agent_repository.find_in_account(owner.account_id, request.agent_id)
+        if not agent or agent.owner_id != owner.user_id:
             raise ValueError("Agent not found")
 
         latest = self.repository.find_latest_for_source_agent(

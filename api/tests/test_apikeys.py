@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from tests.mock_data import (
     TEST_USER_EMAIL,
+    user_id_for,
     AGENT_CREATE_REQUEST,
     API_KEY_CREATE_REQUEST,
     API_KEY_CREATE_REQUEST_2,
@@ -282,7 +283,7 @@ class TestApiKeysRouter:
         assert data["agent_id"] == agent_id
         assert data["public_key"].startswith("pk_live_")
         assert data["is_active"] is True
-        assert data["created_by"] == TEST_USER_EMAIL
+        assert data["created_by"] == user_id_for(TEST_USER_EMAIL), "who created it, for audit; it acts as the agent's owner"
 
     def test_create_api_key_for_invalid_agent(self, test_client: TestClient, auth_headers: dict):
         """Test creating API key for non-existent agent returns 404."""

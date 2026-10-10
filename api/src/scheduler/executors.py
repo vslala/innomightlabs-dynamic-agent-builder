@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from src.agents.architectures.factory import get_agent_architecture
+from src.agents.access import owned_agent
 from src.agents.repository import AgentRepository
 from src.automations.models import AutomationStatus, AutomationTriggerType
 from src.automations.runner import AutomationRunner
@@ -48,7 +49,8 @@ class AgentScheduledMessageExecutor:
         actor_email = str(schedule.target.get("actor_email") or schedule.owner_email)
         actor_id = str(schedule.target.get("actor_id") or actor_email)
 
-        agent = self.agent_repository.find_agent_by_id(agent_id, schedule.owner_email)
+        # Schedules stay keyed by their owner's email until they move into accounts
+        agent = owned_agent(agent_id, schedule.owner_email, self.agent_repository)
         if not agent:
             raise ValueError("Scheduled agent was not found")
 

@@ -22,7 +22,7 @@ from src.config import settings
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.repository import AgentSkillRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 
 TEAM = example_yaml("agent-team") or ""
 SITE_AGENT = example_yaml("site-agent") or ""
@@ -124,7 +124,7 @@ def test_an_exported_lead_plans_as_unchanged(account):
 def test_an_agent_id_works_if_it_is_yours(account):
     mine = AgentRepository().save(Agent(
         agent_name="Researcher", agent_architecture="krishna-memgpt", agent_provider="Bedrock",
-        agent_persona="Research things.", created_by=TEST_USER_EMAIL,
+        agent_persona="Research things.", **agent_fields(TEST_USER_EMAIL),
     ))
     text = TEAM.replace("target_agent_id: specialist", f"target_agent_id: {mine.agent_id}")
     _, plan = plan_for(text)

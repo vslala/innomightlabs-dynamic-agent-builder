@@ -23,7 +23,7 @@ from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.agent_invocation import actions as invoke_actions
 from src.skills.agent_invocation.history import InvocationHistoryStore, key_for
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 
 #: Bigger than a DynamoDB item may be (400 KB), like a researcher's dozen searches.
 LARGE = {"response_text": "x" * 450_000}
@@ -119,7 +119,7 @@ def invoke_setup(dynamodb_table, monkeypatch):
     monkeypatch.setattr(invoke_actions, "get_agent_architecture", lambda *args, **kwargs: FakeArchitecture())
     agent = AgentRepository().save(Agent(
         agent_name="Researcher", agent_architecture="krishna-memgpt", agent_provider="Bedrock",
-        agent_persona="Research.", created_by=TEST_USER_EMAIL,
+        agent_persona="Research.", **agent_fields(TEST_USER_EMAIL),
     ))
     conversation = ConversationRepository().save(
         Conversation(title="Lead", agent_id="lead", created_by=TEST_USER_EMAIL)

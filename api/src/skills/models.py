@@ -14,6 +14,8 @@ class ActorKind(str, Enum):
     """Who is speaking in a turn. Tools run with the owner's credentials, so this decides which ones they get."""
 
     OWNER = "owner"
+    #: Another member of the owner's account, chatting with an agent shared with them.
+    MEMBER = "member"
     #: A /v1 secret key.
     API = "api"
     A2A = "a2a"

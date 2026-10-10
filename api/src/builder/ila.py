@@ -5,6 +5,7 @@ provider, and her conversations carry ILA_AGENT_ID so the dashboard chat can fin
 """
 
 from src.agents.architectures.vishwakarma import ARCHITECTURE_NAME, VishwakarmaArchitecture
+from src.accounts.owner import personal_owner
 from src.agents.models import Agent
 from src.builder.models import ILA_AGENT_ID, BuilderSession
 
@@ -15,6 +16,7 @@ GREETING = "Hi, I'm Ila. What do you want to build today?"
 
 
 def ila_agent(session: BuilderSession) -> Agent:
+    owner = personal_owner(session.user_email)
     return Agent(
         agent_id=ILA_AGENT_ID,
         agent_name=ILA_NAME,
@@ -24,7 +26,10 @@ def ila_agent(session: BuilderSession) -> Agent:
         agent_persona="Ila, the InnomightLabs solution builder.",
         # A build can pause for a while (reading a website, the person checking their site); keep the whole thread.
         session_timeout_minutes=0,
-        created_by=session.user_email,
+        # Built for the turn, never stored: it belongs to whoever is building, in their personal account
+        account_id=owner.account_id,
+        owner_id=owner.user_id,
+        created_by=owner.user_id,
     )
 
 

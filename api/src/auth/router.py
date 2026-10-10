@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..accounts import AccountService
+from ..agents.access import require_own_agent
+from ..iam.dependencies import get_principal
 from ..config import settings
 from ..agents.repository import AgentRepository
 from ..identity import EmailTaken, Identity, IdentityRepository
@@ -354,9 +356,8 @@ async def _start_google_skill_oauth(
         raise HTTPException(status_code=401, detail="Unauthorized")
     if body.skill_id != flow.skill_id:
         raise HTTPException(status_code=400, detail=f"Unsupported skill for {flow.display_name} OAuth")
-    agent = agent_repository.find_agent_by_id(body.agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    # The skill will run on the owner's Google account, so only the owner connects it
+    require_own_agent(get_principal(request), body.agent_id, "skills:Install", agent_repository)
     return _google_skill_authorize(flow, user_email=user_email, agent_id=body.agent_id, return_to=body.return_to)
 
 

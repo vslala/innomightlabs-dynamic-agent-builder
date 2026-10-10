@@ -257,6 +257,80 @@
 - **Waiting on KAN-80.** "Lists show only the active account's resources" depends on resources moving
   into accounts.
 
+### KAN-80: enforcement and re-keying (in progress)
+
+The work is done one resource type at a time. Each slice moves a type into accounts, checks every route
+through the principal, and leaves the suite green.
+
+**The common pieces**
+- **`Owner(account_id, user_id, email)`** (`api/src/accounts/owner.py`) replaces the bare email as "whose
+  data this is".
+  - `account_pk` gives `Account#{aid}`, and `member_pk` gives `Account#{aid}#Member#{uid}`.
+  - `email` stays only while some data is still keyed by email. It goes once every slice is in.
+  - `get_owner` (`api/src/iam/dependencies.py`) is the caller in the active account.
+- **Interim rule for flows still keyed by email.** Blueprints, kits, Ila's sessions, skill install forms
+  and automations are implicitly personal until their own slice.
+  - Through `personal_owner(email)` they act in the person's personal account.
+  - So a kit applied while you're switched to another account still creates its agents in your personal
+    account. That only matters once invites (KAN-82) put people in shared accounts, and the kits slice
+    fixes it.
+- **Agent pickers on forms** list the owner's agents in the given owner's account, or in the personal
+  account when no owner is given.
+
+**Slice 1: agents (done)**
+- **Keys.** `Agent` is at `Account#{aid}/Agent#{id}`, with `account_id` and `owner_id`. `created_by` is a
+  user_id kept for audit only.
+  - A gsi2 entry `Agent#{id}` / `Agent` lets credential and background paths find an agent by id alone.
+  - Owner routes read in the account with `find_in_account`, because the index is eventually consistent.
+- **Repository.** It provides `get`, `find_in_account`, `list_in_account`, `list_owned`,
+  `find_by_name(account_id, owner_id, name)` and `delete(account_id, agent_id)`. The email-keyed methods
+  are gone.
+- **Route helpers** in `api/src/agents/access.py`:
+  - `require_agent` and its `agent_with(action)` dependency for dashboard routes;
+  - `require_own_agent` and `own_agent_with` for connecting the owner's own accounts: skill OAuth, A2A
+    remote OAuth and MCP connection links;
+  - `owner_of(agent)` for the member an agent runs as;
+  - `owned_agent(agent_id, email)` for paths that still carry an email: scheduler, dream, automations,
+    agent invocation, the league report and the clean-up script.
+
+  The module also registers the `agent` share resolver, so the KAN-78 share routes work for agents.
+- **Actions per route.**
+
+  | Route | Action |
+  | --- | --- |
+  | create | `agents:Create` |
+  | list | own, shared, and others' as admin metadata; each carries `access` |
+  | get | `agents:Describe`; the admin projection has no persona |
+  | update, A2A sharing toggle, KB link and unlink | `agents:Update` |
+  | delete | `agents:Delete` (it also forgets the agent's shares) |
+  | A2A tasks, analytics, token usage, linked KBs, installed skills | `agents:Get` |
+  | chat, conversations, image generation, memory, dream runs, default agent | `agents:Chat` |
+  | skills | `skills:Install`, `skills:Configure`, `skills:Uninstall` |
+  | widget keys and `/v1` secret keys | `apikeys:ListKeys`, `apikeys:CreateKey`, `apikeys:RevokeKey` |
+- **Run as owner, everywhere.**
+  - Owner chat, widget, embed, `/v1`, A2A and image generation all take the owner email from the
+    agent's owner (`owner_of`), never from a key's `created_by`.
+  - A key's `created_by` is now the creator's user_id, for audit. The A2A OAuth token no longer carries
+    `owner_email`.
+  - A member chatting with a shared agent is a new actor kind, `member`. Skills and MCP tools reach them
+    only if the owner opted that audience in, the same way as visitors and API keys. The SPA audience
+    picker offers it.
+  - Their conversation and memory are still keyed by their own email until the conversations and memory
+    slices.
+- **Middleware.** The analytics special case in `AuthMiddleware` is gone; the analytics routes authorize
+  through the principal. Rate limits stay per person until KAN-86, and count the agents a person owns
+  across all their accounts.
+- **Lambdas.** The usage stream finds an agent's owner email through `owner_id`. Account deletion removes
+  the person's agents in their personal account; offboarding from shared accounts is KAN-83.
+- **SPA.** `AgentResponse` gains `account_id`, `owner_id` and `access`. The agent list shows "Shared with
+  you" or "Admin view" on agents the person doesn't own.
+- **Tests.**
+  - conftest seeds a personal account for every test identity. `owner_for`, `owner_ids` and
+    `agent_fields` build owners and agent ownership fields.
+  - `tests/test_agent_access.py` covers private by default, a User share, run-as-owner with the `member`
+    actor kind, admin metadata-only access, isolation across accounts, secret keys acting as the owner,
+    and deletion forgetting shares.
+
 ## Context and problem
 
 ### How it works today

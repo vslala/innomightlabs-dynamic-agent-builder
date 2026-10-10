@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, TypeVar
 
+from src.agents.access import owned_agent
 from src.agents.architectures import get_agent_architecture
 from src.agents.repository import AgentRepository
 from src.automations.models import (
@@ -332,7 +333,7 @@ class AutomationRunner:
         conversation = ctx.conversation
 
         agent_id = node.config["agent_id"]
-        agent = self.agent_repo.find_agent_by_id(agent_id, user_email)
+        agent = owned_agent(agent_id, user_email, self.agent_repo)
         if not agent:
             return self._failed_node_result(
                 ctx,

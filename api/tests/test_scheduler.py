@@ -29,7 +29,7 @@ from src.scheduler.repository import ScheduleRunAlreadyExists, SchedulerReposito
 from src.scheduler import runtime as scheduler_runtime_module
 from src.scheduler.runtime import CRAWL_JOB_REAPER_ID, DREAM_RUN_REAPER_ID, SchedulerRuntime
 from src.scheduler.service import SchedulerService
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 
 
 class FakeSchedulerBackend:
@@ -343,7 +343,7 @@ async def test_scheduler_dispatcher_invokes_agent_message_target(dynamodb_table,
         agent_architecture="krishna-mini",
         agent_provider="openai",
         agent_persona="Helpful",
-        created_by=TEST_USER_EMAIL,
+        **agent_fields(TEST_USER_EMAIL),
     )
     AgentRepository().save(agent)
     conversation = Conversation(

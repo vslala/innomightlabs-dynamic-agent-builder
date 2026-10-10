@@ -31,6 +31,9 @@ from src.config import settings
 from src.connectors.mcp.client import MCPClientError
 from src.connectors.mcp.oauth import decode_state_session
 from src.connectors.mcp.service import MCPConnectorService, get_mcp_connector_service
+# An agent uses its owner's own MCP connections, so only the owner links them
+from src.agents.access import own_agent_with
+from src.agents.models import Agent
 from src.form_models import Form
 from src.skills.models import ActorKind
 
@@ -288,6 +291,7 @@ async def complete_mcp_oauth(
 async def list_agent_mcp_connections(
     request: Request,
     agent_id: str,
+    _agent: Annotated[Agent, Depends(own_agent_with("agents:Get"))],
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> list[AgentMCPConnectionResponse]:
     try:
@@ -305,6 +309,7 @@ async def update_agent_mcp_connection(
     mcp_id: str,
     body: AgentMCPConnectionUpdateRequest,
     background_tasks: BackgroundTasks,
+    _agent: Annotated[Agent, Depends(own_agent_with("agents:Update"))],
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> AgentMCPConnectionResponse:
     owner_email = _user_email(request)
@@ -326,6 +331,7 @@ async def get_agent_mcp_sharing(
     request: Request,
     agent_id: str,
     mcp_id: str,
+    _agent: Annotated[Agent, Depends(own_agent_with("agents:Get"))],
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPSharingView:
     try:
@@ -340,6 +346,7 @@ async def update_agent_mcp_sharing(
     agent_id: str,
     mcp_id: str,
     body: MCPSharingUpdateRequest,
+    _agent: Annotated[Agent, Depends(own_agent_with("agents:Update"))],
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPSharingView:
     try:
@@ -353,6 +360,7 @@ async def delete_agent_mcp_connection(
     request: Request,
     agent_id: str,
     mcp_id: str,
+    _agent: Annotated[Agent, Depends(own_agent_with("agents:Update"))],
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> None:
     try:

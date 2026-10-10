@@ -107,7 +107,7 @@ async def embed_shell(public_key: str) -> HTMLResponse:
     if not api_key or not api_key.is_active:
         return _unavailable()
 
-    agent = AgentRepository().find_agent_by_id(api_key.agent_id, api_key.created_by)
+    agent = AgentRepository().get(api_key.agent_id)
     if not agent:
         return _unavailable()
 

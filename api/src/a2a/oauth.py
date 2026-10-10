@@ -78,7 +78,6 @@ def issue_a2a_access_token(*, api_key: AgentApiKey, requested_scope: str | None 
         "token_use": A2A_OAUTH_TOKEN_USE,
         "agent_id": api_key.agent_id,
         "client_key_id": api_key.key_id,
-        "owner_email": api_key.created_by,
         "scope": " ".join(sorted(scopes)),
         "iat": now,
         "exp": now + timedelta(seconds=expires_in),
@@ -124,7 +123,7 @@ def validate_a2a_access_token(
 
     client_key_id = str(payload.get("client_key_id") or "")
     api_key = api_key_repo.find_by_id(agent_id, client_key_id)
-    if not api_key or not api_key.is_active or api_key.created_by != payload.get("owner_email"):
+    if not api_key or not api_key.is_active:
         raise _oauth_error("invalid_token", "A2A OAuth token client has been revoked")
     return api_key
 

@@ -3,10 +3,14 @@ from __future__ import annotations
 from src.agents.models import Agent
 from src.form_models import Form, FormInput, FormInputType, FormOptionsSource
 from src.form_options import FormOptionsContext, hydrate_form_options, validate_form_options
+from tests.mock_data import agent_fields, owner_for
+
+OWNER = owner_for("owner@example.com")
 
 
 class FakeAgentRepository:
-    def find_all_by_created_by(self, user_email: str) -> list[Agent]:
+    def list_owned(self, account_id: str, owner_id: str) -> list[Agent]:
+        user_email = "user@example.com"
         return [
             Agent(
                 agent_id="mini-1",
@@ -14,7 +18,7 @@ class FakeAgentRepository:
                 agent_architecture="krishna-mini",
                 agent_provider="Bedrock",
                 agent_persona="Reports.",
-                created_by=user_email,
+                **agent_fields(user_email),
             ),
             Agent(
                 agent_id="memgpt-1",
@@ -22,7 +26,7 @@ class FakeAgentRepository:
                 agent_architecture="krishna-memgpt",
                 agent_provider="Bedrock",
                 agent_persona="Memory.",
-                created_by=user_email,
+                **agent_fields(user_email),
             ),
         ]
 
@@ -45,7 +49,7 @@ def _agent_form() -> Form:
 def test_krishna_mini_agent_options_only_include_mini_agents():
     form = hydrate_form_options(
         _agent_form(),
-        FormOptionsContext(user_email="owner@example.com", agent_repository=FakeAgentRepository()),
+        FormOptionsContext(user_email="owner@example.com", owner=OWNER, agent_repository=FakeAgentRepository()),
     )
 
     options = form.form_inputs[0].options or []
@@ -53,7 +57,7 @@ def test_krishna_mini_agent_options_only_include_mini_agents():
 
 
 def test_krishna_mini_agent_options_validation_rejects_other_architectures():
-    context = FormOptionsContext(user_email="owner@example.com", agent_repository=FakeAgentRepository())
+    context = FormOptionsContext(user_email="owner@example.com", owner=OWNER, agent_repository=FakeAgentRepository())
 
     validate_form_options(_agent_form().form_inputs, {"agent_id": "mini-1"}, context)
 

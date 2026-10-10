@@ -30,6 +30,7 @@ from typing import Dict, List
 import boto3
 from boto3.dynamodb.conditions import Key
 
+from src.accounts.models import personal_account_id
 from src.identity.models import email_index_key
 
 logging.basicConfig(level=logging.INFO)
@@ -59,7 +60,7 @@ class AccountDeletionHandler:
         )
 
         # 3. Delete Agents and related data
-        agent_ids = self._get_agent_ids_for_user(user_email)
+        agent_ids = self._get_agent_ids_for_user(user_id)
         counts["archival_memory"] = self._delete_archival_memory_for_agents(agent_ids)
         counts["core_memory"] = self._delete_items_by_agents(agent_ids, "CoreMemory#")
         counts["memory_block_defs"] = self._delete_items_by_agents(agent_ids, "MemoryBlockDef#")
@@ -81,10 +82,8 @@ class AccountDeletionHandler:
             f"User#{user_email}", "KnowledgeBase#"
         )
 
-        # 7. Delete Agents
-        counts["agents"] = self._delete_items_by_pattern(
-            f"User#{user_email}", "Agent#"
-        )
+        # 7. Delete Agents (in the personal account until KAN-83 handles every account)
+        counts["agents"] = self._delete_agents(user_id, agent_ids)
 
         # 8. Delete API Keys
         counts["api_keys"] = self._delete_items_by_pattern(
@@ -158,35 +157,32 @@ class AccountDeletionHandler:
 
         return count
 
-    def _get_agent_ids_for_user(self, user_email: str) -> List[str]:
-        agent_ids = []
+    def _get_agent_ids_for_user(self, user_id: str) -> List[str]:
+        """The agents the person owns in their personal account. Leaving shared accounts, and what they
+        own there, comes with offboarding (KAN-83)."""
+        agent_ids: List[str] = []
+        query_params = {
+            "KeyConditionExpression": Key("pk").eq(f"Account#{personal_account_id(user_id)}")
+            & Key("sk").begins_with("Agent#"),
+        }
         try:
-            last_evaluated_key = None
             while True:
-                query_params = {
-                    "KeyConditionExpression": Key("pk").eq(f"User#{user_email}") & Key("sk").begins_with("Agent#")
-                }
-                if last_evaluated_key:
-                    query_params["ExclusiveStartKey"] = last_evaluated_key
-
                 response = self.table.query(**query_params)
-                items = response.get("Items", [])
-
-                for item in items:
-                    sk = item.get("sk", "")
-                    if sk.startswith("Agent#"):
-                        agent_id = sk.replace("Agent#", "")
-                        agent_ids.append(agent_id)
-
-                last_evaluated_key = response.get("LastEvaluatedKey")
-                if not last_evaluated_key:
+                agent_ids += [item["agent_id"] for item in response.get("Items", []) if item.get("owner_id") == user_id]
+                if "LastEvaluatedKey" not in response:
                     break
-
-            log.info(f"Found {len(agent_ids)} agents for {user_email}")
+                query_params["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+            log.info(f"Found {len(agent_ids)} agents for {user_id}")
         except Exception as e:
-            log.error(f"Error getting agent IDs for {user_email}: {e}")
-
+            log.error(f"Error getting agent IDs for {user_id}: {e}")
         return agent_ids
+
+    def _delete_agents(self, user_id: str, agent_ids: List[str]) -> int:
+        pk = f"Account#{personal_account_id(user_id)}"
+        with self.table.batch_writer() as batch:
+            for agent_id in agent_ids:
+                batch.delete_item(Key={"pk": pk, "sk": f"Agent#{agent_id}"})
+        return len(agent_ids)
 
     def _delete_items_by_agents(self, agent_ids: List[str], sk_prefix: str) -> int:
         count = 0

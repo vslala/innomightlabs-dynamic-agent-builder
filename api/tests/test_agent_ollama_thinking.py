@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from src.agents.models import Agent
 from src.agents.schemas import UPDATE_AGENT_FORM
-from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL
+from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL, agent_fields
 
 
 class TestAgentModel:
@@ -14,7 +14,7 @@ class TestAgentModel:
             agent_architecture="krishna-mini",
             agent_provider="Ollama",
             agent_persona="p",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
 
         assert agent.agent_ollama_thinking is None
@@ -25,7 +25,7 @@ class TestAgentModel:
             agent_architecture="krishna-mini",
             agent_provider="Ollama",
             agent_persona="p",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
 
         assert agent.to_response().agent_ollama_thinking == "default"
@@ -37,7 +37,7 @@ class TestAgentModel:
             agent_provider="Ollama",
             agent_persona="p",
             agent_ollama_thinking="enabled",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
 
         assert agent.to_response().agent_ollama_thinking == "enabled"
@@ -49,7 +49,7 @@ class TestAgentModel:
             agent_provider="Ollama",
             agent_persona="p",
             agent_ollama_thinking="disabled",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
 
         restored = Agent.from_dynamo_item(agent.to_dynamo_item())
@@ -62,7 +62,7 @@ class TestAgentModel:
             agent_architecture="krishna-mini",
             agent_provider="Bedrock",
             agent_persona="p",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
         item = agent.to_dynamo_item()
         del item["agent_ollama_thinking"]

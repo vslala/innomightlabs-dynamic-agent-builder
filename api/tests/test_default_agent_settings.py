@@ -3,7 +3,7 @@
 from fastapi.testclient import TestClient
 
 from src.agents.models import Agent
-from tests.mock_data import AGENT_CREATE_REQUEST, AGENT_CREATE_REQUEST_2, TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for
+from tests.mock_data import AGENT_CREATE_REQUEST, AGENT_CREATE_REQUEST_2, TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for, agent_fields
 
 
 def _create_agent(test_client: TestClient, auth_headers: dict, request: dict | None = None) -> str:
@@ -48,10 +48,10 @@ class TestDefaultAgentSettingsRouter:
     ):
         # Two agents for the same user, inserted directly to bypass the per-user agent-creation rate limit.
         first_agent_id = agent_repository.save(
-            Agent.model_validate({**AGENT_CREATE_REQUEST, "created_by": TEST_USER_EMAIL})
+            Agent.model_validate({**AGENT_CREATE_REQUEST, **agent_fields(TEST_USER_EMAIL)})
         ).agent_id
         second_agent_id = agent_repository.save(
-            Agent.model_validate({**AGENT_CREATE_REQUEST_2, "created_by": TEST_USER_EMAIL})
+            Agent.model_validate({**AGENT_CREATE_REQUEST_2, **agent_fields(TEST_USER_EMAIL)})
         ).agent_id
 
         test_client.put("/settings/default-agent", json={"agent_id": first_agent_id}, headers=auth_headers)

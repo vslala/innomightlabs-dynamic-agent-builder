@@ -7,7 +7,10 @@ import src.form_models as form_models
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPBearer
 
+from src.agents.access import owner_of, require_agent
 from src.agents.repository import AgentRepository
+from src.iam.dependencies import get_principal
+from src.iam.principal import Principal
 from src.skills.models import (
     InstallSkillRequest,
     InstalledSkillResponse,
@@ -58,31 +61,27 @@ async def get_skill_install_schema(
 
 @router.get("/agents/{agent_id}/skills", response_model=list[InstalledSkillResponse])
 async def list_installed_skills(
-    request: Request,
     agent_id: str,
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
     service: Annotated[SkillService, Depends(get_skill_service)],
 ) -> list[InstalledSkillResponse]:
-    user_email: str = request.state.user_email
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    require_agent(principal, agent_id, "agents:Get", agent_repo)
     return service.list_installed(agent_id)
 
 
 @router.post("/agents/{agent_id}/skills", response_model=InstalledSkillResponse, status_code=status.HTTP_201_CREATED)
 async def install_skill_for_agent(
-    request: Request,
     agent_id: str,
     body: InstallSkillRequest,
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
     service: Annotated[SkillService, Depends(get_skill_service)],
     skill_id: str = Query(..., description="Skill id to install"),
 ) -> InstalledSkillResponse:
-    user_email: str = request.state.user_email
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = require_agent(principal, agent_id, "skills:Install", agent_repo)
+    # Skills run as the agent's owner, so their credentials are the owner's
+    user_email = owner_of(agent).email
 
     try:
         installed = service.install_skill(
@@ -99,17 +98,14 @@ async def install_skill_for_agent(
 
 @router.patch("/agents/{agent_id}/skills/{skill_id}", response_model=InstalledSkillResponse)
 async def update_installed_skill(
-    request: Request,
     agent_id: str,
     skill_id: str,
     body: UpdateInstalledSkillRequest,
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
     service: Annotated[SkillService, Depends(get_skill_service)],
 ) -> InstalledSkillResponse:
-    user_email: str = request.state.user_email
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    require_agent(principal, agent_id, "skills:Configure", agent_repo)
 
     try:
         installed = service.update_installed(
@@ -127,17 +123,16 @@ async def update_installed_skill(
 
 @router.delete("/agents/{agent_id}/skills/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def uninstall_skill(
-    request: Request,
     agent_id: str,
     skill_id: str,
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
     service: Annotated[SkillService, Depends(get_skill_service)],
     disconnect_oauth: bool = Query(False, description="Also delete the user-level OAuth credentials for this skill's provider"),
 ) -> None:
-    user_email: str = request.state.user_email
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = require_agent(principal, agent_id, "skills:Uninstall", agent_repo)
+    # Skills run as the agent's owner, so their credentials are the owner's
+    user_email = owner_of(agent).email
 
     service.uninstall(
         agent_id=agent_id,

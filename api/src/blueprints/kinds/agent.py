@@ -2,6 +2,8 @@ from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Mapping, Optional
 from uuid import uuid4
 
+from src.accounts.owner import personal_owner
+from src.agents.access import owner_of
 from src.agents.models import Agent, CreateAgentRequest
 from src.agents.repository import AgentRepository
 from src.agents.service import AgentService, validate_provider_model
@@ -36,6 +38,14 @@ from src.skills.service import SkillService
 
 #: The only architecture that uses knowledge bases and skills, so blueprints don't offer a choice.
 BLUEPRINT_ARCHITECTURE = "krishna-memgpt"
+
+
+def _owned_agent(agent_id: str, user_email: str, repository: Optional[AgentRepository] = None) -> Optional[Agent]:
+    """One of this person's agents. Blueprints and kits work in the personal account until they move into
+    accounts themselves (KAN-80)."""
+    owner = personal_owner(user_email)
+    agent = (repository or AgentRepository()).find_in_account(owner.account_id, agent_id)
+    return agent if agent and agent.owner_id == owner.user_id else None
 
 
 def skill_audience(entry: SkillEntry) -> list[ActorKind] | None:
@@ -155,15 +165,16 @@ class CreateAgent(Command):
         return Undo("delete_new_agent", {"agent_id": self.agent_id})
 
     def run(self, ctx: ApplyContext) -> None:
-        agent = AgentService().create(self.request, ctx.user_email, agent_id=self.agent_id)
+        agent = AgentService().create(self.request, personal_owner(ctx.user_email), agent_id=self.agent_id)
         ctx.applied[self.resource] = _applied(self.resource, agent)
 
 
 @undo_action("delete_new_agent")
 def _delete_new_agent(args: dict[str, Any], user_email: str) -> None:
     # The same delete as the dashboard's, so the dream schedule `create` added goes too, not left firing nightly.
-    if AgentRepository().find_agent_by_id(args["agent_id"], user_email):
-        AgentService().delete(args["agent_id"], user_email)
+    agent = _owned_agent(args["agent_id"], user_email)
+    if agent:
+        AgentService().delete(agent, user_email)
 
 
 @dataclass(kw_only=True)
@@ -174,7 +185,7 @@ class SaveAgent(Command):
     establishes: ClassVar[bool] = True
 
     def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
-        current = AgentRepository().find_agent_by_id(self.agent_id, ctx.user_email)
+        current = _owned_agent(self.agent_id, ctx.user_email)
         before = {key: getattr(current, key) for key in self.fields} if current else {}
         return Undo("restore_agent", {"agent_id": self.agent_id, "fields": before})
 
@@ -183,7 +194,7 @@ class SaveAgent(Command):
 
 
 def _save_agent(agent_id: str, fields: dict[str, Any], user_email: str) -> Agent:
-    current = AgentRepository().find_agent_by_id(agent_id, user_email)
+    current = _owned_agent(agent_id, user_email)
     if current is None:
         raise RuntimeError("The agent was deleted since the plan. Plan again.")
     return AgentRepository().save(current.model_copy(update=fields))
@@ -366,7 +377,9 @@ class DeleteAgent(Command):
     deletes: ClassVar[bool] = True
 
     def run(self, ctx: ApplyContext) -> None:
-        AgentService().delete(self.agent_id, ctx.user_email)
+        agent = _owned_agent(self.agent_id, ctx.user_email)
+        if agent:
+            AgentService().delete(agent, ctx.user_email)
 
 
 def _ids(ctx: ApplyContext) -> dict[str, str]:
@@ -417,7 +430,7 @@ class AgentKind(ManagedKind[AgentSpec]):
             resource["model"] = record.agent_model
         if record.agent_description:
             resource["description"] = record.agent_description
-        linked = self.linked(record.agent_id, record.created_by)
+        linked = self.linked(record.agent_id, owner_of(record).email)
         for field_name, kind in (("knowledge_bases", "KnowledgeBase"), ("mcp_connections", "McpConnection")):
             targets = [names[linked_id] for linked_kind, linked_id, _ in linked if linked_kind == kind and linked_id in names]
             if targets:
@@ -446,11 +459,12 @@ class AgentKind(ManagedKind[AgentSpec]):
     def find_existing(self, name: str, spec: AgentSpec, ctx: PlanContext) -> Optional[Existing]:
         repo = AgentRepository()
         if spec.id:
-            agent = repo.find_agent_by_id(spec.id, ctx.user_email)
+            agent = _owned_agent(spec.id, ctx.user_email, repo)
             if not agent:
                 raise NotFound(f"There's no agent with id '{spec.id}' in your account.")
             return Existing(id=agent.agent_id, record=agent, matched_by="id")
-        agent = repo.find_by_name(spec.name, ctx.user_email)
+        owner = personal_owner(ctx.user_email)
+        agent = repo.find_by_name(owner.account_id, owner.user_id, spec.name)
         return Existing(id=agent.agent_id, record=agent, matched_by="name") if agent else None
 
     def applied(self, name: str, record: Agent) -> AppliedResource:
@@ -519,7 +533,8 @@ class AgentKind(ManagedKind[AgentSpec]):
         issues: list[BlueprintIssue] = []
         if change.action == Action.UNCHANGED:
             return issues
-        same_name = AgentRepository().find_by_name(spec.name, ctx.user_email)
+        owner = personal_owner(ctx.user_email)
+        same_name = AgentRepository().find_by_name(owner.account_id, owner.user_id, spec.name)
         if same_name and (change.existing is None or same_name.agent_id != change.existing.id):
             issues.append(BlueprintIssue(
                 path=f"{path}.name",

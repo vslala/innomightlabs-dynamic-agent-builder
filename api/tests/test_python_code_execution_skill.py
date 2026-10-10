@@ -13,6 +13,7 @@ from src.skills.python_code_execution import actions, client
 from src.skills.python_code_execution.models import RunScriptRequest
 from src.skills.registry import SkillRegistry
 from src.skills.workspaces import workspace_id_from_context
+from tests.mock_data import agent_fields
 
 
 RUNTIME_CONTEXT = {
@@ -78,7 +79,7 @@ def test_skill_installs_without_configuration(test_client, auth_headers) -> None
             agent_provider="Bedrock",
             agent_model="claude-3-7-sonnet",
             agent_persona="Helpful",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
     )
 

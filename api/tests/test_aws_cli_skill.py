@@ -14,6 +14,7 @@ from src.crypto import decrypt
 from src.skills.aws_cli import actions
 from src.skills.aws_cli.models import AwsCliConfig, AwsCliReadRequest, parse_policy
 from src.skills.registry import SkillRegistry
+from tests.mock_data import agent_fields
 
 
 VALID_CONFIG = {
@@ -81,7 +82,7 @@ def test_install_asks_for_aws_credentials_and_stores_them_as_secrets(
             agent_provider="Bedrock",
             agent_model="claude-3-7-sonnet",
             agent_persona="Helpful",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
     )
 

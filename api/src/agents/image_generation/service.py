@@ -76,17 +76,20 @@ class AgentImageGenerationService:
     async def generate_for_dashboard(
         self,
         *,
-        agent_id: str,
-        conversation_id: str,
-        user_email: str,
+        agent: Agent,
+        conversation: Conversation,
+        owner_email: str,
+        actor_email: str,
         request: GenerateImageRequest,
     ) -> GenerateImageResponse:
-        context = self._load_dashboard_context(agent_id, conversation_id, user_email)
+        """The route has authorized the caller for this agent and conversation. The image is made on
+        the agent owner's provider settings."""
+        context = AgentConversationContext(agent=agent, conversation=conversation)
         result = await self._generate(
             agent=context.agent,
             conversation=context.conversation,
-            owner_email=user_email,
-            actor_email=user_email,
+            owner_email=owner_email,
+            actor_email=actor_email,
             request=request,
         )
         for image in result.images:
@@ -99,17 +102,17 @@ class AgentImageGenerationService:
     async def stream_for_dashboard(
         self,
         *,
-        agent_id: str,
-        conversation_id: str,
-        user_email: str,
+        agent: Agent,
+        conversation: Conversation,
+        owner_email: str,
+        actor_email: str,
         request: GenerateImageRequest,
     ) -> AsyncIterator[SSEEvent]:
-        context = self._load_dashboard_context(agent_id, conversation_id, user_email)
         async for event in self._stream_generate(
-            agent=context.agent,
-            conversation=context.conversation,
-            owner_email=user_email,
-            actor_email=user_email,
+            agent=agent,
+            conversation=conversation,
+            owner_email=owner_email,
+            actor_email=actor_email,
             request=request,
             dashboard_urls=True,
         ):
@@ -510,25 +513,6 @@ class AgentImageGenerationService:
             images=response_images,
         )
 
-    def _load_dashboard_context(
-        self,
-        agent_id: str,
-        conversation_id: str,
-        user_email: str,
-    ) -> AgentConversationContext:
-        agent = self.agent_repo.find_agent_by_id(agent_id, user_email)
-        if not agent:
-            raise ImageGenerationNotFoundError("Agent not found")
-
-        conversation = self.conversation_repo.find_by_id(conversation_id, user_email)
-        if not conversation:
-            raise ImageGenerationNotFoundError("Conversation not found")
-
-        if conversation.agent_id != agent_id:
-            raise ImageGenerationConflictError("Conversation does not belong to this agent")
-
-        return AgentConversationContext(agent=agent, conversation=conversation)
-
     def _load_agent_turn_context(
         self,
         *,
@@ -537,7 +521,8 @@ class AgentImageGenerationService:
         owner_email: str,
         actor_email: str,
     ) -> AgentConversationContext:
-        agent = self.agent_repo.find_agent_by_id(agent_id, owner_email)
+        # The agent of the running turn, found by its id
+        agent = self.agent_repo.get(agent_id)
         if not agent:
             raise ImageGenerationNotFoundError("Agent not found")
 

@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 
-from ..agents.repository import AgentRepository
+from ..agents.models import Agent
 from .models import (
     TokenUsagePeriod,
     TokenUsagePoint,
@@ -28,10 +28,8 @@ class TokenUsageService:
         self,
         *,
         token_usage_repository: Optional[TokenUsageRepository] = None,
-        agent_repository: Optional[AgentRepository] = None,
     ) -> None:
         self.token_usage_repository = token_usage_repository or TokenUsageRepository()
-        self.agent_repository = agent_repository or AgentRepository()
 
     def record_usage(
         self,
@@ -63,8 +61,7 @@ class TokenUsageService:
     def get_usage(
         self,
         *,
-        owner_email: str,
-        agent_id: str,
+        agent: Agent,
         period: TokenUsagePeriod,
         from_at: Optional[datetime],
         to_at: Optional[datetime],
@@ -75,13 +72,10 @@ class TokenUsageService:
         public API secret keys when `api_key_id` is given (the caller must have
         confirmed that key belongs to the agent).
 
-        Must check agent ownership via AgentRepository.find_agent_by_id --
-        this data is keyed by agent_id alone and doesn't get scoping "for
-        free" the way analytics/service.py does by filtering conversations
-        first.
+        This data is keyed by agent_id alone, so the caller must have authorized
+        the agent (`require_agent`) before asking.
         """
-        if self.agent_repository.find_agent_by_id(agent_id, owner_email) is None:
-            raise HTTPException(status_code=404, detail="Agent not found")
+        agent_id = agent.agent_id
 
         normalized_from, normalized_to = self._normalize_range(period, from_at, to_at)
         from_key = format_period_key(period, normalized_from)

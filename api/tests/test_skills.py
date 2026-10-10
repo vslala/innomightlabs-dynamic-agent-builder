@@ -16,6 +16,7 @@ from src.skills.lead_capture.forms import parse_custom_inputs
 from src.skills.lifecycle import SkillLifecycleRunner
 from src.skills.service import SkillRuntimeService, SkillService
 from src.skills.models import ActorKind
+from tests.mock_data import agent_fields
 
 
 def _create_agent_for_user(user_email: str) -> Agent:
@@ -26,7 +27,7 @@ def _create_agent_for_user(user_email: str) -> Agent:
         agent_provider="Bedrock",
         agent_model="claude-3-7-sonnet",
         agent_persona="Helpful",
-        created_by=user_email,
+        **agent_fields(user_email),
     )
     return repo.save(agent)
 

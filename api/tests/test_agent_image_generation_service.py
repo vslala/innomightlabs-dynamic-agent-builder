@@ -10,6 +10,7 @@ from src.agents.image_generation.service import (
 from src.agents.models import Agent
 from src.conversations.models import Conversation
 from src.llm.events import SSEEventType
+from tests.mock_data import agent_fields
 
 
 class FakeMessageRepository:
@@ -63,7 +64,7 @@ class FakeAgentImageGenerationService(AgentImageGenerationService):
                 agent_provider="OpenAI",
                 agent_model="gpt-5.4",
                 agent_persona="Generate images.",
-                created_by=owner_email,
+                **agent_fields(owner_email),
             ),
             conversation=Conversation(
                 conversation_id=conversation_id,

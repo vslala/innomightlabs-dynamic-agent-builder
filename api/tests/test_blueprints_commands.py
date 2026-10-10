@@ -152,7 +152,7 @@ def test_an_interrupted_apply_is_put_back_by_the_reaper(account, monkeypatch):
     assert recovered.status == DeploymentStatus.FAILED
     assert "put back" in recovered.error
     assert recovered.resources == {}
-    assert AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL) is None
+    assert AgentRepository().get(agent_id) is None
     [kb] = KnowledgeBaseRepository().find_all_by_user(TEST_USER_EMAIL, include_deleted=True)
     assert kb.status == KnowledgeBaseStatus.DELETED
     assert account == []  # it never got as far as reading the site
@@ -172,7 +172,7 @@ def test_an_apply_interrupted_after_the_commit_point_says_what_is_left(account, 
     [recovered] = DeploymentRepository().list_by_user(TEST_USER_EMAIL)
     assert recovered.status == DeploymentStatus.FAILED_PARTIAL
     assert "Apply the same blueprint again" in recovered.error
-    assert AgentRepository().find_agent_by_id(recovered.resources["assistant"].id, TEST_USER_EMAIL) is not None
+    assert AgentRepository().get(recovered.resources["assistant"].id) is not None
 
 
 def test_undo_puts_back_only_what_it_changed_as_it_was_when_it_ran(account, monkeypatch):
@@ -186,7 +186,7 @@ def test_undo_puts_back_only_what_it_changed_as_it_was_when_it_ran(account, monk
     )
     validated, plan = planned(edited)
     # Between the plan and the apply, the person edits the agent's description in the dashboard.
-    agent = AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL)
+    agent = AgentRepository().get(agent_id)
     AgentRepository().save(agent.model_copy(update={"agent_description": "Edited in the dashboard"}))
 
     def fail(*args, **kwargs):
@@ -196,7 +196,7 @@ def test_undo_puts_back_only_what_it_changed_as_it_was_when_it_ran(account, monk
     failed = apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
 
     assert failed.status == DeploymentStatus.FAILED
-    agent = AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL)
+    agent = AgentRepository().get(agent_id)
     assert "short and friendly" in agent.agent_persona
     assert agent.agent_description == "Edited in the dashboard"
     assert ApiKeyRepository().find_all_by_agent(agent_id)[0].allow_guests is True

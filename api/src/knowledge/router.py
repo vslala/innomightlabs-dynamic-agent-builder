@@ -42,7 +42,8 @@ import asyncio
 import json
 
 import src.form_models as form_models
-from src.agents.repository import AgentRepository
+from src.agents.access import agent_with, owner_of
+from src.agents.models import Agent
 from src.knowledge.models import (
     KnowledgeBase,
     KnowledgeBaseResponse,
@@ -138,10 +139,10 @@ def get_agent_kb_repository() -> AgentKnowledgeBaseRepository:
     return AgentKnowledgeBaseRepository()
 
 
-def require_owned_agent(request: Request, agent_id: str) -> None:
-    """Agent ids are public (A2A cards, embeds), so every agent-keyed route checks the caller owns it."""
-    if not AgentRepository().find_agent_by_id(agent_id, request.state.user_email):
-        raise HTTPException(status_code=404, detail="Agent not found")
+# Agent ids are public (A2A cards, embeds), so every agent-keyed route authorizes the caller for it
+can_chat_with_agent = agent_with("agents:Chat")
+can_open_agent = agent_with("agents:Get")
+can_update_agent = agent_with("agents:Update")
 
 
 def get_kb_service() -> KnowledgeBaseService:
@@ -790,10 +791,10 @@ async def search_knowledge_base(
     return KBSearchResponse(results=results, query=query).model_dump()
 
 
-@agent_kb_router.post("/{agent_id}/knowledge-search", dependencies=[Depends(require_owned_agent)])
+@agent_kb_router.post("/{agent_id}/knowledge-search")
 async def search_agent_knowledge_bases(
-    request: Request,
     agent_id: str,
+    agent: Annotated[Agent, Depends(can_chat_with_agent)],
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     agent_kb_repo: Annotated[AgentKnowledgeBaseRepository, Depends(get_agent_kb_repository)],
     query: str = Query(..., description="Search query"),
@@ -807,7 +808,7 @@ async def search_agent_knowledge_bases(
     """
     from src.config import settings
 
-    user_email: str = request.state.user_email
+    user_email = owner_of(agent).email  # the agent reads its owner's knowledge bases
 
     # Pinecone is required for vector search.
     try:
@@ -858,19 +859,17 @@ async def search_agent_knowledge_bases(
 @agent_kb_router.post(
     "/{agent_id}/knowledge-bases",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_owned_agent)],
 )
 async def link_knowledge_base(
-    request: Request,
     agent_id: str,
+    agent: Annotated[Agent, Depends(can_update_agent)],
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     agent_kb_repo: Annotated[AgentKnowledgeBaseRepository, Depends(get_agent_kb_repository)],
     kb_id: str = Query(..., description="Knowledge base ID to link"),
 ) -> dict:
-    """Link a knowledge base to an agent."""
-    user_email: str = request.state.user_email
+    """Link one of the agent owner's knowledge bases to the agent (it reads them as its owner)."""
+    user_email = owner_of(agent).email
 
-    # Verify KB exists and belongs to user
     kb = kb_repo.find_by_id(kb_id, user_email)
     if not kb:
         raise HTTPException(status_code=404, detail="Knowledge base not found")
@@ -894,16 +893,15 @@ async def link_knowledge_base(
 @agent_kb_router.get(
     "/{agent_id}/knowledge-bases",
     response_model=list[KnowledgeBaseResponse],
-    dependencies=[Depends(require_owned_agent)],
 )
 async def list_agent_knowledge_bases(
-    request: Request,
     agent_id: str,
+    agent: Annotated[Agent, Depends(can_open_agent)],
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     agent_kb_repo: Annotated[AgentKnowledgeBaseRepository, Depends(get_agent_kb_repository)],
 ) -> list[KnowledgeBaseResponse]:
     """List all knowledge bases linked to an agent."""
-    user_email: str = request.state.user_email
+    user_email = owner_of(agent).email
 
     # Get linked KB IDs
     links = agent_kb_repo.find_kbs_for_agent(agent_id)
@@ -921,7 +919,7 @@ async def list_agent_knowledge_bases(
 @agent_kb_router.delete(
     "/{agent_id}/knowledge-bases/{kb_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_owned_agent)],
+    dependencies=[Depends(can_update_agent)],
 )
 async def unlink_knowledge_base(
     request: Request,

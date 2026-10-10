@@ -18,7 +18,7 @@ from src.automations.service import AutomationGraph
 from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 from src.skills.models import ActorKind
 
 
@@ -123,7 +123,7 @@ async def test_runner_invokes_agent_and_stores_run_context(dynamodb_table, monke
         agent_architecture="successful",
         agent_provider="Bedrock",
         agent_persona="Helpful",
-        created_by=TEST_USER_EMAIL,
+        **agent_fields(TEST_USER_EMAIL),
     )
     AgentRepository().save(agent)
     monkeypatch.setattr(
@@ -157,7 +157,7 @@ async def test_runner_creates_pending_run_then_executes_by_id(dynamodb_table, mo
         agent_architecture="successful",
         agent_provider="Bedrock",
         agent_persona="Helpful",
-        created_by=TEST_USER_EMAIL,
+        **agent_fields(TEST_USER_EMAIL),
     )
     AgentRepository().save(agent)
     graph = build_graph(agent.agent_id)
@@ -198,7 +198,7 @@ async def test_runner_follows_error_edge_for_failed_agent(dynamodb_table, monkey
         agent_architecture="failing",
         agent_provider="Bedrock",
         agent_persona="Helpful",
-        created_by=TEST_USER_EMAIL,
+        **agent_fields(TEST_USER_EMAIL),
     )
     AgentRepository().save(agent)
     monkeypatch.setattr(

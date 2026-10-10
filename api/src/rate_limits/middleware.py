@@ -9,6 +9,8 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 
 from .service import RateLimitService
+from ..iam.dependencies import get_principal
+from ..iam.service import IamError
 from ..knowledge.repository import CrawlJobRepository
 from ..agents.repository import AgentRepository
 
@@ -30,10 +32,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         try:
             if request.method == "POST" and request.url.path == "/agents":
                 agent_name = await self._extract_agent_name(request)
-                if agent_name:
-                    existing = self.agent_repo.find_by_name(agent_name, user_email)
-                    if existing:
-                        return await call_next(request)
+                # Re-creating an agent by name returns the existing one, so it isn't counted again
+                if agent_name and self._existing_agent(request, agent_name):
+                    return await call_next(request)
                 self.rate_limits.check_agent_limit(user_email)
 
             if request.method == "POST" and self._is_send_message(request.url.path):
@@ -55,6 +56,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
         return await call_next(request)
+
+    def _existing_agent(self, request: Request, agent_name: str) -> bool:
+        try:
+            principal = get_principal(request)
+        except IamError:
+            return False  # the route refuses the request itself
+        return self.agent_repo.find_by_name(principal.account_id, principal.user_id, agent_name) is not None
 
     @staticmethod
     def _is_send_message(path: str) -> bool:

@@ -123,14 +123,14 @@ def test_leaving_out_resources_deletes_them_dependents_first():
     assert [line.split(":")[0] for line in result.deployment.removed] == [
         "delete chat widget 'Acme assistant widget'", "delete agent 'Acme assistant'",
     ]
-    assert AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL) is None
+    assert AgentRepository().get(agent_id) is None
     assert ApiKeyRepository().find_all_by_agent(agent_id) == []
     assert set(result.kit.resources) == {"site_kb"}
 
 
 def test_a_knowledge_base_used_outside_the_kit_isnt_deleted_with_it():
     kit = deploy(SITE_AGENT).kit
-    other = AgentRepository().find_agent_by_id(kit.resources["assistant"].id, TEST_USER_EMAIL).model_copy(
+    other = AgentRepository().get(kit.resources["assistant"].id).model_copy(
         update={"agent_id": "outsider", "agent_name": "Outsider"}
     )
     AgentRepository().save(other)
@@ -152,7 +152,7 @@ def test_renaming_a_resource_carries_it_on():
     result = deploy(renamed, kit.kit_id)
     assert result.deployment.removed == []
     assert result.kit.resources["helper"].id == agent_id and "assistant" not in result.kit.resources
-    assert AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL) is not None
+    assert AgentRepository().get(agent_id) is not None
 
 
 def test_a_rename_that_would_rebuild_a_resource_is_asked_about():
@@ -177,7 +177,7 @@ def test_a_name_that_changes_kind_is_refused():
 
 def test_drift_is_reported_and_left_alone():
     kit = deploy(SITE_AGENT).kit
-    agent = AgentRepository().find_agent_by_id(kit.resources["assistant"].id, TEST_USER_EMAIL)
+    agent = AgentRepository().get(kit.resources["assistant"].id)
     AgentRepository().save(agent.model_copy(update={"agent_persona": "Edited in the dashboard."}))
     _, plan = plan_next(SITE_AGENT.replace("allow_guests: true", "allow_guests: false"), kit.kit_id)
     step = next(step for step in plan.steps if step.resource == "assistant")
@@ -202,7 +202,7 @@ def test_rolling_back_plans_the_earlier_version_and_applies_only_that_plan():
     assert (result.deployment.action, result.deployment.rolled_back_to, result.kit.current_version) == (
         DeploymentAction.ROLLBACK, 1, 3,
     )
-    assert "short and friendly" in AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL).agent_persona
+    assert "short and friendly" in AgentRepository().get(agent_id).agent_persona
     assert {s.skill_id for s in AgentSkillRepository().list_by_agent(agent_id)} == {"lead_capture"}
     # The plan seen before that rollback is stale now: planned again, it has another id.
     again = plan_rollback(TEST_USER_EMAIL, kit.kit_id, 1)
@@ -218,7 +218,7 @@ def test_removing_a_kit_deletes_everything_it_holds():
     result = apply_kit_plan(planned, TEST_USER_EMAIL, kit.kit_id, planned.plan_id)
     assert isinstance(result, Deployed) and result.deployment.status == DeploymentStatus.APPLIED
     assert (result.kit.status, result.kit.resources) == (KitStatus.REMOVED, {})
-    assert AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL) is None
+    assert AgentRepository().get(agent_id) is None
     assert KnowledgeBaseRepository().find_by_id(kb_id, TEST_USER_EMAIL).status == KnowledgeBaseStatus.DELETED
     with pytest.raises(KitError, match="removed"):
         plan_kit_removal(TEST_USER_EMAIL, kit.kit_id)
@@ -235,7 +235,7 @@ def test_a_failed_disconnect_puts_everything_back(monkeypatch):
     without = edited(SITE_AGENT.replace("short and friendly", "terse"), lambda r: r["assistant"].update(knowledge_bases=[]))
     result = deploy(without, kit.kit_id)
     assert result.deployment.status == DeploymentStatus.FAILED and result.deployment.removed == []
-    assert "short and friendly" in AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL).agent_persona
+    assert "short and friendly" in AgentRepository().get(agent_id).agent_persona
     assert result.kit.versions == 1  # a failure put back isn't a version
 
 

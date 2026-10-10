@@ -25,6 +25,7 @@ from src.skills.registry import SkillRegistry
 from src.skills.repository import AgentSkillRepository
 from src.skills.service import SkillRuntimeService, SkillService
 from src.skills.models import ActorKind
+from tests.mock_data import agent_fields
 
 OWNER = "owner@example.com"
 
@@ -325,7 +326,7 @@ def test_turn_prompt_carries_the_schema_of_an_action_used_last_turn(registry, dy
         agent_architecture="krishna-memgpt",
         agent_provider="Bedrock",
         agent_persona="Helpful",
-        created_by=OWNER,
+        **agent_fields(OWNER),
     )
     architecture = KrishnaMemGPTArchitecture(message_repository=InMemoryMessageRepository())
     architecture.provider_settings_repo = _FakeProviderSettingsRepository()

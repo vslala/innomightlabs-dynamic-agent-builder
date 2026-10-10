@@ -41,6 +41,7 @@ from src.connectors.mcp.service import MCPConnectorService
 from src.connectors.mcp.usage import MCPCall
 from src.crypto import encrypt
 from src.skills.models import ActorKind
+from tests.mock_data import agent_fields
 
 
 OWNER_CALLER = MCPCaller(actor_kind=ActorKind.OWNER, actor_id="owner@example.com")
@@ -107,10 +108,8 @@ class FakeAgentRepository:
     def __init__(self, agent: Agent):
         self.agent = agent
 
-    def find_agent_by_id(self, agent_id: str, created_by: str) -> Agent | None:
-        if self.agent.agent_id == agent_id and self.agent.created_by == created_by:
-            return self.agent
-        return None
+    def get(self, agent_id: str) -> Agent | None:
+        return self.agent if self.agent.agent_id == agent_id else None
 
 
 class FakeMCPClient:
@@ -193,7 +192,7 @@ def make_agent() -> Agent:
         agent_provider="OpenAI",
         agent_model="gpt-5.5",
         agent_persona="SEO analyst",
-        created_by="owner@example.com",
+        **agent_fields("owner@example.com"),
         created_at=datetime.now(timezone.utc),
     )
 

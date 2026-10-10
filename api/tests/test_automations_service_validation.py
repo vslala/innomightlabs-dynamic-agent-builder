@@ -23,7 +23,7 @@ from src.scheduler.repository import SchedulerRepository
 from src.scheduler.service import SchedulerService
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 
 
 def make_service() -> AutomationService:
@@ -207,7 +207,7 @@ def test_validate_invoke_agent_requires_owned_agent(dynamodb_table):
         agent_architecture="krishna-mini",
         agent_provider="Bedrock",
         agent_persona="Helpful",
-        created_by=TEST_USER_EMAIL,
+        **agent_fields(TEST_USER_EMAIL),
     )
     AgentRepository().save(agent)
     start = AutomationNode(automation_id="auto-1", node_id="start", type=AutomationNodeType.START, name="Start")

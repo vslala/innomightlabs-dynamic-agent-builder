@@ -24,7 +24,7 @@ from src.skills.league_insights_report.report_agent import generate_report_html_
 from src.skills.league_insights_report.report_data import build_report_payload
 from src.skills.league_insights_report.riot_client import RiotClient, RiotAccount, RiotApiError
 from src.skills.registry import SkillRegistry
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 
 
 SAFE_HTML = """<!doctype html>
@@ -136,7 +136,7 @@ def test_report_data_builds_multi_match_trends():
     assert payload["trends"]["keystone_perks"] == [{"value": "8369", "games": 2}]
 
 
-def test_report_agent_rejects_non_krishna_mini_agent():
+def test_report_agent_rejects_non_krishna_mini_agent(dynamodb_table):
     repo = _FakeAgentRepository(
         Agent(
             agent_id="agent-1",
@@ -144,7 +144,7 @@ def test_report_agent_rejects_non_krishna_mini_agent():
             agent_architecture="krishna-memgpt",
             agent_provider="OpenAI",
             agent_persona="Reporter",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
     )
 
@@ -161,7 +161,7 @@ def test_report_agent_rejects_non_krishna_mini_agent():
         )
 
 
-def test_report_agent_uses_in_memory_repository(monkeypatch):
+def test_report_agent_uses_in_memory_repository(monkeypatch, dynamodb_table):
     captured = {}
     repo = _FakeAgentRepository(
         Agent(
@@ -170,7 +170,7 @@ def test_report_agent_uses_in_memory_repository(monkeypatch):
             agent_architecture="krishna-mini",
             agent_provider="OpenAI",
             agent_persona="Reporter",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
     )
 
@@ -323,7 +323,7 @@ class _FakeAgentRepository:
     def __init__(self, agent: Agent | None):
         self.agent = agent
 
-    def find_agent_by_id(self, agent_id: str, owner_email: str) -> Agent | None:
+    def get(self, agent_id: str) -> Agent | None:
         return self.agent
 
 

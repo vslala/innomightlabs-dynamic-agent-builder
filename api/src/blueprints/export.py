@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 import yaml  # type: ignore[import-untyped,unused-ignore]
 
+from src.accounts.owner import personal_owner
 from src.agents.repository import AgentRepository
 from src.blueprints.kinds import kind_for
 from src.blueprints.kinds.agent import AgentKind
@@ -27,8 +28,9 @@ def _numbered(base: str, index: int) -> str:
 def export_agent(agent_id: str, user_email: str) -> Optional[str]:
     """The agent as blueprint YAML, or None if it isn't the person's: the resources it links to, the agent, and its
     widget keys, each written by its own kind's `observe`."""
-    agent = AgentRepository().find_agent_by_id(agent_id, user_email)
-    if agent is None:
+    owner = personal_owner(user_email)
+    agent = AgentRepository().find_in_account(owner.account_id, agent_id)
+    if agent is None or agent.owner_id != owner.user_id:
         return None
     agent_kind, widget_kind = AgentKind(), WidgetKeyKind()
 

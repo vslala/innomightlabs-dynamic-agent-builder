@@ -18,7 +18,7 @@ from src.builder.tools import BuilderTools
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 from tests.test_builder_ila import PARAMS, account, session, turn_state  # noqa: F401
 
 SITE_AGENT = example_yaml("site-agent") or ""
@@ -172,7 +172,7 @@ async def test_loading_an_agent_forgets_answers_for_the_old_draft(session):  # n
     BuilderSessionRepository().save(stale)
     agent = AgentRepository().save(Agent(
         agent_name="Docs", agent_architecture="krishna-memgpt", agent_provider="Bedrock",
-        agent_persona="Docs.", created_by=TEST_USER_EMAIL,
+        agent_persona="Docs.", **agent_fields(TEST_USER_EMAIL),
     ))
     await BuilderTools().load_agent("load_agent", {"agent_id": agent.agent_id}, turn_state(session))
     assert reload(session).skill_inputs == {} and reload(session).pending_input is None

@@ -5,6 +5,7 @@ from src.agents.models import Agent
 from src.conversations.models import Conversation
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
+from tests.mock_data import agent_fields
 
 
 class FakeArchitecture(AgentArchitecture):
@@ -55,7 +56,7 @@ async def test_handle_message_buffered_extracts_common_invocation_fields():
         agent_architecture="fake",
         agent_provider="Bedrock",
         agent_persona="Helpful",
-        created_by="owner@example.com",
+        **agent_fields("owner@example.com"),
     )
     conversation = Conversation(
         title="Test Conversation",
@@ -117,7 +118,7 @@ async def test_handle_message_buffered_marks_error_events_as_failed():
         agent_architecture="failing",
         agent_provider="Bedrock",
         agent_persona="Helpful",
-        created_by="owner@example.com",
+        **agent_fields("owner@example.com"),
     )
     conversation = Conversation(
         title="Test Conversation",

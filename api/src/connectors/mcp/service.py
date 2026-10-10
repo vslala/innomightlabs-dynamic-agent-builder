@@ -392,7 +392,7 @@ class MCPConnectorService:
         mcp_id: str,
         enabled: bool = True,
     ) -> AgentMCPConnectionResponse:
-        agent = self.agent_repository.find_agent_by_id(agent_id, owner_email)
+        agent = self.agent_repository.get(agent_id)
         if not agent:
             raise ValueError("Agent not found")
         connection = self._require_connection(owner_email, mcp_id)
@@ -402,7 +402,7 @@ class MCPConnectorService:
         return self._agent_response(saved, connection)
 
     def disable_for_agent(self, *, owner_email: str, agent_id: str, mcp_id: str) -> None:
-        agent = self.agent_repository.find_agent_by_id(agent_id, owner_email)
+        agent = self.agent_repository.get(agent_id)
         if not agent:
             raise ValueError("Agent not found")
         self.repository.delete_agent_connection(agent_id, mcp_id)
@@ -417,7 +417,7 @@ class MCPConnectorService:
         verify_agent: bool = True,
     ) -> list[AgentMCPConnectionResponse]:
         if verify_agent:
-            agent = self.agent_repository.find_agent_by_id(agent_id, owner_email)
+            agent = self.agent_repository.get(agent_id)
             if not agent:
                 raise ValueError("Agent not found")
 
@@ -667,7 +667,7 @@ class MCPConnectorService:
     def _require_agent_link(
         self, *, owner_email: str, agent_id: str, mcp_id: str
     ) -> tuple[AgentMCPConnection, MCPConnection]:
-        if not self.agent_repository.find_agent_by_id(agent_id, owner_email):
+        if not self.agent_repository.get(agent_id):
             raise ValueError("Agent not found")
         link = self.repository.find_agent_connection(agent_id, mcp_id)
         if not link or link.owner_email != owner_email:

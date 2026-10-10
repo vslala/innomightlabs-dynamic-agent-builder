@@ -18,6 +18,7 @@ from src.dream.planner import DreamPlanningResult
 from src.dream.service import DreamService
 from src.memory.models import CoreMemory, MemoryBlockDefinition
 from src.messages.models import Message
+from tests.mock_data import agent_fields
 
 
 OWNER = "owner@example.com"
@@ -113,10 +114,10 @@ class FakeMessageRepository:
 
 
 class FakeAgentRepository:
-    def find_agent_by_id(self, agent_id: str, owner_email: str):
+    def get(self, agent_id: str):
         return Agent(
             agent_id=AGENT_ID, agent_name="Dreamer", agent_architecture="krishna-memgpt",
-            agent_provider="test", agent_persona="Helpful", created_by=OWNER, session_timeout_minutes=60,
+            agent_provider="test", agent_persona="Helpful", **agent_fields(OWNER), session_timeout_minutes=60,
         )
 
 

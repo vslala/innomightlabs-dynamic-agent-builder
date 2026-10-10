@@ -10,7 +10,7 @@ from src.agents.repository import AgentRepository
 from src.dream.models import DreamRun, DreamRunStatus
 from src.dream.repository import DreamRepository
 from src.dream.service import get_dream_service
-from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for
+from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for, agent_fields
 
 
 def _headers_for(email: str) -> dict[str, str]:
@@ -35,7 +35,7 @@ def _save_agent(repository: AgentRepository, *, owner_email: str, agent_id: str)
         agent_architecture="krishna-memgpt",
         agent_provider="Bedrock",
         agent_persona="Maintain core memory.",
-        created_by=owner_email,
+        **agent_fields(owner_email),
     )
     return repository.save(agent)
 
