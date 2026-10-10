@@ -5,6 +5,9 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+#: The agent id Ada's conversations carry. Ada isn't stored as an agent; see src/builder/ada.py.
+ADA_AGENT_ID = "innomightlabs-ada"
+
 
 class PendingInput(BaseModel):
     """The skill-settings form the system showed and is waiting on. See src/builder/skill_inputs.py."""

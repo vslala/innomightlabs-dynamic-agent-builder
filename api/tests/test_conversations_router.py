@@ -83,6 +83,24 @@ class TestConversationsRouter:
         assert len(data["items"]) >= 1
         assert data["items"][0]["title"] == CONVERSATION_CREATE_REQUEST["title"]
 
+    def test_adas_conversations_are_not_listed_and_pages_stay_full(
+        self, test_client: TestClient, auth_headers: dict
+    ):
+        """Building with Ada has its own page, so her conversations stay out of the person's chats."""
+        from src.builder.models import ADA_AGENT_ID
+        from src.conversations.models import Conversation
+        from src.conversations.repository import ConversationRepository
+
+        for i in range(3):
+            ConversationRepository().save(Conversation(title=f"Build {i}", agent_id=ADA_AGENT_ID, created_by=TEST_USER_EMAIL))
+        for i in range(2):
+            request_data = {"title": f"Chat {i}", "agent_id": self.agent_id}
+            test_client.post("/conversations/", json=request_data, headers=auth_headers)
+
+        data = test_client.get("/conversations/?limit=2", headers=auth_headers).json()
+        assert sorted(item["title"] for item in data["items"]) == ["Chat 0", "Chat 1"]
+        assert data["has_more"] is False
+
     def test_list_conversations_pagination(
         self, test_client: TestClient, auth_headers: dict
     ):

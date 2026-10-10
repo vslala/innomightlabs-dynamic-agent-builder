@@ -6,9 +6,9 @@ provider, and her conversations carry ADA_AGENT_ID so the dashboard chat can fin
 
 from src.agents.architectures.vishwakarma import ARCHITECTURE_NAME, VishwakarmaArchitecture
 from src.agents.models import Agent
-from src.builder.models import BuilderSession
+from src.builder.models import ADA_AGENT_ID, BuilderSession
 
-ADA_AGENT_ID = "innomightlabs-ada"
+__all__ = ["ADA_AGENT_ID", "ADA_NAME", "GREETING", "ada_agent", "ada_architecture"]
 ADA_NAME = "Ada"
 #: Ada's first message, saved when the session starts so the person sees it before typing anything.
 GREETING = "Hi, I'm Ada. What do you want to build today?"

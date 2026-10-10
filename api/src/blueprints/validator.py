@@ -17,7 +17,6 @@ from src.blueprints.document import Blueprint
 from src.blueprints.kinds import KIND_NAMES, RESOURCE_KINDS, kind_for
 from src.blueprints.params import param_type
 from src.blueprints.parser import join_path, parse_yaml
-from src.blueprints.upgrade import upgrade
 from src.blueprints.references import Reference
 from src.blueprints.skills_schema import SkillSetup, SkillVariant, skill_variants
 from src.blueprints.spec import (
@@ -68,7 +67,6 @@ def validate_blueprint(
     data, lines = parse_yaml(text)
     if not isinstance(data, dict):
         raise BlueprintInvalid([BlueprintIssue(path="", line=1, message="A blueprint must be a YAML mapping.")])
-    data = upgrade(data)
 
     issues = list(check_templates(data))
     template = _model_or_issues(data, lines, issues)

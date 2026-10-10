@@ -15,6 +15,62 @@ export interface ChangeLogEntry {
 
 export const changeLogEntries: ChangeLogEntry[] = [
   {
+    date: "2026-10-10",
+    title: "Build with Ada, and kits",
+    summary:
+      "Ada, InnomightLabs' solution builder, sets up what you describe in a chat: agents, knowledge bases, skills, tools and chat widgets. Everything she builds is kept together as a kit you can change, roll back or remove as one.",
+    items: [
+      {
+        title: "Build with Ada",
+        description:
+          "Tell Ada what you need, or pick one of her ideas, such as a website support agent, a lead qualifier with email alerts, a web research team or a report studio. She shows you a drawing of the plan and builds only when you approve it.",
+        category: "new",
+      },
+      {
+        title: "Kits",
+        description:
+          "Everything one build creates is a kit, listed on the Build with Ada page with what it holds. Each change you approve is a new version, and Ada only ever changes or removes what the kit itself built, never the things you added yourself.",
+        category: "new",
+      },
+      {
+        title: "Roll back a kit to any version",
+        description:
+          "Open a kit to see its versions and go back to any of them. You see exactly what will change before anything happens, including anything you edited in the dashboard, which is kept as you left it.",
+        category: "new",
+      },
+      {
+        title: "Remove a kit and everything in it",
+        description:
+          "One action deletes a kit's agents, knowledge bases and chat widgets together, after showing you the full list. Connections to other services stay on your account.",
+        category: "new",
+      },
+      {
+        title: "Ada asks only what you know",
+        description:
+          "When a skill needs something only you can tell her, such as where lead emails should go, the chat shows a short form for it. Ada writes the rest of the setup herself.",
+        category: "new",
+      },
+      {
+        title: "Web search for your agents",
+        description:
+          "Agents can search and read the web through Tavily. Ada asks you to connect it from a card in the chat, and you sign in once for every agent that uses it.",
+        category: "new",
+      },
+      {
+        title: "Changes that finish or put everything back",
+        description:
+          "If a build fails part-way, or the server restarts in the middle of one, everything it had done is undone, so you're never left with half a solution.",
+        category: "improved",
+      },
+      {
+        title: "Ada's conversations stay on her page",
+        description:
+          "Building with Ada no longer fills your conversations list; her conversations are on the Build with Ada page.",
+        category: "improved",
+      },
+    ],
+  },
+  {
     date: "2026-10-06",
     title: "Public API, embeddable widget, and MCP sharing",
     summary:
