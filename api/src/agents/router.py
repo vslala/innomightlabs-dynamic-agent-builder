@@ -18,7 +18,7 @@ from src.agents.image_generation.service import (
 )
 from src.agents.models import Agent, CreateAgentRequest, AgentResponse
 from src.agents.repository import AgentRepository
-from src.agents.service import AgentService
+from src.agents.service import AgentService, validate_provider_model
 from src.agents.schemas import get_create_agent_form, get_update_agent_form, UPDATE_AGENT_FORM
 from src.agents.turns import (
     ConversationTurn,
@@ -184,7 +184,19 @@ async def create_agent(
         log.info(f"Agent '{create_request.agent_name}' already exists for user {user_email}, returning existing")
         return existing_agent.to_response()
 
+    _require_provider_model(user_email, create_request.agent_provider, create_request.agent_model)
     return AgentService(repo).create(create_request, user_email).to_response()
+
+
+def _require_provider_model(user_email: str, provider: str, model: str | None) -> None:
+    try:
+        validate_provider_model(user_email, provider, model or None)
+    except ValueError:
+        offered = f"{model} on {provider}" if model else provider
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{offered} isn't available. Choose a provider you've set up in Settings, and one of its models.",
+        )
 
 
 @router.get("", response_model=list[AgentResponse])
@@ -342,6 +354,12 @@ async def update_agent(
     if not filtered_data:
         # No valid fields to update, return current agent (idempotent)
         return agent.to_response()
+
+    # Only a changed pair is checked: an older agent keeps working while its provider stops listing its model.
+    provider = filtered_data.get("agent_provider", agent.agent_provider)
+    model = filtered_data.get("agent_model", agent.agent_model)
+    if (provider, model) != (agent.agent_provider, agent.agent_model):
+        _require_provider_model(user_email, provider, model)
 
     # Encrypt secret fields based on form schema
     encrypted_data = encrypt_secret_fields(UPDATE_AGENT_FORM, filtered_data)

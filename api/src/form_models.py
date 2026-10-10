@@ -1,5 +1,6 @@
+from collections.abc import Mapping
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 from pydantic import BaseModel
 
 
@@ -18,6 +19,8 @@ class SelectOption(BaseModel):
     """Option for select inputs with value and display label."""
     value: str
     label: str
+    #: What the option belongs to, e.g. a model's provider. Read by `FormOptionsFilter`.
+    group: str | None = None
 
 
 class FormOptionsSource(BaseModel):
@@ -26,6 +29,21 @@ class FormOptionsSource(BaseModel):
     type: str
     mode: Literal["hydrate", "lazy"] = "hydrate"
     endpoint: str | None = None
+
+
+class FormOptionsFilter(BaseModel):
+    """Offer only the options whose `group` is another field's current value.
+
+    The model field filters by the provider field this way, so picking a provider
+    narrows the models to that provider's. Ungrouped options are always offered.
+    The SPA applies the same rule as the user types (`optionsFilter.ts`).
+    """
+
+    field: str
+
+    def apply(self, options: list[SelectOption], values: Mapping[str, Any]) -> list[SelectOption]:
+        selected = values.get(self.field)
+        return [option for option in options if option.group is None or option.group == selected]
 
 
 class FormInputValidationFormat(str, Enum):
@@ -60,6 +78,7 @@ class FormInput(BaseModel):
     values: None | list[str] = None
     options: None | list[SelectOption] = None  # New: for value/label pairs
     options_source: None | FormOptionsSource = None
+    options_filter: None | FormOptionsFilter = None
     validation: None | FormInputValidation = None
     smart_suggestion: None | SmartSuggestionConfig = None
     attr: None | dict[str, str] = None

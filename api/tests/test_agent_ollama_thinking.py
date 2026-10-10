@@ -88,6 +88,10 @@ class TestAgentRouterRoundTrip:
     def test_create_agent_persists_the_chosen_thinking_mode(
         self, test_client: TestClient, auth_headers: dict
     ):
+        # An agent can only use a provider the user has set up.
+        test_client.post(
+            "/settings/providers/Ollama", json={"endpoint_url": "http://localhost:11434"}, headers=auth_headers
+        )
         response = test_client.post(
             "/agents",
             json={**AGENT_CREATE_REQUEST, "agent_provider": "Ollama", "agent_ollama_thinking": "enabled"},

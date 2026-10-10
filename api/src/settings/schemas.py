@@ -94,11 +94,28 @@ OPENAI_PROVIDER_FORM = Form(
     ],
 )
 
+OPENAI_API_PROVIDER_FORM = Form(
+    form_name="OpenAI API Key Configuration",
+    submit_path="/settings/providers/OpenAIAPI",
+    form_inputs=[
+        FormInput(
+            input_type=FormInputType.PASSWORD,
+            name="api_key",
+            label="OpenAI API Key",
+            attr={
+                "placeholder": "sk-...",
+                "help_text": "A project or service-account key from platform.openai.com. Usage is billed to that account.",
+            },
+        )
+    ]
+)
+
 # Map of provider name -> form schema
 PROVIDER_SCHEMAS: dict[str, Form] = {
     "Bedrock": BEDROCK_PROVIDER_FORM,
     "Anthropic": ANTHROPIC_PROVIDER_FORM,
     "OpenAI": OPENAI_PROVIDER_FORM,
+    "OpenAIAPI": OPENAI_API_PROVIDER_FORM,
     "Gemini": GEMINI_PROVIDER_FORM,
     "Ollama": OLLAMA_PROVIDER_FORM,
 }

@@ -126,3 +126,13 @@ export DYNAMODB_ENDPOINT=http://localhost:8001
 export DYNAMODB_TABLE=dynamic-agent-builder-local
 uv run python scripts/debug/check_user.py --all
 ```
+
+## openai_api_smoke.py
+
+Live check of the OpenAI API-key provider (`OpenAIAPI`): lists the chat models the key offers, then
+runs a real tool round trip (the model calls `get_weather`, gets a result, answers). Reads the key
+from `OPEN_AI_SERVICE_ACCOUNT_KEY` and never prints it. It spends a few cents of the key's credit.
+
+```bash
+source ../.envrc && PYTHONPATH=. uv run python scripts/debug/openai_api_smoke.py [model]   # default gpt-5.4-mini
+```

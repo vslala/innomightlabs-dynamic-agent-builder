@@ -61,6 +61,14 @@ const isKeyValueRecord = (value: FormValue): value is Record<string, string> => 
   && !Array.isArray(value)
 );
 
+// Provider ids are stored on agents, so the two ways into OpenAI get readable titles here.
+const PROVIDER_TITLES: Record<string, string> = {
+  OpenAI: "OpenAI (OAuth)",
+  OpenAIAPI: "OpenAI (API key)",
+};
+
+const providerTitle = (providerName: string): string => PROVIDER_TITLES[providerName] ?? providerName;
+
 export function Settings() {
   const [providers, setProviders] = useState<ProviderWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -668,7 +676,7 @@ export function Settings() {
                       className={styles.providerConfigPanel}
                     >
                       <Stack className={styles.stackGap4}>
-                        <SectionCardHeader icon={SettingsIcon} title={`Configure ${provider.provider_name}`} />
+                        <SectionCardHeader icon={SettingsIcon} title={`Configure ${providerTitle(provider.provider_name)}`} />
                         {provider.provider_name === "OpenAI" && (
                           <div className={styles.oauthGuide}>
                             <p className={styles.oauthGuideText}>
@@ -705,7 +713,7 @@ export function Settings() {
                           <AlertCircle className={styles.providerUnconfiguredIcon} />
                         )
                       }
-                      title={provider.provider_name === "OpenAI" ? "OpenAI (OAuth)" : provider.provider_name}
+                      title={providerTitle(provider.provider_name)}
                       subtitle={
                         provider.provider_name === "OpenAI"
                           ? (provider.is_configured ? "Connected via OAuth" : "Not connected")

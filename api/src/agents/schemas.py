@@ -6,6 +6,7 @@ from src.form_models import (
     Form,
     FormInput,
     FormInputType,
+    FormOptionsFilter,
     FormOptionsSource,
     SelectOption,
     SmartSuggestionConfig,
@@ -17,9 +18,9 @@ from src.smart_suggestions.models import SmartSuggestionType
 # Fallback model options if dynamic fetch fails
 # These must be models available in eu-west-2
 DEFAULT_MODEL_OPTIONS = [
-    SelectOption(value="claude-3-7-sonnet", label="Claude 3.7 Sonnet"),
-    SelectOption(value="claude-3-sonnet", label="Claude 3 Sonnet"),
-    SelectOption(value="claude-3-haiku", label="Claude 3 Haiku (Fast)"),
+    SelectOption(value="claude-3-7-sonnet", label="Claude 3.7 Sonnet", group="Bedrock"),
+    SelectOption(value="claude-3-sonnet", label="Claude 3 Sonnet", group="Bedrock"),
+    SelectOption(value="claude-3-haiku", label="Claude 3 Haiku (Fast)", group="Bedrock"),
 ]
 
 # Session timeout options
@@ -112,6 +113,7 @@ def get_create_agent_form() -> Form:
                 options=DEFAULT_MODEL_OPTIONS,
                 input_type=FormInputType.SEARCH,
                 options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODELS),
+                options_filter=FormOptionsFilter(field="agent_provider"),
             ),
             FormInput(
                 label="Session Timeout",
@@ -163,6 +165,7 @@ def get_update_agent_form(
                 options=DEFAULT_MODEL_OPTIONS,
                 input_type=FormInputType.SEARCH,
                 options_source=FormOptionsSource(type=FormOptionSourceType.AGENT_MODELS),
+                options_filter=FormOptionsFilter(field="agent_provider"),
             ),
             FormInput(
                 label="Session Timeout",
@@ -196,7 +199,7 @@ UPDATE_AGENT_FORM = Form(
         FormInput(
             label="Provider Name",
             name="agent_provider",
-            values=["Bedrock", "Anthropic", "OpenAI", "Gemini", "Ollama"],
+            values=["Bedrock", "Anthropic", "OpenAI", "OpenAIAPI", "Gemini", "Ollama"],
             input_type=FormInputType.SELECT,
         ),
         FormInput(

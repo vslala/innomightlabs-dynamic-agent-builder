@@ -10,6 +10,7 @@ from .bedrock import BedrockProvider
 from .gemini import GeminiProvider
 from .ollama import OllamaProvider
 from .openai import OpenAIProvider
+from .openai_api import OpenAIAPIProvider
 
 
 def get_llm_provider(provider_name: str) -> LLMProvider:
@@ -29,6 +30,7 @@ def get_llm_provider(provider_name: str) -> LLMProvider:
         "Bedrock": BedrockProvider(),
         "Anthropic": AnthropicProvider(),
         "OpenAI": OpenAIProvider(),
+        "OpenAIAPI": OpenAIAPIProvider(),
         "Gemini": GeminiProvider(),
         "Ollama": OllamaProvider(),
     }

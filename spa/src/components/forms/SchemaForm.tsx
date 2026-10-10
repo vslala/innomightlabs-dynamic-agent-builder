@@ -15,6 +15,7 @@ import { useState } from "react";
 import { Button } from "../ui/button";
 import { FormActions, FormStack } from "../layout";
 import { FormField } from "./FormField";
+import { applyFieldChange, withFilteredOptions } from "./optionsFilter";
 import { useHydratedFormSchema } from "./useHydratedFormSchema";
 import type { FormSchema, FormValue } from "../../types/form";
 
@@ -67,10 +68,7 @@ export function SchemaForm({
 
   const handleFieldChange = (fieldName: string, value: FormValue) => {
     setFormData((prev) => {
-      const next = {
-        ...prev,
-        [fieldName]: value,
-      };
+      const next = applyFieldChange(hydratedSchema.form_inputs, prev, fieldName, value);
       onChange?.(next);
       return next;
     });
@@ -86,7 +84,7 @@ export function SchemaForm({
       {hydratedSchema.form_inputs.map((field) => (
         <FormField
           key={field.name}
-          field={field}
+          field={withFilteredOptions(field, formData)}
           value={formData[field.name] || ""}
           formData={formData}
           onChange={(value) => handleFieldChange(field.name, value)}

@@ -46,6 +46,9 @@ class OpenAIRequestInput:
 class OpenAIProvider(LLMProvider):
     """OpenAI provider using Responses API streaming."""
 
+    #: Names the endpoint in logs and errors; the API-key subclass talks to a different one.
+    endpoint_label = "OpenAI OAuth"
+
     def _extract_instructions_and_messages(self, messages: list[dict]) -> OpenAIRequestInput:
         split = split_system_messages(normalize_messages(messages))
         return OpenAIRequestInput(
@@ -167,8 +170,26 @@ class OpenAIProvider(LLMProvider):
         tools: Optional[list[dict]] = None,
         model: Optional[str] = None,
     ) -> AsyncIterator[LLMEvent]:
-        model_id = model or DEFAULT_MODEL_NAME
         typed_credentials = OpenAICredentials.model_validate(credentials)
+        async for event in self._stream_responses(
+            settings.openai_oauth_responses_url,
+            self._request_headers(typed_credentials),
+            messages,
+            tools,
+            model,
+        ):
+            yield event
+
+    async def _stream_responses(
+        self,
+        url: str,
+        headers: dict[str, str],
+        messages: list[dict],
+        tools: Optional[list[dict]],
+        model: Optional[str],
+    ) -> AsyncIterator[LLMEvent]:
+        """One streamed Responses API call. The Codex backend and the public API send the same events."""
+        model_id = model or DEFAULT_MODEL_NAME
         request_input = self._extract_instructions_and_messages(messages)
         body = self._request_body(
             model_id,
@@ -187,7 +208,8 @@ class OpenAIProvider(LLMProvider):
         }
 
         log.info(
-            "Calling OpenAI OAuth responses endpoint with model %s, %d messages, %d tools",
+            "Calling %s responses endpoint with model %s, %d messages, %d tools",
+            self.endpoint_label,
             model_id,
             len(messages),
             len(tools) if tools else 0,
@@ -196,21 +218,22 @@ class OpenAIProvider(LLMProvider):
         async with httpx.AsyncClient(timeout=60.0) as client:
             async with client.stream(
                 "POST",
-                settings.openai_oauth_responses_url,
-                headers=self._request_headers(typed_credentials),
+                url,
+                headers=headers,
                 json=body,
             ) as response:
                 upstream_request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
                 if not response.is_success:
                     error_text = await response.aread()
                     log.error(
-                        "OpenAI OAuth responses HTTP error: status=%s request_id=%s context=%s",
+                        "%s responses HTTP error: status=%s request_id=%s context=%s",
+                        self.endpoint_label,
                         response.status_code,
                         upstream_request_id,
                         diagnostic_context,
                     )
                     raise RuntimeError(
-                        "OpenAI OAuth responses error"
+                        f"{self.endpoint_label} responses error"
                         f" ({response.status_code}, request_id={upstream_request_id}): "
                         f"{error_text.decode('utf-8', errors='ignore')}"
                     )
