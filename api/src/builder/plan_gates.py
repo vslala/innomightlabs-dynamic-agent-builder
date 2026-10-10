@@ -53,7 +53,7 @@ class PlanAttempt:
     def plan(self) -> Plan:
         assert self.validated is not None
         if self._plan is None:
-            self._plan = plan_blueprint(self.validated, self.state.owner_email, self.before)
+            self._plan = plan_blueprint(self.validated, self.state.owner, self.before)
         return self._plan
 
     @property

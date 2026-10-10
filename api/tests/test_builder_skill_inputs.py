@@ -20,6 +20,10 @@ from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
 from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversations_of
 from tests.test_builder_ila import PARAMS, account, session, turn_state  # noqa: F401
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 SITE_AGENT = example_yaml("site-agent") or ""
 
@@ -42,7 +46,7 @@ async def plan(session_: BuilderSession, tool_input: dict) -> dict:
 
 
 def reload(session_: BuilderSession) -> BuilderSession:
-    return BuilderSessionRepository().find(TEST_USER_EMAIL, session_.conversation_id)
+    return BuilderSessionRepository().find(TEST_OWNER.member_pk, session_.conversation_id)
 
 
 def answer(session_: BuilderSession, **values: str) -> BuilderSession:

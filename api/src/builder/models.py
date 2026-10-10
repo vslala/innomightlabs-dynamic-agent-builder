@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from src.accounts.owner import member_partition
 from pydantic import BaseModel, Field
 
 #: The agent id Ila's conversations carry. Ila isn't stored as an agent; see src/builder/ila.py.
@@ -23,11 +24,13 @@ class BuilderSession(BaseModel):
     One conversation with Ila. Holds the draft between turns: chat history keeps only the messages,
     not Ila's tool calls, so the blueprint she planned would otherwise be lost to her next turn.
 
-    DynamoDB: pk=User#{user_email}, sk=BuilderSession#{conversation_id}
+    DynamoDB: pk=Account#{account_id}#Member#{user_id}, sk=BuilderSession#{conversation_id}: the member's own,
+    in the account they build in.
     """
 
     conversation_id: str
-    user_email: str
+    account_id: str
+    user_id: str
     #: The owner's own provider and model; Ila runs on them like any of their agents.
     provider: str
     model: Optional[str] = None
@@ -53,7 +56,7 @@ class BuilderSession(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"User#{self.user_email}"
+        return member_partition(self.account_id, self.user_id)
 
     @property
     def sk(self) -> str:

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, Mapping, Optional
 from uuid import uuid4
 
-from src.accounts.owner import personal_owner
+from src.accounts.owner import Owner
 from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.reconcile import Outcome
@@ -67,8 +67,7 @@ class CreateKnowledgeBase(Command):
         return Undo("delete_new_knowledge_base", {"kb_id": self.kb_id})
 
     def run(self, ctx: ApplyContext) -> None:
-        # Blueprints are still keyed by email and so personal: what they create lands in the personal account
-        owner = personal_owner(ctx.user_email)
+        owner = ctx.owner
         kb = KnowledgeBaseRepository().save(KnowledgeBase(
             kb_id=self.kb_id, name=self.kb_name, description=self.description,
             account_id=owner.account_id, owner_id=owner.user_id, created_by=owner.user_id,
@@ -77,9 +76,9 @@ class CreateKnowledgeBase(Command):
 
 
 @undo_action("delete_new_knowledge_base")
-def _delete_new_knowledge_base(args: dict[str, Any], user_email: str) -> None:
+def _delete_new_knowledge_base(args: dict[str, Any], owner: Owner) -> None:
     # Crawls start only after the commit point, so a new knowledge base has no content to clean up.
-    kb = owned_kb(args["kb_id"], user_email)
+    kb = owned_kb(args["kb_id"], owner)
     if kb:
         KnowledgeBaseRepository().soft_delete(kb.account_id, kb.kb_id)
 
@@ -92,25 +91,25 @@ class SaveKnowledgeBase(Command):
     establishes: ClassVar[bool] = True
 
     def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
-        current = owned_kb(self.kb_id, ctx.user_email)
+        current = owned_kb(self.kb_id, ctx.owner)
         before = {key: getattr(current, key) for key in self.fields} if current else {}
         return Undo("restore_knowledge_base", {"kb_id": self.kb_id, "fields": before})
 
     def run(self, ctx: ApplyContext) -> None:
-        ctx.applied[self.resource] = _applied(self.resource, _save_fields(self.kb_id, self.fields, ctx.user_email))
+        ctx.applied[self.resource] = _applied(self.resource, _save_fields(self.kb_id, self.fields, ctx.owner))
 
 
-def _save_fields(kb_id: str, fields: dict[str, Any], user_email: str) -> KnowledgeBase:
-    current = owned_kb(kb_id, user_email)
+def _save_fields(kb_id: str, fields: dict[str, Any], owner: Owner) -> KnowledgeBase:
+    current = owned_kb(kb_id, owner)
     if current is None:
         raise RuntimeError("The knowledge base was deleted since the plan. Plan again.")
     return KnowledgeBaseRepository().save(current.model_copy(update=fields))
 
 
 @undo_action("restore_knowledge_base")
-def _restore_knowledge_base(args: dict[str, Any], user_email: str) -> None:
+def _restore_knowledge_base(args: dict[str, Any], owner: Owner) -> None:
     if args["fields"]:
-        _save_fields(args["kb_id"], args["fields"], user_email)
+        _save_fields(args["kb_id"], args["fields"], owner)
 
 
 @dataclass(kw_only=True)
@@ -123,7 +122,7 @@ class StartCrawl(Command):
 
     def run(self, ctx: ApplyContext) -> None:
         applied = ctx.applied[self.resource]
-        owner = personal_owner(ctx.user_email)
+        owner = ctx.owner
         job = CrawlJobRepository().save(CrawlJob(
             kb_id=applied.id,
             config=CrawlConfig(
@@ -147,7 +146,7 @@ class DeleteKnowledgeBase(Command):
 
     def run(self, ctx: ApplyContext) -> None:
         # The same delete as the dashboard's: vectors and chunks go, and it's disconnected from every agent.
-        kb = owned_kb(self.kb_id, ctx.user_email)
+        kb = owned_kb(self.kb_id, ctx.owner)
         if kb is None:
             raise RuntimeError("The knowledge base was deleted since the plan. Plan again.")
         result = get_knowledge_base_service().soft_delete(kb)
@@ -197,11 +196,11 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
 
     def find_existing(self, name: str, spec: KnowledgeBaseSpec, ctx: PlanContext) -> Optional[Existing]:
         if spec.id:
-            kb = owned_kb(spec.id, ctx.user_email)
+            kb = owned_kb(spec.id, ctx.owner)
             if not kb or kb.status == KnowledgeBaseStatus.DELETED:
                 raise NotFound(f"There's no knowledge base with id '{spec.id}' in your account.")
             return Existing(id=kb.kb_id, record=kb, matched_by="id")
-        owner = personal_owner(ctx.user_email)
+        owner = ctx.owner
         mine = KnowledgeBaseRepository().list_owned(owner.account_id, owner.user_id)
         same_name = [kb for kb in mine if kb.name == spec.name]
         if len(same_name) != 1:

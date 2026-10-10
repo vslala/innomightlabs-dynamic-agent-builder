@@ -22,6 +22,10 @@ from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.repository import AgentSkillRepository
 from tests.mock_data import TEST_USER_EMAIL, owner_ids
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 SITE_AGENT = example_yaml("site-agent") or ""
 DOCS = example_yaml("docs-assistant") or ""
@@ -43,9 +47,9 @@ def launched(monkeypatch, dynamodb_table) -> list[str]:
 
 def build(text: str = SITE_AGENT, params: dict | None = None):
     validated = validate_blueprint(text, PARAMS if params is None else params)
-    plan = plan_blueprint(validated, TEST_USER_EMAIL)
+    plan = plan_blueprint(validated, TEST_OWNER)
     assert plan.ok, plan.blockers
-    return plan, apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
+    return plan, apply_blueprint(validated, plan, TEST_OWNER, BackgroundTasks())
 
 
 def counts() -> tuple[int, int]:
@@ -136,7 +140,7 @@ def test_a_failed_update_puts_things_back(launched, monkeypatch):
 def test_an_unknown_id_blocks(launched):
     text = SITE_AGENT.replace("    kind: Agent\n", "    kind: Agent\n    id: not-mine\n")
     validated = validate_blueprint(text, PARAMS)
-    plan = plan_blueprint(validated, TEST_USER_EMAIL)
+    plan = plan_blueprint(validated, TEST_OWNER)
     assert any(issue.path == "resources.assistant.id" for issue in plan.blockers)
 
 
@@ -145,10 +149,10 @@ def test_an_exported_agent_plans_as_unchanged_and_can_be_extended(launched):
     _, built = build(DOCS, docs_params)
     agent_id = built.resources["docs_assistant"].id
 
-    exported = export_agent(agent_id, TEST_USER_EMAIL)
+    exported = export_agent(agent_id, TEST_OWNER)
     assert exported is not None
     validated = validate_blueprint(exported, {})
-    plan = plan_blueprint(validated, TEST_USER_EMAIL)
+    plan = plan_blueprint(validated, TEST_OWNER)
     assert plan.ok, plan.blockers
     assert [step.action for step in plan.steps] == ["unchanged", "unchanged"]
 

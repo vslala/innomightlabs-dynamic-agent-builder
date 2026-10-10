@@ -16,6 +16,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks
 
+from src.accounts.owner import Owner
 from src.blueprints.commands import COMMIT, Command, Undo, run_undo
 from src.blueprints.kinds import AppliedResource, ApplyContext
 from src.blueprints.models import (
@@ -44,7 +45,7 @@ def apply_rate_limit() -> RateLimitPolicy:
 def apply_blueprint(
     validated: ValidatedBlueprint,
     plan: Plan,
-    user_email: str,
+    owner: Owner,
     background_tasks: BackgroundTasks | None = None,
     repository: DeploymentRepository | None = None,
     deployment_fields: dict[str, Any] | None = None,
@@ -54,7 +55,8 @@ def apply_blueprint(
     repository = repository or DeploymentRepository()
     blueprint = validated.blueprint
     deployment = repository.save(Deployment(
-        user_email=user_email,
+        account_id=owner.account_id,
+        owner_id=owner.user_id,
         blueprint_name=blueprint.metadata.name,
         blueprint_title=blueprint.metadata.title,
         blueprint_yaml=validated.yaml,
@@ -62,7 +64,7 @@ def apply_blueprint(
         steps=[step.summary for step in plan.steps],
         **(deployment_fields or {}),
     ))
-    ctx = ApplyContext(user_email=user_email, background_tasks=background_tasks)
+    ctx = ApplyContext(owner=owner, background_tasks=background_tasks)
     for step in plan.commands:
         if step is COMMIT:
             deployment.committed = True
@@ -72,14 +74,14 @@ def apply_blueprint(
         try:
             _run(step, ctx, deployment, repository)
         except Exception as e:
-            log.exception("Blueprint %s failed for %s at %s", blueprint.metadata.name, user_email, step.name)
+            log.exception("Blueprint %s failed for %s at %s", blueprint.metadata.name, owner.user_id, step.name)
             reason = str(e) or type(e).__name__
             if deployment.committed:
                 deployment.error = f"Everything that could be undone was applied, but this didn't finish: {reason}"
                 deployment.status = DeploymentStatus.FAILED_PARTIAL
             else:
                 deployment.error = reason
-                deployment.status = unwind(deployment)
+                deployment.status = unwind(deployment, owner)
             return repository.save(deployment)
 
     deployment.outputs = {
@@ -112,16 +114,27 @@ def _run(command: Command, ctx: ApplyContext, deployment: Deployment, repository
     repository.save(deployment)
 
 
-def unwind(deployment: Deployment) -> DeploymentStatus:
-    """Runs the saved undos, newest first, including the one for a command that may have stopped part-way. Returns
-    FAILED when everything was put back, FAILED_PARTIAL when an undo failed too."""
+def owner_of_deployment(deployment: Deployment) -> Owner:
+    """The member a deployment applied as, for work without a request (recovering an interrupted apply)."""
+    from src.identity import IdentityRepository
+
+    identity = IdentityRepository().get(deployment.owner_id)
+    if identity is None:
+        raise RuntimeError(f"The owner of deployment {deployment.deployment_id} no longer exists")
+    return Owner(account_id=deployment.account_id, user_id=deployment.owner_id, email=identity.email)
+
+
+def unwind(deployment: Deployment, owner: Owner | None = None) -> DeploymentStatus:
+    """Runs the saved undos, newest first, including the one for a command that may have stopped part-way, as the
+    member it applied as. Returns FAILED when everything was put back, FAILED_PARTIAL when an undo failed too."""
+    owner = owner or owner_of_deployment(deployment)
     status = DeploymentStatus.FAILED
     for entry in reversed(deployment.journal):
         if entry.state not in (JournalState.STARTED, JournalState.DONE):
             continue
         try:
             if entry.undo:
-                run_undo(Undo(entry.undo.action, entry.undo.args), deployment.user_email)
+                run_undo(Undo(entry.undo.action, entry.undo.args), owner)
         except Exception:
             log.exception("Undoing %s failed for deployment %s", entry.command, deployment.deployment_id)
             entry.state = JournalState.UNDO_FAILED

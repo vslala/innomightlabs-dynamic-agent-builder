@@ -268,12 +268,11 @@ through the principal, and leaves the suite green.
   - `account_pk` gives `Account#{aid}`, and `member_pk` gives `Account#{aid}#Member#{uid}`.
   - `email` stays only while some data is still keyed by email. It goes once every slice is in.
   - `get_owner` (`api/src/iam/dependencies.py`) is the caller in the active account.
-- **Interim rule for flows still keyed by email.** Blueprints, kits, Ila's sessions, skill install forms
-  and automations are implicitly personal until their own slice.
-  - Through `personal_owner(email)` they act in the person's personal account.
-  - So a kit applied while you're switched to another account still creates its agents in your personal
-    account. That only matters once invites (KAN-82) put people in shared accounts, and the kits slice
-    fixes it.
+- **Interim rule for flows still keyed by email.** Until slice 5, blueprints, kits, Ila's sessions and automations
+  were implicitly personal, acting through `personal_owner(email)` in the person's personal account. Slices 4 and 5
+  replaced that with the real `Owner`.
+  - `personal_owner` remains only as the fallback for form agent pickers whose caller passes no owner (skill
+    install forms). It goes with slice 6.
 - **Agent pickers on forms** list the owner's agents in the given owner's account, or in the personal
   account when no owner is given.
 
@@ -488,6 +487,87 @@ through the principal, and leaves the suite green.
     member's test run running as the owner, admin metadata-only access, isolation across accounts,
     deletion forgetting shares, and schedules being each member's own.
 
+**Slice 5: kits, blueprint deployments and Ila's sessions (done)**
+- **Keys.**
+  - A `Kit` is at `Account#{aid}/Kit#{id}` with `account_id` and `owner_id`, and is shareable (`kits:*`).
+  - A `Deployment` (a kit's version) follows its kit into the account, at
+    `Account#{aid}/BlueprintDeployment#{created_at}#{id}`. It has `account_id` and `owner_id` (the member it
+    applied as) instead of `user_email`. The applying index (`BlueprintApplying`) is unchanged.
+  - A `BuilderSession` is at `Account#{aid}#Member#{uid}/BuilderSession#{conversation_id}`, with `account_id`
+    and `user_id`.
+- **The real owner, no interim.** Planner, executor, kinds, kits, the deploy service, export and Ila's tools take
+  an `Owner` instead of an email (`PlanContext.owner`, `ApplyContext.owner`).
+  - A blueprint builds in the account the request acts in, owned by the caller. Its agents and knowledge bases
+    land there, not in the personal account.
+  - Email-keyed per-member settings take `owner.email` until slice 6: provider settings, MCP connections, skill
+    installs and rate limits.
+- **A kit applies as its owner.** Its next version, a rollback and a removal all run as the kit's owner
+  (`owner_of_kit`), whoever starts them. They reach only what that member owns.
+- **Undo without a request.** Undo actions take `(args, Owner)`. Recovering an interrupted apply rebuilds the
+  owner from the deployment (`owner_of_deployment`, through `owner_id`).
+- **Route helpers** in `api/src/blueprints/access.py`: `require_kit`, `kit_with(action)`, `access_to` and
+  `visible_kits`. The module registers the `kit` share resolver.
+- **Actions per route.**
+
+  | Route | Action |
+  | --- | --- |
+  | plan or deploy a new blueprint | `kits:Create` |
+  | plan or deploy a kit's next version | `kits:Apply` on the kit |
+  | kit detail | `kits:Get` |
+  | rollback plan and apply | `kits:Rollback` |
+  | removal plan and remove | `kits:Delete` |
+  | kit list | own, shared, and others' as admin metadata; each carries `access` |
+  | deployments | the caller's own; one deployment also when it's a version of a kit they may `kits:Get` |
+- **Ila.**
+  - A session lives in the member's partition of the account they build in. Ila's transient agent carries that
+    account and the member (`ila_agent`).
+  - The architecture finds the session through `agent.owner_partition`.
+  - `AgentTurnState` gains `account_id` and `owner_id` (the agent's), and `state.owner` builds the `Owner` that
+    Ila's tools act as.
+  - Skill-setting forms pass that owner.
+- **Widget keys** a blueprint creates record the owner's user_id in `created_by`.
+- **Scripts.** `cleanup_ila_builds.py` groups builds by member and account (`owner_of(item)` reads
+  `owner_id`, `user_id` or `created_by`) instead of the email in a `User#` key.
+- **Not done here.** Account deletion still doesn't remove kits, deployments or builder sessions. It never did,
+  and it's left for KAN-83.
+- **SPA.** `KitSummary` gains `account_id`, `owner_id` and `access`. The kits list shows "Shared with you" or
+  "Admin view".
+- **Tests.**
+  - `session_fields(email)` and `turn_owner_fields(email)` build test ownership.
+  - `tests/test_kit_access.py` covers a blueprint building in the request's account, a viewer share, admin
+    metadata-only access with removal as the owner, isolation across accounts, and sessions being the member's
+    own.
+
+**Slice 6: account settings and credentials (in progress)**
+- **Design change (agreed 2026-10-11).** Provider keys, MCP connections and the other settings that cost money or
+  reach outside belong to the **account**, not to each member. Think of an organisation: the account's admins
+  connect the LLM providers and MCP servers, the account pays for them, and members' agents use them. This replaces
+  "per-member settings" and pulls account-level credentials forward from KAN-89. KAN-89 now covers limiting which
+  members may use which account resource, and how much.
+- **Keys.**
+
+  | Record | Today | Now | Who changes it |
+  | --- | --- | --- | --- |
+  | Provider settings (LLM keys, and OAuth connections such as OpenAI sign-in, Google Mail, Drive and Ads) | `User#{email}` | `Account#{aid}/ProviderSettings#{name}` | `settings:Manage` |
+  | MCP connection and its tool catalog | `User#{email}` | `Account#{aid}/MCPConnection#{id}`, `MCPToolCatalog#{id}` | `settings:Manage` |
+  | A2A client OAuth (tokens for remote agents) | `User#{email}` | `Account#{aid}` | `settings:Manage` |
+  | A2A settings (trusted outbound origins) | `User#{email}` | `Account#{aid}/Agent2AgentSettings` | `settings:Manage` |
+  | Dream settings | `User#{email}` | `Account#{aid}/DreamSettings` | `settings:Manage` |
+  | Smart-suggestion settings | `User#{email}` | `Account#{aid}/SmartSuggestionSettings` | `settings:Manage` |
+  | Default-agent preference | `User#{email}` | `Account#{aid}#Member#{uid}/DefaultAgentPreference` | the member (a personal preference) |
+
+  Each account record carries `account_id` and `updated_by` (the user_id of the last person to change it). An
+  agent's MCP link (`Agent#{id}/MCPConnection#{mcp}`) carries `account_id` instead of `owner_email`.
+- **New action.** `settings:Manage` on `*`, in `AdministratorAccess` (`settings:*`), so the account owner and
+  admins hold it. Members can't connect, change or remove account credentials.
+- **What members still see.** Any member can list which providers are configured (names and status, never
+  secrets), list the account's MCP connections and link them to agents they may `agents:Update`, and read the
+  dream and smart-suggestion settings. Smart suggestions run for any member on the account's settings.
+- **Runtime.** An agent's turn, dream run, skill action or automation uses the credentials of the **agent's
+  account** (`agent.account_id`), whoever its owner is. A shared agent no longer depends on one member's keys, and
+  a transferred agent keeps working.
+- **Skill installs** record the installer's user_id in `installed_by` (audit only).
+
 ## Context and problem
 
 ### How it works today
@@ -530,9 +610,11 @@ through the principal, and leaves the suite green.
 **Non-goals (v1)**
 
 - Sharing across accounts. To share with someone outside the account, invite them first.
-- A policy simulator ([KAN-88](https://vslala007.atlassian.net/browse/KAN-88)), account-level provider
-  credentials ([KAN-89](https://vslala007.atlassian.net/browse/KAN-89)), and policies attached to keys
-  ([KAN-90](https://vslala007.atlassian.net/browse/KAN-90)). These are follow-ups; this design leaves room for them.
+- A policy simulator ([KAN-88](https://vslala007.atlassian.net/browse/KAN-88)), per-member limits on the
+  account's providers and MCP connections ([KAN-89](https://vslala007.atlassian.net/browse/KAN-89)), and policies
+  attached to keys ([KAN-90](https://vslala007.atlassian.net/browse/KAN-90)). These are follow-ups; this design
+  leaves room for them. The credentials themselves belong to the account in v1 (see
+  [Account settings and credentials](#account-settings-and-credentials)).
 - Conditions beyond "the resource's owner is the caller". No tags, IP or time conditions yet.
 - Nested groups, SSO or SCIM provisioning, or usernames.
 - Sharing conversations.
@@ -670,7 +752,7 @@ declares:
 | `kits` | `Create` M, `List` M, `Describe` M, `Get` C, `Apply` C, `Rollback` C, `Delete` M, `Transfer` M, `Share` M | `kit/{id}` |
 | `skills` | `Install` C, `Configure` C, `Uninstall` C | `agent/{id}` (skills are children of an agent) |
 | `apikeys` | `ListKeys` M, `CreateKey` C, `RevokeKey` C (renamed in KAN-76, see Implementation notes) | `agent/{id}` |
-| `mcp` | `Create` M, `List` M, `Describe` M, `Get` C, `Update` C, `Link` C, `Delete` M | `mcp-connection/{id}` |
+| `settings` | `Manage` M: provider settings, MCP connections, A2A and dream and smart-suggestion settings (slice 6 replaced the per-connection `mcp` service) | `*` |
 | `conversations` | `List` M, `Describe` M, `Read` C, `Delete` M | `conversation/{id}` |
 | `iam` | `ListMembers` M, `ListGroups` M, `ListPolicies` M, `Invite` M, `ManageMembers` M, `ManageGroups` M, `ManagePolicies` M, `AttachPolicies` M | `*` |
 | `billing` | `View` M, `Manage` M | `*` |
@@ -710,7 +792,7 @@ CATALOG: dict[str, Action] = {
         *_service("knowledge", "knowledge-base",
                   metadata=["Create", "List", "Describe", "Delete", "Transfer", "Share"],
                   contents=["Get", "Update", "Crawl"]),
-        # ... automations, kits, skills, apikeys, mcp, conversations, iam, billing, audit, account
+        # ... automations, kits, skills, apikeys, conversations, iam, billing, audit, account, settings
     ]
 }
 
@@ -728,7 +810,7 @@ stored per account, so improving one improves it everywhere.
 | --- | --- | --- |
 | `OwnerAccess` | **Implicitly, to every member.** It cannot be detached. | Allow `*` on `*` when `iml:ResourceOwner == ${iml:PrincipalId}`. This is what makes resources private by default and makes a shared account feel like today's personal one. |
 | `MemberAccess` | By default, to people who accept an invite | Allow `*:Create`, `*:List`, `iam:ListMembers`, `iam:ListGroups` on `*`. Members can create their own resources, see the directory so they can share, and see lists, which are filtered to what they own or was shared with them. |
-| `AdministratorAccess` | Held implicitly by the account owner; attached to anyone an admin promotes | Allow `iam:*`, `billing:*`, `audit:*`, `account:*`, `*:Create`, `*:List`, `*:Describe`, `*:Transfer`, `*:Delete` on `*`. **It includes no contents actions**, which is how admins see metadata only. |
+| `AdministratorAccess` | Held implicitly by the account owner; attached to anyone an admin promotes | Allow `iam:*`, `billing:*`, `audit:*`, `account:*`, `settings:*`, `*:Create`, `*:List`, `*:Describe`, `*:Transfer`, `*:Delete` on `*`. **It includes no contents actions**, which is how admins see metadata only. |
 | `ViewOnlyAccess` | Optional | Allow `*:List`, `*:Describe`, `iam:List*` on `*` (the same idea as AWS's ViewOnlyAccess). |
 
 An admin who owns a resource can still do everything with it through `OwnerAccess`. "Metadata only"
@@ -924,8 +1006,8 @@ form of an IAM resource policy.
 - **What can be shared.** The sharer can grant only actions they are allowed themselves on that resource
   (see the escalation guard).
 - **Running as the owner.** When Bob chats with Alice's shared agent:
-  - it runs on Alice's provider settings, skills and MCP connections, the way widget and `/v1` callers
-    already run;
+  - it runs with Alice's skills and the account's provider settings and MCP connections, the way widget
+    and `/v1` callers already run;
   - usage counts against the account;
   - the conversation belongs to Bob;
   - memory blocks are scoped per user (`Agent#{id}#User#{user_id}`), so Bob doesn't see what the agent
@@ -1016,10 +1098,8 @@ stateDiagram-v2
   3. increments `authz_version`.
 - **Keys keep working.** Widget, `/v1` and A2A keys under transferred agents keep working: they follow the
   agent's `owner_id`.
-- **One caveat for transferred agents.** They still point at the previous owner's provider settings and
-  MCP connections, which belong to that member and are removed with them. The transfer dialog warns about
-  this, and the new owner has to reconnect. Account-level credentials
-  ([KAN-89](https://vslala007.atlassian.net/browse/KAN-89)) remove this rough edge.
+- **Credentials stay.** Provider settings and MCP connections belong to the account, not to the member, so
+  transferred agents keep working with nothing to reconnect.
 - **What is kept.** The identity, and its memberships in other accounts, are never touched.
 
 ### Billing, quotas and seats
@@ -1050,6 +1130,23 @@ stateDiagram-v2
 - **Invitations never count** toward the limit.
 - **The error:** 409 `ACCOUNT_LIMIT_REACHED` with a readable message. Account creation is also
   rate-limited per identity and per IP.
+
+### Account settings and credentials
+
+An account works like an organisation: its admins connect the LLM providers and MCP servers, the account
+pays for them, and members' agents use them. No member brings their own keys into a shared account.
+
+- **Owned by the account:** provider settings (LLM keys and OAuth connections), MCP connections and their
+  tool catalogs, A2A client OAuth, A2A trusted origins, and dream and smart-suggestion settings. They live in
+  the `Account#{aid}` partition.
+- **Managed with `settings:Manage`,** which `AdministratorAccess` grants, so the account owner and admins
+  hold it.
+- **Used by every member.** Members see what is configured, never the secrets. They link the account's MCP
+  connections to agents they may update, and their agents run on the account's providers.
+- **Runtime.** Every run uses the credentials of the agent's account, whoever starts it.
+- **Personal preferences** stay with the member: the default agent is at `Account#{aid}#Member#{uid}`.
+- **Later ([KAN-89](https://vslala007.atlassian.net/browse/KAN-89)):** limit which members may use which
+  provider or connection, and how much.
 
 ### Credentials as the account
 
@@ -1120,8 +1217,9 @@ The rule for each type:
 | Marketplace templates | global `MarketplaceAgent` | unchanged; `publisher_user_email` becomes `publisher_user_id` + `publisher_account_id` | the catalog is global |
 | Conversation | `USER#{email}` | `Account#{aid}#Member#{uid}` | private-only |
 | `/v1` conversation | `USER#secret-key:{key_id}[:{end_user}]` | `Account#{aid}#Member#secret-key:{key_id}[:{end_user}]` (see KAN-80 slice 2) | already scoped to the key; now inside the agent's account |
-| Provider settings, A2A settings, default-agent preference, dream settings, smart-suggestion settings | `User#{email}` | `Account#{aid}#Member#{uid}` | belong to the person, within this account |
-| MCP connection, tool catalog, A2A client OAuth | `User#{email}` | `Account#{aid}#Member#{uid}` | personal credentials (KAN-89 adds account-level ones) |
+| Provider settings, A2A settings, dream settings, smart-suggestion settings | `User#{email}` | `Account#{aid}` | the account's, managed by admins (see [Account settings and credentials](#account-settings-and-credentials)) |
+| MCP connection, tool catalog, A2A client OAuth | `User#{email}` | `Account#{aid}` | the account's credentials, used by every member's agents |
+| Default-agent preference | `User#{email}` | `Account#{aid}#Member#{uid}` | a personal preference |
 | Artifact (+ S3 `users/{scope}/artifacts/…`) | `User#{email}` | `Account#{aid}#Member#{uid}`; S3 `accounts/{aid}/members/{uid}/artifacts/…` | private-only |
 | Tool job, builder session, marketplace import session | `User#{email}` | `Account#{aid}#Member#{uid}` | private-only |
 | Memory, dream state | `Agent#{id}#User#{email}` | `Agent#{id}#User#{uid}` | owner chats; visitor and end-user keys are unchanged |
@@ -1376,7 +1474,7 @@ comes last.*
 | Privacy | Private by default (`OwnerAccess`), opt-in shares | Everything shared within the account | It should feel like today; sharing is deliberate. |
 | Admin reach | Metadata only (`List`, `Describe`, `Transfer`, `Delete`) | Full access; no access | Admins can offboard and clean up without reading people's conversations and memory. |
 | Escalation guard | You can grant only what you hold, checked per action and resource | Trust anyone with `iam:*` | Without the guard, metadata-only admins could grant themselves contents access, and "private" would mean nothing. |
-| Running shared agents | On the owner's credentials; usage counts against the account | The caller's own credentials; account-level credentials | Matches how widget and `/v1` callers already run. KAN-89 adds account-level credentials. |
+| Running shared agents | On the account's credentials, with the owner's skills; usage counts against the account | The owner's personal credentials; the caller's own credentials | The account pays and its admins connect providers and MCP servers, as in an organisation. A shared or transferred agent never depends on one member's keys. Changed from the owner's credentials on 2026-10-11 (slice 6). |
 | Sharing scope | Same account only | Any verified email | Billing, quotas and Deny rules stay unambiguous. |
 | Account in the JWT | No; sent as the `X-Account-Id` header, checked against the membership | Claim in the JWT, re-issued on switch | Switching needs no new token; the membership check makes forging the header useless. |
 | Migration | Full re-key with copy, sync and cutover, plus validation | Keep `User#{email}` as the partition of migrated accounts | One key scheme in code forever; the user count makes a careful migration cheap. |

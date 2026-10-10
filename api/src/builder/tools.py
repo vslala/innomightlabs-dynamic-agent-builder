@@ -31,7 +31,6 @@ from src.builder.models import BuilderSession
 from src.builder.plan_gates import PLAN_GATES, PlanAttempt
 from src.builder.requirements import REQUIREMENTS
 from src.builder.repository import BuilderSessionRepository
-from src.accounts.owner import personal_owner
 from src.agents.repository import AgentRepository
 from src.apikeys.repository import ApiKeyRepository
 from src.config import settings
@@ -189,7 +188,7 @@ class BuilderTools:
         self.book = book or blueprint_book
 
     def _session(self, state: AgentTurnState) -> BuilderSession:
-        session = self.sessions.find(state.owner_email, state.conversation_id)
+        session = self.sessions.find(state.owner.member_pk, state.conversation_id)
         if session is None:
             raise ValueError("This conversation isn't a building session.")
         return session
@@ -256,7 +255,7 @@ class BuilderTools:
         # The person's answers to earlier skill forms, whatever Ila's YAML says; and the kit's ids, whatever names
         # she wrote them under.
         try:
-            kit = active_kit(state.owner_email, session.kit_id) if session.kit_id else None
+            kit = active_kit(state.owner.account_id, session.kit_id) if session.kit_id else None
             before = declared(kit, session.baseline_yaml)
         except KitError as e:
             return json.dumps({"ok": False, "reason": str(e), "next": "Tell the person plainly; this kit can't change."})
@@ -291,7 +290,7 @@ class BuilderTools:
             })
 
         outcome = deploy_blueprint(
-            session.draft_yaml, session.draft_params, state.owner_email,
+            session.draft_yaml, session.draft_params, state.owner,
             kit_id=session.kit_id, baseline=session.baseline_yaml, conversation_id=state.conversation_id,
         )
         if not isinstance(outcome, Deployed):
@@ -330,7 +329,7 @@ class BuilderTools:
     async def list_agents(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
         agents = []
         # Ila builds in the person's personal account, where kits live until they move into accounts
-        owner = personal_owner(state.owner_email)
+        owner = state.owner
         for agent in AgentRepository().list_owned(owner.account_id, owner.user_id):
             agents.append({
                 "agent_id": agent.agent_id,
@@ -345,9 +344,9 @@ class BuilderTools:
     async def load_agent(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
         session = self._session(state)
         agent_id = str(tool_input.get("agent_id") or "").strip()
-        kit = KitRepository().holding(state.owner_email, agent_id) if agent_id else None
+        kit = KitRepository().holding(state.owner.account_id, agent_id) if agent_id else None
         current = (
-            DeploymentRepository().find_by_id(state.owner_email, kit.current_deployment_id)
+            DeploymentRepository().find_by_id(state.owner.account_id, kit.current_deployment_id)
             if kit and kit.current_deployment_id else None
         )
         if kit is not None and current is not None:
@@ -355,7 +354,7 @@ class BuilderTools:
             session.draft_yaml = pin(Draft(current.blueprint_yaml).without_ids().text, kit)
             session.draft_params, session.kit_id, session.baseline_yaml = dict(current.params), kit.kit_id, None
         else:
-            yaml = export_agent(agent_id, state.owner_email)
+            yaml = export_agent(agent_id, state.owner)
             if yaml is None:
                 return json.dumps({"loaded": False, "reason": "There's no agent with that id. Call list_my_agents."})
             # Not in a kit yet: what it is now is the baseline, and its first apply here starts a kit.
@@ -377,7 +376,7 @@ class BuilderTools:
     async def build_status(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
         session = self._session(state)
         deployment = (
-            DeploymentRepository().find_by_id(state.owner_email, session.deployment_id) if session.deployment_id else None
+            DeploymentRepository().find_by_id(state.owner.account_id, session.deployment_id) if session.deployment_id else None
         )
         if deployment is None:
             return json.dumps({"built": False, "reason": "Nothing has been built in this conversation yet."})

@@ -23,6 +23,10 @@ from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
 from tests.mock_data import TEST_USER_EMAIL, conversations_of
 from tests.test_builder_ila import PARAMS, SITE_AGENT, account, session, turn_state  # noqa: F401
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 BOOK = blueprint_book()
 
@@ -134,7 +138,7 @@ async def test_open_pages_records_the_pages_on_the_session(session):  # noqa: F8
     ))
     assert result["opened"] == ["kind/Agent"]
     assert result["did_you_mean"][0] == "skill/lead_capture"
-    saved = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id)
+    saved = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id)
     assert saved.opened_pages == {"kind/Agent": 2}
 
 
@@ -148,7 +152,7 @@ async def test_plan_issues_open_the_pages_that_explain_them(session):  # noqa: F
     result = json.loads(await BuilderTools().plan("plan_blueprint", {"yaml": broken, "params": PARAMS}, turn_state(session)))
     assert result["ok"] is False
     assert any(issue.get("page") == "skill/lead_capture" for issue in result["issues"])
-    saved = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id)
+    saved = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id)
     assert "skill/lead_capture" in saved.opened_pages
 
 
@@ -205,7 +209,7 @@ async def test_an_opened_page_leaves_the_prompt_after_the_configured_turns(
     later = [(await _turn(session, monkeypatch))[0] for _ in range(3)]
     shown = 1 + sum(PAGE_HEADING in prompt for prompt in later)
     assert shown == turns_shown
-    saved = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id)
+    saved = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id)
     assert saved.turn == 4
     assert saved.opened_pages == {}  # closed pages are dropped from the session
 

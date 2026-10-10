@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 import yaml  # type: ignore[import-untyped,unused-ignore]
 
-from src.accounts.owner import personal_owner
+from src.accounts.owner import Owner
 from src.agents.repository import AgentRepository
 from src.blueprints.kinds import kind_for
 from src.blueprints.kinds.agent import AgentKind
@@ -25,10 +25,9 @@ def _numbered(base: str, index: int) -> str:
     return base if index == 0 else f"{base}_{index + 1}"
 
 
-def export_agent(agent_id: str, user_email: str) -> Optional[str]:
-    """The agent as blueprint YAML, or None if it isn't the person's: the resources it links to, the agent, and its
-    widget keys, each written by its own kind's `observe`."""
-    owner = personal_owner(user_email)
+def export_agent(agent_id: str, owner: Owner) -> Optional[str]:
+    """The agent as blueprint YAML, or None if it isn't the member's in their account: the resources it links to,
+    the agent, and its widget keys, each written by its own kind's `observe`."""
     agent = AgentRepository().find_in_account(owner.account_id, agent_id)
     if agent is None or agent.owner_id != owner.user_id:
         return None
@@ -40,7 +39,7 @@ def export_agent(agent_id: str, user_email: str) -> Optional[str]:
     records: list[tuple[str, str, Any]] = []
     keys = [(widget_kind.kind, key.key_id, key) for key in widget_kind.for_agent(agent_id)]
     for kind, resource_id, record in [
-        *agent_kind.linked(agent_id, user_email), (agent_kind.kind, agent_id, agent), *keys,
+        *agent_kind.linked(agent_id, owner), (agent_kind.kind, agent_id, agent), *keys,
     ]:
         base = kind_for(kind).export_name
         names[resource_id] = _numbered(base, counts.get(base, 0))

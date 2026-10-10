@@ -136,6 +136,8 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             attachments=attachments or [],
             api_key_id=api_key_id,
             conversation_context=conversation.context,
+            account_id=agent.account_id,
+            owner_id=agent.owner_id,
         )
 
         state.linked_kb_ids = self._get_linked_kb_ids(agent)

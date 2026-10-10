@@ -28,13 +28,14 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from boto3.dynamodb.conditions import Attr, Key  # noqa: E402
 
-from src.agents.access import owned_agent  # noqa: E402
+from src.accounts.owner import Owner  # noqa: E402
+from src.agents.models import Agent  # noqa: E402
 from src.agents.repository import AgentRepository  # noqa: E402
 from src.agents.service import AgentService  # noqa: E402
 from src.artifacts.storage import ArtifactStorage  # noqa: E402
@@ -80,21 +81,25 @@ def partition(table, pk: str) -> list[dict[str, Any]]:
         kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
 
-def owner_of(item: dict[str, Any]) -> str:
-    """The owner's email. Builder records are still keyed by it; Ila's conversations live in the member's
-    partition and name them by user_id."""
-    if item.get("entity_type") == "Conversation":
-        identity = IdentityRepository().get(str(item["created_by"]))
-        return identity.email if identity else str(item["created_by"])
-    return str(item["pk"]).split("#", 1)[1]
+def owner_of(item: dict[str, Any]) -> Owner:
+    """The member a builder record is theirs, in its account: conversations name them in `created_by`, builder
+    sessions in `user_id`, kits and deployments in `owner_id`."""
+    user_id = str(item.get("owner_id") or item.get("user_id") or item["created_by"])
+    identity = IdentityRepository().get(user_id)
+    return Owner(account_id=str(item["account_id"]), user_id=user_id, email=identity.email if identity else user_id)
 
 
-def find(table, only_user: str | None) -> dict[str, AccountFindings]:
-    found: dict[str, AccountFindings] = defaultdict(AccountFindings)
+def _owned_agent(agent_id: str, owner: Owner) -> Optional[Agent]:
+    agent = AgentRepository().find_in_account(owner.account_id, agent_id)
+    return agent if agent and agent.owner_id == owner.user_id else None
+
+
+def find(table, only_user: str | None) -> dict[Owner, AccountFindings]:
+    found: dict[Owner, AccountFindings] = defaultdict(AccountFindings)
     ila_conversation = Attr("entity_type").eq("Conversation") & Attr("agent_id").eq(ILA_AGENT_ID)
     for item in scan(table, Attr("entity_type").is_in(["BuilderSession", "BlueprintDeployment", "Kit"]) | ila_conversation):
         owner = owner_of(item)
-        if only_user and owner != only_user:
+        if only_user and owner.email != only_user:
             continue
         account = found[owner]
         entity = item.get("entity_type")
@@ -113,7 +118,8 @@ def find(table, only_user: str | None) -> dict[str, AccountFindings]:
             account.conversations.add(item["conversation_id"])
 
     for owner, account in found.items():
-        for item in scan(table, Attr("pk").eq(f"User#{owner}") & Attr("entity_type").eq("Artifact")):
+        # Artifacts are still keyed by email
+        for item in scan(table, Attr("pk").eq(f"User#{owner.email}") & Attr("entity_type").eq("Artifact")):
             if (item.get("source") or {}).get("conversation_id") in account.conversations:
                 account.artifacts.append(item)
     return dict(found)
@@ -126,12 +132,11 @@ def _built(account: AccountFindings, resource: dict[str, Any]) -> None:
         account.knowledge_bases.add(resource["id"])
 
 
-def report(owner: str, account: AccountFindings) -> None:
-    agents = AgentRepository()
-    live_agents = [a for a in (owned_agent(i, owner, agents) for i in sorted(account.agents)) if a]
+def report(owner: Owner, account: AccountFindings) -> None:
+    live_agents = [a for a in (_owned_agent(i, owner) for i in sorted(account.agents)) if a]
     live_kbs = [k for k in (owned_kb(i, owner) for i in sorted(account.knowledge_bases))
                 if k and k.status != KnowledgeBaseStatus.DELETED]
-    print(f"\n{owner}")
+    print(f"\n{owner.email} (account {owner.account_id})")
     print(f"  Ila conversations: {len(account.conversations)} (builder sessions: {len(account.sessions)})")
     print(f"  canvases drawn in them: {len(account.artifacts)}")
     print(f"  agents built: {len(live_agents)} still there of {len(account.agents)}")
@@ -143,14 +148,14 @@ def report(owner: str, account: AccountFindings) -> None:
     print(f"  deployment records: {len(account.deployments)}, kit records: {len(account.kits)}")
 
 
-def delete(table, owner: str, account: AccountFindings) -> list[str]:
+def delete(table, owner: Owner, account: AccountFindings) -> list[str]:
     """Deletes in dependency order. Returns what couldn't be deleted, so the run can say so."""
     problems: list[str] = []
     for agent_id in sorted(account.agents):
         try:
-            agent = owned_agent(agent_id, owner)
+            agent = _owned_agent(agent_id, owner)
             if agent:
-                AgentService().delete(agent, owner)
+                AgentService().delete(agent, owner.email)
             _delete_rows(table, partition(table, f"Agent#{agent_id}"))
         except Exception as e:  # keep going: report everything that failed at the end
             problems.append(f"agent {agent_id}: {e}")
@@ -200,14 +205,14 @@ def main() -> int:
     if not found:
         print("Nothing to remove.")
         return 0
-    for owner, account in sorted(found.items()):
+    for owner, account in sorted(found.items(), key=lambda found_item: found_item[0].email):
         report(owner, account)
     if not args.apply:
         print("\nDry run: nothing was deleted. Run again with --apply to delete.")
         return 0
 
     failed = False
-    for owner, account in sorted(found.items()):
+    for owner, account in sorted(found.items(), key=lambda found_item: found_item[0].email):
         problems = delete(table, owner, account)
         for problem in problems:
             print(f"  could not delete {problem}")

@@ -5,6 +5,9 @@ export type KitStatus = "active" | "removed";
 export type KitAction = "apply" | "rollback" | "remove";
 export type PlanAction = "create" | "update" | "unchanged" | "remove";
 
+/** How the caller reaches a kit: their own, shared with them, or (admins) metadata only. */
+export type KitAccess = "owner" | "shared" | "admin";
+
 export interface KitSummary {
   kit_id: string;
   title: string;
@@ -15,6 +18,9 @@ export interface KitSummary {
   /** How many of each kind it holds, by kind (Agent, KnowledgeBase, WidgetKey, McpConnection). */
   counts: Record<string, number>;
   conversation_id?: string | null;
+  account_id: string;
+  owner_id: string;
+  access: KitAccess;
   created_at: string;
   updated_at?: string | null;
 }

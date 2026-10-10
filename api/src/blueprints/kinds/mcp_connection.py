@@ -85,7 +85,7 @@ class McpConnectionKind(LookupKind[McpConnectionSpec]):
         return []
 
     def find_existing(self, name: str, spec: McpConnectionSpec, ctx: PlanContext) -> Optional[Existing]:
-        connection = connection_for(spec, ctx.user_email)
+        connection = connection_for(spec, ctx.owner.email)
         if connection is None:
             if spec.id:
                 raise NotFound(f"There's no MCP connection with id '{spec.id}' in your account.")

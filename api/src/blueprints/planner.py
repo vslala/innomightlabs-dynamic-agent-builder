@@ -11,6 +11,7 @@ from typing import Any, Mapping, Optional
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.accounts.owner import Owner
 from src.blueprints.commands import Command, OrderError, Step, command_order
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.kinds import (
@@ -70,21 +71,21 @@ class Plan(BaseModel):
 
 
 def plan_blueprint(
-    validated: ValidatedBlueprint, user_email: str, before: Optional[ValidatedBlueprint] = None
+    validated: ValidatedBlueprint, owner: Owner, before: Optional[ValidatedBlueprint] = None
 ) -> Plan:
     """`before` is the kit's last applied version, with the kit's ids pinned; None for a new kit."""
-    return _plan(validated.blueprint.resources, validated.order, before, user_email)
+    return _plan(validated.blueprint.resources, validated.order, before, owner)
 
 
-def plan_removal(before: ValidatedBlueprint, user_email: str) -> Plan:
+def plan_removal(before: ValidatedBlueprint, owner: Owner) -> Plan:
     """Removing a kit: everything its last version declared, left out."""
-    return _plan({}, [], before, user_email)
+    return _plan({}, [], before, owner)
 
 
 def _plan(
-    resources: Mapping[str, Any], order: list[str], before: Optional[ValidatedBlueprint], user_email: str
+    resources: Mapping[str, Any], order: list[str], before: Optional[ValidatedBlueprint], owner: Owner
 ) -> Plan:
-    ctx = PlanContext(user_email=user_email)
+    ctx = PlanContext(owner=owner)
     plan = Plan(steps=[], blockers=[])
     commands: list[Command] = []
     declared = before.blueprint.resources if before else {}
@@ -199,9 +200,9 @@ def _plan(
     # Called directly: the subscription middleware only sees the HTTP routes, not blueprint applies.
     limits = RateLimitService()
     if agents:
-        plan.blockers += _limit_issue(lambda: limits.check_agent_limit(user_email, additional=agents))
+        plan.blockers += _limit_issue(lambda: limits.check_agent_limit(owner.email, additional=agents))
     if kb_pages:
-        plan.blockers += _limit_issue(lambda: limits.check_kb_pages_limit(user_email, kb_pages))
+        plan.blockers += _limit_issue(lambda: limits.check_kb_pages_limit(owner.email, kb_pages))
     return plan
 
 

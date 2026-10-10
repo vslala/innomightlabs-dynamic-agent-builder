@@ -96,7 +96,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
         api_key_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
         # 1. Preflight: the session this conversation builds in.
-        session = self.sessions.find(owner_email, conversation.conversation_id)
+        session = self.sessions.find(agent.owner_partition, conversation.conversation_id)
         if session is None:
             raise ValueError("This conversation isn't a building session.")
         # A new turn: pages opened too long ago leave the prompt.
@@ -119,6 +119,8 @@ class VishwakarmaArchitecture(AgentArchitecture):
             attachments=attachments or [],
             api_key_id=api_key_id,
             conversation_context=conversation.context,
+            account_id=agent.account_id,
+            owner_id=agent.owner_id,
         )
 
         user_msg = Message(
@@ -171,7 +173,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
                 continue
             if isinstance(item, PromptRefreshNeeded):
                 # Opening pages, planning or building changed what the prompt shows.
-                refreshed = self.sessions.find(owner_email, conversation.conversation_id) or session
+                refreshed = self.sessions.find(agent.owner_partition, conversation.conversation_id) or session
                 context[0]["content"] = self._prompt(book, refreshed, conversation.context)
                 continue
 

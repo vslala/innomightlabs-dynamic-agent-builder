@@ -24,6 +24,8 @@ from enum import Enum
 from graphlib import CycleError, TopologicalSorter
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, Union
 
+from src.accounts.owner import Owner
+
 if TYPE_CHECKING:
     from src.blueprints.kinds.base import AppliedResource, ApplyContext
 
@@ -42,7 +44,8 @@ class Undo:
     args: dict[str, Any]
 
 
-UndoAction = Callable[[dict[str, Any], str], None]
+#: Undone as the member the deployment applied as.
+UndoAction = Callable[[dict[str, Any], Owner], None]
 UNDO_ACTIONS: dict[str, UndoAction] = {}
 
 
@@ -57,8 +60,8 @@ def undo_action(name: str) -> Callable[[UndoAction], UndoAction]:
     return register
 
 
-def run_undo(undo: Undo, user_email: str) -> None:
-    UNDO_ACTIONS[undo.action](undo.args, user_email)
+def run_undo(undo: Undo, owner: Owner) -> None:
+    UNDO_ACTIONS[undo.action](undo.args, owner)
 
 
 @dataclass(kw_only=True)

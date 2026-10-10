@@ -33,7 +33,11 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.registry import get_skill_registry
-from tests.mock_data import TEST_USER_EMAIL, owner_ids, conversation_fields, conversations_of
+from tests.mock_data import TEST_USER_EMAIL, owner_ids, conversation_fields, conversations_of, session_fields, turn_owner_fields
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 SITE_AGENT = example_yaml("site-agent") or ""
 PARAMS = {"site_url": "https://acme.example", "business_name": "Acme"}
@@ -57,13 +61,14 @@ def session(account) -> BuilderSession:
         Conversation(title="Building with Ila", agent_id=ILA_AGENT_ID, **conversation_fields(TEST_USER_EMAIL))
     )
     return BuilderSessionRepository().save(
-        BuilderSession(conversation_id=conversation.conversation_id, user_email=TEST_USER_EMAIL, provider="Bedrock")
+        BuilderSession(conversation_id=conversation.conversation_id, **session_fields(TEST_USER_EMAIL), provider="Bedrock")
     )
 
 
 def turn_state(session: BuilderSession) -> AgentTurnState:
     return AgentTurnState(
         owner_email=TEST_USER_EMAIL,
+        **turn_owner_fields(TEST_USER_EMAIL),
         actor_email=TEST_USER_EMAIL,
         actor_id=TEST_USER_EMAIL,
         actor_kind=ActorKind.OWNER,
@@ -119,7 +124,7 @@ async def test_plan_keeps_the_draft_and_shows_an_approval_form(session):
     assert result["ok"] is True
     assert result["type"] == "ui_form_render"
     assert result["form"]["form_name"] == approval_label(result["plan_id"])
-    stored = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id)
+    stored = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id)
     assert stored.draft_yaml == SITE_AGENT
     assert stored.draft_params == PARAMS
     assert stored.plan_id == result["plan_id"]
@@ -131,7 +136,7 @@ async def test_plan_with_issues_keeps_the_draft_but_no_plan(session):
 
     assert result["ok"] is False
     assert result["issues"][0]["hint"] == "Did you mean 'skills'?"
-    stored = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id)
+    stored = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id)
     assert stored.draft_yaml == broken and stored.plan_id is None
 
 
@@ -159,7 +164,7 @@ async def test_approved_plan_is_built_and_its_status_reported(session, account):
     assert "pk_live_" in built["outputs"]["snippet"]["value"]
     agent_id = built["resources"]["assistant"]["id"]
     assert AgentRepository().get(agent_id).agent_name == "Acme assistant"
-    stored = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id)
+    stored = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id)
     assert stored.deployment_id and stored.plan_id is None
     assert len(account) == 1
 
@@ -235,7 +240,7 @@ async def test_a_turn_runs_ila_with_only_her_tools(session, monkeypatch):
 
 async def test_a_conversation_without_a_session_is_refused(account):
     conversation = ConversationRepository().save(Conversation(title="x", agent_id=ILA_AGENT_ID, **conversation_fields(TEST_USER_EMAIL)))
-    session = BuilderSession(conversation_id=conversation.conversation_id, user_email=TEST_USER_EMAIL, provider="Bedrock")
+    session = BuilderSession(conversation_id=conversation.conversation_id, **session_fields(TEST_USER_EMAIL), provider="Bedrock")
 
     events = [event async for event in vishwakarma.VishwakarmaArchitecture().handle_message(
         agent=ila_agent(session), conversation=conversation, user_message="hi", owner_email=TEST_USER_EMAIL,
@@ -310,7 +315,7 @@ MEDIA_BUCKET = "innomightlabs-conversations-meta"
 
 def _planned(account, params=PARAMS):
     validated = validate_blueprint(SITE_AGENT, params)
-    return validated, plan_blueprint(validated, TEST_USER_EMAIL)
+    return validated, plan_blueprint(validated, TEST_OWNER)
 
 
 def test_the_drawing_shows_each_resource_and_how_they_connect(account):
@@ -378,7 +383,7 @@ async def test_after_a_build_the_draft_is_pinned_to_what_was_built(session):
     say(session, "user", approval(plan_id))
     built = json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))
 
-    draft = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id).draft_yaml
+    draft = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id).draft_yaml
     assert f"id: {built['resources']['assistant']['id']}" in draft
 
     # Ila changes the draft and plans again: the same agent is updated, nothing new is built.
@@ -402,7 +407,7 @@ async def test_ila_can_find_and_load_an_existing_agent(session):
 
     loaded = json.loads(await tools.load_agent("load_agent", {"agent_id": agent_id}, state))
     assert loaded["loaded"] is True
-    draft = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id).draft_yaml
+    draft = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id).draft_yaml
     assert f"id: {agent_id}" in draft
     # In its kit, the draft is the kit's last version with its params.
     replanned = json.loads(await tools.plan("plan_blueprint", {"yaml": draft}, state))
@@ -419,10 +424,10 @@ async def test_ila_can_find_and_load_an_existing_agent(session):
 async def test_ila_names_what_a_plan_removes(session):
     """An agent loaded from outside a kit: what it was is the baseline, so leaving a skill out uninstalls it."""
     validated = validate_blueprint(SITE_AGENT, PARAMS)
-    built = apply_blueprint(validated, plan_blueprint(validated, TEST_USER_EMAIL), TEST_USER_EMAIL)
+    built = apply_blueprint(validated, plan_blueprint(validated, TEST_OWNER), TEST_OWNER)
     tools, state = BuilderTools(), turn_state(session)
     assert json.loads(await tools.load_agent("load_agent", {"agent_id": built.resources["assistant"].id}, state))["loaded"]
-    draft = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id).draft_yaml
+    draft = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id).draft_yaml
     document = yaml.safe_load(draft)
     document["resources"]["agent"]["skills"] = []
 

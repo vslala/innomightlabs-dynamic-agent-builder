@@ -12,7 +12,7 @@ from src.iam.dependencies import get_principal
 from src.iam.principal import Principal, load_principal
 from src.iam.service import IamError
 from src.iam.shares import RESOLVERS
-from src.identity import IdentityRepository
+from src.accounts.owner import Owner
 from src.knowledge.models import KnowledgeBase, KnowledgeBaseAccess, KnowledgeBaseStatus
 from src.knowledge.repository import KnowledgeBaseRepository
 
@@ -74,18 +74,11 @@ def readable_by_agent(agent: Agent, kb_ids: list[str],
     return [kb for kb in kbs if kb.owner_id == agent.owner_id or owner.can("knowledge:Get", kb.resource_ref).allowed]
 
 
-def owned_kb(kb_id: str, owner_email: str,
+def owned_kb(kb_id: str, owner: Owner,
              repository: Optional[KnowledgeBaseRepository] = None) -> Optional[KnowledgeBase]:
-    """The knowledge base, if the person with this email owns it in their personal account. For paths that
-    still carry the owner's email (blueprints, kits, the clean-up script) until their data moves into
-    accounts (KAN-80)."""
-    from src.accounts.models import personal_account_id
-
-    identity = IdentityRepository().find_by_email(owner_email)
-    if identity is None:
-        return None
-    kb = (repository or KnowledgeBaseRepository()).find_in_account(personal_account_id(identity.user_id), kb_id)
-    return kb if kb and kb.owner_id == identity.user_id else None
+    """The knowledge base, if this member owns it in their account: what blueprints and kits may change."""
+    kb = (repository or KnowledgeBaseRepository()).find_in_account(owner.account_id, kb_id)
+    return kb if kb and kb.owner_id == owner.user_id else None
 
 
 def _resolve(account_id: str, kb_id: str) -> Optional[ResourceRef]:

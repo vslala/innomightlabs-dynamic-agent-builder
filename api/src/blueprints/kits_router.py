@@ -14,11 +14,17 @@ See docs/LLD-solution-blueprints.md and docs/REFACTOR-blueprints.md.
 
 from collections import Counter
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from typing import Annotated
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.security import HTTPBearer
 
+from src.blueprints.access import KitAccess, access_to, kit_with, visible_kits
+from src.iam.dependencies import get_principal
+from src.iam.principal import Principal
+
 from src.blueprints.kinds import kind_for
-from src.blueprints.kits import Kit, KitError, KitNotFound, KitPlan, KitRepository, plan_kit_removal, plan_rollback
+from src.blueprints.kits import Kit, KitError, KitNotFound, KitPlan, plan_kit_removal, plan_rollback
 from src.blueprints.models import (
     ApplyKitPlanRequest,
     Deployment,
@@ -36,20 +42,20 @@ from src.blueprints.service import Blocked, Deployed, DeployOutcome, Invalid, Ra
 router = APIRouter(prefix="/kits", tags=["kits"], dependencies=[Depends(HTTPBearer())])
 
 
-def _summary(kit: Kit) -> dict:
+def _summary(kit: Kit, access: KitAccess = "owner") -> dict:
     return {
         **kit.model_dump(include={"kit_id", "title", "description", "current_version", "versions", "conversation_id",
-                                  "created_at", "updated_at"}),
+                                  "account_id", "owner_id", "created_at", "updated_at"}),
         "status": kit.status.value,
         "counts": dict(Counter(resource.kind for resource in kit.resources.values())),
+        "access": access,
     }
 
 
-def _kit(request: Request, kit_id: str) -> Kit:
-    kit = KitRepository().find(request.state.user_email, kit_id)
-    if kit is None:
-        raise HTTPException(status_code=404, detail="Kit not found")
-    return kit
+# A kit's versions apply as its owner, whoever applies them (`deploy_blueprint`, `apply_kit_plan`)
+Readable = Annotated[Kit, Depends(kit_with("kits:Get"))]
+RollingBack = Annotated[Kit, Depends(kit_with("kits:Rollback"))]
+Removing = Annotated[Kit, Depends(kit_with("kits:Delete"))]
 
 
 def _planned(plan: KitPlan) -> KitPlanResponse:
@@ -84,14 +90,14 @@ def _applied(outcome: DeployOutcome) -> Deployment:
 
 
 @router.get("", response_model=list[KitSummary])
-async def list_kits(request: Request) -> list[KitSummary]:
-    return [KitSummary.model_validate(_summary(kit)) for kit in KitRepository().list_by_user(request.state.user_email)]
+async def list_kits(principal: Annotated[Principal, Depends(get_principal)]) -> list[KitSummary]:
+    """The caller's kits, those shared with them, and (for admins) everyone else's."""
+    return [KitSummary.model_validate(_summary(kit, access)) for kit, access in visible_kits(principal)]
 
 
 @router.get("/{kit_id}", response_model=KitDetail)
-async def get_kit(request: Request, kit_id: str) -> KitDetail:
-    kit = _kit(request, kit_id)
-    deployments = DeploymentRepository().list_for_kit(request.state.user_email, kit_id)
+async def get_kit(kit: Readable, principal: Annotated[Principal, Depends(get_principal)]) -> KitDetail:
+    deployments = DeploymentRepository().list_for_kit(kit.account_id, kit.kit_id)
     current = next((d for d in deployments if d.deployment_id == kit.current_deployment_id), None)
     attributes = {name: resource.attributes for name, resource in (current.resources.items() if current else [])}
     resources = []
@@ -120,42 +126,41 @@ async def get_kit(request: Request, kit_id: str) -> KitDetail:
         for d in deployments
         if d.version is not None and d.status != DeploymentStatus.FAILED
     ]
-    return KitDetail.model_validate({**_summary(kit), "resources": resources, "history": history})
+    summary = _summary(kit, access_to(principal, kit) or "admin")
+    return KitDetail.model_validate({**summary, "resources": resources, "history": history})
 
 
 @router.post("/{kit_id}/rollback/plan", response_model=KitPlanResponse)
-async def plan_kit_rollback(request: Request, kit_id: str, body: RollbackRequest) -> KitPlanResponse:
+async def plan_kit_rollback(kit: RollingBack, body: RollbackRequest) -> KitPlanResponse:
     try:
-        return _planned(plan_rollback(request.state.user_email, kit_id, body.version))
+        return _planned(plan_rollback(kit.account_id, kit.kit_id, body.version))
     except KitError as e:
         raise _kit_error(e) from e
 
 
 @router.post("/{kit_id}/rollback", response_model=Deployment)
-async def rollback_kit(
-    request: Request, kit_id: str, body: ApplyKitPlanRequest, background_tasks: BackgroundTasks
-) -> Deployment:
+async def rollback_kit(kit: RollingBack, body: ApplyKitPlanRequest, background_tasks: BackgroundTasks) -> Deployment:
     if body.version is None:
         raise HTTPException(status_code=422, detail="Say which version to go back to.")
     try:
-        planned = plan_rollback(request.state.user_email, kit_id, body.version)
+        planned = plan_rollback(kit.account_id, kit.kit_id, body.version)
     except KitError as e:
         raise _kit_error(e) from e
-    return _applied(apply_kit_plan(planned, request.state.user_email, kit_id, body.plan_id, background_tasks))
+    return _applied(apply_kit_plan(planned, kit.account_id, kit.kit_id, body.plan_id, background_tasks))
 
 
 @router.post("/{kit_id}/removal/plan", response_model=KitPlanResponse)
-async def plan_removal(request: Request, kit_id: str) -> KitPlanResponse:
+async def plan_removal(kit: Removing) -> KitPlanResponse:
     try:
-        return _planned(plan_kit_removal(request.state.user_email, kit_id))
+        return _planned(plan_kit_removal(kit.account_id, kit.kit_id))
     except KitError as e:
         raise _kit_error(e) from e
 
 
 @router.post("/{kit_id}/remove", response_model=Deployment)
-async def remove_kit(request: Request, kit_id: str, body: ApplyKitPlanRequest) -> Deployment:
+async def remove_kit(kit: Removing, body: ApplyKitPlanRequest) -> Deployment:
     try:
-        planned = plan_kit_removal(request.state.user_email, kit_id)
+        planned = plan_kit_removal(kit.account_id, kit.kit_id)
     except KitError as e:
         raise _kit_error(e) from e
-    return _applied(apply_kit_plan(planned, request.state.user_email, kit_id, body.plan_id))
+    return _applied(apply_kit_plan(planned, kit.account_id, kit.kit_id, body.plan_id))

@@ -143,3 +143,15 @@ def schedule_fields(email: str = TEST_USER_EMAIL) -> dict:
     """The fields a `Schedule(...)` built in a test needs: run as `email`, in their personal account."""
     account_id, user_id = owner_ids(email)
     return {"account_id": account_id, "owner_id": user_id}
+
+
+def session_fields(email: str = TEST_USER_EMAIL) -> dict:
+    """The fields a `BuilderSession(...)` built in a test needs: the seeded person's, in their personal account."""
+    account_id, user_id = owner_ids(email)
+    return {"account_id": account_id, "user_id": user_id}
+
+
+def turn_owner_fields(email: str = TEST_USER_EMAIL) -> dict:
+    """What an `AgentTurnState(...)` built in a test needs for the member it runs as."""
+    account_id, user_id = owner_ids(email)
+    return {"account_id": account_id, "owner_id": user_id}

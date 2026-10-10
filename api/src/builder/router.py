@@ -71,7 +71,7 @@ class BuildTarget:
 
 def resolve_build(request: Request, conversation_id: str) -> BuildTarget:
     owner = get_owner(request)
-    session = BuilderSessionRepository().find(owner.email, conversation_id)
+    session = BuilderSessionRepository().find(owner.member_pk, conversation_id)
     conversation = ConversationRepository().find_by_id(conversation_id, owner.member_pk)
     if session is None or conversation is None:
         raise HTTPException(status_code=404, detail="Building session not found")
@@ -95,7 +95,8 @@ async def session_form(request: Request) -> form_models.Form:
     """The person's own providers and models, filled in the same way as the create-agent form."""
     inputs = [field for field in get_create_agent_form().form_inputs if field.name in SESSION_FORM_FIELDS]
     form = form_models.Form(form_name="Build with Ila", submit_path="/builder/sessions", form_inputs=inputs)
-    return hydrate_form_options(form, FormOptionsContext(user_email=request.state.user_email))
+    owner = get_owner(request)
+    return hydrate_form_options(form, FormOptionsContext(user_email=owner.email, owner=owner))
 
 
 @router.post("/sessions", response_model=BuilderSessionResponse, status_code=status.HTTP_201_CREATED)
@@ -118,7 +119,8 @@ async def create_session(request: Request, body: CreateBuilderSessionRequest) ->
     ))
     session = BuilderSessionRepository().save(BuilderSession(
         conversation_id=conversation.conversation_id,
-        user_email=user_email,
+        account_id=owner.account_id,
+        user_id=owner.user_id,
         provider=body.agent_provider,
         model=model,
     ))
@@ -133,7 +135,7 @@ async def create_session(request: Request, body: CreateBuilderSessionRequest) ->
 
 @router.get("/sessions", response_model=list[BuilderSessionResponse])
 async def list_sessions(request: Request) -> list[BuilderSessionResponse]:
-    return [_response(session) for session in BuilderSessionRepository().list_by_user(request.state.user_email)]
+    return [_response(session) for session in BuilderSessionRepository().list_in(get_owner(request).member_pk)]
 
 
 @router.post("/{conversation_id}/send-message")

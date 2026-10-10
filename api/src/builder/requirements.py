@@ -82,7 +82,7 @@ class SkillSettings:
         error = pending.error if pending is not None and pending.key == item.key else None
         session.pending_input = PendingInput(key=item.key, label=item.label)
         context = {"agent_id": state.agent_id, "conversation_id": state.conversation_id}
-        form = input_form(item, Draft(session.draft_yaml), session.draft_params, state.owner_email, context, error)
+        form = input_form(item, Draft(session.draft_yaml), session.draft_params, state.owner, context, error)
         return {
             **form,
             "ok": False,

@@ -9,6 +9,7 @@ import {
   PanelBody,
   PanelHeader,
   PanelTitle,
+  Pill,
   StatusBadge,
   Tabs,
   TabsContent,
@@ -16,10 +17,12 @@ import {
   TabsTrigger,
 } from "../../../components/ui";
 import { builderApiService, type BuilderSession } from "../../../services/builder/BuilderApiService";
-import { kitApiService, type KitSummary } from "../../../services/kits/KitApiService";
+import { kitApiService, type KitAccess, type KitSummary } from "../../../services/kits/KitApiService";
 import type { FormSchema, FormValue } from "../../../types/form";
 import { kitContents, kitStatus } from "./kitView";
 import styles from "./BuildPage.module.css";
+
+const ACCESS_BADGES: Partial<Record<KitAccess, string>> = { shared: "Shared with you", admin: "Admin view" };
 
 export function BuildPage() {
   const navigate = useNavigate();
@@ -123,6 +126,9 @@ export function BuildPage() {
                               <span className={styles.kitTitle}>{kit.title}</span>
                               <span className={styles.sessionMeta}>{kitContents(kit.counts)}</span>
                             </span>
+                            {ACCESS_BADGES[kit.access] && (
+                              <Pill size="sm" variant="secondary">{ACCESS_BADGES[kit.access]}</Pill>
+                            )}
                             <StatusBadge size="sm" status={status.status} label={status.label} />
                             <ChevronRight className={styles.sessionIcon} aria-hidden="true" />
                           </Link>

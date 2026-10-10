@@ -16,6 +16,7 @@ from typing import Any, ClassVar, Generic, Literal, Mapping, Optional, TypeVar
 from fastapi import BackgroundTasks
 from pydantic import BaseModel
 
+from src.accounts.owner import Owner
 from src.blueprints.commands import Command, Use
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.reconcile import Context, Outcome, reconcile
@@ -62,7 +63,8 @@ class AppliedResource:
 
 @dataclass
 class PlanContext:
-    user_email: str
+    #: Who it plans as: what it finds and builds is theirs, in their account
+    owner: Owner
     #: Resources matched so far, by blueprint name, so later ones can resolve references to them.
     matched: dict[str, Existing] = field(default_factory=dict)
     #: Resources planned so far that will be created, by blueprint name. They have no id until apply.
@@ -80,7 +82,7 @@ class PlanContext:
 
 @dataclass
 class ApplyContext:
-    user_email: str
+    owner: Owner
     #: Set when applying from an HTTP request; a tool call from a chat turn has none.
     background_tasks: Optional[BackgroundTasks] = None
     #: Resources created, updated or kept so far, by name, so references resolve to real ids.

@@ -22,6 +22,7 @@ from src.blueprints.draft import Draft
 from src.blueprints.skills_schema import REFERENCE_OPTION_SOURCES, SkillSetup, skill_variants
 from src.blueprints.validator import substitute
 from src.builder.models import BuilderSession, PendingInput
+from src.accounts.owner import Owner
 from src.form_options import FormOptionsContext, hydrate_form_options
 from src.skills.lead_capture.actions import render_custom_form
 from src.skills.registry import get_skill_registry
@@ -122,7 +123,7 @@ def input_form(
     item: SkillInput,
     draft: Draft,
     params: dict[str, Any],
-    user_email: str,
+    owner: Owner,
     context: dict[str, Any],
     error: Optional[str] = None,
 ) -> dict[str, Any]:
@@ -130,7 +131,7 @@ def input_form(
     blueprint_agents = [
         (name, _name(resource, name, params)) for name, resource in draft.kept("Agent") if name != item.resource
     ]
-    options_context = FormOptionsContext(user_email=user_email)
+    options_context = FormOptionsContext(user_email=owner.email, owner=owner)
     inputs = [_chat_input(field, blueprint_agents, options_context) for field in item.fields]
     if inputs:
         # Say what the skill is for, so the person knows why they're being asked.

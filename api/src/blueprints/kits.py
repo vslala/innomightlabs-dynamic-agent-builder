@@ -13,7 +13,8 @@ A kit is the lasting boundary, and each apply is a version of it:
 Both go through a plan the person sees first. Its `plan_id` says exactly what they saw, so the apply that follows
 can't do anything else.
 
-DynamoDB: pk=User#{owner_email}, sk=Kit#{kit_id}. Versions are deployments with `kit_id` (`BlueprintDeployment#…`).
+DynamoDB: pk=Account#{account_id}, sk=Kit#{kit_id}, with the `owner_id` it applies as. Versions are deployments with
+`kit_id` (`BlueprintDeployment#…`) in the same account. Kits are shareable (`kits:*`; see `src/blueprints/access.py`).
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from uuid import uuid4
 from boto3.dynamodb.conditions import Key
 from pydantic import BaseModel, Field
 
+from src.accounts.owner import Owner
 from src.blueprints.approval import plan_id_for
 from src.blueprints.draft import Draft
 from src.blueprints.issues import BlueprintInvalid
@@ -36,6 +38,7 @@ from src.blueprints.repository import DeploymentRepository
 from src.blueprints.validator import ValidatedBlueprint, validate_blueprint
 from src.config import settings
 from src.db import get_dynamodb_resource
+from src.iam.actions import ResourceRef
 from src.utils.dynamodb import convert_decimals, convert_floats_to_decimals
 
 SK_PREFIX = "Kit#"
@@ -54,7 +57,9 @@ class KitResource(BaseModel):
 
 class Kit(BaseModel):
     kit_id: str = Field(default_factory=lambda: str(uuid4()))
-    owner_email: str
+    account_id: str
+    #: The member it belongs to: its versions apply as them, whoever applies them
+    owner_id: str
     #: From the blueprint's metadata.
     name: str
     title: str
@@ -76,6 +81,10 @@ class Kit(BaseModel):
     def ids(self) -> dict[str, str]:
         return {name: resource.id for name, resource in self.resources.items()}
 
+    @property
+    def resource_ref(self) -> ResourceRef:
+        return ResourceRef("kit", self.kit_id, self.owner_id)
+
 
 class KitRepository:
     def __init__(self) -> None:
@@ -83,18 +92,18 @@ class KitRepository:
 
     def save(self, kit: Kit) -> Kit:
         kit.updated_at = datetime.now(timezone.utc)
-        item = {"pk": f"User#{kit.owner_email}", "sk": f"{SK_PREFIX}{kit.kit_id}", "entity_type": "Kit",
+        item = {"pk": f"Account#{kit.account_id}", "sk": f"{SK_PREFIX}{kit.kit_id}", "entity_type": "Kit",
                 **kit.model_dump(mode="json")}
         self.table.put_item(Item=convert_floats_to_decimals(item))
         return kit
 
-    def find(self, owner_email: str, kit_id: str) -> Optional[Kit]:
-        item = self.table.get_item(Key={"pk": f"User#{owner_email}", "sk": f"{SK_PREFIX}{kit_id}"}).get("Item")
+    def find(self, account_id: str, kit_id: str) -> Optional[Kit]:
+        item = self.table.get_item(Key={"pk": f"Account#{account_id}", "sk": f"{SK_PREFIX}{kit_id}"}).get("Item")
         return self._from_item(item) if item else None
 
-    def list_by_user(self, owner_email: str) -> list[Kit]:
-        """Most recently changed first."""
-        kwargs: dict = {"KeyConditionExpression": Key("pk").eq(f"User#{owner_email}") & Key("sk").begins_with(SK_PREFIX)}
+    def list_in_account(self, account_id: str) -> list[Kit]:
+        """Every kit in the account, whoever owns it, most recently changed first."""
+        kwargs: dict = {"KeyConditionExpression": Key("pk").eq(f"Account#{account_id}") & Key("sk").begins_with(SK_PREFIX)}
         kits = []
         while True:
             response = self.table.query(**kwargs)
@@ -104,10 +113,13 @@ class KitRepository:
             kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
         return sorted(kits, key=lambda kit: kit.updated_at or kit.created_at, reverse=True)
 
-    def holding(self, owner_email: str, resource_id: str) -> Optional[Kit]:
-        """The active kit a resource belongs to. A resource is in at most one."""
+    def list_owned(self, account_id: str, owner_id: str) -> list[Kit]:
+        return [kit for kit in self.list_in_account(account_id) if kit.owner_id == owner_id]
+
+    def holding(self, account_id: str, resource_id: str) -> Optional[Kit]:
+        """The active kit in the account a resource belongs to. A resource is in at most one."""
         return next(
-            (kit for kit in self.list_by_user(owner_email)
+            (kit for kit in self.list_in_account(account_id)
              if kit.status == KitStatus.ACTIVE and any(r.id == resource_id for r in kit.resources.values())),
             None,
         )
@@ -149,7 +161,7 @@ def declared(kit: Optional[Kit], baseline: Optional[str] = None) -> Optional[Val
     """What the kit declares now (its last version applied in full), with its ids pinned: the `before` of its next
     plan. For something that isn't in a kit yet, `baseline` (what it was when it was loaded) stands in."""
     if kit is not None and kit.current_deployment_id:
-        deployment = DeploymentRepository().find_by_id(kit.owner_email, kit.current_deployment_id)
+        deployment = DeploymentRepository().find_by_id(kit.account_id, kit.current_deployment_id)
         if deployment is None:
             raise KitError("The kit's last version can't be found.")
         return _validated(pin(Draft(deployment.blueprint_yaml).without_ids().text, kit), deployment.params)
@@ -166,8 +178,18 @@ def _validated(text: str, params: dict[str, Any]) -> ValidatedBlueprint:
         raise KitError("The kit's last version doesn't read any more: " + "; ".join(i.message for i in e.issues)) from e
 
 
-def active_kit(owner_email: str, kit_id: str) -> Kit:
-    kit = KitRepository().find(owner_email, kit_id)
+def owner_of_kit(kit: Kit) -> Owner:
+    """The member a kit applies as, whoever applies, rolls back or removes it: what it holds is theirs."""
+    from src.identity import IdentityRepository
+
+    identity = IdentityRepository().get(kit.owner_id)
+    if identity is None:
+        raise KitError("The kit's owner no longer exists.")
+    return Owner(account_id=kit.account_id, user_id=kit.owner_id, email=identity.email)
+
+
+def active_kit(account_id: str, kit_id: str) -> Kit:
+    kit = KitRepository().find(account_id, kit_id)
     if kit is None:
         raise KitNotFound("There's no such kit.")
     if kit.status != KitStatus.ACTIVE:
@@ -175,25 +197,25 @@ def active_kit(owner_email: str, kit_id: str) -> Kit:
     return kit
 
 
-def plan_rollback(owner_email: str, kit_id: str, version: int) -> KitPlan:
-    kit = active_kit(owner_email, kit_id)
-    target = next((d for d in DeploymentRepository().list_for_kit(owner_email, kit_id) if d.version == version), None)
+def plan_rollback(account_id: str, kit_id: str, version: int) -> KitPlan:
+    kit = active_kit(account_id, kit_id)
+    target = next((d for d in DeploymentRepository().list_for_kit(account_id, kit_id) if d.version == version), None)
     if target is None or target.status == DeploymentStatus.FAILED:
         raise KitError(f"The kit has no version {version}.")
     if target.action == DeploymentAction.REMOVE:
         raise KitError("That version removed the kit; there's nothing to go back to.")
     text = pin(Draft(target.blueprint_yaml).without_ids().text, kit)
     validated = _validated(text, target.params)
-    plan = plan_blueprint(validated, owner_email, declared(kit))
+    plan = plan_blueprint(validated, owner_of_kit(kit), declared(kit))
     return KitPlan(validated, plan, _plan_id("rollback", kit, text, target.params), DeploymentAction.ROLLBACK, version)
 
 
-def plan_kit_removal(owner_email: str, kit_id: str) -> KitPlan:
-    kit = active_kit(owner_email, kit_id)
+def plan_kit_removal(account_id: str, kit_id: str) -> KitPlan:
+    kit = active_kit(account_id, kit_id)
     before = declared(kit)
     if before is None:
         raise KitError("The kit has no version to remove.")
-    plan = plan_removal(before, owner_email)
+    plan = plan_removal(before, owner_of_kit(kit))
     # What's recorded for the removal: the version it removed, with no outputs to show.
     validated = ValidatedBlueprint(
         blueprint=before.blueprint.model_copy(update={"outputs": {}}), yaml=before.yaml, params=before.params, order=[]
@@ -221,8 +243,8 @@ def record_version(
         kit.resources = {name: KitResource(kind=r.kind, id=r.id) for name, r in deployment.resources.items()}
         return KitRepository().save(kit)
     metadata = planned.validated.blueprint.metadata
-    kit = kit or Kit(owner_email=deployment.user_email, name=metadata.name, title=metadata.title,
-                     conversation_id=conversation_id)
+    kit = kit or Kit(account_id=deployment.account_id, owner_id=deployment.owner_id, name=metadata.name,
+                     title=metadata.title, conversation_id=conversation_id)
     kit.versions += 1
     deployment.kit_id, deployment.version = kit.kit_id, kit.versions
     DeploymentRepository().save(deployment)

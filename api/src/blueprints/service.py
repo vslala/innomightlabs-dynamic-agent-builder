@@ -13,7 +13,8 @@ from fastapi import BackgroundTasks
 
 from src.blueprints.executor import apply_blueprint, apply_rate_limit
 from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
-from src.blueprints.kits import Kit, KitError, KitPlan, active_kit, declared, pin, record_version
+from src.accounts.owner import Owner
+from src.blueprints.kits import Kit, KitError, KitPlan, active_kit, declared, owner_of_kit, pin, record_version
 from src.blueprints.models import Deployment, DeploymentAction, DeploymentStatus
 from src.blueprints.planner import Plan, plan_blueprint
 from src.blueprints.validator import ValidatedBlueprint, validate_blueprint
@@ -52,7 +53,7 @@ DeployOutcome = Union[Invalid, Blocked, RateLimited, Deployed]
 
 def apply_planned(
     planned: KitPlan,
-    owner_email: str,
+    owner: Owner,
     kit: Optional[Kit],
     background_tasks: Optional[BackgroundTasks] = None,
     conversation_id: Optional[str] = None,
@@ -61,11 +62,11 @@ def apply_planned(
     if not planned.plan.ok:
         return Blocked(planned.plan)
     limiter = RateLimiter(apply_rate_limit())
-    decision = limiter.acquire(owner_email)
+    decision = limiter.acquire(owner.email)
     if not decision.allowed:
         return RateLimited(decision.retry_after_seconds or 60)
     deployment = apply_blueprint(
-        planned.validated, planned.plan, owner_email, background_tasks,
+        planned.validated, planned.plan, owner, background_tasks,
         deployment_fields={
             "kit_id": kit.kit_id if kit else None,
             "action": planned.action,
@@ -81,7 +82,7 @@ def apply_planned(
 def deploy_blueprint(
     yaml: str,
     params: dict[str, Any],
-    owner_email: str,
+    owner: Owner,
     background_tasks: Optional[BackgroundTasks] = None,
     *,
     kit_id: Optional[str] = None,
@@ -89,9 +90,11 @@ def deploy_blueprint(
     conversation_id: Optional[str] = None,
 ) -> DeployOutcome:
     """Validates, plans against the kit and applies: a new kit without `kit_id`, its next version with it. The
-    dashboard's API and Ila both deploy through here, so neither can skip a step."""
+    dashboard's API and Ila both deploy through here, so neither can skip a step. A new kit is `owner`'s, in their
+    account; a kit's next version applies as the kit's owner, whoever applies it."""
     try:
-        kit = active_kit(owner_email, kit_id) if kit_id else None
+        kit = active_kit(owner.account_id, kit_id) if kit_id else None
+        owner = owner_of_kit(kit) if kit else owner
         text = pin(yaml, kit)
         validated = validate_blueprint(text, params)
         before = declared(kit, baseline)
@@ -99,19 +102,20 @@ def deploy_blueprint(
         return Invalid(e.issues)
     except KitError as e:
         return Invalid([BlueprintIssue(path="", message=str(e))])
-    planned = KitPlan(validated, plan_blueprint(validated, owner_email, before), "", DeploymentAction.APPLY)
-    return apply_planned(planned, owner_email, kit, background_tasks, conversation_id)
+    planned = KitPlan(validated, plan_blueprint(validated, owner, before), "", DeploymentAction.APPLY)
+    return apply_planned(planned, owner, kit, background_tasks, conversation_id)
 
 
 def apply_kit_plan(
-    planned: KitPlan, owner_email: str, kit_id: str, plan_id: str, background_tasks: Optional[BackgroundTasks] = None
+    planned: KitPlan, account_id: str, kit_id: str, plan_id: str, background_tasks: Optional[BackgroundTasks] = None
 ) -> DeployOutcome:
     """Applies a kit's rollback or removal, only if it's the plan the person saw: planned again just now, it must
     have the same `plan_id`, so nothing has changed in between."""
     if plan_id != planned.plan_id:
         return Invalid([BlueprintIssue(path="", message="The kit changed since you saw this plan. Look at it again.")])
     try:
-        kit = active_kit(owner_email, kit_id)
+        kit = active_kit(account_id, kit_id)
+        owner = owner_of_kit(kit)
     except KitError as e:
         return Invalid([BlueprintIssue(path="", message=str(e))])
-    return apply_planned(planned, owner_email, kit, background_tasks)
+    return apply_planned(planned, owner, kit, background_tasks)

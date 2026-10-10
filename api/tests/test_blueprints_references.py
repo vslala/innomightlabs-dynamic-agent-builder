@@ -17,6 +17,10 @@ from src.config import settings
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 TEAM = example_yaml("agent-team") or ""
 SITE_AGENT = example_yaml("site-agent") or ""
@@ -60,8 +64,8 @@ def account(monkeypatch, dynamodb_table) -> None:
 
 def test_every_kind_observes_what_it_built(account):
     validated = validate_blueprint(SITE_AGENT, SITE_PARAMS)
-    built = apply_blueprint(validated, plan_blueprint(validated, TEST_USER_EMAIL), TEST_USER_EMAIL, BackgroundTasks())
-    exported = yaml.safe_load(export_agent(built.resources["assistant"].id, TEST_USER_EMAIL) or "")
+    built = apply_blueprint(validated, plan_blueprint(validated, TEST_OWNER), TEST_OWNER, BackgroundTasks())
+    exported = yaml.safe_load(export_agent(built.resources["assistant"].id, TEST_OWNER) or "")
 
     resources = exported["resources"]
     assert list(resources) == ["knowledge", "agent", "widget"]
@@ -76,5 +80,5 @@ def test_every_kind_observes_what_it_built(account):
     assert exported["outputs"]["snippet"]["value"] == "{{ resources.widget.snippet }}"
 
     # Written back as it is, nothing changes.
-    replanned = plan_blueprint(validate_blueprint(yaml.safe_dump(exported, sort_keys=False), {}), TEST_USER_EMAIL)
+    replanned = plan_blueprint(validate_blueprint(yaml.safe_dump(exported, sort_keys=False), {}), TEST_OWNER)
     assert {step.action for step in replanned.steps} == {"unchanged"}

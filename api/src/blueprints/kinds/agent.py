@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Mapping, Optional
 from uuid import uuid4
 
-from src.accounts.owner import personal_owner
+from src.accounts.owner import Owner
 from src.knowledge.access import owned_kb
 from src.agents.access import owner_of
 from src.agents.models import Agent, CreateAgentRequest
@@ -41,10 +41,8 @@ from src.skills.service import SkillService
 BLUEPRINT_ARCHITECTURE = "krishna-memgpt"
 
 
-def _owned_agent(agent_id: str, user_email: str, repository: Optional[AgentRepository] = None) -> Optional[Agent]:
-    """One of this person's agents. Blueprints and kits work in the personal account until they move into
-    accounts themselves (KAN-80)."""
-    owner = personal_owner(user_email)
+def _owned_agent(agent_id: str, owner: Owner, repository: Optional[AgentRepository] = None) -> Optional[Agent]:
+    """One of this member's agents in their account: a blueprint changes only what its owner owns."""
     agent = (repository or AgentRepository()).find_in_account(owner.account_id, agent_id)
     return agent if agent and agent.owner_id == owner.user_id else None
 
@@ -166,16 +164,16 @@ class CreateAgent(Command):
         return Undo("delete_new_agent", {"agent_id": self.agent_id})
 
     def run(self, ctx: ApplyContext) -> None:
-        agent = AgentService().create(self.request, personal_owner(ctx.user_email), agent_id=self.agent_id)
+        agent = AgentService().create(self.request, ctx.owner, agent_id=self.agent_id)
         ctx.applied[self.resource] = _applied(self.resource, agent)
 
 
 @undo_action("delete_new_agent")
-def _delete_new_agent(args: dict[str, Any], user_email: str) -> None:
+def _delete_new_agent(args: dict[str, Any], owner: Owner) -> None:
     # The same delete as the dashboard's, so the dream schedule `create` added goes too, not left firing nightly.
-    agent = _owned_agent(args["agent_id"], user_email)
+    agent = _owned_agent(args["agent_id"], owner)
     if agent:
-        AgentService().delete(agent, user_email)
+        AgentService().delete(agent, owner.email)
 
 
 @dataclass(kw_only=True)
@@ -186,25 +184,25 @@ class SaveAgent(Command):
     establishes: ClassVar[bool] = True
 
     def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
-        current = _owned_agent(self.agent_id, ctx.user_email)
+        current = _owned_agent(self.agent_id, ctx.owner)
         before = {key: getattr(current, key) for key in self.fields} if current else {}
         return Undo("restore_agent", {"agent_id": self.agent_id, "fields": before})
 
     def run(self, ctx: ApplyContext) -> None:
-        ctx.applied[self.resource] = _applied(self.resource, _save_agent(self.agent_id, self.fields, ctx.user_email))
+        ctx.applied[self.resource] = _applied(self.resource, _save_agent(self.agent_id, self.fields, ctx.owner))
 
 
-def _save_agent(agent_id: str, fields: dict[str, Any], user_email: str) -> Agent:
-    current = _owned_agent(agent_id, user_email)
+def _save_agent(agent_id: str, fields: dict[str, Any], owner: Owner) -> Agent:
+    current = _owned_agent(agent_id, owner)
     if current is None:
         raise RuntimeError("The agent was deleted since the plan. Plan again.")
     return AgentRepository().save(current.model_copy(update=fields))
 
 
 @undo_action("restore_agent")
-def _restore_agent(args: dict[str, Any], user_email: str) -> None:
+def _restore_agent(args: dict[str, Any], owner: Owner) -> None:
     if args["fields"]:
-        _save_agent(args["agent_id"], args["fields"], user_email)
+        _save_agent(args["agent_id"], args["fields"], owner)
 
 
 @dataclass(kw_only=True)
@@ -216,7 +214,7 @@ class LinkKnowledgeBase(Command):
 
     def run(self, ctx: ApplyContext) -> None:
         ids = self._ids(ctx)
-        AgentKnowledgeBaseRepository().link(ids["agent_id"], ids["kb_id"], personal_owner(ctx.user_email).user_id)
+        AgentKnowledgeBaseRepository().link(ids["agent_id"], ids["kb_id"], ctx.owner.user_id)
 
     def _ids(self, ctx: ApplyContext) -> dict[str, str]:
         return {"agent_id": ctx.applied[self.resource].id, "kb_id": ctx.applied[self.knowledge_base].id}
@@ -239,13 +237,13 @@ class UnlinkKnowledgeBase(LinkKnowledgeBase):
 
 
 @undo_action("unlink_knowledge_base")
-def _unlink_knowledge_base(args: dict[str, Any], user_email: str) -> None:
+def _unlink_knowledge_base(args: dict[str, Any], owner: Owner) -> None:
     AgentKnowledgeBaseRepository().unlink(args["agent_id"], args["kb_id"])
 
 
 @undo_action("link_knowledge_base")
-def _link_knowledge_base(args: dict[str, Any], user_email: str) -> None:
-    AgentKnowledgeBaseRepository().link(args["agent_id"], args["kb_id"], personal_owner(user_email).user_id)
+def _link_knowledge_base(args: dict[str, Any], owner: Owner) -> None:
+    AgentKnowledgeBaseRepository().link(args["agent_id"], args["kb_id"], owner.user_id)
 
 
 @dataclass(kw_only=True)
@@ -256,7 +254,7 @@ class EnableTools(Command):
         return Undo("disable_tools", self._ids(ctx))
 
     def run(self, ctx: ApplyContext) -> None:
-        _enable_tools(self._ids(ctx), ctx.user_email)
+        _enable_tools(self._ids(ctx), ctx.owner)
 
     def _ids(self, ctx: ApplyContext) -> dict[str, str]:
         return {"agent_id": ctx.applied[self.resource].id, "mcp_id": ctx.applied[self.connection].id}
@@ -274,17 +272,17 @@ class DisableTools(EnableTools):
         return Undo("enable_tools", self._ids(ctx))
 
     def run(self, ctx: ApplyContext) -> None:
-        _disable_tools(self._ids(ctx), ctx.user_email)
+        _disable_tools(self._ids(ctx), ctx.owner)
 
 
 @undo_action("enable_tools")
-def _enable_tools(args: dict[str, Any], user_email: str) -> None:
-    get_mcp_connector_service().enable_for_agent(owner_email=user_email, agent_id=args["agent_id"], mcp_id=args["mcp_id"])
+def _enable_tools(args: dict[str, Any], owner: Owner) -> None:
+    get_mcp_connector_service().enable_for_agent(owner_email=owner.email, agent_id=args["agent_id"], mcp_id=args["mcp_id"])
 
 
 @undo_action("disable_tools")
-def _disable_tools(args: dict[str, Any], user_email: str) -> None:
-    get_mcp_connector_service().disable_for_agent(owner_email=user_email, agent_id=args["agent_id"], mcp_id=args["mcp_id"])
+def _disable_tools(args: dict[str, Any], owner: Owner) -> None:
+    get_mcp_connector_service().disable_for_agent(owner_email=owner.email, agent_id=args["agent_id"], mcp_id=args["mcp_id"])
 
 
 @dataclass(kw_only=True)
@@ -301,7 +299,7 @@ class InstallSkill(Command):
         SkillService().install_skill(
             agent_id=ctx.applied[self.resource].id,
             skill_id=self.entry.id,
-            user_email=ctx.user_email,
+            user_email=ctx.owner.email,
             raw_config=skill_config(self.entry, _ids(ctx)),
             enabled=self.entry.enabled,
             available_to=skill_audience(self.entry),
@@ -309,8 +307,8 @@ class InstallSkill(Command):
 
 
 @undo_action("uninstall_skill")
-def _uninstall_skill(args: dict[str, Any], user_email: str) -> None:
-    SkillService().uninstall(agent_id=args["agent_id"], installed_skill_id=args["installed_skill_id"], user_email=user_email)
+def _uninstall_skill(args: dict[str, Any], owner: Owner) -> None:
+    SkillService().uninstall(agent_id=args["agent_id"], installed_skill_id=args["installed_skill_id"], user_email=owner.email)
 
 
 @dataclass(kw_only=True)
@@ -345,7 +343,7 @@ class UpdateSkill(Command):
 
 
 @undo_action("restore_skill")
-def _restore_skill(args: dict[str, Any], user_email: str) -> None:
+def _restore_skill(args: dict[str, Any], owner: Owner) -> None:
     SkillService().update_installed(
         agent_id=args["agent_id"],
         installed_skill_id=args["installed_skill_id"],
@@ -366,7 +364,7 @@ class UninstallSkill(Command):
 
     def run(self, ctx: ApplyContext) -> None:
         SkillService().uninstall(
-            agent_id=self.agent_id, installed_skill_id=self.installed_skill_id, user_email=ctx.user_email
+            agent_id=self.agent_id, installed_skill_id=self.installed_skill_id, user_email=ctx.owner.email
         )
 
 
@@ -378,9 +376,9 @@ class DeleteAgent(Command):
     deletes: ClassVar[bool] = True
 
     def run(self, ctx: ApplyContext) -> None:
-        agent = _owned_agent(self.agent_id, ctx.user_email)
+        agent = _owned_agent(self.agent_id, ctx.owner)
         if agent:
-            AgentService().delete(agent, ctx.user_email)
+            AgentService().delete(agent, ctx.owner.email)
 
 
 def _ids(ctx: ApplyContext) -> dict[str, str]:
@@ -401,16 +399,16 @@ class AgentKind(ManagedKind[AgentSpec]):
     dashboard_path = "/dashboard/agents/{id}"
     export_name = "agent"
 
-    def linked(self, agent_id: str, user_email: str) -> list[tuple[str, str, Any]]:
+    def linked(self, agent_id: str, owner: Owner) -> list[tuple[str, str, Any]]:
         """(kind, id, record) of every resource the agent links to, in link order."""
         found: list[tuple[str, str, Any]] = []
         for link in AgentKnowledgeBaseRepository().find_kbs_for_agent(agent_id):
-            kb = owned_kb(link.kb_id, user_email)
+            kb = owned_kb(link.kb_id, owner)
             if kb is not None and kb.status != KnowledgeBaseStatus.DELETED:
                 found.append(("KnowledgeBase", kb.kb_id, kb))
         connections = get_mcp_connection_repository()
         for mcp_link in connections.list_agent_connections(agent_id):
-            connection = connections.find_connection(user_email, mcp_link.mcp_id) if mcp_link.enabled else None
+            connection = connections.find_connection(owner.email, mcp_link.mcp_id) if mcp_link.enabled else None
             if connection is not None:
                 found.append(("McpConnection", connection.mcp_id, connection))
         return found
@@ -430,7 +428,7 @@ class AgentKind(ManagedKind[AgentSpec]):
             resource["model"] = record.agent_model
         if record.agent_description:
             resource["description"] = record.agent_description
-        linked = self.linked(record.agent_id, owner_of(record).email)
+        linked = self.linked(record.agent_id, owner_of(record))
         for field_name, kind in (("knowledge_bases", "KnowledgeBase"), ("mcp_connections", "McpConnection")):
             targets = [names[linked_id] for linked_kind, linked_id, _ in linked if linked_kind == kind and linked_id in names]
             if targets:
@@ -459,11 +457,11 @@ class AgentKind(ManagedKind[AgentSpec]):
     def find_existing(self, name: str, spec: AgentSpec, ctx: PlanContext) -> Optional[Existing]:
         repo = AgentRepository()
         if spec.id:
-            agent = _owned_agent(spec.id, ctx.user_email, repo)
+            agent = _owned_agent(spec.id, ctx.owner, repo)
             if not agent:
                 raise NotFound(f"There's no agent with id '{spec.id}' in your account.")
             return Existing(id=agent.agent_id, record=agent, matched_by="id")
-        owner = personal_owner(ctx.user_email)
+        owner = ctx.owner
         agent = repo.find_by_name(owner.account_id, owner.user_id, spec.name)
         return Existing(id=agent.agent_id, record=agent, matched_by="name") if agent else None
 
@@ -533,7 +531,7 @@ class AgentKind(ManagedKind[AgentSpec]):
         issues: list[BlueprintIssue] = []
         if change.action == Action.UNCHANGED:
             return issues
-        owner = personal_owner(ctx.user_email)
+        owner = ctx.owner
         same_name = AgentRepository().find_by_name(owner.account_id, owner.user_id, spec.name)
         if same_name and (change.existing is None or same_name.agent_id != change.existing.id):
             issues.append(BlueprintIssue(
@@ -542,9 +540,9 @@ class AgentKind(ManagedKind[AgentSpec]):
                 hint="Choose a different name.",
             ))
 
-        provider_ready = get_provider_settings_repository().find_by_provider(ctx.user_email, spec.provider)
+        provider_ready = get_provider_settings_repository().find_by_provider(ctx.owner.email, spec.provider)
         try:
-            validate_provider_model(ctx.user_email, spec.provider, None)
+            validate_provider_model(ctx.owner.email, spec.provider, None)
         except ValueError:
             provider_ready = None
         if not provider_ready:
@@ -555,7 +553,7 @@ class AgentKind(ManagedKind[AgentSpec]):
             ))
         elif spec.model:
             try:
-                validate_provider_model(ctx.user_email, spec.provider, spec.model)
+                validate_provider_model(ctx.owner.email, spec.provider, spec.model)
             except ValueError:
                 issues.append(BlueprintIssue(
                     path=f"{path}.model",
@@ -573,7 +571,7 @@ class AgentKind(ManagedKind[AgentSpec]):
             try:
                 service.check_install(
                     skill_id=entry.id,
-                    user_email=ctx.user_email,
+                    user_email=ctx.owner.email,
                     raw_config=config,
                     enabled=entry.enabled,
                     available_to=skill_audience(entry),

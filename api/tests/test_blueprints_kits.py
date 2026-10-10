@@ -26,6 +26,10 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.repository import AgentSkillRepository
 from tests.mock_data import TEST_USER_EMAIL, kb_fields, owner_ids
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 SITE_AGENT = example_yaml("site-agent") or ""
 PARAMS = {"site_url": "https://acme.example", "business_name": "Acme"}
@@ -43,7 +47,7 @@ def account(monkeypatch, dynamodb_table) -> None:
 
 
 def deploy(text: str, kit_id: str | None = None, params: dict | None = None) -> Deployed:
-    outcome = deploy_blueprint(text, PARAMS if params is None else params, TEST_USER_EMAIL, BackgroundTasks(), kit_id=kit_id)
+    outcome = deploy_blueprint(text, PARAMS if params is None else params, TEST_OWNER, BackgroundTasks(), kit_id=kit_id)
     assert isinstance(outcome, Deployed), outcome
     return outcome
 
@@ -59,9 +63,9 @@ def linked(agent_id: str) -> set[str]:
 
 
 def plan_next(text: str, kit_id: str):
-    kit = KitRepository().find(TEST_USER_EMAIL, kit_id)
+    kit = KitRepository().find(TEST_OWNER.account_id, kit_id)
     validated = validate_blueprint(text, PARAMS)
-    return validated, plan_blueprint(validated, TEST_USER_EMAIL, declared(kit))
+    return validated, plan_blueprint(validated, TEST_OWNER, declared(kit))
 
 
 # --- A kit and its versions ----------------------------------------------------------------------
@@ -89,7 +93,7 @@ def test_leaving_out_a_link_takes_it_away_but_never_what_the_kit_didnt_declare()
     kit = deploy(SITE_AGENT).kit
     agent_id, site_kb = kit.resources["assistant"].id, kit.resources["site_kb"].id
     docs = KnowledgeBaseRepository().save(KnowledgeBase(name="Docs", **kb_fields(TEST_USER_EMAIL)))
-    AgentKnowledgeBaseRepository().link(agent_id, docs.kb_id, TEST_USER_EMAIL)  # from the dashboard
+    AgentKnowledgeBaseRepository().link(agent_id, docs.kb_id, TEST_OWNER.user_id)  # from the dashboard
 
     without = edited(SITE_AGENT, lambda r: r["assistant"].update(knowledge_bases=[]))
     result = deploy(without, kit.kit_id)
@@ -134,7 +138,7 @@ def test_a_knowledge_base_used_outside_the_kit_isnt_deleted_with_it():
         update={"agent_id": "outsider", "agent_name": "Outsider"}
     )
     AgentRepository().save(other)
-    AgentKnowledgeBaseRepository().link("outsider", kit.resources["site_kb"].id, TEST_USER_EMAIL)
+    AgentKnowledgeBaseRepository().link("outsider", kit.resources["site_kb"].id, TEST_OWNER.user_id)
     without_kb = edited(SITE_AGENT, lambda r: (r.pop("site_kb"), r["assistant"].update(knowledge_bases=[])))
     document = yaml.safe_load(without_kb)
     document["outputs"].pop("crawl_job_id", None)
@@ -193,11 +197,11 @@ def test_rolling_back_plans_the_earlier_version_and_applies_only_that_plan():
     with_canvas = edited(SITE_AGENT, lambda r: r["assistant"]["skills"].append({"id": "html_canvas"}))
     kit = deploy(with_canvas.replace("short and friendly", "terse"), kit.kit_id).kit
 
-    planned = plan_rollback(TEST_USER_EMAIL, kit.kit_id, 1)
+    planned = plan_rollback(TEST_OWNER.account_id, kit.kit_id, 1)
     assert planned.plan.ok and "uninstall skill html canvas" in planned.plan.removals
-    assert isinstance(apply_kit_plan(planned, TEST_USER_EMAIL, kit.kit_id, "not-that-plan"), Invalid)
+    assert isinstance(apply_kit_plan(planned, TEST_OWNER.account_id, kit.kit_id, "not-that-plan"), Invalid)
 
-    result = apply_kit_plan(planned, TEST_USER_EMAIL, kit.kit_id, planned.plan_id)
+    result = apply_kit_plan(planned, TEST_OWNER.account_id, kit.kit_id, planned.plan_id)
     assert isinstance(result, Deployed)
     assert (result.deployment.action, result.deployment.rolled_back_to, result.kit.current_version) == (
         DeploymentAction.ROLLBACK, 1, 3,
@@ -205,23 +209,23 @@ def test_rolling_back_plans_the_earlier_version_and_applies_only_that_plan():
     assert "short and friendly" in AgentRepository().get(agent_id).agent_persona
     assert {s.skill_id for s in AgentSkillRepository().list_by_agent(agent_id)} == {"lead_capture"}
     # The plan seen before that rollback is stale now: planned again, it has another id.
-    again = plan_rollback(TEST_USER_EMAIL, kit.kit_id, 1)
-    assert isinstance(apply_kit_plan(again, TEST_USER_EMAIL, kit.kit_id, planned.plan_id), Invalid)
+    again = plan_rollback(TEST_OWNER.account_id, kit.kit_id, 1)
+    assert isinstance(apply_kit_plan(again, TEST_OWNER.account_id, kit.kit_id, planned.plan_id), Invalid)
 
 
 def test_removing_a_kit_deletes_everything_it_holds():
     kit = deploy(SITE_AGENT).kit
     agent_id, kb_id = kit.resources["assistant"].id, kit.resources["site_kb"].id
-    planned = plan_kit_removal(TEST_USER_EMAIL, kit.kit_id)
+    planned = plan_kit_removal(TEST_OWNER.account_id, kit.kit_id)
     assert {step.action for step in planned.plan.steps} == {"remove"}
 
-    result = apply_kit_plan(planned, TEST_USER_EMAIL, kit.kit_id, planned.plan_id)
+    result = apply_kit_plan(planned, TEST_OWNER.account_id, kit.kit_id, planned.plan_id)
     assert isinstance(result, Deployed) and result.deployment.status == DeploymentStatus.APPLIED
     assert (result.kit.status, result.kit.resources) == (KitStatus.REMOVED, {})
     assert AgentRepository().get(agent_id) is None
     assert KnowledgeBaseRepository().find_in_account(owner_ids(TEST_USER_EMAIL)[0], kb_id).status == KnowledgeBaseStatus.DELETED
     with pytest.raises(KitError, match="removed"):
-        plan_kit_removal(TEST_USER_EMAIL, kit.kit_id)
+        plan_kit_removal(TEST_OWNER.account_id, kit.kit_id)
 
 
 # --- Failures --------------------------------------------------------------------------------------
@@ -268,8 +272,8 @@ def test_the_approval_and_the_drawing_call_out_removals():
 
 
 def test_a_kit_that_isnt_the_persons_cant_be_deployed_to():
-    assert isinstance(deploy_blueprint(SITE_AGENT, PARAMS, TEST_USER_EMAIL, kit_id="nope"), Invalid)
-    blocked = deploy_blueprint(SITE_AGENT, {**PARAMS, "provider": "OpenAI"}, TEST_USER_EMAIL)
+    assert isinstance(deploy_blueprint(SITE_AGENT, PARAMS, TEST_OWNER, kit_id="nope"), Invalid)
+    blocked = deploy_blueprint(SITE_AGENT, {**PARAMS, "provider": "OpenAI"}, TEST_OWNER)
     assert isinstance(blocked, Blocked)
 
 

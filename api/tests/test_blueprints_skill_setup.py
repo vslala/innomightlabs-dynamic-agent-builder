@@ -23,6 +23,10 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.repository import AgentSkillRepository
 from tests.mock_data import TEST_USER_EMAIL, agent_fields
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 TEAM = example_yaml("agent-team") or ""
 SITE_AGENT = example_yaml("site-agent") or ""
@@ -42,13 +46,13 @@ def account(monkeypatch, dynamodb_table) -> None:
 
 def plan_for(text: str, params: dict | None = None):
     validated = validate_blueprint(text, params or {})
-    return validated, plan_blueprint(validated, TEST_USER_EMAIL)
+    return validated, plan_blueprint(validated, TEST_OWNER)
 
 
 def build(text: str, params: dict | None = None):
     validated, plan = plan_for(text, params)
     assert plan.ok, plan.blockers
-    return plan, apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
+    return plan, apply_blueprint(validated, plan, TEST_OWNER, BackgroundTasks())
 
 
 # --- Tiers -------------------------------------------------------------------------------------
@@ -116,7 +120,7 @@ def test_the_drawing_wires_the_lead_to_its_specialist(account):
 
 def test_an_exported_lead_plans_as_unchanged(account):
     _, built = build(TEAM)
-    exported = export_agent(built.resources["lead"].id, TEST_USER_EMAIL)
+    exported = export_agent(built.resources["lead"].id, TEST_OWNER)
     _, plan = plan_for(exported or "")
     assert plan.ok and not plan.changes_anything
 
