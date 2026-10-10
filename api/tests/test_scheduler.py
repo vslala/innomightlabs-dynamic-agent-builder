@@ -29,7 +29,11 @@ from src.scheduler.repository import ScheduleRunAlreadyExists, SchedulerReposito
 from src.scheduler import runtime as scheduler_runtime_module
 from src.scheduler.runtime import CRAWL_JOB_REAPER_ID, DREAM_RUN_REAPER_ID, SchedulerRuntime
 from src.scheduler.service import SchedulerService
-from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversation_fields
+from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversation_fields, schedule_fields
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 
 class FakeSchedulerBackend:
@@ -73,7 +77,7 @@ def test_cron_rejects_invalid_shape():
 def test_scheduler_repository_saves_schedule_lookup_items(dynamodb_table):
     repository = SchedulerRepository()
     schedule = Schedule(
-        owner_email=TEST_USER_EMAIL,
+        **schedule_fields(TEST_USER_EMAIL),
         name="Wake agent",
         cron_expression="*/5 * * * *",
         target_type=ScheduleTargetType.AGENT_MESSAGE,
@@ -88,7 +92,7 @@ def test_scheduler_repository_saves_schedule_lookup_items(dynamodb_table):
 
     repository.save_schedule(schedule)
 
-    assert repository.find_schedule(TEST_USER_EMAIL, schedule.schedule_id) is not None
+    assert repository.find_schedule(TEST_OWNER.account_id, schedule.schedule_id) is not None
     assert dynamodb_table.get_item(
         Key={"pk": "Agent#agent-1", "sk": f"Schedule#{schedule.schedule_id}"}
     ).get("Item")
@@ -101,7 +105,7 @@ def test_scheduler_repository_updates_schedule_with_same_lookup_key(dynamodb_tab
     repository = SchedulerRepository()
     schedule = Schedule(
         schedule_id="schedule-1",
-        owner_email=TEST_USER_EMAIL,
+        **schedule_fields(TEST_USER_EMAIL),
         name="Initial",
         cron_expression="*/5 * * * *",
         target_type=ScheduleTargetType.AUTOMATION_RUN,
@@ -122,7 +126,7 @@ def test_scheduler_repository_updates_schedule_with_same_lookup_key(dynamodb_tab
 
     repository.save_schedule(schedule)
 
-    saved = repository.find_schedule(TEST_USER_EMAIL, "schedule-1")
+    saved = repository.find_schedule(TEST_OWNER.account_id, "schedule-1")
     assert saved is not None
     assert saved.name == "Updated"
     assert saved.target["input"] == {"source": "updated"}
@@ -131,7 +135,7 @@ def test_scheduler_repository_updates_schedule_with_same_lookup_key(dynamodb_tab
 def test_scheduler_repository_lists_active_schedules_from_gsi(dynamodb_table):
     repository = SchedulerRepository()
     active_schedule = Schedule(
-        owner_email=TEST_USER_EMAIL,
+        **schedule_fields(TEST_USER_EMAIL),
         name="Active",
         cron_expression="*/5 * * * *",
         target_type=ScheduleTargetType.AGENT_MESSAGE,
@@ -140,7 +144,7 @@ def test_scheduler_repository_lists_active_schedules_from_gsi(dynamodb_table):
         next_run_at=datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc),
     )
     paused_schedule = Schedule(
-        owner_email=TEST_USER_EMAIL,
+        **schedule_fields(TEST_USER_EMAIL),
         name="Paused",
         cron_expression="*/5 * * * *",
         target_type=ScheduleTargetType.AGENT_MESSAGE,
@@ -164,7 +168,7 @@ def test_scheduler_repository_run_idempotency(dynamodb_table):
     run = ScheduleRun(
         run_id=ScheduleRun.deterministic_run_id("schedule-1", scheduled_for),
         schedule_id="schedule-1",
-        owner_email=TEST_USER_EMAIL,
+        account_id=TEST_OWNER.account_id,
         scheduled_for=scheduled_for,
         status=ScheduleRunStatus.RUNNING,
         target_type=ScheduleTargetType.AUTOMATION_RUN,
@@ -187,19 +191,19 @@ def test_scheduler_service_uses_backend_and_repository(dynamodb_table):
             target_type=ScheduleTargetType.AUTOMATION_RUN,
             target={"automation_id": "automation-1", "input": {"task": "cleanup"}},
         ),
-        owner_email=TEST_USER_EMAIL,
-        created_by=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
+        created_by=TEST_OWNER.user_id,
     )
 
     assert backend.upserts == [schedule.schedule_id]
-    assert service.get_schedule(schedule.schedule_id, TEST_USER_EMAIL).target["automation_id"] == "automation-1"
+    assert service.get_schedule(schedule.schedule_id, TEST_OWNER).target["automation_id"] == "automation-1"
 
 
 @pytest.mark.asyncio
 async def test_scheduler_runtime_registers_active_schedules_on_start(dynamodb_table):
     repository = SchedulerRepository()
     schedule = Schedule(
-        owner_email=TEST_USER_EMAIL,
+        **schedule_fields(TEST_USER_EMAIL),
         name="Active",
         cron_expression="*/5 * * * *",
         target_type=ScheduleTargetType.AGENT_MESSAGE,
@@ -254,7 +258,7 @@ async def test_scheduler_runtime_dispatch_uses_current_tick_not_mutable_next_run
 ):
     repository = SchedulerRepository()
     schedule = Schedule(
-        owner_email=TEST_USER_EMAIL,
+        **schedule_fields(TEST_USER_EMAIL),
         name="Active",
         cron_expression="0 8 * * *",
         target_type=ScheduleTargetType.AGENT_MESSAGE,
@@ -270,11 +274,11 @@ async def test_scheduler_runtime_dispatch_uses_current_tick_not_mutable_next_run
         def __init__(self, repository: SchedulerRepository):
             self.repository = repository
 
-        async def dispatch(self, *, schedule_id: str, owner_email: str, scheduled_for: datetime):
+        async def dispatch(self, *, schedule_id: str, account_id: str, scheduled_for: datetime):
             calls.append(
                 {
                     "schedule_id": schedule_id,
-                    "owner_email": owner_email,
+                    "account_id": account_id,
                     "scheduled_for": scheduled_for,
                 }
             )
@@ -284,12 +288,12 @@ async def test_scheduler_runtime_dispatch_uses_current_tick_not_mutable_next_run
     monkeypatch.setattr("src.scheduler.dispatcher.SchedulerDispatcher", CapturingDispatcher)
 
     runtime = SchedulerRuntime(repository=repository)
-    await runtime._dispatch_job(schedule.schedule_id, TEST_USER_EMAIL)
+    await runtime._dispatch_job(schedule.schedule_id, TEST_OWNER.account_id)
 
     assert calls == [
         {
             "schedule_id": schedule.schedule_id,
-            "owner_email": TEST_USER_EMAIL,
+            "account_id": TEST_OWNER.account_id,
             "scheduled_for": fired_at,
         }
     ]
@@ -307,8 +311,8 @@ async def test_scheduler_dispatcher_records_duplicate_as_skipped(dynamodb_table)
             target_type=ScheduleTargetType.AUTOMATION_RUN,
             target={"automation_id": "automation-1", "input": {}},
         ),
-        owner_email=TEST_USER_EMAIL,
-        created_by=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
+        created_by=TEST_OWNER.user_id,
     )
     dispatcher = SchedulerDispatcher(
         repository=repository,
@@ -319,12 +323,12 @@ async def test_scheduler_dispatcher_records_duplicate_as_skipped(dynamodb_table)
 
     first = await dispatcher.dispatch(
         schedule_id=schedule.schedule_id,
-        owner_email=TEST_USER_EMAIL,
+        account_id=TEST_OWNER.account_id,
         scheduled_for=scheduled_for,
     )
     second = await dispatcher.dispatch(
         schedule_id=schedule.schedule_id,
-        owner_email=TEST_USER_EMAIL,
+        account_id=TEST_OWNER.account_id,
         scheduled_for=scheduled_for,
     )
 
@@ -365,8 +369,8 @@ async def test_scheduler_dispatcher_invokes_agent_message_target(dynamodb_table,
                 "actor_id": "user-1",
             },
         ),
-        owner_email=TEST_USER_EMAIL,
-        created_by=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
+        created_by=TEST_OWNER.user_id,
     )
     captured: dict[str, object] = {}
 
@@ -391,7 +395,7 @@ async def test_scheduler_dispatcher_invokes_agent_message_target(dynamodb_table,
 
     run = await dispatcher.dispatch(
         schedule_id=schedule.schedule_id,
-        owner_email=TEST_USER_EMAIL,
+        account_id=TEST_OWNER.account_id,
         scheduled_for=schedule.next_run_at,
     )
 
@@ -417,12 +421,12 @@ async def test_scheduler_dispatcher_invokes_automation_run_target(dynamodb_table
     automation_service = AutomationService(repo=AutomationRepository())
     automation_graph = automation_service.create_automation(
         CreateAutomationRequest(title="Scheduled automation"),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
     automation_service.update_automation(
         automation_graph.automation.automation_id,
         UpdateAutomationRequest(status=AutomationStatus.ACTIVE),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
     schedule = scheduler_service.create_schedule(
         CreateScheduleRequest(
@@ -434,25 +438,22 @@ async def test_scheduler_dispatcher_invokes_automation_run_target(dynamodb_table
                 "input": {"source": "scheduler"},
             },
         ),
-        owner_email=TEST_USER_EMAIL,
-        created_by=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
+        created_by=TEST_OWNER.user_id,
     )
     assert schedule.next_run_at is not None
     dispatcher = SchedulerDispatcher(repository=repository, service=scheduler_service)
 
     run = await dispatcher.dispatch(
         schedule_id=schedule.schedule_id,
-        owner_email=TEST_USER_EMAIL,
+        account_id=TEST_OWNER.account_id,
         scheduled_for=schedule.next_run_at,
     )
 
     assert run.status == ScheduleRunStatus.SUCCEEDED
     assert run.output["automation_id"] == automation_graph.automation.automation_id
     assert run.output["status"] == "succeeded"
-    automation_run = AutomationRepository().find_run_by_id(
-        run.output["automation_run_id"],
-        TEST_USER_EMAIL,
-    )
+    automation_run = AutomationRepository().find_run_by_id(run.output["automation_run_id"])
     assert automation_run is not None
     assert automation_run.context["input"] == {"source": "scheduler"}
     assert automation_run.context["trigger"]["type"] == "schedule"

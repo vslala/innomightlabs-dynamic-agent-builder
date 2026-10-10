@@ -426,6 +426,68 @@ through the principal, and leaves the suite green.
     access, isolation across accounts, an agent reading a shared KB only while the share lasts, and
     deletion forgetting shares.
 
+**Slice 4: automations and schedules (done)**
+- **Automations.** An `Automation` is at `Account#{aid}/Automation#{id}`, with `account_id` and
+  `owner_id`. `created_by` is a user_id.
+  - Nodes, edges, triggers, skills, runs and node results stay under `Automation#{id}` and
+    `AutomationRun#{run_id}`.
+  - `AutomationSkill.enabled_by` becomes a user_id.
+  - The run lookup moves from `User#{email}/AutomationRun#{id}` to `AutomationRun#{id}/Run`.
+    `find_run_by_id(run_id)` needs no owner, and every caller checks the run belongs to the automation
+    it authorized.
+- **Runs as its owner.** Services take an `Owner` (`AutomationService`, `AutomationRunner`, validation,
+  trigger lifecycle, marketplace). Routes pass `owner_of_automation(automation)`, so an editor's changes
+  and a shared member's test run use the owner's agents, connectors and settings.
+  - A run's conversation is in the owner's partition, and `run.created_by` is the owner.
+  - An agent step may use the owner's own agents, or agents shared with them (`usable_agent`,
+    `agents:Chat`). The agent runs as its own owner, and the automation's owner is the actor
+    (`member` when they differ).
+- **Route helpers** in `api/src/automations/access.py`: `require_automation`, `automation_with(action)`,
+  `access_to`, `visible_automations` and `owner_of_automation`. The module registers the `automation`
+  share resolver.
+- **Actions per route.**
+
+  | Route | Action |
+  | --- | --- |
+  | create, marketplace import | `automations:Create` |
+  | get | `automations:Describe` |
+  | update, graph, nodes, edges, triggers, skills (any write) | `automations:Update` |
+  | delete | `automations:Delete` (it also forgets the automation's shares) |
+  | test run | `automations:Run` |
+  | graph, action catalog, smart-value preview, triggers, skills, runs (reads) | `automations:Get` |
+  | marketplace publish | `automations:Share` |
+- **Async run payload.** `automation_run` carries `account_id` instead of `user_email`. The Lambda
+  finds the automation in that account and runs as its owner.
+- **Schedules.** A `Schedule` is at `Account#{aid}/Schedule#{id}`, with `account_id` and `owner_id`
+  (the member it runs as).
+  - `created_by` is whoever set it up: a user_id, or the chat actor's id when an agent's skill did it.
+  - `SchedulerService` takes an `Owner`. `get_schedule` only finds the member's own schedules.
+  - Schedule lookups (`Agent#`, `Conversation#`, `Automation#`), `ScheduleRun` and the in-process job
+    args carry `account_id` instead of `owner_email`.
+  - Executors get the owner from `owner_of_schedule`, through `owner_id`.
+  - The due index (`ScheduleDue#active`) is unchanged.
+- **The scheduler skill** gets its owner from the run context. In an automation run the runner now puts
+  `account_id` and `owner_id` in the skill context. In an agent's chat it is the agent's owner, found
+  through the context's `agent_id`.
+  - An argument never decides the owner, so a model naming another agent can't create a schedule in
+    someone else's account. The executor checks the target agent with `usable_agent`.
+- **Dream schedules** are created as the agent owner's, in the agent's account. Their ids and target
+  `user_id` stay email-based until the memory slice.
+- **`/schedules`** lists and manages the caller's own schedules in the active account.
+- **Marketplace.**
+  - Templates record `publisher_user_id` and `publisher_account_id` instead of `publisher_user_email`.
+  - Archiving checks `publisher_user_id`. Republishing finds the previous version by `publisher_user_id`.
+  - Import sessions move to `Account#{aid}#Member#{uid}`.
+- **Not done here.** Account deletion still doesn't remove automations or schedules. It never did, and
+  it's left for offboarding (KAN-83).
+- **SPA.** `AutomationResponse` gains `account_id`, `owner_id` and `access`. The list shows "Shared
+  with you" or "Admin view".
+- **Tests.**
+  - `test_owner()`, `automation_fields(email)` and `schedule_fields(email)` build test ownership.
+  - `tests/test_automation_access.py` covers private by default, viewer and user shares, a shared
+    member's test run running as the owner, admin metadata-only access, isolation across accounts,
+    deletion forgetting shares, and schedules being each member's own.
+
 ## Context and problem
 
 ### How it works today

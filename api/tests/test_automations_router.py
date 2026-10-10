@@ -68,10 +68,10 @@ def test_list_runs_requires_owner_scoped_automation(test_client, auth_headers):
 def test_test_run_returns_accepted_run_id(test_client, auth_headers, monkeypatch):
     dispatched = {}
 
-    def fake_invoke(run_id: str, automation_id: str, user_email: str) -> None:
+    def fake_invoke(run_id: str, automation_id: str, owner) -> None:
         dispatched["run_id"] = run_id
         dispatched["automation_id"] = automation_id
-        dispatched["user_email"] = user_email
+        dispatched["owner_email"] = owner.email
 
     monkeypatch.setattr("src.automations.router.invoke_automation_run_async", fake_invoke)
 
@@ -96,8 +96,8 @@ def test_test_run_returns_accepted_run_id(test_client, auth_headers, monkeypatch
     assert dispatched == {
         "run_id": payload["run_id"],
         "automation_id": automation_id,
-        "user_email": TEST_USER_EMAIL,
-    }
+        "owner_email": TEST_USER_EMAIL,
+    }, "it runs as the automation's owner"
 
     detail_response = test_client.get(
         f"/automations/{automation_id}/runs/{payload['run_id']}",

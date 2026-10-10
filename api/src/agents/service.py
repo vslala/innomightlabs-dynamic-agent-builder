@@ -48,7 +48,7 @@ class AgentService:
         if saved_agent.agent_architecture == "krishna-memgpt":
             dream_settings = DreamRepository().find_settings(owner.email)
             if dream_settings:
-                DreamService().ensure_schedule(saved_agent.agent_id, owner.email, owner.email, dream_settings)
+                DreamService().ensure_schedule(saved_agent.agent_id, owner.email, owner, dream_settings)
         log.info(f"Created agent '{saved_agent.agent_name}' (id={saved_agent.agent_id}) for {owner.user_id}")
         return saved_agent
 
@@ -56,7 +56,8 @@ class AgentService:
         """Delete an agent with its dream schedule, shares, keys and media. The caller has authorized it.
         `owner_email` is the agent owner's, which dream schedules are still keyed by."""
         agent_id = agent.agent_id
-        DreamService().delete_schedule(agent_id, owner_email, owner_email)
+        owner = Owner(account_id=agent.account_id, user_id=agent.owner_id, email=owner_email)
+        DreamService().delete_schedule(agent_id, owner_email, owner)
         self.repository.delete(agent.account_id, agent_id)
         ShareService().forget_resource(agent.account_id, "agent", agent_id)
         SecretKeyRepository().delete_all_by_agent(agent_id)

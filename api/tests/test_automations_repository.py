@@ -9,19 +9,15 @@ from src.automations.models import (
     AutomationTrigger,
 )
 from src.automations.repository import AutomationRepository
-from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2
+from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, automation_fields, owner_ids
 
 
 def test_save_and_find_automation_by_owner(automation_repository):
-    automation = Automation(title="Customer Follow-up", created_by=TEST_USER_EMAIL)
+    automation = Automation(title="Customer Follow-up", **automation_fields(TEST_USER_EMAIL))
     automation_repository.save_automation(automation)
 
-    found = automation_repository.find_automation_by_id(
-        automation.automation_id, TEST_USER_EMAIL
-    )
-    other_user = automation_repository.find_automation_by_id(
-        automation.automation_id, TEST_USER_EMAIL_2
-    )
+    found = automation_repository.find_in_account(owner_ids(TEST_USER_EMAIL)[0], automation.automation_id)
+    other_user = automation_repository.find_in_account(owner_ids(TEST_USER_EMAIL_2)[0], automation.automation_id)
 
     assert found is not None
     assert found.title == "Customer Follow-up"
@@ -30,7 +26,7 @@ def test_save_and_find_automation_by_owner(automation_repository):
 
 def test_save_and_replace_graph(automation_repository):
     automation = automation_repository.save_automation(
-        Automation(title="Workflow", created_by=TEST_USER_EMAIL)
+        Automation(title="Workflow", **automation_fields(TEST_USER_EMAIL))
     )
     start = AutomationNode(automation_id=automation.automation_id, type="start", name="Start")
     final = AutomationNode(automation_id=automation.automation_id, type="final", name="Done")
@@ -163,7 +159,7 @@ def test_save_and_find_run_details(automation_repository):
     automation_repository.save_run(run)
     automation_repository.save_node_result(result)
 
-    found = automation_repository.find_run_by_id(run.run_id, TEST_USER_EMAIL)
+    found = automation_repository.find_run_by_id(run.run_id)
     results = automation_repository.find_node_results(run.run_id)
 
     assert found is not None

@@ -8,20 +8,20 @@ from src.automations.models import (
     AutomationRunNodeResult,
     AutomationTrigger,
 )
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, automation_fields
 
 
 def test_automation_dynamo_round_trip():
     automation = Automation(
         title="Customer Follow-up",
         description="Draft a reply",
-        created_by=TEST_USER_EMAIL,
+        **automation_fields(TEST_USER_EMAIL),
     )
 
     hydrated = Automation.from_dynamo_item(automation.to_dynamo_item())
 
     assert hydrated.automation_id == automation.automation_id
-    assert hydrated.pk == f"User#{TEST_USER_EMAIL}"
+    assert hydrated.pk == f"Account#{automation.account_id}"
     assert hydrated.sk == f"Automation#{automation.automation_id}"
     assert hydrated.status == "draft"
 
@@ -77,7 +77,7 @@ def test_run_and_node_result_round_trip():
     response = hydrated_run.to_response()
     assert response.current_node_id == "node-1"
     assert response.heartbeat_timeout_seconds == 900
-    assert run.to_owner_lookup_item()["sk"] == f"AutomationRun#{run.run_id}"
+    assert (run.to_lookup_item()["pk"], run.to_lookup_item()["sk"]) == (f"AutomationRun#{run.run_id}", "Run")
     assert AutomationRunNodeResult.from_dynamo_item(
         result.to_dynamo_item()
     ).message_ids == result.message_ids

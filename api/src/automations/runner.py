@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, TypeVar
 
-from src.accounts.owner import personal_owner
-from src.agents.access import owned_agent
+from src.accounts.owner import Owner
+from src.agents.access import owner_of, usable_agent
 from src.agents.architectures import get_agent_architecture
 from src.agents.repository import AgentRepository
 from src.automations.models import (
@@ -52,7 +52,7 @@ class NodeExecutionContext:
     node: AutomationNode
     run: AutomationRun
     conversation: AutomationConversation
-    user_email: str
+    owner: Owner
     started_at: datetime
 
 
@@ -115,17 +115,17 @@ class AutomationRunner:
         graph: AutomationGraph,
         trigger_id: str | None,
         input_data: dict[str, Any],
-        user_email: str,
+        owner: Owner,
     ) -> AutomationRun:
-        run = self.create_test_run(graph, trigger_id, input_data, user_email)
-        return await self.execute_run_graph(graph, run, user_email)
+        run = self.create_test_run(graph, trigger_id, input_data, owner)
+        return await self.execute_run_graph(graph, run, owner)
 
     def create_test_run(
         self,
         graph: AutomationGraph,
         trigger_id: str | None,
         input_data: dict[str, Any],
-        user_email: str,
+        owner: Owner,
     ) -> AutomationRun:
         trigger = self._select_trigger(graph.triggers, trigger_id)
         first_agent_id = self._first_agent_id(graph.nodes)
@@ -143,11 +143,9 @@ class AutomationRunner:
                 "steps": {},
                 "execution": {},
             },
-            created_by=user_email,
+            created_by=owner.user_id,
         )
-        # Automations are still keyed by their owner's email and so personal (KAN-80 moves them):
-        # the run's conversation lives in the owner's partition of their personal account
-        owner = personal_owner(user_email)
+        # The run's conversation is the automation owner's, in its account
         conversation = AutomationConversation(
             title=f"Automation Run: {graph.automation.title}",
             description="Workflow execution",
@@ -165,7 +163,7 @@ class AutomationRunner:
         self,
         graph: AutomationGraph,
         input_data: dict[str, Any],
-        user_email: str,
+        owner: Owner,
         schedule_id: str,
         trigger_id: str | None = None,
     ) -> AutomationRun:
@@ -184,11 +182,9 @@ class AutomationRunner:
                 "steps": {},
                 "execution": {},
             },
-            created_by=user_email,
+            created_by=owner.user_id,
         )
-        # Automations are still keyed by their owner's email and so personal (KAN-80 moves them):
-        # the run's conversation lives in the owner's partition of their personal account
-        owner = personal_owner(user_email)
+        # The run's conversation is the automation owner's, in its account
         conversation = AutomationConversation(
             title=f"Scheduled Automation Run: {graph.automation.title}",
             description="Scheduled workflow execution",
@@ -202,8 +198,8 @@ class AutomationRunner:
         run.conversation_id = saved_conversation.conversation_id
         return self.automation_repo.save_run(run)
 
-    async def execute_run(self, run_id: str, user_email: str) -> AutomationRun:
-        run = self.automation_repo.find_run_by_id(run_id, user_email)
+    async def execute_run(self, run_id: str, owner: Owner) -> AutomationRun:
+        run = self.automation_repo.find_run_by_id(run_id)
         if not run:
             raise AutomationValidationError("Run not found")
         if run.status in {
@@ -214,21 +210,21 @@ class AutomationRunner:
             return run
 
         service = AutomationService(repo=self.automation_repo)
-        graph = service.get_graph(run.automation_id, user_email)
-        service.validate_graph(graph.nodes, graph.edges, graph.triggers, user_email)
-        return await self.execute_run_graph(graph, run, user_email)
+        graph = service.get_graph(run.automation_id, owner)
+        service.validate_graph(graph.nodes, graph.edges, graph.triggers, owner)
+        return await self.execute_run_graph(graph, run, owner)
 
     async def execute_run_graph(
         self,
         graph: AutomationGraph,
         run: AutomationRun,
-        user_email: str,
+        owner: Owner,
     ) -> AutomationRun:
         trigger = self._select_trigger(graph.triggers, run.trigger_id)
         if not run.conversation_id:
             raise AutomationValidationError("Run is missing conversation")
 
-        conversation = self.conversation_repo.find_by_id(run.conversation_id, personal_owner(user_email).member_pk)
+        conversation = self.conversation_repo.find_by_id(run.conversation_id, owner.member_pk)
         if not isinstance(conversation, AutomationConversation):
             raise AutomationValidationError("Run conversation not found")
 
@@ -252,7 +248,7 @@ class AutomationRunner:
                     node=node,
                     run=run,
                     conversation=conversation,
-                    user_email=user_email,
+                    owner=owner,
                 )
                 self.automation_repo.save_node_result(result)
 
@@ -289,7 +285,7 @@ class AutomationRunner:
         node: AutomationNode,
         run: AutomationRun,
         conversation: AutomationConversation,
-        user_email: str,
+        owner: Owner,
     ) -> AutomationRunNodeResult:
         started_at = datetime.now(timezone.utc)
         executor = self._node_executors.get(node.type)
@@ -301,7 +297,7 @@ class AutomationRunner:
                 node=node,
                 run=run,
                 conversation=conversation,
-                user_email=user_email,
+                owner=owner,
                 started_at=started_at,
             )
         )
@@ -338,11 +334,12 @@ class AutomationRunner:
     async def _execute_agent_action(self, ctx: NodeExecutionContext) -> AutomationRunNodeResult:
         node = ctx.node
         run = ctx.run
-        user_email = ctx.user_email
+        owner = ctx.owner
         conversation = ctx.conversation
 
         agent_id = node.config["agent_id"]
-        agent = owned_agent(agent_id, user_email, self.agent_repo)
+        # The automation's owner may use their own agents and those shared with them; an agent runs as its owner
+        agent = usable_agent(owner, agent_id, self.agent_repo)
         if not agent:
             return self._failed_node_result(
                 ctx,
@@ -357,10 +354,10 @@ class AutomationRunner:
                 agent=agent,
                 conversation=conversation,
                 user_message=prompt,
-                owner_email=user_email,
-                actor_email=user_email,
-                actor_id=user_email,
-                actor_kind=ActorKind.OWNER,
+                owner_email=owner_of(agent).email,
+                actor_email=owner.email,
+                actor_id=owner.email,
+                actor_kind=ActorKind.OWNER if agent.owner_id == owner.user_id else ActorKind.MEMBER,
             ),
             heartbeat=lambda: self.run_state.heartbeat(run, current_node_id=node.node_id),
         )
@@ -395,7 +392,7 @@ class AutomationRunner:
         node = ctx.node
         run = ctx.run
         conversation = ctx.conversation
-        user_email = ctx.user_email
+        owner = ctx.owner
         installed_skill_id = str(node.config.get("installed_skill_id", "")).strip()
         skill_id = str(node.config.get("skill_id", "")).strip()
         action_name = str(node.config.get("action", "")).strip()
@@ -436,7 +433,7 @@ class AutomationRunner:
                 input_data=base_input,
                 error="Skill is not available",
             )
-        missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
+        missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.email)
         if missing:
             return self._failed_node_result(
                 ctx,
@@ -459,9 +456,11 @@ class AutomationRunner:
                     arguments=arguments,
                     config=self.automation_repo.get_skill_runtime_config(enabled),
                     context={
-                        "owner_email": user_email,
-                        "actor_email": user_email,
-                        "actor_id": user_email,
+                        "owner_email": owner.email,
+                        "actor_email": owner.email,
+                        "actor_id": owner.email,
+                        "account_id": owner.account_id,
+                        "owner_id": owner.user_id,
                         "conversation_id": conversation.conversation_id,
                         "automation_id": automation.automation_id,
                         "automation_run_id": run.run_id,

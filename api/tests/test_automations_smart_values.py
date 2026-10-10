@@ -27,6 +27,10 @@ from src.automations.validation import GraphValidationMode
 from src.automations.errors import AutomationValidationError
 from tests.mock_data import TEST_USER_EMAIL
 from tests.test_automations_service_validation import make_service
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 
 def make_pointer_context() -> dict:
@@ -342,7 +346,7 @@ def make_incomplete_action_graph(
 
 def graph_for_automation(service, automation_id: str):
     """Rebuild the incomplete graph on top of an automation's real boundary nodes."""
-    existing = service.get_graph(automation_id, TEST_USER_EMAIL)
+    existing = service.get_graph(automation_id, TEST_OWNER)
     start = next(node for node in existing.nodes if node.type == AutomationNodeType.START)
     final = next(node for node in existing.nodes if node.type == AutomationNodeType.FINAL)
     return make_incomplete_action_graph(automation_id, start.node_id, final.node_id)
@@ -379,12 +383,12 @@ def test_draft_mode_allows_unconfigured_action(dynamodb_table):
     nodes, edges, triggers = make_incomplete_action_graph("auto-draft")
 
     service.validate_graph(
-        nodes, edges, triggers, TEST_USER_EMAIL, "auto-draft", mode=GraphValidationMode.DRAFT
+        nodes, edges, triggers, TEST_OWNER, "auto-draft", mode=GraphValidationMode.DRAFT
     )
 
     with pytest.raises(AutomationValidationError):
         service.validate_graph(
-            nodes, edges, triggers, TEST_USER_EMAIL, "auto-draft", mode=GraphValidationMode.STRICT
+            nodes, edges, triggers, TEST_OWNER, "auto-draft", mode=GraphValidationMode.STRICT
         )
 
 
@@ -394,32 +398,32 @@ def test_draft_mode_still_rejects_structural_problems(dynamodb_table):
 
     with pytest.raises(AutomationValidationError, match="unreachable"):
         service.validate_graph(
-            nodes, edges[:1], triggers, TEST_USER_EMAIL, "auto-draft", mode=GraphValidationMode.DRAFT
+            nodes, edges[:1], triggers, TEST_OWNER, "auto-draft", mode=GraphValidationMode.DRAFT
         )
 
     with pytest.raises(AutomationValidationError, match="final node"):
         service.validate_graph(
-            nodes[:2], edges[:1], triggers, TEST_USER_EMAIL, "auto-draft", mode=GraphValidationMode.DRAFT
+            nodes[:2], edges[:1], triggers, TEST_OWNER, "auto-draft", mode=GraphValidationMode.DRAFT
         )
 
 
 def test_save_graph_accepts_incomplete_draft_and_backfills_aliases(dynamodb_table):
     service = make_service()
     created = service.create_automation(
-        CreateAutomationRequest(title="Draft flow"), TEST_USER_EMAIL
+        CreateAutomationRequest(title="Draft flow"), TEST_OWNER
     )
     nodes, edges, _ = graph_for_automation(service, created.automation.automation_id)
 
     saved = service.save_graph(
         created.automation.automation_id,
         save_request(nodes, edges),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
 
     action = next(node for node in saved.nodes if node.type == AutomationNodeType.ACTION)
     assert action.alias == "summarize"
 
-    reloaded = service.get_graph(created.automation.automation_id, TEST_USER_EMAIL)
+    reloaded = service.get_graph(created.automation.automation_id, TEST_OWNER)
     reloaded_action = next(
         node for node in reloaded.nodes if node.type == AutomationNodeType.ACTION
     )
@@ -429,22 +433,22 @@ def test_save_graph_accepts_incomplete_draft_and_backfills_aliases(dynamodb_tabl
 def test_active_automation_rejects_incomplete_save(dynamodb_table):
     service = make_service()
     created = service.create_automation(
-        CreateAutomationRequest(title="Live flow"), TEST_USER_EMAIL
+        CreateAutomationRequest(title="Live flow"), TEST_OWNER
     )
     automation_id = created.automation.automation_id
     service.update_automation(
-        automation_id, UpdateAutomationRequest(status=AutomationStatus.ACTIVE), TEST_USER_EMAIL
+        automation_id, UpdateAutomationRequest(status=AutomationStatus.ACTIVE), TEST_OWNER
     )
     nodes, edges, _ = graph_for_automation(service, automation_id)
 
     with pytest.raises(AutomationValidationError):
-        service.save_graph(automation_id, save_request(nodes, edges), TEST_USER_EMAIL)
+        service.save_graph(automation_id, save_request(nodes, edges), TEST_OWNER)
 
 
 def test_preview_smart_values_uses_latest_run_context(dynamodb_table):
     service = make_service()
     created = service.create_automation(
-        CreateAutomationRequest(title="Preview flow"), TEST_USER_EMAIL
+        CreateAutomationRequest(title="Preview flow"), TEST_OWNER
     )
     automation_id = created.automation.automation_id
 
@@ -461,7 +465,7 @@ def test_preview_smart_values_uses_latest_run_context(dynamodb_table):
     response = service.preview_smart_values(
         automation_id,
         SmartValuePreviewRequest(template="Hi {{ steps.find_senders.output.response_text }}"),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
 
     assert response.rendered == "Hi found 12 senders"
@@ -472,13 +476,13 @@ def test_preview_smart_values_uses_latest_run_context(dynamodb_table):
 def test_preview_smart_values_without_runs(dynamodb_table):
     service = make_service()
     created = service.create_automation(
-        CreateAutomationRequest(title="No runs"), TEST_USER_EMAIL
+        CreateAutomationRequest(title="No runs"), TEST_OWNER
     )
 
     response = service.preview_smart_values(
         created.automation.automation_id,
         SmartValuePreviewRequest(template="{{ input.topic }}"),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
 
     assert response.rendered == ""

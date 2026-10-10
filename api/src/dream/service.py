@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
 
+from src.accounts.owner import Owner
 from src.agents.repository import AgentRepository
 from src.config import settings as app_settings
 from src.conversations.repository import ConversationRepository
@@ -66,7 +67,7 @@ class DreamService:
     def schedule_id_for(agent_id: str, user_id: str) -> str:
         return f"dream:{agent_id}:{user_id}"
 
-    def ensure_schedule(self, agent_id: str, user_id: str, owner_email: str, dream_settings: DreamSettings) -> None:
+    def ensure_schedule(self, agent_id: str, user_id: str, owner: Owner, dream_settings: DreamSettings) -> None:
         schedule_id = self.schedule_id_for(agent_id, user_id)
         enabled = dream_settings.enabled and app_settings.dream_enabled
         request = CreateScheduleRequest(
@@ -81,9 +82,9 @@ class DreamService:
             enabled=enabled,
         )
         try:
-            self.scheduler_service.get_schedule(schedule_id, owner_email)
+            self.scheduler_service.get_schedule(schedule_id, owner)
         except SchedulerValidationError:
-            self.scheduler_service.create_schedule(request, owner_email, owner_email)
+            self.scheduler_service.create_schedule(request, owner, owner.user_id)
             return
         self.scheduler_service.update_schedule(
             schedule_id,
@@ -95,12 +96,12 @@ class DreamService:
                 source_ref=request.source_ref,
                 enabled=enabled,
             ),
-            owner_email,
+            owner,
         )
 
-    def delete_schedule(self, agent_id: str, user_id: str, owner_email: str) -> None:
+    def delete_schedule(self, agent_id: str, user_id: str, owner: Owner) -> None:
         try:
-            self.scheduler_service.delete_schedule(self.schedule_id_for(agent_id, user_id), owner_email)
+            self.scheduler_service.delete_schedule(self.schedule_id_for(agent_id, user_id), owner)
         except SchedulerValidationError:
             pass
 

@@ -357,9 +357,9 @@ async def update_agent(
     dream_service = DreamService()
     dream_settings = DreamRepository().find_settings(owner_email)
     if saved_agent.agent_architecture == "krishna-memgpt" and dream_settings:
-        dream_service.ensure_schedule(saved_agent.agent_id, owner_email, owner_email, dream_settings)
+        dream_service.ensure_schedule(saved_agent.agent_id, owner_email, owner_of(saved_agent), dream_settings)
     elif saved_agent.agent_architecture != "krishna-memgpt":
-        dream_service.delete_schedule(saved_agent.agent_id, owner_email, owner_email)
+        dream_service.delete_schedule(saved_agent.agent_id, owner_email, owner_of(saved_agent))
     log.info(f"Updated agent '{saved_agent.agent_name}' (id={saved_agent.agent_id}) by {principal.user_id}")
 
     return saved_agent.to_response()

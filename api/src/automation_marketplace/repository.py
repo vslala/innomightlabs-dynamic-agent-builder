@@ -68,13 +68,13 @@ class AutomationMarketplaceRepository:
         self,
         *,
         source_automation_id: str,
-        publisher_user_email: str,
+        publisher_user_id: str,
     ) -> MarketplaceAutomationTemplate | None:
         response = self.table.query(
             KeyConditionExpression=Key("pk").eq("MarketplaceAutomation")
             & Key("sk").begins_with("Template#"),
             FilterExpression=Attr("source_automation_id").eq(source_automation_id)
-            & Attr("publisher_user_email").eq(publisher_user_email),
+            & Attr("publisher_user_id").eq(publisher_user_id),
         )
         templates = [
             MarketplaceAutomationTemplate.from_dynamo_item(item)
@@ -104,22 +104,22 @@ class AutomationMarketplaceRepository:
     def find_import_session(
         self,
         *,
-        owner_email: str,
+        partition: str,
         session_id: str,
     ) -> MarketplaceAutomationImportSession | None:
         response = self.table.get_item(
             Key={
-                "pk": f"User#{owner_email}",
+                "pk": partition,
                 "sk": f"AutomationMarketplaceImportSession#{session_id}",
             }
         )
         item = response.get("Item")
         return MarketplaceAutomationImportSession.from_dynamo_item(item) if item else None
 
-    def delete_import_session(self, *, owner_email: str, session_id: str) -> None:
+    def delete_import_session(self, *, partition: str, session_id: str) -> None:
         self.table.delete_item(
             Key={
-                "pk": f"User#{owner_email}",
+                "pk": partition,
                 "sk": f"AutomationMarketplaceImportSession#{session_id}",
             }
         )

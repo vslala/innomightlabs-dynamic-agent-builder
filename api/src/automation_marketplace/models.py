@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
+from src.accounts.owner import member_partition
 from src.automations.models import AutomationNodeType
 from src.form_models import Form, FormInput
 from src.utils.dynamodb import convert_decimals
@@ -90,7 +91,9 @@ class MarketplaceAutomationTemplate(BaseModel):
     skills: list[MarketplaceAutomationSkillTemplate] = Field(default_factory=list)
     import_inputs: list[MarketplaceAutomationImportInput] = Field(default_factory=list)
     source_automation_id: str | None = None
-    publisher_user_email: str | None = None
+    #: Who published it, and from which account (None for InnomightLabs' own templates)
+    publisher_user_id: str | None = None
+    publisher_account_id: str | None = None
     publisher_display_name: str = "InnomightLabs"
     tags: list[str] = Field(default_factory=list)
     status: MarketplaceAutomationStatus = MarketplaceAutomationStatus.DRAFT
@@ -148,7 +151,8 @@ class MarketplaceAutomationTemplate(BaseModel):
             "skills": [skill.model_dump(mode="json") for skill in self.skills],
             "import_inputs": [item.model_dump(mode="json") for item in self.import_inputs],
             "source_automation_id": self.source_automation_id,
-            "publisher_user_email": self.publisher_user_email,
+            "publisher_user_id": self.publisher_user_id,
+            "publisher_account_id": self.publisher_account_id,
             "publisher_display_name": self.publisher_display_name,
             "tags": self.tags,
             "status": self.status.value,
@@ -177,7 +181,8 @@ class MarketplaceAutomationTemplate(BaseModel):
             skills=[MarketplaceAutomationSkillTemplate(**skill) for skill in data.get("skills", [])],
             import_inputs=[MarketplaceAutomationImportInput(**item) for item in data.get("import_inputs", [])],
             source_automation_id=data.get("source_automation_id"),
-            publisher_user_email=data.get("publisher_user_email"),
+            publisher_user_id=data.get("publisher_user_id"),
+            publisher_account_id=data.get("publisher_account_id"),
             publisher_display_name=data.get("publisher_display_name", "InnomightLabs"),
             tags=data.get("tags", []) or [],
             status=MarketplaceAutomationStatus(data.get("status", MarketplaceAutomationStatus.DRAFT.value)),
@@ -272,7 +277,9 @@ IMPORT_SESSION_TTL_MINUTES = 30
 class MarketplaceAutomationImportSession(BaseModel):
     session_id: str = Field(default_factory=lambda: f"automation_import_session_{uuid4().hex}")
     template_id: str
-    owner_email: str
+    #: The member importing, in the account the automation lands in: a session is theirs alone
+    account_id: str
+    owner_id: str
     title: str | None = None
     description: str | None = None
     skill_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
@@ -290,7 +297,7 @@ class MarketplaceAutomationImportSession(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"User#{self.owner_email}"
+        return member_partition(self.account_id, self.owner_id)
 
     @property
     def sk(self) -> str:
@@ -311,7 +318,8 @@ class MarketplaceAutomationImportSession(BaseModel):
             "entity_type": "MarketplaceAutomationImportSession",
             "session_id": self.session_id,
             "template_id": self.template_id,
-            "owner_email": self.owner_email,
+            "account_id": self.account_id,
+            "owner_id": self.owner_id,
             "title": self.title,
             "description": self.description,
             "skill_configs": self.skill_configs,
@@ -328,7 +336,8 @@ class MarketplaceAutomationImportSession(BaseModel):
         return cls(
             session_id=data["session_id"],
             template_id=data["template_id"],
-            owner_email=data["owner_email"],
+            account_id=data["account_id"],
+            owner_id=data["owner_id"],
             title=data.get("title"),
             description=data.get("description"),
             skill_configs=data.get("skill_configs", {}) or {},

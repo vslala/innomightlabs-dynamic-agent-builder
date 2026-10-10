@@ -249,7 +249,7 @@ def handler(event, context):
         "automation_run": {
             "run_id": "...",
             "automation_id": "...",
-            "user_email": "..."
+            "account_id": "..."
         }
     }
 
@@ -319,18 +319,25 @@ def _handle_automation_run(automation_run: dict, context):  # noqa: ARG001
     import asyncio
 
     run_id = automation_run.get("run_id")
-    user_email = automation_run.get("user_email")
+    automation_id = automation_run.get("automation_id")
+    account_id = automation_run.get("account_id")
 
-    if not isinstance(run_id, str) or not isinstance(user_email, str) or not run_id or not user_email:
+    if not all(isinstance(value, str) and value for value in (run_id, automation_id, account_id)):
         log.error("Invalid automation_run payload: %s", automation_run)
         return {"statusCode": 400, "body": "Invalid automation_run payload"}
 
     log.info("Processing async automation run %s", run_id)
 
     try:
+        from src.automations.access import owner_of_automation
+        from src.automations.repository import AutomationRepository
         from src.automations.runner import AutomationRunner
 
-        run = asyncio.run(AutomationRunner().execute_run(run_id, user_email))
+        automation = AutomationRepository().find_in_account(str(account_id), str(automation_id))
+        if automation is None:
+            return {"statusCode": 404, "body": f"Automation {automation_id} not found"}
+        # It runs as the automation's owner, whoever started it
+        run = asyncio.run(AutomationRunner().execute_run(str(run_id), owner_of_automation(automation)))
 
         log.info("Completed automation run %s with status %s", run_id, run.status.value)
         return {

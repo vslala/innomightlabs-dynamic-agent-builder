@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from src.accounts.owner import Owner
 from src.automations.models import (
     Automation,
     AutomationStatus,
@@ -17,7 +18,7 @@ class AutomationTriggerLifecycleService:
     def __init__(self, scheduler_service: SchedulerService | None = None):
         self.scheduler_service = scheduler_service or SchedulerService()
 
-    def sync_trigger(self, automation: Automation, trigger: AutomationTrigger, owner_email: str) -> None:
+    def sync_trigger(self, automation: Automation, trigger: AutomationTrigger, owner: Owner) -> None:
         if trigger.type != AutomationTriggerType.SCHEDULE:
             return
 
@@ -34,7 +35,7 @@ class AutomationTriggerLifecycleService:
             "trigger_id": trigger.trigger_id,
         }
 
-        existing = self.scheduler_service.repository.find_schedule(owner_email, schedule_id)
+        existing = self.scheduler_service.repository.find_schedule(owner.account_id, schedule_id)
         if existing and existing.status == ScheduleStatus.COMPLETED and existing.run_at == config.run_at:
             # Its one run already happened. Saving or re-activating the automation mustn't run it again, or
             # fail because the moment is now in the past; giving the trigger a new run_at schedules it again.
@@ -51,7 +52,7 @@ class AutomationTriggerLifecycleService:
                     source_ref=source_ref,
                     enabled=enabled,
                 ),
-                owner_email,
+                owner,
             )
             return
 
@@ -68,14 +69,14 @@ class AutomationTriggerLifecycleService:
                 source_ref=source_ref,
                 enabled=enabled,
             ),
-            owner_email=owner_email,
-            created_by=owner_email,
+            owner=owner,
+            created_by=owner.user_id,
         )
 
-    def delete_trigger(self, automation_id: str, trigger_id: str, owner_email: str) -> None:
+    def delete_trigger(self, automation_id: str, trigger_id: str, owner: Owner) -> None:
         schedule_id = self.schedule_id_for(automation_id, trigger_id)
         try:
-            self.scheduler_service.delete_schedule(schedule_id, owner_email)
+            self.scheduler_service.delete_schedule(schedule_id, owner)
         except SchedulerValidationError:
             return
 
@@ -83,14 +84,14 @@ class AutomationTriggerLifecycleService:
         self,
         automation_id: str,
         triggers: list[AutomationTrigger],
-        owner_email: str,
+        owner: Owner,
     ) -> None:
         for trigger in triggers:
             if trigger.type != AutomationTriggerType.SCHEDULE:
                 continue
             schedule_id = self.schedule_id_for(automation_id, trigger.trigger_id)
             try:
-                self.scheduler_service.pause_schedule(schedule_id, owner_email)
+                self.scheduler_service.pause_schedule(schedule_id, owner)
             except SchedulerValidationError:
                 continue
 

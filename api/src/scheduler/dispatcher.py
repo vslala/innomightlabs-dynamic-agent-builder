@@ -14,7 +14,7 @@ from src.scheduler.models import (
     ScheduleTargetType,
 )
 from src.scheduler.repository import ScheduleRunAlreadyExists, SchedulerRepository
-from src.scheduler.service import SchedulerService
+from src.scheduler.service import SchedulerService, SchedulerValidationError
 from src.scheduler.executors import (
     AgentScheduledMessageExecutor,
     AutomationScheduledRunExecutor,
@@ -39,14 +39,16 @@ class SchedulerDispatcher:
         self,
         *,
         schedule_id: str,
-        owner_email: str,
+        account_id: str,
         scheduled_for: datetime,
     ) -> ScheduleRun:
-        schedule = self.service.get_schedule(schedule_id, owner_email)
+        schedule = self.repository.find_schedule(account_id, schedule_id)
+        if not schedule:
+            raise SchedulerValidationError("Schedule not found")
         run = ScheduleRun(
             run_id=ScheduleRun.deterministic_run_id(schedule_id, scheduled_for),
             schedule_id=schedule_id,
-            owner_email=owner_email,
+            account_id=account_id,
             scheduled_for=scheduled_for,
             status=ScheduleRunStatus.RUNNING,
             target_type=schedule.target_type,
@@ -113,6 +115,6 @@ class SchedulerDispatcher:
         if schedule.target_type == ScheduleTargetType.DREAM_RUN:
             return {
                 "agent_id": schedule.target.get("agent_id"),
-                "user_id": schedule.target.get("user_id") or schedule.owner_email,
+                "user_id": schedule.target.get("user_id"),
             }
         return {}

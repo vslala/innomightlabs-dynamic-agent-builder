@@ -127,3 +127,19 @@ DYNAMODB_TABLE_SCHEMA = {
     ],
     "BillingMode": "PAY_PER_REQUEST",
 }
+
+
+def test_owner(email: str = TEST_USER_EMAIL):
+    """The seeded person as the `Owner` services take: in their personal account."""
+    return owner_for(email)
+
+
+def automation_fields(email: str = TEST_USER_EMAIL) -> dict:
+    """The ownership fields an `Automation(...)` built in a test needs: like an agent's."""
+    return agent_fields(email)
+
+
+def schedule_fields(email: str = TEST_USER_EMAIL) -> dict:
+    """The fields a `Schedule(...)` built in a test needs: run as `email`, in their personal account."""
+    account_id, user_id = owner_ids(email)
+    return {"account_id": account_id, "owner_id": user_id}

@@ -18,12 +18,15 @@ import {
   Input,
   Label,
   LoadingState,
+  Pill,
   StatusBadge,
   Textarea,
 } from "../../../components/ui";
 import { FieldGroup, Page, PageBody, PageTitle, Stack } from "../../../components/layout";
 import { automationApiService } from "../../../services/automations";
-import type { AutomationResponse, AutomationStatus } from "../../../types/automation";
+import type { AutomationAccess, AutomationResponse, AutomationStatus } from "../../../types/automation";
+
+const ACCESS_BADGES: Partial<Record<AutomationAccess, string>> = { shared: "Shared with you", admin: "Admin view" };
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
@@ -195,6 +198,9 @@ export function AutomationsListPage() {
                       </Link>
                       <div className="automations-row__meta">
                         <StatusBadge status={badgeStatus(automation.status)} label={statusLabel(automation.status)} />
+                        {ACCESS_BADGES[automation.access] && (
+                          <Pill size="sm" variant="secondary">{ACCESS_BADGES[automation.access]}</Pill>
+                        )}
                         <span>v{automation.version}</span>
                         <span>Updated {formatDate(automation.updated_at ?? automation.created_at)}</span>
                       </div>

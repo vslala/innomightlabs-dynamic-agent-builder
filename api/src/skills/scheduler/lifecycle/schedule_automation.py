@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.scheduler.repository import SchedulerRepository
-from src.scheduler.service import SchedulerService
+from src.scheduler.service import SchedulerService, owner_of_schedule
 from src.skills.lifecycle import SkillLifecycleContext
 
 async def on_delete(context: SkillLifecycleContext) -> dict[str, Any]:
@@ -22,7 +22,7 @@ async def on_delete(context: SkillLifecycleContext) -> dict[str, Any]:
             continue
         if automation_node_id and schedule.source_ref.get("automation_node_id") != automation_node_id:
             continue
-        service.delete_schedule(schedule.schedule_id, context.owner_email)
+        service.delete_schedule(schedule.schedule_id, owner_of_schedule(schedule))
         deleted.append(schedule.schedule_id)
 
     return {"deleted": len(deleted), "schedule_ids": deleted}

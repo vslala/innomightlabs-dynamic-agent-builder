@@ -18,8 +18,12 @@ from src.automations.service import AutomationGraph
 from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
-from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversations_of
+from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversations_of, automation_fields
 from src.skills.models import ActorKind
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 
 class SuccessfulArchitecture(AgentArchitecture):
@@ -77,7 +81,7 @@ def build_graph(agent_id: str, include_error_edge: bool = False) -> AutomationGr
     automation = Automation(
         automation_id="auto-1",
         title="Workflow",
-        created_by=TEST_USER_EMAIL,
+        **automation_fields(TEST_USER_EMAIL),
     )
     start = AutomationNode(automation_id="auto-1", node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
@@ -136,7 +140,7 @@ async def test_runner_invokes_agent_and_stores_run_context(dynamodb_table, monke
         agent_repo=AgentRepository(),
         conversation_repo=ConversationRepository(),
     )
-    run = await runner.run_test(build_graph(agent.agent_id), None, {"name": "Ada"}, TEST_USER_EMAIL)
+    run = await runner.run_test(build_graph(agent.agent_id), None, {"name": "Ada"}, TEST_OWNER)
 
     assert run.status == "succeeded"
     assert run.conversation_id is not None
@@ -174,13 +178,13 @@ async def test_runner_creates_pending_run_then_executes_by_id(dynamodb_table, mo
         agent_repo=AgentRepository(),
         conversation_repo=ConversationRepository(),
     )
-    pending = runner.create_test_run(graph, None, {"name": "Ada"}, TEST_USER_EMAIL)
+    pending = runner.create_test_run(graph, None, {"name": "Ada"}, TEST_OWNER)
 
     assert pending.status == "pending"
     assert pending.started_at is None
     assert pending.conversation_id is not None
 
-    completed = await runner.execute_run(pending.run_id, TEST_USER_EMAIL)
+    completed = await runner.execute_run(pending.run_id, TEST_OWNER)
 
     assert completed.status == "succeeded"
     assert completed.started_at is not None
@@ -215,7 +219,7 @@ async def test_runner_follows_error_edge_for_failed_agent(dynamodb_table, monkey
         build_graph(agent.agent_id, include_error_edge=True),
         None,
         {"name": "Ada"},
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
 
     assert run.status == "succeeded"
@@ -227,7 +231,7 @@ async def test_runner_executes_skill_action_and_renders_arguments(dynamodb_table
     automation = Automation(
         automation_id="auto-skill",
         title="Workflow",
-        created_by=TEST_USER_EMAIL,
+        **automation_fields(TEST_USER_EMAIL),
     )
     start = AutomationNode(automation_id="auto-skill", node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
@@ -292,7 +296,7 @@ async def test_runner_executes_skill_action_and_renders_arguments(dynamodb_table
 
     monkeypatch.setattr(runner.skill_service.registry, "execute_action", fake_execute_action)
 
-    run = await runner.run_test(graph, None, {"query": "pricing", "limit": 3}, TEST_USER_EMAIL)
+    run = await runner.run_test(graph, None, {"query": "pricing", "limit": 3}, TEST_OWNER)
 
     assert run.status == "succeeded"
     assert run.context["nodes"]["search"]["output"]["result"] == {"ok": True}

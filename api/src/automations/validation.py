@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Protocol
 
-from src.agents.access import owned_agent
+from src.accounts.owner import Owner
+from src.agents.access import usable_agent
 from src.agents.repository import AgentRepository
 from src.automations.aliases import alias_errors
 from src.automations.errors import AutomationValidationError
@@ -49,13 +50,13 @@ class GraphValidationContext:
     triggers: list[AutomationTrigger]
     node_by_id: dict[str, AutomationNode]
     outgoing: dict[str, list[AutomationEdge]]
-    user_email: str
+    owner: Owner
     automation_id: str
 
 
 @dataclass(frozen=True)
 class ActionValidationContext:
-    user_email: str
+    owner: Owner
     automation_id: str
 
 
@@ -124,7 +125,7 @@ class ActionNodeValidationPolicy:
         validator.validate(
             node.config,
             ActionValidationContext(
-                user_email=ctx.user_email,
+                owner=ctx.owner,
                 automation_id=ctx.automation_id,
             ),
         )
@@ -143,7 +144,7 @@ class InvokeAgentActionValidator:
             raise AutomationValidationError("invoke_agent action requires agent_id")
         if not prompt_template or not isinstance(prompt_template, str):
             raise AutomationValidationError("invoke_agent action requires prompt_template")
-        if not owned_agent(agent_id, ctx.user_email, self.agent_repo):
+        if not usable_agent(ctx.owner, agent_id, self.agent_repo):
             raise AutomationValidationError("invoke_agent action references an unknown agent")
 
 
@@ -155,7 +156,7 @@ class SkillActionValidator:
         skill_registry: SkillRegistry,
         connector_service: ConnectorService,
         resolve_skill: Callable[
-            [str, str | None, str | None, str, bool],
+            [str, str | None, str | None, Owner, bool],
             AutomationSkill | None,
         ],
     ):
@@ -174,7 +175,7 @@ class SkillActionValidator:
             ctx.automation_id,
             skill_config.installed_skill_id,
             skill_config.skill_id,
-            ctx.user_email,
+            ctx.owner,
             True,
         )
         if not enabled or not enabled.enabled:
@@ -188,7 +189,7 @@ class SkillActionValidator:
             raise AutomationValidationError(
                 "skill_action references a skill that is not available for automations"
             )
-        missing = self.connector_service.missing_required_connectors(loaded.manifest, ctx.user_email)
+        missing = self.connector_service.missing_required_connectors(loaded.manifest, ctx.owner.email)
         if missing:
             raise AutomationValidationError(
                 "skill_action requires connected connectors: " + ", ".join(missing)
@@ -221,7 +222,7 @@ class AutomationGraphValidator:
         nodes: list[AutomationNode],
         edges: list[AutomationEdge],
         triggers: list[AutomationTrigger],
-        user_email: str,
+        owner: Owner,
         automation_id: str | None = None,
         mode: GraphValidationMode = GraphValidationMode.STRICT,
     ) -> None:
@@ -244,7 +245,7 @@ class AutomationGraphValidator:
             triggers=triggers,
             node_by_id=node_by_id,
             outgoing=outgoing,
-            user_email=user_email,
+            owner=owner,
             automation_id=automation_id or nodes[0].automation_id,
         )
         for node in nodes:

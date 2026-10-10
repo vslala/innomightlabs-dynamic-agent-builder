@@ -16,7 +16,7 @@ from src.skills.lead_capture.forms import parse_custom_inputs
 from src.skills.lifecycle import SkillLifecycleRunner
 from src.skills.service import SkillRuntimeService, SkillService
 from src.skills.models import ActorKind
-from tests.mock_data import agent_fields, conversation_fields
+from tests.mock_data import agent_fields, conversation_fields, owner_ids
 
 
 def _create_agent_for_user(user_email: str) -> Agent:
@@ -782,7 +782,7 @@ def test_scheduler_skill_creates_conversation_bound_schedule(test_client, auth_h
     assert schedule["target"]["message"] == "Check new leads and summarize any follow-up needed."
     assert schedule["next_run_at"]
 
-    saved = SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule["schedule_id"])
+    saved = SchedulerRepository().find_schedule(owner_ids(TEST_USER_EMAIL)[0], schedule["schedule_id"])
     assert saved is not None
     assert saved.target["conversation_id"] == conversation.conversation_id
 
@@ -839,7 +839,7 @@ def test_scheduler_skill_without_schedule_id_updates_existing_conversation_sched
     assert second["schedule_id"] == first["schedule_id"]
     assert second["name"] == "Updated morning email"
     assert second["target"]["message"] == "Send the updated version."
-    schedules = SchedulerRepository().list_schedules(TEST_USER_EMAIL)
+    schedules = SchedulerRepository().list_schedules(owner_ids(TEST_USER_EMAIL)[0])
     assert [schedule.schedule_id for schedule in schedules if schedule.source_type == "agent_skill"] == [
         first["schedule_id"]
     ]
@@ -870,6 +870,9 @@ def test_scheduler_skill_accepts_agent_id_argument_for_automation_context(dynamo
             config={},
             context={
                 "owner_email": TEST_USER_EMAIL,
+                # An automation run names its owner; the agent comes from the arguments
+                "account_id": owner_ids(TEST_USER_EMAIL)[0],
+                "owner_id": owner_ids(TEST_USER_EMAIL)[1],
                 "actor_email": TEST_USER_EMAIL,
                 "actor_id": TEST_USER_EMAIL,
                 "conversation_id": conversation.conversation_id,
@@ -901,6 +904,8 @@ def test_scheduler_skill_creates_automation_run_schedule(dynamodb_table):
             config={},
             context={
                 "owner_email": TEST_USER_EMAIL,
+                "account_id": owner_ids(TEST_USER_EMAIL)[0],
+                "owner_id": owner_ids(TEST_USER_EMAIL)[1],
                 "actor_email": TEST_USER_EMAIL,
                 "actor_id": TEST_USER_EMAIL,
                 "automation_id": "automation-1",
@@ -932,6 +937,8 @@ def test_scheduler_skill_creates_automation_run_schedule(dynamodb_table):
             config={},
             context={
                 "owner_email": TEST_USER_EMAIL,
+                "account_id": owner_ids(TEST_USER_EMAIL)[0],
+                "owner_id": owner_ids(TEST_USER_EMAIL)[1],
                 "actor_email": TEST_USER_EMAIL,
                 "actor_id": TEST_USER_EMAIL,
                 "automation_id": "automation-1",
@@ -947,7 +954,7 @@ def test_scheduler_skill_creates_automation_run_schedule(dynamodb_table):
     assert updated["schedule"]["target"]["input"] == {"source": "updated"}
     assert [
         schedule.schedule_id
-        for schedule in SchedulerRepository().list_schedules(TEST_USER_EMAIL)
+        for schedule in SchedulerRepository().list_schedules(owner_ids(TEST_USER_EMAIL)[0])
         if schedule.source_type == "automation_skill"
     ] == ["scheduled-workflow"]
 

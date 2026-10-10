@@ -11,6 +11,7 @@ from src.scheduler.models import (
     ScheduleTargetType,
     UpdateScheduleRequest,
 )
+from src.accounts.owner import Owner
 from src.scheduler.service import SchedulerService
 
 
@@ -19,6 +20,22 @@ def _required_context(context: dict[str, Any], key: str) -> str:
     if not value:
         raise ValueError(f"Missing scheduler runtime context: {key}")
     return value
+
+
+def _owner(context: dict[str, Any]) -> Owner:
+    """Whose schedules these are, in which account: an automation run's owner (its context names them), else
+    the owner of the agent the action runs on, the member it runs as."""
+    owner_email = _required_context(context, "owner_email")
+    account_id, owner_id = context.get("account_id"), context.get("owner_id")
+    if account_id and owner_id:
+        return Owner(account_id=str(account_id), user_id=str(owner_id), email=owner_email)
+    from src.agents.access import owner_of
+    from src.agents.repository import AgentRepository
+
+    agent = AgentRepository().get(_required_context(context, "agent_id"))
+    if agent is None:
+        raise ValueError("Missing scheduler runtime context: agent")
+    return owner_of(agent)
 
 
 def _required_argument(arguments: dict[str, Any], key: str) -> str:
@@ -87,7 +104,7 @@ def _automation_input(arguments: dict[str, Any]) -> dict[str, Any]:
 def _find_existing_agent_schedule(
     service: SchedulerService,
     *,
-    owner_email: str,
+    owner: Owner,
     target: dict[str, Any],
     cron_expression: str,
     run_at: datetime | None,
@@ -99,7 +116,7 @@ def _find_existing_agent_schedule(
     normalized_cron = cron_expression.strip()
     normalized_timezone = (timezone or "UTC").strip() or "UTC"
 
-    for schedule in service.list_schedules(owner_email):
+    for schedule in service.list_schedules(owner):
         if schedule.source_type != "agent_skill":
             continue
         if schedule.target_type != ScheduleTargetType.AGENT_MESSAGE:
@@ -125,7 +142,7 @@ async def create_or_update(
 ) -> dict[str, Any]:
     del config
 
-    owner_email = _required_context(context, "owner_email")
+    owner = _owner(context)
     target = _agent_message_target(arguments, context)
     source_ref = {
         "agent_id": target["agent_id"],
@@ -154,12 +171,12 @@ async def create_or_update(
                 source_ref=source_ref,
                 enabled=True,
             ),
-            owner_email,
+            owner,
         )
     else:
         existing = _find_existing_agent_schedule(
             service,
-            owner_email=owner_email,
+            owner=owner,
             target=target,
             cron_expression=cron_expression,
             run_at=run_at,
@@ -177,7 +194,7 @@ async def create_or_update(
                     source_ref=source_ref,
                     enabled=True,
                 ),
-                owner_email,
+                owner,
             )
         else:
             schedule = service.create_schedule(
@@ -192,8 +209,8 @@ async def create_or_update(
                     source_ref=source_ref,
                     enabled=True,
                 ),
-                owner_email=owner_email,
-                created_by=str(context.get("actor_email") or owner_email),
+                owner=owner,
+                created_by=str(context.get("actor_id") or owner.user_id),
             )
 
     return {
@@ -213,7 +230,7 @@ async def schedule_automation(
 ) -> dict[str, Any]:
     del config
 
-    owner_email = _required_context(context, "owner_email")
+    owner = _owner(context)
     automation_id = _required_context(context, "automation_id")
     target = {
         "automation_id": automation_id,
@@ -229,7 +246,7 @@ async def schedule_automation(
     service = SchedulerService()
     schedule_id = _required_argument(arguments, "schedule_id")
 
-    if service.repository.find_schedule(owner_email, schedule_id):
+    if service.repository.find_schedule(owner.account_id, schedule_id):
         schedule = service.update_schedule(
             schedule_id,
             UpdateScheduleRequest(
@@ -240,7 +257,7 @@ async def schedule_automation(
                 source_ref=source_ref,
                 enabled=True,
             ),
-            owner_email,
+            owner,
         )
     else:
         schedule = service.create_schedule(
@@ -255,8 +272,8 @@ async def schedule_automation(
                 source_ref=source_ref,
                 enabled=True,
             ),
-            owner_email=owner_email,
-            created_by=str(context.get("actor_email") or owner_email),
+            owner=owner,
+            created_by=str(context.get("actor_id") or owner.user_id),
         )
 
     return {
@@ -273,7 +290,7 @@ async def pause(
     del config
     schedule = SchedulerService().pause_schedule(
         str(arguments.get("schedule_id") or "").strip(),
-        _required_context(context, "owner_email"),
+        _owner(context),
     )
     return {"schedule": _schedule_response(schedule), "message": "Schedule paused."}
 
@@ -286,7 +303,7 @@ async def resume(
     del config
     schedule = SchedulerService().resume_schedule(
         str(arguments.get("schedule_id") or "").strip(),
-        _required_context(context, "owner_email"),
+        _owner(context),
     )
     return {"schedule": _schedule_response(schedule), "message": "Schedule resumed."}
 
@@ -298,7 +315,7 @@ async def delete(
 ) -> dict[str, Any]:
     del config
     schedule_id = str(arguments.get("schedule_id") or "").strip()
-    SchedulerService().delete_schedule(schedule_id, _required_context(context, "owner_email"))
+    SchedulerService().delete_schedule(schedule_id, _owner(context))
     return {"schedule_id": schedule_id, "deleted": True}
 
 
@@ -308,12 +325,12 @@ async def list_schedules(
     context: dict[str, Any],
 ) -> dict[str, Any]:
     del arguments, config
-    owner_email = _required_context(context, "owner_email")
+    owner = _owner(context)
     agent_id = _required_context(context, "agent_id")
     conversation_id = _required_context(context, "conversation_id")
     schedules = [
         schedule
-        for schedule in SchedulerService().list_schedules(owner_email)
+        for schedule in SchedulerService().list_schedules(owner)
         if schedule.target.get("agent_id") == agent_id
         and schedule.target.get("conversation_id") == conversation_id
     ]

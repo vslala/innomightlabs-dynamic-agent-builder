@@ -95,7 +95,7 @@ class SchedulerRuntime:
             self._dispatch_job,
             trigger=trigger,
             id=schedule.schedule_id,
-            args=[schedule.schedule_id, schedule.owner_email],
+            args=[schedule.schedule_id, schedule.account_id],
             replace_existing=True,
             coalesce=True,
             max_instances=1,
@@ -106,8 +106,8 @@ class SchedulerRuntime:
         if self.scheduler.get_job(schedule_id):
             self.scheduler.remove_job(schedule_id)
 
-    async def _dispatch_job(self, schedule_id: str, owner_email: str) -> None:
-        schedule = self.repository.find_schedule(owner_email, schedule_id)
+    async def _dispatch_job(self, schedule_id: str, account_id: str) -> None:
+        schedule = self.repository.find_schedule(account_id, schedule_id)
         if not schedule:
             self.remove(schedule_id)
             return
@@ -117,7 +117,7 @@ class SchedulerRuntime:
 
         await SchedulerDispatcher(repository=self.repository).dispatch(
             schedule_id=schedule_id,
-            owner_email=owner_email,
+            account_id=account_id,
             scheduled_for=scheduled_for,
         )
 

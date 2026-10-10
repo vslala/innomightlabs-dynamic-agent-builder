@@ -11,7 +11,8 @@ from src.agents.models import Agent, AgentAccess
 from src.agents.repository import AgentRepository
 from src.iam.actions import ResourceRef
 from src.iam.dependencies import get_principal
-from src.iam.principal import Principal
+from src.iam.principal import Principal, load_principal
+from src.iam.service import IamError
 from src.iam.shares import RESOLVERS
 from src.identity import IdentityRepository
 
@@ -80,6 +81,20 @@ def owner_of(agent: Agent) -> Owner:
     if identity is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return Owner(account_id=agent.account_id, user_id=agent.owner_id, email=identity.email)
+
+
+def usable_agent(owner: Owner, agent_id: str, repository: Optional[AgentRepository] = None) -> Optional[Agent]:
+    """The agent, if this member may chat with it in their account: their own, or one shared with them.
+    For what acts as a member without a request (automations, schedules); the agent still runs as its
+    own owner (`owner_of`)."""
+    agent = (repository or AgentRepository()).find_in_account(owner.account_id, agent_id)
+    if agent is None or agent.owner_id == owner.user_id:
+        return agent
+    try:
+        member = load_principal(owner.user_id, owner.account_id)
+    except IamError:  # they have left the account
+        return None
+    return agent if member.can("agents:Chat", agent.resource_ref).allowed else None
 
 
 def owned_agent(agent_id: str, owner_email: str, repository: Optional[AgentRepository] = None) -> Optional[Agent]:

@@ -10,7 +10,7 @@ from fastapi.security import HTTPBearer
 from src.agents.access import owner_of, require_agent
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
-from src.iam.dependencies import get_principal
+from src.iam.dependencies import get_owner, get_principal
 from src.config import settings as app_settings
 from src.dream.models import DreamSettings, DreamSettingsRequest
 from src.dream.repository import DreamRepository, get_dream_repository
@@ -78,7 +78,7 @@ async def save_settings(
     principal = get_principal(request)
     for agent in AgentRepository().list_owned(principal.account_id, principal.user_id):
         if agent.agent_architecture == "krishna-memgpt":
-            service.ensure_schedule(agent.agent_id, request.state.user_email, request.state.user_email, saved)
+            service.ensure_schedule(agent.agent_id, request.state.user_email, get_owner(request), saved)
     return saved
 
 

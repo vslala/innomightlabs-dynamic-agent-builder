@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
@@ -28,7 +28,7 @@ class SchedulerRepository:
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save_schedule(self, schedule: Schedule) -> Schedule:
-        existing = self.find_schedule(schedule.owner_email, schedule.schedule_id)
+        existing = self.find_schedule(schedule.account_id, schedule.schedule_id)
         if existing:
             schedule.created_at = existing.created_at
             schedule.updated_at = datetime.now(timezone.utc)
@@ -46,23 +46,26 @@ class SchedulerRepository:
                 batch.put_item(Item=item)
         return schedule
 
-    def find_schedule(self, owner_email: str, schedule_id: str) -> Optional[Schedule]:
+    def find_schedule(self, account_id: str, schedule_id: str) -> Optional[Schedule]:
         response = self.table.get_item(
-            Key={"pk": f"User#{owner_email}", "sk": f"Schedule#{schedule_id}"}
+            Key={"pk": f"Account#{account_id}", "sk": f"Schedule#{schedule_id}"}
         )
         item = response.get("Item")
         return Schedule.from_dynamo_item(item) if item else None
 
-    def list_schedules(self, owner_email: str) -> list[Schedule]:
-        response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"User#{owner_email}")
-            & Key("sk").begins_with("Schedule#")
-        )
-        schedules = [
-            Schedule.from_dynamo_item(item)
-            for item in response.get("Items", [])
-            if item.get("entity_type") == "Schedule"
-        ]
+    def list_schedules(self, account_id: str) -> list[Schedule]:
+        """Every schedule in the account, whoever it runs as, newest first."""
+        query: dict[str, Any] = {
+            "KeyConditionExpression": Key("pk").eq(f"Account#{account_id}") & Key("sk").begins_with("Schedule#")
+        }
+        items: list[dict[str, Any]] = []
+        while True:
+            response = self.table.query(**query)
+            items.extend(response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                break
+            query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+        schedules = [Schedule.from_dynamo_item(item) for item in items if item.get("entity_type") == "Schedule"]
         schedules.sort(key=lambda item: item.created_at, reverse=True)
         return schedules
 
@@ -88,7 +91,7 @@ class SchedulerRepository:
         for item in response.get("Items", []):
             if item.get("entity_type") != "AutomationScheduleLookup":
                 continue
-            schedule = self.find_schedule(item["owner_email"], item["schedule_id"])
+            schedule = self.find_schedule(item["account_id"], item["schedule_id"])
             if schedule:
                 schedules.append(schedule)
         schedules.sort(key=lambda item: item.created_at, reverse=True)

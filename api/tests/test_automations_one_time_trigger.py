@@ -24,6 +24,10 @@ from src.scheduler.repository import SchedulerRepository
 from src.scheduler.service import SchedulerService
 from tests.mock_data import TEST_USER_EMAIL
 from tests.test_scheduler import FakeSchedulerBackend, FakeScheduleTargetExecutor
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 
 def soon(minutes: int = 30) -> datetime:
@@ -68,7 +72,7 @@ def services(dynamodb_table):
 
 
 def one_time(automations: AutomationService, run_at: datetime) -> tuple[str, str]:
-    graph = automations.create_automation(CreateAutomationRequest(title="Launch announcement"), TEST_USER_EMAIL)
+    graph = automations.create_automation(CreateAutomationRequest(title="Launch announcement"), TEST_OWNER)
     automation_id, trigger = graph.automation.automation_id, graph.triggers[0]
     automations.update_trigger(
         automation_id,
@@ -78,13 +82,13 @@ def one_time(automations: AutomationService, run_at: datetime) -> tuple[str, str
             name="Launch day",
             config={"run_at": run_at.isoformat(), "cron_expression": "", "timezone": "UTC"},
         ),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
     return automation_id, trigger.trigger_id
 
 
 def status(automations: AutomationService, automation_id: str, value: AutomationStatus) -> None:
-    automations.update_automation(automation_id, UpdateAutomationRequest(status=value), TEST_USER_EMAIL)
+    automations.update_automation(automation_id, UpdateAutomationRequest(status=value), TEST_OWNER)
 
 
 async def test_a_one_time_trigger_runs_once_and_survives_being_switched_off_and_on(services):
@@ -94,7 +98,7 @@ async def test_a_one_time_trigger_runs_once_and_survives_being_switched_off_and_
     status(automations, automation_id, AutomationStatus.ACTIVE)
 
     schedule_id = AutomationTriggerLifecycleService.schedule_id_for(automation_id, trigger_id)
-    schedule = schedules.get_schedule(schedule_id, TEST_USER_EMAIL)
+    schedule = schedules.get_schedule(schedule_id, TEST_OWNER)
     assert (schedule.status, schedule.run_at, schedule.next_run_at) == (ScheduleStatus.ACTIVE, run_at, run_at)
 
     dispatcher = SchedulerDispatcher(
@@ -102,13 +106,13 @@ async def test_a_one_time_trigger_runs_once_and_survives_being_switched_off_and_
         service=schedules,
         executors={ScheduleTargetType.AUTOMATION_RUN: FakeScheduleTargetExecutor()},
     )
-    await dispatcher.dispatch(schedule_id=schedule_id, owner_email=TEST_USER_EMAIL, scheduled_for=run_at)
-    assert schedules.get_schedule(schedule_id, TEST_USER_EMAIL).status == ScheduleStatus.COMPLETED
+    await dispatcher.dispatch(schedule_id=schedule_id, account_id=TEST_OWNER.account_id, scheduled_for=run_at)
+    assert schedules.get_schedule(schedule_id, TEST_OWNER).status == ScheduleStatus.COMPLETED
 
     # Switching the automation off and on again neither fails (the moment has passed) nor runs it again.
     status(automations, automation_id, AutomationStatus.DISABLED)
     status(automations, automation_id, AutomationStatus.ACTIVE)
-    assert schedules.get_schedule(schedule_id, TEST_USER_EMAIL).status == ScheduleStatus.COMPLETED
+    assert schedules.get_schedule(schedule_id, TEST_OWNER).status == ScheduleStatus.COMPLETED
 
     # A new moment schedules it again.
     again = soon(90)
@@ -116,9 +120,9 @@ async def test_a_one_time_trigger_runs_once_and_survives_being_switched_off_and_
         automation_id,
         trigger_id,
         UpdateAutomationTriggerRequest(config={"run_at": again.isoformat(), "cron_expression": "", "timezone": "UTC"}),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
-    rescheduled = schedules.get_schedule(schedule_id, TEST_USER_EMAIL)
+    rescheduled = schedules.get_schedule(schedule_id, TEST_OWNER)
     assert (rescheduled.status, rescheduled.next_run_at) == (ScheduleStatus.ACTIVE, again)
 
 
@@ -132,7 +136,7 @@ def test_a_moment_already_past_is_refused_when_the_automation_is_switched_on(ser
         UpdateAutomationTriggerRequest(
             config={"run_at": "2020-01-01T09:00:00+00:00", "cron_expression": "", "timezone": "UTC"}
         ),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
     with pytest.raises(ValueError, match="in the past"):
         status(automations, automation_id, AutomationStatus.ACTIVE)
