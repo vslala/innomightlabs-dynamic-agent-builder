@@ -92,6 +92,38 @@
 - **Not yet.** `Identity.last_account_id` and `PUT /accounts/active` come with the account context
   (KAN-79). The account-deletion Lambda doesn't remove memberships yet; that is KAN-83.
 
+### KAN-76: policy engine (done)
+
+- **Where it lives.** `api/src/iam/`:
+  - `actions.py`: the catalog, `ResourceRef`, `expand` and `describe_action_for`;
+  - `policy.py`: the pydantic document and its validator;
+  - `engine.py`: `evaluate`, `NamedPolicy`, `Share` and `Decision`;
+  - `builtins.py`: the four built-in policies.
+
+  A test checks that these modules import only the standard library and pydantic.
+- **API key verbs are renamed (a change to the catalog).** They are now `apikeys:ListKeys`,
+  `apikeys:CreateKey` and `apikeys:RevokeKey`, not `List`, `Create` and `Revoke`.
+  - The reason: they act on an existing `agent/{id}`. `MemberAccess` and `AdministratorAccess` allow
+    `*:Create` and `*:List` on `*` so that people can create their own resources, and with the old names
+    that would have let any member create a key on someone else's agent, then chat with it through the
+    key.
+  - Skills already had verbs of their own (`Install`, `Configure`, `Uninstall`).
+  - Rule for the catalog: an action on a child of a resource must not reuse a top-level verb.
+- **Resource matching.** `type/*` matches every resource of that type, including the agent actions that
+  name no id (Create and List). Account-wide actions (`iam`, `billing`, `audit` and `account`) use the
+  `account` type and match only `*`.
+- **Validation.** Parsing a `PolicyDocument` validates it and expands the action patterns. Expanding at
+  parse time means a stored `agents:*` picks up actions added later.
+  - Unknown fields are rejected, so `Principal` isn't allowed.
+  - Action patterns can only use letters, `:` and `*`, so `?` and `[...]` aren't allowed.
+  - Resource types must be in the catalog.
+- **Decisions on misuse.** `evaluate` raises `ValueError` when an action doesn't exist or doesn't apply
+  to the resource's type, because that is a bug in a route. For an Allow that came from a share,
+  `Decision.policy` holds the share's grantee.
+- **Built-ins.** The policy names come from the LLD, which wins over the ticket's wording:
+  - the view-only policy is `ViewOnlyAccess` (the ticket says `ReadOnlyAccess`);
+  - the condition is `iml:ResourceOwner` / `${iml:PrincipalId}`.
+
 ## Context and problem
 
 ### How it works today
@@ -270,7 +302,7 @@ declares:
 | `automations` | `Create` M, `List` M, `Describe` M, `Get` C, `Update` C, `Run` C, `Delete` M, `Transfer` M, `Share` M | `automation/{id}` |
 | `kits` | `Create` M, `List` M, `Describe` M, `Get` C, `Apply` C, `Rollback` C, `Delete` M, `Transfer` M, `Share` M | `kit/{id}` |
 | `skills` | `Install` C, `Configure` C, `Uninstall` C | `agent/{id}` (skills are children of an agent) |
-| `apikeys` | `List` M, `Create` C, `Revoke` C | `agent/{id}` |
+| `apikeys` | `ListKeys` M, `CreateKey` C, `RevokeKey` C (renamed in KAN-76, see Implementation notes) | `agent/{id}` |
 | `mcp` | `Create` M, `List` M, `Describe` M, `Get` C, `Update` C, `Link` C, `Delete` M | `mcp-connection/{id}` |
 | `conversations` | `List` M, `Describe` M, `Read` C, `Delete` M | `conversation/{id}` |
 | `iam` | `ListMembers` M, `ListGroups` M, `ListPolicies` M, `Invite` M, `ManageMembers` M, `ManageGroups` M, `ManagePolicies` M, `AttachPolicies` M | `*` |

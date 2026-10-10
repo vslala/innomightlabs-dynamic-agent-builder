@@ -13,7 +13,9 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ADMINISTRATOR_ACCESS = "AdministratorAccess"
+from ..iam.builtins import ADMINISTRATOR_ACCESS as _ADMINISTRATOR_ACCESS
+
+ADMINISTRATOR_ACCESS = _ADMINISTRATOR_ACCESS.name
 
 
 class AccountStatus(str, Enum):
