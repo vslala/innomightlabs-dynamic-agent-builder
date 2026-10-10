@@ -58,6 +58,40 @@
   isn't thread-safe. The test drives the race step by step instead: every racer misses the lookup, one
   transaction wins, and the rest return the winner.
 
+### KAN-75: accounts and memberships (done)
+
+- **New module.** `api/src/accounts/` (models, repository, service, router) holds `Account`, `Member`,
+  `GET /accounts` and `POST /accounts`.
+- **One transaction per account.** `AccountRepository.create` writes four items in one
+  `TransactWriteItems`:
+  - the Account;
+  - its first Member;
+  - an `Attachment#member#{uid}#AdministratorAccess` item;
+  - the `OwnedAccountCount` increment.
+
+  The increment has no condition yet. KAN-85 adds `n < :max` together with its setting, the rate limit and
+  `ACCOUNT_LIMIT_REACHED`, so every account created before then is already counted.
+- **The personal account.**
+  - It is created at every InnomightLabs sign-in (the OAuth callback for the default app, local sign-up
+    and local login) for an identity that belongs to no account, not only at the first sign-in.
+  - Its id is `uuid5("personal-account:{user_id}")`, and the Account put is conditional. Racing or retried
+    sign-ins therefore make exactly one.
+  - This also covers an identity whose first sign-in failed part way, and identities created under KAN-74
+    before accounts existed. The migration (KAN-81) can use the same id.
+  - Other apps' sign-ins (BidSignal) create none. Such a person gets one the first time they sign in to
+    InnomightLabs.
+- **`GET /accounts`** returns `[{account_id, name, access_summary, membership_status, joined_at}]`.
+  `access_summary` is `admin` when `AdministratorAccess` is attached directly, and `member` otherwise,
+  until KAN-77 brings custom policies and groups.
+- **Removing a member** (`AccountService.remove_member`) deletes the member's attachments, both halves of
+  each group membership and then the Member item, and finally bumps `authz_version`.
+  - The Member goes last, so a failure part way leaves fewer permissions, never stale ones waiting for a
+    re-invite.
+  - Permission checks, the last-admin rule, shares and resource transfer stay with KAN-77, KAN-78 and
+    KAN-83.
+- **Not yet.** `Identity.last_account_id` and `PUT /accounts/active` come with the account context
+  (KAN-79). The account-deletion Lambda doesn't remove memberships yet; that is KAN-83.
+
 ## Context and problem
 
 ### How it works today

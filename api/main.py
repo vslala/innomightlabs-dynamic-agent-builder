@@ -22,6 +22,7 @@ from src.llm.router import router as llm_router
 from src.knowledge.router import router as knowledge_router, agent_kb_router, sse_router as knowledge_sse_router
 from src.payments.stripe.router import router as stripe_payments_router
 from src.users import users_router
+from src.accounts import accounts_router
 from src.widget import widget_router, WidgetAuthMiddleware
 from src.contact.router import router as contact_router
 from src.connectors.router import router as connectors_router
@@ -166,6 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(router=embed_router)
     app.include_router(router=stripe_payments_router)
     app.include_router(router=users_router)
+    app.include_router(router=accounts_router)
     app.include_router(router=contact_router)
     app.include_router(router=connectors_router)
     app.include_router(router=oauth_completion_router)

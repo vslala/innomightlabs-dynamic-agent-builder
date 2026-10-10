@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from ..accounts import AccountService
 from ..config import settings
 from ..agents.repository import AgentRepository
 from ..identity import EmailTaken, Identity, IdentityRepository
@@ -554,6 +555,8 @@ async def _oauth_callback(
         user, is_new_user = identity_repository.find_or_create(email, name, picture=picture, email_verified=True)
         if not is_new_user:
             identity_repository.update_profile(user.user_id, name=name, picture=picture, email_verified=True)
+        if app == DEFAULT_APP:
+            AccountService().ensure_personal_account(user)
 
         # The welcome email is InnomightLabs-branded, so other apps send their own
         if is_new_user and app == DEFAULT_APP:
@@ -692,6 +695,7 @@ async def local_signup(payload: LocalSignupRequest):
         ))
     except EmailTaken:
         raise HTTPException(status_code=400, detail="Username already taken")
+    AccountService().ensure_personal_account(user)
 
     # Generate JWT token
     jwt_token = create_access_token(user)
@@ -740,6 +744,8 @@ async def local_login(payload: LocalLoginRequest):
             status_code=401,
             detail="Invalid username or password"
         )
+
+    AccountService().ensure_personal_account(user)
 
     # Generate JWT token
     jwt_token = create_access_token(user)
