@@ -58,7 +58,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _is_send_message(path: str) -> bool:
-        # Ada's turns (/builder/...) use the person's own provider too, so they count like any agent's.
+        # Ila's turns (/builder/...) use the person's own provider too, so they count like any agent's.
         return re.match(r"^/(agents/[^/]+|builder)/[^/]+/send-message$", path) is not None
 
     @staticmethod

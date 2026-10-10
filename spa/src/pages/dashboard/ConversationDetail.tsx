@@ -36,11 +36,11 @@ import {
 } from "../../components/ui/select";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
-import { agentDisplayName, isAda, showsToolActivity } from "../../services/builder/ada";
+import { agentDisplayName, isIla, showsToolActivity } from "../../services/builder/ila";
 import { connectedMessage } from "../../services/builder/connect";
 import { ConnectAccountCard, type ConnectRequestPayload } from "../../components/chat/ConnectAccountCard";
-import { AdaWorking } from "../../components/chat/AdaWorking";
-import { adaStep } from "../../components/chat/adaSteps";
+import { IlaWorking } from "../../components/chat/IlaWorking";
+import { ilaStep } from "../../components/chat/ilaSteps";
 import { chatService, type ActiveTurn } from "../../services/chat";
 import { authService } from "../../services/auth";
 import type { ConversationResponse } from "../../types/conversation";
@@ -284,9 +284,9 @@ export function ConversationDetail() {
   }, [conversation, initialMessagesLoaded, isGeneratingImage, isSending, location.state, navigate]);
 
   const getAgentName = (agentId: string): string => agentDisplayName(agents, agentId);
-  const isAdaConversation = isAda(conversation?.agent_id);
-  // Ada shows what she's doing as a drawing instead of a tool list; it steps aside once her reply streams in.
-  const adaWorkingStep = isAdaConversation ? adaStep(toolActivities, isSending && !streamingContent) : null;
+  const isIlaConversation = isIla(conversation?.agent_id);
+  // Ila shows what she's doing as a drawing instead of a tool list; it steps aside once her reply streams in.
+  const ilaWorkingStep = isIlaConversation ? ilaStep(toolActivities, isSending && !streamingContent) : null;
 
   const currentAgent = conversation
     ? agents.find((agent) => agent.agent_id === conversation.agent_id)
@@ -1227,13 +1227,13 @@ export function ConversationDetail() {
                   streamingContent={streamingContent}
                   toolActivities={showsToolActivity(conversation?.agent_id, featureFlags.showToolActivity) ? toolActivities : []}
                   debugToolActivity={debugEnabled}
-                  statusMessage={isAdaConversation ? null : statusMessage}
+                  statusMessage={isIlaConversation ? null : statusMessage}
                   userPicture={userInfo?.picture}
                   userName={userInfo?.name}
                   onExpandCanvas={setExpandedCanvas}
                   extraNode={
                     <>
-                      {adaWorkingStep && <AdaWorking step={adaWorkingStep} />}
+                      {ilaWorkingStep && <IlaWorking step={ilaWorkingStep} />}
                       {activeConnect && (
                         <ConnectAccountCard
                           request={activeConnect}

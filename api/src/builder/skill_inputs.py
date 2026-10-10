@@ -1,6 +1,6 @@
-"""Skill settings the person supplies, asked for by the system rather than by Ada.
+"""Skill settings the person supplies, asked for by the system rather than by Ila.
 
-Ada adds a skill as `- id: send_email` and plans. Before planning, the system reads each skill's manifest, finds
+Ila adds a skill as `- id: send_email` and plans. Before planning, the system reads each skill's manifest, finds
 the required settings only the person knows (`SkillVariant.person_settings`) that the draft doesn't have, and shows
 a form in the chat for one skill at a time, built from the manifest's own fields. The person's answers are checked
 with the manifest's validation and kept on the session; every plan fills them into the draft. Once nothing is
@@ -43,7 +43,7 @@ _FIELD = re.compile(r'^- ([A-Za-z0-9_]+)="(.*)"$', re.MULTILINE)
 class SkillInput:
     """One skill entry in the draft that still needs settings from the person."""
 
-    #: The entry's key in the draft (`SkillEntryRef.key`), which survives Ada rewriting it.
+    #: The entry's key in the draft (`SkillEntryRef.key`), which survives Ila rewriting it.
     key: str
     resource: str
     #: The entry's position in the agent's `skills`, for issue paths.
@@ -75,7 +75,7 @@ def missing_inputs(draft: Draft, params: Optional[dict[str, Any]] = None) -> lis
         if variant is None or variant.setup == SkillSetup.SECRETS:
             continue
         config = ref.entry["config"] if isinstance(ref.entry.get("config"), dict) else {}
-        # Only what the person knows; settings Ada writes are hers, and a missing one is an issue for her to fix.
+        # Only what the person knows; settings Ila writes are hers, and a missing one is an issue for her to fix.
         fields = tuple(field for field in variant.person_settings if config.get(field.name) in (None, ""))
         if fields:
             missing.append(SkillInput(

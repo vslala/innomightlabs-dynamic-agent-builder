@@ -21,23 +21,23 @@
 
 ## Implementation notes
 
-**Who writes blueprints.** People don't. **Ada**, InnomightLabs' solution builder, writes the YAML from a
+**Who writes blueprints.** People don't. **Ila**, InnomightLabs' solution builder, writes the YAML from a
 conversation and hands it to a tool that turns it into real resources. The person sees questions, forms, a
 plain-words plan, an approval form, the result and how to test it. So phase 2 (the Builder) is part of the POC.
 
-Ada runs on her own agent architecture, **Vishwakarma**, named after the divine architect. It sits next to
+Ila runs on her own agent architecture, **Vishwakarma**, named after the divine architect. It sits next to
 `krishna_memgpt` but runs one workflow, with tools and prompts made for it:
 
 ```mermaid
 sequenceDiagram
     participant P as Person
-    participant A as Ada (Vishwakarma)
+    participant A as Ila (Vishwakarma)
     participant T as Builder tools
     participant B as blueprints
-    Note over P,A: Session starts with Ada's greeting: "What do you want to build today?"
+    Note over P,A: Session starts with Ila's greeting: "What do you want to build today?"
     P->>A: "I don't know, what can you do?"
     A->>T: show_form (choice: the ideas + "Something else")
-    T-->>P: form under Ada's message
+    T-->>P: form under Ila's message
     P->>A: form submission: "Website support agent"
     A->>T: show_form (requirements: the draft's params + up to two questions)
     P->>A: form submission: site, business name, ...
@@ -71,8 +71,8 @@ person.*
     and skill service.
 - **Not in the factory.** No agent can be created with it. `start_turn(architecture=...)` takes an injected
   architecture (`api/src/agents/turns/run.py`), and the builder module creates Vishwakarma explicitly
-  (`api/src/builder/ada.py`).
-- **Ada's tools:** `api/src/builder/tools.py`, a `BuilderTools` class bound into its own `ToolRegistry`.
+  (`api/src/builder/ila.py`).
+- **Ila's tools:** `api/src/builder/tools.py`, a `BuilderTools` class bound into its own `ToolRegistry`.
   - `show_form`: the Interactive Forms module's `render_custom_form`. Its parameters are that action's own
     `input_schema` from `lead_capture/manifest.yml`, so the form contract has one definition. Used to brainstorm
     ideas and collect requirements.
@@ -82,7 +82,7 @@ person.*
   - `get_build_status`: crawl progress and dashboard links, for the "how to test it" step.
   - `plan_blueprint` and `apply_blueprint` mark the prompt stale, so the next model call sees the updated draft.
 - **The blueprint document:** `api/src/builder/canvas.py` and `builder/templates/blueprint_canvas.html.j2`.
-  - When Ada plans, the result carries a canvas: a drawing on blueprint paper of each resource and the wires
+  - When Ila plans, the result carries a canvas: a drawing on blueprint paper of each resource and the wires
     between them. It has a "Draft, awaiting approval" stamp and tabs for the steps and the highlighted YAML.
   - When she applies, the same drawing comes back stamped "Built", with ticks, pulses along the wires, and a
     "Use it" tab with the outputs.
@@ -91,7 +91,7 @@ person.*
     `AttachedCanvas` in `agents/tool_results.py`, picks it up.
   - Everything the person typed is escaped before it's drawn. If the canvas can't be saved, the plan and the build
     carry on without it.
-- **While she works:** the dashboard shows `AdaWorking` (`spa/src/components/chat/AdaWorking.tsx`) instead of the
+- **While she works:** the dashboard shows `IlaWorking` (`spa/src/components/chat/IlaWorking.tsx`) instead of the
   tool list. It's a blueprint tile sketching a drawing for the current step (asking, drafting, building, checking),
   with her words for it.
 - **Applying updates what exists (idempotent).** Phase 4 is partly built: applying no longer only creates.
@@ -114,7 +114,7 @@ person.*
   - **Starting from an existing agent:** `blueprints/export.py` (`export_agent`) writes an agent, its knowledge
     bases, skills and widget keys out as a blueprint with their ids. Skills that need a secret are left out, and
     since updates never remove skills, they stay installed.
-  - **Ada's side:**
+  - **Ila's side:**
     - `list_my_agents` and `load_agent` load an existing agent into her draft.
     - After a build she pins the draft to the built ids (`with_ids`), so her next change updates rather than
       rebuilds.
@@ -145,32 +145,32 @@ person.*
   - **The plan** lists removals apart (`PlanStep.removals`, `Plan.removals`). The approval form repeats them under
     "This removes, and it can't be undone", and the drawing marks them in red: a **Remove** badge on deleted
     resources, and "− disconnect knowledge base …" on updated ones. Disconnections aren't drawn as wires.
-  - **Ada:** the plan result carries `removals`, and she must name each one before the person approves. Her
+  - **Ila:** the plan result carries `removals`, and she must name each one before the person approves. Her
     prompt says when to remove (only when asked; prefer disconnecting or switching off to deleting), and never to
     send the person to the dashboard for something a blueprint can do.
-  - **Tests:** `api/tests/test_blueprints_remove.py`, and a removal case in `test_builder_ada.py`.
+  - **Tests:** `api/tests/test_blueprints_remove.py`, and a removal case in `test_builder_ila.py`.
 - **Builder session:** `api/src/builder/models.py`, item `pk=User#{email}`, `sk=BuilderSession#{conversation_id}`.
   - Chat history keeps messages, not tool calls. So the draft (YAML, params), the current `plan_id` and the
     `deployment_id` live here, and the prompt renders them every turn.
-  - It also records the provider and model Ada runs on, which are the person's own, as for their agents.
+  - It also records the provider and model Ila runs on, which are the person's own, as for their agents.
 - **Ideas come from the example blueprints** (`build_ideas()` in `blueprints/catalog.py`), from each one's
   `metadata.title` and `description`. So adding an example under `blueprints/examples/` adds an idea.
   - Today there are two: Website support agent (`site-agent`) and Documentation assistant (`docs-assistant`).
   - A weekly newsletter idea needs an `Automation` kind first.
 - **Routes:** `api/src/builder/router.py`.
   - `GET /builder/session-form` returns the create-agent form's provider and model fields.
-  - `POST /builder/sessions` creates the conversation (`agent_id = innomightlabs-ada`), the session and Ada's
+  - `POST /builder/sessions` creates the conversation (`agent_id = innomightlabs-ila`), the session and Ila's
     greeting message.
   - `GET /builder/sessions` lists them.
   - The chat routes (`/builder/{conversation_id}/send-message`, `turns/active`, `turns/{id}/events`,
     `turns/{id}/stop`) mirror an agent's.
-  - Ada's messages count against the person's monthly message limit (`rate_limits/middleware.py`).
+  - Ila's messages count against the person's monthly message limit (`rate_limits/middleware.py`).
 - **Dashboard:**
-  - **Build with Ada** (`/dashboard/build`, first in the sidebar) picks a provider and model and opens the chat.
-  - Ada's conversations open in the existing conversation page. `spa/src/services/builder/ada.ts` maps
-    `innomightlabs-ada` to the `/builder` routes in `ChatService` and names her in conversation lists. The chat's
+  - **Build with Ila** (`/dashboard/build`, first in the sidebar) picks a provider and model and opens the chat.
+  - Ila's conversations open in the existing conversation page. `spa/src/services/builder/ila.ts` maps
+    `innomightlabs-ila` to the `/builder` routes in `ChatService` and names her in conversation lists. The chat's
     form renderer shows her forms unchanged.
-- **Replaced:** the `solution_builder` skill from an earlier iteration of this POC is gone. Ada owns the workflow.
+- **Replaced:** the `solution_builder` skill from an earlier iteration of this POC is gone. Ila owns the workflow.
   The internal `/dashboard/blueprints` page stays for inspecting what was built, with no sidebar link.
 
 Where the POC differs from the design below, and why:
@@ -211,7 +211,7 @@ Where the POC differs from the design below, and why:
     `dashboard_path`.
   - **Param types are strategies** in `blueprints/params.py`, shared by the spec, the validator and the run form.
   - **One deploy path.** `blueprints/service.deploy_blueprint` validates, plans, rate-limits and applies, returning
-    `Invalid`, `Blocked`, `RateLimited` or `Deployed`. The API route and Ada's `apply_blueprint` both use it.
+    `Invalid`, `Blocked`, `RateLimited` or `Deployed`. The API route and Ila's `apply_blueprint` both use it.
 - **Refactor phase 2, 2026-10-09:**
   - **References are one list per resource.** `ResourceKind.references`, in `blueprints/references.py`, covers
     fields marked `x-ref-kind` and skill settings that name an agent (now marked `x-ref-kind: Agent` in the
@@ -234,12 +234,12 @@ Where the POC differs from the design below, and why:
   apply is a version.
   - **Removing is now by omission.** Within a kit, leaving out what the kit declared removes it. The explicit
     `remove` fields are gone, and v1 documents are upgraded on read.
-  - **Rollback and removal** are planned and then confirmed by `plan_id` (`/kits` API, and the Build with Ada page).
+  - **Rollback and removal** are planned and then confirmed by `plan_id` (`/kits` API, and the Build with Ila page).
   - **This replaces** "Leaving a resource out of a blueprint never removes it" and the `remove` fields described
     below. See [REFACTOR-blueprints.md](REFACTOR-blueprints.md), phase 6.
 - **Tests:**
   - `api/tests/test_blueprints_validator.py`, `test_blueprints_skills_schema.py`, `test_blueprints_apply.py` and
-    `test_builder_ada.py`, plus an injected-architecture case in `test_chat_turn_run.py`.
+    `test_builder_ila.py`, plus an injected-architecture case in `test_chat_turn_run.py`.
   - `test_blueprints_kinds.py` and `test_blueprints_params.py`, for refactor phase 1.
   - `spa/src/pages/dashboard/blueprints/blueprintView.test.ts`.
 
@@ -1198,10 +1198,10 @@ Tests go in `api/tests/test_blueprints_*.py`.
 
 ## Later phases
 
-Extending Ada to every skill, automation and feature (new kinds, setup requirements for secrets and OAuth, context
-management, specialists) has its own design: [Ada: Building With Everything InnomightLabs Offers](LLD-ada-capabilities.md).
+Extending Ila to every skill, automation and feature (new kinds, setup requirements for secrets and OAuth, context
+management, specialists) has its own design: [Ila: Building With Everything InnomightLabs Offers](LLD-ila-capabilities.md).
 
-- **Phase 2: Builder chatbot.** Built in the POC as Ada on the Vishwakarma architecture (see Implementation notes).
+- **Phase 2: Builder chatbot.** Built in the POC as Ila on the Vishwakarma architecture (see Implementation notes).
   Still to do:
   - trying it with real models, small ones included, and tuning the prompt sections;
   - more ideas, which need more kinds (`Automation` for a newsletter);

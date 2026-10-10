@@ -6,7 +6,7 @@
 | Owner | InnomightLabs API |
 | Last reviewed | 2026-10-09 |
 | Scope | `api/src/blueprints/`, and the parts of `api/src/builder/` that call into it |
-| Depends on | [Solution Blueprints](LLD-solution-blueprints.md), [Ada capabilities](LLD-ada-capabilities.md) |
+| Depends on | [Solution Blueprints](LLD-solution-blueprints.md), [Ila capabilities](LLD-ila-capabilities.md) |
 | Tracker | Prepares KAN-68 (Kits) |
 
 > **Summary:** The blueprint pipeline (validate, plan, apply) is sound, and its best parts are already
@@ -177,9 +177,9 @@
   - `Draft` lives in `blueprints/` rather than `builder/` because the book uses it too.
 - **Issue owners.** `BlueprintIssue.owner` is `AUTHOR` (the default) or `PERSON`.
   - The validator marks an issue `PERSON` only when it's a required person's setting that the entry doesn't have,
-    for a skill outside the secrets tier. A wrong value Ada wrote there stays hers, so a draft can't stall with
+    for a skill outside the secrets tier. A wrong value Ila wrote there stays hers, so a draft can't stall with
     nobody to fix it.
-  - `covers()` is gone, and Ada's tool results leave `owner` out.
+  - `covers()` is gone, and Ila's tool results leave `owner` out.
 - **`builder/requirements.py`:** `Requirement` (`missing`, `settle`, `ask`, `absorb`) with `AccountConnection` and
   `SkillSettings`.
   - `REQUIREMENTS` is the order the person is asked.
@@ -200,7 +200,7 @@
   no `x-removes`, and `Each.removals_from` is gone.
   - `blueprints/upgrade.py` reads v1 as v2: resources marked `remove` and the removal lists are dropped, which is
     what a v1 document kept.
-  - The schema is at `/blueprints/schema/v2.json`. The examples, Ada's blueprint language and the drawing say v2.
+  - The schema is at `/blueprints/schema/v2.json`. The examples, Ila's blueprint language and the drawing say v2.
 - **`blueprints/kits.py`:**
   - `Kit` (pk `User#…`, sk `Kit#{kit_id}`) holds `resources`, the name → id map, plus `current_deployment_id`,
     `current_version`, `versions`, `status` and `conversation_id`.
@@ -233,11 +233,11 @@
 - **The API:** `GET /kits`, `GET /kits/{id}` (resources and history), `POST /kits/{id}/rollback/plan`,
   `POST /kits/{id}/rollback`, `POST /kits/{id}/removal/plan` and `POST /kits/{id}/remove`. `BlueprintRequest` takes
   `kit_id`.
-- **Ada.** `BuilderSession` has `kit_id` and `baseline_yaml`.
+- **Ila.** `BuilderSession` has `kit_id` and `baseline_yaml`.
   - Her plans pin and compare against the kit, and her apply records the version.
   - `load_agent` continues the agent's kit (its last version), or exports the agent as the baseline for a new kit.
   - Her prompt says to take things away by leaving them out, and never to rename a built resource.
-- **SPA.** The Build with Ada page has "Your kits" and "Conversations" tabs.
+- **SPA.** The Build with Ila page has "Your kits" and "Conversations" tabs.
   - `/dashboard/build/kits/:kitId` shows what a kit holds (with dashboard links), a version timeline with "Roll
     back to this", and "Remove kit".
   - Both actions open `KitPlanDialog`, which shows the plan (steps, removals in red, drift, blockers) and applies
@@ -245,14 +245,14 @@
   - Code: `services/kits/KitApiService.ts` and `pages/dashboard/build/kitView.ts`, with tests.
 - **Tests:**
   - New: `test_blueprints_kits.py`, which replaces `test_blueprints_remove.py`.
-  - Changed: the MCP, Ada and reconciler tests now remove by omission.
+  - Changed: the MCP, Ila and reconciler tests now remove by omission.
   - SPA: `kitView.test.ts` and `KitApiService.test.ts`.
 
 ## What's good and stays
 
 - **One registry of kinds** (`RESOURCE_KINDS`), selected by `kind_for`, with no `if kind ==` chains in the
   pipeline.
-- **Generated, never copied.** The JSON Schema, the reference, the catalog, Ada's book and the skill variants are
+- **Generated, never copied.** The JSON Schema, the reference, the catalog, Ila's book and the skill variants are
   all derived from the spec models and the manifests.
 - **Strategy lists** for skill setup tiers (`SETUP_RULES`) and setting suppliers (`SUPPLIER_RULES`).
 - **Plan before apply, with approval.** No side effects in the planner, and the plan id hashes exactly what was
@@ -408,7 +408,7 @@ flowchart LR
         EX["Executor: derived order, commit point"]
         J[("Undo log, saved on the deployment")]
     end
-    subgraph Builder["Builder (Ada)"]
+    subgraph Builder["Builder (Ila)"]
         D[Draft view]
         G[Plan gates]
         RQ["Requirements: settings, accounts, later secrets and consent"]
@@ -448,7 +448,7 @@ before (P2).
   - Removing a kit is reconciling an empty desired state.
   - Both go through the same plan and approval.
 - **Adopting existing resources:**
-  - When Ada loads an agent that isn't in a kit, the exported blueprint is recorded as the "before" baseline.
+  - When Ila loads an agent that isn't in a kit, the exported blueprint is recorded as the "before" baseline.
     Removing a line from it then removes that link, which is the behaviour the person expects ("take the docs off
     this agent").
   - A resource shared outside the kit (an agent outside it using its knowledge base) is a blocker, never a silent
@@ -481,7 +481,7 @@ Per field it applies the same rule `kubectl apply` uses with its last-applied co
 ```python
 def resolve(before: V, now: V, actual: V) -> Outcome:
     if before == now:                                   # pass 1: not changed by the person
-        return Keep() if actual == now else Drift(actual)   # edited outside Ada: reported, not reverted
+        return Keep() if actual == now else Drift(actual)   # edited outside Ila: reported, not reverted
     return Keep() if actual == now else Set(now)        # pass 2: only the remaining difference is work
 ```
 
@@ -495,7 +495,7 @@ For keyed collections (resources, links, skill installs), each key gets the same
 | no | no | not the kit's: never touched, even when actual has it |
 
 **Drift is reported, not reverted.** If someone changed an agent's instructions in the dashboard and the blueprint
-didn't, the plan says "changed outside Ada, and it stays". Reverting would quietly undo the person's own work.
+didn't, the plan says "changed outside Ila, and it stays". Reverting would quietly undo the person's own work.
 
 **Field rules are declared once, on the spec.** The reconciler is generic because how each field compares is
 written next to the field, the same way `x-ref-kind` already is:
@@ -530,8 +530,8 @@ generic `Set` writer.
 mounts a new one. That's cheap for React. Here it would mean deleting an agent with its conversations, or a
 knowledge base with its content.
 
-- If Ada renames a resource key in the YAML (`assistant` → `support_bot`), a naive keyed diff would plan "delete
-  agent, create agent". Identity comes from the kit's map of names to ids, and Ada keeps the `id` when she renames
+- If Ila renames a resource key in the YAML (`assistant` → `support_bot`), a naive keyed diff would plan "delete
+  agent, create agent". Identity comes from the kit's map of names to ids, and Ila keeps the `id` when she renames
   a key.
 - A removal and a creation of the same kind in one plan is a **blocker** that asks whether it's a rename. It's
   never planned as delete plus create.
@@ -661,21 +661,21 @@ With P2 and P4, a kind shrinks to a few methods:
   `skill_entries()`, `set(path, value)` and `page_for(path)`. The five raw-dict walkers become methods on it, so
   one place knows the document's raw shape.
 - **Issues carry an owner instead of being filtered by path.** The validator and the kinds mark each issue's owner:
-  `BUILDER` (Ada fixes it), `PERSON` (a setting only they know) or `ACCOUNT` (a sign-in). `covers()` and the
+  `BUILDER` (Ila fixes it), `PERSON` (a setting only they know) or `ACCOUNT` (a sign-in). `covers()` and the
   double computation of `missing_inputs` go.
 - **`Requirement`** is one protocol for everything the system asks the person:
   `missing(draft) → list[Need]`, `ask(need) → payload`, `absorb(message, session)`. `SkillSettings` and
-  `AccountConnection` are the first two. The secure-secrets modal and A2A consent from the Ada LLD slot in as
+  `AccountConnection` are the first two. The secure-secrets modal and A2A consent from the Ila LLD slot in as
   entries, not as new branches.
 - **Plan gates** are a strategy list:
   `PLAN_GATES = (Invalid(), NeedsPerson(REQUIREMENTS), Blocked(), NothingToChange(), AwaitApproval())`. Each
   returns an outcome or `None`, and `BuilderTools.plan` becomes a loop of a few lines.
 - **`BlueprintService.deploy(yaml, params, owner, kit_id, background_tasks)`** holds the deploy sequence once.
-  The router and Ada both call it. Kits' rollback and remove call it too.
+  The router and Ila both call it. Kits' rollback and remove call it too.
 
 ## Phases
 
-Each phase ships on its own, with the full API suite green and no change to what Ada or the API returns, except
+Each phase ships on its own, with the full API suite green and no change to what Ila or the API returns, except
 where noted.
 
 | Phase | Changes | Behaviour change |
@@ -684,8 +684,8 @@ where noted.
 | 2. References and lens | P3; `observe()` per kind, with `export_agent` rebuilt on it | none; the export round trip proves `observe` |
 | 3. Commands | P4: commands, reversibility classes, derived order, run-time capture, saved undo log and the reaper | undo no longer overwrites changes made after the plan; an interrupted apply is unwound |
 | 4. Reconciler, two-way | `DIFF` rules declared on the spec; P2 with **before** = **actual**, which is what the planner does today, and `remove_*` still accepted as explicit removals | fixes the missing MCP check and the repeatable-skill removal |
-| 5. Builder | P6: `Draft`, issue owners, `Requirement`, gates | none visible to Ada |
-| 6. Kits | P1 with KAN-68: the kit record and versions, **before** from the kit, drift reporting, the rename blocker, `innomight/v2` and `upgrade_v1`, with examples, the book and Ada's prompts migrated | omission removes within a kit |
+| 5. Builder | P6: `Draft`, issue owners, `Requirement`, gates | none visible to Ila |
+| 6. Kits | P1 with KAN-68: the kit record and versions, **before** from the kit, drift reporting, the rename blocker, `innomight/v2` and `upgrade_v1`, with examples, the book and Ila's prompts migrated | omission removes within a kit |
 
 Phase 4 runs the reconciler with **before** = **actual**, so it can replace the hand-written `differences` before
 Kits exist. Phase 6 then only supplies a different **before**.

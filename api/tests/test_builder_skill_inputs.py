@@ -1,4 +1,4 @@
-"""The system, not Ada, asks the person for a skill's settings: one form per skill, from its manifest."""
+"""The system, not Ila, asks the person for a skill's settings: one form per skill, from its manifest."""
 
 import json
 
@@ -9,7 +9,7 @@ from src.agents.architectures import vishwakarma
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.blueprints.catalog import example_yaml
-from src.builder.ada import ada_agent
+from src.builder.ila import ila_agent
 from src.builder.models import BuilderSession, PendingInput
 from src.builder.repository import BuilderSessionRepository
 from src.blueprints.draft import Draft
@@ -19,7 +19,7 @@ from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
 from tests.mock_data import TEST_USER_EMAIL
-from tests.test_builder_ada import PARAMS, account, session, turn_state  # noqa: F401
+from tests.test_builder_ila import PARAMS, account, session, turn_state  # noqa: F401
 
 SITE_AGENT = example_yaml("site-agent") or ""
 
@@ -111,7 +111,7 @@ async def test_planning_a_skill_without_its_settings_asks_the_person(session):  
     assert reload(session).pending_input is None
 
 
-async def test_ada_rewriting_the_draft_keeps_the_persons_answers(session):  # noqa: F811
+async def test_ila_rewriting_the_draft_keeps_the_persons_answers(session):  # noqa: F811
     text = with_skills({"id": "send_email"})
     await plan(session, {"yaml": text, "params": PARAMS})
     answer(session, to="sales@acme.example")
@@ -151,14 +151,14 @@ async def test_skills_are_asked_one_at_a_time_in_order(session):  # noqa: F811
 
 
 async def test_the_person_is_never_asked_for_the_builds_design(session):  # noqa: F811
-    """Which agent a skill calls, and when, are Ada's to write: a missing one is an issue for her, not a form."""
+    """Which agent a skill calls, and when, are Ila's to write: a missing one is an issue for her, not a form."""
     result = await plan(session, {"yaml": with_skills({"id": "agent_invocation"}), "params": PARAMS})
     assert "needs_input" not in result and result["ok"] is False
     assert {issue["page"] for issue in result["issues"]} == {"skill/agent_invocation"}
     assert reload(session).pending_input is None
 
 
-async def test_other_issues_go_to_ada_before_the_person_is_asked(session):  # noqa: F811
+async def test_other_issues_go_to_ila_before_the_person_is_asked(session):  # noqa: F811
     text = with_skills({"id": "send_email"}).replace("mode: site", "mode: everything")
     result = await plan(session, {"yaml": text, "params": PARAMS})
     assert "issues" in result and "needs_input" not in result
@@ -178,7 +178,7 @@ async def test_loading_an_agent_forgets_answers_for_the_old_draft(session):  # n
     assert reload(session).skill_inputs == {} and reload(session).pending_input is None
 
 
-async def test_the_turn_takes_the_answers_before_ada_sees_it(session, monkeypatch):  # noqa: F811
+async def test_the_turn_takes_the_answers_before_ila_sees_it(session, monkeypatch):  # noqa: F811
     await plan(session, {"yaml": with_skills({"id": "send_email"}), "params": PARAMS})
     label = reload(session).pending_input.label
     prompts: list[str] = []
@@ -195,13 +195,13 @@ async def test_the_turn_takes_the_answers_before_ada_sees_it(session, monkeypatc
     monkeypatch.setattr(vishwakarma, "open_provider_session", fake_provider_session)
     conversation = ConversationRepository().find_by_id(session.conversation_id, TEST_USER_EMAIL)
     async for _ in vishwakarma.VishwakarmaArchitecture().handle_message(
-        agent=ada_agent(session), conversation=conversation,
+        agent=ila_agent(session), conversation=conversation,
         user_message=submission(label, to="sales@acme.example"),
         owner_email=TEST_USER_EMAIL, actor_email=TEST_USER_EMAIL, actor_id=TEST_USER_EMAIL, actor_kind=ActorKind.OWNER,
     ):
         pass
 
-    assert "sales@acme.example" in prompts[0]  # in the draft Ada's prompt shows
+    assert "sales@acme.example" in prompts[0]  # in the draft Ila's prompt shows
     assert reload(session).skill_inputs == {"assistant/send_email/0": {"to": "sales@acme.example"}}
 
 

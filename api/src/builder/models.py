@@ -1,12 +1,12 @@
-"""A building conversation with Ada, and the blueprint she is working on in it."""
+"""A building conversation with Ila, and the blueprint she is working on in it."""
 
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-#: The agent id Ada's conversations carry. Ada isn't stored as an agent; see src/builder/ada.py.
-ADA_AGENT_ID = "innomightlabs-ada"
+#: The agent id Ila's conversations carry. Ila isn't stored as an agent; see src/builder/ila.py.
+ILA_AGENT_ID = "innomightlabs-ila"
 
 
 class PendingInput(BaseModel):
@@ -20,15 +20,15 @@ class PendingInput(BaseModel):
 
 class BuilderSession(BaseModel):
     """
-    One conversation with Ada. Holds the draft between turns: chat history keeps only the messages,
-    not Ada's tool calls, so the blueprint she planned would otherwise be lost to her next turn.
+    One conversation with Ila. Holds the draft between turns: chat history keeps only the messages,
+    not Ila's tool calls, so the blueprint she planned would otherwise be lost to her next turn.
 
     DynamoDB: pk=User#{user_email}, sk=BuilderSession#{conversation_id}
     """
 
     conversation_id: str
     user_email: str
-    #: The owner's own provider and model; Ada runs on them like any of their agents.
+    #: The owner's own provider and model; Ila runs on them like any of their agents.
     provider: str
     model: Optional[str] = None
     draft_yaml: Optional[str] = None
@@ -41,9 +41,9 @@ class BuilderSession(BaseModel):
     #: An agent loaded that isn't in a kit yet, as it was when loaded: what the draft is compared with, so leaving
     #: something out of the draft removes it, as it would in a kit.
     baseline_yaml: Optional[str] = None
-    #: Ada's turns in this conversation so far, counting the current one.
+    #: Ila's turns in this conversation so far, counting the current one.
     turn: int = 0
-    #: Book pages Ada has open, with the turn each was last opened in. See src/agents/book.py.
+    #: Book pages Ila has open, with the turn each was last opened in. See src/agents/book.py.
     opened_pages: dict[str, int] = Field(default_factory=dict)
     #: Skill settings the person gave through the system's forms, by skill entry key; every plan fills them in.
     skill_inputs: dict[str, dict[str, Any]] = Field(default_factory=dict)

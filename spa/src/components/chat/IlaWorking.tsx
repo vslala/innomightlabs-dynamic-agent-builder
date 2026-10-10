@@ -1,8 +1,8 @@
-import { ADA_STEPS, type AdaStep } from "./adaSteps";
-import styles from "./AdaWorking.module.css";
+import { ILA_STEPS, type IlaStep } from "./ilaSteps";
+import styles from "./IlaWorking.module.css";
 
-/** One small drawing per step, sketched over and over on a blueprint tile while Ada works. */
-const SKETCHES: Record<AdaStep, string[]> = {
+/** One small drawing per step, sketched over and over on a blueprint tile while Ila works. */
+const SKETCHES: Record<IlaStep, string[]> = {
   thinking: ["M10 24 Q18 10 26 24 T42 24", "M14 30 H38"],
   asking: ["M12 12 H40 M12 20 H32", "M12 28 H40 V34 H12 Z"],
   drafting: ["M6 14 H18 V28 H6 Z", "M30 10 H44 V22 H30 Z", "M30 26 H44 V36 H30 Z", "M18 21 C24 21 24 16 30 16", "M18 21 C24 21 24 31 30 31"],
@@ -10,8 +10,8 @@ const SKETCHES: Record<AdaStep, string[]> = {
   checking: ["M26 10 A14 14 0 1 1 12 24", "M26 24 L33 17", "M26 24 m-2 0 a2 2 0 1 0 4 0 a2 2 0 1 0 -4 0"],
 };
 
-export function AdaWorking({ step }: { step: AdaStep }) {
-  const copy = ADA_STEPS[step];
+export function IlaWorking({ step }: { step: IlaStep }) {
+  const copy = ILA_STEPS[step];
   return (
     <div className={styles.card} role="status" aria-live="polite">
       <svg key={step} className={styles.tile} viewBox="0 0 52 44" aria-hidden="true">

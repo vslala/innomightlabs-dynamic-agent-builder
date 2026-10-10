@@ -1,4 +1,4 @@
-"""Ada, the solution builder: the Vishwakarma architecture, her tools and her routes."""
+"""Ila, the solution builder: the Vishwakarma architecture, her tools and her routes."""
 
 import json
 
@@ -18,7 +18,7 @@ from src.blueprints.kinds import knowledge_base as knowledge_base_kind
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.validator import validate_blueprint
 from src.builder import router as builder_router
-from src.builder.ada import ADA_AGENT_ID, GREETING, ada_agent
+from src.builder.ila import ILA_AGENT_ID, GREETING, ila_agent
 from src.builder.canvas import drawing_for, highlight_yaml, render_drawing
 from src.builder.models import BuilderSession
 from src.builder.repository import BuilderSessionRepository
@@ -54,7 +54,7 @@ def account(monkeypatch, dynamodb_table) -> list[str]:
 @pytest.fixture
 def session(account) -> BuilderSession:
     conversation = ConversationRepository().save(
-        Conversation(title="Building with Ada", agent_id=ADA_AGENT_ID, created_by=TEST_USER_EMAIL)
+        Conversation(title="Building with Ila", agent_id=ILA_AGENT_ID, created_by=TEST_USER_EMAIL)
     )
     return BuilderSessionRepository().save(
         BuilderSession(conversation_id=conversation.conversation_id, user_email=TEST_USER_EMAIL, provider="Bedrock")
@@ -68,7 +68,7 @@ def turn_state(session: BuilderSession) -> AgentTurnState:
         actor_id=TEST_USER_EMAIL,
         actor_kind=ActorKind.OWNER,
         conversation_id=session.conversation_id,
-        agent_id=ADA_AGENT_ID,
+        agent_id=ILA_AGENT_ID,
         model_name="",
         user_message="",
     )
@@ -172,7 +172,7 @@ async def test_approved_plan_is_built_and_its_status_reported(session, account):
 # --- Architecture -----------------------------------------------------------------------------
 
 
-async def test_a_turn_runs_ada_with_only_her_tools(session, monkeypatch):
+async def test_a_turn_runs_ila_with_only_her_tools(session, monkeypatch):
     seen: dict = {}
 
     async def fake_loop(**kwargs):
@@ -203,7 +203,7 @@ async def test_a_turn_runs_ada_with_only_her_tools(session, monkeypatch):
     conversation = ConversationRepository().find_by_id(session.conversation_id, TEST_USER_EMAIL)
 
     events = [event async for event in vishwakarma.VishwakarmaArchitecture().handle_message(
-        agent=ada_agent(session),
+        agent=ila_agent(session),
         conversation=conversation,
         user_message="A website support agent please",
         owner_email=TEST_USER_EMAIL,
@@ -215,7 +215,7 @@ async def test_a_turn_runs_ada_with_only_her_tools(session, monkeypatch):
     assert seen["tools"] == [
         "open_pages", "search_book", "show_form", "plan_blueprint", "apply_blueprint", "list_my_agents", "load_agent", "get_build_status",
     ]
-    assert "You are Ada" in seen["first_prompt"]
+    assert "You are Ila" in seen["first_prompt"]
     # The book's index, not its pages: the recipe is listed, its YAML isn't there until it's opened.
     assert "`recipe/site-agent`: Website support agent." in seen["first_prompt"]
     assert "kind: WidgetKey" not in seen["first_prompt"]
@@ -234,11 +234,11 @@ async def test_a_turn_runs_ada_with_only_her_tools(session, monkeypatch):
 
 
 async def test_a_conversation_without_a_session_is_refused(account):
-    conversation = ConversationRepository().save(Conversation(title="x", agent_id=ADA_AGENT_ID, created_by=TEST_USER_EMAIL))
+    conversation = ConversationRepository().save(Conversation(title="x", agent_id=ILA_AGENT_ID, created_by=TEST_USER_EMAIL))
     session = BuilderSession(conversation_id=conversation.conversation_id, user_email=TEST_USER_EMAIL, provider="Bedrock")
 
     events = [event async for event in vishwakarma.VishwakarmaArchitecture().handle_message(
-        agent=ada_agent(session), conversation=conversation, user_message="hi", owner_email=TEST_USER_EMAIL,
+        agent=ila_agent(session), conversation=conversation, user_message="hi", owner_email=TEST_USER_EMAIL,
         actor_email=TEST_USER_EMAIL, actor_id=TEST_USER_EMAIL, actor_kind=ActorKind.OWNER,
     )]
     assert events[-1].event_type == SSEEventType.ERROR
@@ -275,14 +275,14 @@ def test_a_session_starts_with_adas_greeting(test_client, auth_headers, account)
     conversation_id = created.json()["conversation_id"]
 
     conversation = ConversationRepository().find_by_id(conversation_id, TEST_USER_EMAIL)
-    assert conversation.agent_id == ADA_AGENT_ID
+    assert conversation.agent_id == ILA_AGENT_ID
     [greeting] = get_message_repository().find_by_conversation(conversation_id)
     assert (greeting.role, greeting.content) == ("assistant", GREETING)
     listed = test_client.get("/builder/sessions", headers=auth_headers).json()
     assert [item["conversation_id"] for item in listed] == [conversation_id]
 
 
-def test_send_message_runs_ada_through_the_injected_architecture(test_client, auth_headers, session, monkeypatch):
+def test_send_message_runs_ila_through_the_injected_architecture(test_client, auth_headers, session, monkeypatch):
     started: dict = {}
 
     def fake_start_turn(**kwargs):
@@ -294,7 +294,7 @@ def test_send_message_runs_ada_through_the_injected_architecture(test_client, au
         test_client.post(f"/builder/{session.conversation_id}/send-message", headers=auth_headers, json={"content": "hi"})
 
     assert isinstance(started["architecture"], vishwakarma.VishwakarmaArchitecture)
-    assert started["agent"].agent_id == ADA_AGENT_ID
+    assert started["agent"].agent_id == ILA_AGENT_ID
     assert started["agent"].agent_architecture == "vishwakarma"
 
 
@@ -381,13 +381,13 @@ async def test_after_a_build_the_draft_is_pinned_to_what_was_built(session):
     draft = BuilderSessionRepository().find(TEST_USER_EMAIL, session.conversation_id).draft_yaml
     assert f"id: {built['resources']['assistant']['id']}" in draft
 
-    # Ada changes the draft and plans again: the same agent is updated, nothing new is built.
+    # Ila changes the draft and plans again: the same agent is updated, nothing new is built.
     changed = draft.replace("allow_guests: true", "allow_guests: false")
     replanned = json.loads(await tools.plan("plan_blueprint", {"yaml": changed, "params": PARAMS}, state))
     assert [step["action"] for step in replanned["steps"]] == ["unchanged", "unchanged", "update"]
 
 
-async def test_ada_can_find_and_load_an_existing_agent(session):
+async def test_ila_can_find_and_load_an_existing_agent(session):
     tools, state = BuilderTools(), turn_state(session)
     plan_id = json.loads(await tools.plan("plan_blueprint", {"yaml": SITE_AGENT, "params": PARAMS}, state))["plan_id"]
     say(session, "user", approval(plan_id))
@@ -416,7 +416,7 @@ async def test_ada_can_find_and_load_an_existing_agent(session):
     assert missing["loaded"] is False
 
 
-async def test_ada_names_what_a_plan_removes(session):
+async def test_ila_names_what_a_plan_removes(session):
     """An agent loaded from outside a kit: what it was is the baseline, so leaving a skill out uninstalls it."""
     validated = validate_blueprint(SITE_AGENT, PARAMS)
     built = apply_blueprint(validated, plan_blueprint(validated, TEST_USER_EMAIL), TEST_USER_EMAIL)

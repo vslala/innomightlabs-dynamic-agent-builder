@@ -1,4 +1,4 @@
-"""MCP connections in blueprints: found on the account, linked to agents, and connected by the person, not Ada."""
+"""MCP connections in blueprints: found on the account, linked to agents, and connected by the person, not Ila."""
 
 import json
 
@@ -23,7 +23,7 @@ from src.connectors.mcp.models import MCPConnection
 from src.connectors.mcp.repository import get_mcp_connection_repository
 from src.llm.events import SSEEventType
 from tests.mock_data import TEST_USER_EMAIL
-from tests.test_builder_ada import account, session, turn_state  # noqa: F401
+from tests.test_builder_ila import account, session, turn_state  # noqa: F401
 
 TEAM = example_yaml("web-research-team") or ""
 

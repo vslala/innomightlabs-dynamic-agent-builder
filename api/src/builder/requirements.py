@@ -1,9 +1,9 @@
-"""What the system asks the person for, rather than Ada: an account to connect, a skill's settings.
+"""What the system asks the person for, rather than Ila: an account to connect, a skill's settings.
 
 Each requirement reads what the draft still needs from the person, asks for the first of it in the chat, and takes
 in the answer when it comes back as their next message. `REQUIREMENTS` is in the order the person is asked: sign in
 first, then settings. A new kind of ask (the secure secrets panel, consent for another agent's domain) is one more
-entry here, not a new branch in Ada's tools.
+entry here, not a new branch in Ila's tools.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class Requirement(Protocol):
         ...
 
     def ask(self, missing: list[Any], session: BuilderSession, state: "AgentTurnState") -> dict[str, Any]:
-        """The tool result that asks for the first of `missing`: the chat shows it under Ada's message."""
+        """The tool result that asks for the first of `missing`: the chat shows it under Ila's message."""
         ...
 
     def absorb(self, session: BuilderSession, message: str) -> bool:
@@ -73,7 +73,7 @@ class SkillSettings:
     def settle(self, session: BuilderSession, missing: list[Any]) -> None:
         pending = session.pending_input
         if pending is not None and all(item.key != pending.key for item in missing):
-            # The form it waited on isn't needed any more (the draft changed, or the setting is Ada's to write).
+            # The form it waited on isn't needed any more (the draft changed, or the setting is Ila's to write).
             session.pending_input = None
 
     def ask(self, missing: list[Any], session: BuilderSession, state: "AgentTurnState") -> dict[str, Any]:
@@ -102,5 +102,5 @@ REQUIREMENTS: tuple[Requirement, ...] = (AccountConnection(), SkillSettings())
 
 
 def absorb_answers(session: BuilderSession, message: str) -> bool:
-    """Takes in the person's answer to whatever the system asked them, before Ada sees the turn."""
+    """Takes in the person's answer to whatever the system asked them, before Ila sees the turn."""
     return any(requirement.absorb(session, message) for requirement in REQUIREMENTS)

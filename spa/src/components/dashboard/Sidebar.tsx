@@ -7,7 +7,7 @@ import logo from "../../assets/brand/innomightlabs-logo.png";
 
 const navItems = [
   { to: "/dashboard", icon: Home, label: "Overview" },
-  { to: "/dashboard/build", icon: Hammer, label: "Build with Ada" },
+  { to: "/dashboard/build", icon: Hammer, label: "Build with Ila" },
   { to: "/dashboard/agents", icon: Bot, label: "Agents" },
   { to: "/dashboard/automations", icon: Workflow, label: "Automations" },
   { to: "/dashboard/conversations", icon: MessageSquare, label: "Conversations" },

@@ -1,11 +1,11 @@
-"""Ada's tools: read the blueprint book, ask with forms, plan a blueprint, apply it once approved, and report how
+"""Ila's tools: read the blueprint book, ask with forms, plan a blueprint, apply it once approved, and report how
 the build is doing.
 
-The book's index is always in Ada's prompt; `open_pages` puts whole pages there for a few turns, and issues from a
+The book's index is always in Ila's prompt; `open_pages` puts whole pages there for a few turns, and issues from a
 plan open the pages that explain them.
 
 Forms come from the Interactive Forms module (`lead_capture`), so the chat renders them like any other
-skill's forms. The blueprint tools keep the draft on the BuilderSession, which Ada's prompt shows every
+skill's forms. The blueprint tools keep the draft on the BuilderSession, which Ila's prompt shows every
 turn, so a plan made in one turn can be approved and applied in the next.
 """
 
@@ -48,7 +48,7 @@ def _forms_schema() -> dict[str, Any]:
     loaded = get_skill_registry().get("lead_capture")
     action = loaded.manifest.find_action("render_custom_form") if loaded else None
     if action is None:
-        raise RuntimeError("Ada needs the Interactive Forms skill (lead_capture) to be installed on the platform")
+        raise RuntimeError("Ila needs the Interactive Forms skill (lead_capture) to be installed on the platform")
     return action.input_schema
 
 
@@ -161,7 +161,7 @@ def builder_tool_definitions() -> list[dict[str, Any]]:
 
 
 def _issue(issue: BlueprintIssue) -> dict[str, Any]:
-    """An issue as Ada reads it. Who owns it is the system's business: she only sees her own."""
+    """An issue as Ila reads it. Who owns it is the system's business: she only sees her own."""
     return issue.model_dump(exclude_none=True, exclude={"owner"})
 
 
@@ -209,7 +209,7 @@ class BuilderTools:
             **({"did_you_mean": opened.suggestions} if opened.suggestions else {}),
             "next": (
                 f"The opened pages are in your prompt under <open_pages> for the next "
-                f"{settings.ada_page_retention_turns} turns, this one included."
+                f"{settings.ila_page_retention_turns} turns, this one included."
             ),
         })
 
@@ -252,7 +252,7 @@ class BuilderTools:
         params = tool_input["params"] if isinstance(tool_input.get("params"), dict) else session.draft_params
         if not isinstance(yaml, str) or not yaml.strip():
             raise ValueError("plan_blueprint needs `yaml`, the whole blueprint: there's no draft yet.")
-        # The person's answers to earlier skill forms, whatever Ada's YAML says; and the kit's ids, whatever names
+        # The person's answers to earlier skill forms, whatever Ila's YAML says; and the kit's ids, whatever names
         # she wrote them under.
         try:
             kit = active_kit(state.owner_email, session.kit_id) if session.kit_id else None
@@ -414,11 +414,11 @@ def build_builder_tool_registry(tools: Optional[BuilderTools] = None) -> ToolReg
     tools = tools or BuilderTools()
     open_book, search, show_form, plan, apply, list_agents, load_agent, status = builder_tool_definitions()
     return ToolRegistry([
-        # Opening pages changes the pages Ada's prompt shows.
+        # Opening pages changes the pages Ila's prompt shows.
         BoundTool(ToolSpec(open_book, ToolCategory.BUILDER, mutates_prompt_context=True), tools.open_book_pages),
         BoundTool(ToolSpec(search, ToolCategory.BUILDER), tools.search_book),
         BoundTool(ToolSpec(show_form, ToolCategory.BUILDER), tools.show_form),
-        # Planning and applying change the draft that Ada's prompt shows.
+        # Planning and applying change the draft that Ila's prompt shows.
         BoundTool(ToolSpec(plan, ToolCategory.BUILDER, mutates_prompt_context=True), tools.plan),
         BoundTool(ToolSpec(apply, ToolCategory.BUILDER, mutates_prompt_context=True), tools.apply),
         BoundTool(ToolSpec(list_agents, ToolCategory.BUILDER), tools.list_agents),

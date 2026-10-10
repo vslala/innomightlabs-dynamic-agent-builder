@@ -1,16 +1,16 @@
 """
-Building with Ada.
+Building with Ila.
 
 Endpoints:
     GET  /builder/session-form                          Provider and model to build with (a SchemaForm)
-    POST /builder/sessions                              Start a building conversation, greeted by Ada
+    POST /builder/sessions                              Start a building conversation, greeted by Ila
     GET  /builder/sessions                              The person's building conversations
-    POST /builder/{conversation_id}/send-message        A turn with Ada (SSE, like an agent's send-message)
+    POST /builder/{conversation_id}/send-message        A turn with Ila (SSE, like an agent's send-message)
     GET  /builder/{conversation_id}/turns/active        The running turn, to reattach
     GET  /builder/{conversation_id}/turns/{id}/events   Tail a turn's transcript
     POST /builder/{conversation_id}/turns/{id}/stop     Stop a turn
 
-The chat routes mirror an agent's, so the dashboard chat works for Ada unchanged.
+The chat routes mirror an agent's, so the dashboard chat works for Ila unchanged.
 """
 
 import logging
@@ -27,7 +27,7 @@ from src.agents.service import validate_provider_model
 from src.agents.turns import ConversationTurn, ConversationTurnRepository, ConversationTurnResponse
 from src.agents.turns import live_transcript, start_turn, stop_turn
 from src.agents.turns.transcript import TurnTranscript
-from src.builder.ada import ADA_AGENT_ID, GREETING, ada_agent, ada_architecture
+from src.builder.ila import ILA_AGENT_ID, GREETING, ila_agent, ila_architecture
 from src.builder.connections import start_connection
 from src.builder.models import BuilderSession, BuilderSessionResponse, CreateBuilderSessionRequest
 from src.builder.repository import BuilderSessionRepository
@@ -93,7 +93,7 @@ async def _stream(transcript: TurnTranscript, *, after_sequence: int):
 async def session_form(request: Request) -> form_models.Form:
     """The person's own providers and models, filled in the same way as the create-agent form."""
     inputs = [field for field in get_create_agent_form().form_inputs if field.name in SESSION_FORM_FIELDS]
-    form = form_models.Form(form_name="Build with Ada", submit_path="/builder/sessions", form_inputs=inputs)
+    form = form_models.Form(form_name="Build with Ila", submit_path="/builder/sessions", form_inputs=inputs)
     return hydrate_form_options(form, FormOptionsContext(user_email=request.state.user_email))
 
 
@@ -112,7 +112,7 @@ async def create_session(request: Request, body: CreateBuilderSessionRequest) ->
         )
 
     conversation = ConversationRepository().save(
-        Conversation(title="Building with Ada", agent_id=ADA_AGENT_ID, created_by=user_email)
+        Conversation(title="Building with Ila", agent_id=ILA_AGENT_ID, created_by=user_email)
     )
     session = BuilderSessionRepository().save(BuilderSession(
         conversation_id=conversation.conversation_id,
@@ -145,10 +145,10 @@ async def send_message(
     if active:
         raise HTTPException(
             status_code=409,
-            detail={"message": "Ada is still working on your last message.", "turn_id": active.turn_id},
+            detail={"message": "Ila is still working on your last message.", "turn_id": active.turn_id},
         )
     running = start_turn(
-        agent=ada_agent(target.session),
+        agent=ila_agent(target.session),
         conversation=target.conversation,
         user_message=body.content,
         attachments=None,
@@ -156,7 +156,7 @@ async def send_message(
         actor_email=user_email,
         actor_id=user_email,
         actor_kind=ActorKind.OWNER,
-        architecture=ada_architecture(),
+        architecture=ila_architecture(),
     )
     response = sse_response(_stream(running.transcript, after_sequence=0))
     response.headers["X-Turn-Id"] = running.turn.turn_id
@@ -169,7 +169,7 @@ async def connect(
     body: ConnectRequest,
     target: Annotated[BuildTarget, Depends(resolve_build)],
 ) -> ConnectResponse:
-    """The person's click on a Connect card. Their own action, never Ada's: installs the preset if needed and
+    """The person's click on a Connect card. Their own action, never Ila's: installs the preset if needed and
     returns the sign-in address."""
     try:
         authorize_url = await start_connection(get_mcp_connector_service(), request.state.user_email, body.provider)

@@ -109,7 +109,7 @@ export const SSEEventType = {
   IMAGE_GENERATION_PARTIAL: "IMAGE_GENERATION_PARTIAL",
   IMAGE_GENERATION_COMPLETE: "IMAGE_GENERATION_COMPLETE",
   UI_FORM_RENDER: "UI_FORM_RENDER",
-  // An account to connect in a sign-in popup (Ada's builds), shown as a card.
+  // An account to connect in a sign-in popup (Ila's builds), shown as a card.
   CONNECT_REQUEST: "CONNECT_REQUEST",
   USER_MESSAGE_SAVED: "USER_MESSAGE_SAVED",
   ASSISTANT_MESSAGE_SAVED: "ASSISTANT_MESSAGE_SAVED",

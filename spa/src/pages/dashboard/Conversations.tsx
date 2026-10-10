@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
-import { agentDisplayName } from "../../services/builder/ada";
+import { agentDisplayName } from "../../services/builder/ila";
 import { defaultAgentService } from "../../services/settings/DefaultAgentService";
 import { featureFlags } from "../../config/featureFlags";
 import type { ConversationResponse } from "../../types/conversation";

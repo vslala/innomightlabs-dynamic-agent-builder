@@ -109,7 +109,7 @@ class ResourceKind(Generic[SpecT]):
     kind: ClassVar[str]
     #: How the kind is named to people, in plans and drawings.
     label: ClassVar[str]
-    #: When to use it, in the words a person would ask with. Ada's book index routes on this.
+    #: When to use it, in the words a person would ask with. Ila's book index routes on this.
     use_when: ClassVar[str]
     spec_model: ClassVar[type[BaseModel]]
     #: Attribute names `apply` fills in, listed in the catalog and checked in `outputs`.
@@ -140,7 +140,7 @@ class ResourceKind(Generic[SpecT]):
         return list(field_references(name, spec))
 
     def page_sections(self) -> list[str]:
-        """Extra Markdown for this kind's page in Ada's book, beyond the fields its spec model gives."""
+        """Extra Markdown for this kind's page in Ila's book, beyond the fields its spec model gives."""
         return []
 
     def validate(self, name: str, spec: SpecT) -> list[BlueprintIssue]:

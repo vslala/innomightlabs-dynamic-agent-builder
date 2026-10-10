@@ -1,4 +1,4 @@
-"""Prompt construction for Vishwakarma, the architecture behind Ada the solution builder."""
+"""Prompt construction for Vishwakarma, the architecture behind Ila the solution builder."""
 
 from __future__ import annotations
 

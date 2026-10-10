@@ -1,7 +1,7 @@
-"""Accounts the person connects, asked for by the system rather than by Ada.
+"""Accounts the person connects, asked for by the system rather than by Ila.
 
 A blueprint's MCP connection (`kind: McpConnection`, `provider: tavily`) needs the person's own sign-in, which
-only they can give, in their browser. When Ada plans a draft that uses a provider the account isn't connected
+only they can give, in their browser. When Ila plans a draft that uses a provider the account isn't connected
 to, the system shows a card in the chat instead of the plan. The card's button calls `POST /builder/{id}/connect`,
 which installs the preset (registering an OAuth client where the server allows it) and returns the sign-in
 address for a popup window. Once the person is back, the next plan finds the connection and goes ahead.
@@ -46,7 +46,7 @@ def missing_connections(draft: Draft, user_email: str) -> list[ConnectionNeed]:
         try:
             spec = McpConnectionSpec.model_validate(raw)
         except ValidationError:
-            continue  # the validator reports it to Ada
+            continue  # the validator reports it to Ila
         connection = connection_for(spec, user_email)
         if connection is not None and is_ready(connection):
             continue

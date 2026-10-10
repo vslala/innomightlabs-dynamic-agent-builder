@@ -1,12 +1,12 @@
 """
-Vishwakarma: the architecture behind Ada, InnomightLabs' solution builder.
+Vishwakarma: the architecture behind Ila, InnomightLabs' solution builder.
 
 Named after the divine architect. Where Krishna MemGPT is a general agent, Vishwakarma runs one workflow:
 discover what the person wants (with forms), draft a blueprint, collect requirements, plan, build once
 approved, and explain how to try it. It has no memory or knowledge tools; its tools are the builder's
 (book, forms, plan, apply, status).
 
-What Ada can build is a book (`blueprints/book.py`): her prompt carries its index, the blueprint rules and the
+What Ila can build is a book (`blueprints/book.py`): her prompt carries its index, the blueprint rules and the
 draft, and only the pages she has opened in the last few turns (`page_retention_turns`). So a new resource kind or
 skill adds a page, not prompt weight.
 
@@ -76,7 +76,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
         """Read at use, so the setting can be changed while trying different values."""
         if self._page_retention_turns is not None:
             return self._page_retention_turns
-        return settings.ada_page_retention_turns
+        return settings.ila_page_retention_turns
 
     @property
     def name(self) -> str:
@@ -103,7 +103,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
         session.turn += 1
         in_view = set(pages_in_view(session.opened_pages, session.turn, self.page_retention_turns))
         session.opened_pages = {page_id: at for page_id, at in session.opened_pages.items() if page_id in in_view}
-        # The person's answer to what the system asked (a skill's settings) goes into the draft here, before Ada sees
+        # The person's answer to what the system asked (a skill's settings) goes into the draft here, before Ila sees
         # the turn.
         absorb_answers(session, user_message)
         self.sessions.save(session)
@@ -193,7 +193,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
             created_by=actor_email,
             role="assistant",
             content=assistant_text,
-            # The blueprint drawings Ada's tools made; kept on the message so they survive a reload.
+            # The blueprint drawings Ila's tools made; kept on the message so they survive a reload.
             canvases=outputs.canvases,
         )
         self.message_repo.save(assistant_msg)
