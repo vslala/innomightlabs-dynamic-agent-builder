@@ -31,9 +31,13 @@ One breakpoint, 900px, shared by `DashboardLayout.tsx` (`COMPACT_QUERY`), `Sideb
 - **Below 900px** the sidebar is a drawer. The header shows a menu button (`aria-controls`, `aria-expanded`) and the layout order becomes menu, title, account, avatar. The drawer closes on navigation, Escape, the backdrop or its close button; while it is open the rest of the app is `inert` and focus moves into it, then back to the menu button on Escape or close. A closed drawer is `inert` and `visibility: hidden`, so it is not in the tab order.
 - **The drawer's open state is the path it was opened on** (`drawerPath`), so any navigation closes it without an effect, and widening the window clears it so narrowing again does not bring it back.
 - **`--dashboard-gutter`** (32, 24, 16px) is the page padding, set on `.dashboard-layout`. Secondary navigation that bleeds to the screen edge reads it (see `AgentSideNav.css`).
-- **Secondary navigation** sits directly under the header on narrow screens as a horizontally scrolling tab bar, pinned with `position: sticky; top: 0`. Sticky only works inside its own containing block, so the parent must not be a one-column grid (see `AgentDetailLayout.module.css`). Scroll the active tab into view.
+- **Secondary navigation** (a page's own section list: the agent tabs in `AgentSideNav.css`, the Google/MCP list in `ConnectorsPage.module.css`) sits directly under the header on narrow screens as a horizontally scrolling tab bar. Three things make it work, and each has bitten us:
+  - It is `position: sticky` with `top: calc(var(--dashboard-gutter) * -1)`. Sticky offsets are measured inside the scroll area's padding, so `top: 0` leaves a gap of one gutter that content shows through.
+  - Its parent must be a flex column, not a one-column grid: a grid item can only stick within its own row.
+  - That column needs `align-items: stretch`. The desktop rule says `start`, which sizes the bar to its content (the whole tab list), widens the page and makes it pan sideways.
+  Scroll the active tab into view.
 - Use `100dvh`, not only `100vh`, for full-height shells: mobile browsers' address bars change the viewport height.
-- Check keyboard and narrow-screen usability (about 390px wide) before extending the shell.
+- Check keyboard and narrow-screen usability (about 390px wide) before extending the shell. A screenshot is not enough to catch sideways overflow: compare the scroll area's `scrollWidth` with its `clientWidth` at 390px (`.dashboard-layout__main`); they must be equal.
 
 ## Verification
 

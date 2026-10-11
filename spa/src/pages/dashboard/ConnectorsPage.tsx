@@ -1,3 +1,5 @@
+import { cn } from "../../lib/utils";
+import styles from "./ConnectorsPage.module.css";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -205,7 +207,7 @@ export function ConnectorsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
         <div>
           <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginBottom: "0.25rem" }}>
             Account Connections
@@ -236,14 +238,7 @@ export function ConnectorsPage() {
       {mcpError && <div style={{ color: "var(--error)", fontSize: "0.875rem" }}>{mcpError}</div>}
       {mcpNotice && <div style={{ color: "var(--success, var(--text-primary))", fontSize: "0.875rem" }}>{mcpNotice}</div>}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "15rem minmax(0, 1fr)",
-          gap: "1.5rem",
-          alignItems: "start",
-        }}
-      >
+      <div className={styles.workspace}>
         <ConnectorSideNav activeSection={activeSection} onChange={setActiveSection} />
 
         <main style={{ minWidth: 0 }}>
@@ -492,15 +487,8 @@ function ConnectorSideNav({
   onChange: (section: ConnectorSection) => void;
 }) {
   return (
-    <aside
-      style={{
-        width: "15rem",
-        minWidth: "15rem",
-        borderRight: "1px solid var(--border-subtle)",
-        paddingRight: "1rem",
-      }}
-    >
-      <nav style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+    <aside className={styles.sideNav}>
+      <nav className={styles.sideNavList} aria-label="Connector types">
         {connectorNavItems.map((item) => {
           const isActive = activeSection === item.id;
           return (
@@ -509,11 +497,13 @@ function ConnectorSideNav({
               type="button"
               variant="ghost"
               onClick={() => onChange(item.id)}
-              className={
+              aria-current={isActive ? "page" : undefined}
+              className={cn(
+                styles.sideNavItem,
                 isActive
                   ? "text-[var(--nav-active-text)]"
                   : "text-[var(--text-muted)] hover:bg-[var(--nav-hover-bg)] hover:text-[var(--text-primary)]"
-              }
+              )}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -525,7 +515,6 @@ function ConnectorSideNav({
                 fontSize: "0.875rem",
                 fontWeight: 500,
                 textAlign: "left",
-                width: "100%",
                 transition: "all 0.2s",
                 background: isActive
                   ? "var(--nav-active-bg)"

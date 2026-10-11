@@ -121,6 +121,7 @@
   /* A column, not a one-column grid: the section nav is sticky, and a grid item
      can only stick within its own row */
   .workspace {
+    align-items: stretch; /* the desktop rule says start, which sizes each child to its content (the whole tab list) */
     display: flex;
     flex-direction: column;
     gap: 16px;
