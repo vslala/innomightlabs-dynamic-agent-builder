@@ -4,6 +4,10 @@ React and TypeScript frontend for the InnomightLabs dashboard, landing site, and
 
 SPA LLDs remain in [`spa/docs/`](docs/) and are mirrored in the curated [InnomightLabs Engineering Handbook wiki](https://github.com/vslala/innomightlabs-dynamic-agent-builder/wiki). Update both copies when an SPA design changes; keep development instructions and component-level contracts with the code they govern.
 
+## Contributing
+
+Start with [CONTRIBUTION.md](CONTRIBUTION.md) for the module map, application boundaries, styling conventions, and verification workflow. Feature directories contain narrower `CONTRIBUTION.md` guides for pages, components, services, and chat clients.
+
 ## Vite baseline
 
 This project uses Vite with HMR and ESLint rules.
