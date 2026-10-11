@@ -1,0 +1,11 @@
+{
+  "Account": 1,
+  "Agent": 1,
+  "Conversation": 1,
+  "EmailIndex": 1,
+  "Identity": 1,
+  "KnowledgeBase": 1,
+  "Member": 1,
+  "OwnedAccountCount": 1,
+  "ProviderSettings": 1
+}
