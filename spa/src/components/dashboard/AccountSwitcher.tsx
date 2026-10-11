@@ -51,7 +51,7 @@ export function AccountSwitcher() {
       <SelectTrigger className="account-switcher" aria-label="Switch account">
         <Building2 className="account-switcher__icon" aria-hidden />
         <span className="account-switcher__name" title={current.name}>{current.name}</span>
-        <Pill size="sm" variant="secondary">{ACCESS_LABELS[current.access_summary]}</Pill>
+        <Pill size="sm" variant="secondary" className="account-switcher__role">{ACCESS_LABELS[current.access_summary]}</Pill>
       </SelectTrigger>
       <SelectContent align="start">
         {accounts.map((account) => (

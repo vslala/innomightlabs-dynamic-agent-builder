@@ -60,7 +60,7 @@ Read this before touching the look of any module. InnomightLabs is a working too
 
 **Before you call it done**
 
-- Look at it, in both themes, at desktop width and around 600px. Wide tables scroll inside their card (`overflow-x: auto` and a table `min-width`) rather than breaking words letter by letter; grid columns that hold them use `minmax(0, 1fr)`.
+- Look at it, in both themes, at desktop width and at phone width (about 390px; Chrome's headless screenshots will not go narrower than 500px, so use device emulation for the last 110px). Below 900px the dashboard sidebar is a drawer, so a page gets the full width: nothing may need horizontal scrolling except a table or tab bar that scrolls inside its own container, and a page's own sub-navigation sits directly under the header. Wide tables scroll inside their card (`overflow-x: auto` and a table `min-width`) rather than breaking words letter by letter; grid columns that hold them use `minmax(0, 1fr)`.
 - Check keyboard focus is visible on every control, motion respects `prefers-reduced-motion`, and text stays legible on its surface in the light theme, where the subtle backgrounds are faintest.
 - Tests, `yarn lint`, `yarn build` and `yarn design:audit` do not prove any of this; say what you checked visually.
 

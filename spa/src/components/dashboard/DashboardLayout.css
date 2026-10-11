@@ -1,7 +1,10 @@
 .dashboard-layout {
+  /* The page gutter, also read by secondary navigation that bleeds to the screen edge */
+  --dashboard-gutter: 32px;
   background-color: var(--bg-dark);
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   width: 100%;
 }
@@ -11,7 +14,9 @@
   flex: 1;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -19,7 +24,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 32px;
+  padding: var(--dashboard-gutter);
 }
 
 .dashboard-layout__main--full-bleed {
@@ -40,9 +45,16 @@
   width: 100%;
 }
 
+.dashboard-layout__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.55);
+}
+
 @media (max-width: 900px) {
-  .dashboard-layout__main {
-    padding: 24px;
+  .dashboard-layout {
+    --dashboard-gutter: 24px;
   }
 
   .dashboard-layout__main--full-bleed {
@@ -51,8 +63,8 @@
 }
 
 @media (max-width: 640px) {
-  .dashboard-layout__main {
-    padding: 16px;
+  .dashboard-layout {
+    --dashboard-gutter: 16px;
   }
 
   .dashboard-layout__main--full-bleed {

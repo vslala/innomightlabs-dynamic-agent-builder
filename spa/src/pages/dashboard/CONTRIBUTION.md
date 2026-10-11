@@ -4,7 +4,7 @@ These screens run under `/dashboard` inside `ProtectedRoute` and `DashboardLayou
 
 ## Layout
 
-- `Overview.tsx` aggregates agents, conversations, automations, knowledge bases, connector/MCP state, artifacts, and release notes. `Overview.css` owns globally scoped, prefixed `overview*` classes.
+- `Overview.tsx` loads agents, conversations, automations, knowledge bases and connector/MCP state (a failed request leaves its part empty) and hands them to `OverviewContent.tsx`, the pure view that `OverviewContent.test.tsx` renders. The view is a summary strip, recent work, a setup checklist that disappears once complete, and the latest release; navigation stays in the sidebar, so it carries no feature shortcuts. `Overview.module.css` owns its scoped styles. Keep the loader and the view in separate files: `lazyRoute` requires every export of a routed module to be a component.
 - `AgentsList.tsx` loads/deletes through `agentApiService`; `AgentCreate.tsx` fetches the create schema and renders `SchemaForm`. Detail tabs and marketplace have separate guides.
 - `Conversations.tsx` loads conversations, agents, and default-agent preference, filters user-visible conversations, and creates the first conversation. `ConversationDetail.tsx` owns message paging, attachments, streaming, active-turn reattachment/stop, image generation, and canvas/form/connect UI. Reuse `src/components/chat/` and `chatService`; don't create another SSE parser here.
 - `ArtifactsPage.tsx` lists durable artifacts; `ArtifactOpenPage.tsx` gets metadata and a view URL through `artifactApiService` before opening it. Keep retry/fallback links usable.

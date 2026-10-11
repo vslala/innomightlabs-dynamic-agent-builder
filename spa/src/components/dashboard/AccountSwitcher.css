@@ -32,3 +32,21 @@
   font-size: 11px;
   color: var(--text-muted);
 }
+
+@media (max-width: 640px) {
+  .account-switcher {
+    max-width: 9.5rem;
+    /* Beat the select trigger's inline padding: the name needs the room */
+    padding-inline: 0.625rem !important;
+    gap: 0.5rem !important;
+  }
+
+  .account-switcher__icon {
+    display: none;
+  }
+
+  /* The role pill is secondary; the name is what identifies the account */
+  .account-switcher .account-switcher__role {
+    display: none;
+  }
+}

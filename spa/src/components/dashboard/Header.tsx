@@ -1,6 +1,10 @@
+import { forwardRef } from "react";
 import { Link } from "react-router-dom";
+import { Menu } from "lucide-react";
+import { Button } from "../ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { AccountSwitcher } from "./AccountSwitcher";
+import "./Header.css";
 
 interface HeaderProps {
   title: string;
@@ -9,9 +13,16 @@ interface HeaderProps {
     email: string;
     picture?: string;
   };
+  /** The id of the navigation drawer this header's menu button opens. */
+  navigationId: string;
+  navigationOpen: boolean;
+  onMenuClick: () => void;
 }
 
-export function Header({ title, user }: HeaderProps) {
+export const Header = forwardRef<HTMLButtonElement, HeaderProps>(function Header(
+  { title, user, navigationId, navigationOpen, onMenuClick },
+  menuButton,
+) {
   const initials = user?.name
     ?.split(" ")
     .map((n) => n[0])
@@ -20,37 +31,37 @@ export function Header({ title, user }: HeaderProps) {
     .slice(0, 2);
 
   return (
-    <header
-      className="sticky top-0 z-30 border-b border-[var(--border-subtle)] bg-[var(--surface-panel)]"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        height: "4rem",
-        padding: "0 1.5rem",
-      }}
-    >
-      {/* The account every request acts in */}
-      <div style={{ flex: 1, display: "flex", alignItems: "center" }}>
-        <AccountSwitcher />
+    <header className="dashboard-header">
+      <div className="dashboard-header__start">
+        {/* Shown only where the sidebar is a drawer */}
+        <Button
+          type="button"
+          ref={menuButton}
+          variant="ghost"
+          size="icon"
+          className="dashboard-header__menu"
+          style={{ width: "2.75rem", height: "2.75rem" }}
+          aria-label="Open navigation"
+          aria-controls={navigationId}
+          aria-expanded={navigationOpen}
+          onClick={onMenuClick}
+        >
+          <Menu aria-hidden="true" />
+        </Button>
+        {/* The account every request acts in */}
+        <div className="dashboard-header__account">
+          <AccountSwitcher />
+        </div>
       </div>
 
-      {/* Centered title */}
-      <h1 style={{ fontSize: "1.125rem", fontWeight: 600, color: "var(--text-primary)" }}>
-        {title}
-      </h1>
+      <h1 className="dashboard-header__title">{title}</h1>
 
-      {/* Right side actions */}
-      <div style={{ flex: 1, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "0.75rem" }}>
+      <div className="dashboard-header__end">
         {user && (
-          <Link
-            to="/dashboard/settings"
-            className="flex items-center gap-2.5 pl-3 border-l border-[var(--border-subtle)]"
-          >
-            <div className="text-right hidden sm:block">
-              <p className="text-[13px] font-medium text-[var(--text-primary)] leading-tight">
-                {user.name}
-              </p>
-              <p className="text-[11px] text-[var(--text-muted)] leading-tight">{user.email}</p>
+          <Link to="/dashboard/settings" className="dashboard-header__user">
+            <div className="dashboard-header__identity">
+              <p className="dashboard-header__name">{user.name}</p>
+              <p className="dashboard-header__email">{user.email}</p>
             </div>
             <Avatar className="h-7 w-7">
               <AvatarImage src={user.picture} alt={user.name} />
@@ -61,4 +72,4 @@ export function Header({ title, user }: HeaderProps) {
       </div>
     </header>
   );
-}
+});

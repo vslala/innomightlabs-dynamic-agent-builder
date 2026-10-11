@@ -118,7 +118,11 @@
 }
 
 @media (max-width: 980px) {
+  /* A column, not a one-column grid: the section nav is sticky, and a grid item
+     can only stick within its own row */
   .workspace {
-    grid-template-columns: minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
   }
 }

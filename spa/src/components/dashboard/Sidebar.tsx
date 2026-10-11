@@ -1,9 +1,11 @@
+import { forwardRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { Archive, Bot, MessageSquare, Settings, LogOut, Home, Database, Workflow, Plug, Sparkles, Hammer, ShieldCheck } from "lucide-react";
+import { Archive, Bot, MessageSquare, Settings, LogOut, Home, Database, Workflow, Plug, Sparkles, Hammer, ShieldCheck, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { authService } from "../../services/auth";
 import logo from "../../assets/brand/innomightlabs-logo.png";
+import "./Sidebar.css";
 
 const navItems = [
   { to: "/dashboard", icon: Home, label: "Overview" },
@@ -19,56 +21,46 @@ const navItems = [
   { to: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
 
-export function Sidebar() {
-  const location = useLocation();
+interface SidebarProps {
+  id: string;
+  /** On a narrow screen the sidebar is a drawer; this is whether it is showing. */
+  open: boolean;
+  /** Whether the layout is narrow enough to use the drawer. */
+  compact: boolean;
+  onClose: () => void;
+}
 
-  const handleLogout = () => {
-    authService.logout();
-  };
+export const Sidebar = forwardRef<HTMLElement, SidebarProps>(function Sidebar({ id, open, compact, onClose }, ref) {
+  const location = useLocation();
 
   return (
     <aside
-      style={{
-        width: "16rem",
-        minWidth: "16rem",
-        borderRight: "1px solid var(--border-subtle)",
-        backgroundColor: "var(--bg-sidebar)",
-      }}
+      id={id}
+      ref={ref}
+      tabIndex={-1}
+      aria-label="Primary"
+      className={cn("dashboard-sidebar", open && "dashboard-sidebar--open")}
+      // A closed drawer is off screen: keep it out of the tab order and away from screen readers
+      inert={compact && !open}
     >
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          height: "100vh",
-          position: "sticky",
-          top: 0,
-        }}
-      >
-        {/* Logo */}
-        <div
-          style={{
-            height: "4rem",
-            display: "flex",
-            alignItems: "center",
-            padding: "0 1rem",
-            borderBottom: "1px solid var(--border-subtle)",
-          }}
-        >
-          <img
-            src={logo}
-            alt="InnoMight Labs logo"
-            style={{
-              width: "2rem",
-              height: "2rem",
-              objectFit: "contain",
-              filter: "drop-shadow(0 10px 20px rgba(24, 24, 40, 0.45))",
-            }}
-          />
-          <span className="gradient-text" style={{ fontSize: "1rem", fontWeight: 700 }}>InnoMight Labs</span>
+      <div className="dashboard-sidebar__inner">
+        <div className="dashboard-sidebar__brand">
+          <img src={logo} alt="InnoMight Labs logo" className="dashboard-sidebar__logo" />
+          <span className="gradient-text dashboard-sidebar__name">InnoMight Labs</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="dashboard-sidebar__close"
+            style={{ width: "2.75rem", height: "2.75rem" }}
+            aria-label="Close navigation"
+            onClick={onClose}
+          >
+            <X aria-hidden="true" />
+          </Button>
         </div>
 
-        {/* Navigation */}
-        <nav style={{ flex: 1, padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+        <nav className="dashboard-sidebar__nav" aria-label="Dashboard">
           {navItems.map((item) => {
             const isActive =
               item.to === "/dashboard"
@@ -76,61 +68,32 @@ export function Sidebar() {
                 : location.pathname.startsWith(item.to);
 
             return (
-              <NavLink key={item.to} to={item.to}>
-                <div
-                  className={cn(
-                    "transition-all duration-200",
-                    isActive
-                      ? "text-[var(--nav-active-text)]"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                  )}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.75rem",
-                    borderRadius: "0.5rem",
-                    padding: "0.625rem 0.75rem",
-                    fontSize: "0.875rem",
-                    fontWeight: isActive ? 700 : 600,
-                    background: isActive ? "var(--nav-active-bg)" : undefined,
-                  }}
-                  onMouseEnter={(event) => {
-                    if (!isActive) event.currentTarget.style.background = "var(--nav-hover-bg)";
-                  }}
-                  onMouseLeave={(event) => {
-                    if (!isActive) event.currentTarget.style.background = "";
-                  }}
-                >
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  {item.label}
-                </div>
+              <NavLink
+                key={item.to}
+                to={item.to}
+                aria-current={isActive ? "page" : undefined}
+                className={cn("dashboard-sidebar__link", isActive && "dashboard-sidebar__link--active")}
+              >
+                <item.icon aria-hidden="true" />
+                {item.label}
               </NavLink>
             );
           })}
         </nav>
 
-        {/* Logout */}
-        <div style={{ padding: "0.75rem", borderTop: "1px solid var(--border-subtle)" }}>
+        <div className="dashboard-sidebar__footer">
           <Button
+            type="button"
             variant="ghost"
             size="sm"
-            className="hover:text-red-400 hover:bg-red-500/10"
-            style={{
-              width: "100%",
-              justifyContent: "flex-start",
-              gap: "0.75rem",
-              height: "2.25rem",
-              padding: "0 0.75rem",
-              fontSize: "0.875rem",
-              color: "var(--text-muted)",
-            }}
-            onClick={handleLogout}
+            className="dashboard-sidebar__logout"
+            onClick={() => authService.logout()}
           >
-            <LogOut className="h-4 w-4 shrink-0" />
+            <LogOut aria-hidden="true" />
             Logout
           </Button>
         </div>
       </div>
     </aside>
   );
-}
+});

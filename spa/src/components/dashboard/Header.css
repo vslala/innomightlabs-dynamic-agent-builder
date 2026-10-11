@@ -1,0 +1,131 @@
+/* Top bar: account switcher | title | user. Below 900px it becomes menu | title | account | user. */
+
+.dashboard-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 0.75rem;
+  height: 4rem;
+  padding: 0 1.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-panel);
+}
+
+.dashboard-header__start,
+.dashboard-header__end {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+}
+
+.dashboard-header__end {
+  justify-content: flex-end;
+}
+
+.dashboard-header__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dashboard-header__menu {
+  display: none;
+  flex-shrink: 0;
+  margin-left: -0.5rem;
+  color: var(--text-primary);
+}
+
+.dashboard-header__menu:focus-visible,
+.dashboard-header__user:focus-visible {
+  outline: 2px solid var(--gradient-start);
+  outline-offset: 2px;
+}
+
+.dashboard-header__menu svg {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.dashboard-header__user {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border-subtle);
+  border-radius: 0.25rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.dashboard-header__identity {
+  min-width: 0;
+  text-align: right;
+}
+
+.dashboard-header__name,
+.dashboard-header__email {
+  margin: 0;
+  overflow: hidden;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-header__name {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dashboard-header__email {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .dashboard-header {
+    padding: 0 0.75rem;
+  }
+
+  /* Flatten the start and end groups so the title can sit beside the menu button */
+  .dashboard-header__start,
+  .dashboard-header__end {
+    display: contents;
+  }
+
+  .dashboard-header__menu {
+    display: inline-flex;
+    order: 0;
+  }
+
+  .dashboard-header__title {
+    order: 1;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 1rem;
+    text-overflow: ellipsis;
+  }
+
+  .dashboard-header__account {
+    order: 2;
+    min-width: 0;
+  }
+
+  .dashboard-header__user {
+    order: 3;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .dashboard-header__identity {
+    display: none;
+  }
+}

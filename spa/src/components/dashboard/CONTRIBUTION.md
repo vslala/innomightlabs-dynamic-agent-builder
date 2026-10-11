@@ -4,9 +4,9 @@
 
 This module supplies signed-in chrome, not resource CRUD pages.
 
-- `DashboardLayout.tsx` / `.css`: Sidebar + Header + scrolling main + OAuthReturn + route Outlet.
-- `Sidebar.tsx`: navigation, imported brand logo, logout through authService.
-- `Header.tsx`: account switcher, route title, user/avatar settings link.
+- `DashboardLayout.tsx` / `.css`: Sidebar + Header + scrolling main + OAuthReturn + route Outlet. Owns whether the navigation drawer is open.
+- `Sidebar.tsx` / `.css`: navigation, imported brand logo, logout through authService. A fixed column on desktop, an off-canvas drawer below 900px.
+- `Header.tsx` / `.css`: menu button (drawer only), account switcher, route title, user/avatar settings link.
 - `AccountSwitcher.tsx` / `.css`: active memberships and account selection.
 - `OAuthReturn.tsx`: sealed OAuth completion before children render.
 
@@ -24,7 +24,16 @@ OAuthReturn detects `oauth_complete` on mount, posts the sealed completion to `/
 
 `DashboardLayout.css` and `AccountSwitcher.css` are plain global CSS with `dashboard-layout__*` and `account-switcher*` prefixes, not CSS modules. Header/Sidebar also use utilities and inline styles. Keep global selectors tightly scoped; use local modules for new isolated styling rather than broad element overrides. Follow shared surface/text/nav/spacing tokens and compact operational UI conventions.
 
-Use actual navigation links and preserve active-route semantics, keyboard focus, accessible account-switch labels, and meaningful avatar alt text. Do not assume the fixed-width sidebar already provides mobile collapse behavior. Check keyboard and narrow-screen usability before extending it.
+Use actual navigation links and preserve active-route semantics, keyboard focus, accessible account-switch labels, and meaningful avatar alt text. ## Responsive behaviour
+
+One breakpoint, 900px, shared by `DashboardLayout.tsx` (`COMPACT_QUERY`), `Sidebar.css` and `Header.css`: change them together.
+
+- **Below 900px** the sidebar is a drawer. The header shows a menu button (`aria-controls`, `aria-expanded`) and the layout order becomes menu, title, account, avatar. The drawer closes on navigation, Escape, the backdrop or its close button; while it is open the rest of the app is `inert` and focus moves into it, then back to the menu button on Escape or close. A closed drawer is `inert` and `visibility: hidden`, so it is not in the tab order.
+- **The drawer's open state is the path it was opened on** (`drawerPath`), so any navigation closes it without an effect, and widening the window clears it so narrowing again does not bring it back.
+- **`--dashboard-gutter`** (32, 24, 16px) is the page padding, set on `.dashboard-layout`. Secondary navigation that bleeds to the screen edge reads it (see `AgentSideNav.css`).
+- **Secondary navigation** sits directly under the header on narrow screens as a horizontally scrolling tab bar, pinned with `position: sticky; top: 0`. Sticky only works inside its own containing block, so the parent must not be a one-column grid (see `AgentDetailLayout.module.css`). Scroll the active tab into view.
+- Use `100dvh`, not only `100vh`, for full-height shells: mobile browsers' address bars change the viewport height.
+- Check keyboard and narrow-screen usability (about 390px wide) before extending the shell.
 
 ## Verification
 

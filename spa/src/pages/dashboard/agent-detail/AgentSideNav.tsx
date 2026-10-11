@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useParams } from "react-router-dom";
 import { BarChart3, BookOpen, Bot, Brain, Database, Key, Network, Server, Wrench } from "lucide-react";
 
@@ -29,16 +29,24 @@ export function AgentSideNav() {
   const { agentId } = useParams<{ agentId: string }>();
   const location = useLocation();
   const [dreamAvailable, setDreamAvailable] = useState(false);
+  const list = useRef<HTMLElement>(null);
 
   useEffect(() => {
     void dreamApiService.isAvailable().then((status) => setDreamAvailable(status.enabled)).catch(() => setDreamAvailable(false));
   }, []);
 
+  // When the nav is a scrolling tab bar, keep the current tab in view
+  useEffect(() => {
+    list.current
+      ?.querySelector(".agent-side-nav__item--active")
+      ?.scrollIntoView?.({ block: "nearest", inline: "center" });
+  }, [location.pathname, dreamAvailable]);
+
   if (!agentId) return null;
 
   return (
     <aside className="agent-side-nav">
-      <nav className="agent-side-nav__list">
+      <nav ref={list} className="agent-side-nav__list" aria-label="Agent sections">
         {navItems.filter((item) => item.path !== "dream" || dreamAvailable).map((item) => {
           const to = item.path
             ? `/dashboard/agents/${agentId}/${item.path}`

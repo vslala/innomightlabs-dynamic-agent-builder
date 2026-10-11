@@ -24,13 +24,7 @@ export function PageHeader({
   return (
     <div
       className={cn(styles.pageHeader, className)}
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "space-between",
-        gap: "var(--space-5)",
-        ...style,
-      }}
+      style={style}
       {...props}
     />
   );
