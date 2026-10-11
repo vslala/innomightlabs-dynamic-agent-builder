@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from tests.mock_data import AGENT_CREATE_REQUEST
+from tests.mock_data import AGENT_CREATE_REQUEST, agent_fields
 from tools.a2a_agent_card_validator import validate_agent_card_payload
 
 
@@ -57,7 +57,7 @@ def test_registry_lists_only_enabled_agents(
         agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
         agent_persona="SECRET PERSONA SHOULD NOT BE PUBLIC",
         agent_description="Disabled description",
-        created_by=TEST_USER_EMAIL,
+        **agent_fields(TEST_USER_EMAIL),
         is_agent2agent_enabled=False,
     )
     AgentRepository().save(disabled_agent)

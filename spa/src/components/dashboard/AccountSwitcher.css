@@ -1,0 +1,34 @@
+.account-switcher {
+  max-width: 280px;
+  border-color: var(--border-subtle);
+  background: var(--bg-tertiary);
+}
+
+.account-switcher__icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.account-switcher__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.account-switcher__option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.account-switcher__access {
+  font-size: 11px;
+  color: var(--text-muted);
+}

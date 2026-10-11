@@ -41,6 +41,7 @@ from src.connectors.mcp.service import MCPConnectorService
 from src.connectors.mcp.usage import MCPCall
 from src.crypto import encrypt
 from src.skills.models import ActorKind
+from tests.mock_data import account_for, agent_fields
 
 
 OWNER_CALLER = MCPCaller(actor_kind=ActorKind.OWNER, actor_id="owner@example.com")
@@ -53,29 +54,29 @@ class FakeMCPRepository:
         self.catalogs: dict[tuple[str, str], MCPToolCatalog] = {}
 
     def save_tool_catalog(self, catalog: MCPToolCatalog) -> MCPToolCatalog:
-        self.catalogs[(catalog.owner_email, catalog.mcp_id)] = catalog
+        self.catalogs[(catalog.account_id, catalog.mcp_id)] = catalog
         return catalog
 
-    def find_tool_catalog(self, owner_email: str, mcp_id: str) -> MCPToolCatalog | None:
-        return self.catalogs.get((owner_email, mcp_id))
+    def find_tool_catalog(self, account_id: str, mcp_id: str) -> MCPToolCatalog | None:
+        return self.catalogs.get((account_id, mcp_id))
 
     def save_connection(self, connection: MCPConnection) -> MCPConnection:
-        self.connections[(connection.owner_email, connection.mcp_id)] = connection
+        self.connections[(connection.account_id, connection.mcp_id)] = connection
         return connection
 
-    def find_connection(self, owner_email: str, mcp_id: str) -> MCPConnection | None:
-        return self.connections.get((owner_email, mcp_id))
+    def find_connection(self, account_id: str, mcp_id: str) -> MCPConnection | None:
+        return self.connections.get((account_id, mcp_id))
 
-    def list_connections(self, owner_email: str) -> list[MCPConnection]:
+    def list_connections(self, account_id: str) -> list[MCPConnection]:
         return [
             connection
             for (email, _), connection in self.connections.items()
-            if email == owner_email
+            if email == account_id
         ]
 
-    def delete_connection(self, owner_email: str, mcp_id: str) -> None:
-        self.connections.pop((owner_email, mcp_id), None)
-        self.catalogs.pop((owner_email, mcp_id), None)
+    def delete_connection(self, account_id: str, mcp_id: str) -> None:
+        self.connections.pop((account_id, mcp_id), None)
+        self.catalogs.pop((account_id, mcp_id), None)
 
     def save_agent_connection(self, link: AgentMCPConnection) -> AgentMCPConnection:
         self.agent_connections[(link.agent_id, link.mcp_id)] = link
@@ -107,10 +108,8 @@ class FakeAgentRepository:
     def __init__(self, agent: Agent):
         self.agent = agent
 
-    def find_agent_by_id(self, agent_id: str, created_by: str) -> Agent | None:
-        if self.agent.agent_id == agent_id and self.agent.created_by == created_by:
-            return self.agent
-        return None
+    def get(self, agent_id: str) -> Agent | None:
+        return self.agent if self.agent.agent_id == agent_id else None
 
 
 class FakeMCPClient:
@@ -193,7 +192,7 @@ def make_agent() -> Agent:
         agent_provider="OpenAI",
         agent_model="gpt-5.5",
         agent_persona="SEO analyst",
-        created_by="owner@example.com",
+        **agent_fields("owner@example.com"),
         created_at=datetime.now(timezone.utc),
     )
 
@@ -213,7 +212,7 @@ def make_service() -> tuple[MCPConnectorService, FakeMCPRepository, FakeMCPClien
 
 def create_connection(service: MCPConnectorService) -> str:
     response = service.create_connection(
-        "owner@example.com",
+        account_for("owner@example.com"),
         MCPConnectionCreateRequest.model_validate(
             {
                 "name": "Ahrefs",
@@ -244,7 +243,7 @@ def test_mcp_connection_can_be_enabled_per_agent() -> None:
     mcp_id = create_connection(service)
 
     linked = service.enable_for_agent(
-        owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         agent_id="agent-1",
         mcp_id=mcp_id,
         enabled=True,
@@ -254,7 +253,7 @@ def test_mcp_connection_can_be_enabled_per_agent() -> None:
     assert linked.name == "Ahrefs"
     assert linked.enabled is True
     assert service.list_agent_connections(
-        owner_email="owner@example.com", agent_id="agent-1", actor_kind=ActorKind.OWNER
+        account_id=account_for("owner@example.com"), agent_id="agent-1", actor_kind=ActorKind.OWNER
     )
 
 
@@ -262,7 +261,7 @@ def test_oauth_mcp_connection_is_created_without_credentials() -> None:
     service, _repository, _client = make_service()
 
     response = service.create_connection(
-        "owner@example.com",
+        account_for("owner@example.com"),
         MCPConnectionCreateRequest.model_validate(
             {
                 "name": "Notion MCP",
@@ -501,7 +500,7 @@ async def test_oauth_mcp_runtime_uses_bearer_token() -> None:
     )
     connection = repository.save_connection(
         MCPConnection(
-            owner_email="owner@example.com",
+            account_id=account_for("owner@example.com"),
             name="Notion MCP",
             server_url="https://mcp.notion.example/mcp",
             auth_type=MCPAuthType.OAUTH,
@@ -509,13 +508,13 @@ async def test_oauth_mcp_runtime_uses_bearer_token() -> None:
         )
     )
     service.enable_for_agent(
-        owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         agent_id="agent-1",
         mcp_id=connection.mcp_id,
         enabled=True,
     )
 
-    listed = await service.list_runtime_tools(owner_email="owner@example.com", agent_id="agent-1", caller=OWNER_CALLER)
+    listed = await service.list_runtime_tools(account_id=account_for("owner@example.com"), agent_id="agent-1", caller=OWNER_CALLER)
 
     assert listed["connectors"][0]["tools"][0]["name"] == "search_pages"
     assert client.auth_headers == [{"Authorization": "Bearer oauth-token"}]
@@ -549,7 +548,7 @@ async def test_oauth_mcp_runtime_rejects_expired_token_without_refresh() -> None
     )
     connection = repository.save_connection(
         MCPConnection(
-            owner_email="owner@example.com",
+            account_id=account_for("owner@example.com"),
             name="Notion MCP",
             server_url="https://mcp.notion.example/mcp",
             auth_type=MCPAuthType.OAUTH,
@@ -557,13 +556,13 @@ async def test_oauth_mcp_runtime_rejects_expired_token_without_refresh() -> None
         )
     )
     service.enable_for_agent(
-        owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         agent_id="agent-1",
         mcp_id=connection.mcp_id,
         enabled=True,
     )
 
-    listed = await service.list_runtime_tools(owner_email="owner@example.com", agent_id="agent-1", caller=OWNER_CALLER)
+    listed = await service.list_runtime_tools(account_id=account_for("owner@example.com"), agent_id="agent-1", caller=OWNER_CALLER)
 
     assert "credentials expired" in listed["connectors"][0]["error"]
     assert client.auth_headers == []
@@ -574,19 +573,19 @@ async def test_mcp_runtime_lists_and_calls_live_tools() -> None:
     service, _repository, client = make_service()
     mcp_id = create_connection(service)
     service.enable_for_agent(
-        owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         agent_id="agent-1",
         mcp_id=mcp_id,
         enabled=True,
     )
 
     listed = await service.list_runtime_tools(
-        owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         agent_id="agent-1",
         caller=OWNER_CALLER,
     )
     called = await service.call_runtime_tool(
-        owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         agent_id="agent-1",
         caller=OWNER_CALLER,
         mcp_id=mcp_id,
@@ -607,7 +606,7 @@ async def test_tool_execution_router_dispatches_mcp_tools() -> None:
     service, _repository, _client = make_service()
     mcp_id = create_connection(service)
     service.enable_for_agent(
-        owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         agent_id="agent-1",
         mcp_id=mcp_id,
         enabled=True,
@@ -621,6 +620,7 @@ async def test_tool_execution_router_dispatches_mcp_tools() -> None:
     )
     state = AgentTurnState(
         owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         actor_email="owner@example.com",
         actor_id="owner@example.com",
         actor_kind=ActorKind.OWNER,
@@ -694,7 +694,7 @@ async def test_streamable_http_client_initializes_session_before_list_tools() ->
         raise AssertionError(f"Unexpected MCP method {method}")
 
     connection = MCPConnection(
-        owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         name="Notion MCP",
         server_url="https://mcp.notion.example/mcp",
         encrypted_auth_config="unused",

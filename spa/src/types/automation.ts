@@ -6,15 +6,21 @@ export type AutomationRunStatus = "pending" | "running" | "succeeded" | "failed"
 export type AutomationNodeRunStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
 export type AutomationEdgeLabel = "next" | "true" | "false" | "error" | string;
 
+/** How the caller reaches it: their own, shared with them, or (admins) metadata only. */
+export type AutomationAccess = "owner" | "shared" | "admin";
+
 export interface AutomationResponse {
   automation_id: string;
   title: string;
   description?: string | null;
   status: AutomationStatus;
   version: number;
+  account_id: string;
+  owner_id: string;
   created_by: string;
   created_at: string;
   updated_at?: string | null;
+  access: AutomationAccess;
 }
 
 export interface AutomationNodePosition {

@@ -8,7 +8,7 @@ import pytest
 from src.dream.executor import DreamScheduledExecutor
 from src.dream.models import DreamRun, DreamRunStatus
 from src.scheduler.models import Schedule, ScheduleTargetType
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, schedule_fields
 
 
 class FakeDreamService:
@@ -24,7 +24,7 @@ class FakeDreamService:
 def _schedule(target: dict[str, str] | None = None) -> Schedule:
     return Schedule(
         schedule_id="dream-schedule",
-        owner_email=TEST_USER_EMAIL,
+        **schedule_fields(TEST_USER_EMAIL),
         name="Nightly memory dream",
         cron_expression="0 3 * * *",
         target_type=ScheduleTargetType.DREAM_RUN,
@@ -45,7 +45,7 @@ def _run(status: DreamRunStatus, *, error: str | None = None) -> DreamRun:
 
 
 @pytest.mark.asyncio
-async def test_execute_missing_agent_is_reported_as_a_skipped_dream_run(monkeypatch: pytest.MonkeyPatch):
+async def test_execute_missing_agent_is_reported_as_a_skipped_dream_run(dynamodb_table, monkeypatch: pytest.MonkeyPatch):
     service = FakeDreamService(_run(DreamRunStatus.SKIPPED, error="agent does not support core memory"))
     monkeypatch.setattr("src.dream.executor.settings", SimpleNamespace(dream_enabled=True))
 
@@ -73,7 +73,7 @@ async def test_execute_missing_agent_is_reported_as_a_skipped_dream_run(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_execute_raises_for_failed_dream_run(monkeypatch: pytest.MonkeyPatch):
+async def test_execute_raises_for_failed_dream_run(dynamodb_table, monkeypatch: pytest.MonkeyPatch):
     service = FakeDreamService(_run(DreamRunStatus.FAILED, error="provider unavailable"))
     monkeypatch.setattr("src.dream.executor.settings", SimpleNamespace(dream_enabled=True))
 

@@ -5,6 +5,8 @@
 import { httpClient } from "../http/client";
 import type { FormSchema } from "../../types/form";
 
+export type AgentAccess = "owner" | "shared" | "admin";
+
 // Backend Agent response type
 export interface AgentResponse {
   agent_id: string;
@@ -16,7 +18,13 @@ export interface AgentResponse {
   agent_description?: string | null;
   capabilities?: string[];
   is_agent2agent_enabled?: boolean;
+  account_id: string;
+  /** The member it belongs to (a user_id); it always runs on its owner's settings. */
+  owner_id: string;
+  /** Who created it (a user_id), for audit. */
   created_by: string;
+  /** How you reach it: yours, shared with you, or (admins) everyone else's as metadata only. */
+  access: AgentAccess;
   created_at: string;
   updated_at: string | null;
 }

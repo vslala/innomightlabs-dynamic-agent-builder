@@ -8,9 +8,11 @@ These keys are used for widget authentication.
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 
+from src.agents.access import agent_with
+from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.apikeys.models import (
     A2ASecretResponse,
@@ -20,6 +22,8 @@ from src.apikeys.models import (
     UpdateApiKeyRequest,
 )
 from src.apikeys.repository import ApiKeyRepository
+from src.iam.dependencies import get_principal
+from src.iam.principal import Principal
 
 log = logging.getLogger(__name__)
 
@@ -42,43 +46,17 @@ def get_agent_repository() -> AgentRepository:
     return AgentRepository()
 
 
-def get_user_email(request: Request) -> str:
-    """Extract user email from request state (set by auth middleware)."""
-    user_email = getattr(request.state, "user_email", None)
-    if not user_email:
-        raise HTTPException(status_code=401, detail="User not authenticated")
-    return str(user_email)
-
-
-def validate_agent_ownership(
-    agent_id: str,
-    user_email: str,
-    agent_repo: AgentRepository,
-) -> None:
-    """
-    Validate that the agent exists and belongs to the user.
-
-    Raises HTTPException if agent not found or not owned by user.
-    """
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Agent '{agent_id}' not found or does not belong to you",
-        )
-
-
 @router.post(
     "",
     response_model=ApiKeyResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_api_key(
-    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     agent_id: str,
     body: CreateApiKeyRequest,
     api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
-    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    agent: Annotated[Agent, Depends(agent_with("apikeys:CreateKey"))],
 ) -> ApiKeyResponse:
     """
     Create a new API key for an agent.
@@ -93,15 +71,13 @@ async def create_api_key(
     Returns:
         The created API key with its public key
     """
-    user_email = get_user_email(request)
-    validate_agent_ownership(agent_id, user_email, agent_repo)
 
     api_key = AgentApiKey(
         agent_id=agent_id,
         name=body.name,
         allowed_origins=body.allowed_origins,
         allow_guests=body.allow_guests,
-        created_by=user_email,
+        created_by=principal.user_id,  # audit only: the key acts as the agent's owner
     )
 
     saved = api_key_repo.save(api_key)
@@ -112,10 +88,9 @@ async def create_api_key(
 
 @router.get("", response_model=list[ApiKeyResponse])
 async def list_api_keys(
-    request: Request,
     agent_id: str,
     api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
-    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    agent: Annotated[Agent, Depends(agent_with("apikeys:ListKeys"))],
 ) -> list[ApiKeyResponse]:
     """
     List all API keys for an agent.
@@ -126,8 +101,6 @@ async def list_api_keys(
     Returns:
         List of API keys for the agent
     """
-    user_email = get_user_email(request)
-    validate_agent_ownership(agent_id, user_email, agent_repo)
 
     keys = api_key_repo.find_all_by_agent(agent_id)
     return [key.to_response() for key in keys]
@@ -135,11 +108,10 @@ async def list_api_keys(
 
 @router.get("/{key_id}", response_model=ApiKeyResponse)
 async def get_api_key(
-    request: Request,
     agent_id: str,
     key_id: str,
     api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
-    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    agent: Annotated[Agent, Depends(agent_with("apikeys:ListKeys"))],
 ) -> ApiKeyResponse:
     """
     Get a specific API key by ID.
@@ -151,8 +123,6 @@ async def get_api_key(
     Returns:
         The API key details
     """
-    user_email = get_user_email(request)
-    validate_agent_ownership(agent_id, user_email, agent_repo)
 
     api_key = api_key_repo.find_by_id(agent_id, key_id)
     if not api_key:
@@ -163,12 +133,11 @@ async def get_api_key(
 
 @router.patch("/{key_id}", response_model=ApiKeyResponse)
 async def update_api_key(
-    request: Request,
     agent_id: str,
     key_id: str,
     body: UpdateApiKeyRequest,
     api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
-    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    agent: Annotated[Agent, Depends(agent_with("apikeys:CreateKey"))],
 ) -> ApiKeyResponse:
     """
     Update an API key's settings.
@@ -184,8 +153,6 @@ async def update_api_key(
     Returns:
         The updated API key
     """
-    user_email = get_user_email(request)
-    validate_agent_ownership(agent_id, user_email, agent_repo)
 
     api_key = api_key_repo.find_by_id(agent_id, key_id)
     if not api_key:
@@ -209,11 +176,10 @@ async def update_api_key(
 
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_api_key(
-    request: Request,
     agent_id: str,
     key_id: str,
     api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
-    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    agent: Annotated[Agent, Depends(agent_with("apikeys:RevokeKey"))],
 ) -> None:
     """
     Revoke/delete an API key.
@@ -224,8 +190,6 @@ async def delete_api_key(
         agent_id: The agent the key belongs to
         key_id: The unique key identifier
     """
-    user_email = get_user_email(request)
-    validate_agent_ownership(agent_id, user_email, agent_repo)
 
     api_key_repo.delete_by_id(agent_id, key_id)
     log.info(f"Deleted API key {key_id} for agent {agent_id}")
@@ -233,16 +197,13 @@ async def delete_api_key(
 
 @router.post("/{key_id}/a2a-secret", response_model=A2ASecretResponse, status_code=status.HTTP_201_CREATED)
 async def issue_a2a_secret(
-    request: Request,
     agent_id: str,
     key_id: str,
     api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
-    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    agent: Annotated[Agent, Depends(agent_with("apikeys:CreateKey"))],
 ) -> A2ASecretResponse:
     """Issue (or rotate) the key's A2A client secret. The public key is embedded in web pages, so it
     is never an A2A credential."""
-    user_email = get_user_email(request)
-    validate_agent_ownership(agent_id, user_email, agent_repo)
 
     api_key = api_key_repo.find_by_id(agent_id, key_id)
     if not api_key:

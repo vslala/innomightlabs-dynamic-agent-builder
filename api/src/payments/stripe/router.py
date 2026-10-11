@@ -24,7 +24,7 @@ from src.payments.stripe.models import (
 
 from ...config import settings
 from ..pricing_config import get_pricing_config
-from ...users import User, UserRepository
+from ...identity import IdentityRepository
 from ..subscriptions import Subscription, SubscriptionRepository
 from ...email import (
     send_subscription_confirmed_email_safe,
@@ -90,16 +90,11 @@ def normalize_value(value: Optional[object]) -> Optional[str]:
     return str(value)
 
 def ensure_user_exists(email: str, customer_id: Optional[str] = None) -> None:
-    """Create user if doesn't exist, update customer_id if provided."""
-    repo = UserRepository()
-    user = repo.get_by_email(email)
-    
-    if user:
-        if customer_id:
-            repo.update_stripe_customer_id(email, customer_id)
-    else:
-        new_user = User(email=email, name=email.split("@")[0], stripe_customer_id=customer_id)
-        repo.create_or_update(new_user)
+    """Create the identity if it doesn't exist, and record the Stripe customer if given."""
+    repo = IdentityRepository()
+    user, created = repo.find_or_create(email, email.split("@")[0], stripe_customer_id=customer_id)
+    if customer_id and not created:
+        repo.update_stripe_customer_id(user.user_id, customer_id)
 
 def extract_subscription_metadata(stripe_sub: dict) -> SubscriptionMetadata:
     """Extract plan_key and billing_cycle from Stripe subscription metadata."""
@@ -398,8 +393,7 @@ async def get_subscription_status(request: Request):
         )
 
     try:
-        user_repo = UserRepository()
-        user = user_repo.get_by_email(user_email)
+        user = IdentityRepository().find_by_email(user_email)
 
         customer_id = user.stripe_customer_id if user else None
         if customer_id:

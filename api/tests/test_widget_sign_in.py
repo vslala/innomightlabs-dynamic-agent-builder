@@ -15,7 +15,7 @@ import src.widget.router as widget_router
 from src.widget import sessions
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields
 
 API = "https://api.example.com"
 IDE_CALLBACK = "vscode://undefined_publisher.innomightlabs-code-assist/auth-callback"
@@ -46,7 +46,7 @@ def _widget_key(test_client: TestClient, auth_headers: dict, allowed_origins: li
             agent_architecture="krishna-mini",
             agent_provider="Bedrock",
             agent_persona="Helpful",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
     ).agent_id
     key = test_client.post(

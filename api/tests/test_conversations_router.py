@@ -11,6 +11,8 @@ from tests.mock_data import (
     AGENT_CREATE_REQUEST,
     CONVERSATION_CREATE_REQUEST,
     CONVERSATION_CREATE_REQUEST_2,
+    conversation_fields,
+    user_id_for,
 )
 
 
@@ -42,7 +44,7 @@ class TestConversationsRouter:
         assert data["title"] == CONVERSATION_CREATE_REQUEST["title"]
         assert data["description"] == CONVERSATION_CREATE_REQUEST["description"]
         assert data["agent_id"] == self.agent_id
-        assert data["created_by"] == TEST_USER_EMAIL
+        assert data["created_by"] == user_id_for(TEST_USER_EMAIL), "the member who started it, by user_id"
         assert "conversation_id" in data
 
     def test_create_conversation_with_invalid_agent(
@@ -92,7 +94,7 @@ class TestConversationsRouter:
         from src.conversations.repository import ConversationRepository
 
         for i in range(3):
-            ConversationRepository().save(Conversation(title=f"Build {i}", agent_id=ILA_AGENT_ID, created_by=TEST_USER_EMAIL))
+            ConversationRepository().save(Conversation(title=f"Build {i}", agent_id=ILA_AGENT_ID, **conversation_fields(TEST_USER_EMAIL)))
         for i in range(2):
             request_data = {"title": f"Chat {i}", "agent_id": self.agent_id}
             test_client.post("/conversations/", json=request_data, headers=auth_headers)

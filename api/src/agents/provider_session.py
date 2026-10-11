@@ -21,13 +21,13 @@ if TYPE_CHECKING:
 
 
 class ProviderNotConfigured(UserFacingError):
-    """The agent names a provider the owner has not set up."""
+    """The agent names a provider its account has not set up."""
 
     def __init__(self, provider_name: str):
         self.provider_name = provider_name
         super().__init__(
             f"Provider '{provider_name}' is not configured. "
-            "Please configure it in Settings > Provider Configuration."
+            "An account admin can configure it in Settings > Provider Configuration."
         )
 
 
@@ -42,12 +42,12 @@ class ProviderSession:
 async def open_provider_session(
     agent: "Agent",
     *,
-    owner_email: str,
     provider_settings_repo: ProviderSettingsRepository,
 ) -> ProviderSession:
-    """Raises ProviderNotConfigured if the owner has no settings for the provider."""
+    """The agent's account's provider, whoever owns the agent or talks to it. Raises ProviderNotConfigured if the
+    account has no settings for the provider."""
     provider_settings = provider_settings_repo.find_by_provider(
-        owner_email, agent.agent_provider
+        agent.account_id, agent.agent_provider
     )
     if not provider_settings:
         raise ProviderNotConfigured(agent.agent_provider)

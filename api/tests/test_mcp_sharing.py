@@ -29,6 +29,7 @@ from tests.test_mcp_connectors import (
     create_connection,
     make_agent,
 )
+from tests.mock_data import account_for
 
 OWNER = "owner@example.com"
 VISITOR = MCPCaller(actor_kind=ActorKind.VISITOR, actor_id="visitor-1", actor_email="v@example.com")
@@ -74,19 +75,20 @@ def _service(client: JiraLikeClient | None = None) -> tuple[MCPConnectorService,
 
 async def _enabled_connector(service: MCPConnectorService) -> str:
     mcp_id = create_connection(service)
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=mcp_id)
-    await service.capture_tool_catalog(OWNER, mcp_id)
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=mcp_id)
+    await service.capture_tool_catalog(account_for(OWNER), mcp_id)
     return mcp_id
 
 
 def _share(service: MCPConnectorService, mcp_id: str, kinds: list[ActorKind], tools: list[str]):
     return service.share(
-        owner_email=OWNER,
+        account_id=account_for(OWNER),
         agent_id="agent-1",
         mcp_id=mcp_id,
         request=MCPSharingUpdateRequest(
             available_to=kinds, allowed_tools=tools, accept_disclaimer_version=DISCLAIMER_VERSION
         ),
+        by=OWNER,
     )
 
 
@@ -117,7 +119,7 @@ async def test_enabling_a_connector_snapshots_its_tools():
 
     mcp_id = await _enabled_connector(service)
 
-    catalog = repository.find_tool_catalog(OWNER, mcp_id)
+    catalog = repository.find_tool_catalog(account_for(OWNER), mcp_id)
     assert catalog is not None
     assert catalog.tool_names() == {"search", "create_issue", "delete_issue"}
 
@@ -127,19 +129,19 @@ async def test_an_unreachable_server_does_not_fail_the_snapshot():
 
     mcp_id = await _enabled_connector(service)
 
-    assert repository.find_tool_catalog(OWNER, mcp_id) is None
+    assert repository.find_tool_catalog(account_for(OWNER), mcp_id) is None
 
 
 async def test_the_share_dialog_lists_tools_live_for_connectors_without_a_snapshot():
     service, repository, _ = _service()
     mcp_id = create_connection(service)
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=mcp_id)
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=mcp_id)
 
-    view = await service.sharing_view(owner_email=OWNER, agent_id="agent-1", mcp_id=mcp_id)
+    view = await service.sharing_view(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=mcp_id)
 
     assert view.catalog is not None
     assert [tool.name for tool in view.catalog.tools] == ["search", "create_issue", "delete_issue"]
-    assert repository.find_tool_catalog(OWNER, mcp_id) is not None
+    assert repository.find_tool_catalog(account_for(OWNER), mcp_id) is not None
     assert view.disclaimer.version == DISCLAIMER_VERSION
     assert "Ahrefs" in view.disclaimer.paragraphs[0]
 
@@ -147,9 +149,9 @@ async def test_the_share_dialog_lists_tools_live_for_connectors_without_a_snapsh
 async def test_the_share_dialog_explains_when_the_tools_cannot_be_listed():
     service, _, _ = _service(JiraLikeClient(reachable=False))
     mcp_id = create_connection(service)
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=mcp_id)
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=mcp_id)
 
-    view = await service.sharing_view(owner_email=OWNER, agent_id="agent-1", mcp_id=mcp_id)
+    view = await service.sharing_view(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=mcp_id)
 
     assert view.catalog is None
     assert view.catalog_error and "Ahrefs" in view.catalog_error
@@ -186,10 +188,11 @@ async def test_sharing_is_refused_unless_it_is_informed_and_specific(request_fie
 
     with pytest.raises(ValueError, match=refusal):
         service.share(
-            owner_email=OWNER,
+            account_id=account_for(OWNER),
             agent_id="agent-1",
             mcp_id=mcp_id,
             request=MCPSharingUpdateRequest(available_to=[ActorKind.VISITOR], **request_fields),
+            by=OWNER,
         )
     assert repository.find_agent_connection("agent-1", mcp_id).sharing.available_to == []
 
@@ -205,7 +208,7 @@ async def test_stopping_sharing_needs_no_consent_and_forgets_everything():
     _share(service, mcp_id, [ActorKind.VISITOR], ["search"])
 
     service.share(
-        owner_email=OWNER, agent_id="agent-1", mcp_id=mcp_id, request=MCPSharingUpdateRequest(available_to=[])
+        account_id=account_for(OWNER), agent_id="agent-1", mcp_id=mcp_id, request=MCPSharingUpdateRequest(available_to=[]), by=OWNER
     )
 
     sharing = repository.find_agent_connection("agent-1", mcp_id).sharing
@@ -217,13 +220,13 @@ async def test_re_enabling_a_connector_keeps_what_was_shared():
     mcp_id = await _enabled_connector(service)
     _share(service, mcp_id, [ActorKind.VISITOR], ["search"])
 
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=mcp_id, enabled=True)
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=mcp_id, enabled=True)
 
     assert repository.find_agent_connection("agent-1", mcp_id).sharing.allowed_tools == ["search"]
 
 
 def test_links_saved_before_sharing_existed_stay_owner_only():
-    link = AgentMCPConnection(agent_id="agent-1", owner_email=OWNER, mcp_id="m")
+    link = AgentMCPConnection(agent_id="agent-1", account_id=account_for(OWNER), mcp_id="m")
     legacy_item = {key: value for key, value in link.to_dynamo_item().items() if key != "sharing"}
 
     loaded = AgentMCPConnection.from_dynamo_item(legacy_item)
@@ -240,15 +243,15 @@ async def test_an_unshared_connector_does_not_exist_for_outsiders():
     mcp_id = await _enabled_connector(service)
 
     connections = service.list_agent_connections(
-        owner_email=OWNER, agent_id="agent-1", actor_kind=ActorKind.VISITOR, verify_agent=False
+        account_id=account_for(OWNER), agent_id="agent-1", actor_kind=ActorKind.VISITOR, verify_agent=False
     )
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=VISITOR)
+    listed = await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=VISITOR)
 
     assert connections == []
     assert listed == {"connectors": []}
     with pytest.raises(ValueError, match="is not enabled for this agent"):
         await service.call_runtime_tool(
-            owner_email=OWNER, agent_id="agent-1", caller=VISITOR, mcp_id=mcp_id, tool_name="search", arguments={}
+            account_id=account_for(OWNER), agent_id="agent-1", caller=VISITOR, mcp_id=mcp_id, tool_name="search", arguments={}
         )
     assert usage.calls == []
 
@@ -259,14 +262,14 @@ async def test_outsiders_see_and_call_only_the_shared_tools():
     mcp_id = await _enabled_connector(service)
     _share(service, mcp_id, [ActorKind.VISITOR], ["search", "create_issue"])
 
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=VISITOR)
+    listed = await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=VISITOR)
     await service.call_runtime_tool(
-        owner_email=OWNER, agent_id="agent-1", caller=VISITOR, mcp_id=mcp_id, tool_name="search", arguments={}
+        account_id=account_for(OWNER), agent_id="agent-1", caller=VISITOR, mcp_id=mcp_id, tool_name="search", arguments={}
     )
     # Refused with the same words as a missing connector, so the visitor learns nothing about it.
     with pytest.raises(ValueError, match=f"MCP connector '{mcp_id}' is not enabled for this agent"):
         await service.call_runtime_tool(
-            owner_email=OWNER, agent_id="agent-1", caller=VISITOR, mcp_id=mcp_id, tool_name="delete_issue", arguments={}
+            account_id=account_for(OWNER), agent_id="agent-1", caller=VISITOR, mcp_id=mcp_id, tool_name="delete_issue", arguments={}
         )
 
     assert _tool_names(listed) == ["search", "create_issue"]
@@ -279,7 +282,7 @@ async def test_each_audience_is_shared_with_on_its_own():
     mcp_id = await _enabled_connector(service)
     _share(service, mcp_id, [ActorKind.VISITOR], ["search"])
 
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=A2A)
+    listed = await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=A2A)
 
     assert listed == {"connectors": []}
 
@@ -289,7 +292,7 @@ async def test_the_owner_keeps_every_tool_whatever_is_shared():
     mcp_id = await _enabled_connector(service)
     _share(service, mcp_id, [ActorKind.VISITOR], ["search"])
 
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
+    listed = await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER)
 
     assert _tool_names(listed) == ["search", "create_issue", "delete_issue"]
 
@@ -315,7 +318,7 @@ async def test_a_call_is_recorded_with_who_asked_and_how_it_went():
     _share(service, mcp_id, [ActorKind.VISITOR], ["create_issue"])
 
     await service.call_runtime_tool(
-        owner_email=OWNER,
+        account_id=account_for(OWNER),
         agent_id="agent-1",
         caller=VISITOR,
         mcp_id=mcp_id,
@@ -335,7 +338,7 @@ async def test_a_tool_that_reports_an_error_is_recorded_as_failed():
     mcp_id = await _enabled_connector(service)
 
     await service.call_runtime_tool(
-        owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER, mcp_id=mcp_id, tool_name="search", arguments={}
+        account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER, mcp_id=mcp_id, tool_name="search", arguments={}
     )
 
     [call] = usage.calls
@@ -350,7 +353,7 @@ async def test_an_unreachable_server_is_recorded_as_failed():
 
     with pytest.raises(MCPClientError):
         await service.call_runtime_tool(
-            owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER, mcp_id=mcp_id, tool_name="search", arguments={}
+            account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER, mcp_id=mcp_id, tool_name="search", arguments={}
         )
 
     [call] = usage.calls
@@ -367,7 +370,7 @@ async def test_recording_trouble_never_fails_the_tool_call():
     usage.record = broken  # type: ignore[method-assign]
 
     result = await service.call_runtime_tool(
-        owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER, mcp_id=mcp_id, tool_name="search", arguments={}
+        account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER, mcp_id=mcp_id, tool_name="search", arguments={}
     )
 
     assert result["content"][0]["text"] == "done"

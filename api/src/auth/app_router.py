@@ -10,20 +10,20 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
 from ..config import settings
-from ..users import User, UserRepository
-from ..users.models import UserStatus
+from ..identity import Identity, IdentityRepository
 from . import app_tokens
 
 router = APIRouter(prefix="/auth", tags=["auth-apps"])
 basic = HTTPBasic(auto_error=False)
 
-user_repository = UserRepository()
+identity_repository = IdentityRepository()
 
 
 class TokenRequest(BaseModel):
     code: str
 
 
+# Apps name the user by email when refreshing or revoking; the refresh token is what proves it.
 class RefreshRequest(BaseModel):
     email: str
     refresh_token: str
@@ -37,6 +37,7 @@ class TokenResponse(BaseModel):
     access_token: str
     expires_in: int
     refresh_token: str
+    user_id: str
     email: str
 
 
@@ -47,31 +48,31 @@ def authenticated_app(credentials: HTTPBasicCredentials | None = Depends(basic))
     return credentials.username
 
 
-def _active_user(email: str | None) -> User:
-    user = user_repository.get_by_email(email) if email else None
-    if user is None or user.status in (UserStatus.INACTIVE.value, UserStatus.PENDING_DELETION.value):
+def _active(user: Identity | None) -> Identity:
+    if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="invalid_grant")
     return user
 
 
-def _response(user: User, tokens: app_tokens.AppTokens) -> TokenResponse:
+def _response(user: Identity, tokens: app_tokens.AppTokens) -> TokenResponse:
     return TokenResponse(
         access_token=tokens.access_token, expires_in=tokens.expires_in,
-        refresh_token=tokens.refresh_token, email=user.email,
+        refresh_token=tokens.refresh_token, user_id=user.user_id, email=user.email,
     )
 
 
 @router.post("/token", response_model=TokenResponse)
 async def exchange_login_code(body: TokenRequest, app: str = Depends(authenticated_app)) -> TokenResponse:
     """Redeem the one-time code the login redirect carried for an access and refresh token."""
-    user = _active_user(app_tokens.redeem_login_code(body.code, app))
+    user_id = app_tokens.redeem_login_code(body.code, app)
+    user = _active(identity_repository.get(user_id) if user_id else None)
     return _response(user, app_tokens.issue_tokens(user, app))
 
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(body: RefreshRequest, app: str = Depends(authenticated_app)) -> TokenResponse:
     """Trade a refresh token for a new access token and a rotated refresh token."""
-    user = _active_user(body.email)
+    user = _active(identity_repository.find_by_email(body.email))
     tokens = app_tokens.refresh_tokens(user, app, body.refresh_token)
     if tokens is None:
         raise HTTPException(status_code=401, detail="invalid_grant")
@@ -81,5 +82,7 @@ async def refresh(body: RefreshRequest, app: str = Depends(authenticated_app)) -
 @router.post("/revoke", status_code=204)
 async def revoke(body: RevokeRequest, app: str = Depends(authenticated_app)) -> Response:
     """Forget the user's refresh token for this app, for example on logout."""
-    app_tokens.revoke_tokens(body.email, app)
+    user = identity_repository.find_by_email(body.email)
+    if user:
+        app_tokens.revoke_tokens(user.user_id, app)
     return Response(status_code=204)

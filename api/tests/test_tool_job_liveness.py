@@ -16,6 +16,7 @@ from src.agents.tool_runtime.jobs.models import (
     ToolJobStatus,
 )
 from src.agents.tool_runtime.jobs.repository import ToolJobRepository
+from tests.mock_data import user_id_for, account_for
 
 OWNER = "owner@example.com"
 
@@ -27,7 +28,8 @@ def job_repository(dynamodb_table):
 
 def _job(*, status: ToolJobStatus, started_at: datetime | None) -> ToolJob:
     return ToolJob(
-        owner_email=OWNER,
+        account_id=account_for(OWNER),
+        owner_id=user_id_for(OWNER),
         actor_email=OWNER,
         actor_id=OWNER,
         agent_id="agent-1",

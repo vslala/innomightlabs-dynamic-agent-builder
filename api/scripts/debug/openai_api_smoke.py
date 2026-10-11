@@ -41,7 +41,7 @@ async def main() -> None:
         sys.exit("OPEN_AI_SERVICE_ACCOUNT_KEY is not set (source ../.envrc)")
 
     settings = ProviderSettings(
-        user_email="smoke@example.com",
+        account_id="smoke-account",
         provider_name="OpenAIAPI",
         encrypted_credentials=encrypt(json.dumps({"api_key": api_key})),
     )

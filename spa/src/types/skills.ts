@@ -47,8 +47,8 @@ export interface InstalledSkill {
   owner_only: boolean;
 }
 
-/** Who is chatting with the agent: its owner, a /v1 secret key, an A2A caller, or a widget visitor. */
-export type SkillActorKind = "owner" | "api" | "a2a" | "visitor";
+/** Who is chatting with the agent: its owner, a member it's shared with, a /v1 secret key, an A2A caller, or a widget visitor. */
+export type SkillActorKind = "owner" | "member" | "api" | "a2a" | "visitor";
 
 export interface SkillInstallRequest {
   config: SkillConfig;

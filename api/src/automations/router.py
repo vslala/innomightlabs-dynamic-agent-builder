@@ -9,7 +9,10 @@ import boto3
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPBearer
 
+from src.accounts.owner import Owner
+from src.automations.access import access_to, automation_with, owner_of_automation, visible_automations
 from src.automations.models import (
+    Automation,
     AutomationGraphResponse,
     AutomationActionCatalogResponse,
     AutomationResponse,
@@ -43,6 +46,9 @@ from src.automations.errors import AutomationNotFoundError, AutomationValidation
 from src.automations.service import AutomationService
 from src.common.pagination import Paginated
 from src.config import settings
+from src.iam.actions import ResourceRef
+from src.iam.dependencies import get_owner, get_principal
+from src.iam.principal import Principal
 from src.form_models import Form
 from src.scheduler.service import SchedulerValidationError
 
@@ -73,17 +79,11 @@ def get_automation_runner(
     return AutomationRunner(automation_repo=repo)
 
 
-def get_user_email(request: Request) -> str:
-    user_email = getattr(request.state, "user_email", None)
-    if not user_email:
-        raise HTTPException(status_code=401, detail="User not authenticated")
-    return str(user_email)
-
-
-def invoke_automation_run_async(run_id: str, automation_id: str, user_email: str) -> None:
+def invoke_automation_run_async(run_id: str, automation_id: str, owner: Owner) -> None:
+    """Runs as the automation's owner; the Lambda finds them again from the automation in its account."""
     if settings.async_job_backend != "lambda":
         log.info("Automation run will execute in local background task: %s", run_id)
-        asyncio.create_task(AutomationRunner().execute_run(run_id, user_email))
+        asyncio.create_task(AutomationRunner().execute_run(run_id, owner))
         return
 
     function_name = settings.async_job_lambda_name
@@ -99,7 +99,7 @@ def invoke_automation_run_async(run_id: str, automation_id: str, user_email: str
                 "automation_run": {
                     "run_id": run_id,
                     "automation_id": automation_id,
-                    "user_email": user_email,
+                    "account_id": owner.account_id,
                 }
             }
         ).encode("utf-8"),
@@ -118,45 +118,48 @@ def translate_error(exc: Exception) -> HTTPException:
 
 @router.post("", response_model=AutomationGraphResponse, status_code=status.HTTP_201_CREATED)
 async def create_automation(
-    request: Request,
     body: CreateAutomationRequest,
+    principal: Annotated[Principal, Depends(get_principal)],
+    owner: Annotated[Owner, Depends(get_owner)],
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationGraphResponse:
+    """A new automation in the account the request acts in, owned by the caller."""
+    principal.require("automations:Create", ResourceRef("automation"))
     try:
-        return service.create_automation(body, get_user_email(request)).to_response()
+        return service.create_automation(body, owner).to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
 
 
 @router.get("", response_model=list[AutomationResponse])
 async def list_automations(
-    request: Request,
-    service: Annotated[AutomationService, Depends(get_automation_service)],
+    principal: Annotated[Principal, Depends(get_principal)],
+    repo: Annotated[AutomationRepository, Depends(get_automation_repository)],
 ) -> list[AutomationResponse]:
-    return [item.to_response() for item in service.list_automations(get_user_email(request))]
+    """The caller's automations, those shared with them, and (for admins) everyone else's."""
+    return [item.to_response(access) for item, access in visible_automations(principal, repo)]
 
 
 @router.get("/{automation_id}", response_model=AutomationResponse)
 async def get_automation(
     request: Request,
     automation_id: str,
-    service: Annotated[AutomationService, Depends(get_automation_service)],
+    automation: Annotated[Automation, Depends(automation_with("automations:Describe"))],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> AutomationResponse:
-    try:
-        return service.get_automation(automation_id, get_user_email(request)).to_response()
-    except Exception as exc:
-        raise translate_error(exc) from exc
+    return automation.to_response(access_to(principal, automation) or "admin")
 
 
 @router.patch("/{automation_id}", response_model=AutomationResponse)
 async def update_automation(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     body: UpdateAutomationRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationResponse:
     try:
-        return service.update_automation(automation_id, body, get_user_email(request)).to_response()
+        return service.update_automation(automation_id, body, owner_of_automation(automation)).to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -165,10 +168,11 @@ async def update_automation(
 async def delete_automation(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Delete"))],
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> None:
     try:
-        service.delete_automation(automation_id, get_user_email(request))
+        service.delete_automation(automation_id, owner_of_automation(automation))
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -177,10 +181,11 @@ async def delete_automation(
 async def get_graph(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Get"))],
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationGraphResponse:
     try:
-        return service.get_graph(automation_id, get_user_email(request)).to_response()
+        return service.get_graph(automation_id, owner_of_automation(automation)).to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -189,10 +194,11 @@ async def get_graph(
 async def get_action_catalog(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Get"))],
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationActionCatalogResponse:
     try:
-        return service.list_action_catalog(automation_id, get_user_email(request))
+        return service.list_action_catalog(automation_id, owner_of_automation(automation))
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -201,11 +207,12 @@ async def get_action_catalog(
 async def preview_smart_values(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Get"))],
     body: SmartValuePreviewRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> SmartValuePreviewResponse:
     try:
-        return service.preview_smart_values(automation_id, body, get_user_email(request))
+        return service.preview_smart_values(automation_id, body, owner_of_automation(automation))
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -214,10 +221,11 @@ async def preview_smart_values(
 async def list_automation_skills(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Get"))],
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> list[AutomationSkillResponse]:
     try:
-        return service.list_skills(automation_id, get_user_email(request))
+        return service.list_skills(automation_id, owner_of_automation(automation))
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -226,12 +234,13 @@ async def list_automation_skills(
 async def enable_automation_skill(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     body: EnableAutomationSkillRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
     skill_id: str = Query(..., description="Skill id to enable"),
 ) -> AutomationSkillResponse:
     try:
-        return service.enable_skill(automation_id, skill_id, body, get_user_email(request))
+        return service.enable_skill(automation_id, skill_id, body, owner_of_automation(automation))
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -240,12 +249,13 @@ async def enable_automation_skill(
 async def update_automation_skill(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     skill_id: str,
     body: UpdateAutomationSkillRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationSkillResponse:
     try:
-        return service.update_skill(automation_id, skill_id, body, get_user_email(request))
+        return service.update_skill(automation_id, skill_id, body, owner_of_automation(automation))
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -254,11 +264,12 @@ async def update_automation_skill(
 async def delete_automation_skill(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     skill_id: str,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> None:
     try:
-        service.delete_skill(automation_id, skill_id, get_user_email(request))
+        service.delete_skill(automation_id, skill_id, owner_of_automation(automation))
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -267,11 +278,12 @@ async def delete_automation_skill(
 async def save_graph(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     body: SaveAutomationGraphRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationGraphResponse:
     try:
-        return service.save_graph(automation_id, body, get_user_email(request)).to_response()
+        return service.save_graph(automation_id, body, owner_of_automation(automation)).to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -280,11 +292,12 @@ async def save_graph(
 async def add_node(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     body: CreateAutomationNodeRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationNodeResponse:
     try:
-        return service.add_node(automation_id, body, get_user_email(request)).to_response()
+        return service.add_node(automation_id, body, owner_of_automation(automation)).to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -293,12 +306,13 @@ async def add_node(
 async def update_node(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     node_id: str,
     body: UpdateAutomationNodeRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationNodeResponse:
     try:
-        return service.update_node(automation_id, node_id, body, get_user_email(request)).to_response()
+        return service.update_node(automation_id, node_id, body, owner_of_automation(automation)).to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -307,11 +321,12 @@ async def update_node(
 async def delete_node(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     node_id: str,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> None:
     try:
-        service.delete_node(automation_id, node_id, get_user_email(request))
+        service.delete_node(automation_id, node_id, owner_of_automation(automation))
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -320,11 +335,12 @@ async def delete_node(
 async def add_edge(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     body: CreateAutomationEdgeRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationEdgeResponse:
     try:
-        return service.add_edge(automation_id, body, get_user_email(request)).to_response()
+        return service.add_edge(automation_id, body, owner_of_automation(automation)).to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -333,12 +349,13 @@ async def add_edge(
 async def update_edge(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     edge_id: str,
     body: UpdateAutomationEdgeRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationEdgeResponse:
     try:
-        return service.update_edge(automation_id, edge_id, body, get_user_email(request)).to_response()
+        return service.update_edge(automation_id, edge_id, body, owner_of_automation(automation)).to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -347,11 +364,12 @@ async def update_edge(
 async def delete_edge(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     edge_id: str,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> None:
     try:
-        service.delete_edge(automation_id, edge_id, get_user_email(request))
+        service.delete_edge(automation_id, edge_id, owner_of_automation(automation))
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -360,11 +378,12 @@ async def delete_edge(
 async def add_trigger(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     body: CreateAutomationTriggerRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationTriggerResponse:
     try:
-        return service.add_trigger(automation_id, body, get_user_email(request)).to_response()
+        return service.add_trigger(automation_id, body, owner_of_automation(automation)).to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -373,10 +392,11 @@ async def add_trigger(
 async def list_triggers(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Get"))],
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> list[AutomationTriggerResponse]:
     try:
-        triggers = service.list_triggers(automation_id, get_user_email(request))
+        triggers = service.list_triggers(automation_id, owner_of_automation(automation))
         return [trigger.to_response() for trigger in triggers]
     except Exception as exc:
         raise translate_error(exc) from exc
@@ -386,11 +406,12 @@ async def list_triggers(
 async def get_trigger_form(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Get"))],
     trigger_type: AutomationTriggerType,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> Form:
     try:
-        graph = service.get_graph(automation_id, get_user_email(request))
+        graph = service.get_graph(automation_id, owner_of_automation(automation))
         submit_path = f"/automations/{automation_id}/triggers"
         if trigger_type == AutomationTriggerType.SCHEDULE:
             return build_schedule_trigger_form(graph.nodes, submit_path=submit_path)
@@ -405,13 +426,14 @@ async def get_trigger_form(
 async def update_trigger(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     trigger_id: str,
     body: UpdateAutomationTriggerRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> AutomationTriggerResponse:
     try:
         return service.update_trigger(
-            automation_id, trigger_id, body, get_user_email(request)
+            automation_id, trigger_id, body, owner_of_automation(automation)
         ).to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
@@ -421,11 +443,12 @@ async def update_trigger(
 async def delete_trigger(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
     trigger_id: str,
     service: Annotated[AutomationService, Depends(get_automation_service)],
 ) -> None:
     try:
-        service.delete_trigger(automation_id, trigger_id, get_user_email(request))
+        service.delete_trigger(automation_id, trigger_id, owner_of_automation(automation))
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -438,16 +461,17 @@ async def delete_trigger(
 async def test_run(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Run"))],
     body: StartAutomationRunRequest,
     service: Annotated[AutomationService, Depends(get_automation_service)],
     runner: Annotated[AutomationRunner, Depends(get_automation_runner)],
 ) -> AutomationRunResponse:
-    user_email = get_user_email(request)
+    owner = owner_of_automation(automation)  # whoever starts it, it runs as its owner
     try:
-        graph = service.get_graph(automation_id, user_email)
-        service.validate_graph(graph.nodes, graph.edges, graph.triggers, user_email)
-        run = runner.create_test_run(graph, body.trigger_id, body.input, user_email)
-        invoke_automation_run_async(run.run_id, automation_id, user_email)
+        graph = service.get_graph(automation_id, owner)
+        service.validate_graph(graph.nodes, graph.edges, graph.triggers, owner)
+        run = runner.create_test_run(graph, body.trigger_id, body.input, owner)
+        invoke_automation_run_async(run.run_id, automation_id, owner)
         return run.to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
@@ -457,13 +481,13 @@ async def test_run(
 async def list_runs(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Get"))],
     limit: int = Query(default=20, ge=1, le=100),
     cursor: Optional[str] = None,
     service: AutomationService = Depends(get_automation_service),
     repo: AutomationRepository = Depends(get_automation_repository),
 ) -> Paginated[AutomationRunResponse]:
     try:
-        service.get_automation(automation_id, get_user_email(request))
         runs, next_cursor, has_more = repo.find_runs_by_automation(automation_id, limit, cursor)
         run_state = AutomationRunStateService(repo)
         runs = [run_state.fail_if_stale(run) for run in runs]
@@ -480,14 +504,13 @@ async def list_runs(
 async def get_run(
     request: Request,
     automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Get"))],
     run_id: str,
     service: Annotated[AutomationService, Depends(get_automation_service)],
     repo: Annotated[AutomationRepository, Depends(get_automation_repository)],
 ) -> AutomationRunDetailResponse:
-    user_email = get_user_email(request)
     try:
-        service.get_automation(automation_id, user_email)
-        run = repo.find_run_by_id(run_id, user_email)
+        run = repo.find_run_by_id(run_id)
         if not run or run.automation_id != automation_id:
             raise AutomationNotFoundError("Run not found")
         run = AutomationRunStateService(repo).fail_if_stale(run)

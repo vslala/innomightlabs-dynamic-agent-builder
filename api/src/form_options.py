@@ -4,6 +4,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from src.accounts.owner import Owner
+from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.form_models import Form, FormInput, SelectOption
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
@@ -20,7 +22,8 @@ class FormOptionSourceType:
 
 @dataclass
 class FormOptionsContext:
-    user_email: str
+    # The member whose agents fill agent pickers; providers are their account's
+    owner: Owner
     provider_settings_repository: ProviderSettingsRepository | None = None
     agent_repository: AgentRepository | None = None
     cache: dict[str, object] = field(default_factory=dict)
@@ -76,21 +79,21 @@ def validate_form_options(
             raise ValueError(f"Invalid value for {input_def.name}")
 
 
+def _owned_agents(context: FormOptionsContext) -> list[Agent]:
+    repo = context.agent_repository or AgentRepository()
+    return repo.list_owned(context.owner.account_id, context.owner.user_id)
+
+
 class AgentsOptionsResolver:
     def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
-        repo = context.agent_repository or AgentRepository()
-        return [
-            SelectOption(value=agent.agent_id, label=agent.agent_name)
-            for agent in repo.find_all_by_created_by(context.user_email)
-        ]
+        return [SelectOption(value=agent.agent_id, label=agent.agent_name) for agent in _owned_agents(context)]
 
 
 class KrishnaMiniAgentsOptionsResolver:
     def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
-        repo = context.agent_repository or AgentRepository()
         return [
             SelectOption(value=agent.agent_id, label=agent.agent_name)
-            for agent in repo.find_all_by_created_by(context.user_email)
+            for agent in _owned_agents(context)
             if agent.agent_architecture == "krishna-mini"
         ]
 
@@ -121,7 +124,7 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
 
     repo = context.provider_settings_repository or get_provider_settings_repository()
 
-    # Bedrock is always offered; every other provider appears once the user has
+    # Bedrock is always offered; every other provider appears once the account has
     # configured it. A provider whose model listing fails is still offered, so a
     # transient outage doesn't silently drop it from the picker.
     providers = ["Bedrock"]
@@ -131,10 +134,7 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
     ]
 
     for source in PROVIDER_MODEL_SOURCES:
-        provider_settings = repo.find_by_provider(
-            user_email=context.user_email,
-            provider_name=source.provider_name,
-        )
+        provider_settings = repo.find_by_provider(context.owner.account_id, source.provider_name)
         if not provider_settings:
             continue
 
@@ -146,9 +146,9 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
             )
         except Exception as e:
             log.warning(
-                "Failed to load %s models for user %s: %s",
+                "Failed to load %s models for account %s: %s",
                 source.provider_name,
-                context.user_email,
+                context.owner.account_id,
                 e,
             )
 

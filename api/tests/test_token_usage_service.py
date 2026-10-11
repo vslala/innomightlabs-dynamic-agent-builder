@@ -1,44 +1,10 @@
 from datetime import datetime, timezone
 
-from fastapi import HTTPException
-
+from src.agents.repository import AgentRepository
 from src.token_usage.models import TokenUsagePeriod
 from src.token_usage.service import TokenUsageService
-from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2
+from tests.mock_data import TEST_USER_EMAIL
 from tests.test_analytics_router import create_agent as _create_agent
-
-
-def test_get_usage_raises_404_for_unowned_agent(dynamodb_table):
-    _create_agent("agent-1", owner_email=TEST_USER_EMAIL_2)
-    service = TokenUsageService()
-
-    try:
-        service.get_usage(
-            owner_email=TEST_USER_EMAIL,
-            agent_id="agent-1",
-            period=TokenUsagePeriod.DAY,
-            from_at=None,
-            to_at=None,
-        )
-        assert False, "Expected HTTPException"
-    except HTTPException as exc:
-        assert exc.status_code == 404
-
-
-def test_get_usage_raises_404_for_missing_agent(dynamodb_table):
-    service = TokenUsageService()
-
-    try:
-        service.get_usage(
-            owner_email=TEST_USER_EMAIL,
-            agent_id="does-not-exist",
-            period=TokenUsagePeriod.DAY,
-            from_at=None,
-            to_at=None,
-        )
-        assert False, "Expected HTTPException"
-    except HTTPException as exc:
-        assert exc.status_code == 404
 
 
 def test_get_usage_returns_range_and_respects_boundaries(dynamodb_table):
@@ -54,8 +20,7 @@ def test_get_usage_returns_range_and_respects_boundaries(dynamodb_table):
     )
 
     response = service.get_usage(
-        owner_email=TEST_USER_EMAIL,
-        agent_id="agent-2",
+        agent=AgentRepository().get("agent-2"),
         period=TokenUsagePeriod.DAY,
         from_at=datetime.now(timezone.utc).replace(day=1),
         to_at=datetime.now(timezone.utc),
@@ -92,8 +57,7 @@ def test_get_usage_llm_model_filter_narrows_results(dynamodb_table):
     )
 
     response = service.get_usage(
-        owner_email=TEST_USER_EMAIL,
-        agent_id="agent-3",
+        agent=AgentRepository().get("agent-3"),
         period=TokenUsagePeriod.DAY,
         from_at=None,
         to_at=None,
@@ -123,8 +87,7 @@ def test_model_switch_preserves_historical_buckets_per_model(dynamodb_table):
     )
 
     response_before_switch = service.get_usage(
-        owner_email=TEST_USER_EMAIL,
-        agent_id="agent-4",
+        agent=AgentRepository().get("agent-4"),
         period=TokenUsagePeriod.DAY,
         from_at=None,
         to_at=None,
@@ -145,8 +108,7 @@ def test_model_switch_preserves_historical_buckets_per_model(dynamodb_table):
     )
 
     response_after_switch = service.get_usage(
-        owner_email=TEST_USER_EMAIL,
-        agent_id="agent-4",
+        agent=AgentRepository().get("agent-4"),
         period=TokenUsagePeriod.DAY,
         from_at=None,
         to_at=None,
@@ -180,8 +142,7 @@ def test_get_usage_range_spans_month_and_year_boundary(dynamodb_table):
     )
 
     response = service.get_usage(
-        owner_email=TEST_USER_EMAIL,
-        agent_id="agent-5",
+        agent=AgentRepository().get("agent-5"),
         period=TokenUsagePeriod.MONTH,
         from_at=datetime(2025, 12, 1, tzinfo=timezone.utc),
         to_at=datetime(2026, 1, 31, tzinfo=timezone.utc),
@@ -190,8 +151,7 @@ def test_get_usage_range_spans_month_and_year_boundary(dynamodb_table):
     assert sorted(point.period_key for point in response.series) == ["2025-12", "2026-01"]
 
     year_response = service.get_usage(
-        owner_email=TEST_USER_EMAIL,
-        agent_id="agent-5",
+        agent=AgentRepository().get("agent-5"),
         period=TokenUsagePeriod.YEAR,
         from_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
         to_at=datetime(2026, 12, 31, tzinfo=timezone.utc),

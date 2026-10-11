@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
 
+from src.accounts.owner import Owner
 from src.agents.repository import AgentRepository
 from src.config import settings as app_settings
 from src.conversations.repository import ConversationRepository
@@ -66,7 +67,7 @@ class DreamService:
     def schedule_id_for(agent_id: str, user_id: str) -> str:
         return f"dream:{agent_id}:{user_id}"
 
-    def ensure_schedule(self, agent_id: str, user_id: str, owner_email: str, dream_settings: DreamSettings) -> None:
+    def ensure_schedule(self, agent_id: str, user_id: str, owner: Owner, dream_settings: DreamSettings) -> None:
         schedule_id = self.schedule_id_for(agent_id, user_id)
         enabled = dream_settings.enabled and app_settings.dream_enabled
         request = CreateScheduleRequest(
@@ -81,9 +82,9 @@ class DreamService:
             enabled=enabled,
         )
         try:
-            self.scheduler_service.get_schedule(schedule_id, owner_email)
+            self.scheduler_service.get_schedule(schedule_id, owner)
         except SchedulerValidationError:
-            self.scheduler_service.create_schedule(request, owner_email, owner_email)
+            self.scheduler_service.create_schedule(request, owner, owner.user_id)
             return
         self.scheduler_service.update_schedule(
             schedule_id,
@@ -95,12 +96,12 @@ class DreamService:
                 source_ref=request.source_ref,
                 enabled=enabled,
             ),
-            owner_email,
+            owner,
         )
 
-    def delete_schedule(self, agent_id: str, user_id: str, owner_email: str) -> None:
+    def delete_schedule(self, agent_id: str, user_id: str, owner: Owner) -> None:
         try:
-            self.scheduler_service.delete_schedule(self.schedule_id_for(agent_id, user_id), owner_email)
+            self.scheduler_service.delete_schedule(self.schedule_id_for(agent_id, user_id), owner)
         except SchedulerValidationError:
             pass
 
@@ -119,12 +120,13 @@ class DreamService:
         ):
             return self._finish(run, DreamRunStatus.SKIPPED, "another dream run is already active")
         try:
-            dream_settings = self.dream_repository.find_settings(owner_email)
+            agent = self.agent_repository.get(agent_id)
+            # The agent's account's settings and provider, whoever owns the agent
+            dream_settings = self.dream_repository.find_settings(agent.account_id) if agent else None
             if not app_settings.dream_enabled or not dream_settings or (not dream_settings.enabled and mode != "manual"):
                 return self._finish(run, DreamRunStatus.SKIPPED, "dreaming is disabled")
             if not dream_settings.provider_name or not dream_settings.model_name:
                 return self._finish(run, DreamRunStatus.SKIPPED, "dream model is not configured")
-            agent = self.agent_repository.find_agent_by_id(agent_id, owner_email)
             if not agent or agent.agent_architecture != "krishna-memgpt":
                 return self._finish(run, DreamRunStatus.SKIPPED, "agent does not support core memory")
 
@@ -135,7 +137,8 @@ class DreamService:
                 message_repository=self.message_repository,
                 page_size=app_settings.dream_message_page_size,
             ).build(
-                agent_id=agent_id, owner_email=owner_email,
+                # The owner's own chats with the agent
+                agent_id=agent_id, partition=agent.owner_partition,
                 session_timeout_minutes=agent.session_timeout_minutes,
                 settings=dream_settings, cursor=cursor, requested_mode=mode,
             )
@@ -144,7 +147,7 @@ class DreamService:
             if not window.sessions:
                 return self._finish(run, DreamRunStatus.SKIPPED, "no_new_sessions")
 
-            provider_settings = self.provider_settings_repository.find_by_provider(owner_email, dream_settings.provider_name)
+            provider_settings = self.provider_settings_repository.find_by_provider(agent.account_id, dream_settings.provider_name)
             if not provider_settings:
                 return self._finish(run, DreamRunStatus.FAILED, f"provider '{dream_settings.provider_name}' is not configured")
             credentials = await load_provider_credentials(

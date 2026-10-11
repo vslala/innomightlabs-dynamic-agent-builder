@@ -10,6 +10,9 @@ const kit: KitSummary = {
   current_version: 3,
   versions: 3,
   counts: { WidgetKey: 1, KnowledgeBase: 1, Agent: 2 },
+  account_id: "account-1",
+  owner_id: "user-1",
+  access: "owner",
   created_at: "2026-10-10T09:00:00Z",
 };
 

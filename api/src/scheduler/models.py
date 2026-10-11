@@ -37,7 +37,8 @@ class ScheduleRunStatus(str, Enum):
 
 class ScheduleResponse(BaseModel):
     schedule_id: str
-    owner_email: str
+    account_id: str
+    owner_id: str
     name: str
     status: ScheduleStatus
     cron_expression: str = ""
@@ -82,7 +83,7 @@ class UpdateScheduleRequest(BaseModel):
 class ScheduleRunResponse(BaseModel):
     run_id: str
     schedule_id: str
-    owner_email: str
+    account_id: str
     scheduled_for: datetime
     status: ScheduleRunStatus
     target_type: ScheduleTargetType
@@ -94,8 +95,13 @@ class ScheduleRunResponse(BaseModel):
 
 
 class Schedule(BaseModel):
+    """In the account of what it runs, as the member it belongs to: their agent or automation runs on their
+    settings."""
+
     schedule_id: str = Field(default_factory=lambda: str(uuid4()))
-    owner_email: str
+    account_id: str
+    #: The member it runs as: the owner of its agent or automation
+    owner_id: str
     name: str
     status: ScheduleStatus = ScheduleStatus.ACTIVE
     #: Repeats on this 5-field cron expression. Empty for a one-time schedule.
@@ -109,13 +115,14 @@ class Schedule(BaseModel):
     source_ref: dict[str, Any] = Field(default_factory=dict)
     next_run_at: Optional[datetime] = None
     last_run_at: Optional[datetime] = None
+    #: Who set it up, for audit: a user_id, or the chat actor's id when an agent's skill did it
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
     @property
     def pk(self) -> str:
-        return f"User#{self.owner_email}"
+        return f"Account#{self.account_id}"
 
     @property
     def sk(self) -> str:
@@ -134,7 +141,8 @@ class Schedule(BaseModel):
             "sk": self.sk,
             "entity_type": "Schedule",
             "schedule_id": self.schedule_id,
-            "owner_email": self.owner_email,
+            "account_id": self.account_id,
+            "owner_id": self.owner_id,
             "name": self.name,
             "status": self.status.value,
             "cron_expression": self.cron_expression,
@@ -176,7 +184,7 @@ class Schedule(BaseModel):
                         "sk": self.sk,
                         "entity_type": entity_type,
                         "schedule_id": self.schedule_id,
-                        "owner_email": self.owner_email,
+                        "account_id": self.account_id,
                         "target_type": self.target_type.value,
                         "status": self.status.value,
                         "next_run_at": self.next_run_at.isoformat() if self.next_run_at else None,
@@ -192,7 +200,8 @@ class Schedule(BaseModel):
         item = convert_decimals(item)
         return cls(
             schedule_id=item["schedule_id"],
-            owner_email=item["owner_email"],
+            account_id=item["account_id"],
+            owner_id=item["owner_id"],
             name=item["name"],
             status=ScheduleStatus(item.get("status", ScheduleStatus.ACTIVE.value)),
             cron_expression=item.get("cron_expression") or "",
@@ -216,7 +225,7 @@ class Schedule(BaseModel):
 class ScheduleRun(BaseModel):
     run_id: str
     schedule_id: str
-    owner_email: str
+    account_id: str
     scheduled_for: datetime
     status: ScheduleRunStatus = ScheduleRunStatus.PENDING
     target_type: ScheduleTargetType
@@ -248,7 +257,7 @@ class ScheduleRun(BaseModel):
                     "entity_type": "ScheduleRun",
                     "run_id": self.run_id,
                     "schedule_id": self.schedule_id,
-                    "owner_email": self.owner_email,
+                    "account_id": self.account_id,
                     "scheduled_for": self.scheduled_for.isoformat(),
                     "status": self.status.value,
                     "target_type": self.target_type.value,
@@ -267,7 +276,7 @@ class ScheduleRun(BaseModel):
         return cls(
             run_id=item["run_id"],
             schedule_id=item["schedule_id"],
-            owner_email=item["owner_email"],
+            account_id=item["account_id"],
             scheduled_for=datetime.fromisoformat(item["scheduled_for"]),
             status=ScheduleRunStatus(item.get("status", ScheduleRunStatus.PENDING.value)),
             target_type=ScheduleTargetType(item["target_type"]),

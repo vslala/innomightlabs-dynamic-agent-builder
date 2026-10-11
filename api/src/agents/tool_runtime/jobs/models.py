@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from src.accounts.owner import member_partition
 from src.common import as_aware_utc
 from src.utils.dynamodb import convert_decimals, convert_floats_to_decimals
 
@@ -26,8 +27,11 @@ class ToolJobStatus(str, Enum):
 
 
 class ToolJob(BaseModel):
+    """A skill action running in the background, as the agent's owner: kept in their member partition."""
+
     job_id: str = Field(default_factory=lambda: f"tooljob_{uuid4().hex}")
-    owner_email: str
+    account_id: str
+    owner_id: str
     actor_email: str
     actor_id: str
     agent_id: str | None = None
@@ -67,7 +71,7 @@ class ToolJob(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"User#{self.owner_email}"
+        return member_partition(self.account_id, self.owner_id)
 
     @property
     def sk(self) -> str:

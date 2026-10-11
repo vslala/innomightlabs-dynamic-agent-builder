@@ -3,12 +3,16 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Optional, cast
+from typing import Any, Literal, Optional, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.iam.actions import ResourceRef
 from src.utils.dynamodb import convert_decimals
+
+#: How the caller reaches an automation: their own, shared with them, or (admins) metadata only
+AutomationAccess = Literal["owner", "shared", "admin"]
 
 
 class AutomationStatus(str, Enum):
@@ -119,9 +123,12 @@ class AutomationResponse(BaseModel):
     description: Optional[str] = None
     status: AutomationStatus
     version: int = 1
+    account_id: str
+    owner_id: str
     created_by: str
     created_at: datetime
     updated_at: Optional[datetime] = None
+    access: AutomationAccess = "owner"
 
 
 class AutomationNodeResponse(BaseModel):
@@ -349,10 +356,17 @@ class UpdateAutomationSkillRequest(BaseModel):
 
 
 class Automation(BaseModel):
+    """Shareable, so it lives in its account; its nodes, edges, triggers and runs stay under
+    `Automation#{id}`. It runs as its owner: their agents, connectors and settings."""
+
     automation_id: str = Field(default_factory=lambda: str(uuid4()))
     title: str
     description: Optional[str] = None
     status: AutomationStatus = AutomationStatus.DRAFT
+    account_id: str
+    #: The member it belongs to: authorization reads this
+    owner_id: str
+    #: The creator's user_id, for audit only
     created_by: str
     version: int = 1
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -360,11 +374,15 @@ class Automation(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"User#{self.created_by}"
+        return f"Account#{self.account_id}"
 
     @property
     def sk(self) -> str:
         return f"Automation#{self.automation_id}"
+
+    @property
+    def resource_ref(self) -> ResourceRef:
+        return ResourceRef("automation", self.automation_id, self.owner_id)
 
     def to_dynamo_item(self) -> dict[str, Any]:
         return {
@@ -374,6 +392,8 @@ class Automation(BaseModel):
             "title": self.title,
             "description": self.description,
             "status": self.status.value,
+            "account_id": self.account_id,
+            "owner_id": self.owner_id,
             "created_by": self.created_by,
             "version": self.version,
             "created_at": self.created_at.isoformat(),
@@ -389,14 +409,16 @@ class Automation(BaseModel):
             title=item["title"],
             description=item.get("description"),
             status=AutomationStatus(item.get("status", AutomationStatus.DRAFT.value)),
+            account_id=item["account_id"],
+            owner_id=item["owner_id"],
             created_by=item["created_by"],
             version=int(item.get("version", 1)),
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
         )
 
-    def to_response(self) -> AutomationResponse:
-        return AutomationResponse(**self.model_dump())
+    def to_response(self, access: AutomationAccess = "owner") -> AutomationResponse:
+        return AutomationResponse(**self.model_dump(), access=access)
 
 
 class AutomationNode(BaseModel):
@@ -637,6 +659,7 @@ class AutomationRun(BaseModel):
     status: AutomationRunStatus = AutomationRunStatus.PENDING
     context: dict[str, Any] = Field(default_factory=dict)
     error: Optional[str] = None
+    #: The user_id of the member it runs as: the automation's owner, whoever started it
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
@@ -655,12 +678,13 @@ class AutomationRun(BaseModel):
         return f"Run#{self.created_at.isoformat()}#{self.run_id}"
 
     @property
-    def owner_pk(self) -> str:
-        return f"User#{self.created_by}"
+    def lookup_pk(self) -> str:
+        """A copy keyed by run id alone, so a run is found without knowing when it started."""
+        return f"AutomationRun#{self.run_id}"
 
     @property
-    def owner_sk(self) -> str:
-        return f"AutomationRun#{self.run_id}"
+    def lookup_sk(self) -> str:
+        return "Run"
 
     def to_dynamo_item(self) -> dict[str, Any]:
         return dynamo_item({
@@ -686,12 +710,12 @@ class AutomationRun(BaseModel):
             "entity_type": "AutomationRun",
         })
 
-    def to_owner_lookup_item(self) -> dict[str, Any]:
+    def to_lookup_item(self) -> dict[str, Any]:
         item = self.to_dynamo_item()
         item.update(
             {
-                "pk": self.owner_pk,
-                "sk": self.owner_sk,
+                "pk": self.lookup_pk,
+                "sk": self.lookup_sk,
                 "entity_type": "AutomationRunLookup",
             }
         )

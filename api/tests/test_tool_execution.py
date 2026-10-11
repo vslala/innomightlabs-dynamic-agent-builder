@@ -25,6 +25,7 @@ from src.connectors.mcp.models import MCPCaller
 from src.agents.tool_runtime.skills import SKILL_TOOL_SPECS
 from src.tools.native.specs import NATIVE_TOOL_SPECS
 from src.skills.models import ActorKind
+from tests.mock_data import account_for
 
 
 class FakeSkillRuntime:
@@ -66,6 +67,7 @@ class FakeMCPRuntime:
 def _state() -> AgentTurnState:
     return AgentTurnState(
         owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         actor_email="actor@example.com",
         actor_id="actor-1",
         actor_kind=ActorKind.OWNER,
@@ -201,11 +203,11 @@ async def test_mcp_tools_reach_their_own_handlers():
         conversation_id="conversation-1",
     )
     assert runtimes["mcp_runtime"].list_calls == [
-        {"owner_email": "owner@example.com", "agent_id": "agent-1", "caller": caller, "mcp_id": None}
+        {"account_id": account_for("owner@example.com"), "agent_id": "agent-1", "caller": caller, "mcp_id": None}
     ]
     assert runtimes["mcp_runtime"].call_calls == [
         {
-            "owner_email": "owner@example.com",
+            "account_id": account_for("owner@example.com"),
             "agent_id": "agent-1",
             "caller": caller,
             "mcp_id": "atlassian",

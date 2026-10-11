@@ -21,45 +21,45 @@ class MCPConnectionRepository:
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save_connection(self, connection: MCPConnection) -> MCPConnection:
-        existing = self.find_connection(connection.owner_email, connection.mcp_id)
+        existing = self.find_connection(connection.account_id, connection.mcp_id)
         if existing:
             connection.created_at = existing.created_at
             connection.updated_at = datetime.now(timezone.utc)
         self.table.put_item(Item=connection.to_dynamo_item())
-        log.info("Saved MCP connection %s for user %s", connection.mcp_id, connection.owner_email)
+        log.info("Saved MCP connection %s in account %s", connection.mcp_id, connection.account_id)
         return connection
 
-    def find_connection(self, owner_email: str, mcp_id: str) -> Optional[MCPConnection]:
+    def find_connection(self, account_id: str, mcp_id: str) -> Optional[MCPConnection]:
         response = self.table.get_item(
-            Key={"pk": f"User#{owner_email}", "sk": f"MCPConnection#{mcp_id}"}
+            Key={"pk": f"Account#{account_id}", "sk": f"MCPConnection#{mcp_id}"}
         )
         item = response.get("Item")
         return MCPConnection.from_dynamo_item(item) if item else None
 
-    def list_connections(self, owner_email: str) -> list[MCPConnection]:
+    def list_connections(self, account_id: str) -> list[MCPConnection]:
         response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"User#{owner_email}")
+            KeyConditionExpression=Key("pk").eq(f"Account#{account_id}")
             & Key("sk").begins_with("MCPConnection#")
         )
         return [MCPConnection.from_dynamo_item(item) for item in response.get("Items", [])]
 
-    def delete_connection(self, owner_email: str, mcp_id: str) -> None:
+    def delete_connection(self, account_id: str, mcp_id: str) -> None:
         self.table.delete_item(
-            Key={"pk": f"User#{owner_email}", "sk": f"MCPConnection#{mcp_id}"}
+            Key={"pk": f"Account#{account_id}", "sk": f"MCPConnection#{mcp_id}"}
         )
         self.table.delete_item(
-            Key={"pk": f"User#{owner_email}", "sk": f"MCPToolCatalog#{mcp_id}"}
+            Key={"pk": f"Account#{account_id}", "sk": f"MCPToolCatalog#{mcp_id}"}
         )
-        log.info("Deleted MCP connection %s for user %s", mcp_id, owner_email)
+        log.info("Deleted MCP connection %s in account %s", mcp_id, account_id)
 
     def save_tool_catalog(self, catalog: MCPToolCatalog) -> MCPToolCatalog:
         self.table.put_item(Item=catalog.to_dynamo_item())
         log.info("Saved %s MCP tools for connection %s", len(catalog.tools), catalog.mcp_id)
         return catalog
 
-    def find_tool_catalog(self, owner_email: str, mcp_id: str) -> Optional[MCPToolCatalog]:
+    def find_tool_catalog(self, account_id: str, mcp_id: str) -> Optional[MCPToolCatalog]:
         response = self.table.get_item(
-            Key={"pk": f"User#{owner_email}", "sk": f"MCPToolCatalog#{mcp_id}"}
+            Key={"pk": f"Account#{account_id}", "sk": f"MCPToolCatalog#{mcp_id}"}
         )
         item = response.get("Item")
         return MCPToolCatalog.from_dynamo_item(item) if item else None

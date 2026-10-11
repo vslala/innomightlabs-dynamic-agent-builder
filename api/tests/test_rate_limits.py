@@ -1,7 +1,7 @@
 from fastapi import status
 from fastapi import HTTPException
 
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, kb_fields
 
 
 def _create_kb(kb_repo, name: str = "Test KB"):
@@ -10,7 +10,7 @@ def _create_kb(kb_repo, name: str = "Test KB"):
     kb = KnowledgeBase(
         name=name,
         description="Test knowledge base",
-        created_by=TEST_USER_EMAIL,
+        **kb_fields(TEST_USER_EMAIL),
     )
     return kb_repo.save(kb)
 

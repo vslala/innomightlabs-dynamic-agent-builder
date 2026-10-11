@@ -23,7 +23,11 @@ from src.scheduler.repository import SchedulerRepository
 from src.scheduler.service import SchedulerService
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL, agent_fields
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 
 def make_service() -> AutomationService:
@@ -110,22 +114,22 @@ def create_schedule_for_scheduler_node(automation_id: str, node_id: str):
             source_type="automation_skill",
             source_ref={"automation_id": automation_id, "automation_node_id": node_id},
         ),
-        owner_email=TEST_USER_EMAIL,
-        created_by=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
+        created_by=TEST_OWNER.user_id,
     )
 
 
 def test_validate_accepts_default_graph(dynamodb_table):
     nodes, edges, triggers = make_default_graph()
 
-    make_service().validate_graph(nodes, edges, triggers, TEST_USER_EMAIL)
+    make_service().validate_graph(nodes, edges, triggers, TEST_OWNER)
 
 
 def test_validate_rejects_missing_final(dynamodb_table):
     start = AutomationNode(automation_id="auto-1", node_id="start", type=AutomationNodeType.START, name="Start")
 
     with pytest.raises(AutomationValidationError, match="final"):
-        make_service().validate_graph([start], [], [], TEST_USER_EMAIL)
+        make_service().validate_graph([start], [], [], TEST_OWNER)
 
 
 def test_validate_rejects_invalid_edge_reference(dynamodb_table):
@@ -137,7 +141,7 @@ def test_validate_rejects_invalid_edge_reference(dynamodb_table):
     )
 
     with pytest.raises(AutomationValidationError, match="target node"):
-        make_service().validate_graph(nodes, [bad_edge], triggers, TEST_USER_EMAIL)
+        make_service().validate_graph(nodes, [bad_edge], triggers, TEST_OWNER)
 
 
 def test_validate_rejects_invalid_condition_branches(dynamodb_table):
@@ -171,7 +175,7 @@ def test_validate_rejects_invalid_condition_branches(dynamodb_table):
     )
 
     with pytest.raises(AutomationValidationError, match="true and false"):
-        make_service().validate_graph([start, condition, final], edges, [trigger], TEST_USER_EMAIL)
+        make_service().validate_graph([start, condition, final], edges, [trigger], TEST_OWNER)
 
 
 def test_validate_rejects_cycle(dynamodb_table):
@@ -197,7 +201,7 @@ def test_validate_rejects_cycle(dynamodb_table):
     )
 
     with pytest.raises(AutomationValidationError, match="cycles"):
-        make_service().validate_graph([start, action, final], edges, [trigger], TEST_USER_EMAIL)
+        make_service().validate_graph([start, action, final], edges, [trigger], TEST_OWNER)
 
 
 def test_validate_invoke_agent_requires_owned_agent(dynamodb_table):
@@ -207,7 +211,7 @@ def test_validate_invoke_agent_requires_owned_agent(dynamodb_table):
         agent_architecture="krishna-mini",
         agent_provider="Bedrock",
         agent_persona="Helpful",
-        created_by=TEST_USER_EMAIL,
+        **agent_fields(TEST_USER_EMAIL),
     )
     AgentRepository().save(agent)
     start = AutomationNode(automation_id="auto-1", node_id="start", type=AutomationNodeType.START, name="Start")
@@ -230,7 +234,7 @@ def test_validate_invoke_agent_requires_owned_agent(dynamodb_table):
         entry_node_id="start",
     )
 
-    make_service().validate_graph([start, action, final], edges, [trigger], TEST_USER_EMAIL)
+    make_service().validate_graph([start, action, final], edges, [trigger], TEST_OWNER)
 
 
 def test_validate_skill_action_requires_enabled_automation_skill(dynamodb_table):
@@ -260,14 +264,14 @@ def test_validate_skill_action_requires_enabled_automation_skill(dynamodb_table)
     )
 
     with pytest.raises(AutomationValidationError, match="not enabled"):
-        make_service().validate_graph([start, action, final], edges, [trigger], TEST_USER_EMAIL)
+        make_service().validate_graph([start, action, final], edges, [trigger], TEST_OWNER)
 
 
 def test_validate_skill_action_accepts_enabled_skill_with_connector(dynamodb_table):
-    automation = make_service().create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    automation = make_service().create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
     ProviderSettingsRepository().save(
         ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleMail",
             encrypted_credentials="encrypted",
             auth_type="oauth",
@@ -277,7 +281,7 @@ def test_validate_skill_action_accepts_enabled_skill_with_connector(dynamodb_tab
         automation.automation_id,
         "google_mail",
         EnableAutomationSkillRequest(config={}),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
     start = AutomationNode(automation_id=automation.automation_id, node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
@@ -304,17 +308,17 @@ def test_validate_skill_action_accepts_enabled_skill_with_connector(dynamodb_tab
         entry_node_id="start",
     )
 
-    make_service().validate_graph([start, action, final], edges, [trigger], TEST_USER_EMAIL)
+    make_service().validate_graph([start, action, final], edges, [trigger], TEST_OWNER)
 
 
 def test_validate_skill_action_rejects_action_disabled_for_automation(dynamodb_table):
     service = make_service()
-    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
     service.enable_skill(
         automation.automation_id,
         "scheduler",
         EnableAutomationSkillRequest(config={}),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
     start = AutomationNode(automation_id=automation.automation_id, node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
@@ -346,13 +350,13 @@ def test_validate_skill_action_rejects_action_disabled_for_automation(dynamodb_t
     )
 
     with pytest.raises(AutomationValidationError, match="not available for automations"):
-        service.validate_graph([start, action, final], edges, [trigger], TEST_USER_EMAIL)
+        service.validate_graph([start, action, final], edges, [trigger], TEST_OWNER)
 
 
 def test_add_trigger_does_not_validate_unrelated_action_nodes(dynamodb_table):
     service = make_service()
-    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
-    graph = service.get_graph(automation.automation_id, TEST_USER_EMAIL)
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
+    graph = service.get_graph(automation.automation_id, TEST_OWNER)
     start = next(node for node in graph.nodes if node.type == "start")
     final = next(node for node in graph.nodes if node.type == "final")
     legacy_action = AutomationNode(
@@ -404,7 +408,7 @@ def test_add_trigger_does_not_validate_unrelated_action_nodes(dynamodb_table):
                 "input": {"source": "scheduler"},
             },
         ),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
 
     assert trigger.trigger_id == "daily-cleanup"
@@ -412,8 +416,8 @@ def test_add_trigger_does_not_validate_unrelated_action_nodes(dynamodb_table):
 
 def test_schedule_trigger_lifecycle_creates_updates_pauses_and_deletes_schedule(dynamodb_table):
     service = make_service()
-    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
-    graph = service.get_graph(automation.automation_id, TEST_USER_EMAIL)
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
+    graph = service.get_graph(automation.automation_id, TEST_OWNER)
     start = next(node for node in graph.nodes if node.type == "start")
 
     trigger = service.add_trigger(
@@ -430,11 +434,11 @@ def test_schedule_trigger_lifecycle_creates_updates_pauses_and_deletes_schedule(
                 "input": {"source": "scheduler"},
             },
         ),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
 
     schedule_id = f"automation:{automation.automation_id}:trigger:{trigger.trigger_id}"
-    schedule = SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule_id)
+    schedule = SchedulerRepository().find_schedule(TEST_OWNER.account_id, schedule_id)
     assert schedule is not None
     assert schedule.status.value == "paused"
     assert schedule.source_type == "automation_trigger"
@@ -451,9 +455,9 @@ def test_schedule_trigger_lifecycle_creates_updates_pauses_and_deletes_schedule(
     service.update_automation(
         automation.automation_id,
         UpdateAutomationRequest(status=AutomationStatus.ACTIVE),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
-    schedule = SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule_id)
+    schedule = SchedulerRepository().find_schedule(TEST_OWNER.account_id, schedule_id)
     assert schedule is not None
     assert schedule.status.value == "active"
 
@@ -468,9 +472,9 @@ def test_schedule_trigger_lifecycle_creates_updates_pauses_and_deletes_schedule(
                 "input": {"source": "updated"},
             },
         ),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
-    schedule = SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule_id)
+    schedule = SchedulerRepository().find_schedule(TEST_OWNER.account_id, schedule_id)
     assert schedule is not None
     assert schedule.name == "Every 15 minutes"
     assert schedule.cron_expression == "*/15 * * * *"
@@ -479,20 +483,20 @@ def test_schedule_trigger_lifecycle_creates_updates_pauses_and_deletes_schedule(
     service.update_automation(
         automation.automation_id,
         UpdateAutomationRequest(status=AutomationStatus.DISABLED),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
-    schedule = SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule_id)
+    schedule = SchedulerRepository().find_schedule(TEST_OWNER.account_id, schedule_id)
     assert schedule is not None
     assert schedule.status.value == "paused"
 
-    service.delete_trigger(automation.automation_id, trigger.trigger_id, TEST_USER_EMAIL)
-    assert SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule_id) is None
+    service.delete_trigger(automation.automation_id, trigger.trigger_id, TEST_OWNER)
+    assert SchedulerRepository().find_schedule(TEST_OWNER.account_id, schedule_id) is None
 
 
 def test_save_graph_preserves_existing_triggers_and_schedules(dynamodb_table):
     service = make_service()
-    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
-    graph = service.get_graph(automation.automation_id, TEST_USER_EMAIL)
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
+    graph = service.get_graph(automation.automation_id, TEST_OWNER)
     start = next(node for node in graph.nodes if node.type == "start")
     final = next(node for node in graph.nodes if node.type == "final")
 
@@ -510,7 +514,7 @@ def test_save_graph_preserves_existing_triggers_and_schedules(dynamodb_table):
                 "input": {},
             },
         ),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
     schedule_id = f"automation:{automation.automation_id}:trigger:{trigger.trigger_id}"
 
@@ -529,31 +533,31 @@ def test_save_graph_preserves_existing_triggers_and_schedules(dynamodb_table):
                 }
             ],
         ),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
 
     assert {item.trigger_id for item in saved.triggers} == {
         "five-minute-cleanup",
         *{item.trigger_id for item in graph.triggers},
     }
-    assert SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule_id) is not None
+    assert SchedulerRepository().find_schedule(TEST_OWNER.account_id, schedule_id) is not None
 
 
 def test_delete_scheduler_automation_step_deletes_matching_schedule(dynamodb_table):
     service = make_service()
-    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
     nodes, edges, triggers = make_scheduler_action_graph(automation.automation_id)
     service.repo.save_graph(automation.automation_id, nodes, edges, triggers)
     schedule = create_schedule_for_scheduler_node(automation.automation_id, "schedule-node")
 
-    service.delete_node(automation.automation_id, "schedule-node", TEST_USER_EMAIL)
+    service.delete_node(automation.automation_id, "schedule-node", TEST_OWNER)
 
-    assert SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule.schedule_id) is None
+    assert SchedulerRepository().find_schedule(TEST_OWNER.account_id, schedule.schedule_id) is None
 
 
 def test_save_graph_deletes_schedule_for_removed_scheduler_step(dynamodb_table):
     service = make_service()
-    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
     nodes, edges, triggers = make_scheduler_action_graph(automation.automation_id)
     service.repo.save_graph(automation.automation_id, nodes, edges, triggers)
     schedule = create_schedule_for_scheduler_node(automation.automation_id, "schedule-node")
@@ -582,38 +586,38 @@ def test_save_graph_deletes_schedule_for_removed_scheduler_step(dynamodb_table):
                 }
             ],
         ),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
 
-    assert SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule.schedule_id) is None
+    assert SchedulerRepository().find_schedule(TEST_OWNER.account_id, schedule.schedule_id) is None
 
 
 def test_delete_automation_deletes_scheduler_action_schedules(dynamodb_table):
     service = make_service()
-    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
     nodes, edges, triggers = make_scheduler_action_graph(automation.automation_id)
     service.repo.save_graph(automation.automation_id, nodes, edges, triggers)
     schedule = create_schedule_for_scheduler_node(automation.automation_id, "schedule-node")
 
-    service.delete_automation(automation.automation_id, TEST_USER_EMAIL)
+    service.delete_automation(automation.automation_id, TEST_OWNER)
 
-    assert SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule.schedule_id) is None
+    assert SchedulerRepository().find_schedule(TEST_OWNER.account_id, schedule.schedule_id) is None
 
 
 def test_validate_skill_action_requires_installed_id_when_repeatable_is_ambiguous(dynamodb_table):
     service = make_service()
-    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
     service.enable_skill(
         automation.automation_id,
         "send_email",
         EnableAutomationSkillRequest(config={"to": "first@example.com"}),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
     service.enable_skill(
         automation.automation_id,
         "send_email",
         EnableAutomationSkillRequest(config={"to": "second@example.com"}),
-        TEST_USER_EMAIL,
+        TEST_OWNER,
     )
     start = AutomationNode(automation_id=automation.automation_id, node_id="start", type=AutomationNodeType.START, name="Start")
     action = AutomationNode(
@@ -641,7 +645,7 @@ def test_validate_skill_action_requires_installed_id_when_repeatable_is_ambiguou
     )
 
     with pytest.raises(AutomationValidationError, match="multiple installed instances"):
-        service.validate_graph([start, action, final], edges, [trigger], TEST_USER_EMAIL)
+        service.validate_graph([start, action, final], edges, [trigger], TEST_OWNER)
 
 
 def _invoke_agent_step_graph(automation_id: str, arguments: dict):
@@ -671,28 +675,28 @@ def _invoke_agent_step_graph(automation_id: str, arguments: dict):
 @pytest.mark.parametrize("arguments", [{"prompt_template": "Hi"}, {"agent_id": "  ", "prompt_template": "Hi"}])
 def test_validate_invoke_agent_step_requires_an_agent(dynamodb_table, arguments):
     service = make_service()
-    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
     nodes, edges, triggers = _invoke_agent_step_graph(automation.automation_id, arguments)
 
     with pytest.raises(AutomationValidationError, match="missing required action argument: agent_id"):
-        service.validate_graph(nodes, edges, triggers, TEST_USER_EMAIL, automation.automation_id)
+        service.validate_graph(nodes, edges, triggers, TEST_OWNER, automation.automation_id)
 
 
 def test_validate_invoke_agent_step_accepts_a_chosen_agent(dynamodb_table):
     service = make_service()
-    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
     nodes, edges, triggers = _invoke_agent_step_graph(
         automation.automation_id, {"agent_id": "agent-1", "prompt_template": "Hi"}
     )
 
-    service.validate_graph(nodes, edges, triggers, TEST_USER_EMAIL, automation.automation_id)
+    service.validate_graph(nodes, edges, triggers, TEST_OWNER, automation.automation_id)
 
 
 def test_action_catalog_marks_the_agent_as_required_for_invoke_agent_steps(dynamodb_table):
     service = make_service()
-    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_USER_EMAIL).automation
+    automation = service.create_automation(CreateAutomationRequest(title="Workflow"), TEST_OWNER).automation
 
-    catalog = service.list_action_catalog(automation.automation_id, TEST_USER_EMAIL)
+    catalog = service.list_action_catalog(automation.automation_id, TEST_OWNER)
     invoke = next(item for item in catalog.actions if item.skill_id == "agent_invocation")
 
     assert invoke.input_schema["required"] == ["prompt_template", "agent_id"]

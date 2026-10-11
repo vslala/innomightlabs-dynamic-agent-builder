@@ -21,7 +21,11 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.repository import AgentSkillRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL, owner_ids
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 SITE_AGENT = example_yaml("site-agent") or ""
 DOCS = example_yaml("docs-assistant") or ""
@@ -36,22 +40,22 @@ def launched(monkeypatch, dynamodb_table) -> list[str]:
     # Superuser: the free tier's single agent would otherwise block the second build in some tests.
     monkeypatch.setattr(settings, "is_superuser_email", lambda email: True)
     ProviderSettingsRepository().save(
-        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+        ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )
     return calls
 
 
 def build(text: str = SITE_AGENT, params: dict | None = None):
     validated = validate_blueprint(text, PARAMS if params is None else params)
-    plan = plan_blueprint(validated, TEST_USER_EMAIL)
+    plan = plan_blueprint(validated, TEST_OWNER)
     assert plan.ok, plan.blockers
-    return plan, apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
+    return plan, apply_blueprint(validated, plan, TEST_OWNER, BackgroundTasks())
 
 
 def counts() -> tuple[int, int]:
     return (
-        len(AgentRepository().find_all_by_created_by(TEST_USER_EMAIL)),
-        len(KnowledgeBaseRepository().find_all_by_user(TEST_USER_EMAIL)),
+        len(AgentRepository().list_owned(*owner_ids(TEST_USER_EMAIL))),
+        len(KnowledgeBaseRepository().list_owned(*owner_ids(TEST_USER_EMAIL))),
     )
 
 
@@ -88,7 +92,7 @@ def test_an_edited_blueprint_updates_the_same_resources(launched):
     assert actions["widget"] == ("update", ["ask visitors to sign in"])
 
     assert second.resources["assistant"].id == agent_id
-    agent = AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL)
+    agent = AgentRepository().get(agent_id)
     assert "opening hours" in agent.agent_persona
     assert {skill.skill_id for skill in AgentSkillRepository().list_by_agent(agent_id)} == {"lead_capture", "html_canvas"}
     [updated_key] = ApiKeyRepository().find_all_by_agent(agent_id)
@@ -112,7 +116,7 @@ def test_changing_the_crawl_reads_the_site_again(launched):
 def test_a_failed_update_puts_things_back(launched, monkeypatch):
     _, first = build()
     agent_id = first.resources["assistant"].id
-    before = AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL).agent_persona
+    before = AgentRepository().get(agent_id).agent_persona
 
     def fail(*args, **kwargs):
         raise RuntimeError("key service down")
@@ -127,7 +131,7 @@ def test_a_failed_update_puts_things_back(launched, monkeypatch):
     _, failed = build(edited)
 
     assert failed.status == DeploymentStatus.FAILED
-    assert AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL).agent_persona == before
+    assert AgentRepository().get(agent_id).agent_persona == before
     skills = {skill.skill_id: skill for skill in AgentSkillRepository().list_by_agent(agent_id)}
     assert set(skills) == {"lead_capture"}
     assert set(skills["lead_capture"].available_to) == {ActorKind.OWNER, ActorKind.VISITOR, ActorKind.GUEST}
@@ -136,7 +140,7 @@ def test_a_failed_update_puts_things_back(launched, monkeypatch):
 def test_an_unknown_id_blocks(launched):
     text = SITE_AGENT.replace("    kind: Agent\n", "    kind: Agent\n    id: not-mine\n")
     validated = validate_blueprint(text, PARAMS)
-    plan = plan_blueprint(validated, TEST_USER_EMAIL)
+    plan = plan_blueprint(validated, TEST_OWNER)
     assert any(issue.path == "resources.assistant.id" for issue in plan.blockers)
 
 
@@ -145,10 +149,10 @@ def test_an_exported_agent_plans_as_unchanged_and_can_be_extended(launched):
     _, built = build(DOCS, docs_params)
     agent_id = built.resources["docs_assistant"].id
 
-    exported = export_agent(agent_id, TEST_USER_EMAIL)
+    exported = export_agent(agent_id, TEST_OWNER)
     assert exported is not None
     validated = validate_blueprint(exported, {})
-    plan = plan_blueprint(validated, TEST_USER_EMAIL)
+    plan = plan_blueprint(validated, TEST_OWNER)
     assert plan.ok, plan.blockers
     assert [step.action for step in plan.steps] == ["unchanged", "unchanged"]
 

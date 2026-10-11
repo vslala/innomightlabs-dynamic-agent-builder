@@ -16,12 +16,16 @@ See docs/LLD-solution-blueprints.md.
 """
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.security import HTTPBearer
 
+from src.blueprints.access import require_kit
+from src.iam.actions import ResourceRef
+from src.iam.dependencies import get_owner, get_principal
+from src.iam.principal import Principal
 from src.blueprints.catalog import blueprint_json_schema, catalog, example_yaml, params_form, reference_markdown
 from src.blueprints.issues import BlueprintInvalid
 from src.blueprints.models import (
@@ -31,7 +35,7 @@ from src.blueprints.models import (
     PlanResponse,
     ValidateResponse,
 )
-from src.blueprints.kits import KitError, KitNotFound, active_kit, declared, pin
+from src.blueprints.kits import KitError, KitNotFound, KitRepository, active_kit, declared, owner_of_kit, pin
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.repository import DeploymentRepository
 from src.blueprints.service import Blocked, Deployed, Invalid, RateLimited, deploy_blueprint
@@ -63,7 +67,7 @@ async def get_reference() -> str:
 @router.get("/catalog")
 async def get_catalog(request: Request) -> dict[str, Any]:
     ready = {item.skill_id: item.available and item.oauth_connected is not False
-             for item in get_skill_service().list_catalog(request.state.user_email)}
+             for item in get_skill_service().list_catalog(get_owner(request).account_id)}
     return catalog(ready=ready)
 
 
@@ -84,19 +88,29 @@ async def validate(body: BlueprintRequest) -> ValidateResponse:
     return ValidateResponse(valid=True, params_form=params_form(validated.blueprint).model_dump(exclude_none=True))
 
 
+def _authorize_deploy(request: Request, kit_id: Optional[str]) -> None:
+    """A new kit needs `kits:Create`; a kit's next version, `kits:Apply` on it (it applies as the kit's owner)."""
+    principal = get_principal(request)
+    if kit_id:
+        require_kit(principal, kit_id, "kits:Apply")
+    else:
+        principal.require("kits:Create", ResourceRef("kit"))
+
+
 @router.post("/plan", response_model=PlanResponse)
 async def plan(request: Request, body: BlueprintRequest) -> PlanResponse:
+    _authorize_deploy(request, body.kit_id)
     try:
         validated = validate_blueprint(body.yaml, body.params or {})
     except BlueprintInvalid as e:
         return PlanResponse(ok=False, issues=e.issues)
     if not body.kit_id:
-        result = plan_blueprint(validated, request.state.user_email)
+        result = plan_blueprint(validated, get_owner(request))
         return PlanResponse(ok=result.ok, steps=result.steps, blockers=result.blockers)
     try:
-        kit = active_kit(request.state.user_email, body.kit_id)
+        kit = active_kit(get_principal(request).account_id, body.kit_id)
         validated = validate_blueprint(pin(body.yaml, kit), body.params or {})
-        result = plan_blueprint(validated, request.state.user_email, declared(kit))
+        result = plan_blueprint(validated, owner_of_kit(kit), declared(kit))
     except BlueprintInvalid as e:
         return PlanResponse(ok=False, issues=e.issues)
     except KitError as e:
@@ -106,9 +120,8 @@ async def plan(request: Request, body: BlueprintRequest) -> PlanResponse:
 
 @router.post("/deployments", response_model=Deployment, status_code=status.HTTP_201_CREATED)
 async def create_deployment(request: Request, body: BlueprintRequest, background_tasks: BackgroundTasks):
-    outcome = deploy_blueprint(
-        body.yaml, body.params or {}, request.state.user_email, background_tasks, kit_id=body.kit_id
-    )
+    _authorize_deploy(request, body.kit_id)
+    outcome = deploy_blueprint(body.yaml, body.params or {}, get_owner(request), background_tasks, kit_id=body.kit_id)
     match outcome:
         case Invalid(issues=issues):
             return JSONResponse(status_code=422, content=PlanResponse(ok=False, issues=issues).model_dump(mode="json"))
@@ -129,15 +142,24 @@ async def create_deployment(request: Request, body: BlueprintRequest, background
 
 @router.get("/deployments", response_model=list[DeploymentSummary])
 async def list_deployments(request: Request) -> list[DeploymentSummary]:
+    """The caller's own deployments in the account. A shared kit's versions are on the kit."""
+    owner = get_owner(request)
     return [
         DeploymentSummary.model_validate(deployment.model_dump())
-        for deployment in DeploymentRepository().list_by_user(request.state.user_email)
+        for deployment in DeploymentRepository().list_owned(owner.account_id, owner.user_id)
     ]
 
 
 @router.get("/deployments/{deployment_id}", response_model=Deployment)
 async def get_deployment(request: Request, deployment_id: str) -> Deployment:
-    deployment = DeploymentRepository().find_by_id(request.state.user_email, deployment_id)
-    if not deployment:
+    """One of the caller's deployments, or a version of a kit they may open."""
+    principal = get_principal(request)
+    deployment = DeploymentRepository().find_by_id(principal.account_id, deployment_id)
+    if not deployment or (deployment.owner_id != principal.user_id and not _kit_readable(principal, deployment)):
         raise HTTPException(status_code=404, detail="Deployment not found")
     return deployment
+
+
+def _kit_readable(principal: Principal, deployment: Deployment) -> bool:
+    kit = KitRepository().find(principal.account_id, deployment.kit_id) if deployment.kit_id else None
+    return kit is not None and principal.can("kits:Get", kit.resource_ref).allowed

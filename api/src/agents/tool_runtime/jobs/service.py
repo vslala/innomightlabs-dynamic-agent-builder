@@ -34,7 +34,8 @@ class ToolJobService:
     def start_skill_action_job(
         self,
         *,
-        owner_email: str,
+        account_id: str,
+        owner_id: str,
         actor_email: str,
         actor_id: str,
         agent_id: str,
@@ -50,7 +51,8 @@ class ToolJobService:
         so decrypted secrets are never stored on the job."""
         job = self.repository.create(
             ToolJob(
-                owner_email=owner_email,
+                account_id=account_id,
+                owner_id=owner_id,
                 actor_email=actor_email,
                 actor_id=actor_id,
                 agent_id=agent_id,
@@ -104,15 +106,19 @@ class ToolJobService:
         self,
         *,
         job_id: str,
+        account_id: str,
+        owner_id: str,
         owner_email: str,
         actor_email: str,
         agent_id: str,
         conversation_id: str,
     ) -> dict[str, Any]:
+        """The job, if it ran for this agent's owner in this conversation, and, unless the owner asks, for this
+        actor."""
         job = self.repository.find_by_id(job_id)
         if not job:
             raise ValueError("Tool job not found")
-        if job.owner_email != owner_email:
+        if (job.account_id, job.owner_id) != (account_id, owner_id):
             raise ValueError("Tool job not found")
         if job.agent_id and job.agent_id != agent_id:
             raise ValueError("Tool job not found")

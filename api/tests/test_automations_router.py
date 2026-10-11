@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from src.automations.models import AutomationRun, AutomationRunStatus
 from src.automations.repository import AutomationRepository
-from tests.mock_data import AUTOMATION_CREATE_REQUEST
+from tests.mock_data import account_for, AUTOMATION_CREATE_REQUEST
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from tests.mock_data import TEST_USER_EMAIL
@@ -68,10 +68,10 @@ def test_list_runs_requires_owner_scoped_automation(test_client, auth_headers):
 def test_test_run_returns_accepted_run_id(test_client, auth_headers, monkeypatch):
     dispatched = {}
 
-    def fake_invoke(run_id: str, automation_id: str, user_email: str) -> None:
+    def fake_invoke(run_id: str, automation_id: str, owner) -> None:
         dispatched["run_id"] = run_id
         dispatched["automation_id"] = automation_id
-        dispatched["user_email"] = user_email
+        dispatched["owner_email"] = owner.email
 
     monkeypatch.setattr("src.automations.router.invoke_automation_run_async", fake_invoke)
 
@@ -96,8 +96,8 @@ def test_test_run_returns_accepted_run_id(test_client, auth_headers, monkeypatch
     assert dispatched == {
         "run_id": payload["run_id"],
         "automation_id": automation_id,
-        "user_email": TEST_USER_EMAIL,
-    }
+        "owner_email": TEST_USER_EMAIL,
+    }, "it runs as the automation's owner"
 
     detail_response = test_client.get(
         f"/automations/{automation_id}/runs/{payload['run_id']}",
@@ -205,7 +205,7 @@ def test_automation_skills_and_action_catalog(test_client, auth_headers, dynamod
 
     ProviderSettingsRepository().save(
         ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleMail",
             encrypted_credentials="encrypted",
             auth_type="oauth",
@@ -213,7 +213,7 @@ def test_automation_skills_and_action_catalog(test_client, auth_headers, dynamod
     )
     ProviderSettingsRepository().save(
         ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleDrive",
             encrypted_credentials="encrypted",
             auth_type="oauth",

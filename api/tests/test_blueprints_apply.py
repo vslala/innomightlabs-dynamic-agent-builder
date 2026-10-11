@@ -30,7 +30,11 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.repository import AgentSkillRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL, agent_fields, owner_ids
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 SITE_AGENT = example_yaml("site-agent") or ""
 PARAMS = {"site_url": "https://acme.example/about", "business_name": "Acme"}
@@ -43,14 +47,14 @@ def launched(monkeypatch, dynamodb_table) -> list[tuple[str, str]]:
     monkeypatch.setattr(knowledge_base_kind, "launch_crawl", lambda job_id, kb_id, *_: calls.append((job_id, kb_id)))
     monkeypatch.setattr(settings, "require_pinecone", lambda: None)
     ProviderSettingsRepository().save(
-        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+        ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )
     return calls
 
 
 def planned(text: str = SITE_AGENT, params: dict | None = None):
     validated = validate_blueprint(text, params or PARAMS)
-    return validated, plan_blueprint(validated, TEST_USER_EMAIL)
+    return validated, plan_blueprint(validated, TEST_OWNER)
 
 
 def test_plan_lists_steps_in_order_with_no_blockers(launched):
@@ -63,13 +67,13 @@ def test_plan_lists_steps_in_order_with_no_blockers(launched):
 
 def test_apply_creates_the_whole_solution(launched):
     validated, plan = planned()
-    deployment = apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
+    deployment = apply_blueprint(validated, plan, TEST_OWNER, BackgroundTasks())
 
     assert deployment.status == DeploymentStatus.APPLIED
     kb_id = deployment.resources["site_kb"].id
     agent_id = deployment.resources["assistant"].id
 
-    agent = AgentRepository().find_agent_by_id(agent_id, TEST_USER_EMAIL)
+    agent = AgentRepository().get(agent_id)
     assert agent.agent_name == "Acme assistant"
     assert agent.agent_architecture == "krishna-memgpt"
     assert AgentKnowledgeBaseRepository().exists(agent_id, kb_id)
@@ -87,7 +91,7 @@ def test_apply_creates_the_whole_solution(launched):
     assert key.public_key in deployment.outputs["snippet"].value
     assert deployment.outputs["agent_id"].value == agent_id
 
-    stored = DeploymentRepository().find_by_id(TEST_USER_EMAIL, deployment.deployment_id)
+    stored = DeploymentRepository().find_by_id(TEST_OWNER.account_id, deployment.deployment_id)
     assert stored.status == DeploymentStatus.APPLIED
     assert stored.params["business_name"] == "Acme"
 
@@ -98,13 +102,13 @@ def test_a_failure_rolls_everything_back(launched, monkeypatch):
 
     monkeypatch.setattr(CreateWidgetKey, "run", fail)
     validated, plan = planned()
-    deployment = apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
+    deployment = apply_blueprint(validated, plan, TEST_OWNER, BackgroundTasks())
 
     assert deployment.status == DeploymentStatus.FAILED
     assert deployment.error == "key service down"
     assert deployment.resources == {}
-    assert AgentRepository().find_by_name("Acme assistant", TEST_USER_EMAIL) is None
-    [kb] = KnowledgeBaseRepository().find_all_by_user(TEST_USER_EMAIL, include_deleted=True)
+    assert AgentRepository().find_by_name(*owner_ids(TEST_USER_EMAIL), "Acme assistant") is None
+    [kb] = KnowledgeBaseRepository().list_owned(*owner_ids(TEST_USER_EMAIL), include_deleted=True)
     assert kb.status == KnowledgeBaseStatus.DELETED
     assert launched == []
 
@@ -113,7 +117,7 @@ def test_a_failed_rollback_keeps_the_leftovers(launched, monkeypatch):
     monkeypatch.setattr(CreateWidgetKey, "run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     monkeypatch.setitem(UNDO_ACTIONS, "delete_new_agent", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("stuck")))
     validated, plan = planned()
-    deployment = apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
+    deployment = apply_blueprint(validated, plan, TEST_OWNER, BackgroundTasks())
 
     assert deployment.status == DeploymentStatus.FAILED_PARTIAL
     assert list(deployment.resources) == ["assistant"]
@@ -130,7 +134,7 @@ def test_an_agent_with_the_same_name_is_updated_not_duplicated(launched):
         agent_architecture="krishna-mini",
         agent_provider="Bedrock",
         agent_persona="Existing.",
-        created_by=TEST_USER_EMAIL,
+        **agent_fields(TEST_USER_EMAIL),
     ))
     _, plan = planned()
     agent_step = next(step for step in plan.steps if step.resource == "assistant")
@@ -146,9 +150,9 @@ def test_another_agent_already_called_the_new_name_blocks(launched):
     for name in ("Acme assistant", "Taken name"):
         AgentRepository().save(Agent(
             agent_name=name, agent_architecture="krishna-memgpt", agent_provider="Bedrock",
-            agent_persona="Existing.", created_by=TEST_USER_EMAIL,
+            agent_persona="Existing.", **agent_fields(TEST_USER_EMAIL),
         ))
-    target = AgentRepository().find_by_name("Acme assistant", TEST_USER_EMAIL)
+    target = AgentRepository().find_by_name(*owner_ids(TEST_USER_EMAIL), "Acme assistant")
     renamed = SITE_AGENT.replace("    kind: Agent\n", f"    kind: Agent\n    id: {target.agent_id}\n").replace(
         'name: "{{ params.business_name }} assistant"', "name: Taken name"
     )
@@ -239,10 +243,10 @@ def test_a_failed_build_leaves_no_dream_schedule_behind(dynamodb_table, monkeypa
     monkeypatch.setattr(knowledge_base_kind, "launch_crawl", lambda job_id, *_: None)
     monkeypatch.setattr(settings, "require_pinecone", lambda: None)
     ProviderSettingsRepository().save(
-        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+        ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )
     DreamRepository().save_settings(DreamSettings(
-        user_email=TEST_USER_EMAIL, enabled=True, provider_name="Bedrock", model_name="claude-sonnet"
+        account_id=account_for(TEST_USER_EMAIL), enabled=True, provider_name="Bedrock", model_name="claude-sonnet"
     ))
 
     def fail(*args, **kwargs):
@@ -259,25 +263,25 @@ def test_a_failed_build_leaves_no_dream_schedule_behind(dynamodb_table, monkeypa
         return agent
 
     monkeypatch.setattr(AgentService, "create", remember)
-    deployment = apply_blueprint(validated, plan_blueprint(validated, TEST_USER_EMAIL), TEST_USER_EMAIL)
+    deployment = apply_blueprint(validated, plan_blueprint(validated, TEST_OWNER), TEST_OWNER)
 
     assert deployment.status == DeploymentStatus.FAILED
     [agent_id] = created
-    schedule_id = DreamService().schedule_id_for(agent_id, TEST_USER_EMAIL)
-    assert SchedulerRepository().find_schedule(TEST_USER_EMAIL, schedule_id) is None
+    schedule_id = DreamService().schedule_id_for(agent_id, TEST_OWNER)
+    assert SchedulerRepository().find_schedule(TEST_OWNER.account_id, schedule_id) is None
 
 
 def test_deploying_says_why_it_didnt(launched):
     """The API and Ila both deploy through deploy_blueprint, and each outcome is its own type."""
-    invalid = blueprints_service.deploy_blueprint("kind: Blueprint", {}, TEST_USER_EMAIL)
+    invalid = blueprints_service.deploy_blueprint("kind: Blueprint", {}, TEST_OWNER)
     assert isinstance(invalid, blueprints_service.Invalid) and invalid.issues
 
     no_provider = SITE_AGENT.replace("Bedrock", "OpenAI")
-    blocked = blueprints_service.deploy_blueprint(no_provider, PARAMS, TEST_USER_EMAIL)
+    blocked = blueprints_service.deploy_blueprint(no_provider, PARAMS, TEST_OWNER)
     assert isinstance(blocked, blueprints_service.Blocked)
     assert any(issue.path.endswith(".provider") for issue in blocked.plan.blockers)
 
-    deployed = blueprints_service.deploy_blueprint(SITE_AGENT, PARAMS, TEST_USER_EMAIL)
+    deployed = blueprints_service.deploy_blueprint(SITE_AGENT, PARAMS, TEST_OWNER)
     assert isinstance(deployed, blueprints_service.Deployed)
     assert deployed.deployment.status == DeploymentStatus.APPLIED
     assert [step.resource for step in deployed.plan.steps] == ["site_kb", "assistant", "widget"]

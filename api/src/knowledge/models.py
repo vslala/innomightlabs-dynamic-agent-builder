@@ -2,8 +2,8 @@
 Knowledge Base and Crawl Job models for DynamoDB single table design.
 
 Key Structure:
-    KnowledgeBase:
-        pk: User#{user_email}
+    KnowledgeBase (shareable, so in the account; owner_id is whose it is):
+        pk: Account#{account_id}
         sk: KnowledgeBase#{kb_id}
 
     CrawlJob:
@@ -31,11 +31,15 @@ Key Structure:
 
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
-from typing import Any, Optional, cast
+from typing import Any, Literal, Optional, cast
 from uuid import uuid4
 from enum import Enum
 from decimal import Decimal
 import hashlib
+
+from src.iam.actions import ResourceRef
+
+KnowledgeBaseAccess = Literal["owner", "shared", "admin"]
 
 
 def to_decimal(value: Optional[float]) -> Optional[Decimal]:
@@ -147,9 +151,13 @@ class KnowledgeBaseResponse(BaseModel):
     total_chunks: int = 0
     total_vectors: int = 0
     status: KnowledgeBaseStatus
+    account_id: str
+    owner_id: str
     created_by: str
     created_at: datetime
     updated_at: Optional[datetime] = None
+    #: How the caller reaches it: their own, shared with them, or (admins) metadata only
+    access: KnowledgeBaseAccess = "owner"
 
 
 class CrawlConfig(BaseModel):
@@ -320,6 +328,10 @@ class KnowledgeBase(BaseModel):
     total_chunks: int = 0
     total_vectors: int = 0
     status: KnowledgeBaseStatus = KnowledgeBaseStatus.ACTIVE
+    account_id: str
+    #: The member it belongs to: authorization reads this
+    owner_id: str
+    #: The creator's user_id, for audit only
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
@@ -333,11 +345,15 @@ class KnowledgeBase(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"User#{self.created_by}"
+        return f"Account#{self.account_id}"
 
     @property
     def sk(self) -> str:
         return f"KnowledgeBase#{self.kb_id}"
+
+    @property
+    def resource_ref(self) -> ResourceRef:
+        return ResourceRef("knowledge-base", self.kb_id, self.owner_id)
 
     def to_dynamo_item(self) -> dict[str, Any]:
         item: dict[str, Any] = {
@@ -351,6 +367,8 @@ class KnowledgeBase(BaseModel):
             "total_chunks": self.total_chunks,
             "total_vectors": self.total_vectors,
             "status": self.status.value,
+            "account_id": self.account_id,
+            "owner_id": self.owner_id,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
@@ -372,6 +390,8 @@ class KnowledgeBase(BaseModel):
             total_chunks=item.get("total_chunks", 0),
             total_vectors=item.get("total_vectors", 0),
             status=KnowledgeBaseStatus(item.get("status", "active")),
+            account_id=item["account_id"],
+            owner_id=item["owner_id"],
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
@@ -379,7 +399,7 @@ class KnowledgeBase(BaseModel):
             ttl=item.get("ttl"),
         )
 
-    def to_response(self) -> KnowledgeBaseResponse:
+    def to_response(self, access: "KnowledgeBaseAccess" = "owner") -> KnowledgeBaseResponse:
         return KnowledgeBaseResponse(
             kb_id=self.kb_id,
             name=self.name,
@@ -389,9 +409,12 @@ class KnowledgeBase(BaseModel):
             total_chunks=self.total_chunks,
             total_vectors=self.total_vectors,
             status=self.status,
+            account_id=self.account_id,
+            owner_id=self.owner_id,
             created_by=self.created_by,
             created_at=self.created_at,
             updated_at=self.updated_at,
+            access=access,
         )
 
 
@@ -771,7 +794,7 @@ class AgentKnowledgeBase(BaseModel):
     agent_id: str
     kb_id: str
     linked_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    linked_by: str  # User email
+    linked_by: str  # The user_id of who linked it
 
     @property
     def pk(self) -> str:

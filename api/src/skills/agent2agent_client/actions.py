@@ -31,6 +31,7 @@ from src.skills.agent2agent_client.oauth import (
 )
 from src.skills.agent2agent_client.references import decode_agent_ref
 from src.settings.agent2agent_policy import Agent2AgentPolicy, Agent2AgentPolicyError
+from src.skills.runtime_context import account_of
 
 
 async def discover_agents(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -150,11 +151,9 @@ def _registry_config(config: dict[str, Any]) -> A2ARegistryConfig:
 
 
 def _validate_allowed_urls(context: dict[str, Any], urls: list[str]) -> None:
-    owner_email = str(context.get("owner_email") or "").strip()
-    if not owner_email:
-        raise ValueError("Agent2Agent calls require an owning user context for allowlist validation")
+    """Against the trusted origins of the account the agent is in."""
     try:
-        Agent2AgentPolicy().validate_urls_for_user(user_email=owner_email, urls=urls)
+        Agent2AgentPolicy().validate_urls_for_account(account_id=account_of(context), urls=urls)
     except Agent2AgentPolicyError as exc:
         raise ValueError(str(exc)) from exc
 
@@ -206,16 +205,16 @@ async def _remote_oauth_headers_or_response(
     if not has_authorization_code_flow(raw_card):
         return None
 
-    owner_email = str(context.get("owner_email") or "").strip()
+    account_id = str(context.get("account_id") or "").strip()
     agent_id = str(context.get("agent_id") or "").strip()
     installed_skill_id = str(context.get("installed_skill_id") or "").strip()
-    if not owner_email or not agent_id or not installed_skill_id:
+    if not account_id or not agent_id or not installed_skill_id:
         return None
 
     repository = A2ARemoteOAuthRepository()
     target_origin = _origin(service_url)
     record = repository.find(
-        owner_email=owner_email,
+        account_id=account_id,
         installed_skill_id=installed_skill_id,
         target_origin=target_origin,
     )
@@ -285,6 +284,7 @@ def _remote_oauth_authorization_url(
     return_to = f"{settings.frontend_url.rstrip('/')}/dashboard/agents/{agent_id}/skills"
     session = create_state_session(
         user_email=str(context.get("owner_email") or ""),
+        account_id=str(context.get("account_id") or ""),
         agent_id=str(context.get("agent_id") or ""),
         installed_skill_id=str(context.get("installed_skill_id") or ""),
         service_url=service_url,

@@ -16,6 +16,8 @@ from src.agents.image_generation.service import (
     ImageGenerationNotFoundError,
     ImageGenerationNotSupportedError,
 )
+from src.accounts.owner import Owner
+from src.agents.access import access_to, owner_of, require_agent, visible_agents
 from src.agents.models import Agent, CreateAgentRequest, AgentResponse
 from src.agents.repository import AgentRepository
 from src.agents.service import AgentService, validate_provider_model
@@ -39,6 +41,9 @@ from src.crypto import encrypt_secret_fields
 from src.dream.repository import DreamRepository
 from src.dream.service import DreamService
 from src.form_options import FormOptionsContext, hydrate_form_options
+from src.iam.actions import ResourceRef
+from src.iam.dependencies import get_owner, get_principal
+from src.iam.principal import Principal
 from src.llm.events import SSEEvent, SSEEventType
 from src.messages.models import Attachment, MAX_FILES, MAX_TOTAL_SIZE
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
@@ -133,14 +138,13 @@ def _agent2agent_sharing_response(
 
 @router.get("/supported-models", response_model=form_models.Form, response_model_exclude_none=True)
 async def get_create_agent_schema(
-    request: Request,
+    owner: Annotated[Owner, Depends(get_owner)],
     providers_settings_repo: Annotated[ProviderSettingsRepository, Depends(get_provider_settings_repository)]) -> form_models.Form:
     """Get the form schema for creating an agent with dynamically fetched models."""
-    user_email = request.state.user_email
     return hydrate_form_options(
         get_create_agent_form(),
         FormOptionsContext(
-            user_email=user_email,
+            owner=owner,
             provider_settings_repository=providers_settings_repo,
         ),
     )
@@ -156,9 +160,10 @@ async def get_create_agent_schema(
     }
 )
 async def create_agent(
-    request: Request,
     create_request: CreateAgentRequest,
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
+    owner: Annotated[Owner, Depends(get_owner)],
 ) -> AgentResponse:
     """
     Create a new agent for the authenticated user.
@@ -166,64 +171,56 @@ async def create_agent(
     This endpoint is idempotent - if an agent with the same name already exists
     for the user, it returns the existing agent instead of creating a duplicate.
 
-    Args:
-        request: FastAPI request (contains user_email from auth middleware)
-        create_request: Agent creation request data
-        repo: Agent repository dependency
-
-    Returns:
-        AgentResponse: The created or existing agent (without sensitive fields)
+    The new agent belongs to the caller, in the account the request acts in.
     """
-    # Get user email from auth middleware
-    user_email: str = request.state.user_email
-    user_id = user_email
+    principal.require("agents:Create", ResourceRef("agent"))
 
     # Idempotency check: look for existing agent with same name for this user
-    existing_agent = repo.find_by_name(create_request.agent_name, user_email)
+    existing_agent = repo.find_by_name(owner.account_id, owner.user_id, create_request.agent_name)
     if existing_agent:
-        log.info(f"Agent '{create_request.agent_name}' already exists for user {user_email}, returning existing")
+        log.info(f"Agent '{create_request.agent_name}' already exists for {owner.user_id}, returning existing")
         return existing_agent.to_response()
 
-    _require_provider_model(user_email, create_request.agent_provider, create_request.agent_model)
-    return AgentService(repo).create(create_request, user_email).to_response()
+    _require_provider_model(owner, create_request.agent_provider, create_request.agent_model)
+    return AgentService(repo).create(create_request, owner).to_response()
 
 
-def _require_provider_model(user_email: str, provider: str, model: str | None) -> None:
+def _require_provider_model(owner: Owner, provider: str, model: str | None) -> None:
     try:
-        validate_provider_model(user_email, provider, model or None)
+        validate_provider_model(owner, provider, model or None)
     except ValueError:
         offered = f"{model} on {provider}" if model else provider
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{offered} isn't available. Choose a provider you've set up in Settings, and one of its models.",
+            detail=f"{offered} isn't available. Choose a provider your account has set up in Settings, and one of its models.",
         )
 
 
 @router.get("", response_model=list[AgentResponse])
 async def list_agents(
-    request: Request,
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> list[AgentResponse]:
     """
-    List all agents for the authenticated user.
+    The account's agents the caller can see: their own, those shared with them, and, for admins,
+    everyone else's as metadata. Each says how the caller reaches it (`access`).
     """
-    user_email: str = request.state.user_email
-    agents = repo.find_all_by_created_by(user_email)
-    return [agent.to_response() for agent in agents]
+    return [agent.to_response(access) for agent, access in visible_agents(principal, repo)]
 
 
 @router.get("/update-schema/{agent_id}", response_model=form_models.Form, response_model_exclude_none=True)
 async def get_update_agent_schema(
-    request: Request,
     agent_id: str,
+    principal: Annotated[Principal, Depends(get_principal)],
     providers_settings_repo: Annotated[ProviderSettingsRepository, Depends(get_provider_settings_repository)]
 ) -> form_models.Form:
-    """Get the form schema for updating an agent with dynamically fetched models."""
-    user_email = request.state.user_email
+    """Get the form schema for updating an agent: the models offered are its owner's."""
+    agent = require_agent(principal, agent_id, "agents:Update")
+    owner = owner_of(agent)
     return hydrate_form_options(
         get_update_agent_form(agent_id),
         FormOptionsContext(
-            user_email=user_email,
+            owner=owner,
             provider_settings_repository=providers_settings_repo,
         ),
     )
@@ -231,20 +228,17 @@ async def get_update_agent_schema(
 
 @router.get("/{agent_id}", response_model=AgentResponse)
 async def get_agent(
-    request: Request,
     agent_id: str,
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> AgentResponse:
     """
-    Get an agent by ID. Returns 404 if not found or not owned by user.
+    An agent the caller can see: in full with `agents:Get`, as metadata (no persona) with only
+    `agents:Describe`. 404 if they can't see it at all.
     """
-    user_email: str = request.state.user_email
-    agent = repo.find_agent_by_id(agent_id, user_email)
-
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    return agent.to_response()
+    agent = require_agent(principal, agent_id, "agents:Describe", repo)
+    access = access_to(principal, agent)
+    return agent.to_response(access or "admin")
 
 
 @router.get("/{agent_id}/a2a-sharing", response_model=Agent2AgentSharingResponse)
@@ -253,12 +247,10 @@ async def get_agent2agent_sharing(
     agent_id: str,
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
     api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> Agent2AgentSharingResponse:
     """Get Agent2Agent discovery sharing settings for an agent."""
-    user_email: str = request.state.user_email
-    agent = repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = require_agent(principal, agent_id, "agents:Get", repo)
 
     return _agent2agent_sharing_response(agent=agent, api_key_repo=api_key_repo)
 
@@ -270,12 +262,10 @@ async def update_agent2agent_sharing(
     body: Agent2AgentSharingRequest,
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
     api_key_repo: Annotated[ApiKeyRepository, Depends(get_api_key_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> Agent2AgentSharingResponse:
     """Toggle Agent2Agent discovery sharing for an agent."""
-    user_email: str = request.state.user_email
-    agent = repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = require_agent(principal, agent_id, "agents:Update", repo)
 
     active_keys = [key for key in api_key_repo.find_all_by_agent(agent.agent_id) if key.is_active]
     if body.enabled and not active_keys:
@@ -295,12 +285,10 @@ async def list_agent2agent_tasks(
     agent_id: str,
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
     task_repo: Annotated[A2ATaskRepository, Depends(get_a2a_task_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> A2ATaskListResponse:
-    """List Agent2Agent tasks for an agent owned by the dashboard user."""
-    user_email: str = request.state.user_email
-    agent = repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    """List Agent2Agent tasks for an agent the caller may open."""
+    require_agent(principal, agent_id, "agents:Get", repo)
 
     return A2ATaskListResponse(items=task_repo.find_by_agent(agent_id=agent_id))
 
@@ -312,12 +300,10 @@ async def get_agent2agent_task(
     task_id: str,
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
     task_repo: Annotated[A2ATaskRepository, Depends(get_a2a_task_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> A2ATaskResponse:
-    """Get one Agent2Agent task for an agent owned by the dashboard user."""
-    user_email: str = request.state.user_email
-    agent = repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    """Get one Agent2Agent task for an agent the caller may open."""
+    require_agent(principal, agent_id, "agents:Get", repo)
 
     task = task_repo.find_by_id(agent_id=agent_id, task_id=task_id)
     if not task:
@@ -327,23 +313,20 @@ async def get_agent2agent_task(
 
 @router.put("/{agent_id}", response_model=AgentResponse)
 async def update_agent(
-    request: Request,
     agent_id: str,
     update_data: dict[str, Any],
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> AgentResponse:
     """
     Update an agent by ID. Only fields present in the request are updated.
     Password fields are automatically encrypted based on the form schema.
 
     This endpoint is idempotent - calling with same data returns same result.
-    Returns 404 if agent not found or not owned by user.
+    Needs `agents:Update`. Models and dream settings are the agent's account's, whoever edits the agent.
     """
-    user_email: str = request.state.user_email
-    agent = repo.find_agent_by_id(agent_id, user_email)
-
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = require_agent(principal, agent_id, "agents:Update", repo)
+    owner = owner_of(agent)
 
     # Get valid field names from schema
     valid_fields = {field.name for field in UPDATE_AGENT_FORM.form_inputs}
@@ -359,7 +342,7 @@ async def update_agent(
     provider = filtered_data.get("agent_provider", agent.agent_provider)
     model = filtered_data.get("agent_model", agent.agent_model)
     if (provider, model) != (agent.agent_provider, agent.agent_model):
-        _require_provider_model(user_email, provider, model)
+        _require_provider_model(owner, provider, model)
 
     # Encrypt secret fields based on form schema
     encrypted_data = encrypt_secret_fields(UPDATE_AGENT_FORM, filtered_data)
@@ -370,58 +353,54 @@ async def update_agent(
 
     saved_agent = repo.save(agent)
     dream_service = DreamService()
-    dream_settings = DreamRepository().find_settings(user_email)
+    dream_settings = DreamRepository().find_settings(saved_agent.account_id)
     if saved_agent.agent_architecture == "krishna-memgpt" and dream_settings:
-        dream_service.ensure_schedule(saved_agent.agent_id, user_email, user_email, dream_settings)
+        dream_service.ensure_schedule(saved_agent.agent_id, owner.email, owner, dream_settings)
     elif saved_agent.agent_architecture != "krishna-memgpt":
-        dream_service.delete_schedule(saved_agent.agent_id, user_email, user_email)
-    log.info(f"Updated agent '{saved_agent.agent_name}' (id={saved_agent.agent_id}) for user {user_email}")
+        dream_service.delete_schedule(saved_agent.agent_id, owner.email, owner)
+    log.info(f"Updated agent '{saved_agent.agent_name}' (id={saved_agent.agent_id}) by {principal.user_id}")
 
     return saved_agent.to_response()
 
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_agent(
-    request: Request,
     agent_id: str,
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> None:
-    """Delete an agent, its keys and its media."""
-    user_email: str = request.state.user_email
-    # Agent ids are public (A2A cards, embeds), so nothing is deleted until we know the caller owns it.
-    if not repo.find_agent_by_id(agent_id, user_email):
-        raise HTTPException(status_code=404, detail="Agent not found")
-    AgentService(repo).delete(agent_id, user_email)
+    """Delete an agent, its shares, keys and media. Needs `agents:Delete` (the owner, or an admin)."""
+    agent = require_agent(principal, agent_id, "agents:Delete", repo)
+    AgentService(repo).delete(agent, owner_of(agent).email)
 
 
 @dataclass(frozen=True)
 class ChatTarget:
-    """The (agent, conversation) pair a chat endpoint acts on."""
+    """The (agent, conversation) pair a chat endpoint acts on, and who is chatting."""
 
     agent: Agent
     conversation: Conversation
+    caller: Owner
 
 
 def resolve_chat_target(
-    request: Request,
     agent_id: str,
     conversation_id: str,
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
+    caller: Annotated[Owner, Depends(get_owner)],
 ) -> ChatTarget:
-    """Load the agent and conversation, 404ing on any mismatch."""
-    user_email: str = request.state.user_email
+    """Load the agent the caller may chat with, and their own conversation with it; 404 on any mismatch."""
+    agent = require_agent(principal, agent_id, "agents:Chat", agent_repo)
 
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    conversation = ConversationRepository().find_by_id(conversation_id, user_email)
+    # A conversation belongs to whoever started it, even on someone else's agent
+    conversation = ConversationRepository().find_by_id(conversation_id, caller.member_pk)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     if conversation.agent_id != agent_id:
         raise HTTPException(status_code=404, detail="Conversation does not belong to this agent")
 
-    return ChatTarget(agent=agent, conversation=conversation)
+    return ChatTarget(agent=agent, conversation=conversation, caller=caller)
 
 
 @dataclass(frozen=True)
@@ -481,8 +460,6 @@ async def send_message(
     - STREAM_COMPLETE: Stream has finished successfully
     - ERROR: An error occurred
     """
-    user_email: str = request.state.user_email
-
     active_turn = ConversationTurnRepository().find_active(target.conversation.conversation_id)
     if active_turn:
         raise HTTPException(
@@ -498,10 +475,12 @@ async def send_message(
         conversation=target.conversation,
         user_message=body.content,
         attachments=cast(list[Attachment], body.attachments or []),
-        owner_email=user_email,
-        actor_email=user_email,
-        actor_id=user_email,
-        actor_kind=ActorKind.OWNER,
+        # The agent runs as its owner (their provider keys, skills and connections); the caller is
+        # who speaks, and whose memory it keeps
+        owner_email=owner_of(target.agent).email,
+        actor_email=target.caller.email,
+        actor_id=target.caller.email,
+        actor_kind=ActorKind.OWNER if target.agent.owner_id == target.caller.user_id else ActorKind.MEMBER,
     )
     response = sse_response(_stream_transcript(running.transcript, after_sequence=0))
     response.headers["X-Turn-Id"] = running.turn.turn_id
@@ -548,19 +527,16 @@ async def stop_turn(
 
 @router.post("/{agent_id}/{conversation_id}/generate-image", response_model=GenerateImageResponse)
 async def generate_image(
-    request: Request,
-    agent_id: str,
-    conversation_id: str,
     body: GenerateImageRequest,
+    target: Annotated[ChatTarget, Depends(resolve_chat_target)],
     service: Annotated[AgentImageGenerationService, Depends(get_agent_image_generation_service)],
 ) -> GenerateImageResponse:
     """Explicitly generate an image with an agent and save it to chat history."""
-    user_email: str = request.state.user_email
     try:
         return await service.generate_for_dashboard(
-            agent_id=agent_id,
-            conversation_id=conversation_id,
-            user_email=user_email,
+            agent=target.agent,
+            conversation=target.conversation,
+            actor_email=target.caller.email,
             request=body,
         )
     except ImageGenerationNotFoundError as e:
@@ -575,21 +551,18 @@ async def generate_image(
 
 @router.post("/{agent_id}/{conversation_id}/generate-image-stream")
 async def generate_image_stream(
-    request: Request,
-    agent_id: str,
-    conversation_id: str,
     body: GenerateImageRequest,
+    target: Annotated[ChatTarget, Depends(resolve_chat_target)],
     service: Annotated[AgentImageGenerationService, Depends(get_agent_image_generation_service)],
 ):
     """Explicitly generate an image with an agent and stream preview/final events."""
-    user_email: str = request.state.user_email
 
     async def event_stream():
         try:
             async for event in service.stream_for_dashboard(
-                agent_id=agent_id,
-                conversation_id=conversation_id,
-                user_email=user_email,
+                agent=target.agent,
+                conversation=target.conversation,
+                actor_email=target.caller.email,
                 request=body,
             ):
                 yield event.to_sse()

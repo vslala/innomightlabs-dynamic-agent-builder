@@ -43,6 +43,7 @@ import { agentApiService, type AgentResponse } from "../../services/agents/Agent
 import { dreamApiService } from "../../services/dream";
 import { defaultAgentService } from "../../services/settings/DefaultAgentService";
 import { getStoredTheme, setStoredTheme, type AppTheme } from "../../lib/theme";
+import { useCanManageSettings } from "../../hooks/useCanManageSettings";
 import styles from "./Settings.module.css";
 
 type SubscriptionStatus = {
@@ -68,6 +69,9 @@ const PROVIDER_TITLES: Record<string, string> = {
 };
 
 const providerTitle = (providerName: string): string => PROVIDER_TITLES[providerName] ?? providerName;
+
+/** Shown to members on the account's settings, which only its admins change. */
+const MANAGED_BY_ADMINS = "Your account's admins manage this. Your agents use it.";
 
 export function Settings() {
   const [providers, setProviders] = useState<ProviderWithStatus[]>([]);
@@ -104,6 +108,8 @@ export function Settings() {
 
   // Get user info from token
   const userInfo = authService.getUserFromToken();
+  // Providers, Agent2Agent, Dream and smart suggestions are the account's: only its admins change them
+  const canManage = useCanManageSettings() === true;
 
   useEffect(() => {
     loadProviders();
@@ -655,12 +661,13 @@ export function Settings() {
         <CardHeader>
           <CardTitle>Provider Configuration</CardTitle>
           <CardDescription>
-            Configure API credentials for LLM providers
+            The account's API credentials for LLM providers. Every member's agents use them.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Stack gap="sm">
             {error && <AlertBanner message={error} variant="error" />}
+            {!canManage && <AlertBanner message={MANAGED_BY_ADMINS} variant="info" />}
 
             {loading ? (
               <LoadingState className={styles.providersLoadingState} size="default" />
@@ -719,7 +726,7 @@ export function Settings() {
                           ? (provider.is_configured ? "Connected via OAuth" : "Not connected")
                           : (provider.is_configured ? "Configured" : "Not configured")
                       }
-                      trailing={
+                      trailing={canManage &&
                         <Inline gap="xs" wrap={false}>
                           {provider.provider_name === "OpenAI" && provider.is_configured && (
                             <Button
@@ -755,7 +762,8 @@ export function Settings() {
         <CardHeader>
           <CardTitle>Agent2Agent</CardTitle>
           <CardDescription>
-            Allow outbound Agent2Agent registry and service origins before agents can install or use A2A client skills.
+            The account's outbound Agent2Agent registry and service origins, which agents must be allowed before they
+            can install or use A2A client skills.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -777,14 +785,14 @@ export function Settings() {
                     : "No Agent2Agent origins are allowlisted. A2A client skill installs and calls will be blocked."}
                 </p>
               </div>
-              <SchemaForm
+              {canManage ? <SchemaForm
                 key={JSON.stringify(agent2AgentSettings?.allowed_origins_map ?? {})}
                 schema={agent2AgentSchema}
                 initialValues={{ allowed_origins: agent2AgentSettings?.allowed_origins_map ?? {} }}
                 onSubmit={handleSaveAgent2AgentSettings}
                 submitLabel="Save Agent2Agent Settings"
                 isLoading={agent2AgentSaving}
-              />
+              /> : <p className={styles.mutedText}>{MANAGED_BY_ADMINS}</p>}
             </div>
           ) : (
             <p className={styles.mutedText}>Agent2Agent settings are unavailable.</p>
@@ -795,10 +803,12 @@ export function Settings() {
       {dreamAvailable && <Card>
         <CardHeader>
           <CardTitle>Dream</CardTitle>
-          <CardDescription>Choose the model and nightly schedule used to organize agent memory.</CardDescription>
+          <CardDescription>The model and nightly schedule the account's agents use to organize their memory.</CardDescription>
         </CardHeader>
         <CardContent>
-          {dreamLoading ? <div className={styles.loadingRow}><Loader2 className={styles.sectionLoadingSpinner} /></div> : dreamSchema ? <div className={styles.formSection}>
+          {dreamLoading ? <div className={styles.loadingRow}><Loader2 className={styles.sectionLoadingSpinner} /></div> : !canManage ? (
+            <p className={styles.mutedText}>{MANAGED_BY_ADMINS}</p>
+          ) : dreamSchema ? <div className={styles.formSection}>
             <SchemaForm schema={dreamSchema} onSubmit={handleSaveDreamSettings} submitLabel="Save Dream Settings" isLoading={dreamSaving} />
           </div> : <p className={styles.mutedText}>Dream settings are unavailable.</p>}
         </CardContent>
@@ -808,7 +818,7 @@ export function Settings() {
         <CardHeader>
           <CardTitle>Smart Suggestions</CardTitle>
           <CardDescription>
-            Choose the model used by schema-driven field suggestions.
+            The model the account uses for schema-driven field suggestions.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -830,13 +840,13 @@ export function Settings() {
                     : "Configure a provider and model before using smart suggestions in forms."}
                 </p>
               </div>
-              <SchemaForm
+              {canManage ? <SchemaForm
                 key={`${smartSuggestionSettings?.enabled}-${smartSuggestionSettings?.provider_name}-${smartSuggestionSettings?.model_name}`}
                 schema={smartSuggestionSchema}
                 onSubmit={handleSaveSmartSuggestionSettings}
                 submitLabel="Save Smart Suggestions"
                 isLoading={smartSuggestionSaving}
-              />
+              /> : <p className={styles.mutedText}>{MANAGED_BY_ADMINS}</p>}
             </div>
           ) : (
             <p className={styles.mutedText}>Smart suggestion settings are unavailable.</p>

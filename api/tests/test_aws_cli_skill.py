@@ -14,6 +14,7 @@ from src.crypto import decrypt
 from src.skills.aws_cli import actions
 from src.skills.aws_cli.models import AwsCliConfig, AwsCliReadRequest, parse_policy
 from src.skills.registry import SkillRegistry
+from tests.mock_data import user_id_for, account_for, agent_fields
 
 
 VALID_CONFIG = {
@@ -39,6 +40,8 @@ aws:
 }
 
 RUNTIME_CONTEXT = {
+    "account_id": account_for("owner@example.com"),
+    "owner_id": user_id_for("owner@example.com"),
     "owner_email": "owner@example.com",
     "installed_skill_id": "aws_cli",
     "conversation_id": "conv_123",
@@ -81,7 +84,7 @@ def test_install_asks_for_aws_credentials_and_stores_them_as_secrets(
             agent_provider="Bedrock",
             agent_model="claude-3-7-sonnet",
             agent_persona="Helpful",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
     )
 

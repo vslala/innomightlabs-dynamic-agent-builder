@@ -239,7 +239,7 @@ function simulateRun(
     automation_id: graph.automation.automation_id,
     trigger_id: trigger?.trigger_id ?? null,
     status: "running",
-    created_by: SAMPLE_RECIPIENT,
+    created_by: "sandbox",
     created_at: startedAt,
     started_at: startedAt,
   };

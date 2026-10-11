@@ -6,12 +6,14 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from src.agents.architectures.factory import get_agent_architecture
+from src.agents.access import owner_of, usable_agent
 from src.agents.repository import AgentRepository
 from src.automations.models import AutomationStatus, AutomationTriggerType
 from src.automations.runner import AutomationRunner
 from src.automations.service import AutomationService
 from src.conversations.repository import ConversationRepository
 from src.scheduler.models import Schedule
+from src.scheduler.service import owner_of_schedule
 from src.skills.models import ActorKind
 
 
@@ -45,14 +47,16 @@ class AgentScheduledMessageExecutor:
         agent_id = self._required_target(schedule, "agent_id")
         conversation_id = self._required_target(schedule, "conversation_id")
         message = self._required_target(schedule, "message")
-        actor_email = str(schedule.target.get("actor_email") or schedule.owner_email)
+        owner = owner_of_schedule(schedule)
+        actor_email = str(schedule.target.get("actor_email") or owner.email)
         actor_id = str(schedule.target.get("actor_id") or actor_email)
 
-        agent = self.agent_repository.find_agent_by_id(agent_id, schedule.owner_email)
+        agent = usable_agent(owner, agent_id, self.agent_repository)
         if not agent:
             raise ValueError("Scheduled agent was not found")
+        agent_owner = owner_of(agent)
 
-        conversation = self.conversation_repository.find_by_id(conversation_id, schedule.owner_email)
+        conversation = self.conversation_repository.get(conversation_id)
         if not conversation:
             raise ValueError("Scheduled conversation was not found")
         if conversation.agent_id != agent.agent_id:
@@ -63,11 +67,11 @@ class AgentScheduledMessageExecutor:
             agent=agent,
             conversation=conversation,
             user_message=message,
-            owner_email=schedule.owner_email,
+            owner_email=agent_owner.email,
             actor_email=actor_email,
             actor_id=actor_id,
             # A schedule someone else set up on the owner's agent must not wake it with the owner's tools.
-            actor_kind=ActorKind.OWNER if actor_email == schedule.owner_email else ActorKind.VISITOR,
+            actor_kind=ActorKind.OWNER if actor_email == agent_owner.email else ActorKind.VISITOR,
         )
         if not result.success:
             raise RuntimeError(result.error or "Scheduled agent invocation failed")
@@ -107,7 +111,8 @@ class AutomationScheduledRunExecutor:
         if not isinstance(input_data, dict):
             raise ValueError("Automation schedule input must be an object")
 
-        graph = self.service.get_graph(automation_id, schedule.owner_email)
+        owner = owner_of_schedule(schedule)
+        graph = self.service.get_graph(automation_id, owner)
         if graph.automation.status != AutomationStatus.ACTIVE:
             return {
                 "scheduled_for": scheduled_for.isoformat(),
@@ -138,16 +143,16 @@ class AutomationScheduledRunExecutor:
             graph.nodes,
             graph.edges,
             graph.triggers,
-            schedule.owner_email,
+            owner,
         )
         run = self.runner.create_scheduled_run(
             graph=graph,
             input_data=input_data,
-            user_email=schedule.owner_email,
+            owner=owner,
             schedule_id=schedule.schedule_id,
             trigger_id=trigger_id,
         )
-        completed = await self.runner.execute_run_graph(graph, run, schedule.owner_email)
+        completed = await self.runner.execute_run_graph(graph, run, owner)
 
         return {
             "scheduled_for": scheduled_for.isoformat(),

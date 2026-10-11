@@ -12,7 +12,8 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional, cast
-from src.artifacts.storage import ArtifactStorage, owner_scope
+from src.accounts.owner import Owner
+from src.artifacts.storage import ArtifactStorage, member_prefix
 from src.llm.events import RECORDED_EVENT_TYPES, SSEEvent
 
 log = logging.getLogger(__name__)
@@ -27,9 +28,11 @@ def tool_history(events: list[SSEEvent]) -> list[dict[str, Any]]:
     ]
 
 
-def key_for(owner_email: str, conversation_id: str, tool_call_id: str) -> str:
-    """Where the history of one tool call is kept: the same `tool_call_id` as its audit record."""
-    return f"users/{owner_scope(owner_email)}/invocations/{conversation_id}/tool_audit_{tool_call_id}.json"
+def key_for(owner: Owner, conversation_id: str, tool_call_id: str) -> str:
+    """Where the history of one tool call is kept, under the calling agent's owner: the same `tool_call_id` as its
+    audit record."""
+    prefix = member_prefix(owner.account_id, owner.user_id)
+    return f"{prefix}/invocations/{conversation_id}/tool_audit_{tool_call_id}.json"
 
 
 class InvocationHistoryStore:
@@ -45,7 +48,7 @@ class InvocationHistoryStore:
     def save(
         self,
         *,
-        owner_email: str,
+        owner: Owner,
         conversation_id: str,
         tool_call_id: str,
         agent_id: str,
@@ -56,7 +59,7 @@ class InvocationHistoryStore:
     ) -> Optional[str]:
         """The S3 key the history was saved under, or None if it couldn't be. Losing the audit copy must never
         cost the person their answer, so a failure is logged, not raised."""
-        key = key_for(owner_email, conversation_id, tool_call_id)
+        key = key_for(owner, conversation_id, tool_call_id)
         document = {
             "tool_call_id": tool_call_id,
             "invoked_agent_id": agent_id,

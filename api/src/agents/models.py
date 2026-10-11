@@ -1,9 +1,15 @@
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from uuid import uuid4
 
+from src.accounts.owner import member_partition
 from src.agents.image_generation.capabilities import image_capability_registry
+from src.iam.actions import ResourceRef
+
+# How the caller reaches an agent: they own it, it was shared with them, or they see it as an admin
+# (metadata only: no persona)
+AgentAccess = Literal["owner", "shared", "admin"]
 
 
 class CreateAgentRequest(BaseModel):
@@ -32,7 +38,10 @@ class AgentResponse(BaseModel):
     session_timeout_minutes: int = 60  # Default 60 minutes
     is_agent2agent_enabled: bool = False
     agent_ollama_thinking: str = "default"
+    account_id: str
+    owner_id: str
     created_by: str
+    access: AgentAccess = "owner"
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -57,14 +66,27 @@ class Agent(BaseModel):
     is_agent2agent_enabled: bool = False
     # Ollama only: "enabled" | "disabled" | None (let the model use its own default)
     agent_ollama_thinking: Optional[str] = None
-    created_by: str  # User email who created this agent
+    account_id: str
+    # The member it belongs to (a user_id). Authorization follows it; a transfer changes it.
+    owner_id: str
+    created_by: str  # user_id of whoever created it, kept for audit only
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
 
     @property
     def pk(self) -> str:
-        """Partition key: User#{created_by} - allows querying all agents by user"""
-        return f"User#{self.created_by}"
+        """Partition key: the account, which shares agents among its members"""
+        return f"Account#{self.account_id}"
+
+    @property
+    def resource_ref(self) -> ResourceRef:
+        return ResourceRef("agent", self.agent_id, self.owner_id)
+
+    @property
+    def owner_partition(self) -> str:
+        """The owner's own partition in the agent's account: where conversations it holds as its owner live
+        (A2A, WordPress, scheduled messages)."""
+        return member_partition(self.account_id, self.owner_id)
 
     @property
     def sk(self) -> str:
@@ -86,7 +108,12 @@ class Agent(BaseModel):
             "session_timeout_minutes": self.session_timeout_minutes,
             "is_agent2agent_enabled": self.is_agent2agent_enabled,
             "agent_ollama_thinking": self.agent_ollama_thinking,
+            "account_id": self.account_id,
+            "owner_id": self.owner_id,
             "created_by": self.created_by,
+            # Agent ids are global: widget, /v1, A2A and schedules find an agent by id alone
+            "gsi2_pk": f"Agent#{self.agent_id}",
+            "gsi2_sk": "Agent",
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "entity_type": "Agent",
@@ -116,14 +143,16 @@ class Agent(BaseModel):
             session_timeout_minutes=item.get("session_timeout_minutes", 60),
             is_agent2agent_enabled=bool(item.get("is_agent2agent_enabled", False)),
             agent_ollama_thinking=item.get("agent_ollama_thinking"),
+            account_id=item["account_id"],
+            owner_id=item["owner_id"],
             created_by=item["created_by"],
             created_at=datetime.fromisoformat(item["created_at"]),
             updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
         )
 
-    def to_response(self) -> AgentResponse:
-        """Convert to response model (excludes sensitive fields)"""
-        return AgentResponse(
+    def to_response(self, access: AgentAccess = "owner") -> AgentResponse:
+        """Convert to response model (excludes sensitive fields). An admin sees metadata only."""
+        response = AgentResponse(
             agent_id=self.agent_id,
             agent_name=self.agent_name,
             agent_architecture=self.agent_architecture,
@@ -138,7 +167,13 @@ class Agent(BaseModel):
             session_timeout_minutes=self.session_timeout_minutes,
             is_agent2agent_enabled=self.is_agent2agent_enabled,
             agent_ollama_thinking=self.agent_ollama_thinking or "default",
+            account_id=self.account_id,
+            owner_id=self.owner_id,
             created_by=self.created_by,
+            access=access,
             created_at=self.created_at,
             updated_at=self.updated_at,
         )
+        if access == "admin":
+            response.agent_persona = ""
+        return response

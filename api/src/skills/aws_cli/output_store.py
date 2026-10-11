@@ -12,7 +12,8 @@ OUTPUT_TTL_MINUTES = 30
 @dataclass
 class StoredOutput:
     output_id: str
-    owner_email: str
+    #: The member partition of the agent's owner, whose run made it
+    owner_partition: str
     installed_skill_id: str
     content: str
     created_at: datetime
@@ -22,12 +23,12 @@ class StoredOutput:
 _OUTPUTS: dict[str, StoredOutput] = {}
 
 
-def store_output(*, owner_email: str, installed_skill_id: str, content: str) -> StoredOutput:
+def store_output(*, owner_partition: str, installed_skill_id: str, content: str) -> StoredOutput:
     prune_expired()
     now = datetime.now(timezone.utc)
     output = StoredOutput(
         output_id=f"awsout_{uuid4().hex}",
-        owner_email=owner_email,
+        owner_partition=owner_partition,
         installed_skill_id=installed_skill_id,
         content=content,
         created_at=now,
@@ -40,14 +41,14 @@ def store_output(*, owner_email: str, installed_skill_id: str, content: str) -> 
 def read_page(
     *,
     output_id: str,
-    owner_email: str,
+    owner_partition: str,
     installed_skill_id: str,
     page: int,
     page_size_chars: int,
 ) -> dict[str, object]:
     prune_expired()
     output = _OUTPUTS.get(output_id)
-    if not output or output.owner_email != owner_email or output.installed_skill_id != installed_skill_id:
+    if not output or output.owner_partition != owner_partition or output.installed_skill_id != installed_skill_id:
         raise ValueError("Output not found")
 
     total_pages = max(1, ceil(len(output.content) / page_size_chars))

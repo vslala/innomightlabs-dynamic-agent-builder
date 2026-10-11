@@ -1,4 +1,4 @@
-"""Blueprint deployments in the single table: pk=User#{email}, sk=BlueprintDeployment#{created_at}#{id}.
+"""Blueprint deployments in the single table: pk=Account#{account_id}, sk=BlueprintDeployment#{created_at}#{id}.
 
 While one is applying it's also in gsi2 (gsi2_pk=BlueprintApplying, gsi2_sk=updated_at), so the reaper finds applies
 that were interrupted without scanning the table. The entry goes when the item is saved with another status."""
@@ -49,10 +49,10 @@ class DeploymentRepository:
                 return found
             kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
-    def list_by_user(self, user_email: str) -> list[Deployment]:
-        """Newest first."""
+    def list_in_account(self, account_id: str) -> list[Deployment]:
+        """Every deployment in the account, newest first; callers keep what the caller may see."""
         kwargs: dict = {
-            "KeyConditionExpression": Key("pk").eq(f"User#{user_email}") & Key("sk").begins_with(SK_PREFIX),
+            "KeyConditionExpression": Key("pk").eq(f"Account#{account_id}") & Key("sk").begins_with(SK_PREFIX),
             "ScanIndexForward": False,
         }
         found = []
@@ -63,14 +63,17 @@ class DeploymentRepository:
                 return found
             kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
-    def list_for_kit(self, user_email: str, kit_id: str) -> list[Deployment]:
-        """A kit's deployments, newest first."""
-        return [deployment for deployment in self.list_by_user(user_email) if deployment.kit_id == kit_id]
+    def list_owned(self, account_id: str, owner_id: str) -> list[Deployment]:
+        return [deployment for deployment in self.list_in_account(account_id) if deployment.owner_id == owner_id]
 
-    def find_by_id(self, user_email: str, deployment_id: str) -> Optional[Deployment]:
-        # A user's deployments are few, so a filtered query is enough without an index.
+    def list_for_kit(self, account_id: str, kit_id: str) -> list[Deployment]:
+        """A kit's deployments, newest first."""
+        return [deployment for deployment in self.list_in_account(account_id) if deployment.kit_id == kit_id]
+
+    def find_by_id(self, account_id: str, deployment_id: str) -> Optional[Deployment]:
+        # An account's deployments are few, so a filtered query over its deployment keys is enough without an index.
         kwargs = {
-            "KeyConditionExpression": Key("pk").eq(f"User#{user_email}") & Key("sk").begins_with(SK_PREFIX),
+            "KeyConditionExpression": Key("pk").eq(f"Account#{account_id}") & Key("sk").begins_with(SK_PREFIX),
             "FilterExpression": Attr("deployment_id").eq(deployment_id),
         }
         while True:

@@ -42,12 +42,13 @@ from src.a2a.oauth import (
 from src.a2a.repository import A2ATaskRepository
 from src.agents.architectures import get_agent_architecture
 from src.agents.models import Agent
+from src.agents.access import owner_of
 from src.agents.repository import AgentRepository
 from src.apikeys.models import AgentApiKey
 from src.config import settings
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
-from src.llm.events import SSEEvent, SSEEventType
+from src.llm.events import SSEEventType
 from src.skills.repository import AgentSkillRepository
 from src.skills.models import ActorKind
 from src.common.pagination import InvalidCursor
@@ -232,9 +233,11 @@ class A2AInvocationService:
         api_key: AgentApiKey,
     ) -> A2ATaskResponse:
         agent = self._load_agent(agent_id=agent_id, api_key=api_key)
+        # The key acts for the agent's owner: their provider settings, connections and conversations
+        owner_email = owner_of(agent).email
         self._validate_request(request)
         user_message = self._user_text(request.message)
-        task = self._create_task(agent=agent, request=request, api_key=api_key)
+        task = self._create_task(agent=agent, request=request, api_key=api_key, owner_email=owner_email)
         conversation = self._resolve_conversation(task=task, agent=agent)
         task.status = A2ATaskStatus(state=A2ATaskState.WORKING)
         self.task_repository.save(task)
@@ -245,8 +248,8 @@ class A2AInvocationService:
                 agent=agent,
                 conversation=conversation,
                 user_message=user_message,
-                owner_email=api_key.created_by,
-                actor_email=api_key.created_by,
+                owner_email=owner_email,
+                actor_email=owner_email,
                 actor_id=f"a2a:{api_key.key_id}",
                 actor_kind=ActorKind.A2A,
                 attachments=[],
@@ -285,9 +288,11 @@ class A2AInvocationService:
         api_key: AgentApiKey,
     ):
         agent = self._load_agent(agent_id=agent_id, api_key=api_key)
+        # The key acts for the agent's owner: their provider settings, connections and conversations
+        owner_email = owner_of(agent).email
         self._validate_request(request)
         user_text = self._user_text(request.message)
-        task = self._create_task(agent=agent, request=request, api_key=api_key)
+        task = self._create_task(agent=agent, request=request, api_key=api_key, owner_email=owner_email)
         conversation = self._resolve_conversation(task=task, agent=agent)
         task.status = A2ATaskStatus(state=A2ATaskState.WORKING)
         self.task_repository.save(task)
@@ -303,8 +308,8 @@ class A2AInvocationService:
                 agent=agent,
                 conversation=conversation,
                 user_message=user_text,
-                owner_email=api_key.created_by,
-                actor_email=api_key.created_by,
+                owner_email=owner_email,
+                actor_email=owner_email,
                 actor_id=f"a2a:{api_key.key_id}",
                 actor_kind=ActorKind.A2A,
                 attachments=[],
@@ -378,8 +383,8 @@ class A2AInvocationService:
         )
 
     def _load_agent(self, *, agent_id: str, api_key: AgentApiKey) -> Agent:
-        agent = self.agent_repository.find_agent_by_id(agent_id, api_key.created_by)
-        if not agent or not agent.is_agent2agent_enabled:
+        agent = self.agent_repository.get(agent_id)
+        if not agent or agent.agent_id != api_key.agent_id or not agent.is_agent2agent_enabled:
             raise ValueError("Agent not found")
         return agent
 
@@ -400,6 +405,7 @@ class A2AInvocationService:
         agent: Agent,
         request: A2AMessageSendRequest,
         api_key: AgentApiKey,
+        owner_email: str,
     ) -> A2ATask:
         context_id = request.message.context_id or str(uuid4())
         task_id = request.message.task_id or str(uuid4())
@@ -412,7 +418,7 @@ class A2AInvocationService:
             id=task_id,
             contextId=context_id,
             agentId=agent.agent_id,
-            ownerEmail=api_key.created_by,
+            ownerEmail=owner_email,
             clientKeyId=api_key.key_id,
             conversationId=conversation_id,
             status=A2ATaskStatus(state=A2ATaskState.SUBMITTED),
@@ -422,10 +428,7 @@ class A2AInvocationService:
         return task
 
     def _resolve_conversation(self, *, task: A2ATask, agent: Agent) -> Conversation:
-        conversation = self.conversation_repository.find_by_id(
-            task.conversation_id,
-            task.owner_email,
-        )
+        conversation = self.conversation_repository.find_by_id(task.conversation_id, agent.owner_partition)
         if conversation:
             if conversation.agent_id != agent.agent_id:
                 raise ValueError("A2A context is bound to a different agent")
@@ -436,7 +439,8 @@ class A2AInvocationService:
             title=f"A2A: {agent.agent_name}",
             description=f"Agent2Agent context {task.context_id}",
             agent_id=agent.agent_id,
-            created_by=task.owner_email,
+            account_id=agent.account_id,
+            created_by=agent.owner_id,
         )
         self.conversation_repository.save(conversation)
         return conversation

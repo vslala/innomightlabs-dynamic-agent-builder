@@ -8,6 +8,8 @@ from src.automations.router import invoke_automation_run_async
 from src.automations.service import AutomationValidationError
 from src.knowledge.crawl_launch import invoke_crawl_async as _invoke_crawl_async
 
+from tests.mock_data import owner_for
+
 
 class FakeLambdaClient:
     def __init__(self):
@@ -25,7 +27,7 @@ def test_automation_dispatch_invokes_configured_lambda(monkeypatch):
     monkeypatch.setattr(settings, "aws_region", "us-east-1")
     monkeypatch.setattr("boto3.client", lambda *args, **kwargs: fake_client)
 
-    invoke_automation_run_async("run-1", "automation-1", "user@example.com")
+    invoke_automation_run_async("run-1", "automation-1", owner_for("user@example.com"))
 
     assert len(fake_client.calls) == 1
     call = fake_client.calls[0]
@@ -35,7 +37,7 @@ def test_automation_dispatch_invokes_configured_lambda(monkeypatch):
         "automation_run": {
             "run_id": "run-1",
             "automation_id": "automation-1",
-            "user_email": "user@example.com",
+            "account_id": owner_for("user@example.com").account_id,
         }
     }
 
@@ -45,7 +47,7 @@ def test_automation_dispatch_requires_lambda_name(monkeypatch):
     monkeypatch.setattr(settings, "async_job_lambda_name", "")
 
     with pytest.raises(AutomationValidationError, match="ASYNC_JOB_LAMBDA_NAME"):
-        invoke_automation_run_async("run-1", "automation-1", "user@example.com")
+        invoke_automation_run_async("run-1", "automation-1", owner_for("user@example.com"))
 
 
 def test_crawl_dispatch_invokes_configured_lambda(monkeypatch):
@@ -54,7 +56,7 @@ def test_crawl_dispatch_invokes_configured_lambda(monkeypatch):
     monkeypatch.setattr(settings, "aws_region", "us-east-1")
     monkeypatch.setattr("boto3.client", lambda *args, **kwargs: fake_client)
 
-    _invoke_crawl_async("job-1", "kb-1", "user@example.com")
+    _invoke_crawl_async("job-1", "kb-1", "account-1")
 
     assert len(fake_client.calls) == 1
     call = fake_client.calls[0]
@@ -64,7 +66,7 @@ def test_crawl_dispatch_invokes_configured_lambda(monkeypatch):
         "crawl_job": {
             "job_id": "job-1",
             "kb_id": "kb-1",
-            "user_email": "user@example.com",
+            "account_id": "account-1",
         }
     }
 
@@ -73,7 +75,7 @@ def test_crawl_dispatch_requires_lambda_name(monkeypatch):
     monkeypatch.setattr(settings, "async_job_lambda_name", "")
 
     with pytest.raises(HTTPException) as exc_info:
-        _invoke_crawl_async("job-1", "kb-1", "user@example.com")
+        _invoke_crawl_async("job-1", "kb-1", "account-1")
 
     assert exc_info.value.status_code == 503
     assert "ASYNC_JOB_LAMBDA_NAME" in str(exc_info.value.detail)

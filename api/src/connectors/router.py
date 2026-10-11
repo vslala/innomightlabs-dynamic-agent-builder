@@ -9,6 +9,9 @@ from pydantic import BaseModel
 from src.auth.router import SkillOAuthStartResponse, _google_skill_authorize, _google_skill_oauth_flows
 from src.connectors.models import ConnectorStatus
 from src.connectors.service import ConnectorService, get_connector_service
+from src.iam.dependencies import get_principal
+from src.iam.principal import Principal
+from src.settings.access import settings_manager
 
 security = HTTPBearer()
 
@@ -25,13 +28,11 @@ class ConnectorStartRequest(BaseModel):
 
 @router.get("", response_model=list[ConnectorStatus])
 async def list_connectors(
-    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     service: Annotated[ConnectorService, Depends(get_connector_service)],
 ) -> list[ConnectorStatus]:
-    user_email = getattr(request.state, "user_email", None)
-    if not user_email:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    return service.list_statuses(str(user_email))
+    """The account's connectors and whether each is connected; any member may look."""
+    return service.list_statuses(principal.account_id)
 
 
 @router.post("/{connector_id}/start", response_model=SkillOAuthStartResponse)
@@ -40,7 +41,9 @@ async def start_connector_oauth(
     connector_id: str,
     body: ConnectorStartRequest,
     service: Annotated[ConnectorService, Depends(get_connector_service)],
+    principal: Annotated[Principal, Depends(settings_manager)],
 ) -> SkillOAuthStartResponse:
+    """Connect a Google account for the whole account (admins only)."""
     user_email = getattr(request.state, "user_email", None)
     if not user_email:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -55,4 +58,5 @@ async def start_connector_oauth(
     if not flow.is_configured():
         raise HTTPException(status_code=500, detail=f"{flow.display_name} OAuth is not configured")
 
-    return _google_skill_authorize(flow, user_email=str(user_email), agent_id="", return_to=body.return_to)
+    return _google_skill_authorize(flow, user_email=str(user_email), account_id=principal.account_id, agent_id="",
+                                   return_to=body.return_to)

@@ -17,7 +17,7 @@ from src.config import settings
 from src.crypto import decrypt, encrypt
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL, agent_fields
 from tests.oauth_handoff import handoff_result
 
 
@@ -29,7 +29,7 @@ def _create_agent_for_user(user_email: str) -> Agent:
         agent_provider="Bedrock",
         agent_model="claude-3-7-sonnet",
         agent_persona="Helpful",
-        created_by=user_email,
+        **agent_fields(user_email),
     )
     return repo.save(agent)
 
@@ -85,6 +85,7 @@ class TestGoogleDriveOAuth:
             GoogleDriveOAuthState(
                 nonce="nonce",
                 user_email=TEST_USER_EMAIL,
+                account_id=account_for(TEST_USER_EMAIL),
                 agent_id="agent-1",
                 skill_id="google_drive",
                 return_to="http://localhost:5173/dashboard/agents/agent-1",
@@ -105,7 +106,7 @@ class TestGoogleDriveOAuth:
         assert params["skill_id"] == ["google_drive"]
 
         repo = ProviderSettingsRepository()
-        saved = repo.find_by_provider(TEST_USER_EMAIL, "GoogleDrive")
+        saved = repo.find_by_provider(account_for(TEST_USER_EMAIL), "GoogleDrive")
         assert saved is not None
         assert saved.auth_type == "oauth"
 
@@ -127,7 +128,7 @@ class TestGoogleDriveOAuth:
     def test_force_refresh_google_drive_credentials_updates_storage(self, dynamodb_table, monkeypatch):
         repo = ProviderSettingsRepository()
         provider_settings = ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleDrive",
             encrypted_credentials=encrypt(
                 GoogleDriveCredentials(
@@ -159,7 +160,7 @@ class TestGoogleDriveOAuth:
         assert credentials.access_token == "new-access"
         assert credentials.refresh_token == "new-refresh"
 
-        saved = repo.find_by_provider(TEST_USER_EMAIL, "GoogleDrive")
+        saved = repo.find_by_provider(account_for(TEST_USER_EMAIL), "GoogleDrive")
         assert saved is not None
         payload = json.loads(decrypt(saved.encrypted_credentials))
         assert payload["access_token"] == "new-access"

@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 from pydantic import ValidationError
 
+from src.accounts.owner import Owner
 import src.form_models as form_models
 from src.agents.tool_audit import ToolCallAuditMessage
 from src.agents.tool_execution import current_tool_call_id
@@ -53,7 +54,8 @@ class SkillService:
         self.lifecycle_runner = lifecycle_runner or SkillLifecycleRunner(self.registry)
         self.agent2agent_policy = agent2agent_policy or Agent2AgentPolicy()
 
-    def list_catalog(self, user_email: str | None = None) -> list[SkillCatalogItemResponse]:
+    def list_catalog(self, account_id: str | None = None) -> list[SkillCatalogItemResponse]:
+        """The skills, with whether the account has connected what each needs."""
         items: list[SkillCatalogItemResponse] = []
         for loaded in self.registry.list():
             oauth_provider_name = loaded.manifest.oauth_provider_name if loaded.manifest.requires_oauth else None
@@ -66,9 +68,9 @@ class SkillService:
             )
             oauth_connected: bool | None = None
             oauth_provider = get_skill_oauth_provider(oauth_provider_name)
-            if oauth_provider_name and user_email:
+            if oauth_provider_name and account_id:
                 oauth_connected = (
-                    self.provider_settings_repository.find_by_provider(user_email, oauth_provider_name) is not None
+                    self.provider_settings_repository.find_by_provider(account_id, oauth_provider_name) is not None
                 )
             items.append(
                 SkillCatalogItemResponse(
@@ -84,13 +86,13 @@ class SkillService:
                     oauth_start_path=oauth_provider.start_path if oauth_provider else None,
                     connectors=self.connector_service.statuses_for_manifest(
                         manifest_for_status,
-                        user_email,
+                        account_id,
                     ),
                     available=not self.connector_service.missing_required_connectors(
                         manifest_for_status,
-                        user_email,
+                        account_id,
                     )
-                    if user_email
+                    if account_id
                     else not manifest_for_status.connectors,
                     repeatable=loaded.manifest.repeatable,
                     owner_only=loaded.manifest.runs_only_for_owner,
@@ -98,26 +100,24 @@ class SkillService:
             )
         return items
 
-    def get_install_schema(self, skill_id: str, submit_path: str, user_email: str | None = None) -> form_models.Form:
+    def get_install_schema(self, skill_id: str, submit_path: str, owner: Owner | None = None) -> form_models.Form:
         form = self.registry.install_form(skill_id, submit_path)
-        if not user_email:
+        if not owner:
             return form
-        return hydrate_form_options(
-            form,
-            FormOptionsContext(user_email=user_email),
-        )
+        return hydrate_form_options(form, FormOptionsContext(owner=owner))
 
     def check_install(
         self,
         *,
         skill_id: str,
-        user_email: str,
+        owner: Owner,
         raw_config: dict[str, Any],
         enabled: bool = True,
         available_to: list[ActorKind] | None = None,
         pending_fields: set[str] | None = None,
     ) -> tuple[LoadedSkill, dict[str, Any]]:
-        """Everything an install checks, without installing. Raises ValueError with a user-facing reason.
+        """Everything an install checks, without installing. Raises ValueError with a user-facing reason. `owner` is
+        the agent's owner: its pickers list their agents, and its credentials are their account's.
 
         `pending_fields` name settings whose value the same request is about to create (a blueprint's new agent),
         so their options can't be checked yet; everything else is."""
@@ -129,35 +129,39 @@ class SkillService:
 
         if enabled and loaded.manifest.requires_oauth and loaded.manifest.oauth_provider_name:
             provider_settings = self.provider_settings_repository.find_by_provider(
-                user_email,
+                owner.account_id,
                 loaded.manifest.oauth_provider_name,
             )
             if not provider_settings:
                 raise ValueError(
                     f"{loaded.manifest.name} requires a connected {loaded.manifest.oauth_provider_name} account before installation"
                 )
-        missing_connectors = self.connector_service.missing_required_connectors(loaded.manifest, user_email) if enabled else []
+        missing_connectors = (
+            self.connector_service.missing_required_connectors(loaded.manifest, owner.account_id) if enabled else []
+        )
         if missing_connectors:
             raise ValueError(
                 f"{loaded.manifest.name} requires connected connector(s): {', '.join(missing_connectors)}"
             )
 
-        return loaded, self.validate_install_config(skill_id, user_email, raw_config, pending_fields)
+        return loaded, self.validate_install_config(skill_id, owner, raw_config, pending_fields)
 
     def install_skill(
         self,
         *,
         agent_id: str,
         skill_id: str,
-        user_email: str,
+        owner: Owner,
         raw_config: dict[str, Any],
         enabled: bool = True,
         available_to: list[ActorKind] | None = None,
+        installed_by: str | None = None,
     ) -> AgentSkill:
-        """`available_to=None` keeps the audience of an existing install (owner only for a new one)."""
+        """`owner` is the agent's owner; `installed_by` the user_id of whoever installs it (the owner by default).
+        `available_to=None` keeps the audience of an existing install (owner only for a new one)."""
         loaded, normalized = self.check_install(
             skill_id=skill_id,
-            user_email=user_email,
+            owner=owner,
             raw_config=raw_config,
             enabled=enabled,
             available_to=available_to,
@@ -176,7 +180,7 @@ class SkillService:
             skill_name=loaded.manifest.name,
             skill_description=loaded.manifest.description,
             enabled=enabled,
-            installed_by=user_email,
+            installed_by=installed_by or owner.user_id,
             plain_config=plain_config,
             secret_config=secret_config,
             secret_fields=sorted(secret_fields),
@@ -190,7 +194,7 @@ class SkillService:
     def validate_install_config(
         self,
         skill_id: str,
-        user_email: str,
+        owner: Owner,
         raw_config: dict[str, Any],
         pending_fields: set[str] | None = None,
     ) -> dict[str, Any]:
@@ -202,9 +206,9 @@ class SkillService:
         validate_form_options(
             [field for field in loaded.manifest.form if field.name not in (pending_fields or set())],
             normalized,
-            FormOptionsContext(user_email=user_email),
+            FormOptionsContext(owner=owner),
         )
-        self._validate_skill_policy(skill_id, user_email, normalized)
+        self._validate_skill_policy(skill_id, owner.account_id, normalized)
         return normalized
 
     def list_installed(self, agent_id: str) -> list[InstalledSkillResponse]:
@@ -237,15 +241,17 @@ class SkillService:
         *,
         agent_id: str,
         installed_skill_id: str,
-        user_email: str,
+        owner: Owner,
         disconnect_oauth: bool = False,
     ) -> bool:
+        """`disconnect_oauth` also removes the account's connection to the skill's provider: the caller has checked
+        that whoever asks may manage the account's settings."""
         existing = self.repository.find_by_id(agent_id, installed_skill_id)
         if existing:
             self.lifecycle_runner.run_skill_delete(
                 skill_id=existing.skill_id,
                 installed_skill_id=existing.installed_skill_id or existing.skill_id,
-                owner_email=user_email,
+                owner_email=owner.email,
                 config=self.repository.get_runtime_config(existing),
                 metadata={
                     "agent_id": agent_id,
@@ -258,7 +264,7 @@ class SkillService:
             loaded = self.registry.get(existing.skill_id) if existing else self.registry.get(installed_skill_id)
             oauth_provider_name = loaded.manifest.oauth_provider_name if loaded and loaded.manifest.requires_oauth else None
             if oauth_provider_name:
-                self.provider_settings_repository.delete(user_email, oauth_provider_name)
+                self.provider_settings_repository.delete(owner.account_id, oauth_provider_name)
         return deleted
 
     def update_installed(
@@ -266,10 +272,12 @@ class SkillService:
         *,
         agent_id: str,
         installed_skill_id: str,
+        owner: Owner,
         enabled: bool | None,
         raw_config: dict[str, Any] | None,
         available_to: list[ActorKind] | None = None,
     ) -> AgentSkill:
+        """`owner` is the agent's owner, whose agents and account the settings are checked against."""
         existing = self.repository.find_by_id(agent_id, installed_skill_id)
         if not existing:
             raise ValueError("Skill not installed for this agent")
@@ -300,9 +308,9 @@ class SkillService:
             validate_form_options(
                 loaded.manifest.form,
                 normalized,
-                FormOptionsContext(user_email=existing.installed_by),
+                FormOptionsContext(owner=owner),
             )
-            self._validate_skill_policy(existing.skill_id, existing.installed_by, normalized)
+            self._validate_skill_policy(existing.skill_id, owner.account_id, normalized)
             next_installed_skill_id = installed_skill_id_for(loaded.manifest, normalized)
             if next_installed_skill_id != existing.installed_skill_id:
                 raise ValueError("Repeatable skill identity fields cannot be changed")
@@ -330,7 +338,7 @@ class SkillService:
     def _validate_skill_policy(
         self,
         skill_id: str,
-        user_email: str,
+        account_id: str,
         normalized_config: dict[str, Any],
     ) -> None:
         if skill_id == "aws_cli":
@@ -349,7 +357,7 @@ class SkillService:
         if isinstance(credential_urls, dict):
             urls.extend(str(key).strip() for key in credential_urls if str(key).strip())
         try:
-            self.agent2agent_policy.validate_urls_for_user(user_email=user_email, urls=urls)
+            self.agent2agent_policy.validate_urls_for_account(account_id=account_id, urls=urls)
         except Agent2AgentPolicyError as exc:
             raise ValueError(str(exc)) from exc
 
@@ -443,6 +451,8 @@ class SkillRuntimeService:
         tool_name: str,
         tool_input: dict[str, Any],
         agent_id: str,
+        account_id: str,
+        owner_id: str,
         owner_email: str,
         actor_email: str,
         actor_id: str,
@@ -450,6 +460,7 @@ class SkillRuntimeService:
         conversation_id: str,
         user_message_id: str | None = None,
     ) -> str:
+        """`account_id` and `owner_id` are the agent's: its skills run as its owner, on its account's connections."""
         if tool_name == "load_skill":
             installed_skill_id = str(tool_input.get("skill_id", "")).strip()
             if not installed_skill_id:
@@ -481,6 +492,8 @@ class SkillRuntimeService:
                 raise ValueError("Missing required argument: job_id")
             result = self.tool_job_service.check_job_for_agent(
                 job_id=job_id,
+                account_id=account_id,
+                owner_id=owner_id,
                 owner_email=owner_email,
                 actor_email=actor_email,
                 agent_id=agent_id,
@@ -504,6 +517,8 @@ class SkillRuntimeService:
                 "agent_id": agent_id,
                 "installed_skill_id": installed.installed_skill_id or installed.skill_id,
                 "skill_id": installed.skill_id,
+                "account_id": account_id,
+                "owner_id": owner_id,
                 "owner_email": owner_email,
                 "actor_email": actor_email,
                 "actor_id": actor_id,
@@ -515,7 +530,8 @@ class SkillRuntimeService:
             }
             if run_async:
                 job = self.tool_job_service.start_skill_action_job(
-                    owner_email=owner_email,
+                    account_id=account_id,
+                    owner_id=owner_id,
                     actor_email=actor_email,
                     actor_id=actor_id,
                     agent_id=agent_id,

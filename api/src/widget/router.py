@@ -30,6 +30,8 @@ from src.agents.image_generation.service import (
     AgentImageGenerationService,
     ImageGenerationNotSupportedError,
 )
+from src.agents.access import owner_of
+from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.apikeys.models import AgentApiKey
 from src.auth.google_oauth import GoogleOAuth
@@ -108,7 +110,7 @@ def get_wordpress_ai_conversation(
     request: Request,
     context: dict[str, Any],
     api_key: AgentApiKey,
-    agent_id: str,
+    agent: Agent,
 ):
     """Load or create the owner conversation for a WordPress AI Client request."""
     from src.conversations.models import Conversation
@@ -137,14 +139,15 @@ def get_wordpress_ai_conversation(
     identity_hash = hashlib.sha256(conversation_identity.encode("utf-8")).hexdigest()[:16]
     conversation_id = f"wordpress-ai-client-{api_key.agent_id}-{identity_hash}"
     conversation_repo = ConversationRepository()
-    conversation = conversation_repo.find_by_id(conversation_id, api_key.created_by)
+    conversation = conversation_repo.find_by_id(conversation_id, agent.owner_partition)
     if not conversation:
         conversation = conversation_repo.save(
             Conversation(
                 conversation_id=conversation_id,
                 title=title,
-                agent_id=agent_id,
-                created_by=api_key.created_by,
+                agent_id=agent.agent_id,
+                account_id=agent.account_id,
+                created_by=agent.owner_id,
             )
         )
 
@@ -359,7 +362,7 @@ async def start_guest_session(
     except GuestEmailRejected as error:
         raise HTTPException(422, detail=str(error)) from error
     enforce_guest_limit("GUEST_START_EMAIL", email.casefold())
-    agent = agent_repo.find_agent_by_id(api_key.agent_id, api_key.created_by)
+    agent = agent_repo.get(api_key.agent_id)
     if not agent:
         raise HTTPException(404, detail="Agent not found")
     session = widget_sessions.create_guest_session(agent_id=api_key.agent_id, key_id=api_key.key_id,
@@ -515,15 +518,17 @@ async def generate_text(
     The API key scopes the request to the owning agent. The invocation is treated
     as if the agent owner made the request.
     """
-    agent = agent_repo.find_agent_by_id(api_key.agent_id, api_key.created_by)
+    agent = agent_repo.get(api_key.agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    # The key acts for the agent's owner: their provider settings, connections and conversation
+    owner_email = owner_of(agent).email
 
     conversation, conversation_repo = get_wordpress_ai_conversation(
         request=request,
         context=body.context,
         api_key=api_key,
-        agent_id=agent.agent_id,
+        agent=agent,
     )
 
     architecture = get_agent_architecture(agent.agent_architecture)
@@ -531,9 +536,9 @@ async def generate_text(
         agent=agent,
         conversation=conversation,
         user_message=body.message,
-        owner_email=api_key.created_by,
-        actor_email=api_key.created_by,
-        actor_id=api_key.created_by,
+        owner_email=owner_email,
+        actor_email=owner_email,
+        actor_id=owner_email,
         # Only the public widget key stands behind this caller.
         actor_kind=ActorKind.VISITOR,
         attachments=[],
@@ -570,23 +575,24 @@ async def generate_image(
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
 ) -> WidgetGenerateImageResponse:
     """Generate an image for provider-style integrations using only the widget API key."""
-    agent = agent_repo.find_agent_by_id(api_key.agent_id, api_key.created_by)
+    agent = agent_repo.get(api_key.agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    # The key acts for the agent's owner: their provider settings, connections and conversation
+    owner_email = owner_of(agent).email
 
     conversation, conversation_repo = get_wordpress_ai_conversation(
         request=request,
         context=body.context,
         api_key=api_key,
-        agent_id=agent.agent_id,
+        agent=agent,
     )
 
     try:
         result = await AgentImageGenerationService().generate_for_widget(
             agent=agent,
             conversation=conversation,
-            owner_email=api_key.created_by,
-            actor_email=api_key.created_by,
+            actor_email=owner_email,
             request=GenerateImageRequest(
                 prompt=body.prompt,
                 size=body.size,
@@ -628,15 +634,17 @@ async def generate_image_stream(
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
 ):
     """Generate an image for provider-style integrations using widget API key SSE."""
-    agent = agent_repo.find_agent_by_id(api_key.agent_id, api_key.created_by)
+    agent = agent_repo.get(api_key.agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    # The key acts for the agent's owner: their provider settings, connections and conversation
+    owner_email = owner_of(agent).email
 
     conversation, conversation_repo = get_wordpress_ai_conversation(
         request=request,
         context=body.context,
         api_key=api_key,
-        agent_id=agent.agent_id,
+        agent=agent,
     )
 
     async def event_stream():
@@ -644,8 +652,7 @@ async def generate_image_stream(
             async for event in AgentImageGenerationService().stream_for_widget(
                 agent=agent,
                 conversation=conversation,
-                owner_email=api_key.created_by,
-                actor_email=api_key.created_by,
+                actor_email=owner_email,
                 request=GenerateImageRequest(
                     prompt=body.prompt,
                     size=body.size,
@@ -833,10 +840,8 @@ async def send_message(
                 content="Connecting to agent..."
             ).to_sse()
 
-            # Find the agent - need to find by ID across all users
-            # This is a limitation - we need a GSI on agent_id
-            # For now, we'll use the API key's created_by to find the agent
-            agent = agent_repo.find_agent_by_id(api_key.agent_id, api_key.created_by)
+            # The key is bound to its agent, which runs as its owner
+            agent = agent_repo.get(api_key.agent_id)
 
             if not agent:
                 yield SSEEvent(
@@ -844,6 +849,7 @@ async def send_message(
                     content="Agent not found"
                 ).to_sse()
                 return
+            owner_email = owner_of(agent).email
 
             # Get architecture and handle message
             architecture = get_agent_architecture(agent.agent_architecture)
@@ -855,14 +861,15 @@ async def send_message(
                 conversation_id=conversation.conversation_id,
                 title=conversation.title,
                 agent_id=conversation.agent_id,
-                created_by=visitor.email,  # Use visitor email
+                account_id=agent.account_id,
+                created_by=visitor.email,  # Never saved: the visitor's chat is the WidgetConversation
             )
 
             async for event in architecture.handle_message(  # pyright: ignore[reportGeneralTypeIssues]
                 agent=agent,
                 conversation=mock_conversation,
                 user_message=body.content,
-                owner_email=api_key.created_by,
+                owner_email=owner_email,
                 actor_email=visitor.email,
                 actor_id=visitor.visitor_id,
                 actor_kind=ActorKind.GUEST if visitor.is_guest else ActorKind.VISITOR,

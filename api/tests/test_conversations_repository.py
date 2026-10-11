@@ -10,6 +10,10 @@ from tests.mock_data import (
     TEST_USER_EMAIL_2,
     CONVERSATION_CREATE_REQUEST,
     CONVERSATION_CREATE_REQUEST_2,
+    conversation_fields,
+    conversations_of,
+    owner_ids,
+    user_id_for,
 )
 
 
@@ -22,7 +26,7 @@ class TestConversationRepository:
             title=CONVERSATION_CREATE_REQUEST["title"],
             description=CONVERSATION_CREATE_REQUEST["description"],
             agent_id=CONVERSATION_CREATE_REQUEST["agent_id"],
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
 
         saved = conversation_repository.save(conversation)
@@ -31,7 +35,8 @@ class TestConversationRepository:
         assert saved.title == CONVERSATION_CREATE_REQUEST["title"]
         assert saved.description == CONVERSATION_CREATE_REQUEST["description"]
         assert saved.agent_id == CONVERSATION_CREATE_REQUEST["agent_id"]
-        assert saved.created_by == TEST_USER_EMAIL
+        assert (saved.account_id, saved.created_by) == owner_ids(TEST_USER_EMAIL)
+        assert saved.pk == f"Account#{saved.account_id}#Member#{user_id_for(TEST_USER_EMAIL)}"
         assert saved.to_dynamo_item()["conversation_type"] == "chat"
 
     def test_save_and_find_automation_conversation(self, conversation_repository):
@@ -40,16 +45,13 @@ class TestConversationRepository:
             title="Automation Run",
             description="Workflow execution",
             agent_id="root-agent-id",
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
             automation_id="automation-123",
             automation_run_id="run-456",
         )
 
         saved = conversation_repository.save(conversation)
-        found = conversation_repository.find_by_id(
-            saved.conversation_id,
-            TEST_USER_EMAIL,
-        )
+        found = conversation_repository.find_by_id(saved.conversation_id, conversations_of(TEST_USER_EMAIL))
 
         assert isinstance(saved, AutomationConversation)
         assert isinstance(found, AutomationConversation)
@@ -65,12 +67,12 @@ class TestConversationRepository:
             title=CONVERSATION_CREATE_REQUEST["title"],
             description=CONVERSATION_CREATE_REQUEST["description"],
             agent_id=CONVERSATION_CREATE_REQUEST["agent_id"],
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
         conversation_repository.save(conversation)
 
         found = conversation_repository.find_by_id(
-            conversation.conversation_id, TEST_USER_EMAIL
+            conversation.conversation_id, conversations_of(TEST_USER_EMAIL)
         )
 
         assert found is not None
@@ -83,12 +85,12 @@ class TestConversationRepository:
             title=CONVERSATION_CREATE_REQUEST["title"],
             description=CONVERSATION_CREATE_REQUEST["description"],
             agent_id=CONVERSATION_CREATE_REQUEST["agent_id"],
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
         conversation_repository.save(conversation)
 
         found = conversation_repository.find_by_id(
-            conversation.conversation_id, TEST_USER_EMAIL_2
+            conversation.conversation_id, conversations_of(TEST_USER_EMAIL_2)
         )
 
         assert found is None
@@ -99,18 +101,18 @@ class TestConversationRepository:
             title=CONVERSATION_CREATE_REQUEST["title"],
             description=CONVERSATION_CREATE_REQUEST["description"],
             agent_id=CONVERSATION_CREATE_REQUEST["agent_id"],
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
         conversation2 = Conversation(
             title=CONVERSATION_CREATE_REQUEST_2["title"],
             description=CONVERSATION_CREATE_REQUEST_2["description"],
             agent_id=CONVERSATION_CREATE_REQUEST_2["agent_id"],
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
         conversation_repository.save(conversation1)
         conversation_repository.save(conversation2)
 
-        conversations = conversation_repository.find_all_by_user(TEST_USER_EMAIL)
+        conversations = conversation_repository.find_all_by_user(conversations_of(TEST_USER_EMAIL))
 
         assert len(conversations) == 2
         titles = {c.title for c in conversations}
@@ -121,7 +123,7 @@ class TestConversationRepository:
         self, conversation_repository
     ):
         """Test that find_all_by_user() returns empty list when no conversations exist."""
-        conversations = conversation_repository.find_all_by_user(TEST_USER_EMAIL)
+        conversations = conversation_repository.find_all_by_user(conversations_of(TEST_USER_EMAIL))
 
         assert conversations == []
 
@@ -133,14 +135,14 @@ class TestConversationRepository:
                 title=f"Conversation {i}",
                 description=f"Description {i}",
                 agent_id="test-agent-id",
-                created_by=TEST_USER_EMAIL,
+                **conversation_fields(TEST_USER_EMAIL),
             )
             conversation_repository.save(conversation)
 
         # Get first page
         conversations, next_cursor, has_more = (
             conversation_repository.find_all_by_user_paginated(
-                created_by=TEST_USER_EMAIL, limit=2
+                conversations_of(TEST_USER_EMAIL), limit=2
             )
         )
 
@@ -151,7 +153,7 @@ class TestConversationRepository:
         # Get second page
         conversations2, next_cursor2, has_more2 = (
             conversation_repository.find_all_by_user_paginated(
-                created_by=TEST_USER_EMAIL, limit=2, cursor=next_cursor
+                conversations_of(TEST_USER_EMAIL), limit=2, cursor=next_cursor
             )
         )
 
@@ -162,7 +164,7 @@ class TestConversationRepository:
         # Get last page
         conversations3, next_cursor3, has_more3 = (
             conversation_repository.find_all_by_user_paginated(
-                created_by=TEST_USER_EMAIL, limit=2, cursor=next_cursor2
+                conversations_of(TEST_USER_EMAIL), limit=2, cursor=next_cursor2
             )
         )
 
@@ -176,18 +178,18 @@ class TestConversationRepository:
             title=CONVERSATION_CREATE_REQUEST["title"],
             description=CONVERSATION_CREATE_REQUEST["description"],
             agent_id=CONVERSATION_CREATE_REQUEST["agent_id"],
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
         conversation_repository.save(conversation)
 
         result = conversation_repository.delete_by_id(
-            conversation.conversation_id, TEST_USER_EMAIL
+            conversation.conversation_id, conversations_of(TEST_USER_EMAIL)
         )
 
         assert result is True
         assert (
             conversation_repository.find_by_id(
-                conversation.conversation_id, TEST_USER_EMAIL
+                conversation.conversation_id, conversations_of(TEST_USER_EMAIL)
             )
             is None
         )
@@ -198,7 +200,7 @@ class TestConversationRepository:
             title=CONVERSATION_CREATE_REQUEST["title"],
             description=CONVERSATION_CREATE_REQUEST["description"],
             agent_id=CONVERSATION_CREATE_REQUEST["agent_id"],
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
         saved = conversation_repository.save(conversation)
         original_created_at = saved.created_at
@@ -219,19 +221,42 @@ class TestConversationRepository:
             title=CONVERSATION_CREATE_REQUEST["title"],
             description=CONVERSATION_CREATE_REQUEST["description"],
             agent_id=CONVERSATION_CREATE_REQUEST["agent_id"],
-            created_by=TEST_USER_EMAIL,
+            **conversation_fields(TEST_USER_EMAIL),
         )
         conversation_repository.save(conversation)
 
         assert (
             conversation_repository.exists(
-                conversation.conversation_id, TEST_USER_EMAIL
+                conversation.conversation_id, conversations_of(TEST_USER_EMAIL)
             )
             is True
         )
         assert (
-            conversation_repository.exists("non-existent-id", TEST_USER_EMAIL) is False
+            conversation_repository.exists("non-existent-id", conversations_of(TEST_USER_EMAIL)) is False
         )
+
+    def test_members_of_one_account_never_see_each_others_conversations(self, conversation_repository):
+        """A conversation is its starter's alone: same account, different member, nothing found."""
+        account_id, _ = owner_ids(TEST_USER_EMAIL)
+        mine = Conversation(title="Mine", agent_id="shared-agent", account_id=account_id,
+                            created_by=user_id_for(TEST_USER_EMAIL))
+        theirs = Conversation(title="Theirs", agent_id="shared-agent", account_id=account_id,
+                              created_by=user_id_for(TEST_USER_EMAIL_2))
+        conversation_repository.save(mine)
+        conversation_repository.save(theirs)
+
+        assert [c.title for c in conversation_repository.find_all_by_user(mine.pk)] == ["Mine"]
+        assert conversation_repository.find_by_id(theirs.conversation_id, mine.pk) is None
+
+    def test_work_inside_a_conversation_finds_it_by_id_alone(self, conversation_repository):
+        """Skill actions, schedules and image generation know only the running conversation's id."""
+        conversation = Conversation(title="Running", agent_id="agent", **conversation_fields(TEST_USER_EMAIL_2))
+        conversation_repository.save(conversation)
+
+        found = conversation_repository.get(conversation.conversation_id)
+
+        assert found is not None and found.pk == conversation.pk
+        assert conversation_repository.get("missing") is None
 
 
 def test_listing_follows_dynamodb_pages(monkeypatch):
@@ -240,8 +265,8 @@ def test_listing_follows_dynamodb_pages(monkeypatch):
 
     repository = ConversationRepository()
     pages = [
-        {"Items": [Conversation(title="a", agent_id="x", created_by="u").to_dynamo_item()], "LastEvaluatedKey": {"pk": "p"}},
-        {"Items": [Conversation(title="b", agent_id="x", created_by="u").to_dynamo_item()]},
+        {"Items": [Conversation(title="a", agent_id="x", **conversation_fields("u")).to_dynamo_item()], "LastEvaluatedKey": {"pk": "p"}},
+        {"Items": [Conversation(title="b", agent_id="x", **conversation_fields("u")).to_dynamo_item()]},
     ]
     starts = []
 
@@ -251,7 +276,7 @@ def test_listing_follows_dynamodb_pages(monkeypatch):
 
     monkeypatch.setattr(repository.table, "query", query)
 
-    conversations, _, _ = repository.find_all_by_user_paginated("u", limit=10)
+    conversations, _, _ = repository.find_all_by_user_paginated(conversations_of("u"), limit=10)
 
     assert sorted(c.title for c in conversations) == ["a", "b"]
     assert starts == [None, {"pk": "p"}]

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.agents.access import owner_of, usable_agent
 from src.agents.architectures import get_agent_architecture
-from src.agents.repository import AgentRepository
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import recorded_events
@@ -11,6 +11,7 @@ from src.messages.repositories import get_message_repository
 from src.skills.agent_invocation.history import InvocationHistoryStore
 from src.skills.agent_invocation.models import InvokeAgentRequest
 from src.skills.models import ActorKind
+from src.skills.runtime_context import run_owner
 
 
 async def invoke(
@@ -22,20 +23,23 @@ async def invoke(
     target_agent_id = _target_agent_id(request, config, context)
     if not target_agent_id:
         raise ValueError("Missing target agent configuration")
-    owner_email = str(context.get("owner_email") or "").strip()
-    actor_email = str(context.get("actor_email") or owner_email).strip()
+    owner = run_owner(context)
+    actor_email = str(context.get("actor_email") or owner.email).strip()
     actor_id = str(context.get("actor_id") or actor_email).strip()
     conversation_id = str(context.get("conversation_id") or "").strip()
-    if not owner_email:
-        raise ValueError("Missing skill runtime owner context")
     if not conversation_id:
         raise ValueError("Missing automation conversation context")
 
-    agent = AgentRepository().find_agent_by_id(target_agent_id, owner_email)
+    # The owner's own agent, or one shared with them; a shared one runs as its own owner, for them as a member
+    agent = usable_agent(owner, target_agent_id)
     if not agent:
         raise ValueError("Agent not found")
+    actor_kind = ActorKind(context.get("actor_kind") or ActorKind.OWNER)
+    if actor_kind == ActorKind.OWNER and agent.owner_id != owner.user_id:
+        actor_kind = ActorKind.MEMBER
 
-    conversation = ConversationRepository().find_by_id(conversation_id, owner_email)
+    # The conversation of the running turn, found by its id
+    conversation = ConversationRepository().get(conversation_id)
     if not isinstance(conversation, Conversation):
         raise ValueError("Conversation not found")
 
@@ -47,10 +51,10 @@ async def invoke(
         agent=agent,
         conversation=conversation,
         user_message=request.prompt_template,
-        owner_email=owner_email,
+        owner_email=owner_of(agent).email,
         actor_email=actor_email,
         actor_id=actor_id,
-        actor_kind=ActorKind(context.get("actor_kind") or ActorKind.OWNER),
+        actor_kind=actor_kind,
     )
 
     if not invocation.success:
@@ -78,7 +82,7 @@ async def invoke(
     tool_call_id = str(context.get("tool_call_id") or "").strip()
     if tool_call_id:
         InvocationHistoryStore().save(
-            owner_email=owner_email,
+            owner=owner,
             conversation_id=conversation_id,
             tool_call_id=tool_call_id,
             agent_id=agent.agent_id,

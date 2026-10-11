@@ -31,7 +31,14 @@ from src.config import settings
 from src.connectors.mcp.client import MCPClientError
 from src.connectors.mcp.oauth import decode_state_session
 from src.connectors.mcp.service import MCPConnectorService, get_mcp_connector_service
+# The connections are the account's: admins manage them (`settings:Manage`), any member lists them, and an
+# agent's owner links them to the agent, as they install its skills
+from src.agents.access import own_agent_with
+from src.agents.models import Agent
 from src.form_models import Form
+from src.iam.dependencies import get_principal
+from src.iam.principal import Principal
+from src.settings.access import may_manage_settings, settings_manager
 from src.skills.models import ActorKind
 
 log = logging.getLogger(__name__)
@@ -49,6 +56,10 @@ def _user_email(request: Request) -> str:
     return str(user_email)
 
 
+Member = Annotated[Principal, Depends(get_principal)]
+Manager = Annotated[Principal, Depends(settings_manager)]
+
+
 def _not_found_from_value_error(error: ValueError) -> HTTPException:
     detail = str(error)
     status_code = status.HTTP_404_NOT_FOUND if "not found" in detail.lower() else status.HTTP_400_BAD_REQUEST
@@ -57,20 +68,20 @@ def _not_found_from_value_error(error: ValueError) -> HTTPException:
 
 @router.get("/connectors/mcp", response_model=list[MCPConnectionResponse])
 async def list_mcp_connections(
-    request: Request,
+    principal: Member,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> list[MCPConnectionResponse]:
-    return service.list_connections(_user_email(request))
+    return service.list_connections(principal.account_id)
 
 
 @router.post("/connectors/mcp", response_model=MCPConnectionResponse, status_code=status.HTTP_201_CREATED)
 async def create_mcp_connection(
-    request: Request,
+    principal: Manager,
     body: MCPConnectionCreateRequest,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPConnectionResponse:
     try:
-        return service.create_connection(_user_email(request), body)
+        return service.create_connection(principal.account_id, body)
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
@@ -78,10 +89,10 @@ async def create_mcp_connection(
 # Registered before /connectors/mcp/{mcp_id} so "providers" is not read as a connector id.
 @router.get("/connectors/mcp/providers", response_model=list[MCPProviderResponse])
 async def list_mcp_providers(
-    request: Request,
+    principal: Member,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> list[MCPProviderResponse]:
-    return service.list_providers(_user_email(request))
+    return service.list_providers(principal.account_id)
 
 
 @router.get("/connectors/mcp/providers/{key}/forms/install", response_model=Form)
@@ -102,12 +113,13 @@ async def get_mcp_provider_install_form(
 )
 async def install_mcp_provider(
     request: Request,
+    principal: Manager,
     key: str,
     body: MCPProviderInstallRequest,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPProviderInstallResponse:
     try:
-        return await service.install_provider(_user_email(request), key, body)
+        return await service.install_provider(principal.account_id, key, body, user_email=_user_email(request))
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 
@@ -124,36 +136,36 @@ async def list_mcp_stdio_packages(
 
 @router.get("/connectors/mcp/{mcp_id}/runtime", response_model=MCPRuntimeStatusResponse)
 async def get_mcp_runtime(
-    request: Request,
+    principal: Member,
     mcp_id: str,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPRuntimeStatusResponse:
     try:
-        return await service.runtime_status(_user_email(request), mcp_id)
+        return await service.runtime_status(principal.account_id, mcp_id)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 
 
 @router.post("/connectors/mcp/{mcp_id}/runtime/restart", response_model=MCPRuntimeStatusResponse)
 async def restart_mcp_runtime(
-    request: Request,
+    principal: Manager,
     mcp_id: str,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPRuntimeStatusResponse:
     try:
-        return await service.restart_runtime(_user_email(request), mcp_id)
+        return await service.restart_runtime(principal.account_id, mcp_id)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 
 
 @router.post("/connectors/mcp/{mcp_id}/tools/refresh", response_model=MCPToolCatalogResponse)
 async def refresh_mcp_tool_catalog(
-    request: Request,
+    principal: Manager,
     mcp_id: str,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPToolCatalogResponse:
     try:
-        catalog = await service.refresh_tool_catalog(_user_email(request), mcp_id)
+        catalog = await service.refresh_tool_catalog(principal.account_id, mcp_id)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
     except MCPClientError as error:
@@ -163,49 +175,49 @@ async def refresh_mcp_tool_catalog(
 
 @router.get("/connectors/mcp/{mcp_id}/forms/settings", response_model=Form)
 async def get_mcp_connection_settings_form(
-    request: Request,
+    principal: Manager,
     mcp_id: str,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> Form:
     try:
-        return service.connection_settings_form(_user_email(request), mcp_id)
+        return service.connection_settings_form(principal.account_id, mcp_id)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 
 
 @router.get("/connectors/mcp/{mcp_id}", response_model=MCPConnectionResponse)
 async def get_mcp_connection(
-    request: Request,
+    principal: Member,
     mcp_id: str,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPConnectionResponse:
     try:
-        return service.get_connection(_user_email(request), mcp_id)
+        return service.get_connection(principal.account_id, mcp_id)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 
 
 @router.patch("/connectors/mcp/{mcp_id}", response_model=MCPConnectionResponse)
 async def update_mcp_connection(
-    request: Request,
+    principal: Manager,
     mcp_id: str,
     body: MCPConnectionUpdateRequest,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPConnectionResponse:
     try:
-        return await service.update_connection(_user_email(request), mcp_id, body)
+        return await service.update_connection(principal.account_id, mcp_id, body)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 
 
 @router.delete("/connectors/mcp/{mcp_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_mcp_connection(
-    request: Request,
+    principal: Manager,
     mcp_id: str,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> None:
     try:
-        await service.delete_connection(_user_email(request), mcp_id)
+        await service.delete_connection(principal.account_id, mcp_id)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 
@@ -226,13 +238,15 @@ async def discover_mcp_oauth(
 @router.post("/connectors/mcp/{mcp_id}/oauth/start", response_model=MCPOAuthStartResponse)
 async def start_mcp_oauth(
     request: Request,
+    principal: Manager,
     mcp_id: str,
     body: MCPOAuthStartRequest,
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPOAuthStartResponse:
     try:
         authorize_url = service.start_oauth(
-            owner_email=_user_email(request),
+            account_id=principal.account_id,
+            user_email=_user_email(request),
             mcp_id=mcp_id,
             return_to=body.return_to,
         )
@@ -258,12 +272,15 @@ async def mcp_oauth_callback(
 
 
 async def complete_mcp_oauth(
-    *, state: str | None, code: str | None, error: str | None, user_email: str
+    *, state: str | None, code: str | None, error: str | None, user_email: str, user_id: str
 ) -> dict[str, str]:
-    """Store the tokens, if the signed-in user started this flow. Returns the page's result parameters."""
+    """Store the tokens on the account's connection, if the signed-in user started this flow and may still manage
+    that account's settings. Returns the page's result parameters."""
     session = decode_state_session(state)
     if not session or session.is_expired() or session.user_email != user_email:
         return {"mcp_oauth": "error", "reason": "invalid_state"}
+    if not may_manage_settings(user_id, session.account_id):
+        return {"mcp_oauth": "error", "reason": "not_allowed"}
     if error:
         return {"mcp_oauth": "error", "reason": "cancelled"}
     if not code:
@@ -271,7 +288,7 @@ async def complete_mcp_oauth(
     service = get_mcp_connector_service()
     try:
         await service.complete_oauth(
-            owner_email=session.user_email,
+            account_id=session.account_id,
             mcp_id=session.mcp_id,
             code=code,
             code_verifier=session.code_verifier,
@@ -280,19 +297,19 @@ async def complete_mcp_oauth(
         log.error("MCP OAuth completion failed for %s: %s", session.mcp_id, exc, exc_info=True)
         return {"mcp_oauth": "error", "reason": "callback_failed"}
     # Signing in is the first moment we can ask the server which tools it offers.
-    await service.capture_tool_catalog(session.user_email, session.mcp_id)
+    await service.capture_tool_catalog(session.account_id, session.mcp_id)
     return {"mcp_oauth": "success", "mcp_id": session.mcp_id}
 
 
 @router.get("/agents/{agent_id}/mcp-connections", response_model=list[AgentMCPConnectionResponse])
 async def list_agent_mcp_connections(
-    request: Request,
     agent_id: str,
+    agent: Annotated[Agent, Depends(own_agent_with("agents:Get"))],
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> list[AgentMCPConnectionResponse]:
     try:
         return service.list_agent_connections(
-            owner_email=_user_email(request), agent_id=agent_id, actor_kind=ActorKind.OWNER
+            account_id=agent.account_id, agent_id=agent_id, actor_kind=ActorKind.OWNER
         )
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
@@ -300,36 +317,35 @@ async def list_agent_mcp_connections(
 
 @router.put("/agents/{agent_id}/mcp-connections/{mcp_id}", response_model=AgentMCPConnectionResponse)
 async def update_agent_mcp_connection(
-    request: Request,
     agent_id: str,
     mcp_id: str,
     body: AgentMCPConnectionUpdateRequest,
     background_tasks: BackgroundTasks,
+    agent: Annotated[Agent, Depends(own_agent_with("agents:Update"))],
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> AgentMCPConnectionResponse:
-    owner_email = _user_email(request)
     try:
         linked = service.enable_for_agent(
-            owner_email=owner_email,
+            account_id=agent.account_id,
             agent_id=agent_id,
             mcp_id=mcp_id,
             enabled=body.enabled,
         )
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
-    background_tasks.add_task(service.capture_tool_catalog, owner_email, mcp_id)
+    background_tasks.add_task(service.capture_tool_catalog, agent.account_id, mcp_id)
     return linked
 
 
 @router.get("/agents/{agent_id}/mcp-connections/{mcp_id}/sharing", response_model=MCPSharingView)
 async def get_agent_mcp_sharing(
-    request: Request,
     agent_id: str,
     mcp_id: str,
+    agent: Annotated[Agent, Depends(own_agent_with("agents:Get"))],
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPSharingView:
     try:
-        return await service.sharing_view(owner_email=_user_email(request), agent_id=agent_id, mcp_id=mcp_id)
+        return await service.sharing_view(account_id=agent.account_id, agent_id=agent_id, mcp_id=mcp_id)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 
@@ -340,22 +356,24 @@ async def update_agent_mcp_sharing(
     agent_id: str,
     mcp_id: str,
     body: MCPSharingUpdateRequest,
+    agent: Annotated[Agent, Depends(own_agent_with("agents:Update"))],
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> MCPSharingView:
     try:
-        return service.share(owner_email=_user_email(request), agent_id=agent_id, mcp_id=mcp_id, request=body)
+        return service.share(account_id=agent.account_id, agent_id=agent_id, mcp_id=mcp_id, request=body,
+                             by=_user_email(request))
     except ValueError as error:
         raise _not_found_from_value_error(error) from error
 
 
 @router.delete("/agents/{agent_id}/mcp-connections/{mcp_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_agent_mcp_connection(
-    request: Request,
     agent_id: str,
     mcp_id: str,
+    agent: Annotated[Agent, Depends(own_agent_with("agents:Update"))],
     service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
 ) -> None:
     try:
-        service.disable_for_agent(owner_email=_user_email(request), agent_id=agent_id, mcp_id=mcp_id)
+        service.disable_for_agent(account_id=agent.account_id, agent_id=agent_id, mcp_id=mcp_id)
     except ValueError as error:
         raise _not_found_from_value_error(error) from error

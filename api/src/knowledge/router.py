@@ -42,7 +42,12 @@ import asyncio
 import json
 
 import src.form_models as form_models
-from src.agents.repository import AgentRepository
+from src.agents.access import agent_with
+from src.agents.models import Agent
+from src.iam.actions import ResourceRef
+from src.iam.dependencies import get_principal
+from src.iam.principal import Principal
+from src.knowledge.access import access_to, kb_with, readable_by_agent, require_kb, visible_kbs
 from src.knowledge.models import (
     KnowledgeBase,
     KnowledgeBaseResponse,
@@ -138,10 +143,18 @@ def get_agent_kb_repository() -> AgentKnowledgeBaseRepository:
     return AgentKnowledgeBaseRepository()
 
 
-def require_owned_agent(request: Request, agent_id: str) -> None:
-    """Agent ids are public (A2A cards, embeds), so every agent-keyed route checks the caller owns it."""
-    if not AgentRepository().find_agent_by_id(agent_id, request.state.user_email):
-        raise HTTPException(status_code=404, detail="Agent not found")
+# Agent ids are public (A2A cards, embeds), so every agent-keyed route authorizes the caller for it
+can_chat_with_agent = agent_with("agents:Chat")
+can_open_agent = agent_with("agents:Get")
+can_update_agent = agent_with("agents:Update")
+
+# A knowledge base's metadata (name, stats) is Describe; its contents (crawls, pages, search, uploads) are
+# Get, Update and Crawl, which admins don't get unless it's shared with them
+can_describe_kb = kb_with("knowledge:Describe")
+can_read_kb = kb_with("knowledge:Get")
+can_update_kb = kb_with("knowledge:Update")
+can_crawl_kb = kb_with("knowledge:Crawl")
+can_delete_kb = kb_with("knowledge:Delete")
 
 
 def get_kb_service() -> KnowledgeBaseService:
@@ -171,66 +184,52 @@ async def get_create_kb_schema() -> form_models.Form:
     status_code=status.HTTP_201_CREATED,
 )
 async def create_knowledge_base(
-    request: Request,
     create_request: CreateKnowledgeBaseRequest,
+    principal: Annotated[Principal, Depends(get_principal)],
     repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
 ) -> KnowledgeBaseResponse:
-    """Create a new knowledge base."""
-    user_email: str = request.state.user_email
+    """Create a knowledge base in the account the request acts in, owned by the caller."""
+    principal.require("knowledge:Create", ResourceRef("knowledge-base"))
 
     kb = KnowledgeBase(
         name=create_request.name,
         description=create_request.description,
-        created_by=user_email,
+        account_id=principal.account_id,
+        owner_id=principal.user_id,
+        created_by=principal.user_id,
     )
 
     saved_kb = repo.save(kb)
-    log.info(f"Created knowledge base '{saved_kb.name}' (id={saved_kb.kb_id}) for user {user_email}")
+    log.info(f"Created knowledge base '{saved_kb.name}' (id={saved_kb.kb_id}) in account {saved_kb.account_id}")
 
     return saved_kb.to_response()
 
 
 @router.get("", response_model=list[KnowledgeBaseResponse])
 async def list_knowledge_bases(
-    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
 ) -> list[KnowledgeBaseResponse]:
-    """List all knowledge bases for the authenticated user."""
-    user_email: str = request.state.user_email
-    kbs = repo.find_all_by_user(user_email)
-    return [kb.to_response() for kb in kbs]
+    """The caller's knowledge bases, those shared with them, and (for admins) everyone else's."""
+    return [kb.to_response(access) for kb, access in visible_kbs(principal, repo)]
 
 
 @router.get("/{kb_id}", response_model=KnowledgeBaseResponse)
 async def get_knowledge_base(
-    request: Request,
-    kb_id: str,
-    repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
+    kb: Annotated[KnowledgeBase, Depends(can_describe_kb)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> KnowledgeBaseResponse:
     """Get a knowledge base by ID."""
-    user_email: str = request.state.user_email
-    kb = repo.find_by_id(kb_id, user_email)
-
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
-
-    return kb.to_response()
+    return kb.to_response(access_to(principal, kb) or "admin")
 
 
 @router.patch("/{kb_id}", response_model=KnowledgeBaseResponse)
 async def update_knowledge_base(
-    request: Request,
-    kb_id: str,
     update_request: UpdateKnowledgeBaseRequest,
+    kb: Annotated[KnowledgeBase, Depends(can_update_kb)],
     repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
 ) -> KnowledgeBaseResponse:
     """Update a knowledge base."""
-    user_email: str = request.state.user_email
-    kb = repo.find_by_id(kb_id, user_email)
-
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
-
     if update_request.name is not None:
         kb.name = update_request.name
     if update_request.description is not None:
@@ -244,8 +243,7 @@ async def update_knowledge_base(
 
 @router.delete("/{kb_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_knowledge_base(
-    request: Request,
-    kb_id: str,
+    kb: Annotated[KnowledgeBase, Depends(can_delete_kb)],
     service: Annotated[KnowledgeBaseService, Depends(get_kb_service)],
 ) -> None:
     """
@@ -257,8 +255,8 @@ async def delete_knowledge_base(
     3. Unlinks the KB from all agents
     4. Marks the KB as deleted with 30-day TTL for auto-expiration
     """
-    user_email: str = request.state.user_email
-    result = service.soft_delete(kb_id, user_email)
+    kb_id = kb.kb_id
+    result = service.soft_delete(kb)
 
     if not result.success:
         raise HTTPException(status_code=404, detail=result.error or "Failed to delete knowledge base")
@@ -292,6 +290,7 @@ async def get_crawl_config_schema(kb_id: str) -> form_models.Form:
 )
 async def start_crawl_job(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     crawl_request: StartCrawlJobRequest,
     background_tasks: BackgroundTasks,
@@ -306,12 +305,7 @@ async def start_crawl_job(
     Set auto_start=false to create the job without starting the crawler.
     The job can then be started manually via POST /{kb_id}/crawl-jobs/{job_id}/run
     """
-    user_email: str = request.state.user_email
-
-    # Verify KB exists and belongs to user
-    kb = kb_repo.find_by_id(kb_id, user_email)
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    kb = require_kb(principal, kb_id, "knowledge:Crawl", kb_repo)
 
     # Pinecone is required only when we actually start a crawl.
     from src.config import settings
@@ -336,7 +330,7 @@ async def start_crawl_job(
     job = CrawlJob(
         kb_id=kb_id,
         config=config,
-        created_by=user_email,
+        created_by=principal.user_id,
     )
 
     saved_job = job_repo.save(job)
@@ -344,7 +338,7 @@ async def start_crawl_job(
 
     # Start crawling if auto_start is enabled
     if auto_start:
-        launch_crawl(saved_job.job_id, kb_id, user_email, background_tasks, crawler)
+        launch_crawl(saved_job.job_id, kb_id, kb.account_id, background_tasks, crawler)
 
     return saved_job.to_response()
 
@@ -352,18 +346,14 @@ async def start_crawl_job(
 @router.get("/{kb_id}/crawl-jobs", response_model=list[CrawlJobResponse])
 async def list_crawl_jobs(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     job_repo: Annotated[CrawlJobRepository, Depends(get_crawl_job_repository)],
     limit: int = Query(default=5, ge=1, le=50),
 ) -> list[CrawlJobResponse]:
     """List crawl jobs for a knowledge base (most recent first)."""
-    user_email: str = request.state.user_email
-
-    # Verify KB exists and belongs to user
-    kb = kb_repo.find_by_id(kb_id, user_email)
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    require_kb(principal, kb_id, "knowledge:Get", kb_repo)
 
     jobs = job_repo.find_all_by_kb(kb_id, limit=limit)
     return [job.to_response() for job in jobs]
@@ -372,18 +362,14 @@ async def list_crawl_jobs(
 @router.get("/{kb_id}/crawl-jobs/{job_id}", response_model=CrawlJobResponse)
 async def get_crawl_job(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     job_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     job_repo: Annotated[CrawlJobRepository, Depends(get_crawl_job_repository)],
 ) -> CrawlJobResponse:
     """Get a crawl job by ID."""
-    user_email: str = request.state.user_email
-
-    # Verify KB exists and belongs to user
-    kb = kb_repo.find_by_id(kb_id, user_email)
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    require_kb(principal, kb_id, "knowledge:Get", kb_repo)
 
     job = job_repo.find_by_id(job_id, kb_id)
     if not job:
@@ -395,6 +381,7 @@ async def get_crawl_job(
 @router.post("/{kb_id}/crawl-jobs/{job_id}/run", response_model=CrawlJobResponse)
 async def run_crawl_job(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     job_id: str,
     background_tasks: BackgroundTasks,
@@ -408,12 +395,7 @@ async def run_crawl_job(
     Use this endpoint to start a job that was created with auto_start=false,
     or to retry a failed job.
     """
-    user_email: str = request.state.user_email
-
-    # Verify KB exists and belongs to user
-    kb = kb_repo.find_by_id(kb_id, user_email)
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    kb = require_kb(principal, kb_id, "knowledge:Crawl", kb_repo)
 
     job = job_repo.find_by_id(job_id, kb_id)
     if not job:
@@ -445,7 +427,7 @@ async def run_crawl_job(
     except Exception:
         raise HTTPException(status_code=503, detail=KNOWLEDGE_SEARCH_UNAVAILABLE)
 
-    launch_crawl(job_id, kb_id, user_email, background_tasks, crawler)
+    launch_crawl(job_id, kb_id, kb.account_id, background_tasks, crawler)
 
     return job.to_response()
 
@@ -453,6 +435,7 @@ async def run_crawl_job(
 @sse_router.get("/{kb_id}/crawl-jobs/{job_id}/stream")
 async def stream_crawl_job(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     job_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
@@ -468,11 +451,7 @@ async def stream_crawl_job(
 
     Auth is handled via query param token since EventSource doesn't support headers.
     """
-    user_email: str = request.state.user_email
-
-    kb = kb_repo.find_by_id(kb_id, user_email)
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    require_kb(principal, kb_id, "knowledge:Get", kb_repo)
 
     job = job_repo.find_by_id(job_id, kb_id)
     if not job:
@@ -565,6 +544,7 @@ async def stream_crawl_job(
 @sse_router.post("/{kb_id}/crawl-jobs/{job_id}/run-stream")
 async def run_and_stream_crawl_job(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     job_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
@@ -584,12 +564,7 @@ async def run_and_stream_crawl_job(
 
     Auth is handled via query param token since EventSource doesn't support headers.
     """
-    user_email: str = request.state.user_email
-
-    # Verify KB exists and belongs to user
-    kb = kb_repo.find_by_id(kb_id, user_email)
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    kb = require_kb(principal, kb_id, "knowledge:Crawl", kb_repo)
 
     job = job_repo.find_by_id(job_id, kb_id)
     if not job:
@@ -621,7 +596,7 @@ async def run_and_stream_crawl_job(
             async for event in crawler.run_with_events(
                 job_id=job_id,
                 kb_id=kb_id,
-                user_email=user_email,
+                account_id=kb.account_id,
                 timeout_ms=300000,  # 5 minutes
             ):
                 # Check if client disconnected
@@ -660,18 +635,14 @@ async def run_and_stream_crawl_job(
 )
 async def cancel_crawl_job(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     job_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     job_repo: Annotated[CrawlJobRepository, Depends(get_crawl_job_repository)],
 ) -> None:
     """Cancel a crawl job."""
-    user_email: str = request.state.user_email
-
-    # Verify KB exists and belongs to user
-    kb = kb_repo.find_by_id(kb_id, user_email)
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    require_kb(principal, kb_id, "knowledge:Crawl", kb_repo)
 
     job = job_repo.find_by_id(job_id, kb_id)
     if not job:
@@ -686,6 +657,7 @@ async def cancel_crawl_job(
 @router.get("/{kb_id}/crawl-jobs/{job_id}/steps", response_model=list[CrawlStepResponse])
 async def list_crawl_steps(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     job_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
@@ -694,12 +666,7 @@ async def list_crawl_steps(
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[CrawlStepResponse]:
     """List audit log steps for a crawl job."""
-    user_email: str = request.state.user_email
-
-    # Verify KB exists and belongs to user
-    kb = kb_repo.find_by_id(kb_id, user_email)
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    require_kb(principal, kb_id, "knowledge:Get", kb_repo)
 
     job = job_repo.find_by_id(job_id, kb_id)
     if not job:
@@ -712,6 +679,7 @@ async def list_crawl_steps(
 @router.get("/{kb_id}/crawl-jobs/{job_id}/pages", response_model=list[CrawledPageResponse])
 async def list_crawled_pages(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     job_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
@@ -720,12 +688,7 @@ async def list_crawled_pages(
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[CrawledPageResponse]:
     """List crawled pages for a crawl job with analytics."""
-    user_email: str = request.state.user_email
-
-    # Verify KB exists and belongs to user
-    kb = kb_repo.find_by_id(kb_id, user_email)
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    require_kb(principal, kb_id, "knowledge:Get", kb_repo)
 
     job = job_repo.find_by_id(job_id, kb_id)
     if not job:
@@ -743,6 +706,7 @@ async def list_crawled_pages(
 @router.post("/{kb_id}/search")
 async def search_knowledge_base(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     query: str = Query(..., description="Search query"),
@@ -757,18 +721,13 @@ async def search_knowledge_base(
     from src.config import settings
     from src.knowledge.models import SearchResponse as KBSearchResponse, SearchResult as KBSearchResult
 
-    user_email: str = request.state.user_email
-
     # Pinecone is required for vector search.
     try:
         settings.require_pinecone()
     except Exception:
         raise HTTPException(status_code=503, detail=KNOWLEDGE_SEARCH_UNAVAILABLE)
 
-    # Verify KB exists and belongs to user
-    kb = kb_repo.find_by_id(kb_id, user_email)
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    require_kb(principal, kb_id, "knowledge:Get", kb_repo)
 
     # Perform search
     from src.vectorstore import get_search_service
@@ -790,10 +749,10 @@ async def search_knowledge_base(
     return KBSearchResponse(results=results, query=query).model_dump()
 
 
-@agent_kb_router.post("/{agent_id}/knowledge-search", dependencies=[Depends(require_owned_agent)])
+@agent_kb_router.post("/{agent_id}/knowledge-search")
 async def search_agent_knowledge_bases(
-    request: Request,
     agent_id: str,
+    agent: Annotated[Agent, Depends(can_chat_with_agent)],
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     agent_kb_repo: Annotated[AgentKnowledgeBaseRepository, Depends(get_agent_kb_repository)],
     query: str = Query(..., description="Search query"),
@@ -807,8 +766,6 @@ async def search_agent_knowledge_bases(
     """
     from src.config import settings
 
-    user_email: str = request.state.user_email
-
     # Pinecone is required for vector search.
     try:
         settings.require_pinecone()
@@ -820,12 +777,8 @@ async def search_agent_knowledge_bases(
     if not links:
         return {"results": [], "query": query}
 
-    # Get KB IDs that the user has access to
-    kb_ids = []
-    for link in links:
-        kb = kb_repo.find_by_id(link.kb_id, user_email)
-        if kb:
-            kb_ids.append(link.kb_id)
+    # The agent reads as its owner: only the linked KBs they can still read
+    kb_ids = [kb.kb_id for kb in readable_by_agent(agent, [link.kb_id for link in links], kb_repo)]
 
     if not kb_ids:
         return {"results": [], "query": query}
@@ -858,29 +811,25 @@ async def search_agent_knowledge_bases(
 @agent_kb_router.post(
     "/{agent_id}/knowledge-bases",
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_owned_agent)],
 )
 async def link_knowledge_base(
-    request: Request,
     agent_id: str,
+    agent: Annotated[Agent, Depends(can_update_agent)],
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     agent_kb_repo: Annotated[AgentKnowledgeBaseRepository, Depends(get_agent_kb_repository)],
     kb_id: str = Query(..., description="Knowledge base ID to link"),
 ) -> dict:
-    """Link a knowledge base to an agent."""
-    user_email: str = request.state.user_email
-
-    # Verify KB exists and belongs to user
-    kb = kb_repo.find_by_id(kb_id, user_email)
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    """Link a knowledge base the caller can read to the agent. The agent reads it as its owner, so it
+    searches it only while its owner can read it too (their own, or shared with them)."""
+    require_kb(principal, kb_id, "knowledge:Get", kb_repo)
 
     # Check if already linked
     if agent_kb_repo.exists(agent_id, kb_id):
         return {"message": "Knowledge base already linked", "kb_id": kb_id, "agent_id": agent_id}
 
     # Create link
-    link = agent_kb_repo.link(agent_id, kb_id, user_email)
+    link = agent_kb_repo.link(agent_id, kb_id, principal.user_id)
     log.info(f"Linked KB {kb_id} to agent {agent_id}")
 
     return {
@@ -894,34 +843,25 @@ async def link_knowledge_base(
 @agent_kb_router.get(
     "/{agent_id}/knowledge-bases",
     response_model=list[KnowledgeBaseResponse],
-    dependencies=[Depends(require_owned_agent)],
 )
 async def list_agent_knowledge_bases(
-    request: Request,
     agent_id: str,
+    agent: Annotated[Agent, Depends(can_open_agent)],
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     agent_kb_repo: Annotated[AgentKnowledgeBaseRepository, Depends(get_agent_kb_repository)],
 ) -> list[KnowledgeBaseResponse]:
-    """List all knowledge bases linked to an agent."""
-    user_email: str = request.state.user_email
-
-    # Get linked KB IDs
+    """The knowledge bases the agent reads. Part of the agent's setup, so shown as metadata to whoever may
+    open the agent, even one they can't open themselves."""
     links = agent_kb_repo.find_kbs_for_agent(agent_id)
-
-    # Fetch full KB details
-    kbs = []
-    for link in links:
-        kb = kb_repo.find_by_id(link.kb_id, user_email)
-        if kb:
-            kbs.append(kb.to_response())
-
-    return kbs
+    readable = readable_by_agent(agent, [link.kb_id for link in links], kb_repo)
+    return [kb.to_response(access_to(principal, kb) or "admin") for kb in readable]
 
 
 @agent_kb_router.delete(
     "/{agent_id}/knowledge-bases/{kb_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_owned_agent)],
+    dependencies=[Depends(can_update_agent)],
 )
 async def unlink_knowledge_base(
     request: Request,
@@ -937,13 +877,11 @@ async def unlink_knowledge_base(
 @router.get("/{kb_id}/forms/content-upload", response_model=form_models.Form, status_code=status.HTTP_200_OK)
 async def kb_content_upload(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)]
 ):
-    user_email: str = request.state.user_email
-    knowledge_base = kb_repo.find_by_id(kb_id=kb_id, user_email=user_email)
-    if not knowledge_base:
-        raise HTTPException(404, f"Knowledge base not found: {kb_id}")
+    knowledge_base = require_kb(principal, kb_id, "knowledge:Update", kb_repo)
     
     return get_content_upload_form_schema(knowledge_base)
 
@@ -955,6 +893,7 @@ async def kb_content_upload(
 )
 async def upload_kb_content(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     upload_repo: Annotated[ContentUploadRepository, Depends(get_content_upload_repository)],
@@ -965,10 +904,7 @@ async def upload_kb_content(
     """Upload a text-based file and ingest it into the knowledge base."""
     from src.config import settings
 
-    user_email: str = request.state.user_email
-    knowledge_base = kb_repo.find_by_id(kb_id=kb_id, user_email=user_email)
-    if not knowledge_base:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    knowledge_base = require_kb(principal, kb_id, "knowledge:Update", kb_repo)
 
     if not settings.is_pinecone_configured():
         raise HTTPException(
@@ -992,7 +928,6 @@ async def upload_kb_content(
 
     ingest_result = await service.ingest_text_content(
         kb=knowledge_base,
-        user_email=user_email,
         filename=filename,
         content=content,
         metadata=metadata,
@@ -1001,7 +936,7 @@ async def upload_kb_content(
     upload_record = upload_repo.save(
         ContentUpload(
             kb_id=knowledge_base.kb_id,
-            created_by=user_email,
+            created_by=principal.user_id,
             filename=filename,
             content_type=attachment.content_type,
             size_bytes=len(raw_bytes),
@@ -1016,8 +951,8 @@ async def upload_kb_content(
     total_vectors = knowledge_base.total_vectors + ingest_result.vector_count
 
     kb_repo.update_stats(
+        knowledge_base.account_id,
         knowledge_base.kb_id,
-        user_email,
         total_pages=total_pages,
         total_chunks=total_chunks,
         total_vectors=total_vectors,
@@ -1046,6 +981,7 @@ async def upload_kb_content(
 )
 async def list_kb_uploads(
     request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     upload_repo: Annotated[ContentUploadRepository, Depends(get_content_upload_repository)],
@@ -1053,10 +989,7 @@ async def list_kb_uploads(
     cursor: Optional[str] = Query(default=None, description="Pagination cursor"),
 ) -> Paginated[ContentUploadItemResponse]:
     """List content uploads for a knowledge base (most recent page, ordered oldest to newest)."""
-    user_email: str = request.state.user_email
-    knowledge_base = kb_repo.find_by_id(kb_id=kb_id, user_email=user_email)
-    if not knowledge_base:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    require_kb(principal, kb_id, "knowledge:Get", kb_repo)
 
     uploads, next_cursor, has_more = upload_repo.list_by_kb_paginated(
         kb_id=kb_id,

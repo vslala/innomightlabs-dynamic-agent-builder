@@ -27,6 +27,8 @@ class MCPOAuthState(BaseModel):
     nonce: str
     code_verifier: str
     user_email: str
+    #: The account whose connection this is
+    account_id: str
     mcp_id: str
     return_to: str
     expires_at: int
@@ -62,12 +64,13 @@ def decode_state_session(state: str | None) -> Optional[MCPOAuthState]:
         return None
 
 
-def create_state_session(*, user_email: str, mcp_id: str, return_to: str) -> MCPOAuthState:
+def create_state_session(*, user_email: str, account_id: str, mcp_id: str, return_to: str) -> MCPOAuthState:
     nonce, code_verifier = generate_pkce_bundle()
     return MCPOAuthState(
         nonce=nonce,
         code_verifier=code_verifier,
         user_email=user_email,
+        account_id=account_id,
         mcp_id=mcp_id,
         return_to=return_to,
         expires_at=int((datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()),

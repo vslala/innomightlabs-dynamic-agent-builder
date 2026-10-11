@@ -7,6 +7,7 @@ import pytest
 from src.agents.agentic_loop import _record_token_usage
 from src.token_usage.models import TokenUsagePeriod, TokenUsageRecord
 from src.skills.models import ActorKind
+from tests.mock_data import account_for
 
 
 class _Recorder:
@@ -30,6 +31,7 @@ async def test_record_token_usage_forwards_api_key_id(api_key_id):
     recorder = _Recorder()
     state = AgentTurnState(
         owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         actor_email="owner@example.com",
         actor_id="secret-key:key-1",
         actor_kind=ActorKind.OWNER,

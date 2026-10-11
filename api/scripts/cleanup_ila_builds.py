@@ -28,20 +28,24 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from boto3.dynamodb.conditions import Attr, Key  # noqa: E402
 
+from src.accounts.owner import Owner  # noqa: E402
+from src.agents.models import Agent  # noqa: E402
 from src.agents.repository import AgentRepository  # noqa: E402
 from src.agents.service import AgentService  # noqa: E402
 from src.artifacts.storage import ArtifactStorage  # noqa: E402
+from src.conversations.repository import ConversationRepository  # noqa: E402
+from src.identity import IdentityRepository  # noqa: E402
 from src.builder.models import ILA_AGENT_ID  # noqa: E402
 from src.config import settings  # noqa: E402
 from src.db import get_dynamodb_resource  # noqa: E402
 from src.knowledge.models import KnowledgeBaseStatus  # noqa: E402
-from src.knowledge.repository import KnowledgeBaseRepository  # noqa: E402
+from src.knowledge.access import owned_kb  # noqa: E402
 from src.knowledge.service import get_knowledge_base_service  # noqa: E402
 
 
@@ -77,16 +81,25 @@ def partition(table, pk: str) -> list[dict[str, Any]]:
         kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
 
-def owner_of(item: dict[str, Any]) -> str:
-    return str(item["pk"]).split("#", 1)[1]
+def owner_of(item: dict[str, Any]) -> Owner:
+    """The member a builder record is theirs, in its account: conversations name them in `created_by`, builder
+    sessions in `user_id`, kits and deployments in `owner_id`."""
+    user_id = str(item.get("owner_id") or item.get("user_id") or item["created_by"])
+    identity = IdentityRepository().get(user_id)
+    return Owner(account_id=str(item["account_id"]), user_id=user_id, email=identity.email if identity else user_id)
 
 
-def find(table, only_user: str | None) -> dict[str, AccountFindings]:
-    found: dict[str, AccountFindings] = defaultdict(AccountFindings)
+def _owned_agent(agent_id: str, owner: Owner) -> Optional[Agent]:
+    agent = AgentRepository().find_in_account(owner.account_id, agent_id)
+    return agent if agent and agent.owner_id == owner.user_id else None
+
+
+def find(table, only_user: str | None) -> dict[Owner, AccountFindings]:
+    found: dict[Owner, AccountFindings] = defaultdict(AccountFindings)
     ila_conversation = Attr("entity_type").eq("Conversation") & Attr("agent_id").eq(ILA_AGENT_ID)
     for item in scan(table, Attr("entity_type").is_in(["BuilderSession", "BlueprintDeployment", "Kit"]) | ila_conversation):
         owner = owner_of(item)
-        if only_user and owner != only_user:
+        if only_user and owner.email != only_user:
             continue
         account = found[owner]
         entity = item.get("entity_type")
@@ -105,7 +118,8 @@ def find(table, only_user: str | None) -> dict[str, AccountFindings]:
             account.conversations.add(item["conversation_id"])
 
     for owner, account in found.items():
-        for item in scan(table, Attr("pk").eq(f"User#{owner}") & Attr("entity_type").eq("Artifact")):
+        # Ila's canvases are the building member's, in their partition of the account
+        for item in scan(table, Attr("pk").eq(owner.member_pk) & Attr("entity_type").eq("Artifact")):
             if (item.get("source") or {}).get("conversation_id") in account.conversations:
                 account.artifacts.append(item)
     return dict(found)
@@ -118,13 +132,11 @@ def _built(account: AccountFindings, resource: dict[str, Any]) -> None:
         account.knowledge_bases.add(resource["id"])
 
 
-def report(owner: str, account: AccountFindings) -> None:
-    agents = AgentRepository()
-    kbs = KnowledgeBaseRepository()
-    live_agents = [a for a in (agents.find_agent_by_id(i, owner) for i in sorted(account.agents)) if a]
-    live_kbs = [k for k in (kbs.find_by_id(i, owner) for i in sorted(account.knowledge_bases))
+def report(owner: Owner, account: AccountFindings) -> None:
+    live_agents = [a for a in (_owned_agent(i, owner) for i in sorted(account.agents)) if a]
+    live_kbs = [k for k in (owned_kb(i, owner) for i in sorted(account.knowledge_bases))
                 if k and k.status != KnowledgeBaseStatus.DELETED]
-    print(f"\n{owner}")
+    print(f"\n{owner.email} (account {owner.account_id})")
     print(f"  Ila conversations: {len(account.conversations)} (builder sessions: {len(account.sessions)})")
     print(f"  canvases drawn in them: {len(account.artifacts)}")
     print(f"  agents built: {len(live_agents)} still there of {len(account.agents)}")
@@ -136,21 +148,22 @@ def report(owner: str, account: AccountFindings) -> None:
     print(f"  deployment records: {len(account.deployments)}, kit records: {len(account.kits)}")
 
 
-def delete(table, owner: str, account: AccountFindings) -> list[str]:
+def delete(table, owner: Owner, account: AccountFindings) -> list[str]:
     """Deletes in dependency order. Returns what couldn't be deleted, so the run can say so."""
     problems: list[str] = []
     for agent_id in sorted(account.agents):
         try:
-            if AgentRepository().find_agent_by_id(agent_id, owner):
-                AgentService().delete(agent_id, owner)
+            agent = _owned_agent(agent_id, owner)
+            if agent:
+                AgentService().delete(agent, owner.email)
             _delete_rows(table, partition(table, f"Agent#{agent_id}"))
         except Exception as e:  # keep going: report everything that failed at the end
             problems.append(f"agent {agent_id}: {e}")
     for kb_id in sorted(account.knowledge_bases):
         try:
-            kb = KnowledgeBaseRepository().find_by_id(kb_id, owner)
+            kb = owned_kb(kb_id, owner)
             if kb and kb.status != KnowledgeBaseStatus.DELETED:
-                result = get_knowledge_base_service().soft_delete(kb_id, owner)
+                result = get_knowledge_base_service().soft_delete(kb)
                 if not result.success:
                     problems.append(f"knowledge base {kb_id}: {result.error}")
         except Exception as e:
@@ -167,7 +180,9 @@ def delete(table, owner: str, account: AccountFindings) -> list[str]:
 
     for conversation_id in sorted(account.conversations):
         _delete_rows(table, partition(table, f"CONVERSATION#{conversation_id}"))
-        _delete_rows(table, [{"pk": f"USER#{owner}", "sk": f"CONVERSATION#{conversation_id}"}])
+        conversation = ConversationRepository().get(conversation_id)
+        if conversation:
+            _delete_rows(table, [{"pk": conversation.pk, "sk": conversation.sk}])
     _delete_rows(table, [*account.sessions, *account.deployments, *account.kits])
     return problems
 
@@ -190,14 +205,14 @@ def main() -> int:
     if not found:
         print("Nothing to remove.")
         return 0
-    for owner, account in sorted(found.items()):
+    for owner, account in sorted(found.items(), key=lambda found_item: found_item[0].email):
         report(owner, account)
     if not args.apply:
         print("\nDry run: nothing was deleted. Run again with --apply to delete.")
         return 0
 
     failed = False
-    for owner, account in sorted(found.items()):
+    for owner, account in sorted(found.items(), key=lambda found_item: found_item[0].email):
         problems = delete(table, owner, account)
         for problem in problems:
             print(f"  could not delete {problem}")

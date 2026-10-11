@@ -21,6 +21,7 @@ from src.agents.turn_runtime import emit_turn_event
 from src.agents.tool_execution import ToolExecutionOutcome
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
+from tests.mock_data import account_for
 
 
 def _type(item):
@@ -104,6 +105,7 @@ class FakeTokenUsageService:
 def _turn_state() -> AgentTurnState:
     return AgentTurnState(
         owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         actor_email="actor@example.com",
         actor_id="actor-1",
         actor_kind=ActorKind.OWNER,

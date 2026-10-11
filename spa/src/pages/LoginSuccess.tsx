@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { httpClient } from '../services/http';
+import { httpClient, setActiveAccountId } from '../services/http';
 import { pricingService } from '../services/pricing';
 import { Button } from '../components/ui/button';
 import styles from './LoginSuccess.module.css';
@@ -44,6 +44,8 @@ export function LoginSuccess() {
     const signIn = async () => {
       const { token } = await httpClient.post<{ token: string }>('/auth/session', { code }, { skipAuth: true });
       localStorage.setItem('auth_token', token);
+      // A new session acts in the account the API remembers for this person, not the last tab's
+      setActiveAccountId(null);
       return token;
     };
 
@@ -52,7 +54,7 @@ export function LoginSuccess() {
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         const userInfo = {
-          email: payload.sub,
+          email: payload.email,
           name: payload.name,
           picture: payload.picture,
         };

@@ -12,7 +12,7 @@ from src.skills.registry import SkillRegistry
 from src.skills.upload_file.actions import upload_file
 from src.skills.upload_file.mime import infer_mime_type
 from src.skills.upload_file.models import MAX_ARTIFACT_UPLOAD_BYTES, UploadFileRequest
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import owner_for, user_id_for, account_for, TEST_USER_EMAIL
 
 
 def _create_media_bucket(bucket_name: str = "innomightlabs-conversations-meta") -> None:
@@ -21,6 +21,8 @@ def _create_media_bucket(bucket_name: str = "innomightlabs-conversations-meta") 
 
 def _context() -> dict:
     return {
+        "account_id": account_for(TEST_USER_EMAIL),
+        "owner_id": user_id_for(TEST_USER_EMAIL),
         "owner_email": TEST_USER_EMAIL,
         "agent_id": "agent-1",
         "conversation_id": "conversation-1",
@@ -68,7 +70,7 @@ def test_upload_file_text_creates_artifact(dynamodb_table, monkeypatch):
 
     from src.artifacts.service import ArtifactService
 
-    stored = ArtifactService().repository.find_by_id(TEST_USER_EMAIL, result["artifact_id"])
+    stored = ArtifactService().repository.find_by_id(owner_for(TEST_USER_EMAIL).member_pk, result["artifact_id"])
     assert stored is not None
     assert stored.source.skill_id == "upload_file"
     assert stored.source.agent_id == "agent-1"

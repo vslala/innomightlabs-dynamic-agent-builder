@@ -18,8 +18,12 @@ from src.builder.tools import BuilderTools
 from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversations_of
 from tests.test_builder_ila import PARAMS, account, session, turn_state  # noqa: F401
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 SITE_AGENT = example_yaml("site-agent") or ""
 
@@ -42,7 +46,7 @@ async def plan(session_: BuilderSession, tool_input: dict) -> dict:
 
 
 def reload(session_: BuilderSession) -> BuilderSession:
-    return BuilderSessionRepository().find(TEST_USER_EMAIL, session_.conversation_id)
+    return BuilderSessionRepository().find(TEST_OWNER.member_pk, session_.conversation_id)
 
 
 def answer(session_: BuilderSession, **values: str) -> BuilderSession:
@@ -172,7 +176,7 @@ async def test_loading_an_agent_forgets_answers_for_the_old_draft(session):  # n
     BuilderSessionRepository().save(stale)
     agent = AgentRepository().save(Agent(
         agent_name="Docs", agent_architecture="krishna-memgpt", agent_provider="Bedrock",
-        agent_persona="Docs.", created_by=TEST_USER_EMAIL,
+        agent_persona="Docs.", **agent_fields(TEST_USER_EMAIL),
     ))
     await BuilderTools().load_agent("load_agent", {"agent_id": agent.agent_id}, turn_state(session))
     assert reload(session).skill_inputs == {} and reload(session).pending_input is None
@@ -193,7 +197,7 @@ async def test_the_turn_takes_the_answers_before_ila_sees_it(session, monkeypatc
 
     monkeypatch.setattr(vishwakarma, "run_agentic_tool_loop", fake_loop)
     monkeypatch.setattr(vishwakarma, "open_provider_session", fake_provider_session)
-    conversation = ConversationRepository().find_by_id(session.conversation_id, TEST_USER_EMAIL)
+    conversation = ConversationRepository().find_by_id(session.conversation_id, conversations_of(TEST_USER_EMAIL))
     async for _ in vishwakarma.VishwakarmaArchitecture().handle_message(
         agent=ila_agent(session), conversation=conversation,
         user_message=submission(label, to="sales@acme.example"),

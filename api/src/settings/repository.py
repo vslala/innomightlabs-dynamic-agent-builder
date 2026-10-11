@@ -1,5 +1,6 @@
 """
-Repository for ProviderSettings entity using DynamoDB single table design.
+Repositories for the account's settings (provider settings, A2A trust settings) and a member's default agent,
+using DynamoDB single table design.
 """
 
 from ..db import get_dynamodb_resource
@@ -8,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 import logging
 
+from src.accounts.owner import member_partition
 from src.settings.models import Agent2AgentSettings, DefaultAgentPreference, ProviderSettings
 from src.config import settings
 
@@ -19,13 +21,13 @@ class ProviderSettingsRepository:
     Repository for ProviderSettings entity using DynamoDB single table design.
 
     Key Structure:
-        pk: User#{user_email}              - Partition by user
+        pk: Account#{account_id}             - The account's, used by every member's agents
         sk: ProviderSettings#{provider_name} - Unique provider identifier
 
     Access Patterns:
         - save: PutItem (create or update)
         - find_by_provider: GetItem by pk + sk
-        - find_all_by_user: Query by pk with sk prefix "ProviderSettings#"
+        - find_all_in_account: Query by pk with sk prefix "ProviderSettings#"
         - delete: DeleteItem by pk + sk
     """
 
@@ -40,7 +42,7 @@ class ProviderSettingsRepository:
         If settings exist for this provider, updates the existing record.
         Otherwise, creates a new record.
         """
-        existing = self.find_by_provider(provider_settings.user_email, provider_settings.provider_name)
+        existing = self.find_by_provider(provider_settings.account_id, provider_settings.provider_name)
 
         if existing:
             # Update: preserve created_at, update updated_at
@@ -48,23 +50,14 @@ class ProviderSettingsRepository:
             provider_settings.updated_at = datetime.now(timezone.utc)
 
         self.table.put_item(Item=provider_settings.to_dynamo_item())
-        log.info(f"Saved provider settings for {provider_settings.provider_name} for user {provider_settings.user_email}")
+        log.info(f"Saved provider settings for {provider_settings.provider_name} in account {provider_settings.account_id}")
         return provider_settings
 
-    def find_by_provider(self, user_email: str, provider_name: str) -> Optional[ProviderSettings]:
-        """
-        Find settings for a specific provider and user.
-
-        Args:
-            user_email: The user's email
-            provider_name: The provider name (e.g., "Bedrock")
-
-        Returns:
-            ProviderSettings if found, None otherwise
-        """
+    def find_by_provider(self, account_id: str, provider_name: str) -> Optional[ProviderSettings]:
+        """The account's settings for one provider (e.g. "Bedrock"), or None."""
         response = self.table.get_item(
             Key={
-                "pk": f"User#{user_email}",
+                "pk": f"Account#{account_id}",
                 "sk": f"ProviderSettings#{provider_name}",
             }
         )
@@ -73,33 +66,21 @@ class ProviderSettingsRepository:
             return ProviderSettings.from_dynamo_item(item)
         return None
 
-    def find_all_by_user(self, user_email: str) -> list[ProviderSettings]:
-        """
-        Find all provider settings for a user.
-
-        Args:
-            user_email: The user's email
-
-        Returns:
-            List of provider settings configured by the user
-        """
+    def find_all_in_account(self, account_id: str) -> list[ProviderSettings]:
+        """Every provider the account has configured."""
         response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"User#{user_email}") & Key("sk").begins_with("ProviderSettings#")
+            KeyConditionExpression=Key("pk").eq(f"Account#{account_id}") & Key("sk").begins_with("ProviderSettings#")
         )
 
         items = response.get("Items", [])
         settings_list = [ProviderSettings.from_dynamo_item(item) for item in items]
 
-        log.info(f"Found {len(settings_list)} provider settings for user {user_email}")
+        log.info(f"Found {len(settings_list)} provider settings in account {account_id}")
         return settings_list
 
-    def delete(self, user_email: str, provider_name: str) -> bool:
+    def delete(self, account_id: str, provider_name: str) -> bool:
         """
         Delete provider settings.
-
-        Args:
-            user_email: The user's email
-            provider_name: The provider name
 
         Returns:
             True if deleted successfully, False otherwise
@@ -107,11 +88,11 @@ class ProviderSettingsRepository:
         try:
             self.table.delete_item(
                 Key={
-                    "pk": f"User#{user_email}",
+                    "pk": f"Account#{account_id}",
                     "sk": f"ProviderSettings#{provider_name}",
                 }
             )
-            log.info(f"Deleted provider settings for {provider_name} for user {user_email}")
+            log.info(f"Deleted provider settings for {provider_name} in account {account_id}")
             return True
         except Exception as e:
             log.error(f"Failed to delete provider settings {provider_name}: {e}", exc_info=True)
@@ -124,10 +105,10 @@ def get_provider_settings_repository() -> ProviderSettingsRepository:
 
 class Agent2AgentSettingsRepository:
     """
-    Repository for user-level Agent2Agent outbound trust settings.
+    Repository for the account's Agent2Agent outbound trust settings.
 
     Key Structure:
-        pk: User#{user_email}
+        pk: Account#{account_id}
         sk: Agent2AgentSettings
     """
 
@@ -136,19 +117,19 @@ class Agent2AgentSettingsRepository:
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, a2a_settings: Agent2AgentSettings) -> Agent2AgentSettings:
-        existing = self.find_by_user(a2a_settings.user_email)
+        existing = self.find_in_account(a2a_settings.account_id)
         if existing:
             a2a_settings.created_at = existing.created_at
             a2a_settings.updated_at = datetime.now(timezone.utc)
 
         self.table.put_item(Item=a2a_settings.to_dynamo_item())
-        log.info("Saved Agent2Agent settings for user %s", a2a_settings.user_email)
+        log.info("Saved Agent2Agent settings for account %s", a2a_settings.account_id)
         return a2a_settings
 
-    def find_by_user(self, user_email: str) -> Optional[Agent2AgentSettings]:
+    def find_in_account(self, account_id: str) -> Optional[Agent2AgentSettings]:
         response = self.table.get_item(
             Key={
-                "pk": f"User#{user_email}",
+                "pk": f"Account#{account_id}",
                 "sk": "Agent2AgentSettings",
             }
         )
@@ -162,10 +143,10 @@ def get_agent2agent_settings_repository() -> Agent2AgentSettingsRepository:
 
 class DefaultAgentPreferenceRepository:
     """
-    Repository for the user's default-agent preference.
+    Repository for a member's default-agent preference.
 
     Key Structure:
-        pk: User#{user_email}
+        pk: Account#{account_id}#Member#{user_id}
         sk: DefaultAgentPreference
     """
 
@@ -174,33 +155,33 @@ class DefaultAgentPreferenceRepository:
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save(self, preference: DefaultAgentPreference) -> DefaultAgentPreference:
-        existing = self.find_by_user(preference.user_email)
+        existing = self.find_for_member(preference.account_id, preference.user_id)
         if existing:
             preference.created_at = existing.created_at
             preference.updated_at = datetime.now(timezone.utc)
 
         self.table.put_item(Item=preference.to_dynamo_item())
-        log.info("Saved default agent preference for user %s", preference.user_email)
+        log.info("Saved default agent preference for member %s", preference.user_id)
         return preference
 
-    def find_by_user(self, user_email: str) -> Optional[DefaultAgentPreference]:
+    def find_for_member(self, account_id: str, user_id: str) -> Optional[DefaultAgentPreference]:
         response = self.table.get_item(
             Key={
-                "pk": f"User#{user_email}",
+                "pk": member_partition(account_id, user_id),
                 "sk": "DefaultAgentPreference",
             }
         )
         item = response.get("Item")
         return DefaultAgentPreference.from_dynamo_item(item) if item else None
 
-    def delete(self, user_email: str) -> None:
+    def delete(self, account_id: str, user_id: str) -> None:
         self.table.delete_item(
             Key={
-                "pk": f"User#{user_email}",
+                "pk": member_partition(account_id, user_id),
                 "sk": "DefaultAgentPreference",
             }
         )
-        log.info("Cleared default agent preference for user %s", user_email)
+        log.info("Cleared default agent preference for member %s", user_id)
 
 
 def get_default_agent_preference_repository() -> DefaultAgentPreferenceRepository:

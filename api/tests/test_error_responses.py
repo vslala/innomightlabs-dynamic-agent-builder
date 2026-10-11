@@ -18,6 +18,7 @@ from src.exceptions import GENERIC_ERROR_MESSAGE, register_exception_handlers
 from src.llm.events import SSEEventType
 from src.middleware.request_id import RequestIdMiddleware
 from src.skills.models import ActorKind
+from tests.mock_data import agent_fields, conversation_fields
 
 
 def _app() -> TestClient:
@@ -80,12 +81,12 @@ class _Failing(AgentArchitecture):
 
 
 async def _error_for(error: Exception, actor_kind: ActorKind) -> str:
-    agent = Agent(agent_name="a", agent_architecture="krishna-mini", agent_provider="Bedrock", agent_persona="p", created_by="o")
+    agent = Agent(agent_name="a", agent_architecture="krishna-mini", agent_provider="Bedrock", agent_persona="p", **agent_fields("o"))
     events = [
         event
         async for event in _Failing(error).handle_message(
             agent=agent,
-            conversation=Conversation(title="c", agent_id=agent.agent_id, created_by="o"),
+            conversation=Conversation(title="c", agent_id=agent.agent_id, **conversation_fields("o")),
             user_message="hi",
             owner_email="o",
             actor_email="v",

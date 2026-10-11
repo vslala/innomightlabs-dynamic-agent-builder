@@ -4,7 +4,7 @@ import base64
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from boto3.dynamodb.conditions import Key
 
@@ -34,32 +34,41 @@ class AutomationRepository:
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save_automation(self, automation: Automation) -> Automation:
-        existing = self.find_automation_by_id(automation.automation_id, automation.created_by)
+        existing = self.find_in_account(automation.account_id, automation.automation_id)
         if existing:
             automation.created_at = existing.created_at
             automation.updated_at = datetime.now(timezone.utc)
             automation.version = existing.version + 1
         self.table.put_item(Item=automation.to_dynamo_item())
-        log.info("Saved automation %s for user %s", automation.automation_id, automation.created_by)
+        log.info("Saved automation %s in account %s", automation.automation_id, automation.account_id)
         return automation
 
-    def find_automation_by_id(self, automation_id: str, user_email: str) -> Optional[Automation]:
+    def find_in_account(self, account_id: str, automation_id: str) -> Optional[Automation]:
+        """Finding an automation is not authorizing its use: routes check the caller
+        (`src/automations/access.py`)."""
         response = self.table.get_item(
-            Key={"pk": f"User#{user_email}", "sk": f"Automation#{automation_id}"}
+            Key={"pk": f"Account#{account_id}", "sk": f"Automation#{automation_id}"}
         )
         item = response.get("Item")
         if not item:
             return None
         return Automation.from_dynamo_item(item)
 
-    def find_automations_by_user(self, user_email: str, include_deleted: bool = False) -> list[Automation]:
-        response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"User#{user_email}")
-            & Key("sk").begins_with("Automation#")
-        )
+    def list_in_account(self, account_id: str, include_deleted: bool = False) -> list[Automation]:
+        """Every automation in the account, whoever owns it, newest first."""
+        query: dict[str, Any] = {
+            "KeyConditionExpression": Key("pk").eq(f"Account#{account_id}") & Key("sk").begins_with("Automation#")
+        }
+        items: list[dict[str, Any]] = []
+        while True:
+            response = self.table.query(**query)
+            items.extend(response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                break
+            query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
         automations = [
             Automation.from_dynamo_item(item)
-            for item in response.get("Items", [])
+            for item in items
             if item.get("entity_type") == "Automation"
         ]
         if not include_deleted:
@@ -69,10 +78,13 @@ class AutomationRepository:
         automations.sort(key=lambda automation: automation.created_at, reverse=True)
         return automations
 
-    def soft_delete_automation(self, automation_id: str, user_email: str) -> bool:
+    def list_owned(self, account_id: str, owner_id: str, include_deleted: bool = False) -> list[Automation]:
+        return [a for a in self.list_in_account(account_id, include_deleted) if a.owner_id == owner_id]
+
+    def soft_delete_automation(self, account_id: str, automation_id: str) -> bool:
         try:
             self.table.update_item(
-                Key={"pk": f"User#{user_email}", "sk": f"Automation#{automation_id}"},
+                Key={"pk": f"Account#{account_id}", "sk": f"Automation#{automation_id}"},
                 UpdateExpression="SET #status = :status, updated_at = :updated_at",
                 ExpressionAttributeNames={"#status": "status"},
                 ExpressionAttributeValues={
@@ -224,7 +236,7 @@ class AutomationRepository:
 
     def save_run(self, run: AutomationRun) -> AutomationRun:
         self.table.put_item(Item=run.to_dynamo_item())
-        self.table.put_item(Item=run.to_owner_lookup_item())
+        self.table.put_item(Item=run.to_lookup_item())
         return run
 
     def find_runs_by_automation(
@@ -248,10 +260,9 @@ class AutomationRepository:
         )
         return runs, next_cursor, last_key is not None
 
-    def find_run_by_id(self, run_id: str, user_email: str) -> Optional[AutomationRun]:
-        lookup = self.table.get_item(
-            Key={"pk": f"User#{user_email}", "sk": f"AutomationRun#{run_id}"}
-        ).get("Item")
+    def find_run_by_id(self, run_id: str) -> Optional[AutomationRun]:
+        """The run with this id. Callers check it belongs to the automation they authorized."""
+        lookup = self.table.get_item(Key={"pk": f"AutomationRun#{run_id}", "sk": "Run"}).get("Item")
         if not lookup:
             return None
         response = self.table.get_item(

@@ -7,6 +7,7 @@ from src.auth.openai_oauth import OpenAICredentials
 from src.crypto import encrypt
 from src.llm.credentials import load_provider_credentials
 from src.settings.models import ProviderSettings
+from tests.mock_data import account_for
 
 
 class FakeProviderSettingsRepository:
@@ -15,7 +16,7 @@ class FakeProviderSettingsRepository:
 
 async def test_load_provider_credentials_decrypts_static_provider_credentials():
     provider_settings = ProviderSettings(
-        user_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         provider_name="Bedrock",
         encrypted_credentials=encrypt(json.dumps({"api_key": "secret"})),
     )
@@ -31,7 +32,7 @@ async def test_load_provider_credentials_decrypts_static_provider_credentials():
 
 async def test_load_provider_credentials_uses_openai_oauth_refresh_path(monkeypatch):
     provider_settings = ProviderSettings(
-        user_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         provider_name="OpenAI",
         encrypted_credentials="encrypted",
         auth_type="oauth",
@@ -68,7 +69,7 @@ async def test_load_provider_credentials_uses_openai_oauth_refresh_path(monkeypa
 
 async def test_load_provider_credentials_rejects_non_object_static_credentials():
     provider_settings = ProviderSettings(
-        user_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         provider_name="Bedrock",
         encrypted_credentials=encrypt(json.dumps(["not", "an", "object"])),
     )

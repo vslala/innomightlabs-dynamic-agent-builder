@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Literal, Any, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -70,11 +70,14 @@ class Deployment(BaseModel):
     """
     What one blueprint apply created.
 
-    DynamoDB: pk=User#{user_email}, sk=BlueprintDeployment#{created_at}#{deployment_id}
+    DynamoDB: pk=Account#{account_id}, sk=BlueprintDeployment#{created_at}#{deployment_id}. It follows its kit
+    into the account, and runs (and is undone) as `owner_id`.
     """
 
     deployment_id: str = Field(default_factory=lambda: str(uuid4()))
-    user_email: str
+    account_id: str
+    #: The member it applied as: what it built is theirs
+    owner_id: str
     blueprint_name: str
     blueprint_title: str
     blueprint_yaml: str
@@ -102,7 +105,7 @@ class Deployment(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"User#{self.user_email}"
+        return f"Account#{self.account_id}"
 
     @property
     def sk(self) -> str:
@@ -152,6 +155,10 @@ class KitSummary(BaseModel):
     #: How many of each kind it holds, by kind.
     counts: dict[str, int] = Field(default_factory=dict)
     conversation_id: Optional[str] = None
+    account_id: str
+    owner_id: str
+    #: How the caller reaches it: their own, shared with them, or (admins) metadata only
+    access: Literal["owner", "shared", "admin"] = "owner"
     created_at: datetime
     updated_at: Optional[datetime] = None
 

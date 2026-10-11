@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from src.accounts.owner import Owner
 from src.scheduler.backends import get_scheduler_backend
 from src.scheduler.backends.base import SchedulerBackend
 from src.scheduler.models import (
@@ -24,6 +25,16 @@ class SchedulerValidationError(ValueError):
     """Raised when schedule input is invalid."""
 
 
+def owner_of_schedule(schedule: Schedule) -> Owner:
+    """The member a schedule runs as, in its account."""
+    from src.identity import IdentityRepository
+
+    identity = IdentityRepository().get(schedule.owner_id)
+    if identity is None:
+        raise SchedulerValidationError("The schedule's owner no longer exists")
+    return Owner(account_id=schedule.account_id, user_id=schedule.owner_id, email=identity.email)
+
+
 class SchedulerService:
     """Coordinates schedule validation, persistence, and backend state."""
 
@@ -35,7 +46,7 @@ class SchedulerService:
         self.repository = repository or SchedulerRepository()
         self.backend = backend or get_scheduler_backend()
 
-    def create_schedule(self, body: CreateScheduleRequest, owner_email: str, created_by: str) -> Schedule:
+    def create_schedule(self, body: CreateScheduleRequest, owner: Owner, created_by: str) -> Schedule:
         self._validate_target(body.target_type.value, body.target)
         status = ScheduleStatus.ACTIVE if body.enabled else ScheduleStatus.PAUSED
         schedule_kwargs: dict[str, Any] = {}
@@ -45,7 +56,8 @@ class SchedulerService:
                 raise SchedulerValidationError("Schedule id cannot be empty")
             schedule_kwargs["schedule_id"] = schedule_id
         schedule = Schedule(
-            owner_email=owner_email,
+            account_id=owner.account_id,
+            owner_id=owner.user_id,
             name=body.name,
             status=status,
             cron_expression=(body.cron_expression or "").strip(),
@@ -68,9 +80,9 @@ class SchedulerService:
         self,
         schedule_id: str,
         body: UpdateScheduleRequest,
-        owner_email: str,
+        owner: Owner,
     ) -> Schedule:
-        schedule = self.get_schedule(schedule_id, owner_email)
+        schedule = self.get_schedule(schedule_id, owner)
         if body.name is not None:
             schedule.name = body.name
         if body.cron_expression:
@@ -95,8 +107,8 @@ class SchedulerService:
             self.backend.pause(saved)
         return saved
 
-    def pause_schedule(self, schedule_id: str, owner_email: str) -> Schedule:
-        schedule = self.get_schedule(schedule_id, owner_email)
+    def pause_schedule(self, schedule_id: str, owner: Owner) -> Schedule:
+        schedule = self.get_schedule(schedule_id, owner)
         if schedule.status == ScheduleStatus.COMPLETED:
             return schedule  # already done; pausing would make it look as if it could run again
         schedule.status = ScheduleStatus.PAUSED
@@ -105,8 +117,8 @@ class SchedulerService:
         self.backend.pause(saved)
         return saved
 
-    def resume_schedule(self, schedule_id: str, owner_email: str) -> Schedule:
-        schedule = self.get_schedule(schedule_id, owner_email)
+    def resume_schedule(self, schedule_id: str, owner: Owner) -> Schedule:
+        schedule = self.get_schedule(schedule_id, owner)
         if schedule.status == ScheduleStatus.COMPLETED:
             raise SchedulerValidationError("This schedule already ran once; make a new one")
         schedule.status = ScheduleStatus.ACTIVE
@@ -115,20 +127,21 @@ class SchedulerService:
         self.backend.resume(saved)
         return saved
 
-    def delete_schedule(self, schedule_id: str, owner_email: str) -> None:
-        schedule = self.get_schedule(schedule_id, owner_email)
+    def delete_schedule(self, schedule_id: str, owner: Owner) -> None:
+        schedule = self.get_schedule(schedule_id, owner)
         schedule.status = ScheduleStatus.DELETED
         self.backend.delete(schedule)
         self.repository.delete_schedule(schedule)
 
-    def get_schedule(self, schedule_id: str, owner_email: str) -> Schedule:
-        schedule = self.repository.find_schedule(owner_email, schedule_id)
-        if not schedule:
+    def get_schedule(self, schedule_id: str, owner: Owner) -> Schedule:
+        """The member's own schedule in the account: a schedule runs as them, so only they manage it."""
+        schedule = self.repository.find_schedule(owner.account_id, schedule_id)
+        if not schedule or schedule.owner_id != owner.user_id:
             raise SchedulerValidationError("Schedule not found")
         return schedule
 
-    def list_schedules(self, owner_email: str) -> list[Schedule]:
-        return self.repository.list_schedules(owner_email)
+    def list_schedules(self, owner: Owner) -> list[Schedule]:
+        return [s for s in self.repository.list_schedules(owner.account_id) if s.owner_id == owner.user_id]
 
     def mark_dispatched(self, schedule: Schedule, scheduled_for: datetime) -> Schedule:
         """After a run, whatever its outcome: a one-time schedule is completed, a recurring one moves on."""

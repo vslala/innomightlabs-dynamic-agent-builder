@@ -8,6 +8,7 @@ from src.llm.providers.base import LLMEvent
 from src.llm.providers.factory import get_llm_provider
 from src.llm.providers.gemini import GeminiProvider
 from src.settings.models import ProviderSettings
+from tests.mock_data import account_for
 
 
 class FakeGeminiModel:
@@ -148,7 +149,7 @@ def test_gemini_models_are_loaded_from_google_genai(monkeypatch):
 
     monkeypatch.setattr("google.genai.Client", FakeClient)
     provider_settings = ProviderSettings(
-        user_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         provider_name="Gemini",
         encrypted_credentials=encrypt('{"api_key": "gemini-key"}'),
     )
@@ -232,7 +233,7 @@ def test_gemini_models_fallback_when_live_list_fails(monkeypatch):
 
     monkeypatch.setattr("google.genai.Client", FailingClient)
     provider_settings = ProviderSettings(
-        user_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
         provider_name="Gemini",
         encrypted_credentials=encrypt('{"api_key": "gemini-key"}'),
     )

@@ -15,6 +15,7 @@ from src.agents.provider_session import ProviderNotConfigured, open_provider_ses
 from src.conversations.models import Conversation
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.models import ActorKind
+from tests.mock_data import agent_fields, conversation_fields
 
 
 def _agent(provider: str = "Anthropic", thinking: str | None = None) -> Agent:
@@ -25,17 +26,17 @@ def _agent(provider: str = "Anthropic", thinking: str | None = None) -> Agent:
         agent_model="claude-sonnet-4",
         agent_persona="Helpful",
         agent_ollama_thinking=thinking,
-        created_by="owner@example.com",
+        **agent_fields("owner@example.com"),
     )
 
 
 class NoSettingsRepo:
-    def find_by_provider(self, owner_email, provider_name):
+    def find_by_provider(self, account_id, provider_name):
         return None
 
 
 class SettingsRepo:
-    def find_by_provider(self, owner_email, provider_name):
+    def find_by_provider(self, account_id, provider_name):
         return object()
 
 
@@ -43,7 +44,6 @@ async def test_open_provider_session_raises_when_the_provider_is_not_configured(
     with pytest.raises(ProviderNotConfigured) as caught:
         await open_provider_session(
             _agent(provider="Bedrock"),
-            owner_email="owner@example.com",
             provider_settings_repo=NoSettingsRepo(),
         )
 
@@ -67,12 +67,10 @@ async def test_open_provider_session_applies_the_thinking_override_only_for_olla
 
     ollama = await open_provider_session(
         _agent(provider="Ollama", thinking="enabled"),
-        owner_email="owner@example.com",
         provider_settings_repo=SettingsRepo(),
     )
     anthropic = await open_provider_session(
         _agent(provider="Anthropic", thinking="enabled"),
-        owner_email="owner@example.com",
         provider_settings_repo=SettingsRepo(),
     )
 
@@ -116,7 +114,7 @@ def _turn_args():
     return {
         "agent": agent,
         "conversation": Conversation(
-            title="c", agent_id=agent.agent_id, created_by="owner@example.com"
+            title="c", agent_id=agent.agent_id, **conversation_fields("owner@example.com")
         ),
         "user_message": "hi",
         "owner_email": "owner@example.com",

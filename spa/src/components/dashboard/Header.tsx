@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
+import { AccountSwitcher } from "./AccountSwitcher";
 
 interface HeaderProps {
   title: string;
@@ -28,8 +29,10 @@ export function Header({ title, user }: HeaderProps) {
         padding: "0 1.5rem",
       }}
     >
-      {/* Spacer for balance */}
-      <div style={{ flex: 1 }} />
+      {/* The account every request acts in */}
+      <div style={{ flex: 1, display: "flex", alignItems: "center" }}>
+        <AccountSwitcher />
+      </div>
 
       {/* Centered title */}
       <h1 style={{ fontSize: "1.125rem", fontWeight: 600, color: "var(--text-primary)" }}>

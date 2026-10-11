@@ -47,5 +47,6 @@ async def complete_oauth(request: Request, body: OAuthCompletionRequest) -> OAut
         code=handoff.get("code"),
         error=handoff.get("error"),
         user_email=request.state.user_email,
+        user_id=request.state.user_id,
     )
     return OAuthCompletionResponse(result=result)

@@ -53,6 +53,8 @@ class A2ARemoteOAuthState(BaseModel):
     nonce: str
     code_verifier: str
     user_email: str
+    #: The account the tokens are for: the agent's
+    account_id: str
     agent_id: str
     installed_skill_id: str
     target_origin: str
@@ -66,7 +68,9 @@ class A2ARemoteOAuthState(BaseModel):
 
 
 class A2ARemoteOAuthCredentialRecord(BaseModel):
-    owner_email: str
+    """A remote agent's tokens for one installed skill: the account's, like its other connections."""
+
+    account_id: str
     agent_id: str
     installed_skill_id: str
     target_origin: str
@@ -76,7 +80,7 @@ class A2ARemoteOAuthCredentialRecord(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"User#{self.owner_email}"
+        return f"Account#{self.account_id}"
 
     @property
     def sk(self) -> str:
@@ -87,7 +91,7 @@ class A2ARemoteOAuthCredentialRecord(BaseModel):
             "pk": self.pk,
             "sk": self.sk,
             "entity_type": "A2ARemoteOAuthCredential",
-            "owner_email": self.owner_email,
+            "account_id": self.account_id,
             "agent_id": self.agent_id,
             "installed_skill_id": self.installed_skill_id,
             "target_origin": self.target_origin,
@@ -99,7 +103,7 @@ class A2ARemoteOAuthCredentialRecord(BaseModel):
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "A2ARemoteOAuthCredentialRecord":
         return cls(
-            owner_email=item["owner_email"],
+            account_id=item["account_id"],
             agent_id=item["agent_id"],
             installed_skill_id=item["installed_skill_id"],
             target_origin=item["target_origin"],
@@ -116,7 +120,7 @@ class A2ARemoteOAuthRepository:
 
     def save(self, record: A2ARemoteOAuthCredentialRecord) -> A2ARemoteOAuthCredentialRecord:
         existing = self.find(
-            owner_email=record.owner_email,
+            account_id=record.account_id,
             installed_skill_id=record.installed_skill_id,
             target_origin=record.target_origin,
         )
@@ -129,13 +133,13 @@ class A2ARemoteOAuthRepository:
     def find(
         self,
         *,
-        owner_email: str,
+        account_id: str,
         installed_skill_id: str,
         target_origin: str,
     ) -> A2ARemoteOAuthCredentialRecord | None:
         response = self.table.get_item(
             Key={
-                "pk": f"User#{owner_email}",
+                "pk": f"Account#{account_id}",
                 "sk": f"A2ARemoteOAuthCredential#{installed_skill_id}#{_target_hash(target_origin)}",
             }
         )
@@ -259,6 +263,7 @@ def build_authorization_url(
 def create_state_session(
     *,
     user_email: str,
+    account_id: str,
     agent_id: str,
     installed_skill_id: str,
     service_url: str,
@@ -270,6 +275,7 @@ def create_state_session(
         nonce=nonce,
         code_verifier=code_verifier,
         user_email=user_email,
+        account_id=account_id,
         agent_id=agent_id,
         installed_skill_id=installed_skill_id,
         target_origin=provider.target_origin,

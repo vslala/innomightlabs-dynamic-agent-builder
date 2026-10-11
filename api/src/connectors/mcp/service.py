@@ -101,13 +101,13 @@ class MCPConnectorService:
 
     def create_connection(
         self,
-        owner_email: str,
+        account_id: str,
         request: MCPConnectionCreateRequest,
     ) -> MCPConnectionResponse:
         if request.transport == MCPTransport.STDIO:
-            return self._create_stdio_connection(owner_email, request)
+            return self._create_stdio_connection(account_id, request)
         connection = MCPConnection(
-            owner_email=owner_email,
+            account_id=account_id,
             name=request.name.strip(),
             server_url=str(request.server_url),
             auth_type=request.auth_type,
@@ -121,9 +121,9 @@ class MCPConnectorService:
         )
         saved = self.repository.save_connection(connection)
         log.info(
-            "Created MCP connection mcp_id=%s owner=%s auth_type=%s server_url=%s",
+            "Created MCP connection mcp_id=%s account=%s auth_type=%s server_url=%s",
             saved.mcp_id,
-            owner_email,
+            account_id,
             saved.auth_type.value,
             saved.server_url,
         )
@@ -131,11 +131,11 @@ class MCPConnectorService:
 
     async def update_connection(
         self,
-        owner_email: str,
+        account_id: str,
         mcp_id: str,
         request: MCPConnectionUpdateRequest,
     ) -> MCPConnectionResponse:
-        connection = self._require_connection(owner_email, mcp_id)
+        connection = self._require_connection(account_id, mcp_id)
         if connection.provider_key:
             response = self._update_provider_install(connection, request)
         elif connection.transport == MCPTransport.STDIO:
@@ -190,26 +190,26 @@ class MCPConnectorService:
             )
         saved = self.repository.save_connection(connection)
         log.info(
-            "Updated MCP connection mcp_id=%s owner=%s auth_type=%s enabled=%s",
+            "Updated MCP connection mcp_id=%s account=%s auth_type=%s enabled=%s",
             saved.mcp_id,
-            saved.owner_email,
+            saved.account_id,
             saved.auth_type.value,
             saved.enabled,
         )
         return self._connection_response(saved)
 
-    def list_connections(self, owner_email: str) -> list[MCPConnectionResponse]:
+    def list_connections(self, account_id: str) -> list[MCPConnectionResponse]:
         return [
             self._connection_response(connection)
-            for connection in self.repository.list_connections(owner_email)
+            for connection in self.repository.list_connections(account_id)
         ]
 
-    def get_connection(self, owner_email: str, mcp_id: str) -> MCPConnectionResponse:
-        return self._connection_response(self._require_connection(owner_email, mcp_id))
+    def get_connection(self, account_id: str, mcp_id: str) -> MCPConnectionResponse:
+        return self._connection_response(self._require_connection(account_id, mcp_id))
 
-    def list_providers(self, owner_email: str) -> list[MCPProviderResponse]:
+    def list_providers(self, account_id: str) -> list[MCPProviderResponse]:
         installed: dict[str, int] = {}
-        for connection in self.repository.list_connections(owner_email):
+        for connection in self.repository.list_connections(account_id):
             if connection.provider_key:
                 installed[connection.provider_key] = installed.get(connection.provider_key, 0) + 1
         return [
@@ -235,8 +235,8 @@ class MCPConnectorService:
             form_inputs=list(provider.inputs),
         )
 
-    def connection_settings_form(self, owner_email: str, mcp_id: str) -> Form:
-        connection = self._require_connection(owner_email, mcp_id)
+    def connection_settings_form(self, account_id: str, mcp_id: str) -> Form:
+        connection = self._require_connection(account_id, mcp_id)
         provider = get_provider(connection.provider_key)
         values = self._public_inputs(connection, provider)
         return Form(
@@ -252,10 +252,13 @@ class MCPConnectorService:
 
     async def install_provider(
         self,
-        owner_email: str,
+        account_id: str,
         key: str,
         request: MCPProviderInstallRequest,
+        *,
+        user_email: str,
     ) -> MCPProviderInstallResponse:
+        """`user_email` is the admin installing it, who signs in to the provider when it uses OAuth."""
         provider = get_provider(key)
         secrets = ProviderInstallSecrets(inputs=provider.validated_inputs(request.inputs))
         if isinstance(provider.oauth, DiscoveredOAuth):
@@ -285,7 +288,7 @@ class MCPConnectorService:
 
         connection = self.repository.save_connection(
             MCPConnection(
-                owner_email=owner_email,
+                account_id=account_id,
                 name=(request.name or provider.display_name).strip(),
                 server_url="",
                 transport=provider.transport,
@@ -295,13 +298,14 @@ class MCPConnectorService:
             )
         )
         log.info(
-            "Installed MCP provider provider=%s mcp_id=%s owner=%s",
+            "Installed MCP provider provider=%s mcp_id=%s account=%s",
             provider.key,
             connection.mcp_id,
-            owner_email,
+            account_id,
         )
         authorize_url = (
-            self.start_oauth(owner_email=owner_email, mcp_id=connection.mcp_id, return_to=request.return_to)
+            self.start_oauth(account_id=account_id, user_email=user_email, mcp_id=connection.mcp_id,
+                             return_to=request.return_to)
             if provider.oauth is not None
             else None
         )
@@ -357,23 +361,23 @@ class MCPConnectorService:
         log.info("Discovering OAuth authorization server issuer_url=%s", issuer_url)
         return await discover_authorization_server(issuer_url)
 
-    async def delete_connection(self, owner_email: str, mcp_id: str) -> None:
-        connection = self._require_connection(owner_email, mcp_id)
-        self.repository.delete_connection(owner_email, mcp_id)
+    async def delete_connection(self, account_id: str, mcp_id: str) -> None:
+        connection = self._require_connection(account_id, mcp_id)
+        self.repository.delete_connection(account_id, mcp_id)
         await self._release(connection)
 
     async def list_stdio_packages(self) -> list[MCPStdioPackageResponse]:
         return await self.sidecar.packages()
 
-    async def runtime_status(self, owner_email: str, mcp_id: str) -> MCPRuntimeStatusResponse:
-        connection = self._require_stdio_connection(owner_email, mcp_id)
+    async def runtime_status(self, account_id: str, mcp_id: str) -> MCPRuntimeStatusResponse:
+        connection = self._require_stdio_connection(account_id, mcp_id)
         status = await self.sidecar.status(connection.mcp_id)
         if status is None:
             return MCPRuntimeStatusResponse(state="stopped")
         return self._public_status(status)
 
-    async def restart_runtime(self, owner_email: str, mcp_id: str) -> MCPRuntimeStatusResponse:
-        connection = self._require_stdio_connection(owner_email, mcp_id)
+    async def restart_runtime(self, account_id: str, mcp_id: str) -> MCPRuntimeStatusResponse:
+        connection = self._require_stdio_connection(account_id, mcp_id)
         if not connection.enabled:
             raise ValueError("Enable the MCP connector before starting it")
         target = await self._prepared_target(connection)
@@ -387,22 +391,22 @@ class MCPConnectorService:
     def enable_for_agent(
         self,
         *,
-        owner_email: str,
+        account_id: str,
         agent_id: str,
         mcp_id: str,
         enabled: bool = True,
     ) -> AgentMCPConnectionResponse:
-        agent = self.agent_repository.find_agent_by_id(agent_id, owner_email)
+        agent = self.agent_repository.get(agent_id)
         if not agent:
             raise ValueError("Agent not found")
-        connection = self._require_connection(owner_email, mcp_id)
+        connection = self._require_connection(account_id, mcp_id)
         existing = self.repository.find_agent_connection(agent_id, mcp_id)
-        link = existing or AgentMCPConnection(agent_id=agent_id, owner_email=owner_email, mcp_id=mcp_id)
+        link = existing or AgentMCPConnection(agent_id=agent_id, account_id=account_id, mcp_id=mcp_id)
         saved = self.repository.save_agent_connection(link.model_copy(update={"enabled": enabled}))
         return self._agent_response(saved, connection)
 
-    def disable_for_agent(self, *, owner_email: str, agent_id: str, mcp_id: str) -> None:
-        agent = self.agent_repository.find_agent_by_id(agent_id, owner_email)
+    def disable_for_agent(self, *, account_id: str, agent_id: str, mcp_id: str) -> None:
+        agent = self.agent_repository.get(agent_id)
         if not agent:
             raise ValueError("Agent not found")
         self.repository.delete_agent_connection(agent_id, mcp_id)
@@ -410,56 +414,56 @@ class MCPConnectorService:
     def list_agent_connections(
         self,
         *,
-        owner_email: str,
+        account_id: str,
         agent_id: str,
         actor_kind: ActorKind,
         enabled_only: bool = False,
         verify_agent: bool = True,
     ) -> list[AgentMCPConnectionResponse]:
         if verify_agent:
-            agent = self.agent_repository.find_agent_by_id(agent_id, owner_email)
+            agent = self.agent_repository.get(agent_id)
             if not agent:
                 raise ValueError("Agent not found")
 
         responses: list[AgentMCPConnectionResponse] = []
         for link in self.repository.list_agent_connections(agent_id):
-            if link.owner_email != owner_email or not link.usable_by(actor_kind):
+            if link.account_id != account_id or not link.usable_by(actor_kind):
                 continue
             if enabled_only and not link.enabled:
                 continue
-            connection = self.repository.find_connection(owner_email, link.mcp_id)
+            connection = self.repository.find_connection(account_id, link.mcp_id)
             if not connection or not connection.enabled:
                 continue
             responses.append(self._agent_response(link, connection))
         return responses
 
-    async def refresh_tool_catalog(self, owner_email: str, mcp_id: str) -> MCPToolCatalog:
-        connection = self._require_connection(owner_email, mcp_id)
+    async def refresh_tool_catalog(self, account_id: str, mcp_id: str) -> MCPToolCatalog:
+        connection = self._require_connection(account_id, mcp_id)
         target, headers = await self._session(connection)
         listed = await self.client.list_tools(target, headers)
         catalog = MCPToolCatalog(
-            owner_email=owner_email,
+            account_id=account_id,
             mcp_id=mcp_id,
             tools=[MCPCatalogTool.from_server(tool) for tool in listed.get("tools", []) if tool.get("name")],
         )
         return self.repository.save_tool_catalog(catalog)
 
-    async def capture_tool_catalog(self, owner_email: str, mcp_id: str) -> None:
+    async def capture_tool_catalog(self, account_id: str, mcp_id: str) -> None:
         """Snapshot the tools when the owner signs in or enables a connector. A miss costs nothing:
         the share dialog lists them live when there is no snapshot."""
         try:
-            await asyncio.wait_for(self.refresh_tool_catalog(owner_email, mcp_id), CATALOG_CAPTURE_SECONDS)
+            await asyncio.wait_for(self.refresh_tool_catalog(account_id, mcp_id), CATALOG_CAPTURE_SECONDS)
         except Exception as exc:
             log.warning("Could not capture MCP tool catalog mcp_id=%s error=%r", mcp_id, exc)
 
-    async def sharing_view(self, *, owner_email: str, agent_id: str, mcp_id: str) -> MCPSharingView:
-        link, connection = self._require_agent_link(owner_email=owner_email, agent_id=agent_id, mcp_id=mcp_id)
-        catalog = self.repository.find_tool_catalog(owner_email, mcp_id)
+    async def sharing_view(self, *, account_id: str, agent_id: str, mcp_id: str) -> MCPSharingView:
+        link, connection = self._require_agent_link(account_id=account_id, agent_id=agent_id, mcp_id=mcp_id)
+        catalog = self.repository.find_tool_catalog(account_id, mcp_id)
         catalog_error: str | None = None
         if catalog is None:
             # Connectors set up before sharing existed have no snapshot yet.
             try:
-                catalog = await self.refresh_tool_catalog(owner_email, mcp_id)
+                catalog = await self.refresh_tool_catalog(account_id, mcp_id)
             except Exception as exc:
                 log.warning("Could not list tools to share mcp_id=%s error=%r", mcp_id, exc)
                 catalog_error = f"Couldn't reach {connection.name} to list its tools. Check the connector and retry."
@@ -468,14 +472,16 @@ class MCPConnectorService:
     def share(
         self,
         *,
-        owner_email: str,
+        account_id: str,
         agent_id: str,
         mcp_id: str,
         request: MCPSharingUpdateRequest,
+        by: str,
     ) -> MCPSharingView:
-        link, connection = self._require_agent_link(owner_email=owner_email, agent_id=agent_id, mcp_id=mcp_id)
-        catalog = self.repository.find_tool_catalog(owner_email, mcp_id)
-        saved = self.repository.save_agent_connection(link.shared(request, catalog, by=owner_email))
+        """`by` is the email of whoever accepts what sharing means."""
+        link, connection = self._require_agent_link(account_id=account_id, agent_id=agent_id, mcp_id=mcp_id)
+        catalog = self.repository.find_tool_catalog(account_id, mcp_id)
+        saved = self.repository.save_agent_connection(link.shared(request, catalog, by=by))
         log.info(
             "Updated MCP sharing mcp_id=%s agent_id=%s available_to=%s tools=%s",
             mcp_id,
@@ -488,12 +494,12 @@ class MCPConnectorService:
     async def list_runtime_tools(
         self,
         *,
-        owner_email: str,
+        account_id: str,
         agent_id: str,
         caller: MCPCaller,
         mcp_id: str | None = None,
     ) -> dict[str, Any]:
-        runtime = self._runtime_connections(owner_email=owner_email, agent_id=agent_id, caller=caller, mcp_id=mcp_id)
+        runtime = self._runtime_connections(account_id=account_id, agent_id=agent_id, caller=caller, mcp_id=mcp_id)
         results: list[dict[str, Any]] = []
         for link, connection in runtime:
             try:
@@ -537,14 +543,14 @@ class MCPConnectorService:
     async def call_runtime_tool(
         self,
         *,
-        owner_email: str,
+        account_id: str,
         agent_id: str,
         caller: MCPCaller,
         mcp_id: str,
         tool_name: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
-        runtime = self._runtime_connections(owner_email=owner_email, agent_id=agent_id, caller=caller, mcp_id=mcp_id)
+        runtime = self._runtime_connections(account_id=account_id, agent_id=agent_id, caller=caller, mcp_id=mcp_id)
         not_enabled = f"MCP connector '{mcp_id}' is not enabled for this agent"
         if not runtime:
             raise ValueError(not_enabled)
@@ -600,17 +606,18 @@ class MCPConnectorService:
                 )
             )
 
-    def start_oauth(self, *, owner_email: str, mcp_id: str, return_to: str) -> str:
-        connection = self._require_connection(owner_email, mcp_id)
+    def start_oauth(self, *, account_id: str, user_email: str, mcp_id: str, return_to: str) -> str:
+        connection = self._require_connection(account_id, mcp_id)
         oauth = self._oauth_binding(connection)
         log.info(
-            "Starting MCP OAuth mcp_id=%s owner=%s resource_url=%s token_url=%s",
+            "Starting MCP OAuth mcp_id=%s account=%s resource_url=%s token_url=%s",
             mcp_id,
-            owner_email,
+            account_id,
             oauth.auth.provider.resource_url,
             oauth.auth.provider.token_url,
         )
-        session = create_state_session(user_email=owner_email, mcp_id=mcp_id, return_to=safe_return_to(return_to))
+        session = create_state_session(user_email=user_email, account_id=account_id, mcp_id=mcp_id,
+                                       return_to=safe_return_to(return_to))
         state = encode_state_session(session)
         return build_authorization_url(
             provider=oauth.auth.provider,
@@ -621,12 +628,12 @@ class MCPConnectorService:
     async def complete_oauth(
         self,
         *,
-        owner_email: str,
+        account_id: str,
         mcp_id: str,
         code: str,
         code_verifier: str,
     ) -> MCPConnectionResponse:
-        connection = self._require_connection(owner_email, mcp_id)
+        connection = self._require_connection(account_id, mcp_id)
         oauth = self._oauth_binding(connection)
         tokens = await exchange_code_for_tokens(
             provider=oauth.auth.provider,
@@ -635,9 +642,9 @@ class MCPConnectorService:
         )
         credentials = build_credentials(tokens, default_scope=oauth.auth.provider.scope)
         log.info(
-            "Completed MCP OAuth mcp_id=%s owner=%s expires_at=%s has_refresh_token=%s",
+            "Completed MCP OAuth mcp_id=%s account=%s expires_at=%s has_refresh_token=%s",
             mcp_id,
-            owner_email,
+            account_id,
             credentials.expires_at.isoformat() if credentials.expires_at else "never",
             bool(credentials.refresh_token),
         )
@@ -648,31 +655,31 @@ class MCPConnectorService:
     def _runtime_connections(
         self,
         *,
-        owner_email: str,
+        account_id: str,
         agent_id: str,
         caller: MCPCaller,
         mcp_id: str | None = None,
     ) -> list[tuple[AgentMCPConnection, MCPConnection]]:
         runtime: list[tuple[AgentMCPConnection, MCPConnection]] = []
         for link in self.repository.list_agent_connections(agent_id):
-            if link.owner_email != owner_email or not link.enabled or not link.usable_by(caller.actor_kind):
+            if link.account_id != account_id or not link.enabled or not link.usable_by(caller.actor_kind):
                 continue
             if mcp_id and link.mcp_id != mcp_id:
                 continue
-            connection = self.repository.find_connection(owner_email, link.mcp_id)
+            connection = self.repository.find_connection(account_id, link.mcp_id)
             if connection and connection.enabled:
                 runtime.append((link, connection))
         return runtime
 
     def _require_agent_link(
-        self, *, owner_email: str, agent_id: str, mcp_id: str
+        self, *, account_id: str, agent_id: str, mcp_id: str
     ) -> tuple[AgentMCPConnection, MCPConnection]:
-        if not self.agent_repository.find_agent_by_id(agent_id, owner_email):
+        if not self.agent_repository.get(agent_id):
             raise ValueError("Agent not found")
         link = self.repository.find_agent_connection(agent_id, mcp_id)
-        if not link or link.owner_email != owner_email:
+        if not link or link.account_id != account_id:
             raise ValueError("MCP connector not found for this agent")
-        return link, self._require_connection(owner_email, mcp_id)
+        return link, self._require_connection(account_id, mcp_id)
 
     def _agent_response(
         self,
@@ -746,8 +753,8 @@ class MCPConnectorService:
             response.oauth_delivery = stored.oauth_delivery
         return response
 
-    def _require_connection(self, owner_email: str, mcp_id: str) -> MCPConnection:
-        connection = self.repository.find_connection(owner_email, mcp_id)
+    def _require_connection(self, account_id: str, mcp_id: str) -> MCPConnection:
+        connection = self.repository.find_connection(account_id, mcp_id)
         if not connection:
             raise ValueError("MCP connection not found")
         return connection
@@ -828,8 +835,8 @@ class MCPConnectorService:
         except MCPClientError:
             log.warning("Failed to stop hosted MCP server mcp_id=%s", connection.mcp_id, exc_info=True)
 
-    def _require_stdio_connection(self, owner_email: str, mcp_id: str) -> MCPConnection:
-        connection = self._require_connection(owner_email, mcp_id)
+    def _require_stdio_connection(self, account_id: str, mcp_id: str) -> MCPConnection:
+        connection = self._require_connection(account_id, mcp_id)
         if connection.transport != MCPTransport.STDIO:
             raise ValueError("Only hosted stdio MCP connectors have a runtime")
         return connection
@@ -840,7 +847,7 @@ class MCPConnectorService:
 
     def _create_stdio_connection(
         self,
-        owner_email: str,
+        account_id: str,
         request: MCPConnectionCreateRequest,
     ) -> MCPConnectionResponse:
         assert request.stdio is not None
@@ -852,7 +859,7 @@ class MCPConnectorService:
         stored = MCPStdioStoredConfig(target=request.stdio, oauth=oauth, oauth_delivery=request.oauth_delivery)
         connection = self.repository.save_connection(
             MCPConnection(
-                owner_email=owner_email,
+                account_id=account_id,
                 name=request.name.strip(),
                 server_url="",
                 transport=MCPTransport.STDIO,
@@ -862,9 +869,9 @@ class MCPConnectorService:
             )
         )
         log.info(
-            "Created stdio MCP connection mcp_id=%s owner=%s package=%s auth_type=%s",
+            "Created stdio MCP connection mcp_id=%s account=%s package=%s auth_type=%s",
             connection.mcp_id,
-            owner_email,
+            account_id,
             request.stdio.package,
             connection.auth_type.value,
         )

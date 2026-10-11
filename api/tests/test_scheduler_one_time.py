@@ -15,8 +15,12 @@ from src.scheduler.runtime import SchedulerRuntime
 from src.scheduler.service import SchedulerService, SchedulerValidationError
 from src.scheduler.timing import moment
 from src.skills.scheduler import actions as scheduler_skill
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, schedule_fields
 from tests.test_scheduler import FakeSchedulerBackend, FakeScheduleTargetExecutor
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 TARGET = {"automation_id": "automation-1", "input": {}}
 
@@ -34,8 +38,8 @@ def once(svc: SchedulerService, run_at: datetime, **extra) -> Schedule:
         CreateScheduleRequest(
             name="Remind me", run_at=run_at, target_type=ScheduleTargetType.AUTOMATION_RUN, target=TARGET, **extra
         ),
-        owner_email=TEST_USER_EMAIL,
-        created_by=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
+        created_by=TEST_OWNER.user_id,
     )
 
 
@@ -68,8 +72,8 @@ def test_a_schedule_runs_once_or_repeats_never_both_or_neither(dynamodb_table, r
             CreateScheduleRequest(
                 name="Remind me", target_type=ScheduleTargetType.AUTOMATION_RUN, target=TARGET, **request_fields
             ),
-            owner_email=TEST_USER_EMAIL,
-            created_by=TEST_USER_EMAIL,
+            owner=TEST_OWNER,
+            created_by=TEST_OWNER.user_id,
         )
 
 
@@ -89,20 +93,20 @@ async def test_after_its_run_a_one_time_schedule_is_completed(dynamodb_table, ex
     dispatcher = SchedulerDispatcher(
         repository=svc.repository, service=svc, executors={ScheduleTargetType.AUTOMATION_RUN: executor}
     )
-    await dispatcher.dispatch(schedule_id=schedule.schedule_id, owner_email=TEST_USER_EMAIL, scheduled_for=soon())
+    await dispatcher.dispatch(schedule_id=schedule.schedule_id, account_id=TEST_OWNER.account_id, scheduled_for=soon())
 
-    done = svc.get_schedule(schedule.schedule_id, TEST_USER_EMAIL)
+    done = svc.get_schedule(schedule.schedule_id, TEST_OWNER)
     assert (done.status, done.next_run_at) == (ScheduleStatus.COMPLETED, None) and done.last_run_at
     assert schedule.schedule_id in backend.deletes  # taken off the process clock
     assert schedule.schedule_id not in {item.schedule_id for item in svc.repository.list_active_schedules()}
 
     # It never runs again, even if the clock fires once more, and can't be resumed.
     again = await dispatcher.dispatch(
-        schedule_id=schedule.schedule_id, owner_email=TEST_USER_EMAIL, scheduled_for=soon(60)
+        schedule_id=schedule.schedule_id, account_id=TEST_OWNER.account_id, scheduled_for=soon(60)
     )
     assert again.output == {"reason": "schedule_completed"}
     with pytest.raises(SchedulerValidationError, match="already ran once"):
-        svc.resume_schedule(schedule.schedule_id, TEST_USER_EMAIL)
+        svc.resume_schedule(schedule.schedule_id, TEST_OWNER)
 
 
 async def test_a_recurring_schedule_moves_on_even_when_a_run_fails(dynamodb_table):
@@ -111,15 +115,15 @@ async def test_a_recurring_schedule_moves_on_even_when_a_run_fails(dynamodb_tabl
         CreateScheduleRequest(
             name="Hourly", cron_expression="0 * * * *", target_type=ScheduleTargetType.AUTOMATION_RUN, target=TARGET
         ),
-        owner_email=TEST_USER_EMAIL,
-        created_by=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
+        created_by=TEST_OWNER.user_id,
     )
     fired = datetime(2099, 1, 1, 10, 0, tzinfo=timezone.utc)
     dispatcher = SchedulerDispatcher(
         repository=svc.repository, service=svc, executors={ScheduleTargetType.AUTOMATION_RUN: FailingExecutor()}
     )
-    await dispatcher.dispatch(schedule_id=schedule.schedule_id, owner_email=TEST_USER_EMAIL, scheduled_for=fired)
-    after = svc.get_schedule(schedule.schedule_id, TEST_USER_EMAIL)
+    await dispatcher.dispatch(schedule_id=schedule.schedule_id, account_id=TEST_OWNER.account_id, scheduled_for=fired)
+    after = svc.get_schedule(schedule.schedule_id, TEST_OWNER)
     assert after.status == ScheduleStatus.ACTIVE
     assert after.next_run_at == datetime(2099, 1, 1, 11, 0, tzinfo=timezone.utc)
 
@@ -129,7 +133,7 @@ async def test_a_recurring_schedule_moves_on_even_when_a_run_fails(dynamodb_tabl
 
 def test_the_runtime_uses_a_date_trigger_once_and_a_cron_trigger_to_repeat():
     runtime = SchedulerRuntime(repository=object())  # type: ignore[arg-type]
-    base = dict(owner_email=TEST_USER_EMAIL, name="x", target_type=ScheduleTargetType.AUTOMATION_RUN, created_by="x")
+    base = dict(**schedule_fields(TEST_USER_EMAIL), name="x", target_type=ScheduleTargetType.AUTOMATION_RUN, created_by="x")
     runtime.upsert(Schedule(schedule_id="once", run_at=soon(), **base))
     runtime.upsert(Schedule(schedule_id="repeat", cron_expression="0 9 * * 1", **base))
     assert isinstance(runtime.scheduler.get_job("once").trigger, DateTrigger)
@@ -140,7 +144,7 @@ def test_a_wake_up_missed_while_the_server_was_down_runs_when_it_is_back():
     runtime = SchedulerRuntime(repository=object())  # type: ignore[arg-type]
     missed = datetime.now(timezone.utc) - timedelta(hours=2)
     runtime.upsert(Schedule(
-        schedule_id="missed", run_at=missed, owner_email=TEST_USER_EMAIL, name="x",
+        schedule_id="missed", run_at=missed, **schedule_fields(TEST_USER_EMAIL), name="x",
         target_type=ScheduleTargetType.AUTOMATION_RUN, created_by="x",
     ))
     trigger = runtime.scheduler.get_job("missed").trigger
@@ -154,7 +158,8 @@ def test_a_wake_up_missed_while_the_server_was_down_runs_when_it_is_back():
 def skill_context(dynamodb_table, monkeypatch):
     backend = FakeSchedulerBackend()
     monkeypatch.setattr(scheduler_skill, "SchedulerService", lambda: SchedulerService(backend=backend))
-    return {"owner_email": TEST_USER_EMAIL, "agent_id": "agent-1", "conversation_id": "conv-1"}
+    return {"owner_email": TEST_USER_EMAIL, "account_id": TEST_OWNER.account_id, "owner_id": TEST_OWNER.user_id,
+            "agent_id": "agent-1", "conversation_id": "conv-1"}
 
 
 async def test_the_skill_saves_a_one_time_wake_up(skill_context):

@@ -15,7 +15,7 @@ from src.agent_marketplace.service import AgentMarketplaceService
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.skills.service import SkillService
-from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2
+from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, agent_fields, owner_for
 
 
 def _create_agent(user_email: str = TEST_USER_EMAIL) -> Agent:
@@ -27,7 +27,7 @@ def _create_agent(user_email: str = TEST_USER_EMAIL) -> Agent:
             agent_model="claude-3-7-sonnet",
             agent_persona="You are a marketplace-ready assistant.",
             agent_description="Marketplace source",
-            created_by=user_email,
+            **agent_fields(user_email),
         )
     )
 
@@ -38,7 +38,7 @@ def test_marketplace_publish_import_and_secret_stripping(test_client: TestClient
     skill_service.install_skill(
         agent_id=agent.agent_id,
         skill_id="wordpress_search",
-        user_email=TEST_USER_EMAIL,
+        owner=owner_for(TEST_USER_EMAIL),
         raw_config={
             "site_url": "https://example.com",
             "username": "admin",
@@ -85,7 +85,7 @@ def test_marketplace_publish_import_and_secret_stripping(test_client: TestClient
 
     assert import_response.status_code == 201
     imported = import_response.json()
-    imported_agent = AgentRepository().find_agent_by_id(imported["agent_id"], TEST_USER_EMAIL)
+    imported_agent = AgentRepository().get(imported["agent_id"])
     assert imported_agent is not None
     assert imported_agent.agent_name == "Imported WordPress Helper"
 
@@ -197,7 +197,7 @@ def test_marketplace_publish_rejects_unowned_agent(test_client: TestClient, auth
         },
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 404, "someone else's agent is not even visible"
 
 
 def test_marketplace_import_installs_oauth_skill_disabled_without_connection(dynamodb_table):
@@ -226,7 +226,7 @@ def test_marketplace_import_installs_oauth_skill_disabled_without_connection(dyn
 
     imported = AgentMarketplaceService().import_agent(
         template_id=template.template_id,
-        user_email=TEST_USER_EMAIL,
+        owner=owner_for(TEST_USER_EMAIL),
         request=ImportMarketplaceAgentRequest(
             agent_name="Imported Drive",
             agent_provider="Bedrock",

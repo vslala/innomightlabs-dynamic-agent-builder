@@ -14,7 +14,7 @@ from botocore.exceptions import ClientError
 
 from ..config import settings
 from ..db import get_dynamodb_resource
-from ..users import User
+from ..identity import Identity
 from .jwt_utils import app_audience, create_access_token
 
 LOGIN_CODE_TTL_SECONDS = 60
@@ -32,15 +32,15 @@ def _hash(value: str) -> str:
 
 
 class AppTokenRepository:
-    """`AuthCode#{hash}` items expire in a minute; `RefreshToken#{app}` sits under the user's key."""
+    """`AuthCode#{hash}` items expire in a minute; `RefreshToken#{app}` sits under the identity's key."""
 
     def __init__(self) -> None:
         self.table = get_dynamodb_resource().Table(settings.dynamodb_table)
 
-    def put_login_code(self, code_hash: str, email: str, app: str, expires_at: int) -> None:
+    def put_login_code(self, code_hash: str, user_id: str, app: str, expires_at: int) -> None:
         self.table.put_item(Item={
             "pk": f"AuthCode#{code_hash}", "sk": "AuthCode#Metadata",
-            "email": email, "app": app, "expires_at": expires_at, "ttl": expires_at,
+            "user_id": user_id, "app": app, "expires_at": expires_at, "ttl": expires_at,
         })
 
     def take_login_code(self, code_hash: str) -> Optional[dict[str, Any]]:
@@ -57,20 +57,20 @@ class AppTokenRepository:
             raise
         return response["Attributes"]
 
-    def put_refresh_token(self, email: str, app: str, token_hash: str, expires_at: int) -> None:
+    def put_refresh_token(self, user_id: str, app: str, token_hash: str, expires_at: int) -> None:
         self.table.put_item(Item={
-            "pk": f"User#{email}", "sk": f"RefreshToken#{app}",
+            "pk": f"Identity#{user_id}", "sk": f"RefreshToken#{app}",
             "token_hash": token_hash, "expires_at": expires_at, "ttl": expires_at,
         })
 
-    def get_refresh_token(self, email: str, app: str) -> Optional[dict[str, Any]]:
-        return self.table.get_item(Key={"pk": f"User#{email}", "sk": f"RefreshToken#{app}"}).get("Item")
+    def get_refresh_token(self, user_id: str, app: str) -> Optional[dict[str, Any]]:
+        return self.table.get_item(Key={"pk": f"Identity#{user_id}", "sk": f"RefreshToken#{app}"}).get("Item")
 
-    def replace_refresh_token(self, email: str, app: str, old_hash: str, new_hash: str, expires_at: int) -> bool:
+    def replace_refresh_token(self, user_id: str, app: str, old_hash: str, new_hash: str, expires_at: int) -> bool:
         """Swap the token only if it is still the one presented, so a token rotates exactly once."""
         try:
             self.table.update_item(
-                Key={"pk": f"User#{email}", "sk": f"RefreshToken#{app}"},
+                Key={"pk": f"Identity#{user_id}", "sk": f"RefreshToken#{app}"},
                 UpdateExpression="SET token_hash = :new, expires_at = :expires, #ttl = :expires",
                 ConditionExpression="token_hash = :old",
                 ExpressionAttributeNames={"#ttl": "ttl"},
@@ -82,56 +82,56 @@ class AppTokenRepository:
             raise
         return True
 
-    def delete_refresh_token(self, email: str, app: str) -> None:
-        self.table.delete_item(Key={"pk": f"User#{email}", "sk": f"RefreshToken#{app}"})
+    def delete_refresh_token(self, user_id: str, app: str) -> None:
+        self.table.delete_item(Key={"pk": f"Identity#{user_id}", "sk": f"RefreshToken#{app}"})
 
 
 repository = AppTokenRepository()
 
 
-def create_login_code(email: str, app: str) -> str:
+def create_login_code(user_id: str, app: str) -> str:
     code = secrets.token_urlsafe(32)
-    repository.put_login_code(_hash(code), email, app, int(time.time()) + LOGIN_CODE_TTL_SECONDS)
+    repository.put_login_code(_hash(code), user_id, app, int(time.time()) + LOGIN_CODE_TTL_SECONDS)
     return code
 
 
 def redeem_login_code(code: str, app: str) -> Optional[str]:
-    """The email the code was issued to, if it is unused, unexpired and was issued for this app."""
+    """The user_id the code was issued to, if it is unused, unexpired and was issued for this app."""
     item = repository.take_login_code(_hash(code))
     if item is None or item["app"] != app or int(item["expires_at"]) < time.time():
         return None
-    return str(item["email"])
+    return str(item["user_id"])
 
 
-def issue_tokens(user: User, app: str) -> AppTokens:
+def issue_tokens(user: Identity, app: str) -> AppTokens:
     """A fresh pair; any earlier refresh token for this user and app stops working."""
     refresh_token = secrets.token_urlsafe(32)
-    repository.put_refresh_token(user.email, app, _hash(refresh_token), _refresh_expiry())
+    repository.put_refresh_token(user.user_id, app, _hash(refresh_token), _refresh_expiry())
     return _tokens(user, app, refresh_token)
 
 
-def refresh_tokens(user: User, app: str, refresh_token: str) -> Optional[AppTokens]:
-    stored = repository.get_refresh_token(user.email, app)
+def refresh_tokens(user: Identity, app: str, refresh_token: str) -> Optional[AppTokens]:
+    stored = repository.get_refresh_token(user.user_id, app)
     if stored is None or int(stored["expires_at"]) < time.time():
         return None
     if not secrets.compare_digest(str(stored["token_hash"]), _hash(refresh_token)):
         return None
 
     rotated = secrets.token_urlsafe(32)
-    if not repository.replace_refresh_token(user.email, app, str(stored["token_hash"]), _hash(rotated), _refresh_expiry()):
+    if not repository.replace_refresh_token(user.user_id, app, str(stored["token_hash"]), _hash(rotated), _refresh_expiry()):
         return None
     return _tokens(user, app, rotated)
 
 
-def revoke_tokens(email: str, app: str) -> None:
-    repository.delete_refresh_token(email, app)
+def revoke_tokens(user_id: str, app: str) -> None:
+    repository.delete_refresh_token(user_id, app)
 
 
 def _refresh_expiry() -> int:
     return int(time.time()) + settings.auth_refresh_token_days * 24 * 3600
 
 
-def _tokens(user: User, app: str, refresh_token: str) -> AppTokens:
+def _tokens(user: Identity, app: str, refresh_token: str) -> AppTokens:
     lifetime = timedelta(minutes=settings.auth_app_access_token_minutes)
     access_token = create_access_token(user, lifetime, audience=app_audience(app))
     return AppTokens(access_token, int(lifetime.total_seconds()), refresh_token)

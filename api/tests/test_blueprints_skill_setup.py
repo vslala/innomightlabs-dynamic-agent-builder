@@ -22,7 +22,11 @@ from src.config import settings
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.repository import AgentSkillRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL, agent_fields
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 TEAM = example_yaml("agent-team") or ""
 SITE_AGENT = example_yaml("site-agent") or ""
@@ -36,19 +40,19 @@ def account(monkeypatch, dynamodb_table) -> None:
     # Superuser: the free tier allows one agent, and these build two.
     monkeypatch.setattr(settings, "is_superuser_email", lambda email: True)
     ProviderSettingsRepository().save(
-        ProviderSettings(user_email=TEST_USER_EMAIL, provider_name="Bedrock", encrypted_credentials="{}")
+        ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )
 
 
 def plan_for(text: str, params: dict | None = None):
     validated = validate_blueprint(text, params or {})
-    return validated, plan_blueprint(validated, TEST_USER_EMAIL)
+    return validated, plan_blueprint(validated, TEST_OWNER)
 
 
 def build(text: str, params: dict | None = None):
     validated, plan = plan_for(text, params)
     assert plan.ok, plan.blockers
-    return plan, apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
+    return plan, apply_blueprint(validated, plan, TEST_OWNER, BackgroundTasks())
 
 
 # --- Tiers -------------------------------------------------------------------------------------
@@ -116,7 +120,7 @@ def test_the_drawing_wires_the_lead_to_its_specialist(account):
 
 def test_an_exported_lead_plans_as_unchanged(account):
     _, built = build(TEAM)
-    exported = export_agent(built.resources["lead"].id, TEST_USER_EMAIL)
+    exported = export_agent(built.resources["lead"].id, TEST_OWNER)
     _, plan = plan_for(exported or "")
     assert plan.ok and not plan.changes_anything
 
@@ -124,7 +128,7 @@ def test_an_exported_lead_plans_as_unchanged(account):
 def test_an_agent_id_works_if_it_is_yours(account):
     mine = AgentRepository().save(Agent(
         agent_name="Researcher", agent_architecture="krishna-memgpt", agent_provider="Bedrock",
-        agent_persona="Research things.", created_by=TEST_USER_EMAIL,
+        agent_persona="Research things.", **agent_fields(TEST_USER_EMAIL),
     ))
     text = TEAM.replace("target_agent_id: specialist", f"target_agent_id: {mine.agent_id}")
     _, plan = plan_for(text)

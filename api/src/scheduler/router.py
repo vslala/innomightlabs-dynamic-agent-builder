@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
 
+from src.iam.dependencies import get_owner
 from src.scheduler.models import (
     CreateScheduleRequest,
     ScheduleResponse,
@@ -36,7 +37,7 @@ async def list_schedules(
     request: Request,
     service: Annotated[SchedulerService, Depends(get_scheduler_service)],
 ) -> list[ScheduleResponse]:
-    return [schedule.to_response() for schedule in service.list_schedules(request.state.user_email)]
+    return [schedule.to_response() for schedule in service.list_schedules(get_owner(request))]
 
 
 @router.post("", response_model=ScheduleResponse, status_code=status.HTTP_201_CREATED)
@@ -46,7 +47,7 @@ async def create_schedule(
     service: Annotated[SchedulerService, Depends(get_scheduler_service)],
 ) -> ScheduleResponse:
     try:
-        schedule = service.create_schedule(body, request.state.user_email, request.state.user_email)
+        schedule = service.create_schedule(body, get_owner(request), get_owner(request).user_id)
         return schedule.to_response()
     except SchedulerValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -59,7 +60,7 @@ async def get_schedule(
     service: Annotated[SchedulerService, Depends(get_scheduler_service)],
 ) -> ScheduleResponse:
     try:
-        return service.get_schedule(schedule_id, request.state.user_email).to_response()
+        return service.get_schedule(schedule_id, get_owner(request)).to_response()
     except SchedulerValidationError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -72,7 +73,7 @@ async def update_schedule(
     service: Annotated[SchedulerService, Depends(get_scheduler_service)],
 ) -> ScheduleResponse:
     try:
-        return service.update_schedule(schedule_id, body, request.state.user_email).to_response()
+        return service.update_schedule(schedule_id, body, get_owner(request)).to_response()
     except SchedulerValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -84,7 +85,7 @@ async def pause_schedule(
     service: Annotated[SchedulerService, Depends(get_scheduler_service)],
 ) -> ScheduleResponse:
     try:
-        return service.pause_schedule(schedule_id, request.state.user_email).to_response()
+        return service.pause_schedule(schedule_id, get_owner(request)).to_response()
     except SchedulerValidationError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -96,7 +97,7 @@ async def resume_schedule(
     service: Annotated[SchedulerService, Depends(get_scheduler_service)],
 ) -> ScheduleResponse:
     try:
-        return service.resume_schedule(schedule_id, request.state.user_email).to_response()
+        return service.resume_schedule(schedule_id, get_owner(request)).to_response()
     except SchedulerValidationError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -108,7 +109,7 @@ async def delete_schedule(
     service: Annotated[SchedulerService, Depends(get_scheduler_service)],
 ) -> None:
     try:
-        service.delete_schedule(schedule_id, request.state.user_email)
+        service.delete_schedule(schedule_id, get_owner(request))
     except SchedulerValidationError:
         return None
 
@@ -121,7 +122,7 @@ async def list_schedule_runs(
     service: Annotated[SchedulerService, Depends(get_scheduler_service)],
 ) -> list[ScheduleRunResponse]:
     try:
-        service.get_schedule(schedule_id, request.state.user_email)
+        service.get_schedule(schedule_id, get_owner(request))
     except SchedulerValidationError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return [run.to_response() for run in repository.list_runs(schedule_id)]

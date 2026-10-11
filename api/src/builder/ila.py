@@ -24,7 +24,10 @@ def ila_agent(session: BuilderSession) -> Agent:
         agent_persona="Ila, the InnomightLabs solution builder.",
         # A build can pause for a while (reading a website, the person checking their site); keep the whole thread.
         session_timeout_minutes=0,
-        created_by=session.user_email,
+        # Built for the turn, never stored: it belongs to whoever is building, in the account they build in
+        account_id=session.account_id,
+        owner_id=session.user_id,
+        created_by=session.user_id,
     )
 
 

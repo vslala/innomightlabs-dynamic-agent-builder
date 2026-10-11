@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from fastapi.testclient import TestClient
 
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, user_id_for, agent_fields
 
 
 def _token(**claims) -> str:
@@ -18,16 +18,35 @@ def _get_agents(test_client: TestClient, token: str):
 
 
 def test_an_owner_token_for_an_existing_user_is_accepted(test_client: TestClient):
-    assert _get_agents(test_client, _token(aud="owner", sub=TEST_USER_EMAIL)).status_code == 200
+    assert _get_agents(test_client, _token(aud="owner", sub=user_id_for(TEST_USER_EMAIL))).status_code == 200
+
+
+def test_a_token_naming_the_user_by_email_is_refused(test_client: TestClient):
+    """Tokens from before identities had ids carry the email as `sub`; they no longer sign anyone in."""
+    assert _get_agents(test_client, _token(aud="owner", sub=TEST_USER_EMAIL)).status_code == 401
+
+
+def test_the_email_claim_is_never_trusted(test_client: TestClient, agent_repository):
+    """Who you are comes from `sub`; claiming someone else's email in the token changes nothing."""
+    from src.agents.models import Agent
+
+    agent_repository.save(Agent(agent_name="Theirs", agent_architecture="krishna-mini", agent_provider="Bedrock",
+                                agent_persona="p", **agent_fields("otheruser@example.com")))
+    token = _token(aud="owner", sub=user_id_for(TEST_USER_EMAIL), email="otheruser@example.com")
+
+    response = _get_agents(test_client, token)
+
+    assert response.status_code == 200
+    assert "Theirs" not in response.text
 
 
 def test_a_widget_visitor_token_is_not_an_owner_session(test_client: TestClient):
-    visitor = _token(aud="widget_visitor", type="widget_visitor", sub=TEST_USER_EMAIL, agent_id="agent-1")
+    visitor = _token(aud="widget_visitor", type="widget_visitor", sub=user_id_for(TEST_USER_EMAIL), agent_id="agent-1")
     assert _get_agents(test_client, visitor).status_code == 401
 
 
 def test_a_token_without_an_audience_is_refused(test_client: TestClient):
-    assert _get_agents(test_client, _token(sub=TEST_USER_EMAIL)).status_code == 401
+    assert _get_agents(test_client, _token(sub=user_id_for(TEST_USER_EMAIL))).status_code == 401
 
 
 def test_an_a2a_token_is_refused(test_client: TestClient):
@@ -40,5 +59,5 @@ def test_a_token_for_someone_who_never_signed_up_is_refused(test_client: TestCli
 
 
 def test_the_token_is_not_read_from_the_query_string(test_client: TestClient):
-    token = _token(aud="owner", sub=TEST_USER_EMAIL)
+    token = _token(aud="owner", sub=user_id_for(TEST_USER_EMAIL))
     assert test_client.get(f"/agents?token={token}").status_code == 401

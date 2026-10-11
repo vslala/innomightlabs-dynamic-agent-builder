@@ -16,6 +16,7 @@ from src.config import settings
 from src.crypto import decrypt
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
+from src.skills.runtime_context import account_of
 from src.skills.google_ads.models import MICROS, GoogleAdsConfig, GoogleAdsCredentials
 from src.skills.google_ads.oauth import refresh_access_token, save_credentials
 
@@ -57,14 +58,12 @@ class GoogleAdsClient:
 
     @classmethod
     async def connect(cls, config: GoogleAdsConfig, context: dict[str, Any]) -> "GoogleAdsClient":
-        owner_email = str(context.get("owner_email") or "").strip()
-        if not owner_email:
-            raise ValueError("Missing skill runtime owner context")
-
         repo = ProviderSettingsRepository()
-        provider_settings = repo.find_by_provider(owner_email, GOOGLE_ADS_PROVIDER_NAME)
+        provider_settings = repo.find_by_provider(account_of(context), GOOGLE_ADS_PROVIDER_NAME)
         if not provider_settings:
-            raise ValueError("Google Ads is not connected for the agent owner. Connect it from the Connectors page.")
+            raise ValueError(
+                "Google Ads is not connected for this account. An account admin can connect it from the Connectors page."
+            )
         try:
             credentials = GoogleAdsCredentials.model_validate_json(decrypt(provider_settings.encrypted_credentials))
         except (ValidationError, Exception) as exc:

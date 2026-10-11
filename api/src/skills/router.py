@@ -4,10 +4,15 @@ import logging
 from typing import Annotated
 
 import src.form_models as form_models
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPBearer
 
+from src.agents.access import owner_of, require_agent
 from src.agents.repository import AgentRepository
+from src.accounts.owner import Owner
+from src.iam.dependencies import get_owner, get_principal
+from src.iam.principal import Principal
+from src.settings.access import MANAGE_SETTINGS
 from src.skills.models import (
     InstallSkillRequest,
     InstalledSkillResponse,
@@ -32,25 +37,23 @@ def get_agent_repository() -> AgentRepository:
 
 @router.get("/skills", response_model=list[SkillCatalogItemResponse])
 async def list_skills(
-    request: Request,
+    principal: Annotated[Principal, Depends(get_principal)],
     service: Annotated[SkillService, Depends(get_skill_service)],
 ) -> list[SkillCatalogItemResponse]:
-    user_email: str = request.state.user_email
-    return service.list_catalog(user_email)
+    return service.list_catalog(principal.account_id)
 
 
 @router.get("/skills/{skill_id}/install-schema", response_model=form_models.Form, response_model_exclude_none=True)
 async def get_skill_install_schema(
-    request: Request,
     skill_id: str,
+    owner: Annotated[Owner, Depends(get_owner)],
     service: Annotated[SkillService, Depends(get_skill_service)],
 ) -> form_models.Form:
-    user_email: str = request.state.user_email
     try:
         return service.get_install_schema(
             skill_id=skill_id,
             submit_path=f"/agents/{{agent_id}}/skills?skill_id={skill_id}",
-            user_email=user_email,
+            owner=owner,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -58,38 +61,34 @@ async def get_skill_install_schema(
 
 @router.get("/agents/{agent_id}/skills", response_model=list[InstalledSkillResponse])
 async def list_installed_skills(
-    request: Request,
     agent_id: str,
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
     service: Annotated[SkillService, Depends(get_skill_service)],
 ) -> list[InstalledSkillResponse]:
-    user_email: str = request.state.user_email
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    require_agent(principal, agent_id, "agents:Get", agent_repo)
     return service.list_installed(agent_id)
 
 
 @router.post("/agents/{agent_id}/skills", response_model=InstalledSkillResponse, status_code=status.HTTP_201_CREATED)
 async def install_skill_for_agent(
-    request: Request,
     agent_id: str,
     body: InstallSkillRequest,
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
     service: Annotated[SkillService, Depends(get_skill_service)],
     skill_id: str = Query(..., description="Skill id to install"),
 ) -> InstalledSkillResponse:
-    user_email: str = request.state.user_email
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = require_agent(principal, agent_id, "skills:Install", agent_repo)
 
     try:
+        # Skills run as the agent's owner, on their account's credentials
         installed = service.install_skill(
             agent_id=agent_id,
             skill_id=skill_id,
-            user_email=user_email,
+            owner=owner_of(agent),
             raw_config=body.config,
+            installed_by=principal.user_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -99,22 +98,20 @@ async def install_skill_for_agent(
 
 @router.patch("/agents/{agent_id}/skills/{skill_id}", response_model=InstalledSkillResponse)
 async def update_installed_skill(
-    request: Request,
     agent_id: str,
     skill_id: str,
     body: UpdateInstalledSkillRequest,
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
     service: Annotated[SkillService, Depends(get_skill_service)],
 ) -> InstalledSkillResponse:
-    user_email: str = request.state.user_email
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = require_agent(principal, agent_id, "skills:Configure", agent_repo)
 
     try:
         installed = service.update_installed(
             agent_id=agent_id,
             installed_skill_id=skill_id,
+            owner=owner_of(agent),
             enabled=body.enabled,
             raw_config=body.config,
             available_to=body.available_to,
@@ -127,21 +124,21 @@ async def update_installed_skill(
 
 @router.delete("/agents/{agent_id}/skills/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def uninstall_skill(
-    request: Request,
     agent_id: str,
     skill_id: str,
     agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
     service: Annotated[SkillService, Depends(get_skill_service)],
-    disconnect_oauth: bool = Query(False, description="Also delete the user-level OAuth credentials for this skill's provider"),
+    disconnect_oauth: bool = Query(False, description="Also delete the account's OAuth connection to this skill's provider"),
 ) -> None:
-    user_email: str = request.state.user_email
-    agent = agent_repo.find_agent_by_id(agent_id, user_email)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = require_agent(principal, agent_id, "skills:Uninstall", agent_repo)
+    if disconnect_oauth:
+        # The connection is the account's, used by every member's agents
+        principal.require(MANAGE_SETTINGS)
 
     service.uninstall(
         agent_id=agent_id,
         installed_skill_id=skill_id,
-        user_email=user_email,
+        owner=owner_of(agent),
         disconnect_oauth=disconnect_oauth,
     )

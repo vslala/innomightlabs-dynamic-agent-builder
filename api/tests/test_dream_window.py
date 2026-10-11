@@ -5,6 +5,7 @@ from src.dream.models import DreamCursor, DreamSettings
 from src.dream.window import DreamWindowBuilder
 from src.messages.models import Message
 from src.messages.repositories.in_memory import InMemoryMessageRepository
+from tests.mock_data import account_for, conversation_fields, conversations_of
 
 
 OWNER = "owner@example.com"
@@ -16,8 +17,8 @@ class ConversationRepositoryStub:
     def __init__(self, conversations: list[Conversation]):
         self.conversations = conversations
 
-    def find_all_by_user(self, owner_email: str) -> list[Conversation]:
-        assert owner_email == OWNER
+    def find_all_by_user(self, partition: str) -> list[Conversation]:
+        assert partition == conversations_of(OWNER)
         return self.conversations
 
 
@@ -43,7 +44,7 @@ def conversation(conversation_id: str, *, agent_id: str = AGENT_ID) -> Conversat
         conversation_id=conversation_id,
         title=conversation_id,
         agent_id=agent_id,
-        created_by=OWNER,
+        **conversation_fields(OWNER),
         created_at=NOW - timedelta(days=40),
     )
 
@@ -72,9 +73,9 @@ def build_window(
         page_size=1,
     ).build(
         agent_id=AGENT_ID,
-        owner_email=OWNER,
+        partition=conversations_of(OWNER),
         session_timeout_minutes=timeout_minutes,
-        settings=DreamSettings(user_email=OWNER, backfill_days=backfill_days),
+        settings=DreamSettings(account_id=account_for(OWNER), backfill_days=backfill_days),
         cursor=cursor,
         now=NOW,
     )
@@ -151,7 +152,7 @@ def test_automation_conversations_are_excluded_before_the_message_probe():
         conversation_id="automation",
         title="Automation",
         agent_id=AGENT_ID,
-        created_by=OWNER,
+        **conversation_fields(OWNER),
         automation_id="automation-1",
         automation_run_id="run-1",
         created_at=NOW - timedelta(days=2),

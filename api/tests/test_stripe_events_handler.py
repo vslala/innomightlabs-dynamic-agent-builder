@@ -4,7 +4,7 @@ import stripe
 
 from src.config import settings
 from src.payments.subscriptions import SubscriptionRepository
-from src.users import UserRepository
+from src.identity import IdentityRepository
 from lambdas.stripe_events_handler import handler as stripe_handler
 
 
@@ -54,7 +54,7 @@ def test_handler_persists_subscription_and_user(dynamodb_table, monkeypatch):
     assert subscription.currency == "gbp"
     assert subscription.amount == 2900
 
-    user = UserRepository().get_by_email("user@example.com")
+    user = IdentityRepository().find_by_email("user@example.com")
     assert user is not None
     assert user.stripe_customer_id == "cus_123"
 

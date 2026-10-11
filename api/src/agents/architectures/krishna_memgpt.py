@@ -35,6 +35,7 @@ from src.settings.repository import get_provider_settings_repository
 from src.skills.models import ActorKind, AgentSkill, LoadedSkillRuntimeResponse
 from src.skills.service import SkillRuntimeService
 from src.tools.native import NativeToolHandler
+from src.knowledge.access import readable_by_agent
 from src.knowledge.repository import AgentKnowledgeBaseRepository, KnowledgeBaseRepository
 
 from .base import AgentArchitecture
@@ -135,9 +136,11 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             attachments=attachments or [],
             api_key_id=api_key_id,
             conversation_context=conversation.context,
+            account_id=agent.account_id,
+            owner_id=agent.owner_id,
         )
 
-        state.linked_kb_ids = self._get_linked_kb_ids(agent.agent_id, owner_email)
+        state.linked_kb_ids = self._get_linked_kb_ids(agent)
 
         state.enabled_skills = self.skill_runtime.list_usable(agent.agent_id, actor_kind)
         state.enabled_mcp_connections = self._mcp_connections_for(state)
@@ -167,7 +170,6 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
         session = await open_provider_session(
             agent,
-            owner_email=state.owner_email,
             provider_settings_repo=self.provider_settings_repo,
         )
 
@@ -350,7 +352,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         """The owner gets every enabled connector; anyone else only what the owner shared with them."""
         try:
             return self.mcp_connector_service.list_agent_connections(
-                owner_email=state.owner_email,
+                account_id=state.account_id,
                 agent_id=state.agent_id,
                 actor_kind=state.actor_kind,
                 enabled_only=True,
@@ -360,13 +362,13 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             log.warning("Failed to load enabled MCP connectors for agent %s: %s", state.agent_id, exc)
             return []
 
-    def _get_linked_kb_ids(self, agent_id: str, owner_email: str) -> list[str]:
-        """The linked knowledge bases the agent's owner owns. A link to anyone else's is never searched."""
+    def _get_linked_kb_ids(self, agent: "Agent") -> list[str]:
+        """The linked knowledge bases the agent's owner can read, in its account. Nothing else is searched."""
         try:
-            links = self.agent_kb_repo.find_kbs_for_agent(agent_id)
-            return [link.kb_id for link in links if self.kb_repo.find_by_id(link.kb_id, owner_email)]
+            links = self.agent_kb_repo.find_kbs_for_agent(agent.agent_id)
+            return [kb.kb_id for kb in readable_by_agent(agent, [link.kb_id for link in links], self.kb_repo)]
         except Exception as e:
-            log.warning(f"Failed to load linked KBs for agent {agent_id}: {e}")
+            log.warning(f"Failed to load linked KBs for agent {agent.agent_id}: {e}")
             return []
 
 

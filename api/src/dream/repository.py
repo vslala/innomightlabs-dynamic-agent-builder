@@ -20,15 +20,15 @@ class DreamRepository:
         self.table = self.dynamodb.Table(settings.dynamodb_table)
 
     def save_settings(self, dream_settings: DreamSettings) -> DreamSettings:
-        existing = self.find_settings(dream_settings.user_email)
+        existing = self.find_settings(dream_settings.account_id)
         if existing:
             dream_settings.created_at = existing.created_at
             dream_settings.updated_at = datetime.now(timezone.utc)
         self.table.put_item(Item=dream_settings.to_dynamo_item())
         return dream_settings
 
-    def find_settings(self, user_email: str) -> DreamSettings | None:
-        response = self.table.get_item(Key={"pk": f"User#{user_email}", "sk": "DreamSettings"})
+    def find_settings(self, account_id: str) -> DreamSettings | None:
+        response = self.table.get_item(Key={"pk": f"Account#{account_id}", "sk": "DreamSettings"})
         item = response.get("Item")
         return DreamSettings.from_dynamo_item(item) if item else None
 

@@ -21,16 +21,22 @@ class BuilderSessionRepository:
         self.table.put_item(Item=convert_floats_to_decimals(item))
         return session
 
-    def find(self, user_email: str, conversation_id: str) -> Optional[BuilderSession]:
-        item = self.table.get_item(Key={"pk": f"User#{user_email}", "sk": f"{SK_PREFIX}{conversation_id}"}).get("Item")
+    def find(self, partition: str, conversation_id: str) -> Optional[BuilderSession]:
+        """The session in this member's partition (`Owner.member_pk`)."""
+        item = self.table.get_item(Key={"pk": partition, "sk": f"{SK_PREFIX}{conversation_id}"}).get("Item")
         return self._from_item(item) if item else None
 
-    def list_by_user(self, user_email: str) -> list[BuilderSession]:
-        """Newest first."""
-        response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"User#{user_email}") & Key("sk").begins_with(SK_PREFIX),
-        )
-        sessions = [self._from_item(item) for item in response.get("Items", [])]
+    def list_in(self, partition: str) -> list[BuilderSession]:
+        """The member's sessions, newest first."""
+        kwargs: dict = {"KeyConditionExpression": Key("pk").eq(partition) & Key("sk").begins_with(SK_PREFIX)}
+        items: list[dict] = []
+        while True:
+            response = self.table.query(**kwargs)
+            items += response.get("Items", [])
+            if "LastEvaluatedKey" not in response:
+                break
+            kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+        sessions = [self._from_item(item) for item in items]
         return sorted(sessions, key=lambda session: session.created_at, reverse=True)
 
     @staticmethod

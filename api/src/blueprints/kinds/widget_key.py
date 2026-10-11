@@ -3,6 +3,7 @@ from html import escape
 from typing import Any, ClassVar, Mapping, Optional
 from uuid import uuid4
 
+from src.accounts.owner import Owner
 from src.apikeys.models import AgentApiKey
 from src.apikeys.repository import ApiKeyRepository
 from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
@@ -69,13 +70,13 @@ class CreateWidgetKey(Command):
             name=self.key_name or f"{agent.attributes['name']} widget",
             allowed_origins=self.allowed_origins,
             allow_guests=self.allow_guests,
-            created_by=ctx.user_email,
+            created_by=ctx.owner.user_id,
         ))
         ctx.applied[self.resource] = _applied(self.resource, key)
 
 
 @undo_action("delete_widget_key")
-def _delete_widget_key(args: dict[str, Any], user_email: str) -> None:
+def _delete_widget_key(args: dict[str, Any], owner: Owner) -> None:
     ApiKeyRepository().delete_by_id(args["agent_id"], args["key_id"])
 
 
@@ -106,7 +107,7 @@ def _save_fields(agent_id: str, key_id: str, fields: dict[str, Any]) -> AgentApi
 
 
 @undo_action("restore_widget_key")
-def _restore_widget_key(args: dict[str, Any], user_email: str) -> None:
+def _restore_widget_key(args: dict[str, Any], owner: Owner) -> None:
     if args["fields"]:
         _save_fields(args["agent_id"], args["key_id"], args["fields"])
 

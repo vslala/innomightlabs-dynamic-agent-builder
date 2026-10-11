@@ -195,11 +195,9 @@ class GuestSessionCloser:
     def _agent_name(self, session: dict) -> str:
         from src.agents.repository import AgentRepository
 
-        key = self.table.get_item(Key={"pk": f"Agent#{session['agent_id']}", "sk": f"ApiKey#{session['key_id']}"}, ConsistentRead=True).get("Item", {})
-        if key.get("created_by"):
-            agent = AgentRepository().find_agent_by_id(session["agent_id"], key["created_by"])
-            if agent:
-                return agent.agent_name
+        agent = AgentRepository().get(session["agent_id"])
+        if agent:
+            return agent.agent_name
         return session.get("agent_name") or "your assistant"
 
     def close(self, candidate: dict) -> bool:

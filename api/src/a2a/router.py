@@ -55,7 +55,7 @@ async def issue_a2a_oauth_token(
     """Issue a scoped A2A access token using OAuth 2.0 client credentials."""
     credentials = await parse_client_credentials_request(request)
     api_key = validate_client_credentials(credentials=credentials, api_key_repo=api_key_repo)
-    agent = agent_repo.find_agent_by_id(api_key.agent_id, api_key.created_by)
+    agent = agent_repo.get(api_key.agent_id)
     if not agent or not agent.is_agent2agent_enabled:
         raise HTTPException(
             status_code=401,

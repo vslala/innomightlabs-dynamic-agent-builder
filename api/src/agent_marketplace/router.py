@@ -16,6 +16,11 @@ from src.agent_marketplace.models import (
     PublishMarketplaceAgentResponse,
 )
 from src.agent_marketplace.service import AgentMarketplaceService, get_agent_marketplace_service
+from src.accounts.owner import Owner
+from src.iam.actions import ResourceRef
+from src.agents.access import require_agent
+from src.iam.dependencies import get_owner, get_principal
+from src.iam.principal import Principal
 
 security = HTTPBearer()
 
@@ -53,7 +58,7 @@ async def get_marketplace_agent_import_plan(
     service: Annotated[AgentMarketplaceService, Depends(get_agent_marketplace_service)],
 ) -> MarketplaceImportPlanResponse:
     try:
-        return service.get_import_plan(template_id=template_id, user_email=request.state.user_email)
+        return service.get_import_plan(template_id=template_id, owner=get_owner(request))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -64,15 +69,17 @@ async def get_marketplace_agent_import_plan(
     status_code=status.HTTP_201_CREATED,
 )
 async def import_marketplace_agent(
-    request: Request,
     template_id: str,
     body: ImportMarketplaceAgentRequest,
     service: Annotated[AgentMarketplaceService, Depends(get_agent_marketplace_service)],
+    principal: Annotated[Principal, Depends(get_principal)],
+    owner: Annotated[Owner, Depends(get_owner)],
 ) -> ImportMarketplaceAgentResponse:
+    principal.require("agents:Create", ResourceRef("agent"))
     try:
         return service.import_agent(
             template_id=template_id,
-            user_email=request.state.user_email,
+            owner=owner,
             request=body,
         )
     except ValueError as exc:
@@ -85,23 +92,26 @@ async def import_marketplace_agent(
     status_code=status.HTTP_201_CREATED,
 )
 async def publish_marketplace_agent(
-    request: Request,
     body: PublishMarketplaceAgentRequest,
     service: Annotated[AgentMarketplaceService, Depends(get_agent_marketplace_service)],
+    owner: Annotated[Owner, Depends(get_owner)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> PublishMarketplaceAgentResponse:
+    # Publishing hands the agent to everyone: it takes the right to share it
+    require_agent(principal, body.agent_id, "agents:Share")
     try:
-        return service.publish_agent(user_email=request.state.user_email, request=body)
+        return service.publish_agent(owner=owner, request=body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/agents/{template_id}/archive", response_model=ArchiveMarketplaceAgentResponse)
 async def archive_marketplace_agent(
-    request: Request,
     template_id: str,
     service: Annotated[AgentMarketplaceService, Depends(get_agent_marketplace_service)],
+    owner: Annotated[Owner, Depends(get_owner)],
 ) -> ArchiveMarketplaceAgentResponse:
     try:
-        return service.archive_agent(template_id=template_id, user_email=request.state.user_email)
+        return service.archive_agent(template_id=template_id, owner=owner)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { authHeaders } from "../services/http";
 
 export type ArtifactHtmlState =
   | { status: "loading" }
@@ -20,9 +21,9 @@ export function useArtifactHtml(contentUrl: string | null | undefined, enabled: 
 
     async function load() {
       try {
-        const token = localStorage.getItem("auth_token");
+        
         const response = await fetch(contentUrl!, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          headers: authHeaders(),
         });
         if (!response.ok) throw new Error(`Canvas request failed with ${response.status}`);
         const html = await response.text();

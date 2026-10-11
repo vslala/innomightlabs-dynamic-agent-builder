@@ -10,7 +10,9 @@ from fastapi import HTTPException
 
 from ..payments.subscriptions import SubscriptionRepository
 from ..payments.pricing_config import get_pricing_config, PricingTierLimits
+from ..accounts.repository import AccountRepository
 from ..agents.repository import AgentRepository
+from ..identity import IdentityRepository
 from ..config import settings
 from .repository import UsageRepository
 
@@ -73,7 +75,7 @@ class RateLimitService:
         current_agents = usage.agents_active if usage else 0
 
         if not usage:
-            actual_agents = self.agent_repo.find_all_by_created_by(user_email)
+            actual_agents = self._owned_agents(user_email)
             current_agents = len(actual_agents)
             if current_agents > 0:
                 self.usage_repo.adjust_active_agents(user_email, current_agents)
@@ -206,6 +208,18 @@ class RateLimitService:
         period_key = datetime.now(timezone.utc).strftime("%Y-%m")
         self.usage_repo.increment_kb_pages(user_email, period_key, count)
 
+    def _owned_agents(self, user_email: str) -> list:
+        """The agents this person owns, in every account they belong to. Limits stay per person until
+        billing moves to accounts (KAN-86)."""
+        identity = IdentityRepository().find_by_email(user_email)
+        if identity is None:
+            return []
+        return [
+            agent
+            for member in AccountRepository().list_memberships(identity.user_id)
+            for agent in self.agent_repo.list_owned(member.account_id, identity.user_id)
+        ]
+
     def get_usage_summary(self, user_email: str) -> dict:
         """Get usage summary for current month."""
         tier = self.get_user_tier(user_email)
@@ -213,7 +227,7 @@ class RateLimitService:
 
         period_key = datetime.now(timezone.utc).strftime("%Y-%m")
         usage = self.usage_repo.get_usage(user_email, period_key)
-        agents = self.agent_repo.find_all_by_created_by(user_email)
+        agents = self._owned_agents(user_email)
 
         return {
             "tier": tier,

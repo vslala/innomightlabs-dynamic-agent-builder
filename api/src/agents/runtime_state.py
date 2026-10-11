@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from src.accounts.owner import Owner
 from src.messages.models import Attachment
 from src.skills.models import ActorKind, AgentSkill, LoadedSkillRuntimeResponse
 
@@ -32,6 +33,13 @@ class AgentTurnState:
     api_key_id: str | None = None
     #: The conversation's standing context, rendered into every system prompt of the turn.
     conversation_context: str | None = None
+    #: The agent's account and owner: the member the turn runs as (`owner_email` is theirs too)
+    account_id: str = ""
+    owner_id: str = ""
+
+    @property
+    def owner(self) -> Owner:
+        return Owner(account_id=self.account_id, user_id=self.owner_id, email=self.owner_email)
 
     # Enrichment (populated during preflight)
     linked_kb_ids: list[str] = field(default_factory=list)

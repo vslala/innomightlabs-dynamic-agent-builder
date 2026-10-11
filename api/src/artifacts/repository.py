@@ -8,6 +8,8 @@ from src.db import get_dynamodb_resource
 
 
 class ArtifactRepository:
+    """Artifacts in their member's partition (`Account#{aid}#Member#{uid}`), found by id through gsi2."""
+
     def __init__(self):
         self.dynamodb = get_dynamodb_resource()
         self.table = self.dynamodb.Table(settings.dynamodb_table)
@@ -16,19 +18,18 @@ class ArtifactRepository:
         self.table.put_item(Item=artifact.to_dynamo_item())
         return artifact
 
-    def find_by_id(self, owner_email: str, artifact_id: str) -> Artifact | None:
+    def find_by_id(self, partition: str, artifact_id: str) -> Artifact | None:
         response = self.table.query(
             IndexName="gsi2",
-            KeyConditionExpression=Key("gsi2_pk").eq(f"Artifact#{artifact_id}")
-            & Key("gsi2_sk").eq(f"User#{owner_email}"),
+            KeyConditionExpression=Key("gsi2_pk").eq(f"Artifact#{artifact_id}") & Key("gsi2_sk").eq(partition),
             Limit=1,
         )
         items = response.get("Items", [])
         return Artifact.from_dynamo_item(items[0]) if items else None
 
-    def list_by_user(self, owner_email: str, limit: int = 50) -> list[Artifact]:
+    def list_in(self, partition: str, limit: int = 50) -> list[Artifact]:
         response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"User#{owner_email}") & Key("sk").begins_with("Artifact#"),
+            KeyConditionExpression=Key("pk").eq(partition) & Key("sk").begins_with("Artifact#"),
             ScanIndexForward=False,
             Limit=max(1, min(100, limit)),
         )

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import re
 from datetime import datetime, timezone
 from typing import Any, cast
@@ -20,14 +19,14 @@ class ArtifactStorage:
     def build_key(
         self,
         *,
-        owner_email: str,
+        account_id: str,
+        user_id: str,
         artifact_id: str,
         filename: str,
     ) -> str:
-        scope = owner_scope(owner_email)
         date_prefix = datetime.now(timezone.utc).strftime("%Y/%m/%d")
         safe_filename = sanitize_filename(filename)
-        return f"users/{scope}/artifacts/{date_prefix}/{artifact_id}/{safe_filename}"
+        return f"{member_prefix(account_id, user_id)}/artifacts/{date_prefix}/{artifact_id}/{safe_filename}"
 
     def put_artifact(self, *, key: str, body: bytes, content_type: str) -> None:
         self.client.put_object(
@@ -65,9 +64,9 @@ class ArtifactStorage:
         )
 
 
-def owner_scope(owner_email: str) -> str:
-    """The per-user key prefix: stable, and doesn't put the email in object keys."""
-    return hashlib.sha256(owner_email.strip().lower().encode("utf-8")).hexdigest()[:24]
+def member_prefix(account_id: str, user_id: str) -> str:
+    """A member's object prefix in an account, as their DynamoDB partition is: ids only, never an email."""
+    return f"accounts/{account_id}/members/{user_id}"
 
 
 def sanitize_filename(filename: str) -> str:

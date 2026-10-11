@@ -25,7 +25,8 @@ from tests.mock_data import (
     DYNAMODB_TABLE_NAME,
     DYNAMODB_TABLE_SCHEMA,
     TEST_USER_EMAIL,
-    TEST_USER_EMAIL_2,
+    SEEDED_EMAILS,
+    user_id_for,
 )
 
 
@@ -33,8 +34,11 @@ from tests.mock_data import (
 def mock_aws_context():
     """Create a mocked AWS context for all tests."""
     from src.db import reset_dynamodb_connections
+    from src.iam.principal import principal_cache
 
     reset_dynamodb_connections()
+    # Ids are reused between tests (deterministic user and personal-account ids, versions from 1)
+    principal_cache.clear()
     with mock_aws():
         yield
     reset_dynamodb_connections()
@@ -48,11 +52,16 @@ def dynamodb_table(mock_aws_context):
     table = dynamodb.Table(DYNAMODB_TABLE_NAME)
     # Wait for table to be active
     table.meta.client.get_waiter('table_exists').wait(TableName=DYNAMODB_TABLE_NAME)
-    # Owner tokens are only accepted for users that exist.
-    from src.users import User, UserRepository
+    # Owner tokens are only accepted for users that exist, and every user has their personal account,
+    # which requests act in when they don't name one.
+    from src.accounts import AccountService, personal_account_id
+    from src.identity import Identity, IdentityRepository
 
-    for email in (TEST_USER_EMAIL, TEST_USER_EMAIL_2, "someone-else@example.com", "owner@example.com"):
-        UserRepository().create_or_update(User(email=email, name="Test User"))
+    for email in SEEDED_EMAILS:
+        identity = IdentityRepository().create(
+            Identity(email=email, name="Test User", user_id=user_id_for(email), email_verified=True)
+        )
+        AccountService().create_account(identity, "Personal", account_id=personal_account_id(identity.user_id))
     return table
 
 
@@ -95,7 +104,7 @@ def auth_headers():
     token = jwt.encode(
         {
             "aud": "owner",
-            "sub": TEST_USER_EMAIL,
+            "sub": user_id_for(TEST_USER_EMAIL),
             "name": "Test User",
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
             "iat": datetime.now(timezone.utc),

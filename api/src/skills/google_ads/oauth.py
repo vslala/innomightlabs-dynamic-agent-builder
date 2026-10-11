@@ -30,6 +30,8 @@ class GoogleAdsOAuthError(Exception):
 class GoogleAdsOAuthState(BaseModel):
     nonce: str
     user_email: str
+    #: The account the connection is for: its credentials are the account's
+    account_id: str
     agent_id: str
     skill_id: str
     return_to: str
@@ -73,12 +75,13 @@ def decode_state_session(state: str | None) -> Optional[GoogleAdsOAuthState]:
 
 
 def create_state_session(
-    *, user_email: str, agent_id: str, skill_id: str, return_to: str, ttl_seconds: int
+    *, user_email: str, account_id: str, agent_id: str, skill_id: str, return_to: str, ttl_seconds: int
 ) -> GoogleAdsOAuthState:
     now_ts = int(datetime.now(timezone.utc).timestamp())
     return GoogleAdsOAuthState(
         nonce=secrets.token_urlsafe(32),
         user_email=user_email,
+        account_id=account_id,
         agent_id=agent_id,
         skill_id=skill_id,
         return_to=return_to,
@@ -151,7 +154,8 @@ def save_credentials(
     credentials: GoogleAdsCredentials,
 ) -> ProviderSettings:
     updated_settings = ProviderSettings(
-        user_email=provider_settings.user_email,
+        account_id=provider_settings.account_id,
+        updated_by=provider_settings.updated_by,
         provider_name=provider_settings.provider_name,
         encrypted_credentials=encrypt(credentials.model_dump_json()),
         auth_type="oauth",

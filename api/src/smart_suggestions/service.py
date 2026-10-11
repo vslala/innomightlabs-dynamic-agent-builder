@@ -17,7 +17,7 @@ from src.smart_suggestions.strategies import (
 
 
 class SmartSuggestionNotConfiguredError(ValueError):
-    """Raised when a user has not configured smart suggestions."""
+    """Raised when the account has not configured smart suggestions."""
 
 
 class SmartSuggestionService:
@@ -35,15 +35,16 @@ class SmartSuggestionService:
     async def suggest(
         self,
         *,
-        user_email: str,
+        account_id: str,
         request: SmartSuggestionRequest,
     ) -> SmartSuggestionResponse:
-        settings = self.settings_repository.find_by_user(user_email)
+        """On the account's settings and provider, for any member."""
+        settings = self.settings_repository.find_in_account(account_id)
         if not settings or not settings.enabled or not settings.provider_name or not settings.model_name:
             raise SmartSuggestionNotConfiguredError("Smart suggestions are not configured")
 
         provider_settings = self.provider_settings_repository.find_by_provider(
-            user_email,
+            account_id,
             settings.provider_name,
         )
         if not provider_settings:

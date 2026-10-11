@@ -10,6 +10,35 @@
 
 const AUTH_TOKEN_KEY = "auth_token";
 const REFRESHED_TOKEN_HEADER = "x-refreshed-token";
+// The account requests act in. Each tab keeps its own choice; the API also remembers the last one used.
+const ACTIVE_ACCOUNT_KEY = "active_account_id";
+const ACCOUNT_HEADER = "X-Account-Id";
+
+export function getActiveAccountId(): string | null {
+  return localStorage.getItem(ACTIVE_ACCOUNT_KEY);
+}
+
+export function setActiveAccountId(accountId: string | null): void {
+  if (accountId) {
+    localStorage.setItem(ACTIVE_ACCOUNT_KEY, accountId);
+  } else {
+    localStorage.removeItem(ACTIVE_ACCOUNT_KEY);
+  }
+}
+
+/** The headers every signed-in request carries, for the few calls that use fetch directly (streams, blobs). */
+export function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const accountId = getActiveAccountId();
+  if (accountId) {
+    headers[ACCOUNT_HEADER] = accountId;
+  }
+  return headers;
+}
 
 export interface HttpClientConfig {
   baseUrl: string;
@@ -24,10 +53,6 @@ class HttpClient {
 
   constructor(config: HttpClientConfig) {
     this.baseUrl = config.baseUrl;
-  }
-
-  private getAuthToken(): string | null {
-    return localStorage.getItem(AUTH_TOKEN_KEY);
   }
 
   private setAuthToken(token: string): void {
@@ -66,12 +91,8 @@ class HttpClient {
       ...customHeaders,
     };
 
-    // Add Authorization header if not skipped and token exists
     if (!skipAuth) {
-      const token = this.getAuthToken();
-      if (token) {
-        (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-      }
+      Object.assign(headers, authHeaders());
     }
 
     const url = `${this.baseUrl}${endpoint}`;

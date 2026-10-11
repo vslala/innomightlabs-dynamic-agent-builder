@@ -11,6 +11,7 @@ from src.config import settings
 from src.crypto import decrypt, encrypt
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
+from src.skills.runtime_context import account_of
 from src.skills.google_mail.models import (
     GoogleMailBatchMessageRequest,
     GoogleMailCredentials,
@@ -43,13 +44,6 @@ class _HTMLTextExtractor(HTMLParser):
         return "\n".join(self._parts)
 
 
-def _require_owner_email(context: dict[str, Any]) -> str:
-    owner_email = str(context.get("owner_email", "")).strip()
-    if not owner_email:
-        raise ValueError("Missing skill runtime owner context")
-    return owner_email
-
-
 def _headers(access_token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {access_token}",
@@ -80,7 +74,8 @@ def _save_credentials(
     credentials: GoogleMailCredentials,
 ) -> ProviderSettings:
     updated_settings = ProviderSettings(
-        user_email=provider_settings.user_email,
+        account_id=provider_settings.account_id,
+        updated_by=provider_settings.updated_by,
         provider_name=provider_settings.provider_name,
         encrypted_credentials=encrypt(credentials.model_dump_json()),
         auth_type="oauth",
@@ -130,11 +125,10 @@ async def _ensure_valid_google_mail_credentials(
 
 
 async def _get_access_token(context: dict[str, Any]) -> str:
-    owner_email = _require_owner_email(context)
     repo = ProviderSettingsRepository()
-    provider_settings = repo.find_by_provider(owner_email, GOOGLE_MAIL_PROVIDER_NAME)
+    provider_settings = repo.find_by_provider(account_of(context), GOOGLE_MAIL_PROVIDER_NAME)
     if not provider_settings:
-        raise ValueError("Google Mail account is not connected for the agent owner")
+        raise ValueError("Google Mail is not connected for this account. An account admin can connect it from the Connectors page.")
 
     credentials = await _ensure_valid_google_mail_credentials(provider_settings, repo)
     return credentials.access_token

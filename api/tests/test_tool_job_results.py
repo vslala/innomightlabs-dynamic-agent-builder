@@ -23,7 +23,7 @@ from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 from src.skills.agent_invocation import actions as invoke_actions
 from src.skills.agent_invocation.history import InvocationHistoryStore, key_for
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import owner_for, user_id_for, account_for, TEST_USER_EMAIL, agent_fields, conversation_fields
 
 #: Bigger than a DynamoDB item may be (400 KB), like a researcher's dozen searches.
 LARGE = {"response_text": "x" * 450_000}
@@ -42,7 +42,8 @@ def bucket(dynamodb_table):
 def running_job() -> ToolJob:
     repository = ToolJobRepository()
     job = repository.create(ToolJob(
-        owner_email=TEST_USER_EMAIL, actor_email=TEST_USER_EMAIL, actor_id=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
+        owner_id=user_id_for(TEST_USER_EMAIL), actor_email=TEST_USER_EMAIL, actor_id=TEST_USER_EMAIL,
         agent_id="agent-1", conversation_id="conv-1", tool_name="execute_skill_action",
         skill_id="agent_invocation", installed_skill_id="agent_invocation", action="invoke",
     ))
@@ -57,7 +58,7 @@ def raw_item(job: ToolJob) -> dict:
 
 def status(job: ToolJob) -> dict:
     return ToolJobService(repository=ToolJobRepository()).check_job_for_agent(
-        job_id=job.job_id, owner_email=TEST_USER_EMAIL, actor_email=TEST_USER_EMAIL,
+        job_id=job.job_id, owner_email=TEST_USER_EMAIL, account_id=account_for(TEST_USER_EMAIL), owner_id=user_id_for(TEST_USER_EMAIL), actor_email=TEST_USER_EMAIL,
         agent_id="agent-1", conversation_id="conv-1",
     )
 
@@ -119,12 +120,12 @@ def invoke_setup(dynamodb_table, monkeypatch):
     monkeypatch.setattr(invoke_actions, "get_agent_architecture", lambda *args, **kwargs: FakeArchitecture())
     agent = AgentRepository().save(Agent(
         agent_name="Researcher", agent_architecture="krishna-memgpt", agent_provider="Bedrock",
-        agent_persona="Research.", created_by=TEST_USER_EMAIL,
+        agent_persona="Research.", **agent_fields(TEST_USER_EMAIL),
     ))
     conversation = ConversationRepository().save(
-        Conversation(title="Lead", agent_id="lead", created_by=TEST_USER_EMAIL)
+        Conversation(title="Lead", agent_id="lead", **conversation_fields(TEST_USER_EMAIL))
     )
-    context = {"owner_email": TEST_USER_EMAIL, "conversation_id": conversation.conversation_id}
+    context = {"account_id": account_for(TEST_USER_EMAIL), "owner_id": user_id_for(TEST_USER_EMAIL), "owner_email": TEST_USER_EMAIL, "conversation_id": conversation.conversation_id}
     return agent, context
 
 
@@ -139,7 +140,7 @@ async def test_a_chat_agent_gets_only_the_answer_and_the_history_is_filed_by_too
         "response_text": "Findings with sources.",
         "message_ids": {"user_message_id": "u1", "assistant_message_id": "a1"},
     }
-    key = key_for(TEST_USER_EMAIL, context["conversation_id"], "toolu_42")
+    key = key_for(owner_for(TEST_USER_EMAIL), context["conversation_id"], "toolu_42")
     assert key.endswith("/tool_audit_toolu_42.json") and TEST_USER_EMAIL not in key
     history = InvocationHistoryStore().load(key)
     assert history["tool_call_id"] == "toolu_42" and history["prompt"] == "Research X"

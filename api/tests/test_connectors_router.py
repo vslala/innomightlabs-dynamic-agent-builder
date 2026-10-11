@@ -2,7 +2,7 @@ from urllib.parse import parse_qs, urlparse
 
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL
 
 
 def test_list_connectors_reports_status(test_client, auth_headers, dynamodb_table):
@@ -16,7 +16,7 @@ def test_list_connectors_reports_status(test_client, auth_headers, dynamodb_tabl
 
     ProviderSettingsRepository().save(
         ProviderSettings(
-            user_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
             provider_name="GoogleMail",
             encrypted_credentials="encrypted",
             auth_type="oauth",

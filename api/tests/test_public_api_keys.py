@@ -9,7 +9,7 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL
+from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL, user_id_for
 
 
 class TestAgentSecretKeyModel:
@@ -140,7 +140,7 @@ class TestSecretKeysRouter:
         token = jwt.encode(
             {
                 "aud": "owner",
-                "sub": "someone-else@example.com",
+                "sub": user_id_for("someone-else@example.com"),
                 "exp": datetime.now(timezone.utc) + timedelta(hours=1),
                 "iat": datetime.now(timezone.utc),
             },

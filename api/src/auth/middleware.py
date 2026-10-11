@@ -12,9 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 
 from ..config import settings
-from ..users import UserRepository
-from ..users.models import UserStatus
-from ..agents.repository import AgentRepository
+from ..identity import IdentityRepository
 from .jwt_utils import OWNER_AUDIENCE, app_audience
 
 
@@ -53,7 +51,6 @@ PUBLIC_PATHS = {
 
 # Path prefixes that use different authentication (not JWT)
 WIDGET_PATH_PREFIX = "/widget"
-ANALYTICS_AGENT_PATH_PREFIX = "/analytics/agents/"
 DOWNLOADS_PLUGINS_PATH_PREFIX = "/downloads/plugins"
 A2A_PATH_PREFIX = "/a2a/"
 A2A_WELL_KNOWN_PATH_PREFIX = "/.well-known/agents/"
@@ -84,8 +81,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app):
         super().__init__(app)
-        self.user_repository = UserRepository()
-        self.agent_repository = AgentRepository()
+        self.identity_repository = IdentityRepository()
 
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
@@ -144,42 +140,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Token expired"}
             )
 
-        email = payload.get("sub")
-        user = self.user_repository.get_by_email(email) if email else None
+        user_id = payload.get("sub")
+        user = self.identity_repository.get(str(user_id)) if user_id else None
         if not user:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid token payload"}
             )
 
-        if user.status in [UserStatus.INACTIVE.value, UserStatus.PENDING_DELETION.value]:
+        if not user.is_active:
             return JSONResponse(
                 status_code=403,
                 content={"detail": "Account has been deactivated", "code": "ACCOUNT_INACTIVE"}
             )
 
         request.state.auth_token = token
-        request.state.user_email = email
-        analytics_agent_id = self._get_analytics_agent_id(request.url.path)
-        if analytics_agent_id:
-            agent = self.agent_repository.find_agent_by_id(analytics_agent_id, email)
-            if not agent:
-                return JSONResponse(
-                    status_code=404,
-                    content={"detail": "Agent not found"},
-                )
-            request.state.analytics_agent = agent
-
+        request.state.identity = user
+        request.state.user_id = user.user_id
+        # Resources stay keyed by email until they move into accounts (KAN-80). It is read from the
+        # identity, never from the token.
+        request.state.user_email = user.email
+        # Routes authorize what they act on themselves, through the principal (src/iam)
         return await call_next(request)
-
-    def _get_analytics_agent_id(self, path: str) -> Optional[str]:
-        """Extract analytics agent ID for analytics routes only."""
-        if not path.startswith(ANALYTICS_AGENT_PATH_PREFIX):
-            return None
-
-        remainder = path.removeprefix(ANALYTICS_AGENT_PATH_PREFIX)
-        if not remainder:
-            return None
-
-        agent_id = remainder.split("/", 1)[0].strip()
-        return agent_id or None

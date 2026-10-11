@@ -76,17 +76,18 @@ class AgentImageGenerationService:
     async def generate_for_dashboard(
         self,
         *,
-        agent_id: str,
-        conversation_id: str,
-        user_email: str,
+        agent: Agent,
+        conversation: Conversation,
+        actor_email: str,
         request: GenerateImageRequest,
     ) -> GenerateImageResponse:
-        context = self._load_dashboard_context(agent_id, conversation_id, user_email)
+        """The route has authorized the caller for this agent and conversation. The image is made on
+        the agent's account's provider settings."""
+        context = AgentConversationContext(agent=agent, conversation=conversation)
         result = await self._generate(
             agent=context.agent,
             conversation=context.conversation,
-            owner_email=user_email,
-            actor_email=user_email,
+            actor_email=actor_email,
             request=request,
         )
         for image in result.images:
@@ -99,17 +100,15 @@ class AgentImageGenerationService:
     async def stream_for_dashboard(
         self,
         *,
-        agent_id: str,
-        conversation_id: str,
-        user_email: str,
+        agent: Agent,
+        conversation: Conversation,
+        actor_email: str,
         request: GenerateImageRequest,
     ) -> AsyncIterator[SSEEvent]:
-        context = self._load_dashboard_context(agent_id, conversation_id, user_email)
         async for event in self._stream_generate(
-            agent=context.agent,
-            conversation=context.conversation,
-            owner_email=user_email,
-            actor_email=user_email,
+            agent=agent,
+            conversation=conversation,
+            actor_email=actor_email,
             request=request,
             dashboard_urls=True,
         ):
@@ -120,14 +119,12 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
     ) -> GenerateImageResponse:
         return await self._generate(
             agent=agent,
             conversation=conversation,
-            owner_email=owner_email,
             actor_email=actor_email,
             request=request,
         )
@@ -137,18 +134,12 @@ class AgentImageGenerationService:
         *,
         agent_id: str,
         conversation_id: str,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
         user_message_id: str | None = None,
     ) -> GenerateImageResponse:
-        context = self._load_agent_turn_context(
-            agent_id=agent_id,
-            conversation_id=conversation_id,
-            owner_email=owner_email,
-            actor_email=actor_email,
-        )
-        provider_settings = self._validate_and_load_provider_settings(context.agent, owner_email)
+        context = self._load_agent_turn_context(agent_id=agent_id, conversation_id=conversation_id)
+        provider_settings = self._validate_and_load_provider_settings(context.agent)
         credentials = await self._load_credentials(context.agent.agent_provider, provider_settings)
         provider = self.provider_factory.get(context.agent.agent_provider)
         generated_images = await provider.generate(
@@ -177,21 +168,14 @@ class AgentImageGenerationService:
         *,
         agent_id: str,
         conversation_id: str,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
         user_message_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
-        context = self._load_agent_turn_context(
-            agent_id=agent_id,
-            conversation_id=conversation_id,
-            owner_email=owner_email,
-            actor_email=actor_email,
-        )
+        context = self._load_agent_turn_context(agent_id=agent_id, conversation_id=conversation_id)
         async for event in self._stream_generate_existing_turn(
             agent=context.agent,
             conversation=context.conversation,
-            owner_email=owner_email,
             actor_email=actor_email,
             request=request,
             user_message_id=user_message_id or "",
@@ -203,14 +187,12 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
     ) -> AsyncIterator[SSEEvent]:
         async for event in self._stream_generate(
             agent=agent,
             conversation=conversation,
-            owner_email=owner_email,
             actor_email=actor_email,
             request=request,
             dashboard_urls=False,
@@ -222,11 +204,10 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
     ) -> GenerateImageResponse:
-        provider_settings = self._validate_and_load_provider_settings(agent, owner_email)
+        provider_settings = self._validate_and_load_provider_settings(agent)
 
         user_msg = Message(
             conversation_id=conversation.conversation_id,
@@ -264,12 +245,11 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
         dashboard_urls: bool,
     ) -> AsyncIterator[SSEEvent]:
-        provider_settings = self._validate_and_load_provider_settings(agent, owner_email)
+        provider_settings = self._validate_and_load_provider_settings(agent)
 
         user_msg = Message(
             conversation_id=conversation.conversation_id,
@@ -359,12 +339,11 @@ class AgentImageGenerationService:
         *,
         agent: Agent,
         conversation: Conversation,
-        owner_email: str,
         actor_email: str,
         request: GenerateImageRequest,
         user_message_id: str,
     ) -> AsyncIterator[SSEEvent]:
-        provider_settings = self._validate_and_load_provider_settings(agent, owner_email)
+        provider_settings = self._validate_and_load_provider_settings(agent)
 
         yield SSEEvent(
             event_type=SSEEventType.IMAGE_GENERATION_STARTED,
@@ -510,40 +489,19 @@ class AgentImageGenerationService:
             images=response_images,
         )
 
-    def _load_dashboard_context(
-        self,
-        agent_id: str,
-        conversation_id: str,
-        user_email: str,
-    ) -> AgentConversationContext:
-        agent = self.agent_repo.find_agent_by_id(agent_id, user_email)
-        if not agent:
-            raise ImageGenerationNotFoundError("Agent not found")
-
-        conversation = self.conversation_repo.find_by_id(conversation_id, user_email)
-        if not conversation:
-            raise ImageGenerationNotFoundError("Conversation not found")
-
-        if conversation.agent_id != agent_id:
-            raise ImageGenerationConflictError("Conversation does not belong to this agent")
-
-        return AgentConversationContext(agent=agent, conversation=conversation)
-
     def _load_agent_turn_context(
         self,
         *,
         agent_id: str,
         conversation_id: str,
-        owner_email: str,
-        actor_email: str,
     ) -> AgentConversationContext:
-        agent = self.agent_repo.find_agent_by_id(agent_id, owner_email)
+        # The agent of the running turn, found by its id
+        agent = self.agent_repo.get(agent_id)
         if not agent:
             raise ImageGenerationNotFoundError("Agent not found")
 
-        conversation = self.conversation_repo.find_by_id(conversation_id, actor_email)
-        if not conversation and actor_email != owner_email:
-            conversation = self.conversation_repo.find_by_id(conversation_id, owner_email)
+        # The conversation of the running turn, whoever started it (the owner, or a member on a shared agent)
+        conversation = self.conversation_repo.get(conversation_id)
         if not conversation:
             raise ImageGenerationNotFoundError("Conversation not found")
 
@@ -552,7 +510,7 @@ class AgentImageGenerationService:
 
         return AgentConversationContext(agent=agent, conversation=conversation)
 
-    def _validate_and_load_provider_settings(self, agent: Agent, owner_email: str):
+    def _validate_and_load_provider_settings(self, agent: Agent):
         if not image_capability_registry.supports(
             agent.agent_provider,
             agent.agent_model,
@@ -562,8 +520,9 @@ class AgentImageGenerationService:
                 "This agent's selected model does not support image generation."
             )
 
+        # The agent's account's provider, whoever asks
         provider_settings = self.provider_settings_repo.find_by_provider(
-            owner_email,
+            agent.account_id,
             agent.agent_provider,
         )
         if not provider_settings:

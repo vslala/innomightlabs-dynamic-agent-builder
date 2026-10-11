@@ -22,8 +22,12 @@ from src.config import settings
 from src.connectors.mcp.models import MCPConnection
 from src.connectors.mcp.repository import get_mcp_connection_repository
 from src.llm.events import SSEEventType
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL
 from tests.test_builder_ila import account, session, turn_state  # noqa: F401
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 TEAM = example_yaml("web-research-team") or ""
 
@@ -41,7 +45,7 @@ def ready(monkeypatch) -> set[str]:
 
 def tavily(signed_in: set[str] | None = None) -> MCPConnection:
     connection = get_mcp_connection_repository().save_connection(MCPConnection(
-        owner_email=TEST_USER_EMAIL, name="Tavily", server_url="", encrypted_auth_config="", provider_key="tavily",
+        account_id=account_for(TEST_USER_EMAIL), name="Tavily", server_url="", encrypted_auth_config="", provider_key="tavily",
     ))
     if signed_in is not None:
         signed_in.add(connection.mcp_id)
@@ -50,13 +54,13 @@ def tavily(signed_in: set[str] | None = None) -> MCPConnection:
 
 def plan_for(text: str):
     validated = validate_blueprint(text, {})
-    return validated, plan_blueprint(validated, TEST_USER_EMAIL)
+    return validated, plan_blueprint(validated, TEST_OWNER)
 
 
 def build(text: str):
     validated, plan = plan_for(text)
     assert plan.ok, plan.blockers
-    return plan, apply_blueprint(validated, plan, TEST_USER_EMAIL, BackgroundTasks())
+    return plan, apply_blueprint(validated, plan, TEST_OWNER, BackgroundTasks())
 
 
 def linked(agent_id: str) -> set[str]:
@@ -102,7 +106,7 @@ def test_the_researcher_gets_the_connected_tools_once(account, ready):  # noqa: 
 def test_an_exported_agent_keeps_its_connection(account, ready):  # noqa: F811
     connection = tavily(ready)
     _, built = build(TEAM)
-    exported = yaml.safe_load(export_agent(built.resources["researcher"].id, TEST_USER_EMAIL) or "")
+    exported = yaml.safe_load(export_agent(built.resources["researcher"].id, TEST_OWNER) or "")
     assert exported["resources"]["tools"] == {
         "kind": "McpConnection", "id": connection.mcp_id, "provider": "tavily", "name": "Tavily",
     }
@@ -114,18 +118,18 @@ def test_an_exported_agent_keeps_its_connection(account, ready):  # noqa: F811
 def test_taking_the_tools_away(account, ready):  # noqa: F811
     """Leaving the connection out of the agent takes its tools away; leaving it out of the kit keeps the connection."""
     connection = tavily(ready)
-    first = deploy_blueprint(TEAM, {}, TEST_USER_EMAIL, BackgroundTasks())
+    first = deploy_blueprint(TEAM, {}, TEST_OWNER, BackgroundTasks())
     assert isinstance(first, Deployed), first
     researcher = first.deployment.resources["researcher"].id
     document = yaml.safe_load(TEAM)
     document["resources"]["researcher"]["mcp_connections"] = []
     document["resources"].pop("web_search")
 
-    again = deploy_blueprint(yaml.safe_dump(document, sort_keys=False), {}, TEST_USER_EMAIL, kit_id=first.kit.kit_id)
+    again = deploy_blueprint(yaml.safe_dump(document, sort_keys=False), {}, TEST_OWNER, kit_id=first.kit.kit_id)
     assert isinstance(again, Deployed), again
     assert again.plan.removals == ["take the Tavily tools away"]
     assert linked(researcher) == set()
-    assert get_mcp_connection_repository().find_connection(TEST_USER_EMAIL, connection.mcp_id)  # the account keeps it
+    assert get_mcp_connection_repository().find_connection(account_for(TEST_USER_EMAIL), connection.mcp_id)  # the account keeps it
 
 
 # --- The system asks the person to connect -----------------------------------------------------
@@ -150,38 +154,38 @@ class FakeService:
         self.installed: list[str] = []
         self.started: list[str] = []
 
-    async def install_provider(self, owner_email, key, request):
+    async def install_provider(self, account_id, key, request, *, user_email):
         self.installed.append(key)
         assert request.return_to.endswith(connections.POPUP_RETURN_PATH)
         return type("Installed", (), {"authorize_url": f"https://auth.example/{key}"})()
 
-    def start_oauth(self, *, owner_email, mcp_id, return_to):
+    def start_oauth(self, *, account_id, user_email, mcp_id, return_to):
         self.started.append(mcp_id)
         return f"https://auth.example/again/{mcp_id}"
 
 
 async def test_connecting_installs_once_then_signs_in_again(account, ready):  # noqa: F811
     service = FakeService()
-    assert await connections.start_connection(service, TEST_USER_EMAIL, "tavily") == "https://auth.example/tavily"
+    assert await connections.start_connection(service, account_for(TEST_USER_EMAIL), TEST_USER_EMAIL, "tavily") == "https://auth.example/tavily"
 
     pending = tavily()  # installed but not signed in yet
-    assert await connections.start_connection(service, TEST_USER_EMAIL, "tavily") == f"https://auth.example/again/{pending.mcp_id}"
+    assert await connections.start_connection(service, account_for(TEST_USER_EMAIL), TEST_USER_EMAIL, "tavily") == f"https://auth.example/again/{pending.mcp_id}"
     ready.add(pending.mcp_id)
-    assert await connections.start_connection(service, TEST_USER_EMAIL, "tavily") is None
+    assert await connections.start_connection(service, account_for(TEST_USER_EMAIL), TEST_USER_EMAIL, "tavily") is None
     assert service.installed == ["tavily"]
 
 
 async def test_a_preset_needing_set_up_isnt_connected_from_the_chat(account, ready):  # noqa: F811
     with pytest.raises(ValueError, match="Connectors page"):
-        await connections.start_connection(FakeService(), TEST_USER_EMAIL, "github")
+        await connections.start_connection(FakeService(), account_for(TEST_USER_EMAIL), TEST_USER_EMAIL, "github")
     github = Draft(TEAM.replace("provider: tavily", "provider: github"))
-    assert connections.missing_connections(github, TEST_USER_EMAIL) == []
+    assert connections.missing_connections(github, account_for(TEST_USER_EMAIL)) == []
 
 
 def test_the_connect_route(test_client, auth_headers, session, monkeypatch):  # noqa: F811
     from src.builder import router as builder_router
 
-    async def fake_start(service, user_email, provider):
+    async def fake_start(service, account_id, user_email, provider):
         return f"https://auth.example/{provider}"
 
     monkeypatch.setattr(builder_router, "start_connection", fake_start)

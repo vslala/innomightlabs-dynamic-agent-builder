@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from src.accounts.owner import Owner
 from src.automation_marketplace.models import (
     ArchiveMarketplaceAutomationResponse,
     ImportedMarketplaceAutomationSkillResponse,
@@ -102,7 +103,7 @@ class AutomationMarketplaceService:
         self,
         *,
         template_id: str,
-        user_email: str,
+        owner: Owner,
     ) -> MarketplaceAutomationImportPlanResponse:
         template = self._published_template(template_id)
         return MarketplaceAutomationImportPlanResponse(
@@ -113,7 +114,7 @@ class AutomationMarketplaceService:
                 node_count=len(template.nodes),
                 edge_count=len(template.edges),
             ),
-            skill_forms=[self._skill_import_form(skill, user_email) for skill in template.skills],
+            skill_forms=[self._skill_import_form(skill, owner) for skill in template.skills],
             input_form=Form(
                 form_name="Automation Inputs",
                 submit_path="",
@@ -125,34 +126,34 @@ class AutomationMarketplaceService:
         self,
         *,
         template_id: str,
-        user_email: str,
+        owner: Owner,
         request: SaveMarketplaceAutomationImportSessionRequest,
     ) -> MarketplaceAutomationImportSessionResponse:
         template = self._published_template(template_id)
         session = self._load_or_create_import_session(
             template=template,
-            user_email=user_email,
+            owner=owner,
             session_id=request.session_id,
         )
-        self._apply_import_session_update(template, session, request, user_email)
+        self._apply_import_session_update(template, session, request, owner)
         saved = self.repository.save_import_session(session)
         return _import_session_response(saved)
 
     def publish_automation(
         self,
         *,
-        user_email: str,
+        owner: Owner,
         request: PublishMarketplaceAutomationRequest,
     ) -> PublishMarketplaceAutomationResponse:
-        graph = self.automation_service.get_graph(request.automation_id, user_email)
+        graph = self.automation_service.get_graph(request.automation_id, owner)
         selected_skills = self._selected_skills(request.automation_id, request.included_skill_ids)
         skill_templates = [self._skill_template_from_installed(skill) for skill in selected_skills]
 
-        version_plan = self._version_plan(request.automation_id, user_email)
+        version_plan = self._version_plan(request.automation_id, owner)
         template = self._template_from_graph(
             graph=graph,
             request=request,
-            user_email=user_email,
+            owner=owner,
             skill_templates=skill_templates,
             version_plan=version_plan,
         )
@@ -170,21 +171,21 @@ class AutomationMarketplaceService:
         self,
         *,
         template_id: str,
-        user_email: str,
+        owner: Owner,
         request: ImportMarketplaceAutomationRequest,
     ) -> ImportMarketplaceAutomationResponse:
         template = self._published_template(template_id)
-        resolved_request = self._resolve_import_request(template, user_email, request)
-        self._validate_skill_configs(template, resolved_request.skill_configs, user_email)
+        resolved_request = self._resolve_import_request(template, owner, request)
+        self._validate_skill_configs(template, resolved_request.skill_configs, owner)
         self._validate_import_inputs(template, resolved_request.import_inputs)
-        saved_automation = self._create_imported_automation(template, resolved_request, user_email)
+        saved_automation = self._create_imported_automation(template, resolved_request, owner)
         installed: list[_InstalledTemplateSkill] = []
         try:
             installed = self._install_template_skills(
                 automation_id=saved_automation.automation_id,
                 template=template,
                 skill_configs=resolved_request.skill_configs,
-                user_email=user_email,
+                owner=owner,
             )
             nodes, edges = self._imported_graph(
                 automation_id=saved_automation.automation_id,
@@ -192,13 +193,13 @@ class AutomationMarketplaceService:
                 installed=installed,
                 import_inputs=resolved_request.import_inputs,
             )
-            self.automation_service.validate_graph(nodes, edges, [], user_email, saved_automation.automation_id)
+            self.automation_service.validate_graph(nodes, edges, [], owner, saved_automation.automation_id)
             self.automation_repository.save_graph(saved_automation.automation_id, nodes, edges, [])
         except Exception:
-            self._rollback_import(saved_automation, installed, user_email)
+            self._rollback_import(saved_automation, installed, owner)
             raise
 
-        self._delete_import_session_if_used(request.session_id, user_email)
+        self._delete_import_session_if_used(request.session_id, owner)
         self.repository.increment_import_count(template.template_id)
         return ImportMarketplaceAutomationResponse(
             automation_id=saved_automation.automation_id,
@@ -219,10 +220,10 @@ class AutomationMarketplaceService:
         self,
         *,
         template_id: str,
-        user_email: str,
+        owner: Owner,
     ) -> ArchiveMarketplaceAutomationResponse:
         template = self.repository.find_by_id(template_id)
-        if not template or template.publisher_user_email != user_email:
+        if not template or template.publisher_user_id != owner.user_id:
             raise ValueError("Marketplace automation not found")
         template.status = MarketplaceAutomationStatus.ARCHIVED
         saved = self.repository.save(template)
@@ -242,27 +243,28 @@ class AutomationMarketplaceService:
         self,
         *,
         template: MarketplaceAutomationTemplate,
-        user_email: str,
+        owner: Owner,
         session_id: str | None,
     ) -> MarketplaceAutomationImportSession:
         if not session_id:
             return MarketplaceAutomationImportSession(
                 template_id=template.template_id,
-                owner_email=user_email,
+                account_id=owner.account_id,
+                owner_id=owner.user_id,
                 title=template.automation_title,
                 description=template.automation_description,
             )
-        return self._active_import_session(template, user_email, session_id)
+        return self._active_import_session(template, owner, session_id)
 
     def _resolve_import_request(
         self,
         template: MarketplaceAutomationTemplate,
-        user_email: str,
+        owner: Owner,
         request: ImportMarketplaceAutomationRequest,
     ) -> ImportMarketplaceAutomationRequest:
         if not request.session_id:
             return request
-        session = self._active_import_session(template, user_email, request.session_id)
+        session = self._active_import_session(template, owner, request.session_id)
         return ImportMarketplaceAutomationRequest(
             session_id=request.session_id,
             title=request.title if request.title is not None else session.title,
@@ -274,10 +276,10 @@ class AutomationMarketplaceService:
     def _active_import_session(
         self,
         template: MarketplaceAutomationTemplate,
-        user_email: str,
+        owner: Owner,
         session_id: str,
     ) -> MarketplaceAutomationImportSession:
-        session = self.repository.find_import_session(owner_email=user_email, session_id=session_id)
+        session = self.repository.find_import_session(partition=owner.member_pk, session_id=session_id)
         if not session or session.template_id != template.template_id or session.is_expired():
             raise ValueError("Import session expired. Reopen the import form and try again.")
         return session
@@ -287,7 +289,7 @@ class AutomationMarketplaceService:
         template: MarketplaceAutomationTemplate,
         session: MarketplaceAutomationImportSession,
         request: SaveMarketplaceAutomationImportSessionRequest,
-        user_email: str,
+        owner: Owner,
     ) -> None:
         if request.title is not None:
             title = request.title.strip()
@@ -299,15 +301,15 @@ class AutomationMarketplaceService:
 
         if request.skill_configs:
             session.skill_configs.update(request.skill_configs)
-            self._validate_partial_skill_configs(template, request.skill_configs, session.skill_configs, user_email)
+            self._validate_partial_skill_configs(template, request.skill_configs, session.skill_configs, owner)
         if request.import_inputs:
             session.import_inputs.update(request.import_inputs)
             self._validate_partial_import_inputs(template, request.import_inputs)
 
-    def _version_plan(self, source_automation_id: str, user_email: str) -> _TemplateVersionPlan:
+    def _version_plan(self, source_automation_id: str, owner: Owner) -> _TemplateVersionPlan:
         latest = self.repository.find_latest_for_source_automation(
             source_automation_id=source_automation_id,
-            publisher_user_email=user_email,
+            publisher_user_id=owner.user_id,
         )
         if not latest:
             return _TemplateVersionPlan(version=1, parent_template_id=None)
@@ -322,7 +324,7 @@ class AutomationMarketplaceService:
         *,
         graph: Any,
         request: PublishMarketplaceAutomationRequest,
-        user_email: str,
+        owner: Owner,
         skill_templates: list[MarketplaceAutomationSkillTemplate],
         version_plan: _TemplateVersionPlan,
     ) -> MarketplaceAutomationTemplate:
@@ -340,8 +342,9 @@ class AutomationMarketplaceService:
             skills=skill_templates,
             import_inputs=self._with_owner_scoped_inputs(request.import_inputs, graph.nodes),
             source_automation_id=request.automation_id,
-            publisher_user_email=user_email,
-            publisher_display_name=user_email.split("@", 1)[0],
+            publisher_user_id=owner.user_id,
+            publisher_account_id=owner.account_id,
+            publisher_display_name=owner.email.split("@", 1)[0],
             tags=request.tags,
             status=request.status,
         )
@@ -394,14 +397,16 @@ class AutomationMarketplaceService:
         self,
         template: MarketplaceAutomationTemplate,
         request: ImportMarketplaceAutomationRequest,
-        user_email: str,
+        owner: Owner,
     ) -> Automation:
         return self.automation_repository.save_automation(
             Automation(
                 title=(request.title or template.automation_title).strip(),
                 description=request.description if request.description is not None else template.automation_description,
                 status=AutomationStatus.DRAFT,
-                created_by=user_email,
+                account_id=owner.account_id,
+                owner_id=owner.user_id,
+                created_by=owner.user_id,
             )
         )
 
@@ -411,7 +416,7 @@ class AutomationMarketplaceService:
         automation_id: str,
         template: MarketplaceAutomationTemplate,
         skill_configs: dict[str, dict[str, Any]],
-        user_email: str,
+        owner: Owner,
     ) -> list[_InstalledTemplateSkill]:
         return [
             _InstalledTemplateSkill(
@@ -420,7 +425,7 @@ class AutomationMarketplaceService:
                     automation_id=automation_id,
                     skill_id=skill.skill_id,
                     raw_config=skill_configs.get(skill.template_skill_key, {}),
-                    user_email=user_email,
+                    owner=owner,
                     enabled=skill.enabled_on_import,
                     validate_connectors=skill.enabled_on_import,
                 ),
@@ -496,18 +501,18 @@ class AutomationMarketplaceService:
         self,
         automation: Automation,
         installed: list[_InstalledTemplateSkill],
-        user_email: str,
+        owner: Owner,
     ) -> None:
         for item in installed:
             self.automation_repository.delete_skill(
                 automation.automation_id,
                 self._installed_skill_id(item.installed),
             )
-        self.automation_repository.soft_delete_automation(automation.automation_id, user_email)
+        self.automation_repository.soft_delete_automation(automation.account_id, automation.automation_id)
 
-    def _delete_import_session_if_used(self, session_id: str | None, user_email: str) -> None:
+    def _delete_import_session_if_used(self, session_id: str | None, owner: Owner) -> None:
         if session_id:
-            self.repository.delete_import_session(owner_email=user_email, session_id=session_id)
+            self.repository.delete_import_session(partition=owner.member_pk, session_id=session_id)
 
     def _installed_skill_id(self, skill: AutomationSkill) -> str:
         return skill.installed_skill_id or skill.skill_id
@@ -515,14 +520,14 @@ class AutomationMarketplaceService:
     def _skill_import_form(
         self,
         skill: MarketplaceAutomationSkillTemplate,
-        user_email: str,
+        owner: Owner,
     ) -> MarketplaceAutomationSkillImportForm:
         loaded = self.automation_service.skill_registry.get(skill.skill_id)
         if not loaded:
             raise ValueError(f"Unknown skill: {skill.skill_id}")
         form = hydrate_form_options(
             self.automation_service.skill_registry.install_form(skill.skill_id, ""),
-            FormOptionsContext(user_email=user_email),
+            FormOptionsContext(owner=owner),
         )
         return MarketplaceAutomationSkillImportForm(
             template_skill_key=skill.template_skill_key,
@@ -536,7 +541,7 @@ class AutomationMarketplaceService:
         self,
         template: MarketplaceAutomationTemplate,
         skill_configs: dict[str, dict[str, Any]],
-        user_email: str,
+        owner: Owner,
     ) -> None:
         for skill in template.skills:
             if self._skill_config_required(skill, skill_configs):
@@ -544,7 +549,7 @@ class AutomationMarketplaceService:
             self.automation_service.validate_skill_config(
                 skill_id=skill.skill_id,
                 raw_config=skill_configs.get(skill.template_skill_key, {}),
-                user_email=user_email,
+                owner=owner,
                 validate_connectors=skill.enabled_on_import,
             )
 
@@ -553,7 +558,7 @@ class AutomationMarketplaceService:
         template: MarketplaceAutomationTemplate,
         changed_skill_configs: dict[str, dict[str, Any]],
         all_skill_configs: dict[str, dict[str, Any]],
-        user_email: str,
+        owner: Owner,
     ) -> None:
         skills_by_key = {skill.template_skill_key: skill for skill in template.skills}
         for key in changed_skill_configs:
@@ -561,7 +566,7 @@ class AutomationMarketplaceService:
             self.automation_service.validate_skill_config(
                 skill_id=skill.skill_id,
                 raw_config=all_skill_configs.get(skill.template_skill_key, {}),
-                user_email=user_email,
+                owner=owner,
                 validate_connectors=skill.enabled_on_import,
             )
 

@@ -109,8 +109,8 @@ def _authenticate_a2a_client(
 
 
 def _validate_agent_enabled(*, agent_id: str, api_key: AgentApiKey, agent_repo: AgentRepository) -> None:
-    agent = agent_repo.find_agent_by_id(agent_id, api_key.created_by)
-    if not agent or not agent.is_agent2agent_enabled:
+    agent = agent_repo.get(agent_id)
+    if not agent or agent.agent_id != api_key.agent_id or not agent.is_agent2agent_enabled:
         raise HTTPException(status_code=404, detail="Agent not found")
 
 

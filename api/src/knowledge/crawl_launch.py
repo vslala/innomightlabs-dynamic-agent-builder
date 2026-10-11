@@ -22,14 +22,14 @@ _running_crawls: set[asyncio.Task[None]] = set()
 def launch_crawl(
     job_id: str,
     kb_id: str,
-    user_email: str,
+    account_id: str,
     background_tasks: Optional[BackgroundTasks] = None,
     crawler: Optional[Any] = None,
 ) -> None:
     """Lambda when ASYNC_JOB_BACKEND=lambda. Otherwise in this process: after the response when called from a
     request, or as a task on the running event loop when called from a chat turn's tool call."""
     if settings.async_job_backend == "lambda":
-        invoke_crawl_async(job_id, kb_id, user_email)
+        invoke_crawl_async(job_id, kb_id, account_id)
         log.info(f"Invoked async Lambda for crawl job {job_id}")
         return
 
@@ -38,15 +38,15 @@ def launch_crawl(
 
         crawler = get_crawler_worker()
     if background_tasks is not None:
-        background_tasks.add_task(run_crawl_in_background, job_id, kb_id, user_email, crawler)
+        background_tasks.add_task(run_crawl_in_background, job_id, kb_id, account_id, crawler)
     else:
-        task = asyncio.get_running_loop().create_task(run_crawl_in_background(job_id, kb_id, user_email, crawler))
+        task = asyncio.get_running_loop().create_task(run_crawl_in_background(job_id, kb_id, account_id, crawler))
         _running_crawls.add(task)
         task.add_done_callback(_running_crawls.discard)
     log.info(f"Queued background crawl for job {job_id}")
 
 
-def invoke_crawl_async(job_id: str, kb_id: str, user_email: str):
+def invoke_crawl_async(job_id: str, kb_id: str, account_id: str):
     """Invoke the crawl job asynchronously via the configured Lambda worker."""
     import boto3
 
@@ -62,7 +62,7 @@ def invoke_crawl_async(job_id: str, kb_id: str, user_email: str):
         "crawl_job": {
             "job_id": job_id,
             "kb_id": kb_id,
-            "user_email": user_email,
+            "account_id": account_id,
         }
     })
 
@@ -82,7 +82,7 @@ def invoke_crawl_async(job_id: str, kb_id: str, user_email: str):
 async def run_crawl_in_background(
     job_id: str,
     kb_id: str,
-    user_email: str,
+    account_id: str,
     crawler,  # CrawlerWorker - type annotation omitted to avoid circular import
 ):
     """Background task to run the crawler in this process (local and Railway)."""
@@ -95,7 +95,7 @@ async def run_crawl_in_background(
             job = await crawler.run(
                 job_id=job_id,
                 kb_id=kb_id,
-                user_email=user_email,
+                account_id=account_id,
                 timeout_ms=300000,  # 5 minutes
             )
             if job.status != CrawlJobStatus.IN_PROGRESS or job.checkpoint is None:

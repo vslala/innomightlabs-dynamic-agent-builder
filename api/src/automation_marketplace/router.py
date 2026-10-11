@@ -5,6 +5,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPBearer
 
+from src.automations.access import require_automation
+from src.iam.actions import ResourceRef
+from src.iam.dependencies import get_owner, get_principal
 from src.automation_marketplace.models import (
     ArchiveMarketplaceAutomationResponse,
     ImportMarketplaceAutomationRequest,
@@ -58,7 +61,7 @@ async def get_marketplace_automation_import_plan(
     service: Annotated[AutomationMarketplaceService, Depends(get_automation_marketplace_service)],
 ) -> MarketplaceAutomationImportPlanResponse:
     try:
-        return service.get_import_plan(template_id=template_id, user_email=request.state.user_email)
+        return service.get_import_plan(template_id=template_id, owner=get_owner(request))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -76,7 +79,7 @@ async def save_marketplace_automation_import_session(
     try:
         return service.save_import_session(
             template_id=template_id,
-            user_email=request.state.user_email,
+            owner=get_owner(request),
             request=body,
         )
     except ValueError as exc:
@@ -94,10 +97,12 @@ async def import_marketplace_automation(
     body: ImportMarketplaceAutomationRequest,
     service: Annotated[AutomationMarketplaceService, Depends(get_automation_marketplace_service)],
 ) -> ImportMarketplaceAutomationResponse:
+    # It lands in the account the request acts in, owned by the caller
+    get_principal(request).require("automations:Create", ResourceRef("automation"))
     try:
         return service.import_automation(
             template_id=template_id,
-            user_email=request.state.user_email,
+            owner=get_owner(request),
             request=body,
         )
     except ValueError as exc:
@@ -115,7 +120,9 @@ async def publish_marketplace_automation(
     service: Annotated[AutomationMarketplaceService, Depends(get_automation_marketplace_service)],
 ) -> PublishMarketplaceAutomationResponse:
     try:
-        return service.publish_automation(user_email=request.state.user_email, request=body)
+        # Publishing hands the graph to everyone: it takes the right to share the automation
+        require_automation(get_principal(request), body.automation_id, "automations:Share")
+        return service.publish_automation(owner=get_owner(request), request=body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -127,6 +134,6 @@ async def archive_marketplace_automation(
     service: Annotated[AutomationMarketplaceService, Depends(get_automation_marketplace_service)],
 ) -> ArchiveMarketplaceAutomationResponse:
     try:
-        return service.archive_automation(template_id=template_id, user_email=request.state.user_email)
+        return service.archive_automation(template_id=template_id, owner=get_owner(request))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

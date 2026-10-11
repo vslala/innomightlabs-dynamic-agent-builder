@@ -49,7 +49,7 @@ class V1ChatTarget:
 def resolve_conversation(conversation_id: str, caller: Caller, end_user_id: EndUserId = None) -> V1ChatTarget:
     """Load a conversation that genuinely belongs to this key, end user and agent."""
     conversation = ConversationRepository().find_by_id(
-        conversation_id, ApiConversation.owner_for(caller.key.key_id, end_user_id)
+        conversation_id, ApiConversation.partition_for(caller.agent.account_id, caller.key.key_id, end_user_id)
     )
     if not isinstance(conversation, ApiConversation) or conversation.agent_id != caller.agent.agent_id:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -68,6 +68,7 @@ async def get_agent(caller: Caller) -> V1AgentResponse:
 async def create_conversation(body: V1CreateConversationRequest, caller: Caller) -> V1ConversationResponse:
     conversation = ApiConversation.start(
         api_key_id=caller.key.key_id,
+        account_id=caller.agent.account_id,
         agent_id=caller.agent.agent_id,
         title=body.title or f"Chat with {caller.agent.agent_name}",
         end_user_id=body.end_user_id,
@@ -86,7 +87,8 @@ async def list_conversations(
 ) -> Paginated[V1ConversationResponse]:
     """The end user's conversations with the agent (or the key's own, without one), most recently active first."""
     conversations, next_cursor, has_more = ConversationRepository().find_all_by_user_paginated(
-        ApiConversation.owner_for(caller.key.key_id, end_user_id), limit=limit, cursor=cursor
+        ApiConversation.partition_for(caller.agent.account_id, caller.key.key_id, end_user_id),
+        limit=limit, cursor=cursor,
     )
     return Paginated[V1ConversationResponse](
         items=[

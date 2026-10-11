@@ -13,7 +13,7 @@ from src.crypto import decrypt
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.google_mail.models import GoogleMailCredentials
 from src.skills.google_mail.oauth import GoogleMailOAuthState, encode_state_session
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, TEST_USER_EMAIL, agent_fields
 from tests.oauth_handoff import handoff_result
 
 
@@ -25,7 +25,7 @@ def _create_agent_for_user(user_email: str) -> Agent:
         agent_provider="Bedrock",
         agent_model="claude-3-7-sonnet",
         agent_persona="Helpful",
-        created_by=user_email,
+        **agent_fields(user_email),
     )
     return repo.save(agent)
 
@@ -86,6 +86,7 @@ class TestGoogleMailOAuth:
             GoogleMailOAuthState(
                 nonce="nonce",
                 user_email=TEST_USER_EMAIL,
+                account_id=account_for(TEST_USER_EMAIL),
                 agent_id="agent-1",
                 skill_id="google_mail",
                 return_to="http://localhost:5173/dashboard/agents/agent-1/skills",
@@ -107,7 +108,7 @@ class TestGoogleMailOAuth:
         assert params["skill_id"] == ["google_mail"]
 
         repo = ProviderSettingsRepository()
-        saved = repo.find_by_provider(TEST_USER_EMAIL, "GoogleMail")
+        saved = repo.find_by_provider(account_for(TEST_USER_EMAIL), "GoogleMail")
         assert saved is not None
         assert saved.auth_type == "oauth"
 

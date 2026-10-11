@@ -16,13 +16,18 @@ import {
   ErrorState,
   EmptyState,
   AlertBanner,
+  Pill,
 } from "../../components/ui";
 import {
   agentApiService,
+  type AgentAccess,
   type AgentResponse,
 } from "../../services/agents/AgentApiService";
 import { Grid, Inline, Page, PageActions, PageBody, PageDescription, PageHeader, Stack } from "../../components/layout";
 import styles from "./AgentsList.module.css";
+
+// Agents you don't own say how you reach them
+const ACCESS_BADGES: Partial<Record<AgentAccess, string>> = { shared: "Shared with you", admin: "Admin view" };
 
 export function AgentsList() {
   const navigate = useNavigate();
@@ -151,6 +156,9 @@ export function AgentsList() {
                           {agent.agent_name}
                         </h3>
                       </Link>
+                      {ACCESS_BADGES[agent.access] && (
+                        <Pill size="sm" variant="secondary">{ACCESS_BADGES[agent.access]}</Pill>
+                      )}
                       <p className={styles.agentPersona}>
                         {agent.agent_persona}
                       </p>

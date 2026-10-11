@@ -42,6 +42,7 @@ from tests.test_mcp_connectors import (
     FakeOAuthMCPClient,
     make_agent,
 )
+from tests.mock_data import account_for
 
 OWNER = "owner@example.com"
 
@@ -77,7 +78,7 @@ def _save_oauth_connection(
 ) -> MCPConnection:
     connection = repository.save_connection(
         MCPConnection(
-            owner_email=OWNER,
+            account_id=account_for(OWNER),
             name="GitHub",
             server_url="https://mcp.github.example/mcp",
             auth_type=MCPAuthType.OAUTH,
@@ -86,7 +87,7 @@ def _save_oauth_connection(
             ),
         )
     )
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=connection.mcp_id)
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=connection.mcp_id)
     return connection
 
 
@@ -137,7 +138,7 @@ async def test_runtime_uses_non_expiring_token_after_an_hour() -> None:
         MCPOAuthCredentials(access_token="gho_token", refresh_token=None, expires_at=None),
     )
 
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
+    listed = await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER)
 
     assert "error" not in listed["connectors"][0]
     assert client.auth_headers == [{"Authorization": "Bearer gho_token"}]
@@ -172,7 +173,7 @@ async def test_refresh_buffer_comes_from_delivery(monkeypatch: pytest.MonkeyPatc
     assert kept.access_token == "old-token"
     assert refreshed.access_token == "fresh-token"
     assert refreshes == ["refresh-1"]
-    stored = service.custom.oauth_auth(repository.find_connection(OWNER, connection.mcp_id))  # type: ignore[arg-type]
+    stored = service.custom.oauth_auth(repository.find_connection(account_for(OWNER), connection.mcp_id))  # type: ignore[arg-type]
     assert stored.credentials is not None and stored.credentials.access_token == "fresh-token"
 
 
@@ -330,14 +331,14 @@ async def test_connection_without_auth_sends_no_credentials() -> None:
     client = FakeOAuthMCPClient()
     service, _repository = _service(client)
     created = service.create_connection(
-        OWNER,
+        account_for(OWNER),
         MCPConnectionCreateRequest.model_validate(
             {"name": "Public MCP", "server_url": "https://public.example/mcp", "auth_type": "none"}
         ),
     )
-    service.enable_for_agent(owner_email=OWNER, agent_id="agent-1", mcp_id=created.mcp_id)
+    service.enable_for_agent(account_id=account_for(OWNER), agent_id="agent-1", mcp_id=created.mcp_id)
 
-    listed = await service.list_runtime_tools(owner_email=OWNER, agent_id="agent-1", caller=OWNER_CALLER)
+    listed = await service.list_runtime_tools(account_id=account_for(OWNER), agent_id="agent-1", caller=OWNER_CALLER)
 
     assert created.auth_type == MCPAuthType.NONE
     assert listed["connectors"][0]["tools"][0]["name"] == "search_pages"
@@ -369,7 +370,7 @@ async def test_list_tools_follows_next_cursor() -> None:
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": payload["id"], "result": result})
 
     connection = MCPConnection(
-        owner_email=OWNER, name="Atlassian", server_url="https://mcp.example/mcp", encrypted_auth_config="unused"
+        account_id=account_for(OWNER), name="Atlassian", server_url="https://mcp.example/mcp", encrypted_auth_config="unused"
     )
 
     result = await StreamableHTTPMCPClient(transport=httpx.MockTransport(handler)).list_tools(connection, {})

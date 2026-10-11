@@ -7,6 +7,7 @@ from src.agents.models import Agent
 from src.conversations.models import Conversation
 from src.memory.snapshot import CoreMemorySnapshot
 from src.skills.models import ActorKind
+from tests.mock_data import agent_fields, conversation_fields
 
 
 class FakeMessageRepository:
@@ -67,7 +68,7 @@ def _ollama_agent(thinking_mode) -> Agent:
         agent_model="qwen3:8b",
         agent_persona="Helpful",
         agent_ollama_thinking=thinking_mode,
-        created_by="owner@example.com",
+        **agent_fields("owner@example.com"),
     )
 
 
@@ -87,12 +88,12 @@ async def test_krishna_memgpt_forwards_the_agents_thinking_choice_to_the_provide
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
-    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
+    architecture._get_linked_kb_ids = lambda agent: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
     agent = _ollama_agent("enabled")
-    conversation = Conversation(title="T", agent_id=agent.agent_id, created_by="owner@example.com")
+    conversation = Conversation(title="T", agent_id=agent.agent_id, **conversation_fields("owner@example.com"))
 
     events = [
         event
@@ -131,12 +132,12 @@ async def test_krishna_memgpt_sends_no_think_key_when_the_agent_has_no_preferenc
     architecture.provider_settings_repo = FakeProviderSettingsRepository()
     architecture.skill_runtime = FakeSkillRuntime()
     architecture.mcp_connector_service = FakeMCPConnectorService()
-    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
+    architecture._get_linked_kb_ids = lambda agent: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
     architecture._build_system_prompt = lambda *args, **kwargs: "system prompt"
 
     agent = _ollama_agent(None)
-    conversation = Conversation(title="T", agent_id=agent.agent_id, created_by="owner@example.com")
+    conversation = Conversation(title="T", agent_id=agent.agent_id, **conversation_fields("owner@example.com"))
 
     async for _ in architecture.handle_message(
         agent=agent,
@@ -170,7 +171,7 @@ async def test_krishna_mini_forwards_the_agents_thinking_choice_to_the_provider(
 
     agent = _ollama_agent("disabled")
     agent.agent_architecture = "krishna-mini"
-    conversation = Conversation(title="T", agent_id=agent.agent_id, created_by="owner@example.com")
+    conversation = Conversation(title="T", agent_id=agent.agent_id, **conversation_fields("owner@example.com"))
 
     async for _ in architecture.handle_message(
         agent=agent,

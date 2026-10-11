@@ -199,6 +199,6 @@ def test_an_unreachable_store_follows_the_policy(fail_open):
 
 def test_subjects_are_stored_hashed(dynamodb_table):
     limiter(RateLimitPolicy.cooldown("TEST_HASH", seconds=60), Clock()).acquire("person@example.com")
-    item = dynamodb_table.scan()["Items"][0]
+    [item] = [item for item in dynamodb_table.scan()["Items"] if item["pk"].startswith("RATE_LIMIT#")]
     assert "person@example.com" not in str(item)
     assert item["sk"] == COOLDOWN_SK

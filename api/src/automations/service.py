@@ -5,6 +5,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
+from src.accounts.owner import Owner
 from src.agents.repository import AgentRepository
 from src.automations.models import (
     Automation,
@@ -113,63 +114,68 @@ class AutomationService:
             ]
         )
 
-    def create_automation(self, body: CreateAutomationRequest, user_email: str) -> AutomationGraph:
+    def create_automation(self, body: CreateAutomationRequest, owner: Owner) -> AutomationGraph:
         automation = Automation(
             title=body.title,
             description=body.description,
             status=body.status,
-            created_by=user_email,
+            account_id=owner.account_id,
+            owner_id=owner.user_id,
+            created_by=owner.user_id,
         )
         saved = self.repo.save_automation(automation)
         start, final, edge, trigger = self._default_graph_entities(saved.automation_id)
         self.repo.save_graph(saved.automation_id, [start, final], [edge], [trigger])
-        self._enable_builtin_skill(saved.automation_id, "agent_invocation", user_email)
+        self._enable_builtin_skill(saved.automation_id, "agent_invocation", owner)
         return AutomationGraph(saved, [start, final], [edge], [trigger])
 
-    def get_automation(self, automation_id: str, user_email: str) -> Automation:
-        automation = self.repo.find_automation_by_id(automation_id, user_email)
+    def get_automation(self, automation_id: str, owner: Owner) -> Automation:
+        automation = self.repo.find_in_account(owner.account_id, automation_id)
         if not automation or automation.status == AutomationStatus.DELETED:
             raise AutomationNotFoundError("Automation not found")
         return automation
 
-    def list_automations(self, user_email: str) -> list[Automation]:
-        return self.repo.find_automations_by_user(user_email)
+    def list_automations(self, owner: Owner) -> list[Automation]:
+        return self.repo.list_owned(owner.account_id, owner.user_id)
 
     def update_automation(
-        self, automation_id: str, body: UpdateAutomationRequest, user_email: str
+        self, automation_id: str, body: UpdateAutomationRequest, owner: Owner
     ) -> Automation:
-        automation = self.get_automation(automation_id, user_email)
+        automation = self.get_automation(automation_id, owner)
         previous_status = automation.status
         if body.title is not None:
             automation.title = body.title
         if body.description is not None:
             automation.description = body.description
         if body.status is not None:
-            self._apply_status_update(automation, previous_status, body.status, user_email)
+            self._apply_status_update(automation, previous_status, body.status, owner)
         return self.repo.save_automation(automation)
 
-    def delete_automation(self, automation_id: str, user_email: str) -> None:
-        graph = self.get_graph(automation_id, user_email)
+    def delete_automation(self, automation_id: str, owner: Owner) -> None:
+        graph = self.get_graph(automation_id, owner)
         for trigger in graph.triggers:
-            self.trigger_lifecycle.delete_trigger(automation_id, trigger.trigger_id, user_email)
+            self.trigger_lifecycle.delete_trigger(automation_id, trigger.trigger_id, owner)
         for node in graph.nodes:
             self._run_action_delete_lifecycle(
                 automation_id,
                 node,
-                user_email,
+                owner,
                 metadata={"automation_deleted": True},
             )
-        if not self.repo.soft_delete_automation(automation_id, user_email):
+        if not self.repo.soft_delete_automation(owner.account_id, automation_id):
             raise AutomationValidationError("Failed to delete automation")
+        from src.iam.shares import ShareService
 
-    def get_graph(self, automation_id: str, user_email: str) -> AutomationGraph:
-        automation = self.get_automation(automation_id, user_email)
-        self._enable_builtin_skill(automation_id, "agent_invocation", user_email)
+        ShareService().forget_resource(owner.account_id, "automation", automation_id)
+
+    def get_graph(self, automation_id: str, owner: Owner) -> AutomationGraph:
+        automation = self.get_automation(automation_id, owner)
+        self._enable_builtin_skill(automation_id, "agent_invocation", owner)
         nodes, edges, triggers = self.repo.get_graph(automation_id)
         return AutomationGraph(automation, nodes, edges, triggers)
 
-    def list_triggers(self, automation_id: str, user_email: str) -> list[AutomationTrigger]:
-        self.get_automation(automation_id, user_email)
+    def list_triggers(self, automation_id: str, owner: Owner) -> list[AutomationTrigger]:
+        self.get_automation(automation_id, owner)
         return self.repo.list_triggers(automation_id)
 
     def _default_graph_entities(
@@ -208,29 +214,29 @@ class AutomationService:
         automation: Automation,
         previous_status: AutomationStatus,
         next_status: AutomationStatus,
-        user_email: str,
+        owner: Owner,
     ) -> None:
         if next_status == AutomationStatus.ACTIVE:
-            graph = self.get_graph(automation.automation_id, user_email)
+            graph = self.get_graph(automation.automation_id, owner)
             self.validate_graph(
                 graph.nodes,
                 graph.edges,
                 graph.triggers,
-                user_email,
+                owner,
                 automation.automation_id,
             )
             automation.status = next_status
             if previous_status != AutomationStatus.ACTIVE:
                 for trigger in graph.triggers:
-                    self.trigger_lifecycle.sync_trigger(automation, trigger, user_email)
+                    self.trigger_lifecycle.sync_trigger(automation, trigger, owner)
             return
 
         if previous_status == AutomationStatus.ACTIVE:
-            graph = self.get_graph(automation.automation_id, user_email)
+            graph = self.get_graph(automation.automation_id, owner)
             self.trigger_lifecycle.pause_schedule_triggers(
                 automation.automation_id,
                 graph.triggers,
-                user_email,
+                owner,
             )
         automation.status = next_status
 
@@ -331,7 +337,7 @@ class AutomationService:
         automation_id: str,
         existing_nodes: list[AutomationNode],
         next_nodes: list[AutomationNode],
-        user_email: str,
+        owner: Owner,
     ) -> None:
         next_node_ids = {node.node_id for node in next_nodes}
         for removed_node in existing_nodes:
@@ -339,14 +345,14 @@ class AutomationService:
                 self._run_action_delete_lifecycle(
                     automation_id,
                     removed_node,
-                    user_email,
+                    owner,
                     metadata={"automation_deleted": False, "graph_replaced": True},
                 )
 
     def save_graph(
-        self, automation_id: str, body: SaveAutomationGraphRequest, user_email: str
+        self, automation_id: str, body: SaveAutomationGraphRequest, owner: Owner
     ) -> AutomationGraph:
-        automation = self.get_automation(automation_id, user_email)
+        automation = self.get_automation(automation_id, owner)
         nodes = assign_missing_aliases(
             [self._node_from_graph_item(automation_id, item) for item in body.nodes]
         )
@@ -356,25 +362,25 @@ class AutomationService:
             nodes,
             edges,
             existing_triggers,
-            user_email,
+            owner,
             automation_id,
             mode=self._save_mode(automation),
         )
-        self._run_removed_node_lifecycle(automation_id, existing_nodes, nodes, user_email)
+        self._run_removed_node_lifecycle(automation_id, existing_nodes, nodes, owner)
         self.repo.save_graph(automation_id, nodes, edges, existing_triggers)
         return AutomationGraph(automation, nodes, edges, existing_triggers)
 
     def add_node(
-        self, automation_id: str, body: CreateAutomationNodeRequest, user_email: str
+        self, automation_id: str, body: CreateAutomationNodeRequest, owner: Owner
     ) -> AutomationNode:
-        graph = self.get_graph(automation_id, user_email)
+        graph = self.get_graph(automation_id, owner)
         node = self._node_from_create_request(automation_id, body)
         nodes = assign_missing_aliases([*graph.nodes, node])
         self.validate_graph(
             nodes,
             graph.edges,
             graph.triggers,
-            user_email,
+            owner,
             automation_id,
             mode=self._save_mode(graph.automation),
         )
@@ -385,9 +391,9 @@ class AutomationService:
         automation_id: str,
         node_id: str,
         body: UpdateAutomationNodeRequest,
-        user_email: str,
+        owner: Owner,
     ) -> AutomationNode:
-        graph = self.get_graph(automation_id, user_email)
+        graph = self.get_graph(automation_id, owner)
         node = next((item for item in graph.nodes if item.node_id == node_id), None)
         if not node:
             raise AutomationNotFoundError("Node not found")
@@ -410,14 +416,14 @@ class AutomationService:
             updated_nodes,
             graph.edges,
             graph.triggers,
-            user_email,
+            owner,
             automation_id,
             mode=self._save_mode(graph.automation),
         )
         return self.repo.save_node(node)
 
-    def delete_node(self, automation_id: str, node_id: str, user_email: str) -> None:
-        graph = self.get_graph(automation_id, user_email)
+    def delete_node(self, automation_id: str, node_id: str, owner: Owner) -> None:
+        graph = self.get_graph(automation_id, owner)
         nodes = [node for node in graph.nodes if node.node_id != node_id]
         if len(nodes) == len(graph.nodes):
             raise AutomationNotFoundError("Node not found")
@@ -431,7 +437,7 @@ class AutomationService:
             nodes,
             edges,
             triggers,
-            user_email,
+            owner,
             automation_id,
             mode=self._save_mode(graph.automation),
         )
@@ -439,7 +445,7 @@ class AutomationService:
         self._run_action_delete_lifecycle(
             automation_id,
             deleted_node,
-            user_email,
+            owner,
             metadata={"automation_deleted": False},
         )
         self.repo.delete_node(automation_id, node_id)
@@ -451,15 +457,15 @@ class AutomationService:
                 self.repo.delete_trigger(automation_id, trigger.trigger_id)
 
     def add_edge(
-        self, automation_id: str, body: CreateAutomationEdgeRequest, user_email: str
+        self, automation_id: str, body: CreateAutomationEdgeRequest, owner: Owner
     ) -> AutomationEdge:
-        graph = self.get_graph(automation_id, user_email)
+        graph = self.get_graph(automation_id, owner)
         edge = self._edge_from_create_request(automation_id, body)
         self.validate_graph(
             graph.nodes,
             [*graph.edges, edge],
             graph.triggers,
-            user_email,
+            owner,
             automation_id,
             mode=self._save_mode(graph.automation),
         )
@@ -470,9 +476,9 @@ class AutomationService:
         automation_id: str,
         edge_id: str,
         body: UpdateAutomationEdgeRequest,
-        user_email: str,
+        owner: Owner,
     ) -> AutomationEdge:
-        graph = self.get_graph(automation_id, user_email)
+        graph = self.get_graph(automation_id, owner)
         edge = next((item for item in graph.edges if item.edge_id == edge_id), None)
         if not edge:
             raise AutomationNotFoundError("Edge not found")
@@ -489,14 +495,14 @@ class AutomationService:
             graph.nodes,
             updated_edges,
             graph.triggers,
-            user_email,
+            owner,
             automation_id,
             mode=self._save_mode(graph.automation),
         )
         return self.repo.save_edge(edge)
 
-    def delete_edge(self, automation_id: str, edge_id: str, user_email: str) -> None:
-        graph = self.get_graph(automation_id, user_email)
+    def delete_edge(self, automation_id: str, edge_id: str, owner: Owner) -> None:
+        graph = self.get_graph(automation_id, owner)
         edges = [edge for edge in graph.edges if edge.edge_id != edge_id]
         if len(edges) == len(graph.edges):
             raise AutomationNotFoundError("Edge not found")
@@ -504,16 +510,16 @@ class AutomationService:
             graph.nodes,
             edges,
             graph.triggers,
-            user_email,
+            owner,
             automation_id,
             mode=self._save_mode(graph.automation),
         )
         self.repo.delete_edge(automation_id, edge_id)
 
     def add_trigger(
-        self, automation_id: str, body: CreateAutomationTriggerRequest, user_email: str
+        self, automation_id: str, body: CreateAutomationTriggerRequest, owner: Owner
     ) -> AutomationTrigger:
-        graph = self.get_graph(automation_id, user_email)
+        graph = self.get_graph(automation_id, owner)
         trigger = AutomationTrigger(
             trigger_id=body.trigger_id or "",
             automation_id=automation_id,
@@ -534,7 +540,7 @@ class AutomationService:
             raise AutomationValidationError("Trigger IDs must be unique")
         self.graph_validator.validate_trigger(graph.nodes, trigger)
         saved = self.repo.save_trigger(trigger)
-        self.trigger_lifecycle.sync_trigger(graph.automation, saved, user_email)
+        self.trigger_lifecycle.sync_trigger(graph.automation, saved, owner)
         return saved
 
     def update_trigger(
@@ -542,9 +548,9 @@ class AutomationService:
         automation_id: str,
         trigger_id: str,
         body: UpdateAutomationTriggerRequest,
-        user_email: str,
+        owner: Owner,
     ) -> AutomationTrigger:
-        graph = self.get_graph(automation_id, user_email)
+        graph = self.get_graph(automation_id, owner)
         trigger = next((item for item in graph.triggers if item.trigger_id == trigger_id), None)
         if not trigger:
             raise AutomationNotFoundError("Trigger not found")
@@ -566,15 +572,15 @@ class AutomationService:
             raise AutomationValidationError("Trigger IDs must be unique")
         self.graph_validator.validate_trigger(graph.nodes, trigger)
         saved = self.repo.save_trigger(trigger)
-        self.trigger_lifecycle.sync_trigger(graph.automation, saved, user_email)
+        self.trigger_lifecycle.sync_trigger(graph.automation, saved, owner)
         return saved
 
-    def delete_trigger(self, automation_id: str, trigger_id: str, user_email: str) -> None:
-        graph = self.get_graph(automation_id, user_email)
+    def delete_trigger(self, automation_id: str, trigger_id: str, owner: Owner) -> None:
+        graph = self.get_graph(automation_id, owner)
         triggers = [trigger for trigger in graph.triggers if trigger.trigger_id != trigger_id]
         if len(triggers) == len(graph.triggers):
             raise AutomationNotFoundError("Trigger not found")
-        self.trigger_lifecycle.delete_trigger(automation_id, trigger_id, user_email)
+        self.trigger_lifecycle.delete_trigger(automation_id, trigger_id, owner)
         self.repo.delete_trigger(automation_id, trigger_id)
 
     def validate_graph(
@@ -582,21 +588,21 @@ class AutomationService:
         nodes: list[AutomationNode],
         edges: list[AutomationEdge],
         triggers: list[AutomationTrigger],
-        user_email: str,
+        owner: Owner,
         automation_id: str | None = None,
         mode: GraphValidationMode = GraphValidationMode.STRICT,
     ) -> None:
-        self.graph_validator.validate(nodes, edges, triggers, user_email, automation_id, mode=mode)
+        self.graph_validator.validate(nodes, edges, triggers, owner, automation_id, mode=mode)
 
     def preview_smart_values(
         self,
         automation_id: str,
         body: SmartValuePreviewRequest,
-        user_email: str,
+        owner: Owner,
     ) -> SmartValuePreviewResponse:
         """Render a template against a run context so the editor can show real values."""
-        self.get_automation(automation_id, user_email)
-        run = self._preview_run(automation_id, body.run_id, user_email)
+        self.get_automation(automation_id, owner)
+        run = self._preview_run(automation_id, body.run_id, owner)
         preview = SmartValueResolver(run.context if run else {}).preview(body.template)
         return SmartValuePreviewResponse(
             rendered=preview.rendered,
@@ -616,42 +622,42 @@ class AutomationService:
         self,
         automation_id: str,
         run_id: str | None,
-        user_email: str,
+        owner: Owner,
     ) -> AutomationRun | None:
         if run_id:
-            run = self.repo.find_run_by_id(run_id, user_email)
+            run = self.repo.find_run_by_id(run_id)
             if not run or run.automation_id != automation_id:
                 raise AutomationNotFoundError("Run not found")
             return run
         runs, _, _ = self.repo.find_runs_by_automation(automation_id, 1, None)
         return runs[0] if runs else None
 
-    def list_skills(self, automation_id: str, user_email: str) -> list[AutomationSkillResponse]:
-        self.get_automation(automation_id, user_email)
-        return [self._skill_response(item, user_email) for item in self.repo.list_skills(automation_id)]
+    def list_skills(self, automation_id: str, owner: Owner) -> list[AutomationSkillResponse]:
+        self.get_automation(automation_id, owner)
+        return [self._skill_response(item, owner) for item in self.repo.list_skills(automation_id)]
 
     def enable_skill(
         self,
         automation_id: str,
         skill_id: str,
         body: EnableAutomationSkillRequest,
-        user_email: str,
+        owner: Owner,
     ) -> AutomationSkillResponse:
-        self.get_automation(automation_id, user_email)
+        self.get_automation(automation_id, owner)
         skill = self.install_skill(
             automation_id=automation_id,
             skill_id=skill_id,
             raw_config=body.config,
-            user_email=user_email,
+            owner=owner,
         )
-        return self._skill_response(skill, user_email)
+        return self._skill_response(skill, owner)
 
     def validate_skill_config(
         self,
         *,
         skill_id: str,
         raw_config: dict[str, Any],
-        user_email: str,
+        owner: Owner,
         validate_connectors: bool = True,
     ) -> dict[str, Any]:
         loaded = self.skill_registry.get(skill_id)
@@ -660,7 +666,7 @@ class AutomationService:
         if not loaded.manifest.automation.enabled:
             raise AutomationValidationError(f"{loaded.manifest.name} is not available for automations")
         if validate_connectors:
-            missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
+            missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.account_id)
             if missing:
                 raise AutomationValidationError(
                     f"{loaded.manifest.name} requires connected connectors: {', '.join(missing)}"
@@ -673,18 +679,18 @@ class AutomationService:
         automation_id: str,
         skill_id: str,
         raw_config: dict[str, Any],
-        user_email: str,
+        owner: Owner,
         enabled: bool = True,
         validate_connectors: bool = True,
     ) -> AutomationSkill:
-        self.get_automation(automation_id, user_email)
+        self.get_automation(automation_id, owner)
         loaded = self.skill_registry.get(skill_id)
         if not loaded:
             raise AutomationValidationError(f"Unknown skill: {skill_id}")
         normalized_config = self.validate_skill_config(
             skill_id=skill_id,
             raw_config=raw_config,
-            user_email=user_email,
+            owner=owner,
             validate_connectors=validate_connectors,
         )
         installed_skill_id = installed_skill_id_for(loaded.manifest, normalized_config)
@@ -700,7 +706,7 @@ class AutomationService:
             config=plain_config,
             encrypted_secrets=encrypted_secrets,
             secret_fields=secret_fields,
-            enabled_by=user_email,
+            enabled_by=owner.user_id,
         )
         return self.repo.save_skill(skill)
 
@@ -709,9 +715,9 @@ class AutomationService:
         automation_id: str,
         skill_id: str,
         body: UpdateAutomationSkillRequest,
-        user_email: str,
+        owner: Owner,
     ) -> AutomationSkillResponse:
-        self.get_automation(automation_id, user_email)
+        self.get_automation(automation_id, owner)
         existing = self.repo.find_skill(automation_id, skill_id)
         if not existing:
             raise AutomationNotFoundError("Automation skill not found")
@@ -731,20 +737,20 @@ class AutomationService:
             existing.config = plain_config
             existing.encrypted_secrets = encrypted_secrets
             existing.secret_fields = secret_fields
-        return self._skill_response(self.repo.save_skill(existing), user_email)
+        return self._skill_response(self.repo.save_skill(existing), owner)
 
-    def delete_skill(self, automation_id: str, skill_id: str, user_email: str) -> None:
-        self.get_automation(automation_id, user_email)
+    def delete_skill(self, automation_id: str, skill_id: str, owner: Owner) -> None:
+        self.get_automation(automation_id, owner)
         if not self.repo.delete_skill(automation_id, skill_id):
             raise AutomationValidationError("Failed to delete automation skill")
 
     def list_action_catalog(
         self,
         automation_id: str,
-        user_email: str,
+        owner: Owner,
     ) -> AutomationActionCatalogResponse:
-        self.get_automation(automation_id, user_email)
-        self._enable_default_available_skills(automation_id, user_email)
+        self.get_automation(automation_id, owner)
+        self._enable_default_available_skills(automation_id, owner)
         actions: list[AutomationActionCatalogItemResponse] = []
         installed_by_base_id: dict[str, list[AutomationSkill]] = defaultdict(list)
         for enabled in self.repo.list_skills(automation_id):
@@ -754,9 +760,9 @@ class AutomationService:
                 continue
             connector_statuses = [
                 AutomationSkillConnectorResponse(**status.model_dump())
-                for status in self.connector_service.statuses_for_manifest(loaded.manifest, user_email)
+                for status in self.connector_service.statuses_for_manifest(loaded.manifest, owner.account_id)
             ]
-            missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
+            missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.account_id)
             disabled_reason = None
             available = enabled.enabled and not missing and loaded.manifest.automation.enabled
             if not loaded.manifest.automation.enabled:
@@ -796,9 +802,9 @@ class AutomationService:
                 continue
             connector_statuses = [
                 AutomationSkillConnectorResponse(**status.model_dump())
-                for status in self.connector_service.statuses_for_manifest(loaded.manifest, user_email)
+                for status in self.connector_service.statuses_for_manifest(loaded.manifest, owner.account_id)
             ]
-            missing = self.connector_service.missing_required_connectors(loaded.manifest, user_email)
+            missing = self.connector_service.missing_required_connectors(loaded.manifest, owner.account_id)
             if missing:
                 disabled_reason = "Missing connected connectors: " + ", ".join(missing)
             elif loaded.manifest.form:
@@ -812,7 +818,7 @@ class AutomationService:
                         loaded.manifest.id,
                         f"/automations/{automation_id}/skills?skill_id={loaded.manifest.id}",
                     ),
-                    FormOptionsContext(user_email=user_email),
+                    FormOptionsContext(owner=owner),
                 )
                 install_form = form.model_dump(mode="json", exclude_none=True)
             for action in loaded.manifest.actions:
@@ -841,13 +847,13 @@ class AutomationService:
                 )
         return AutomationActionCatalogResponse(actions=actions)
 
-    def _skill_response(self, item: AutomationSkill, user_email: str) -> AutomationSkillResponse:
+    def _skill_response(self, item: AutomationSkill, owner: Owner) -> AutomationSkillResponse:
         loaded = self.skill_registry.get(item.skill_id)
         connectors = []
         if loaded:
             connectors = [
                 AutomationSkillConnectorResponse(**status.model_dump())
-                for status in self.connector_service.statuses_for_manifest(loaded.manifest, user_email)
+                for status in self.connector_service.statuses_for_manifest(loaded.manifest, owner.account_id)
             ]
         return AutomationSkillResponse(
             installed_skill_id=item.installed_skill_id or item.skill_id,
@@ -866,7 +872,7 @@ class AutomationService:
         self,
         automation_id: str,
         node: AutomationNode,
-        user_email: str,
+        owner: Owner,
         metadata: dict[str, Any],
     ) -> None:
         if node.type != AutomationNodeType.ACTION:
@@ -882,7 +888,7 @@ class AutomationService:
             automation_id,
             installed_skill_id=skill_config.installed_skill_id,
             skill_id=skill_config.skill_id,
-            user_email=user_email,
+            owner=owner,
             allow_auto_enable=False,
         )
         skill_id = enabled.skill_id if enabled else skill_config.skill_id
@@ -903,7 +909,7 @@ class AutomationService:
                 else skill_config.installed_skill_id
             ),
             action_name=skill_config.action,
-            owner_email=user_email,
+            owner_email=owner.email,
             config=self.repo.get_skill_runtime_config(enabled) if enabled else {},
             arguments=skill_config.arguments,
             metadata=lifecycle_metadata,
@@ -916,7 +922,7 @@ class AutomationService:
         encrypted_secrets = encrypt(json.dumps(secret_config, ensure_ascii=True)) if secret_config else ""
         return plain_config, encrypted_secrets, secret_fields
 
-    def _enable_builtin_skill(self, automation_id: str, skill_id: str, user_email: str) -> None:
+    def _enable_builtin_skill(self, automation_id: str, skill_id: str, owner: Owner) -> None:
         if self.repo.find_skill(automation_id, skill_id):
             return
         loaded = self.skill_registry.get(skill_id)
@@ -932,19 +938,19 @@ class AutomationService:
                 skill_description=loaded.manifest.description,
                 enabled=True,
                 config={},
-                enabled_by=user_email,
+                enabled_by=owner.user_id,
             )
         )
 
-    def _enable_default_available_skills(self, automation_id: str, user_email: str) -> None:
+    def _enable_default_available_skills(self, automation_id: str, owner: Owner) -> None:
         for loaded in self.skill_registry.list():
-            self._find_or_enable_default_skill(automation_id, loaded.manifest.id, user_email)
+            self._find_or_enable_default_skill(automation_id, loaded.manifest.id, owner)
 
     def _find_or_enable_default_skill(
         self,
         automation_id: str,
         skill_id: str,
-        user_email: str,
+        owner: Owner,
     ) -> AutomationSkill | None:
         existing = self.repo.find_skill(automation_id, skill_id)
         if existing:
@@ -957,7 +963,7 @@ class AutomationService:
             return None
         if loaded.manifest.form:
             return None
-        if self.connector_service.missing_required_connectors(loaded.manifest, user_email):
+        if self.connector_service.missing_required_connectors(loaded.manifest, owner.account_id):
             return None
 
         return self.repo.save_skill(
@@ -972,7 +978,7 @@ class AutomationService:
                 config={},
                 encrypted_secrets="",
                 secret_fields=[],
-                enabled_by=user_email,
+                enabled_by=owner.user_id,
             )
         )
 
@@ -982,7 +988,7 @@ class AutomationService:
         *,
         installed_skill_id: str | None,
         skill_id: str | None,
-        user_email: str,
+        owner: Owner,
         allow_auto_enable: bool,
     ) -> AutomationSkill | None:
         requested_installed_id = str(installed_skill_id or "").strip()
@@ -999,7 +1005,7 @@ class AutomationService:
             auto_enabled = self._find_or_enable_default_skill(
                 automation_id,
                 requested_skill_id,
-                user_email,
+                owner,
             )
             if auto_enabled:
                 return auto_enabled
@@ -1022,13 +1028,13 @@ class AutomationService:
         automation_id: str,
         installed_skill_id: str | None,
         skill_id: str | None,
-        user_email: str,
+        owner: Owner,
         allow_auto_enable: bool,
     ) -> AutomationSkill | None:
         return self._resolve_automation_skill(
             automation_id,
             installed_skill_id=installed_skill_id,
             skill_id=skill_id,
-            user_email=user_email,
+            owner=owner,
             allow_auto_enable=allow_auto_enable,
         )

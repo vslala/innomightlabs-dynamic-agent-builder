@@ -37,15 +37,12 @@ async def generate(
         raise ValueError("Image generation requires an agent_id in runtime context")
     if not conversation_id:
         raise ValueError("Image generation requires a conversation_id in runtime context")
-    if not owner_email:
-        raise ValueError("Image generation requires an owner_email in runtime context")
 
     service = AgentImageGenerationService()
     final_event: SSEEvent | None = None
     async for event in service.stream_for_agent_turn(
         agent_id=agent_id,
         conversation_id=conversation_id,
-        owner_email=owner_email,
         actor_email=actor_email,
         user_message_id=user_message_id,
         request=GenerateImageRequest(

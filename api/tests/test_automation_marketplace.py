@@ -32,7 +32,11 @@ from src.automations.models import (
 )
 from src.automations.repository import AutomationRepository
 from src.form_models import Form, FormInput, FormInputType, FormOptionsSource
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import TEST_USER_EMAIL, agent_fields, automation_fields
+from tests.mock_data import test_owner as _test_owner
+
+TEST_OWNER = _test_owner()
+
 
 
 def _service(repo: AutomationRepository | None = None) -> AutomationMarketplaceService:
@@ -53,24 +57,24 @@ class _FakeAutomationService:
         self.repo = repo
         self.skill_registry = _FakeSkillRegistry()
 
-    def get_graph(self, automation_id: str, user_email: str) -> SimpleNamespace:
-        automation = self.repo.find_automation_by_id(automation_id, user_email)
+    def get_graph(self, automation_id: str, owner) -> SimpleNamespace:
+        automation = self.repo.find_in_account(owner.account_id, automation_id)
         assert automation is not None
         nodes, edges, triggers = self.repo.get_graph(automation_id)
         return SimpleNamespace(automation=automation, nodes=nodes, edges=edges, triggers=triggers)
 
-    def validate_graph(self, nodes, edges, triggers, user_email, automation_id=None):
-        del nodes, edges, triggers, user_email, automation_id
+    def validate_graph(self, nodes, edges, triggers, owner, automation_id=None):
+        del nodes, edges, triggers, owner, automation_id
 
     def validate_skill_config(
         self,
         *,
         skill_id,
         raw_config,
-        user_email,
+        owner,
         validate_connectors=True,
     ):
-        del user_email, validate_connectors
+        del owner, validate_connectors
         loaded = self.skill_registry.get(skill_id)
         if not loaded:
             raise ValueError(f"Unknown skill: {skill_id}")
@@ -86,14 +90,14 @@ class _FakeAutomationService:
         automation_id,
         skill_id,
         raw_config,
-        user_email,
+        owner,
         enabled=True,
         validate_connectors=True,
     ):
         normalized = self.validate_skill_config(
             skill_id=skill_id,
             raw_config=raw_config,
-            user_email=user_email,
+            owner=owner,
             validate_connectors=validate_connectors,
         )
         loaded = self.skill_registry.get(skill_id)
@@ -106,7 +110,7 @@ class _FakeAutomationService:
             skill_description="Test skill",
             enabled=enabled,
             config=normalized,
-            enabled_by=user_email,
+            enabled_by=owner.user_id,
         )
         return self.repo.save_skill(skill)
 
@@ -159,7 +163,7 @@ class _FakeSkillRegistry:
 
 
 def _source_automation_with_graph(repo: AutomationRepository) -> tuple[Automation, list[AutomationNode], list[AutomationEdge]]:
-    automation = repo.save_automation(Automation(title="Source workflow", created_by=TEST_USER_EMAIL))
+    automation = repo.save_automation(Automation(title="Source workflow", **automation_fields(TEST_USER_EMAIL)))
     start = AutomationNode(
         automation_id=automation.automation_id,
         node_id="source-start",
@@ -199,7 +203,7 @@ def test_automation_marketplace_import_preserves_node_ids_without_triggers(dynam
     source, nodes, edges = _source_automation_with_graph(automation_repo)
 
     published = service.publish_automation(
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
         request=PublishMarketplaceAutomationRequest(
             automation_id=source.automation_id,
             title="Reusable workflow",
@@ -216,7 +220,7 @@ def test_automation_marketplace_import_preserves_node_ids_without_triggers(dynam
 
     imported = service.import_automation(
         template_id=published.template_id,
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
         request=ImportMarketplaceAutomationRequest(
             title="Imported workflow",
             skill_configs={},
@@ -248,7 +252,7 @@ def test_automation_marketplace_publish_exports_complete_graph(dynamodb_table):
     source, nodes, edges = _source_automation_with_graph(automation_repo)
 
     published = service.publish_automation(
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
         request=PublishMarketplaceAutomationRequest(
             automation_id=source.automation_id,
             title="Complete workflow",
@@ -284,7 +288,7 @@ def test_automation_marketplace_import_session_persists_with_ttl(dynamodb_table)
 
     session = _service().save_import_session(
         template_id=template.template_id,
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
         request=SaveMarketplaceAutomationImportSessionRequest(
             title="Configured workflow",
             description="Configured description",
@@ -292,7 +296,7 @@ def test_automation_marketplace_import_session_persists_with_ttl(dynamodb_table)
     )
 
     saved = AutomationMarketplaceRepository().find_import_session(
-        owner_email=TEST_USER_EMAIL,
+        partition=TEST_OWNER.member_pk,
         session_id=session.session_id,
     )
 
@@ -309,7 +313,7 @@ def test_automation_marketplace_import_uses_saved_session_values(dynamodb_table)
     source, nodes, edges = _source_automation_with_graph(automation_repo)
 
     published = service.publish_automation(
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
         request=PublishMarketplaceAutomationRequest(
             automation_id=source.automation_id,
             title="Reusable workflow",
@@ -325,7 +329,7 @@ def test_automation_marketplace_import_uses_saved_session_values(dynamodb_table)
     )
     session = service.save_import_session(
         template_id=published.template_id,
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
         request=SaveMarketplaceAutomationImportSessionRequest(
             title="Imported from saved session",
             description="Saved while configuring.",
@@ -334,13 +338,13 @@ def test_automation_marketplace_import_uses_saved_session_values(dynamodb_table)
 
     imported = service.import_automation(
         template_id=published.template_id,
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
         request=ImportMarketplaceAutomationRequest(session_id=session.session_id),
     )
 
-    saved_automation = automation_repo.find_automation_by_id(imported.automation_id, TEST_USER_EMAIL)
+    saved_automation = automation_repo.find_in_account(TEST_OWNER.account_id, imported.automation_id)
     cleared_session = AutomationMarketplaceRepository().find_import_session(
-        owner_email=TEST_USER_EMAIL,
+        partition=TEST_OWNER.member_pk,
         session_id=session.session_id,
     )
 
@@ -397,7 +401,7 @@ def test_automation_marketplace_import_does_not_require_config_for_empty_skill_f
 
     imported = service.import_automation(
         template_id=template.template_id,
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
         request=ImportMarketplaceAutomationRequest(title="Imported Gmail workflow"),
     )
 
@@ -426,9 +430,9 @@ def test_automation_marketplace_republish_creates_new_version(dynamodb_table):
         "status": MarketplaceAutomationStatus.PUBLISHED,
     }
 
-    first = service.publish_automation(user_email=TEST_USER_EMAIL, request=PublishMarketplaceAutomationRequest(**payload))
+    first = service.publish_automation(owner=TEST_OWNER, request=PublishMarketplaceAutomationRequest(**payload))
     second = service.publish_automation(
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
         request=PublishMarketplaceAutomationRequest(**{**payload, "short_description": "Two", "full_description": "Two"}),
     )
 
@@ -441,7 +445,7 @@ def test_automation_marketplace_rejects_publisher_owned_agent_id(dynamodb_table)
     del dynamodb_table
     automation_repo = AutomationRepository()
     service = _service(automation_repo)
-    automation = automation_repo.save_automation(Automation(title="Unsafe workflow", created_by=TEST_USER_EMAIL))
+    automation = automation_repo.save_automation(Automation(title="Unsafe workflow", **automation_fields(TEST_USER_EMAIL)))
     start = AutomationNode(
         automation_id=automation.automation_id,
         node_id="start",
@@ -481,7 +485,7 @@ def test_automation_marketplace_rejects_publisher_owned_agent_id(dynamodb_table)
 
     with pytest.raises(ValueError, match="import input placeholder"):
         service.publish_automation(
-            user_email=TEST_USER_EMAIL,
+            owner=TEST_OWNER,
             request=PublishMarketplaceAutomationRequest(
                 automation_id=automation.automation_id,
                 title="Unsafe workflow",
@@ -505,7 +509,7 @@ def test_automation_marketplace_import_plan_hydrates_agent_options(dynamodb_tabl
             agent_architecture="krishna-mini",
             agent_provider="Bedrock",
             agent_persona="Research.",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
     )
     template = AutomationMarketplaceRepository().save(
@@ -528,7 +532,7 @@ def test_automation_marketplace_import_plan_hydrates_agent_options(dynamodb_tabl
 
     plan = _service().get_import_plan(
         template_id=template.template_id,
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
     )
 
     target_agent = plan.skill_forms[0].form.form_inputs[0]
@@ -538,7 +542,7 @@ def test_automation_marketplace_import_plan_hydrates_agent_options(dynamodb_tabl
 
 
 def _publish_invoke_agent_step(service, automation_repo, agent_id: str):
-    automation = automation_repo.save_automation(Automation(title="Briefing", created_by=TEST_USER_EMAIL))
+    automation = automation_repo.save_automation(Automation(title="Briefing", **automation_fields(TEST_USER_EMAIL)))
     automation_repo.save_skill(
         AutomationSkill(
             automation_id=automation.automation_id,
@@ -587,7 +591,7 @@ def _publish_invoke_agent_step(service, automation_repo, agent_id: str):
     ]
     automation_repo.save_graph(automation.automation_id, [start, action, final], edges, [])
     return service.publish_automation(
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
         request=PublishMarketplaceAutomationRequest(
             automation_id=automation.automation_id,
             title="Daily briefing",
@@ -622,7 +626,7 @@ def test_automation_marketplace_asks_the_importer_for_their_own_agent(dynamodb_t
 
     imported = service.import_automation(
         template_id=published.template_id,
-        user_email=TEST_USER_EMAIL,
+        owner=TEST_OWNER,
         request=ImportMarketplaceAutomationRequest(
             title="Imported",
             skill_configs={"agent_invocation": {"target_agent_id": "importer-agent-id"}},
@@ -645,7 +649,7 @@ def test_automation_marketplace_publish_never_copies_skill_config(dynamodb_table
     with pytest.raises(ValueError, match="Missing configuration for skill"):
         service.import_automation(
             template_id=published.template_id,
-            user_email=TEST_USER_EMAIL,
+            owner=TEST_OWNER,
             request=ImportMarketplaceAutomationRequest(
                 title="Imported", skill_configs={}, import_inputs={"briefing_agent_id": "importer-agent-id"}
             ),

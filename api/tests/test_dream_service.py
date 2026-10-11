@@ -19,6 +19,7 @@ from src.dream.planner import DreamPlanningResult
 from src.dream.service import DreamService
 from src.memory.models import CoreMemory, MemoryBlockDefinition
 from src.messages.models import Message
+from tests.mock_data import account_for, agent_fields, conversation_fields, conversations_of
 
 
 OWNER = "owner@example.com"
@@ -44,8 +45,8 @@ class FakeDreamRepository:
     def release_run_lease(self, agent_id, user_id, run_id) -> None:
         self.released_lease_run_ids.append(run_id)
 
-    def find_settings(self, user_email: str) -> DreamSettings | None:
-        assert user_email == OWNER
+    def find_settings(self, account_id: str) -> DreamSettings | None:
+        assert account_id == account_for(OWNER), "the agent's account's settings"
         return self.settings
 
     def find_cursor(self, agent_id: str, user_id: str) -> DreamCursor | None:
@@ -109,8 +110,8 @@ class FakeConversationRepository:
     def __init__(self, conversations) -> None:
         self.conversations = conversations
 
-    def find_all_by_user(self, owner_email: str):
-        assert owner_email == OWNER
+    def find_all_by_user(self, partition: str):
+        assert partition == conversations_of(OWNER), "the owner's own chats with the agent"
         return self.conversations
 
 
@@ -130,13 +131,13 @@ class FakeAgentRepository:
     def __init__(self, agent: Agent | None) -> None:
         self.agent = agent
 
-    def find_agent_by_id(self, agent_id: str, owner_email: str):
-        assert (agent_id, owner_email) == (AGENT_ID, OWNER)
+    def get(self, agent_id: str):
+        assert agent_id == AGENT_ID
         return self.agent
 
 
 class FakeProviderSettingsRepository:
-    def find_by_provider(self, owner_email: str, provider_name: str):
+    def find_by_provider(self, account_id: str, provider_name: str):
         return SimpleNamespace(provider_name=provider_name)
 
 
@@ -172,13 +173,13 @@ def agent(architecture: str = "krishna-memgpt") -> Agent:
         agent_architecture=architecture,
         agent_provider="test",
         agent_persona="Helpful",
-        created_by=OWNER,
+        **agent_fields(OWNER),
     )
 
 
 def settings(**overrides) -> DreamSettings:
     values: dict[str, Any] = {
-        "user_email": OWNER, "enabled": True, "provider_name": "test", "model_name": "test-model"
+        "account_id": account_for(OWNER), "enabled": True, "provider_name": "test", "model_name": "test-model"
     }
     values.update(overrides)
     return DreamSettings(**values)
@@ -187,7 +188,7 @@ def settings(**overrides) -> DreamSettings:
 def conversation_and_messages(*, message_contents: list[str], gap_minutes: int = 1):
     started = datetime.now(timezone.utc) - timedelta(hours=3)
     conversation = Conversation(
-        conversation_id="conversation-1", title="Dream test", agent_id=AGENT_ID, created_by=OWNER
+        conversation_id="conversation-1", title="Dream test", agent_id=AGENT_ID, **conversation_fields(OWNER)
     )
     messages = [
         Message(

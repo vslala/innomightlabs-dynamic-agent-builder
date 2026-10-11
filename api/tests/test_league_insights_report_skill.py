@@ -24,7 +24,7 @@ from src.skills.league_insights_report.report_agent import generate_report_html_
 from src.skills.league_insights_report.report_data import build_report_payload
 from src.skills.league_insights_report.riot_client import RiotClient, RiotAccount, RiotApiError
 from src.skills.registry import SkillRegistry
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import account_for, owner_for, TEST_USER_EMAIL, agent_fields, user_id_for
 
 
 SAFE_HTML = """<!doctype html>
@@ -136,7 +136,7 @@ def test_report_data_builds_multi_match_trends():
     assert payload["trends"]["keystone_perks"] == [{"value": "8369", "games": 2}]
 
 
-def test_report_agent_rejects_non_krishna_mini_agent():
+def test_report_agent_rejects_non_krishna_mini_agent(dynamodb_table):
     repo = _FakeAgentRepository(
         Agent(
             agent_id="agent-1",
@@ -144,7 +144,7 @@ def test_report_agent_rejects_non_krishna_mini_agent():
             agent_architecture="krishna-memgpt",
             agent_provider="OpenAI",
             agent_persona="Reporter",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
     )
 
@@ -152,7 +152,7 @@ def test_report_agent_rejects_non_krishna_mini_agent():
         asyncio.run(
             generate_report_html_with_agent(
                 agent_id="agent-1",
-                owner_email=TEST_USER_EMAIL,
+                owner=owner_for(TEST_USER_EMAIL),
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
                 prompt="Generate",
@@ -161,7 +161,7 @@ def test_report_agent_rejects_non_krishna_mini_agent():
         )
 
 
-def test_report_agent_uses_in_memory_repository(monkeypatch):
+def test_report_agent_uses_in_memory_repository(monkeypatch, dynamodb_table):
     captured = {}
     repo = _FakeAgentRepository(
         Agent(
@@ -170,7 +170,7 @@ def test_report_agent_uses_in_memory_repository(monkeypatch):
             agent_architecture="krishna-mini",
             agent_provider="OpenAI",
             agent_persona="Reporter",
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
     )
 
@@ -194,7 +194,7 @@ def test_report_agent_uses_in_memory_repository(monkeypatch):
     result = asyncio.run(
         generate_report_html_with_agent(
             agent_id="agent-1",
-            owner_email=TEST_USER_EMAIL,
+            owner=owner_for(TEST_USER_EMAIL),
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
             prompt="Generate",
@@ -205,7 +205,7 @@ def test_report_agent_uses_in_memory_repository(monkeypatch):
     assert result == SAFE_HTML
     assert captured["repository_name"] == "in_memory"
     assert captured["architecture_name"] == "krishna-mini"
-    assert captured["kwargs"]["conversation"].created_by == TEST_USER_EMAIL
+    assert captured["kwargs"]["conversation"].created_by == user_id_for(TEST_USER_EMAIL), "held as the agent's owner"
 
 
 def test_generate_match_report_multi_match_creates_artifact(monkeypatch):
@@ -239,6 +239,8 @@ def test_generate_match_report_multi_match_creates_artifact(monkeypatch):
                 "default_routing_region": "europe",
             },
             {
+                "account_id": account_for(TEST_USER_EMAIL),
+                "owner_id": user_id_for(TEST_USER_EMAIL),
                 "owner_email": TEST_USER_EMAIL,
                 "automation_id": "automation-1",
                 "automation_run_id": "run-1",
@@ -287,7 +289,7 @@ def test_generate_match_report_explicit_ids_skip_match_id_lookup(monkeypatch):
                 "riot_api_key": "RGAPI-secret",
                 "default_routing_region": "europe",
             },
-            {"owner_email": TEST_USER_EMAIL},
+            {"account_id": account_for(TEST_USER_EMAIL), "owner_id": user_id_for(TEST_USER_EMAIL), "owner_email": TEST_USER_EMAIL},
         )
     )
 
@@ -308,7 +310,7 @@ def test_generate_match_report_riot_error_returns_branchable_payload(monkeypatch
                 "riot_api_key": "RGAPI-secret",
                 "default_routing_region": "europe",
             },
-            {"owner_email": TEST_USER_EMAIL},
+            {"account_id": account_for(TEST_USER_EMAIL), "owner_id": user_id_for(TEST_USER_EMAIL), "owner_email": TEST_USER_EMAIL},
         )
     )
 
@@ -323,8 +325,11 @@ class _FakeAgentRepository:
     def __init__(self, agent: Agent | None):
         self.agent = agent
 
-    def find_agent_by_id(self, agent_id: str, owner_email: str) -> Agent | None:
+    def get(self, agent_id: str) -> Agent | None:
         return self.agent
+
+    def find_in_account(self, account_id: str, agent_id: str) -> Agent | None:
+        return self.agent if self.agent and self.agent.account_id == account_id else None
 
 
 class _FakeRiotClient:

@@ -22,6 +22,9 @@ from src.llm.router import router as llm_router
 from src.knowledge.router import router as knowledge_router, agent_kb_router, sse_router as knowledge_sse_router
 from src.payments.stripe.router import router as stripe_payments_router
 from src.users import users_router
+from src.accounts import accounts_router
+from src.iam.router import router as iam_router
+from src.iam.shares_router import router as shares_router
 from src.widget import widget_router, WidgetAuthMiddleware
 from src.contact.router import router as contact_router
 from src.connectors.router import router as connectors_router
@@ -166,6 +169,9 @@ def create_app() -> FastAPI:
     app.include_router(router=embed_router)
     app.include_router(router=stripe_payments_router)
     app.include_router(router=users_router)
+    app.include_router(router=accounts_router)
+    app.include_router(router=iam_router)
+    app.include_router(router=shares_router)
     app.include_router(router=contact_router)
     app.include_router(router=connectors_router)
     app.include_router(router=oauth_completion_router)
@@ -234,7 +240,7 @@ def handler(event, context):
         "crawl_job": {
             "job_id": "...",
             "kb_id": "...",
-            "user_email": "..."
+            "account_id": "..."
         }
     }
 
@@ -243,7 +249,7 @@ def handler(event, context):
         "automation_run": {
             "run_id": "...",
             "automation_id": "...",
-            "user_email": "..."
+            "account_id": "..."
         }
     }
 
@@ -268,15 +274,15 @@ def _handle_crawl_job(crawl_job: dict, context):
 
     job_id = crawl_job.get("job_id")
     kb_id = crawl_job.get("kb_id")
-    user_email = crawl_job.get("user_email")
+    account_id = crawl_job.get("account_id")
 
     if (
         not isinstance(job_id, str)
         or not isinstance(kb_id, str)
-        or not isinstance(user_email, str)
+        or not isinstance(account_id, str)
         or not job_id
         or not kb_id
-        or not user_email
+        or not account_id
     ):
         log.error(f"Invalid crawl_job payload: {crawl_job}")
         return {"statusCode": 400, "body": "Invalid crawl_job payload"}
@@ -296,7 +302,7 @@ def _handle_crawl_job(crawl_job: dict, context):
         asyncio.run(crawler.run(
             job_id=job_id,
             kb_id=kb_id,
-            user_email=user_email,
+            account_id=account_id,
             timeout_ms=timeout_ms,
         ))
 
@@ -313,18 +319,25 @@ def _handle_automation_run(automation_run: dict, context):  # noqa: ARG001
     import asyncio
 
     run_id = automation_run.get("run_id")
-    user_email = automation_run.get("user_email")
+    automation_id = automation_run.get("automation_id")
+    account_id = automation_run.get("account_id")
 
-    if not isinstance(run_id, str) or not isinstance(user_email, str) or not run_id or not user_email:
+    if not all(isinstance(value, str) and value for value in (run_id, automation_id, account_id)):
         log.error("Invalid automation_run payload: %s", automation_run)
         return {"statusCode": 400, "body": "Invalid automation_run payload"}
 
     log.info("Processing async automation run %s", run_id)
 
     try:
+        from src.automations.access import owner_of_automation
+        from src.automations.repository import AutomationRepository
         from src.automations.runner import AutomationRunner
 
-        run = asyncio.run(AutomationRunner().execute_run(run_id, user_email))
+        automation = AutomationRepository().find_in_account(str(account_id), str(automation_id))
+        if automation is None:
+            return {"statusCode": 404, "body": f"Automation {automation_id} not found"}
+        # It runs as the automation's owner, whoever started it
+        run = asyncio.run(AutomationRunner().execute_run(str(run_id), owner_of_automation(automation)))
 
         log.info("Completed automation run %s with status %s", run_id, run.status.value)
         return {

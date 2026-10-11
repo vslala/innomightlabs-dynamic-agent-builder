@@ -18,6 +18,7 @@ from src.dream.planner import DreamPlanningResult
 from src.dream.service import DreamService
 from src.memory.models import CoreMemory, MemoryBlockDefinition
 from src.messages.models import Message
+from tests.mock_data import account_for, agent_fields, conversation_fields
 
 
 OWNER = "owner@example.com"
@@ -113,10 +114,10 @@ class FakeMessageRepository:
 
 
 class FakeAgentRepository:
-    def find_agent_by_id(self, agent_id: str, owner_email: str):
+    def get(self, agent_id: str):
         return Agent(
             agent_id=AGENT_ID, agent_name="Dreamer", agent_architecture="krishna-memgpt",
-            agent_provider="test", agent_persona="Helpful", created_by=OWNER, session_timeout_minutes=60,
+            agent_provider="test", agent_persona="Helpful", **agent_fields(OWNER), session_timeout_minutes=60,
         )
 
 
@@ -155,7 +156,7 @@ def no_op() -> DreamAction:
 
 def build_service(repository, memory, planner, messages: list[Message]) -> DreamService:
     conversation = Conversation(
-        conversation_id="conversation-1", title="Dream test", agent_id=AGENT_ID, created_by=OWNER
+        conversation_id="conversation-1", title="Dream test", agent_id=AGENT_ID, **conversation_fields(OWNER)
     )
     return DreamService(
         dream_repository=cast(Any, repository),
@@ -195,7 +196,7 @@ async def test_action_budget_is_checked_between_sessions_after_finishing_current
     monkeypatch.setattr("src.dream.service.app_settings.dream_window_overlap_words", 1)
     repository = FakeDreamRepository(
         DreamSettings(
-            user_email=OWNER, enabled=True, provider_name="test", model_name="test-model",
+            account_id=account_for(OWNER), enabled=True, provider_name="test", model_name="test-model",
             soft_actions_per_run=1,
         )
     )
@@ -219,7 +220,7 @@ async def test_no_op_is_audited_without_consuming_action_budget(monkeypatch):
     stub_provider_access(monkeypatch)
     repository = FakeDreamRepository(
         DreamSettings(
-            user_email=OWNER, enabled=True, provider_name="test", model_name="test-model",
+            account_id=account_for(OWNER), enabled=True, provider_name="test", model_name="test-model",
             soft_actions_per_run=1,
         )
     )
@@ -244,7 +245,7 @@ async def test_crash_before_session_completion_leaves_cursor_unadvanced_and_retr
     monkeypatch.setattr("src.dream.service.app_settings.dream_chunk_max_words", 3)
     monkeypatch.setattr("src.dream.service.app_settings.dream_window_overlap_words", 1)
     messages = closed_messages()
-    repository = FakeDreamRepository(DreamSettings(user_email=OWNER, enabled=True, provider_name="test", model_name="test-model"))
+    repository = FakeDreamRepository(DreamSettings(account_id=account_for(OWNER), enabled=True, provider_name="test", model_name="test-model"))
     memory = FakeMemoryRepository()
     failed_attempt = build_service(
         repository, memory, PlannedActions([result(action()), RuntimeError("planner crashed")]), messages

@@ -25,6 +25,7 @@ from src.skills.registry import SkillRegistry
 from src.skills.repository import AgentSkillRepository
 from src.skills.service import SkillRuntimeService, SkillService
 from src.skills.models import ActorKind
+from tests.mock_data import user_id_for, account_for, agent_fields, conversation_fields
 
 OWNER = "owner@example.com"
 
@@ -178,6 +179,8 @@ def _load(runtime: SkillRuntimeService, **tool_input) -> dict:
                 tool_name="load_skill",
                 tool_input=tool_input,
                 agent_id="agent-1",
+                account_id=account_for(OWNER),
+                owner_id=user_id_for(OWNER),
                 owner_email=OWNER,
                 actor_email=OWNER,
                 actor_id=OWNER,
@@ -325,14 +328,14 @@ def test_turn_prompt_carries_the_schema_of_an_action_used_last_turn(registry, dy
         agent_architecture="krishna-memgpt",
         agent_provider="Bedrock",
         agent_persona="Helpful",
-        created_by=OWNER,
+        **agent_fields(OWNER),
     )
     architecture = KrishnaMemGPTArchitecture(message_repository=InMemoryMessageRepository())
     architecture.provider_settings_repo = _FakeProviderSettingsRepository()
     architecture.skill_runtime = _runtime(registry, "big_skill", agent_id=agent.agent_id)
-    architecture._get_linked_kb_ids = lambda agent_id, owner_email: []
+    architecture._get_linked_kb_ids = lambda agent: []
     architecture._load_core_memory_snapshot = lambda agent_id, user_id: CoreMemorySnapshot(block_defs=[], blocks={})
-    conversation = Conversation(title="Ads", agent_id=agent.agent_id, created_by=OWNER)
+    conversation = Conversation(title="Ads", agent_id=agent.agent_id, **conversation_fields(OWNER))
 
     async def turn(text: str) -> None:
         async for _ in architecture.handle_message(

@@ -10,6 +10,8 @@ from tests.mock_data import (
     TEST_USER_EMAIL_2,
     AGENT_CREATE_REQUEST,
     AGENT_CREATE_REQUEST_2,
+    agent_fields,
+    owner_ids,
 )
 
 
@@ -24,36 +26,37 @@ class TestAgentRepository:
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
 
         saved_agent = agent_repository.save(agent)
 
         assert saved_agent.agent_id == agent.agent_id
         assert saved_agent.agent_name == AGENT_CREATE_REQUEST["agent_name"]
-        assert saved_agent.created_by == TEST_USER_EMAIL
+        assert (saved_agent.account_id, saved_agent.owner_id) == owner_ids(TEST_USER_EMAIL)
         assert saved_agent.is_agent2agent_enabled is False
 
-    def test_find_agent_by_id(self, agent_repository):
-        """Test that find_agent_by_id() retrieves the correct agent."""
+    def test_an_agent_is_found_in_its_account_and_by_id_alone(self, agent_repository):
+        """Owner routes read an agent in its account; credentials and schedules find it by id alone."""
         agent = Agent(
             agent_name=AGENT_CREATE_REQUEST["agent_name"],
             agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
         agent_repository.save(agent)
 
-        found_agent = agent_repository.find_agent_by_id(agent.agent_id, TEST_USER_EMAIL)
+        account_id, _ = owner_ids(TEST_USER_EMAIL)
+        other_account, _ = owner_ids(TEST_USER_EMAIL_2)
 
-        assert found_agent is not None
-        assert found_agent.agent_id == agent.agent_id
-        assert found_agent.agent_name == agent.agent_name
+        assert agent_repository.find_in_account(account_id, agent.agent_id) == agent_repository.get(agent.agent_id)
+        assert agent_repository.get(agent.agent_id).agent_name == agent.agent_name
+        assert agent_repository.find_in_account(other_account, agent.agent_id) is None
 
-    def test_find_all_by_created_by(self, agent_repository):
-        """Test that find_all_by_created_by() retrieves all agents for a user."""
+    def test_list_owned(self, agent_repository):
+        """An owner's agents in an account, and nobody else's."""
         # Create two agents for the same user
         agent1 = Agent(
             agent_name=AGENT_CREATE_REQUEST["agent_name"],
@@ -61,7 +64,7 @@ class TestAgentRepository:
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
         agent2 = Agent(
             agent_name=AGENT_CREATE_REQUEST_2["agent_name"],
@@ -69,12 +72,17 @@ class TestAgentRepository:
             agent_provider=AGENT_CREATE_REQUEST_2["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST_2["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST_2["agent_persona"],
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
         agent_repository.save(agent1)
         agent_repository.save(agent2)
 
-        agents = agent_repository.find_all_by_created_by(TEST_USER_EMAIL)
+        agent_repository.save(Agent(
+            agent_name="Someone else's", agent_architecture="krishna-mini", agent_provider="Bedrock",
+            agent_persona="x", account_id=agent1.account_id, owner_id="someone-else", created_by="someone-else",
+        ))
+
+        agents = agent_repository.list_owned(*owner_ids(TEST_USER_EMAIL))
 
         assert len(agents) == 2
         agent_names = {a.agent_name for a in agents}
@@ -89,13 +97,11 @@ class TestAgentRepository:
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
         agent_repository.save(agent)
 
-        found_agent = agent_repository.find_by_name(
-            AGENT_CREATE_REQUEST["agent_name"], TEST_USER_EMAIL
-        )
+        found_agent = agent_repository.find_by_name(*owner_ids(TEST_USER_EMAIL), AGENT_CREATE_REQUEST["agent_name"])
 
         assert found_agent is not None
         assert found_agent.agent_name == AGENT_CREATE_REQUEST["agent_name"]
@@ -108,32 +114,30 @@ class TestAgentRepository:
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
         agent_repository.save(agent)
 
-        found_agent = agent_repository.find_by_name(
-            AGENT_CREATE_REQUEST["agent_name"], TEST_USER_EMAIL_2
-        )
+        found_agent = agent_repository.find_by_name(*owner_ids(TEST_USER_EMAIL_2), AGENT_CREATE_REQUEST["agent_name"])
 
         assert found_agent is None
 
-    def test_delete_by_id(self, agent_repository):
-        """Test that delete_by_id() removes the agent."""
+    def test_delete(self, agent_repository):
+        """Test that delete() removes the agent."""
         agent = Agent(
             agent_name=AGENT_CREATE_REQUEST["agent_name"],
             agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
         agent_repository.save(agent)
 
-        result = agent_repository.delete_by_id(agent.agent_id, TEST_USER_EMAIL)
+        result = agent_repository.delete(agent.account_id, agent.agent_id)
 
         assert result is True
-        assert agent_repository.find_agent_by_id(agent.agent_id, TEST_USER_EMAIL) is None
+        assert agent_repository.get(agent.agent_id) is None
 
     def test_save_updates_existing_agent(self, agent_repository):
         """Test that save() updates an existing agent."""
@@ -143,7 +147,7 @@ class TestAgentRepository:
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_provider_api_key=AGENT_CREATE_REQUEST["agent_provider_api_key"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
         )
         saved_agent = agent_repository.save(agent)
         original_created_at = saved_agent.created_at
@@ -163,7 +167,7 @@ class TestAgentRepository:
             agent_architecture=AGENT_CREATE_REQUEST["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST["agent_provider"],
             agent_persona=AGENT_CREATE_REQUEST["agent_persona"],
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
             is_agent2agent_enabled=True,
         )
         disabled_agent = Agent(
@@ -171,7 +175,7 @@ class TestAgentRepository:
             agent_architecture=AGENT_CREATE_REQUEST_2["agent_architecture"],
             agent_provider=AGENT_CREATE_REQUEST_2["agent_provider"],
             agent_persona=AGENT_CREATE_REQUEST_2["agent_persona"],
-            created_by=TEST_USER_EMAIL,
+            **agent_fields(TEST_USER_EMAIL),
             is_agent2agent_enabled=False,
         )
         agent_repository.save(enabled_agent)

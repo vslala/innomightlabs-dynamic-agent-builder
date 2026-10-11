@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, Mapping, Optional
 from uuid import uuid4
 
+from src.accounts.owner import Owner
 from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.reconcile import Outcome
@@ -18,6 +19,7 @@ from src.blueprints.kinds.base import (
 )
 from src.blueprints.spec import CrawlSpec, KnowledgeBaseSpec
 from src.config import settings
+from src.knowledge.access import owned_kb
 from src.knowledge.crawl_launch import launch_crawl
 from src.knowledge.models import CrawlConfig, CrawlJob, CrawlSourceType, KnowledgeBase, KnowledgeBaseStatus
 from src.knowledge.repository import AgentKnowledgeBaseRepository, CrawlJobRepository, KnowledgeBaseRepository
@@ -65,17 +67,20 @@ class CreateKnowledgeBase(Command):
         return Undo("delete_new_knowledge_base", {"kb_id": self.kb_id})
 
     def run(self, ctx: ApplyContext) -> None:
-        kb = KnowledgeBaseRepository().save(
-            KnowledgeBase(kb_id=self.kb_id, name=self.kb_name, description=self.description, created_by=ctx.user_email)
-        )
+        owner = ctx.owner
+        kb = KnowledgeBaseRepository().save(KnowledgeBase(
+            kb_id=self.kb_id, name=self.kb_name, description=self.description,
+            account_id=owner.account_id, owner_id=owner.user_id, created_by=owner.user_id,
+        ))
         ctx.applied[self.resource] = _applied(self.resource, kb)
 
 
 @undo_action("delete_new_knowledge_base")
-def _delete_new_knowledge_base(args: dict[str, Any], user_email: str) -> None:
+def _delete_new_knowledge_base(args: dict[str, Any], owner: Owner) -> None:
     # Crawls start only after the commit point, so a new knowledge base has no content to clean up.
-    if KnowledgeBaseRepository().find_by_id(args["kb_id"], user_email):
-        KnowledgeBaseRepository().soft_delete(args["kb_id"], user_email)
+    kb = owned_kb(args["kb_id"], owner)
+    if kb:
+        KnowledgeBaseRepository().soft_delete(kb.account_id, kb.kb_id)
 
 
 @dataclass(kw_only=True)
@@ -86,25 +91,25 @@ class SaveKnowledgeBase(Command):
     establishes: ClassVar[bool] = True
 
     def prepare(self, ctx: ApplyContext) -> Optional[Undo]:
-        current = KnowledgeBaseRepository().find_by_id(self.kb_id, ctx.user_email)
+        current = owned_kb(self.kb_id, ctx.owner)
         before = {key: getattr(current, key) for key in self.fields} if current else {}
         return Undo("restore_knowledge_base", {"kb_id": self.kb_id, "fields": before})
 
     def run(self, ctx: ApplyContext) -> None:
-        ctx.applied[self.resource] = _applied(self.resource, _save_fields(self.kb_id, self.fields, ctx.user_email))
+        ctx.applied[self.resource] = _applied(self.resource, _save_fields(self.kb_id, self.fields, ctx.owner))
 
 
-def _save_fields(kb_id: str, fields: dict[str, Any], user_email: str) -> KnowledgeBase:
-    current = KnowledgeBaseRepository().find_by_id(kb_id, user_email)
+def _save_fields(kb_id: str, fields: dict[str, Any], owner: Owner) -> KnowledgeBase:
+    current = owned_kb(kb_id, owner)
     if current is None:
         raise RuntimeError("The knowledge base was deleted since the plan. Plan again.")
     return KnowledgeBaseRepository().save(current.model_copy(update=fields))
 
 
 @undo_action("restore_knowledge_base")
-def _restore_knowledge_base(args: dict[str, Any], user_email: str) -> None:
+def _restore_knowledge_base(args: dict[str, Any], owner: Owner) -> None:
     if args["fields"]:
-        _save_fields(args["kb_id"], args["fields"], user_email)
+        _save_fields(args["kb_id"], args["fields"], owner)
 
 
 @dataclass(kw_only=True)
@@ -117,6 +122,7 @@ class StartCrawl(Command):
 
     def run(self, ctx: ApplyContext) -> None:
         applied = ctx.applied[self.resource]
+        owner = ctx.owner
         job = CrawlJobRepository().save(CrawlJob(
             kb_id=applied.id,
             config=CrawlConfig(
@@ -125,10 +131,10 @@ class StartCrawl(Command):
                 max_pages=self.crawl.max_pages,
                 max_depth=self.crawl.max_depth,
             ),
-            created_by=ctx.user_email,
+            created_by=owner.user_id,
         ))
         applied.attributes["crawl_job_id"] = job.job_id
-        launch_crawl(job.job_id, applied.id, ctx.user_email, ctx.background_tasks)
+        launch_crawl(job.job_id, applied.id, owner.account_id, ctx.background_tasks)
 
 
 @dataclass(kw_only=True)
@@ -140,7 +146,10 @@ class DeleteKnowledgeBase(Command):
 
     def run(self, ctx: ApplyContext) -> None:
         # The same delete as the dashboard's: vectors and chunks go, and it's disconnected from every agent.
-        result = get_knowledge_base_service().soft_delete(self.kb_id, ctx.user_email)
+        kb = owned_kb(self.kb_id, ctx.owner)
+        if kb is None:
+            raise RuntimeError("The knowledge base was deleted since the plan. Plan again.")
+        result = get_knowledge_base_service().soft_delete(kb)
         if not result.success:
             raise RuntimeError(result.error or "The knowledge base couldn't be deleted.")
 
@@ -186,13 +195,14 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
         return []
 
     def find_existing(self, name: str, spec: KnowledgeBaseSpec, ctx: PlanContext) -> Optional[Existing]:
-        repo = KnowledgeBaseRepository()
         if spec.id:
-            kb = repo.find_by_id(spec.id, ctx.user_email)
+            kb = owned_kb(spec.id, ctx.owner)
             if not kb or kb.status == KnowledgeBaseStatus.DELETED:
                 raise NotFound(f"There's no knowledge base with id '{spec.id}' in your account.")
             return Existing(id=kb.kb_id, record=kb, matched_by="id")
-        same_name = [kb for kb in repo.find_all_by_user(ctx.user_email) if kb.name == spec.name]
+        owner = ctx.owner
+        mine = KnowledgeBaseRepository().list_owned(owner.account_id, owner.user_id)
+        same_name = [kb for kb in mine if kb.name == spec.name]
         if len(same_name) != 1:
             # None to match, or several and no way to tell which: create a new one.
             return None
