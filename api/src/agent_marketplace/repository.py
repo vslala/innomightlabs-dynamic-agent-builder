@@ -64,13 +64,13 @@ class AgentMarketplaceRepository:
         self,
         *,
         source_agent_id: str,
-        publisher_user_email: str,
+        publisher_user_id: str,
     ) -> MarketplaceAgentTemplate | None:
         response = self.table.query(
             KeyConditionExpression=Key("pk").eq("MarketplaceAgent")
             & Key("sk").begins_with("Template#"),
             FilterExpression=Attr("source_agent_id").eq(source_agent_id)
-            & Attr("publisher_user_email").eq(publisher_user_email),
+            & Attr("publisher_user_id").eq(publisher_user_id),
         )
         templates = [MarketplaceAgentTemplate.from_dynamo_item(item) for item in response.get("Items", [])]
         if not templates:

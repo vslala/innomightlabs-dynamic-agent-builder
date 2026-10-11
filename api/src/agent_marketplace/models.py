@@ -58,7 +58,9 @@ class MarketplaceAgentTemplate(BaseModel):
     agent_description: str | None = None
     skills: list[MarketplaceAgentSkillTemplate] = Field(default_factory=list)
     source_agent_id: str | None = None
-    publisher_user_email: str | None = None
+    #: Who published it, and from which account (the catalog itself is global)
+    publisher_user_id: str | None = None
+    publisher_account_id: str | None = None
     publisher_display_name: str = "InnomightLabs"
     tags: list[str] = Field(default_factory=list)
     status: MarketplaceAgentStatus = MarketplaceAgentStatus.DRAFT
@@ -124,7 +126,8 @@ class MarketplaceAgentTemplate(BaseModel):
             "agent_description": self.agent_description,
             "skills": [skill.model_dump(mode="json") for skill in self.skills],
             "source_agent_id": self.source_agent_id,
-            "publisher_user_email": self.publisher_user_email,
+            "publisher_user_id": self.publisher_user_id,
+            "publisher_account_id": self.publisher_account_id,
             "publisher_display_name": self.publisher_display_name,
             "tags": self.tags,
             "status": self.status.value,
@@ -155,7 +158,8 @@ class MarketplaceAgentTemplate(BaseModel):
             agent_description=data.get("agent_description"),
             skills=[MarketplaceAgentSkillTemplate(**skill) for skill in data.get("skills", [])],
             source_agent_id=data.get("source_agent_id"),
-            publisher_user_email=data.get("publisher_user_email"),
+            publisher_user_id=data.get("publisher_user_id"),
+            publisher_account_id=data.get("publisher_account_id"),
             publisher_display_name=data.get("publisher_display_name", "InnomightLabs"),
             tags=data.get("tags", []) or [],
             status=MarketplaceAgentStatus(data.get("status", MarketplaceAgentStatus.DRAFT.value)),

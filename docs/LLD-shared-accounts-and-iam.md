@@ -616,6 +616,48 @@ through the principal, and leaves the suite green.
   - the default agent is per member;
   - nothing crosses accounts.
 
+**Slice 7: artifacts, tool jobs and marketplace publishing (done)**
+- **Keys.**
+  - An `Artifact` is at `Account#{aid}#Member#{uid}/Artifact#{created_at}#{id}`, with `account_id` and `user_id`. Its
+    gsi2 entry is `Artifact#{id}` / the member partition. Its file is at
+    `accounts/{aid}/members/{uid}/artifacts/{date}/{id}/{filename}` (it was `users/{sha256(email)}/…`).
+  - A `ToolJob` is in the member partition of the agent's owner, with `account_id` and `owner_id` instead of
+    `owner_email`. A large result goes to `accounts/{aid}/members/{uid}/tool-jobs/{job}/result.json`.
+  - An invoked agent's audit history goes to `accounts/{aid}/members/{uid}/invocations/…`, under the calling agent's
+    owner.
+- **Whose artifact.** `run_artifact_holder(context)` in `api/src/artifacts/service.py`:
+  - a file a run makes belongs to the member whose conversation it is: their own chat, even with a shared agent, or
+    an automation's run;
+  - a key's, a visitor's or an A2A caller's run has no member of its own, so its files go to the agent's owner.
+  - Ila's canvases are the building member's.
+- **Routes.** `/artifacts` lists and opens only the caller's own, in the account the request acts in. Admins don't
+  see other members' artifacts at all (they are private-only, like conversations).
+- **Run owner.** The skill runtime context gains `owner_id`. `src/skills/runtime_context.py: run_owner(context)` gives
+  the `Owner` a skill runs as.
+  - The agent-invocation and league-report skills reach the owner's own agents or ones shared with them
+    (`usable_agent`). A shared one runs as its owner, for the caller as a member, the rule automation steps follow.
+    `owned_agent(agent_id, email)` is gone.
+  - A tool job is checked against `(account_id, owner_id)`. The AWS CLI's in-memory output pages are scoped to the
+    owner's member partition.
+- **Agent marketplace.** Templates record `publisher_user_id` and `publisher_account_id` instead of
+  `publisher_user_email`. Publishing needs `agents:Share` on the agent, as automations need `automations:Share`. Only
+  the publisher archives.
+- **Not changed.** The sidecar workspace id (`skills/workspaces.py`) still hashes the owner's email. It is opaque and
+  never stored, and changing it would cut existing conversations off their workspace files. Subscriptions and rate
+  limits wait for KAN-86. `scripts/delete_user_account.py` predates KAN-74 and is already out of step with the data;
+  KAN-83 replaces it.
+- **Migration (KAN-81).**
+  - `Artifact` items move from `User#{email}` to the member partition of their owner, in the personal account, with
+    `account_id` and `user_id`; their gsi2 sort key becomes that partition.
+  - Their S3 objects are copied to the new prefix, and `s3_key` is updated.
+  - `ToolJob` items expire within 7 days, so in-flight ones can be left to finish and expire.
+  - `MarketplaceAgent` templates get `publisher_user_id` and `publisher_account_id` from `publisher_user_email`.
+- **Tests.** `tests/test_artifact_access.py` covers:
+  - an artifact being its member's own in one account;
+  - a shared agent's file going to whoever is chatting, and a key's to the agent's owner;
+  - a job being found only for the owner it ran as;
+  - publishing needing `agents:Share`, and archiving the publisher.
+
 ## Context and problem
 
 ### How it works today

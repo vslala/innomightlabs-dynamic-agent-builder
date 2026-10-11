@@ -141,14 +141,13 @@ class AgentMarketplaceService:
         request: PublishMarketplaceAgentRequest,
     ) -> PublishMarketplaceAgentResponse:
         """Only an agent's owner publishes it."""
-        user_email = owner.email
         agent = self.agent_repository.find_in_account(owner.account_id, request.agent_id)
         if not agent or agent.owner_id != owner.user_id:
             raise ValueError("Agent not found")
 
         latest = self.repository.find_latest_for_source_agent(
             source_agent_id=agent.agent_id,
-            publisher_user_email=user_email,
+            publisher_user_id=owner.user_id,
         )
         version = (latest.template_version + 1) if latest else 1
         parent_template_id = latest.parent_template_id if latest else None
@@ -168,8 +167,9 @@ class AgentMarketplaceService:
             agent_description=agent.agent_description,
             skills=self._published_skill_templates(agent.agent_id, request.included_skill_ids),
             source_agent_id=agent.agent_id,
-            publisher_user_email=user_email,
-            publisher_display_name=user_email.split("@", 1)[0],
+            publisher_user_id=owner.user_id,
+            publisher_account_id=owner.account_id,
+            publisher_display_name=owner.email.split("@", 1)[0],
             tags=request.tags,
             status=request.status,
         )
@@ -186,9 +186,10 @@ class AgentMarketplaceService:
             template_version=saved.template_version,
         )
 
-    def archive_agent(self, *, template_id: str, user_email: str) -> ArchiveMarketplaceAgentResponse:
+    def archive_agent(self, *, template_id: str, owner: Owner) -> ArchiveMarketplaceAgentResponse:
+        """Only its publisher archives a template."""
         template = self.repository.find_by_id(template_id)
-        if not template or template.publisher_user_email != user_email:
+        if not template or template.publisher_user_id != owner.user_id:
             raise ValueError("Marketplace agent not found")
         template.status = MarketplaceAgentStatus.ARCHIVED
         saved = self.repository.save(template)

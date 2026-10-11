@@ -26,7 +26,7 @@ from src.skills.agent2agent_client.oauth import (
 )
 from src.skills.agent2agent_client.references import decode_agent_ref, encode_agent_ref
 from src.skills.registry import SkillRegistry
-from tests.mock_data import account_for
+from tests.mock_data import user_id_for, account_for
 
 
 class FakeA2AHttpClient:
@@ -561,7 +561,7 @@ async def test_send_message_uses_install_time_api_key(monkeypatch):
             "registry_urls": "https://registry.test/a2a/agents",
             "default_credentials": {"https://registry.test": "pk_live_test"},
         },
-        context={"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"},
+        context={"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"},
     )
 
     assert result["ok"] is True
@@ -626,6 +626,7 @@ async def test_send_message_missing_api_key_returns_credential_setup_link(monkey
             "agent_id": "agent-123",
             "installed_skill_id": "agent2agent_client:test",
             "account_id": account_for("owner@example.com"),
+            "owner_id": user_id_for("owner@example.com"),
             "owner_email": "owner@example.com",
         },
     )
@@ -707,6 +708,7 @@ async def test_send_message_returns_remote_oauth_authorization_url(monkeypatch, 
             "agent_id": "agent-123",
             "installed_skill_id": "agent2agent_client:test",
             "account_id": account_for("owner@example.com"),
+            "owner_id": user_id_for("owner@example.com"),
             "owner_email": "owner@example.com",
             "return_to": "http://localhost:5173/dashboard/agents/agent-123/skills",
         },
@@ -903,6 +905,7 @@ async def test_send_message_refreshes_saved_remote_oauth_token(monkeypatch, dyna
             "agent_id": "agent-123",
             "installed_skill_id": "agent2agent_client:test",
             "account_id": account_for("owner@example.com"),
+            "owner_id": user_id_for("owner@example.com"),
             "owner_email": "owner@example.com",
         },
     )

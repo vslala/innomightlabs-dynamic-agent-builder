@@ -118,8 +118,8 @@ def find(table, only_user: str | None) -> dict[Owner, AccountFindings]:
             account.conversations.add(item["conversation_id"])
 
     for owner, account in found.items():
-        # Artifacts are still keyed by email
-        for item in scan(table, Attr("pk").eq(f"User#{owner.email}") & Attr("entity_type").eq("Artifact")):
+        # Ila's canvases are the building member's, in their partition of the account
+        for item in scan(table, Attr("pk").eq(owner.member_pk) & Attr("entity_type").eq("Artifact")):
             if (item.get("source") or {}).get("conversation_id") in account.conversations:
                 account.artifacts.append(item)
     return dict(found)

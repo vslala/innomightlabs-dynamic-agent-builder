@@ -452,6 +452,7 @@ class SkillRuntimeService:
         tool_input: dict[str, Any],
         agent_id: str,
         account_id: str,
+        owner_id: str,
         owner_email: str,
         actor_email: str,
         actor_id: str,
@@ -459,7 +460,7 @@ class SkillRuntimeService:
         conversation_id: str,
         user_message_id: str | None = None,
     ) -> str:
-        """`account_id` is the agent's: the account whose connections its skills use."""
+        """`account_id` and `owner_id` are the agent's: its skills run as its owner, on its account's connections."""
         if tool_name == "load_skill":
             installed_skill_id = str(tool_input.get("skill_id", "")).strip()
             if not installed_skill_id:
@@ -491,6 +492,8 @@ class SkillRuntimeService:
                 raise ValueError("Missing required argument: job_id")
             result = self.tool_job_service.check_job_for_agent(
                 job_id=job_id,
+                account_id=account_id,
+                owner_id=owner_id,
                 owner_email=owner_email,
                 actor_email=actor_email,
                 agent_id=agent_id,
@@ -515,6 +518,7 @@ class SkillRuntimeService:
                 "installed_skill_id": installed.installed_skill_id or installed.skill_id,
                 "skill_id": installed.skill_id,
                 "account_id": account_id,
+                "owner_id": owner_id,
                 "owner_email": owner_email,
                 "actor_email": actor_email,
                 "actor_id": actor_id,
@@ -526,7 +530,8 @@ class SkillRuntimeService:
             }
             if run_async:
                 job = self.tool_job_service.start_skill_action_job(
-                    owner_email=owner_email,
+                    account_id=account_id,
+                    owner_id=owner_id,
                     actor_email=actor_email,
                     actor_id=actor_id,
                     agent_id=agent_id,

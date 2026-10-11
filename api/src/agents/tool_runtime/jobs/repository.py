@@ -8,7 +8,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
 from src.agents.tool_runtime.jobs.models import STALE_JOB_ERROR, ToolJob, ToolJobStatus
-from src.artifacts.storage import ArtifactStorage, owner_scope
+from src.artifacts.storage import ArtifactStorage, member_prefix
 from src.config import settings
 from src.db import get_dynamodb_resource
 from src.utils.dynamodb import convert_floats_to_decimals
@@ -36,7 +36,7 @@ class ToolJobResultStore:
         return self._storage
 
     def save(self, job: ToolJob, body: bytes) -> str:
-        key = f"users/{owner_scope(job.owner_email)}/tool-jobs/{job.job_id}/result.json"
+        key = f"{member_prefix(job.account_id, job.owner_id)}/tool-jobs/{job.job_id}/result.json"
         self.storage.put_artifact(key=key, body=body, content_type="application/json")
         return key
 

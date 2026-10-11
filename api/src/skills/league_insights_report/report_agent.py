@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.agents.access import owned_agent
+from src.accounts.owner import Owner
+from src.agents.access import owner_of, usable_agent
 from src.agents.architectures import get_agent_architecture
 from src.agents.repository import AgentRepository
 from src.conversations.models import Conversation
@@ -14,14 +15,14 @@ from src.skills.models import ActorKind
 async def generate_report_html_with_agent(
     *,
     agent_id: str,
-    owner_email: str,
+    owner: Owner,
     actor_email: str,
     actor_id: str,
     prompt: str,
     agent_repository: AgentRepository | None = None,
 ) -> str:
     repo = agent_repository or AgentRepository()
-    agent = owned_agent(agent_id, owner_email, repo)
+    agent = usable_agent(owner, agent_id, repo)
     if not agent:
         raise ValueError("Report agent not found")
     if agent.agent_architecture != "krishna-mini":
@@ -42,7 +43,7 @@ async def generate_report_html_with_agent(
         agent=agent,
         conversation=conversation,
         user_message=prompt,
-        owner_email=owner_email,
+        owner_email=owner_of(agent).email,
         actor_email=actor_email,
         actor_id=actor_id,
         # A krishna-mini report agent has no tools, so whoever asked, it can reach nothing.

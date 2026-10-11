@@ -18,6 +18,7 @@ from src.agent_marketplace.models import (
 from src.agent_marketplace.service import AgentMarketplaceService, get_agent_marketplace_service
 from src.accounts.owner import Owner
 from src.iam.actions import ResourceRef
+from src.agents.access import require_agent
 from src.iam.dependencies import get_owner, get_principal
 from src.iam.principal import Principal
 
@@ -94,7 +95,10 @@ async def publish_marketplace_agent(
     body: PublishMarketplaceAgentRequest,
     service: Annotated[AgentMarketplaceService, Depends(get_agent_marketplace_service)],
     owner: Annotated[Owner, Depends(get_owner)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> PublishMarketplaceAgentResponse:
+    # Publishing hands the agent to everyone: it takes the right to share it
+    require_agent(principal, body.agent_id, "agents:Share")
     try:
         return service.publish_agent(owner=owner, request=body)
     except ValueError as exc:
@@ -103,11 +107,11 @@ async def publish_marketplace_agent(
 
 @router.post("/agents/{template_id}/archive", response_model=ArchiveMarketplaceAgentResponse)
 async def archive_marketplace_agent(
-    request: Request,
     template_id: str,
     service: Annotated[AgentMarketplaceService, Depends(get_agent_marketplace_service)],
+    owner: Annotated[Owner, Depends(get_owner)],
 ) -> ArchiveMarketplaceAgentResponse:
     try:
-        return service.archive_agent(template_id=template_id, user_email=request.state.user_email)
+        return service.archive_agent(template_id=template_id, owner=owner)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

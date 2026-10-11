@@ -7,7 +7,8 @@ import httpx
 from pydantic import ValidationError
 
 from src.artifacts.models import ArtifactSource
-from src.artifacts.service import ArtifactService
+from src.artifacts.service import ArtifactService, run_artifact_holder
+from src.skills.runtime_context import run_owner
 from src.skills.league_insights_report.html_safety import (
     extract_html_document,
     validate_safe_report_html,
@@ -33,8 +34,8 @@ async def generate_match_report(
 ) -> dict[str, Any]:
     skill_config = _validate_config(config)
     request = _validate_request(arguments)
-    owner_email = _required_context(context, "owner_email")
-    actor_email = str(context.get("actor_email") or owner_email)
+    owner = run_owner(context)
+    actor_email = str(context.get("actor_email") or owner.email)
     actor_id = str(context.get("actor_id") or actor_email)
     routing_region = request.routing_region or skill_config.default_routing_region
     client = RiotClient(skill_config.riot_api_key)
@@ -72,7 +73,7 @@ async def generate_match_report(
     html = extract_html_document(
         await generate_report_html_with_agent(
             agent_id=skill_config.report_agent_id,
-            owner_email=owner_email,
+            owner=owner,
             actor_email=actor_email,
             actor_id=actor_id,
             prompt=prompt,
@@ -80,8 +81,10 @@ async def generate_match_report(
     )
     validate_safe_report_html(html)
 
+    account_id, user_id = run_artifact_holder(context)
     artifact = ArtifactService().create_artifact(
-        owner_email=owner_email,
+        account_id=account_id,
+        user_id=user_id,
         artifact_type="html_report",
         title=_report_title(request),
         filename=_report_filename(request),
@@ -186,12 +189,6 @@ def _report_filename(request: GenerateMatchReportRequest) -> str:
     riot_id = f"{request.game_name}-{request.tag_line}".replace("#", "-")
     return f"league-{scope}-report-{riot_id}.html"
 
-
-def _required_context(context: dict[str, Any], key: str) -> str:
-    value = str(context.get(key) or "").strip()
-    if not value:
-        raise ValueError(f"Missing skill runtime context: {key}")
-    return value
 
 
 def _context_value(context: dict[str, Any], key: str) -> str | None:

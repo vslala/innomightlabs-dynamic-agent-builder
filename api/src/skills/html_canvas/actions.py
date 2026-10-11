@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from src.artifacts.models import ArtifactSource
-from src.artifacts.service import ArtifactService
+from src.artifacts.service import ArtifactService, run_artifact_holder
 from src.skills.html_canvas.models import CANVAS_ARTIFACT_FILENAME, RenderCanvasRequest
 
 _EXTERNAL_REFERENCE_RE = re.compile(
@@ -29,9 +29,10 @@ def render_canvas(arguments: dict[str, Any], config: dict[str, Any], context: di
             ),
         }
 
-    owner_email = _required_context(context, "owner_email")
+    account_id, user_id = run_artifact_holder(context)
     artifact = ArtifactService().create_artifact(
-        owner_email=owner_email,
+        account_id=account_id,
+        user_id=user_id,
         artifact_type="canvas",
         title=request.title,
         filename=CANVAS_ARTIFACT_FILENAME,
@@ -63,12 +64,6 @@ def _validate_request(arguments: dict[str, Any]) -> RenderCanvasRequest:
     except ValidationError as exc:
         raise ValueError(f"Invalid html_canvas render_canvas arguments: {exc}") from exc
 
-
-def _required_context(context: dict[str, Any], key: str) -> str:
-    value = str(context.get(key) or "").strip()
-    if not value:
-        raise ValueError(f"Missing skill runtime context: {key}")
-    return value
 
 
 def _context_value(context: dict[str, Any], key: str) -> str | None:

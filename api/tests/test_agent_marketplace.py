@@ -197,7 +197,7 @@ def test_marketplace_publish_rejects_unowned_agent(test_client: TestClient, auth
         },
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 404, "someone else's agent is not even visible"
 
 
 def test_marketplace_import_installs_oauth_skill_disabled_without_connection(dynamodb_table):

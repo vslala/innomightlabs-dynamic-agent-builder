@@ -17,6 +17,7 @@ from src.skills.aws_cli.models import (
     parse_policy,
 )
 from src.skills.aws_cli.output_store import read_page, store_output
+from src.skills.runtime_context import run_owner
 
 
 async def run_read(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -47,7 +48,7 @@ async def read_output_page(arguments: dict[str, Any], config: dict[str, Any], co
     request = _validate(ReadOutputPageRequest, arguments, "read_output_page")
     return read_page(
         output_id=request.output_id,
-        owner_email=_context_value(context, "owner_email"),
+        owner_partition=run_owner(context).member_pk,
         installed_skill_id=_context_value(context, "installed_skill_id"),
         page=request.page,
         page_size_chars=request.page_size_chars,
@@ -167,13 +168,13 @@ def _shape_runner_response(
 
     if len(stdout) > page_size:
         stored = store_output(
-            owner_email=_context_value(context, "owner_email"),
+            owner_partition=run_owner(context).member_pk,
             installed_skill_id=_context_value(context, "installed_skill_id"),
             content=stdout,
         )
         page = read_page(
             output_id=stored.output_id,
-            owner_email=stored.owner_email,
+            owner_partition=stored.owner_partition,
             installed_skill_id=stored.installed_skill_id,
             page=1,
             page_size_chars=page_size,

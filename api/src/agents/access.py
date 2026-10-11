@@ -97,17 +97,6 @@ def usable_agent(owner: Owner, agent_id: str, repository: Optional[AgentReposito
     return agent if member.can("agents:Chat", agent.resource_ref).allowed else None
 
 
-def owned_agent(agent_id: str, owner_email: str, repository: Optional[AgentRepository] = None) -> Optional[Agent]:
-    """The agent, if it belongs to the person with this email, whatever account it's in. For paths that
-    still carry the owner's email (background jobs, skills, automations) until their data moves into
-    accounts (KAN-80)."""
-    agent = (repository or AgentRepository()).get(agent_id)
-    if agent is None:
-        return None
-    identity = IdentityRepository().find_by_email(owner_email)
-    return agent if identity and agent.owner_id == identity.user_id else None
-
-
 def _resolve(account_id: str, agent_id: str) -> Optional[ResourceRef]:
     agent = AgentRepository().find_in_account(account_id, agent_id)
     return agent.resource_ref if agent else None

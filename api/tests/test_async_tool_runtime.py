@@ -21,7 +21,7 @@ from src.agents.tool_runtime.jobs.service import ToolJobService
 from src.skills.service import SkillRuntimeService
 from src.tools.native.handlers import NativeToolHandler
 
-from tests.mock_data import account_for, TEST_USER_EMAIL
+from tests.mock_data import owner_for, user_id_for, account_for, TEST_USER_EMAIL
 from tests.test_skills import _create_agent_for_user
 from src.skills.models import ActorKind
 
@@ -110,7 +110,8 @@ def test_tool_job_repository_persists_status_and_ttl(dynamodb_table):
     repo = ToolJobRepository()
     job = repo.create(
         ToolJob(
-            owner_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
+            owner_id=user_id_for(TEST_USER_EMAIL),
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
             actor_kind=ActorKind.OWNER,
@@ -121,7 +122,7 @@ def test_tool_job_repository_persists_status_and_ttl(dynamodb_table):
             installed_skill_id="demo",
             action="run",
             arguments={"score": 1.5},
-            context={"account_id": account_for(TEST_USER_EMAIL), "owner_email": TEST_USER_EMAIL},
+            context={"account_id": account_for(TEST_USER_EMAIL), "owner_id": user_id_for(TEST_USER_EMAIL), "owner_email": TEST_USER_EMAIL},
         )
     )
 
@@ -142,7 +143,8 @@ def test_tool_job_service_fails_stale_running_job(dynamodb_table):
     service = ToolJobService(repository=repo)
     job = repo.create(
         ToolJob(
-            owner_email=TEST_USER_EMAIL,
+            account_id=account_for(TEST_USER_EMAIL),
+            owner_id=user_id_for(TEST_USER_EMAIL),
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
             actor_kind=ActorKind.OWNER,
@@ -162,6 +164,8 @@ def test_tool_job_service_fails_stale_running_job(dynamodb_table):
     payload = service.check_job_for_agent(
         job_id=job.job_id,
         owner_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
+        owner_id=user_id_for(TEST_USER_EMAIL),
         actor_email=TEST_USER_EMAIL,
         agent_id="agent-1",
         conversation_id="conversation-1",
@@ -209,6 +213,7 @@ def test_skill_runtime_starts_async_job_without_storing_decrypted_config(
             },
             agent_id=agent.agent_id,
             account_id=account_for(TEST_USER_EMAIL),
+            owner_id=user_id_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
@@ -224,7 +229,7 @@ def test_skill_runtime_starts_async_job_without_storing_decrypted_config(
     assert started_jobs == [payload["job_id"]]
 
     raw = dynamodb_table.get_item(
-        Key={"pk": f"User#{TEST_USER_EMAIL}", "sk": f"ToolJob#{payload['job_id']}"}
+        Key={"pk": owner_for(TEST_USER_EMAIL).member_pk, "sk": f"ToolJob#{payload['job_id']}"}
     )["Item"]
     assert "RGAPI-secret" not in json.dumps(raw, default=str)
     assert "config" not in raw
@@ -394,7 +399,8 @@ async def test_start_skill_action_job_keeps_a_strong_reference_while_running():
             await release.wait()
 
     job = ToolJob(
-        owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
+        owner_id=user_id_for("owner@example.com"),
         actor_email="owner@example.com",
         actor_id="owner@example.com",
         actor_kind=ActorKind.OWNER,
@@ -417,7 +423,8 @@ async def test_start_skill_action_job_keeps_a_strong_reference_while_running():
 def test_a_job_is_stale_only_once_it_has_run_longer_than_ten_minutes():
     started = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
     job = ToolJob(
-        owner_email="owner@example.com",
+        account_id=account_for("owner@example.com"),
+        owner_id=user_id_for("owner@example.com"),
         actor_email="owner@example.com",
         actor_id="owner@example.com",
         tool_name="execute_skill_action",

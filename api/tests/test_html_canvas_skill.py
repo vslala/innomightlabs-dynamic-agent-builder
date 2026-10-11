@@ -10,7 +10,7 @@ import yaml
 from src.skills.html_canvas.actions import render_canvas
 from src.skills.html_canvas.models import MAX_CANVAS_HTML_BYTES, RenderCanvasRequest
 from src.skills.registry import SkillRegistry
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import owner_for, user_id_for, account_for, TEST_USER_EMAIL
 
 
 def _create_media_bucket(bucket_name: str = "innomightlabs-conversations-meta") -> None:
@@ -19,6 +19,8 @@ def _create_media_bucket(bucket_name: str = "innomightlabs-conversations-meta") 
 
 def _context() -> dict:
     return {
+        "account_id": account_for(TEST_USER_EMAIL),
+        "owner_id": user_id_for(TEST_USER_EMAIL),
         "owner_email": TEST_USER_EMAIL,
         "agent_id": "agent-1",
         "conversation_id": "conversation-1",
@@ -60,7 +62,7 @@ def test_render_canvas_creates_canvas_artifact(dynamodb_table, monkeypatch):
 
     from src.artifacts.service import ArtifactService
 
-    stored = ArtifactService().repository.find_by_id(TEST_USER_EMAIL, result["artifact_id"])
+    stored = ArtifactService().repository.find_by_id(owner_for(TEST_USER_EMAIL).member_pk, result["artifact_id"])
     assert stored is not None
     assert stored.artifact_type == "canvas"
     assert stored.source.skill_id == "html_canvas"

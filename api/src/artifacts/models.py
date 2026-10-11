@@ -6,6 +6,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from src.accounts.owner import member_partition
+
 
 ArtifactType = Literal["html_report", "image", "file", "csv", "markdown", "json", "text", "code", "canvas"]
 
@@ -22,8 +24,12 @@ class ArtifactSource(BaseModel):
 
 
 class Artifact(BaseModel):
+    """A file a run produced: private to the member it belongs to, in one account."""
+
     artifact_id: str = Field(default_factory=lambda: str(uuid4()))
-    owner_email: str
+    account_id: str
+    #: The member it belongs to
+    user_id: str
     artifact_type: ArtifactType
     title: str
     filename: str
@@ -35,7 +41,7 @@ class Artifact(BaseModel):
 
     @property
     def pk(self) -> str:
-        return f"User#{self.owner_email}"
+        return member_partition(self.account_id, self.user_id)
 
     @property
     def sk(self) -> str:
@@ -47,7 +53,7 @@ class Artifact(BaseModel):
 
     @property
     def gsi2_sk(self) -> str:
-        return f"User#{self.owner_email}"
+        return self.pk
 
     def to_dynamo_item(self) -> dict[str, Any]:
         return {
@@ -57,7 +63,8 @@ class Artifact(BaseModel):
             "gsi2_sk": self.gsi2_sk,
             "entity_type": "Artifact",
             "artifact_id": self.artifact_id,
-            "owner_email": self.owner_email,
+            "account_id": self.account_id,
+            "user_id": self.user_id,
             "artifact_type": self.artifact_type,
             "title": self.title,
             "filename": self.filename,
@@ -72,7 +79,8 @@ class Artifact(BaseModel):
     def from_dynamo_item(cls, item: dict[str, Any]) -> "Artifact":
         return cls(
             artifact_id=item["artifact_id"],
-            owner_email=item["owner_email"],
+            account_id=item["account_id"],
+            user_id=item["user_id"],
             artifact_type=item["artifact_type"],
             title=item.get("title", item.get("filename", "Artifact")),
             filename=item["filename"],

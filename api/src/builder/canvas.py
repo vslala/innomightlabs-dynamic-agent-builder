@@ -200,8 +200,10 @@ def render_drawing(drawing: BlueprintDrawing) -> str:
 def save_blueprint_canvas(drawing: BlueprintDrawing, state: AgentTurnState) -> Optional[dict[str, Any]]:
     """A `canvas_artifact` payload, or None if it couldn't be saved."""
     try:
+        # The building member's: Ila's agent runs as them
         artifact = ArtifactService().create_artifact(
-            owner_email=state.owner_email,
+            account_id=state.account_id,
+            user_id=state.owner_id,
             artifact_type="canvas",
             title=f"{'Built' if drawing.stage == 'built' else 'Blueprint'}: {drawing.title}",
             filename=CANVAS_ARTIFACT_FILENAME,

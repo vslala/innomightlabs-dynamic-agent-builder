@@ -16,7 +16,7 @@ from src.skills.lead_capture.forms import parse_custom_inputs
 from src.skills.lifecycle import SkillLifecycleRunner
 from src.skills.service import SkillRuntimeService, SkillService
 from src.skills.models import ActorKind
-from tests.mock_data import owner_for, account_for, agent_fields, conversation_fields, owner_ids
+from tests.mock_data import user_id_for, owner_for, account_for, agent_fields, conversation_fields, owner_ids
 
 
 def _create_agent_for_user(user_email: str) -> Agent:
@@ -432,6 +432,7 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
                 },
                 agent_id=agent.agent_id,
                 account_id=account_for(TEST_USER_EMAIL),
+                owner_id=user_id_for(TEST_USER_EMAIL),
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
@@ -454,6 +455,7 @@ def test_execute_skill_action_requires_nested_arguments(test_client, auth_header
             },
             agent_id=agent.agent_id,
             account_id=account_for(TEST_USER_EMAIL),
+            owner_id=user_id_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
@@ -498,6 +500,7 @@ def test_skill_runtime_passes_user_message_id_to_actions(test_client, auth_heade
             },
             agent_id=agent.agent_id,
             account_id=account_for(TEST_USER_EMAIL),
+            owner_id=user_id_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
@@ -557,6 +560,7 @@ def test_image_generation_skill_action_uses_agent_turn_service(monkeypatch):
                 "agent_id": "agent-1",
                 "conversation_id": "conversation-1",
                 "account_id": account_for("owner@example.com"),
+                "owner_id": user_id_for("owner@example.com"),
                 "owner_email": "owner@example.com",
                 "actor_email": "actor@example.com",
                 "user_message_id": "user-message-1",
@@ -626,6 +630,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
                     "conversation_id": conversation.conversation_id,
                     "user_message": user_message,
                     "account_id": account_for(owner_email),
+                    "owner_id": user_id_for(owner_email),
                     "owner_email": owner_email,
                     "actor_email": actor_email,
                     "actor_id": actor_id,
@@ -660,6 +665,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
             },
             agent_id=source_agent.agent_id,
             account_id=account_for(TEST_USER_EMAIL),
+            owner_id=user_id_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
@@ -679,6 +685,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
         "conversation_id": conversation.conversation_id,
         "user_message": "Summarize the lead",
         "account_id": account_for(TEST_USER_EMAIL),
+        "owner_id": user_id_for(TEST_USER_EMAIL),
         "owner_email": TEST_USER_EMAIL,
         "actor_email": TEST_USER_EMAIL,
         "actor_id": TEST_USER_EMAIL,
@@ -694,6 +701,7 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
                 tool_input={"skill_id": "agent_invocation"},
                 agent_id=source_agent.agent_id,
                 account_id=account_for(TEST_USER_EMAIL),
+                owner_id=user_id_for(TEST_USER_EMAIL),
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
@@ -772,6 +780,7 @@ def test_scheduler_skill_creates_conversation_bound_schedule(test_client, auth_h
             },
             agent_id=agent.agent_id,
             account_id=account_for(TEST_USER_EMAIL),
+            owner_id=user_id_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,
@@ -833,6 +842,7 @@ def test_scheduler_skill_without_schedule_id_updates_existing_conversation_sched
                 },
                 agent_id=agent.agent_id,
                 account_id=account_for(TEST_USER_EMAIL),
+                owner_id=user_id_for(TEST_USER_EMAIL),
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
@@ -1036,6 +1046,7 @@ def test_repeatable_skill_base_id_requires_unambiguous_instance(test_client, aut
                 tool_input={"skill_id": "agent_invocation"},
                 agent_id=source_agent.agent_id,
                 account_id=account_for(TEST_USER_EMAIL),
+                owner_id=user_id_for(TEST_USER_EMAIL),
                 owner_email=TEST_USER_EMAIL,
                 actor_email=TEST_USER_EMAIL,
                 actor_id=TEST_USER_EMAIL,
@@ -1149,6 +1160,7 @@ def test_send_email_uses_configured_recipients_only(
             },
             agent_id=agent.agent_id,
             account_id=account_for(TEST_USER_EMAIL),
+            owner_id=user_id_for(TEST_USER_EMAIL),
             owner_email=TEST_USER_EMAIL,
             actor_email=TEST_USER_EMAIL,
             actor_id=TEST_USER_EMAIL,

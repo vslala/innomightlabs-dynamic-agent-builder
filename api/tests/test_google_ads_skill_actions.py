@@ -17,12 +17,12 @@ from src.skills.google_ads import accounts, ads, campaigns, keywords, mutate, re
 from src.skills.google_ads.client import GoogleAdsError
 from src.skills.google_ads.models import GoogleAdsCredentials
 from src.skills.registry import SkillRegistry
-from tests.mock_data import account_for
+from tests.mock_data import user_id_for, account_for
 
 OWNER = "owner@example.com"
 CUSTOMER = "1234567890"
-AGENT_CONTEXT = {"account_id": account_for(OWNER), "owner_email": OWNER, "installed_skill_id": "google_ads", "conversation_id": "c1"}
-AUTOMATION_CONTEXT = {"account_id": account_for(OWNER), "owner_email": OWNER, "conversation_id": "c2", "automation_run_id": "run-1"}
+AGENT_CONTEXT = {"account_id": account_for(OWNER), "owner_id": user_id_for(OWNER), "owner_email": OWNER, "installed_skill_id": "google_ads", "conversation_id": "c1"}
+AUTOMATION_CONTEXT = {"account_id": account_for(OWNER), "owner_id": user_id_for(OWNER), "owner_email": OWNER, "conversation_id": "c2", "automation_run_id": "run-1"}
 READ_WRITE = {"customer_id": "123-456-7890", "access": "read_write", "max_daily_budget": "50"}
 READ_ONLY = {"customer_id": "123-456-7890", "access": "read_only"}
 

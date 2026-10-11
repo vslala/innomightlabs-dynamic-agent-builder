@@ -7,7 +7,7 @@ import pytest
 
 from src.skills.google_mail.actions import archive, batch_delete, delete, mark_read, mark_unread, read, search
 from src.skills.registry import SkillRegistry
-from tests.mock_data import account_for
+from tests.mock_data import user_id_for, account_for
 
 
 class FakeResponse:
@@ -83,7 +83,7 @@ def test_google_mail_read_returns_headers_and_plain_text_body(monkeypatch):
     monkeypatch.setattr("src.skills.google_mail.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_mail.actions.httpx.AsyncClient", lambda timeout=30.0: fake_client)
 
-    result = asyncio.run(read({"message_id": "msg-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
+    result = asyncio.run(read({"message_id": "msg-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"}))
 
     assert "Gmail message:" in result
     assert "id=msg-1" in result
@@ -121,7 +121,7 @@ def test_google_mail_read_falls_back_to_html_body(monkeypatch):
     monkeypatch.setattr("src.skills.google_mail.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_mail.actions.httpx.AsyncClient", lambda timeout=30.0: fake_client)
 
-    result = asyncio.run(read({"message_id": "msg-html"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
+    result = asyncio.run(read({"message_id": "msg-html"}, {}, {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"}))
 
     assert "subject=HTML" in result
     assert "Hello" in result
@@ -163,7 +163,7 @@ def test_google_mail_search_recent_20_fetches_metadata(monkeypatch):
     monkeypatch.setattr("src.skills.google_mail.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_mail.actions.httpx.AsyncClient", lambda timeout=20.0: fake_client)
 
-    result = asyncio.run(search({"recent_20": True}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
+    result = asyncio.run(search({"recent_20": True}, {}, {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"}))
 
     assert "Gmail search results:" in result
     assert "query=(recent messages)" in result
@@ -214,7 +214,7 @@ def test_google_mail_search_messages_alias_uses_search_handler(monkeypatch):
             action_name="search_messages",
             arguments={"query": "marketing", "page_size": 1},
             config={},
-            context={"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"},
+            context={"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"},
         )
     )
 
@@ -268,7 +268,7 @@ def test_google_mail_search_builds_rich_query_and_filters(monkeypatch):
                 "include_spam_trash": True,
             },
             {},
-            {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"},
+            {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"},
         )
     )
 
@@ -299,7 +299,7 @@ def test_google_mail_search_returns_empty_message(monkeypatch):
     monkeypatch.setattr("src.skills.google_mail.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_mail.actions.httpx.AsyncClient", lambda timeout=20.0: fake_client)
 
-    result = asyncio.run(search({"query": "missing"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
+    result = asyncio.run(search({"query": "missing"}, {}, {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"}))
 
     assert result == "No Gmail messages found for query: missing"
 
@@ -314,7 +314,7 @@ def test_google_mail_delete_moves_message_to_trash(monkeypatch):
     monkeypatch.setattr("src.skills.google_mail.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_mail.actions.httpx.AsyncClient", lambda timeout=20.0: fake_client)
 
-    result = asyncio.run(delete({"message_id": "msg-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
+    result = asyncio.run(delete({"message_id": "msg-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"}))
 
     assert result == "Moved Gmail message to trash: [msg-1]"
     assert fake_client.post_calls[0]["url"].endswith("/messages/msg-1/trash")
@@ -339,7 +339,7 @@ def test_google_mail_batch_delete_moves_messages_to_trash_in_chunks(monkeypatch)
         batch_delete(
             {"message_ids": ["msg-1", "msg-2", "msg-1", " msg-3 "], "chunk_size": 2},
             {},
-            {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"},
+            {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"},
         )
     )
 
@@ -359,7 +359,7 @@ def test_google_mail_batch_delete_moves_messages_to_trash_in_chunks(monkeypatch)
 
 def test_google_mail_batch_delete_rejects_empty_message_ids():
     with pytest.raises(ValueError, match="message_ids"):
-        asyncio.run(batch_delete({"message_ids": []}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
+        asyncio.run(batch_delete({"message_ids": []}, {}, {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"}))
 
 
 def test_google_mail_batch_delete_reports_api_failure(monkeypatch):
@@ -373,7 +373,7 @@ def test_google_mail_batch_delete_reports_api_failure(monkeypatch):
     monkeypatch.setattr("src.skills.google_mail.actions.httpx.AsyncClient", lambda timeout=30.0: fake_client)
 
     with pytest.raises(RuntimeError, match="Gmail batch trash request failed \\(403\\): forbidden"):
-        asyncio.run(batch_delete({"message_ids": ["msg-1"]}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
+        asyncio.run(batch_delete({"message_ids": ["msg-1"]}, {}, {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"}))
 
 
 def test_google_mail_archive_removes_inbox_label(monkeypatch):
@@ -386,7 +386,7 @@ def test_google_mail_archive_removes_inbox_label(monkeypatch):
     monkeypatch.setattr("src.skills.google_mail.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_mail.actions.httpx.AsyncClient", lambda timeout=20.0: fake_client)
 
-    result = asyncio.run(archive({"message_id": "msg-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
+    result = asyncio.run(archive({"message_id": "msg-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"}))
 
     assert result == "Archived Gmail message: [msg-1]"
     assert fake_client.post_calls[0]["url"].endswith("/messages/msg-1/modify")
@@ -403,7 +403,7 @@ def test_google_mail_mark_read_removes_unread_label(monkeypatch):
     monkeypatch.setattr("src.skills.google_mail.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_mail.actions.httpx.AsyncClient", lambda timeout=20.0: fake_client)
 
-    result = asyncio.run(mark_read({"message_id": "msg-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
+    result = asyncio.run(mark_read({"message_id": "msg-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"}))
 
     assert result == "Marked Gmail message as read: [msg-1]"
     assert fake_client.post_calls[0]["json"] == {"addLabelIds": [], "removeLabelIds": ["UNREAD"]}
@@ -419,7 +419,7 @@ def test_google_mail_mark_unread_adds_unread_label(monkeypatch):
     monkeypatch.setattr("src.skills.google_mail.actions._get_access_token", fake_access_token)
     monkeypatch.setattr("src.skills.google_mail.actions.httpx.AsyncClient", lambda timeout=20.0: fake_client)
 
-    result = asyncio.run(mark_unread({"message_id": "msg-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_email": "owner@example.com"}))
+    result = asyncio.run(mark_unread({"message_id": "msg-1"}, {}, {"account_id": account_for("owner@example.com"), "owner_id": user_id_for("owner@example.com"), "owner_email": "owner@example.com"}))
 
     assert result == "Marked Gmail message as unread: [msg-1]"
     assert fake_client.post_calls[0]["json"] == {"addLabelIds": ["UNREAD"], "removeLabelIds": []}

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from src.artifacts.models import ArtifactSource
 from src.artifacts.service import ArtifactService
 from src.artifacts.storage import ArtifactStorage, sanitize_filename
-from tests.mock_data import TEST_USER_EMAIL
+from tests.mock_data import owner_for, user_id_for, account_for, TEST_USER_EMAIL
 
 
 def _create_media_bucket(bucket_name: str = "innomightlabs-conversations-meta") -> None:
@@ -20,7 +20,8 @@ def test_artifact_service_creates_metadata_and_s3_object(dynamodb_table, monkeyp
 
     service = ArtifactService()
     artifact = service.create_artifact(
-        owner_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
+        user_id=user_id_for(TEST_USER_EMAIL),
         artifact_type="html_report",
         title="League Match Report",
         filename="../league report.html",
@@ -35,14 +36,16 @@ def test_artifact_service_creates_metadata_and_s3_object(dynamodb_table, monkeyp
     assert artifact.url
     assert artifact.view_url.endswith(f"/dashboard/artifacts/{artifact.artifact_id}")
 
-    listed = service.list_artifacts(TEST_USER_EMAIL)
+    listed = service.list_artifacts(owner_for(TEST_USER_EMAIL).member_pk)
     assert len(listed) == 1
     assert listed[0].artifact_id == artifact.artifact_id
     assert listed[0].source.skill_id == "html_report"
 
-    stored = service.repository.find_by_id(TEST_USER_EMAIL, artifact.artifact_id)
+    stored = service.repository.find_by_id(owner_for(TEST_USER_EMAIL).member_pk, artifact.artifact_id)
     assert stored is not None
-    assert stored.s3_key.startswith("users/")
+    owner = owner_for(TEST_USER_EMAIL)
+    assert stored.s3_key.startswith(f"accounts/{owner.account_id}/members/{owner.user_id}/artifacts/"), \
+        "ids only in object keys, never an email"
     assert "/artifacts/" in stored.s3_key
 
     s3_object = boto3.client("s3", region_name="us-east-1").get_object(
@@ -59,7 +62,8 @@ def test_artifact_service_is_owner_scoped(dynamodb_table, monkeypatch):
 
     service = ArtifactService()
     artifact = service.create_artifact(
-        owner_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
+        user_id=user_id_for(TEST_USER_EMAIL),
         artifact_type="file",
         title="Export",
         filename="export.txt",
@@ -95,7 +99,8 @@ def test_artifacts_router_lists_gets_downloads_and_views(test_client: TestClient
     _create_media_bucket()
     service = ArtifactService()
     artifact = service.create_artifact(
-        owner_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
+        user_id=user_id_for(TEST_USER_EMAIL),
         artifact_type="html_report",
         title="Report",
         filename="report.html",
@@ -130,7 +135,8 @@ def test_artifact_view_supports_text_artifacts(dynamodb_table, monkeypatch):
 
     service = ArtifactService()
     artifact = service.create_artifact(
-        owner_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
+        user_id=user_id_for(TEST_USER_EMAIL),
         artifact_type="markdown",
         title="Notes",
         filename="notes.md",
@@ -139,7 +145,7 @@ def test_artifact_view_supports_text_artifacts(dynamodb_table, monkeypatch):
     )
 
     assert artifact.view_url.endswith(f"/dashboard/artifacts/{artifact.artifact_id}")
-    view_url = service.view_url(TEST_USER_EMAIL, artifact.artifact_id)
+    view_url = service.view_url(owner_for(TEST_USER_EMAIL).member_pk, artifact.artifact_id)
     assert "notes.md" in view_url
     assert "response-content-disposition=inline" in view_url
     assert "response-content-type=text%2Fmarkdown" in view_url
@@ -151,7 +157,8 @@ def test_artifact_view_rejects_non_viewable_artifact(dynamodb_table, monkeypatch
 
     service = ArtifactService()
     artifact = service.create_artifact(
-        owner_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
+        user_id=user_id_for(TEST_USER_EMAIL),
         artifact_type="file",
         title="Export",
         filename="export.txt",
@@ -162,7 +169,7 @@ def test_artifact_view_rejects_non_viewable_artifact(dynamodb_table, monkeypatch
     from src.artifacts.service import ArtifactNotViewableError
 
     with pytest.raises(ArtifactNotViewableError):
-        service.view_url(TEST_USER_EMAIL, artifact.artifact_id)
+        service.view_url(owner_for(TEST_USER_EMAIL).member_pk, artifact.artifact_id)
 
 
 def test_artifacts_router_returns_404_for_missing_artifact(test_client: TestClient, auth_headers: dict):
@@ -181,7 +188,8 @@ def test_canvas_artifact_is_viewable_and_content_proxyable(dynamodb_table, monke
 
     service = ArtifactService()
     artifact = service.create_artifact(
-        owner_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
+        user_id=user_id_for(TEST_USER_EMAIL),
         artifact_type="canvas",
         title="Chart",
         filename="canvas.html",
@@ -191,7 +199,7 @@ def test_canvas_artifact_is_viewable_and_content_proxyable(dynamodb_table, monke
 
     assert artifact.view_url.endswith(f"/dashboard/artifacts/{artifact.artifact_id}")
 
-    body, mime_type = service.get_content(TEST_USER_EMAIL, artifact.artifact_id)
+    body, mime_type = service.get_content(owner_for(TEST_USER_EMAIL).member_pk, artifact.artifact_id)
     assert body == b"<html><body>chart</body></html>"
     assert mime_type == "text/html"
 
@@ -202,7 +210,8 @@ def test_get_content_rejects_non_proxyable_artifact_type(dynamodb_table, monkeyp
 
     service = ArtifactService()
     artifact = service.create_artifact(
-        owner_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
+        user_id=user_id_for(TEST_USER_EMAIL),
         artifact_type="file",
         title="Export",
         filename="export.bin",
@@ -213,7 +222,7 @@ def test_get_content_rejects_non_proxyable_artifact_type(dynamodb_table, monkeyp
     from src.artifacts.service import ArtifactNotViewableError
 
     with pytest.raises(ArtifactNotViewableError):
-        service.get_content(TEST_USER_EMAIL, artifact.artifact_id)
+        service.get_content(owner_for(TEST_USER_EMAIL).member_pk, artifact.artifact_id)
 
 
 def test_get_content_raises_not_found_for_missing_artifact(dynamodb_table, monkeypatch):
@@ -223,7 +232,7 @@ def test_get_content_raises_not_found_for_missing_artifact(dynamodb_table, monke
     from src.artifacts.service import ArtifactNotFoundError
 
     with pytest.raises(ArtifactNotFoundError):
-        ArtifactService().get_content(TEST_USER_EMAIL, "missing")
+        ArtifactService().get_content(owner_for(TEST_USER_EMAIL).member_pk, "missing")
 
 
 def test_artifacts_router_content_endpoint_serves_canvas_body(test_client: TestClient, auth_headers: dict, dynamodb_table):
@@ -233,7 +242,8 @@ def test_artifacts_router_content_endpoint_serves_canvas_body(test_client: TestC
     _create_media_bucket()
     service = ArtifactService()
     artifact = service.create_artifact(
-        owner_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
+        user_id=user_id_for(TEST_USER_EMAIL),
         artifact_type="canvas",
         title="Chart",
         filename="canvas.html",
@@ -261,7 +271,8 @@ def test_artifacts_router_content_endpoint_rejects_non_proxyable_type(
     _create_media_bucket()
     service = ArtifactService()
     artifact = service.create_artifact(
-        owner_email=TEST_USER_EMAIL,
+        account_id=account_for(TEST_USER_EMAIL),
+        user_id=user_id_for(TEST_USER_EMAIL),
         artifact_type="file",
         title="Export",
         filename="export.bin",
