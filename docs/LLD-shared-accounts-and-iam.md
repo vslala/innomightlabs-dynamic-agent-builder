@@ -257,7 +257,7 @@
 - **Waiting on KAN-80.** "Lists show only the active account's resources" depends on resources moving
   into accounts.
 
-### KAN-80: enforcement and re-keying (in progress)
+### KAN-80: enforcement and re-keying (done)
 
 The work is done one resource type at a time. Each slice moves a type into accounts, checks every route
 through the principal, and leaves the suite green.
