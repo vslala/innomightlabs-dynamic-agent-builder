@@ -10,6 +10,7 @@ These screens run under `/dashboard` inside `ProtectedRoute` and `DashboardLayou
 - `ArtifactsPage.tsx` lists durable artifacts; `ArtifactOpenPage.tsx` gets metadata and a view URL through `artifactApiService` before opening it. Keep retry/fallback links usable.
 - `KnowledgeBases.tsx` owns collection CRUD. `KnowledgeBaseDetail.tsx` loads crawl jobs and upload schemas, polls job progress, retries/cancels crawls, and uploads files through `knowledgeApiService`. Respect upload limits/types and clear polling on cleanup.
 - `Settings.tsx` combines provider configuration, OpenAI connection, appearance, default agent, subscription actions, suggestions, Dream, and A2A settings. Preserve `useCanManageSettings` affordances; the backend remains the authority for access and trusted origins.
+- [IAM](iam/CONTRIBUTION.md) supplies the Members panel and staged email-only invitation form. Access comes from backend IAM capabilities, not account role labels; sending is intentionally unavailable until Phase 2.
 - `ConnectorsPage.tsx` orchestrates the `connectors/` helpers. `WhatsNewPage.tsx` reuses public `ReleaseNotes` rather than maintaining a dashboard changelog.
 - `oauth/OAuthPopupDone.tsx` is the small builder OAuth return screen: sends the typed `OAUTH_MESSAGE_TYPE` message to `window.opener` using `window.location.origin`. Keep its protocol aligned with `src/services/builder/connect.ts`; do not use a wildcard target origin. This tiny directory is covered here.
 

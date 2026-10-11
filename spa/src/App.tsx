@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, type ComponentType, type ReactElement } from 'react';
-import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 import { RateLimitBanner } from './components/RateLimitBanner';
@@ -62,6 +62,8 @@ const WorkspaceRedirect = lazyRoute(() => import('./pages/dashboard/automations/
 const AutomationMarketplacePage = lazyRoute(() => import('./pages/dashboard/automation-marketplace/AutomationMarketplacePage'), 'AutomationMarketplacePage');
 const AutomationMarketplaceDetail = lazyRoute(() => import('./pages/dashboard/automation-marketplace/AutomationMarketplaceDetail'), 'AutomationMarketplaceDetail');
 const WhatsNewPage = lazyRoute(() => import('./pages/dashboard/WhatsNewPage'), 'WhatsNewPage');
+const IamLayout = lazyRoute(() => import('./pages/dashboard/iam/IamLayout'), 'IamLayout');
+const MembersPage = lazyRoute(() => import('./pages/dashboard/iam/MembersPage'), 'MembersPage');
 
 function lazyRoute<T extends Record<string, ComponentType>>(
   loader: () => Promise<T>,
@@ -174,6 +176,10 @@ function App() {
           <Route path="knowledge-bases" element={<KnowledgeBases />} />
           <Route path="knowledge-bases/:kbId" element={<KnowledgeBaseDetail />} />
           <Route path="connectors" element={<ConnectorsPage />} />
+          <Route path="iam" element={<IamLayout />}>
+            <Route index element={<Navigate to="members" replace />} />
+            <Route path="members" element={<MembersPage />} />
+          </Route>
           <Route path="whats-new" element={<WhatsNewPage />} />
           <Route path="settings" element={<Settings />} />
           </Route>

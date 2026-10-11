@@ -15,6 +15,8 @@ const pageTitles: Record<string, string> = {
   "/dashboard/artifacts": "Artifacts",
   "/dashboard/knowledge-bases": "Knowledge Bases",
   "/dashboard/connectors": "Connectors",
+  "/dashboard/iam": "IAM",
+  "/dashboard/iam/members": "IAM — Members",
   "/dashboard/whats-new": "What's New",
   "/dashboard/settings": "Settings",
 };

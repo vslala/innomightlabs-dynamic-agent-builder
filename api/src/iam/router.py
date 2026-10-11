@@ -16,6 +16,7 @@ from .models import AccountIam, CustomPolicy, Group
 from .principal import Principal
 from .schemas import (
     ActionResponse,
+    CapabilitiesResponse,
     DefaultVersionRequest,
     EffectivePolicyResponse,
     GroupRequest,
@@ -83,6 +84,14 @@ async def list_actions(principal: Principal = Depends(get_principal)) -> list[Ac
     """Every action a policy can name, for the visual policy builder."""
     return [ActionResponse(name=a.name, resource_type=a.resource_type, touches_contents=a.touches_contents)
             for a in CATALOG.values()]
+
+
+@router.get("/capabilities", response_model=CapabilitiesResponse)
+async def get_capabilities(principal: Principal = Depends(get_principal)) -> CapabilitiesResponse:
+    return CapabilitiesResponse(
+        can_list_members=principal.can("iam:ListMembers").allowed,
+        can_invite=principal.can("iam:Invite").allowed,
+    )
 
 
 @router.get("/members", response_model=list[MemberResponse])

@@ -44,6 +44,11 @@ class ActionResponse(BaseModel):
     touches_contents: bool
 
 
+class CapabilitiesResponse(BaseModel):
+    can_list_members: bool
+    can_invite: bool
+
+
 class MemberResponse(BaseModel):
     user_id: str
     email: str
