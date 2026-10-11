@@ -10,7 +10,6 @@ interface HeaderProps {
   title: string;
   user?: {
     name: string;
-    email: string;
     picture?: string;
   };
   /** The id of the navigation drawer this header's menu button opens. */
@@ -61,7 +60,6 @@ export const Header = forwardRef<HTMLButtonElement, HeaderProps>(function Header
           <Link to="/dashboard/settings" className="dashboard-header__user">
             <div className="dashboard-header__identity">
               <p className="dashboard-header__name">{user.name}</p>
-              <p className="dashboard-header__email">{user.email}</p>
             </div>
             <Avatar className="h-7 w-7">
               <AvatarImage src={user.picture} alt={user.name} />

@@ -69,24 +69,15 @@
   text-align: right;
 }
 
-.dashboard-header__name,
-.dashboard-header__email {
+.dashboard-header__name {
   margin: 0;
   overflow: hidden;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.dashboard-header__name {
   color: var(--text-primary);
   font-size: 13px;
   font-weight: 500;
-}
-
-.dashboard-header__email {
-  color: var(--text-muted);
-  font-size: 11px;
 }
 
 @media (max-width: 900px) {
