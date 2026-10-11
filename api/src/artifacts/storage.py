@@ -36,6 +36,10 @@ class ArtifactStorage:
             ContentType=content_type,
         )
 
+    def delete_artifact(self, key: str) -> None:
+        # Exact-key deletion is idempotent for missing objects in the unversioned media bucket.
+        self.client.delete_object(Bucket=self.bucket, Key=key)
+
     def get_object_body(self, key: str) -> bytes:
         return cast(bytes, self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read())
 

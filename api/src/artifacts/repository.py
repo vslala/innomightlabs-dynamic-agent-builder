@@ -27,6 +27,9 @@ class ArtifactRepository:
         items = response.get("Items", [])
         return Artifact.from_dynamo_item(items[0]) if items else None
 
+    def delete(self, artifact: Artifact) -> None:
+        self.table.delete_item(Key={"pk": artifact.pk, "sk": artifact.sk})
+
     def list_in(self, partition: str, limit: int = 50) -> list[Artifact]:
         response = self.table.query(
             KeyConditionExpression=Key("pk").eq(partition) & Key("sk").begins_with("Artifact#"),

@@ -251,19 +251,24 @@ class ModelsService:
         try:
             catalog = self._openai_catalog(provider_settings)
         except Exception as e:
-            log.warning("Falling back to configured OpenAI models: %s", e)
+            log.warning("Could not read the OpenAI model catalog, offering the configured models instead: %s", e)
             catalog = []
         return catalog or self._configured_openai_models()
 
     def _openai_catalog(self, provider_settings: ProviderSettings) -> list[ModelInfo]:
         from src.auth.openai_oauth import credentials_from_provider_settings, extract_account_id_from_access_token
+        from src.llm.credentials import load_openai_credentials_blocking
+        from src.settings.repository import get_provider_settings_repository
 
-        credentials = credentials_from_provider_settings(provider_settings)
-        account_id = credentials.account_id or extract_account_id_from_access_token(credentials.access_token)
-        cache_key = account_id or provider_settings.user_email
+        # The stored token may be expired, but it names the account well enough to find its cached catalog.
+        stored = credentials_from_provider_settings(provider_settings)
+        cache_key = stored.account_id or extract_account_id_from_access_token(stored.access_token) or provider_settings.account_id
         cached = self._openai_catalog_cache.get(cache_key)
         if cached and cached[0] > time.monotonic():
             return cached[1]
+
+        credentials = load_openai_credentials_blocking(provider_settings, get_provider_settings_repository())
+        account_id = credentials.account_id or extract_account_id_from_access_token(credentials.access_token)
 
         headers = {"Authorization": f"Bearer {credentials.access_token}", "Accept": "application/json"}
         if account_id:

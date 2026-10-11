@@ -1,5 +1,7 @@
 export { artifactApiService } from "./ArtifactApiService";
 export type {
+  ArtifactDeletionFailure,
+  BulkArtifactDeletionResponse,
   ArtifactListResponse,
   ArtifactResponse,
   ArtifactSource,

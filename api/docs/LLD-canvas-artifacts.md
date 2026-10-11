@@ -4,6 +4,57 @@ Jira: [KAN-26](https://vslala007.atlassian.net/browse/KAN-26) - Render Agent-Gen
 
 Revision note: this supersedes both earlier drafts of this document (`LLD-agent-generated-chart-artifacts.md`, now removed). Draft 1 had the agent write a Python script that a sandboxed runner executed to produce a chart file, read back over a chunked filesystem API. Draft 2 dropped that round trip but kept the feature framed narrowly as "chart rendering." This revision generalizes it once more: the skill is not chart-specific at all -- it saves any self-contained, agent-authored HTML/CSS/JS document as an inline-renderable artifact, and a chart is just the first, most obvious thing an agent will use it for. The skill is renamed from `chart_generation` to `html_canvas` to reflect that.
 
+## Implementation notes: KAN-21 artifact deletion
+
+| Field | Value |
+| --- | --- |
+| Status | ✅ Implemented (KAN-21 deletion only) |
+| Owner | Authenticated artifact-owning member (`Owner.member_pk`) |
+| Last reviewed | 2026-10-11 |
+| Depends on | Existing artifact metadata, member-scoped ownership, and conversation media S3 bucket |
+
+These notes record the implemented deletion follow-up to the original KAN-26 canvas design below. They supersede its statements that deletion is unavailable and that the artifacts page requires no changes; the original canvas proposal and checklist are retained as design history, not a status claim for KAN-21.
+
+### HTTP contracts
+
+- `DELETE /artifacts/{id}` returns **204** with no body on success, including an idempotent no-op when the artifact is absent from the caller's partition. An artifact belonging to another member/account is not found in that partition, so deletion also returns 204 and leaves the foreign artifact untouched. Actual lookup, storage, and metadata deletion failures return a safe **502** (`Artifact deletion failed`), without exposing provider errors, bucket names, or S3 keys.
+- `DELETE /artifacts/bulk` accepts JSON `{"artifact_ids": ["id-1", "id-2"]}`. The input list contains **1–100** entries, each a strict string of **1–128** characters; extra fields are forbidden. Validation occurs before deduplication and invalid bodies return **422**. The service deduplicates in first-seen order, attempts each unique ID independently, and continues after per-artifact failures. The literal `/bulk` route precedes the parameterized deletion route.
+- Bulk returns **200**, including for mixed results or all per-artifact failures: `{"deleted_ids": ["id-1"], "failed": [{"artifact_id": "id-2", "code": "DELETE_FAILED", "message": "Artifact deletion failed"}]}`. `deleted_ids` contains successfully completed IDs, including idempotent no-ops for IDs absent from the caller's partition; it does not imply each ID had a stored row. `failed` contains only actual deletion failures, with code `DELETE_FAILED` and safe message `Artifact deletion failed`. Each result list preserves first-seen processing order. Authentication failures remain request-level errors, not per-ID results.
+
+### Ownership and storage safety
+
+- Routes derive the private partition from authenticated `Owner.member_pk`, never from request-supplied account/user IDs. `ArtifactRepository.find_by_id()` performs a simple member-partition-scoped GSI lookup, without a base-table reread or additional record-identity validation. This partition scope is the authorization boundary; foreign artifacts are not returned or deleted.
+- The service performs one lookup per unique ID. A missing record is a successful no-op. For an existing record, stored record correctness is assumed at the write boundary: deletion trusts the stored `s3_key`, `pk`, and `sk` rather than reconstructing or revalidating the key or record identity.
+- Delete the **exact S3 object first** using the trusted stored `s3_key`, then perform an ordinary DynamoDB delete at the record's `pk`/`sk`, without a conditional expression. There is no prefix deletion or bucket sweep.
+- An S3 deletion failure retains metadata. If metadata deletion fails after S3 succeeds, bytes may already be gone while metadata remains; retry is safe because deleting a missing S3 object succeeds. There is **no atomic rollback** across S3 and DynamoDB. Once metadata is gone, a subsequent single deletion still returns 204, and bulk includes the ID in `deleted_ids`.
+- The conversation media bucket is currently **unversioned** (`terraform/conversation_media.tf` sets versioning to `Disabled`). This implementation does not enumerate or purge historical object versions; it must not be described as a historical-version purge.
+- Existing conversation/message artifact references are **not removed**, and conversations are **not deleted**. Deleted artifact content is unavailable to those references; deletion does not cascade through conversation history.
+
+### Dashboard implementation
+
+`spa/src/pages/dashboard/ArtifactsPage.tsx` loads at most 100 artifacts and owns requests, selection, confirmation, and feedback. `ArtifactsPagePanel.tsx` renders individual delete actions, row checkboxes, and “Select all loaded artifacts” (including mixed state), not all artifacts in storage. Both single and bulk deletion require a destructive confirmation with a frozen ID snapshot. Selection, reload, and delete controls are locked during confirmation/in-flight deletion; cancellation sends no request and a synchronous guard prevents double confirmation.
+
+`artifactDeletion.ts` applies only reported successes, including idempotent completions for absent IDs: successful rows are removed, only real `DELETE_FAILED` rows remain visible and selected for retry, and safe count-based feedback survives removal of the last item. Refresh intersects selection with IDs still loaded. Request failures do not optimistically remove rows. Styling stays in local `ArtifactsPage.module.css`; the page uses shared UI primitives and the typed `ArtifactApiService.ts` through the shared `httpClient`, not direct fetches or a new global stylesheet.
+
+### Implementation files and focused validation
+
+- Backend: `api/src/artifacts/models.py` (strict bulk request/result models), `router.py` (single/bulk contracts), `service.py` (one lookup, trusted stored-key deletion, and idempotent per-ID orchestration), `repository.py` (member-partition-scoped GSI lookup and ordinary `pk`/`sk` delete), `storage.py` (exact-object delete).
+- Frontend: `spa/src/services/artifacts/ArtifactApiService.ts` and `index.ts` (typed deletion service/exports); `spa/src/pages/dashboard/ArtifactsPage.tsx`, `ArtifactsPagePanel.tsx`, `artifactDeletion.ts`, and `ArtifactsPage.module.css` (page behavior/view/styles).
+- Backend regressions: `api/tests/test_artifact_deletion.py` should cover cleanup using the trusted stored S3 key, missing objects, absent/repeated-delete idempotence, private ownership/authentication with foreign artifacts untouched, strict request bounds, ordered deduplication, successful bulk completion of absent IDs, and actual lookup/S3/DynamoDB failures with safe errors and retries. Stored-record integrity, malformed-key defenses, base-table rereads, and conditional-delete races are not deletion requirements. Existing `test_artifacts.py` and `test_artifact_access.py` cover artifact/read isolation behavior.
+- Frontend regressions: `spa/src/services/artifacts/ArtifactApiService.test.ts` covers encoded paths, shared auth/account headers, bodyless 204 including absent-ID completion, bulk JSON/bounds/idempotent results, and safe 502/HTTP/network failures. `spa/src/pages/dashboard/artifactDeletion.test.ts` covers selection, frozen confirmation/cancellation/double-confirm guards, idempotent successful row removal, partial results containing only real `DELETE_FAILED` failures, and safe feedback; `ArtifactsPagePanel.test.tsx` covers rendered markup and direct control handlers, including final-item feedback (not browser interaction or a mounted page end-to-end test).
+
+From `api/`:
+
+```bash
+uv run pytest tests/test_artifact_deletion.py tests/test_artifacts.py tests/test_artifact_access.py -q
+```
+
+From `spa/`:
+
+```bash
+yarn test src/services/artifacts/ArtifactApiService.test.ts src/pages/dashboard/artifactDeletion.test.ts src/pages/dashboard/ArtifactsPagePanel.test.tsx
+```
+
 ## Goal
 
 Give agents a general-purpose way to author a self-contained, interactive HTML/CSS/JS document -- a chart, a small dashboard, a diagram, a data table with interactive sorting, a mini simulation, whatever the task calls for -- save it as a durable artifact tied to the conversation, and have the SPA render it natively and interactively inline in the chat, without executing that document's script in the SPA's own page context, and without the inline card dominating the conversation's scroll space. Reloading a conversation must reproduce the same inline canvas from storage.

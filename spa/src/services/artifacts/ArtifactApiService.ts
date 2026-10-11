@@ -34,7 +34,32 @@ export interface ArtifactUrlResponse {
   url: string;
 }
 
+export interface ArtifactDeletionFailure {
+  artifact_id: string;
+  code: "DELETE_FAILED";
+  message: string;
+}
+
+export interface BulkArtifactDeletionResponse {
+  deleted_ids: string[];
+  failed: ArtifactDeletionFailure[];
+}
+
 class ArtifactApiService {
+  async deleteArtifact(artifactId: string): Promise<void> {
+    await httpClient.delete<void>(`/artifacts/${encodeURIComponent(artifactId)}`);
+  }
+
+  bulkDeleteArtifacts(artifactIds: string[]): Promise<BulkArtifactDeletionResponse> {
+    const ids = [...new Set(artifactIds)];
+    if (ids.length === 0 || ids.length > 100) {
+      return Promise.reject(new Error("Select between 1 and 100 artifacts to delete."));
+    }
+    return httpClient.delete<BulkArtifactDeletionResponse>("/artifacts/bulk", {
+      body: JSON.stringify({ artifact_ids: ids }),
+    });
+  }
+
   listArtifacts(limit = 50): Promise<ArtifactListResponse> {
     return httpClient.get<ArtifactListResponse>(`/artifacts?limit=${limit}`);
   }

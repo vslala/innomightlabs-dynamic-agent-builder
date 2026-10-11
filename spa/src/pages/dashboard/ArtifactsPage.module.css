@@ -1,0 +1,152 @@
+.content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.header,
+.headingGroup,
+.toolbar,
+.selectAll,
+.actions,
+.rowActions,
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.header,
+.toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.heading {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.panel,
+.empty {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-panel);
+  overflow: hidden;
+}
+
+.empty {
+  padding: var(--card-padding);
+}
+
+.toolbar {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-subtle);
+}
+
+.selectAll {
+  color: var(--text-secondary);
+}
+
+.selectedCount,
+.metadata,
+.loading {
+  color: var(--text-muted);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.row + .row {
+  border-top: 1px solid var(--border-default);
+}
+
+.row:hover {
+  background: var(--surface-panel-hover);
+}
+
+.details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.artifactTitle {
+  margin: 0;
+  font-weight: 600;
+}
+
+.metadata {
+  margin: var(--space-1) 0 0;
+  line-height: 1.5;
+}
+
+.deleteAction {
+  color: var(--danger);
+}
+
+.loading {
+  margin: 0;
+}
+
+.error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+.notification {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+.notification > :first-child {
+  min-width: 0;
+}
+
+.notification button {
+  flex-shrink: 0;
+}
+
+.content button svg,
+.rowActions a svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+@media (max-width: 640px) {
+  .row {
+    gap: var(--space-3);
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .rowActions {
+    grid-column: 2;
+    justify-content: flex-end;
+  }
+
+  .actions {
+    justify-content: space-between;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+}

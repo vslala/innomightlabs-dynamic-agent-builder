@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from src.accounts.owner import member_partition
 
@@ -107,3 +107,22 @@ class ArtifactResponse(BaseModel):
 
 class ArtifactListResponse(BaseModel):
     items: list[ArtifactResponse]
+
+
+class ArtifactBulkDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_ids: list[Annotated[str, StringConstraints(strict=True, min_length=1, max_length=128)]] = Field(
+        min_length=1, max_length=100
+    )
+
+
+class ArtifactDeletionFailure(BaseModel):
+    artifact_id: str
+    code: Literal["DELETE_FAILED"]
+    message: str
+
+
+class ArtifactBulkDeleteResponse(BaseModel):
+    deleted_ids: list[str] = Field(default_factory=list)
+    failed: list[ArtifactDeletionFailure] = Field(default_factory=list)

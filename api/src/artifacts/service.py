@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.artifacts.models import Artifact, ArtifactResponse, ArtifactSource, ArtifactType
+from src.artifacts.models import (
+    Artifact,
+    ArtifactBulkDeleteResponse,
+    ArtifactDeletionFailure,
+    ArtifactResponse,
+    ArtifactSource,
+    ArtifactType,
+)
 from src.artifacts.repository import ArtifactRepository
 from src.artifacts.storage import ArtifactStorage, sanitize_filename
 from src.config import settings
@@ -15,6 +22,11 @@ CONTENT_PROXY_ARTIFACT_TYPES = {"canvas", "html_report", "text", "markdown", "co
 
 class ArtifactNotFoundError(Exception):
     pass
+
+
+class ArtifactDeletionError(Exception):
+    def __init__(self) -> None:
+        super().__init__("Artifact deletion failed")
 
 
 class ArtifactNotViewableError(Exception):
@@ -74,6 +86,28 @@ class ArtifactService:
     def get_artifact(self, partition: str, artifact_id: str) -> ArtifactResponse:
         artifact = self._require_artifact(partition, artifact_id)
         return self.to_response(artifact)
+
+    def delete_artifact(self, partition: str, artifact_id: str) -> None:
+        try:
+            artifact = self.repository.find_by_id(partition, artifact_id)
+            if not artifact:
+                return
+            self.storage.delete_artifact(artifact.s3_key)
+            self.repository.delete(artifact)
+        except Exception as exc:
+            raise ArtifactDeletionError() from exc
+
+    def bulk_delete_artifacts(self, partition: str, artifact_ids: list[str]) -> ArtifactBulkDeleteResponse:
+        result = ArtifactBulkDeleteResponse()
+        for artifact_id in dict.fromkeys(artifact_ids):
+            try:
+                self.delete_artifact(partition, artifact_id)
+                result.deleted_ids.append(artifact_id)
+            except ArtifactDeletionError:
+                result.failed.append(ArtifactDeletionFailure(
+                    artifact_id=artifact_id, code="DELETE_FAILED", message="Artifact deletion failed"
+                ))
+        return result
 
     def download_url(self, partition: str, artifact_id: str) -> str:
         artifact = self._require_artifact(partition, artifact_id)

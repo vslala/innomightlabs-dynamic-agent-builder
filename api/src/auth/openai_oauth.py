@@ -343,7 +343,7 @@ async def force_refresh_openai_credentials(
     updated_credentials = _build_credentials(refreshed, previous=credentials)
     save_credentials(provider_settings, repo, updated_credentials)
 
-    log.info("Refreshed OpenAI OAuth token for user %s", provider_settings.user_email)
+    log.info("Refreshed OpenAI OAuth token for account %s", provider_settings.account_id)
     return updated_credentials
 
 

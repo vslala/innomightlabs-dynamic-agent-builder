@@ -1,105 +1,109 @@
-import { useEffect, useState } from "react";
-import { ExternalLink, FileText, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { artifactApiService, type ArtifactResponse } from "../../services/artifacts";
-import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { EmptyState } from "../../components/ui/empty-state";
-import { LinkButton } from "../../components/ui/link-button";
+import { ConfirmationDialog } from "../../components/ui/confirmation-dialog";
+import { ArtifactsPagePanel } from "./ArtifactsPagePanel";
+import {
+  applyArtifactDeletion, artifactDeletionNotification, artifactRequestError,
+  confirmArtifactDeletion, intersectArtifactSelection,
+  type ArtifactDeletionConfirmation, type ArtifactNotification,
+} from "./artifactDeletion";
 
 export function ArtifactsPage() {
-  const [artifacts, setArtifacts] = useState<ArtifactResponse[]>([]);
+  const [listing, setListing] = useState<{ artifacts: ArtifactResponse[]; selected: string[] }>({ artifacts: [], selected: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmation, setConfirmation] = useState<ArtifactDeletionConfirmation | null>(null);
+  const [notification, setNotification] = useState<ArtifactNotification | null>(null);
+  const pending = useRef<ArtifactDeletionConfirmation | null>(null);
+  const inFlight = useRef(false);
+  const mounted = useRef(false);
+  const loadVersion = useRef(0);
 
-  const loadArtifacts = async () => {
+  const loadArtifacts = useCallback(async () => {
+    if (inFlight.current || pending.current) return;
+    const version = ++loadVersion.current;
     setLoading(true);
     setError(null);
     try {
       const response = await artifactApiService.listArtifacts(100);
-      setArtifacts(response.items);
+      if (!mounted.current || version !== loadVersion.current) return;
+      setListing((current) => ({
+        artifacts: response.items,
+        selected: intersectArtifactSelection(current.selected, response.items.map((artifact) => artifact.artifact_id)),
+      }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load artifacts");
+      if (mounted.current && version === loadVersion.current) setError(artifactRequestError(err, "load"));
     } finally {
-      setLoading(false);
+      if (mounted.current && version === loadVersion.current) setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    void loadArtifacts();
   }, []);
 
-  if (loading) {
-    return <p style={{ color: "var(--text-muted)" }}>Loading artifacts...</p>;
-  }
+  useEffect(() => {
+    const requests = loadVersion;
+    mounted.current = true;
+    void loadArtifacts();
+    return () => {
+      mounted.current = false;
+      ++requests.current;
+    };
+  }, [loadArtifacts]);
 
-  if (error) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Artifacts unavailable</CardTitle>
-        </CardHeader>
-        <CardContent style={{ display: "grid", gap: "1rem" }}>
-          <p style={{ color: "var(--text-muted)" }}>{error}</p>
-          <Button onClick={loadArtifacts} style={{ width: "fit-content" }}>
-            <RefreshCw className="h-4 w-4" />
-            Retry
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
+  const openConfirmation = (snapshot: ArtifactDeletionConfirmation) => {
+    if (loading || inFlight.current || pending.current) return;
+    pending.current = { ...snapshot, ids: [...new Set(snapshot.ids)] };
+    setConfirmation(pending.current);
+  };
 
-  if (artifacts.length === 0) {
-    return (
-      <EmptyState
-        icon={FileText}
-        title="No artifacts yet"
-        description="Generated reports and files will appear here after an agent or automation creates them."
-      />
-    );
-  }
+  const handleConfirm = () => confirmArtifactDeletion(pending, inFlight, artifactApiService, {
+    onStart: () => {
+      // Ignore any older fetch even if it completes after deletion.
+      ++loadVersion.current;
+      setDeleting(true);
+      setNotification(null);
+    },
+    onResult: (result) => {
+      if (!mounted.current) return;
+      setListing((current) => applyArtifactDeletion(current.artifacts, current.selected, result));
+      setNotification(artifactDeletionNotification(result));
+    },
+    onError: (err) => {
+      if (mounted.current) setNotification({ variant: "error", message: artifactRequestError(err, "delete") });
+    },
+    onFinish: () => {
+      if (!mounted.current) return;
+      setDeleting(false);
+      setConfirmation(null);
+    },
+  });
 
   return (
-    <div style={{ display: "grid", gap: "1rem" }}>
-      {artifacts.map((artifact) => (
-        <Card key={artifact.artifact_id}>
-          <CardContent
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "1rem",
-              padding: "1rem",
-            }}
-          >
-            <div style={{ minWidth: 0 }}>
-              <p style={{ margin: 0, fontWeight: 600, color: "var(--text-primary)" }}>{artifact.title}</p>
-              <p style={{ margin: "0.25rem 0 0", color: "var(--text-muted)", fontSize: "0.875rem" }}>
-                {artifact.artifact_type.replace("_", " ")} · {formatBytes(artifact.size_bytes)} ·{" "}
-                {new Date(artifact.created_at).toLocaleString()}
-              </p>
-            </div>
-            <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
-              {artifact.view_url ? (
-                <LinkButton to={`/dashboard/artifacts/${artifact.artifact_id}`} variant="outline" size="sm">
-                  <ExternalLink className="h-4 w-4" />
-                  Open
-                </LinkButton>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+    <>
+      <ArtifactsPagePanel
+        artifacts={listing.artifacts} selected={listing.selected} loading={loading} error={error}
+        locked={deleting || confirmation !== null} notification={notification}
+        onReload={() => { void loadArtifacts(); }} onDismiss={() => setNotification(null)}
+        onSelectionChange={(ids) => {
+          if (loading || inFlight.current || pending.current) return;
+          setListing((current) => ({ ...current, selected: intersectArtifactSelection(ids, current.artifacts.map((artifact) => artifact.artifact_id)) }));
+        }}
+        onDelete={(artifact) => openConfirmation({ kind: "single", ids: [artifact.artifact_id], title: artifact.title })}
+        onBulkDelete={() => openConfirmation({ kind: "bulk", ids: [...listing.selected] })}
+      />
+      <ConfirmationDialog
+        open={confirmation !== null}
+        onOpenChange={(open) => {
+          if (!open && !inFlight.current) {
+            pending.current = null;
+            setConfirmation(null);
+          }
+        }}
+        title={confirmation?.kind === "single" ? `Delete “${confirmation.title}”?` : `Delete ${confirmation?.ids.length ?? 0} artifacts?`}
+        description={confirmation?.kind === "single"
+          ? "This will permanently remove this artifact and its file. This action cannot be undone."
+          : `This will permanently remove ${confirmation?.ids.length ?? 0} selected artifacts and their files. This action cannot be undone.`}
+        confirmText="Delete" variant="destructive" loading={deleting} loadingText="Deleting…" onConfirm={handleConfirm}
+      />
+    </>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (!bytes) {
-    return "0 B";
-  }
-  const units = ["B", "KB", "MB", "GB"];
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const value = bytes / 1024 ** index;
-  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 }

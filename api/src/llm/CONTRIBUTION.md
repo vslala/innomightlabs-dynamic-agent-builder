@@ -74,7 +74,8 @@ strategies only select history.
 2. Register it in `providers/factory.py`.
 3. Add a settings form in `src/settings/schemas.py` (`PROVIDER_SCHEMAS`) so accounts can store credentials.
 4. Add `get_<name>_models` to `ModelsService` and a `ProviderModelSource` entry in `PROVIDER_MODEL_SOURCES`.
-5. If credentials need refresh or parsing beyond decrypt-and-JSON, extend `credentials.py`.
+5. If credentials need refresh or parsing beyond decrypt-and-JSON, extend `credentials.py`. A catalog (sync) that needs
+   refreshed credentials calls the `*_blocking` loader there (`load_openai_credentials_blocking`), never the stored token.
 6. Add a provider test beside `tests/test_anthropic_provider.py` / `tests/test_gemini_provider.py` and a catalog test
    like `tests/test_openai_models.py`.
 

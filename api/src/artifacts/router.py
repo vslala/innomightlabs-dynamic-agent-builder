@@ -8,8 +8,18 @@ from fastapi.security import HTTPBearer
 from src.accounts.owner import Owner
 from src.iam.dependencies import get_owner
 
-from src.artifacts.models import ArtifactListResponse, ArtifactResponse
-from src.artifacts.service import ArtifactNotFoundError, ArtifactNotViewableError, ArtifactService
+from src.artifacts.models import (
+    ArtifactBulkDeleteRequest,
+    ArtifactBulkDeleteResponse,
+    ArtifactListResponse,
+    ArtifactResponse,
+)
+from src.artifacts.service import (
+    ArtifactDeletionError,
+    ArtifactNotFoundError,
+    ArtifactNotViewableError,
+    ArtifactService,
+)
 
 security = HTTPBearer()
 
@@ -32,6 +42,28 @@ async def list_artifacts(
     limit: int = Query(50, ge=1, le=100),
 ) -> ArtifactListResponse:
     return ArtifactListResponse(items=service.list_artifacts(owner.member_pk, limit=limit))
+
+
+@router.delete("/bulk", response_model=ArtifactBulkDeleteResponse)
+def bulk_delete_artifacts(
+    body: ArtifactBulkDeleteRequest,
+    owner: Annotated[Owner, Depends(get_owner)],
+    service: Annotated[ArtifactService, Depends(get_artifact_service)],
+) -> ArtifactBulkDeleteResponse:
+    return service.bulk_delete_artifacts(owner.member_pk, body.artifact_ids)
+
+
+@router.delete("/{artifact_id}", status_code=204)
+def delete_artifact(
+    artifact_id: str,
+    owner: Annotated[Owner, Depends(get_owner)],
+    service: Annotated[ArtifactService, Depends(get_artifact_service)],
+) -> Response:
+    try:
+        service.delete_artifact(owner.member_pk, artifact_id)
+    except ArtifactDeletionError as exc:
+        raise HTTPException(status_code=502, detail="Artifact deletion failed") from exc
+    return Response(status_code=204)
 
 
 @router.get("/{artifact_id}", response_model=ArtifactResponse)
