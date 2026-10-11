@@ -122,6 +122,12 @@ class Settings:
     # Shared accounts. See docs/LLD-shared-accounts-and-iam.md.
     #: Members' resolved permissions kept in-process, keyed by (account, member, authz_version).
     authz_cache_size: int = 1024
+    account_invite_expiry_days: int = 7
+    account_invite_pending_limit: int = 50
+    account_invite_rate_limit: int = 20
+    account_invite_rate_window_seconds: int = 3600
+    invitation_preview_rate_limit: int = 30
+    invitation_preview_rate_window_seconds: int = 60
     widget_guest_email_dns_timeout_seconds: int = 3
     widget_guest_transcript_attempts: int = 3
     widget_guest_transcript_max_chars: int = 100000
@@ -398,6 +404,12 @@ class Settings:
         google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET", google_client_secret)
         openai_oauth_client_id = os.getenv("OPENAI_OAUTH_CLIENT_ID", "")
 
+        def positive_env_int(name: str, default: int) -> int:
+            value = int(os.getenv(name, str(default)))
+            if value < 1:
+                raise ValueError(f"{name} must be positive")
+            return value
+
         def env_bool(name: str, default: bool = False) -> bool:
             value = os.getenv(name)
             if value is None:
@@ -478,6 +490,12 @@ class Settings:
             widget_guest_sweep_interval_seconds=int(os.getenv("WIDGET_GUEST_SWEEP_INTERVAL_SECONDS", "120")),
             widget_guest_sweep_batch=int(os.getenv("WIDGET_GUEST_SWEEP_BATCH", "100")),
             authz_cache_size=int(os.getenv("AUTHZ_CACHE_SIZE", "1024")),
+            account_invite_expiry_days=positive_env_int("ACCOUNT_INVITE_EXPIRY_DAYS", 7),
+            account_invite_pending_limit=positive_env_int("ACCOUNT_INVITE_PENDING_LIMIT", 50),
+            account_invite_rate_limit=positive_env_int("ACCOUNT_INVITE_RATE_LIMIT", 20),
+            account_invite_rate_window_seconds=positive_env_int("ACCOUNT_INVITE_RATE_WINDOW_SECONDS", 3600),
+            invitation_preview_rate_limit=positive_env_int("INVITATION_PREVIEW_RATE_LIMIT", 30),
+            invitation_preview_rate_window_seconds=positive_env_int("INVITATION_PREVIEW_RATE_WINDOW_SECONDS", 60),
             widget_guest_email_dns_timeout_seconds=int(os.getenv("WIDGET_GUEST_EMAIL_DNS_TIMEOUT_SECONDS", "3")),
             widget_guest_transcript_attempts=int(os.getenv("WIDGET_GUEST_TRANSCRIPT_ATTEMPTS", "3")),
             widget_guest_transcript_max_chars=int(os.getenv("WIDGET_GUEST_TRANSCRIPT_MAX_CHARS", "100000")),

@@ -3,7 +3,7 @@
  * See docs/LLD-shared-accounts-and-iam.md, "Account context and switching".
  */
 
-import { getActiveAccountId, httpClient, setActiveAccountId } from "../http";
+import { getActiveAccountId, httpClient, setActiveAccountId, type RequestOptions } from "../http";
 
 export type AccessSummary = "owner" | "admin" | "member";
 
@@ -28,9 +28,9 @@ class AccountService {
     return accounts.find((account) => account.account_id === chosen) ?? accounts.find((account) => account.active);
   }
 
-  /** Act in another account: here at once, and remembered for the person's other devices. */
-  async switchTo(accountId: string): Promise<void> {
-    await httpClient.put<AccountMembership>("/accounts/active", { account_id: accountId });
+  /** Remember the account locally only after the API accepts the selection. */
+  async switchTo(accountId: string, options: Pick<RequestOptions, "redirectOnAuthError"> = {}): Promise<void> {
+    await httpClient.put<AccountMembership>("/accounts/active", { account_id: accountId }, options);
     setActiveAccountId(accountId);
   }
 }

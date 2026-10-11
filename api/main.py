@@ -24,6 +24,7 @@ from src.payments.stripe.router import router as stripe_payments_router
 from src.users import users_router
 from src.accounts import accounts_router
 from src.iam.router import router as iam_router
+from src.iam.invitations import invitations_router
 from src.iam.shares_router import router as shares_router
 from src.widget import widget_router, WidgetAuthMiddleware
 from src.contact.router import router as contact_router
@@ -171,6 +172,7 @@ def create_app() -> FastAPI:
     app.include_router(router=users_router)
     app.include_router(router=accounts_router)
     app.include_router(router=iam_router)
+    app.include_router(router=invitations_router)
     app.include_router(router=shares_router)
     app.include_router(router=contact_router)
     app.include_router(router=connectors_router)

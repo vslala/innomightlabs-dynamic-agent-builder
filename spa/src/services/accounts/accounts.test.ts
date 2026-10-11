@@ -34,6 +34,34 @@ describe("the account a tab acts in", () => {
     expect(authHeaders()).toEqual({ Authorization: "Bearer t", "X-Account-Id": "a" });
   });
 
+  it("does not change local selection before the server switch succeeds", async () => {
+    const values = storage({ auth_token: "t", active_account_id: "a" });
+    let finish!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; })));
+    const switching = accountService.switchTo("b");
+    expect(values.get("active_account_id")).toBe("a");
+    finish(new Response(JSON.stringify(membership("b", true))));
+    await switching;
+    expect(values.get("active_account_id")).toBe("b");
+  });
+
+  it.each([
+    [401, undefined, "/"],
+    [401, false, "/invitations/accept"],
+    [503, false, "/invitations/accept"],
+  ] as const)("failed switch %s with redirect=%s preserves local selection", async (status, redirectOnAuthError, expectedLocation) => {
+    const values = storage({ auth_token: "t", active_account_id: "a" });
+    const location = { pathname: "/invitations/accept", href: "/invitations/accept" };
+    vi.stubGlobal("window", { location });
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "Unavailable" }), { status }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(accountService.switchTo("b", redirectOnAuthError === undefined ? undefined : { redirectOnAuthError })).rejects.toMatchObject({ status });
+    expect(values.get("active_account_id")).toBe("a");
+    expect(location.href).toBe(expectedLocation);
+    if (status === 401) expect(values.has("auth_token")).toBe(false);
+    expect(fetcher.mock.calls[0][1]).not.toHaveProperty("redirectOnAuthError");
+  });
+
   it("is remembered by the API and the tab when switched", async () => {
     const values = storage({ auth_token: "t" });
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(membership("b", true)), { status: 200 }));

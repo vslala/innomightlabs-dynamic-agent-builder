@@ -2,7 +2,8 @@
  * Build-time output for public pages, generated from `src/routes/publicPages.ts`.
  *
  * - `sitemap.xml` and `robots.txt` at the site root.
- * - A copy of `index.html` at `<path>.html` for each indexable page.
+ * - A copy of `index.html` at `<path>.html` for each indexable page,
+ *   plus a noindex invitation shell that avoids the sensitive 404 redirect.
  *   GitHub Pages has no SPA fallback: an unknown path gets `404.html`, which
  *   answers with HTTP 404 and redirects in JavaScript. Crawlers stop at the 404,
  *   so each listed page needs a real file that answers 200 with the app shell.
@@ -17,7 +18,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Plugin, ResolvedConfig } from "vite";
 
-import { buildRobotsTxt, buildSitemap, indexablePaths } from "../src/routes/publicPages";
+import { buildRobotsTxt, buildSitemap, indexablePaths, PUBLIC_PAGES } from "../src/routes/publicPages";
 
 export function publicPagesPlugin(): Plugin {
   let config: ResolvedConfig;
@@ -54,7 +55,14 @@ export function publicPagesPlugin(): Plugin {
         await mkdir(path.dirname(file), { recursive: true });
         await writeFile(file, shell);
       }
-      config.logger.info(`public pages: sitemap with ${paths.length} URLs, ${paths.length - 1} page shells`);
+      // The sensitive nonindexed route must not rely on the 404 query redirect.
+      const invitationPage = PUBLIC_PAGES.find((page) => page.path === "/invitations/accept");
+      if (invitationPage) {
+        const file = path.join(outDir, `${invitationPage.path}.html`);
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, shell.replace(/<head>/i, '<head>\n    <meta name="robots" content="noindex, nofollow" />'));
+      }
+      config.logger.info(`public pages: sitemap with ${paths.length} URLs, ${paths.length - 1} indexed page shells${invitationPage ? ", 1 nonindexed invitation shell" : ""}`);
     },
   };
 }

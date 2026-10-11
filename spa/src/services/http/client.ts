@@ -46,6 +46,7 @@ export interface HttpClientConfig {
 
 export interface RequestOptions extends RequestInit {
   skipAuth?: boolean;
+  redirectOnAuthError?: boolean;
 }
 
 class HttpClient {
@@ -71,10 +72,10 @@ class HttpClient {
     }
   }
 
-  private handleAuthError(): void {
+  private handleAuthError(redirectOnAuthError: boolean): void {
     this.removeAuthToken();
     // Redirect to login page
-    if (window.location.pathname !== "/") {
+    if (redirectOnAuthError && window.location.pathname !== "/") {
       window.location.href = "/";
     }
   }
@@ -83,7 +84,7 @@ class HttpClient {
     endpoint: string,
     options: RequestOptions = {}
   ): Promise<T> {
-    const { skipAuth = false, headers: customHeaders, ...restOptions } = options;
+    const { skipAuth = false, redirectOnAuthError = true, headers: customHeaders, ...restOptions } = options;
 
     const isFormData = restOptions.body instanceof FormData;
     const headers: HeadersInit = {
@@ -108,25 +109,37 @@ class HttpClient {
 
       // Handle authentication errors
       if (response.status === 401) {
-        this.handleAuthError();
+        this.handleAuthError(redirectOnAuthError);
         throw new HttpError(401, "Unauthorized - Please login again");
       }
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        if (response.status === 429 && errorData?.detail?.message) {
+        const errorData: unknown = await response.json().catch(() => ({}));
+        const detail = typeof errorData === "object" && errorData !== null && "detail" in errorData
+          ? errorData.detail : undefined;
+        const detailMessage = typeof detail === "object" && detail !== null && "message" in detail
+          ? detail.message : undefined;
+        const fallbackMessage = typeof errorData === "object" && errorData !== null && "message" in errorData
+          ? errorData.message : undefined;
+        const message = typeof detailMessage === "string" ? detailMessage
+          : typeof detail === "string" && detail ? detail
+          : typeof fallbackMessage === "string" && fallbackMessage ? fallbackMessage
+          : "Request failed";
+        if (response.status === 429 && typeof detailMessage === "string" && detailMessage) {
           window.dispatchEvent(
             new CustomEvent("rate-limit", {
               detail: {
-                message: errorData.detail.message,
-                upgradeUrl: errorData.detail.upgrade_url,
+                message: detailMessage,
+                upgradeUrl: typeof detail === "object" && detail !== null && "upgrade_url" in detail
+                  ? detail.upgrade_url : undefined,
               },
             })
           );
         }
         throw new HttpError(
           response.status,
-          errorData.detail || errorData.message || "Request failed"
+          message,
+          detail
         );
       }
 
@@ -203,11 +216,13 @@ class HttpClient {
 
 export class HttpError extends Error {
   status: number;
+  detail?: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail?: unknown) {
     super(message);
     this.name = "HttpError";
     this.status = status;
+    this.detail = detail;
   }
 }
 

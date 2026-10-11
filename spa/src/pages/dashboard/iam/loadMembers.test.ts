@@ -1,6 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { iamService } from "../../../services/iam";
 import { loadMembers } from "./loadMembers";
+import { invitationService } from "../../../services/iam/invitations";
+
+beforeEach(() => { vi.spyOn(invitationService, "list").mockResolvedValue([]); });
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -12,8 +15,10 @@ describe("capability-gated member loading", () => {
     const signal = new AbortController().signal;
     const result = loadMembers(signal);
     expect(list).not.toHaveBeenCalled();
+    expect(invitationService.list).not.toHaveBeenCalled();
     resolve({ can_list_members: true, can_invite: false });
-    expect(await result).toEqual({ capabilities: { can_list_members: true, can_invite: false }, members: [] });
+    expect(await result).toEqual({ capabilities: { can_list_members: true, can_invite: false }, members: [], invitations: [] });
+        expect(invitationService.list).toHaveBeenCalledExactlyOnceWith(signal);
     expect(list).toHaveBeenCalledExactlyOnceWith(signal);
   });
 
@@ -21,8 +26,9 @@ describe("capability-gated member loading", () => {
     const capabilities = { can_list_members: false, can_invite };
     vi.spyOn(iamService, "getCapabilities").mockResolvedValue(capabilities);
     const list = vi.spyOn(iamService, "listMembers").mockResolvedValue([]);
-    expect(await loadMembers(new AbortController().signal)).toEqual({ capabilities, members: [] });
+    expect(await loadMembers(new AbortController().signal)).toEqual({ capabilities, members: [], invitations: [] });
     expect(list).not.toHaveBeenCalled();
+    expect(invitationService.list).not.toHaveBeenCalled();
   });
 
   it("does not request members if capabilities fail", async () => {
@@ -46,6 +52,8 @@ describe("capability-gated member loading", () => {
   it("propagates list failures instead of displaying an empty success", async () => {
     vi.spyOn(iamService, "getCapabilities").mockResolvedValue({ can_list_members: true, can_invite: true });
     vi.spyOn(iamService, "listMembers").mockRejectedValue(new Error("List failed"));
-    await expect(loadMembers(new AbortController().signal)).rejects.toThrow("List failed");
+    await expect(loadMembers(new AbortController().signal)).resolves.toMatchObject({
+          capabilities: { can_list_members: true, can_invite: true }, directoryError: "List failed",
+        });
   });
 });

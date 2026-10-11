@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { httpClient, setActiveAccountId } from '../services/http';
+import { redeemLoginSession } from './invitations/loginHandoff';
 import { pricingService } from '../services/pricing';
+import { isInvitationContinuation } from './invitations/continuation';
 import { Button } from '../components/ui/button';
 import styles from './LoginSuccess.module.css';
 
@@ -29,6 +30,7 @@ export function LoginSuccess() {
 
   useEffect(() => {
     const code = searchParams.get('code');
+    const invitationContinuation = isInvitationContinuation(searchParams);
 
     if (!code) {
       navigate('/');
@@ -41,15 +43,19 @@ export function LoginSuccess() {
     // Keep the code out of history and out of what analytics tags read from the URL.
     window.history.replaceState(null, '', window.location.pathname);
 
-    const signIn = async () => {
-      const { token } = await httpClient.post<{ token: string }>('/auth/session', { code }, { skipAuth: true });
-      localStorage.setItem('auth_token', token);
-      // A new session acts in the account the API remembers for this person, not the last tab's
-      setActiveAccountId(null);
-      return token;
+    const completeCheckout = async (planKey: string, billingCycle: string, email: string) => {
+      try {
+        const response = await pricingService.createCheckoutSession(planKey, billingCycle, email);
+        window.location.href = response.url;
+      } catch (error) {
+        console.error('Failed to complete checkout:', error);
+        setTimeout(() => navigate('/pricing'), 1500);
+      }
     };
 
-    signIn().then((token) => {
+    redeemLoginSession(code, invitationContinuation, navigate).then((token) => {
+      // Invitation navigation already owns continuation, before JWT display or checkout.
+      if (token === null) return;
       // Decode JWT to get user info (basic decode, not verification)
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
@@ -96,24 +102,6 @@ export function LoginSuccess() {
     }).catch(() => navigate('/login?error=auth_failed'));
   }, [searchParams, navigate]);
 
-  const completeCheckout = async (planKey: string, billingCycle: string, email: string) => {
-    try {
-      const response = await pricingService.createCheckoutSession(
-        planKey,
-        billingCycle,
-        email
-      );
-
-      // Redirect to Stripe checkout
-      window.location.href = response.url;
-    } catch (error) {
-      console.error('Failed to complete checkout:', error);
-      // On error, redirect to pricing page with the plan pre-selected
-      setTimeout(() => {
-        navigate('/pricing');
-      }, 1500);
-    }
-  };
 
   if (loading) {
     return (

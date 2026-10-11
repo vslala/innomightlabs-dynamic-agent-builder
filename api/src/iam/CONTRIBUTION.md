@@ -20,6 +20,7 @@ src/iam/
   dependencies.py   get_principal / get_owner FastAPI dependencies, X-Account-Id
   router.py         /iam API (capabilities, members, groups, policies, attachments, effective policies)
   shares_router.py  /{agents|knowledge-bases|automations|kits}/{id}/shares routes
+  invitations/      token lifecycle, delivery, membership acceptance (own CONTRIBUTION.md)
   schemas.py        request/response models for the two routers
 ```
 
@@ -31,7 +32,7 @@ src/iam/
 - **Cache.** `load_principal` reads two items per request (account version, membership) and uses `principal_cache` keyed by `(account, user, authz_version)`. Because versions only go up, stale entries are never hit. Tests must clear it (the `mock_aws_context` fixture does).
 - **Decision order**: any matching Deny refuses; else an Allow or a share permits; else refused. `OwnerAccess` (`Condition: iml:ResourceOwner = ${iml:PrincipalId}`) is implicit for everyone, which is what keeps resources private. The account owner always holds AdministratorAccess and no Deny applies to them (`AccountIam.effective_policies`). Admins hold no `Get/Update/...` contents actions on others' resources.
 - **Errors.** Raise `IamError(status, code, message, **extra)` (an `HTTPException`): `NOT_A_MEMBER` 403, `ACCESS_DENIED` 403, `NOT_FOUND` 404, `ESCALATION` 403, `CONFLICT` 409, `NAME_TAKEN` 409, `ACCOUNT_OWNER` 409. `Principal.require` returns 404 instead of 403 when the caller couldn't even `Describe` the resource.
-- **UI capabilities.** `GET /iam/capabilities` returns `can_list_members` and `can_invite` from the authenticated account principal's decisions for `iam:ListMembers` and `iam:Invite`. These flags are presentation affordances, not authorization for future writes. Phase 1 invitation scope is in `docs/LLD-account-invitations.md`; no sending or permission presets are implemented there yet.
+- **UI capabilities.** `GET /iam/capabilities` returns `can_list_members` and `can_invite` from the authenticated account principal's decisions for `iam:ListMembers` and `iam:Invite`. These flags are presentation affordances, not authorization for future writes. The phased scope is in `docs/LLD-account-invitations.md`; token delivery and acceptance are implemented in `invitations/`, while permission presets remain deferred. Conditional invitation writes use the same version-checked commit boundary.
 - **Routes.** Reads in `router.py` call `principal.require(action)` then load state; writes are judged again in `IamService._allowed` against the state they change, and `_within_grants` applies the guard.
 - **Using it from another module**: `principal: Principal = Depends(get_principal)` and `principal.require("agents:Create", ResourceRef("agent"))` (see `agent_marketplace/router.py`); `owner: Owner = Depends(get_owner)` for keys. `get_principal` resolves `X-Account-Id`, else the identity's `last_account_id`, else the oldest active membership.
 

@@ -41,6 +41,7 @@ export const PUBLIC_PAGES = [
   { path: "/sitemap", indexed: true, title: "Sitemap", section: "Product" },
   { path: "/login", indexed: false },
   { path: "/login-success", indexed: false },
+  { path: "/invitations/accept", indexed: false },
   { path: "/payments/success", indexed: false },
   { path: "/payments/cancel", indexed: false },
 ] as const satisfies readonly PublicPage[];
@@ -73,6 +74,7 @@ export function buildRobotsTxt(origin: string = SITE_ORIGIN): string {
     "User-agent: *",
     "Disallow: /dashboard",
     "Disallow: /login-success",
+    "Disallow: /invitations/",
     "Disallow: /payments/",
     "",
     `Sitemap: ${origin}/sitemap.xml`,

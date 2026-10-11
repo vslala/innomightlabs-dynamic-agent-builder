@@ -30,6 +30,12 @@ def client_error_message(exc: Exception) -> str:
     return str(exc) if isinstance(exc, UserFacingError) else GENERIC_ERROR_MESSAGE
 
 
+def _validation_issues(exc: RequestValidationError) -> list[dict[str, object]]:
+    """What was wrong and where, never the value: pydantic's `input` echoes whatever the client sent
+    (tokens, passwords, API keys), and `ctx` can carry it too."""
+    return [{key: issue[key] for key in ("type", "loc", "msg")} for issue in exc.errors()]
+
+
 def _request_id(request: Request) -> str | None:
     return getattr(request.state, "request_id", None) or get_request_id()
 
@@ -68,14 +74,13 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
         """Handle request validation errors with detailed information."""
-        log.warning(
-            f"Validation error on {request.method} {request.url.path}: {exc.errors()}"
-        )
+        issues = _validation_issues(exc)
+        log.warning(f"Validation error on {request.method} {request.url.path}: {issues}")
         return JSONResponse(
             status_code=422,
             content={
                 "detail": "Validation error",
-                "errors": exc.errors(),
+                "errors": issues,
                 "path": request.url.path,
             },
         )

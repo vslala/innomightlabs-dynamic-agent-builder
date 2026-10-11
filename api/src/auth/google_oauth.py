@@ -39,7 +39,7 @@ class GoogleOAuth:
         }
 
         url = f"{self.AUTHORIZATION_URL}?{urlencode(params)}"
-        log.debug(f"Authorization URL: {url}")
+        log.debug("Starting Google authorization")
         return url, state
 
     async def exchange_code_for_tokens(self, code: str, redirect_uri: str | None = None) -> dict[str, Any]:

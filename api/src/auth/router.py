@@ -12,9 +12,11 @@ from typing import Any
 from ..accounts import AccountService
 from ..agents.access import require_own_agent
 from ..iam.dependencies import get_principal
+from ..iam.invitations.service import InvitationService
+from ..iam.service import IamError
 from ..config import settings
 from ..agents.repository import AgentRepository
-from ..identity import EmailTaken, Identity, IdentityRepository
+from ..identity import EmailTaken, Identity, IdentityRepository, normalize_email
 from ..settings.models import ProviderSettings, ProviderSettingsResponse
 from ..settings.access import may_manage_settings, settings_manager
 from ..settings.repository import ProviderSettingsRepository
@@ -63,7 +65,8 @@ from .app_tokens import create_login_code, redeem_login_code as redeem_app_login
 from .apps import (
     DEFAULT_APP,
     NONCE_COOKIE,
-    app_from_state,
+    login_context_from_state,
+    valid_invitation_hash,
     create_state,
     forget_nonce,
     frontend_url_for,
@@ -214,23 +217,33 @@ def _redirect_auth_error(error: str, app: str = DEFAULT_APP) -> RedirectResponse
     return forget_nonce(RedirectResponse(url=f"{frontend_url_for(app)}/login?{urlencode({'error': error})}"))
 
 
-def _start_login(provider_name: str, app: str) -> RedirectResponse:
+def _start_login(provider_name: str, app: str, invitation: str | None = None) -> RedirectResponse:
+    if invitation is not None:
+        if app != DEFAULT_APP:
+            raise HTTPException(status_code=400, detail="Invitation context is only supported by the default app")
+        if not valid_invitation_hash(invitation):
+            return _redirect_auth_error("invitation_invalid")
+        invitation = invitation.lower()
+        try:
+            InvitationService().pending_by_hash(invitation)
+        except IamError:
+            return _redirect_auth_error("invitation_invalid")
     provider = _get_provider(provider_name)
-    login = create_state(app)
+    login = create_state(app, invitation)
     authorization_url, _state = provider.get_authorization_url(state=login.state)
     return remember_nonce(RedirectResponse(url=authorization_url), login.nonce)
 
 
 @router.get("/google")
-async def login_with_google(app: str = DEFAULT_APP):
+async def login_with_google(app: str = DEFAULT_APP, invitation: str | None = None) -> RedirectResponse:
     """Redirect user to Google OAuth consent screen."""
-    return _start_login("google", app)
+    return _start_login("google", app, invitation)
 
 
 @router.get("/cognito")
-async def login_with_cognito(app: str = DEFAULT_APP):
+async def login_with_cognito(app: str = DEFAULT_APP, invitation: str | None = None) -> RedirectResponse:
     """Redirect user to Cognito Hosted UI."""
-    return _start_login("cognito", app)
+    return _start_login("cognito", app, invitation)
 
 
 class LoginCodeRequest(BaseModel):
@@ -538,11 +551,13 @@ async def _oauth_callback(
     nonce: str | None,
 ):
     """Handle OAuth callback from an external provider."""
-    app = app_from_state(state, nonce)
-    if app is None:
+    context = login_context_from_state(state, nonce)
+    if context is None:
         return _redirect_auth_error("auth_failed")
+    app, invitation = context.app, context.invitation
     if error:
-        return _redirect_auth_error(error, app)
+        # Provider error text is untrusted and must not echo invitation context.
+        return _redirect_auth_error("auth_failed" if invitation else error, app)
 
     if not code:
         raise HTTPException(status_code=400, detail="Missing authorization code")
@@ -565,13 +580,21 @@ async def _oauth_callback(
             raise HTTPException(status_code=400, detail="Failed to get user email")
         # Accounts are matched by email, so an unverified one could claim someone else's.
         if not _email_verified(user_info):
-            return _redirect_auth_error("email_not_verified", app)
+            return _redirect_auth_error("invitation_invalid" if invitation else "email_not_verified", app)
+
+        if invitation is not None:
+            try:
+                invite = InvitationService().pending_by_hash(invitation)
+            except IamError:
+                return _redirect_auth_error("invitation_invalid", app)
+            if normalize_email(email) != normalize_email(invite.email):
+                return _redirect_auth_error("invitation_email_mismatch", app)
 
         name = name or email.split("@")[0]
         user, is_new_user = identity_repository.find_or_create(email, name, picture=picture, email_verified=True)
         if not is_new_user:
             identity_repository.update_profile(user.user_id, name=name, picture=picture, email_verified=True)
-        if app == DEFAULT_APP:
+        if app == DEFAULT_APP and invitation is None:
             AccountService().ensure_personal_account(user)
 
         # The welcome email is InnomightLabs-branded, so other apps send their own
@@ -581,8 +604,12 @@ async def _oauth_callback(
         # Every app redeems a one-time code (our SPA at /auth/session, other apps' backends at
         # /auth/token); the token never touches the browser URL.
         login_code = create_login_code(user.user_id, app)
+        query = {"code": login_code}
+        if invitation is not None:
+            # The browser retains the redeemable token; OAuth never accepts or grants membership.
+            query["invitation"] = "1"
         return forget_nonce(
-            RedirectResponse(url=f"{frontend_url_for(app)}/login-success?{urlencode({'code': login_code})}")
+            RedirectResponse(url=f"{frontend_url_for(app)}/login-success?{urlencode(query)}")
         )
 
     except Exception as e:

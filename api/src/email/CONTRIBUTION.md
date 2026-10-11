@@ -10,6 +10,7 @@ email/
   service.py        EmailService (Mailjet client, `{{var}}` substitution into templates) and EmailTemplate enum
   helpers.py        The `*_safe` functions: look up user, build variables, send, enqueue a retry on failure
   pending_email.py  EmailType enum, PendingEmail and PendingEmailRepository (failed sends, TTL 1 day)
+  invitation.py     AccountInvitationEmail: escaped house template, no persisted secret retry
   message.py        MessageEmail / EmailLink dataclasses and the Jinja environment (StrictUndefined, autoescape)
 assets/templates/emails/   _layout.html, message.html (Jinja) and the per-email HTML files
 ```
@@ -19,7 +20,7 @@ assets/templates/emails/   _layout.html, message.html (Jinja) and the per-email 
 - **Always send through a `*_safe` helper** in `helpers.py` for lifecycle emails: it catches errors, logs, and on
   failure calls `_handle_email_failure`, which writes a `PendingEmail` for retry. Callers (webhooks, signup) never
   see an exception. `send_guest_transcript_email_safe` is the exception: one attempt only, because the guest closer
-  in `src/widget` owns bounded retries; do not enqueue guest data as `PendingEmail`.
+  in `src/widget` owns bounded retries; do not enqueue guest data as `PendingEmail`. `send_account_invitation_email_safe` is also single-attempt: raw invite links must never be persisted in `PendingEmail`; the invitation lifecycle records failure and rotates a new token on resend.
 - Two template systems coexist. Lifecycle emails use `EmailService.send_email(..., EmailTemplate, variables)` with
   `{{name}}` placeholders replaced by plain string substitution (no escaping). Text-first emails use `MessageEmail`
   (`.html()` and `.text()`), rendered by Jinja with `autoescape` and `StrictUndefined`, extending `_layout.html`;
@@ -56,5 +57,6 @@ for `PendingEmailRepository` tests, and assert the pending item exists after a f
 
 - Do use `*_safe` helpers; don't call `EmailService` from routers or webhooks.
 - Do pass the plain-text part alongside HTML.
+- For invitations, use the dedicated safe helper and Jinja `account_invitation.html`. Disable click/open tracking, check per-message Mailjet success, and never log payloads/provider errors/exception text containing token links. Blocking provider I/O runs off the async event loop.
 - Don't put user-supplied text through `_replace_variables`; use `MessageEmail`.
 - Don't add a Jinja variable without supplying it (`StrictUndefined` raises).

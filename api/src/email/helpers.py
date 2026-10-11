@@ -1,10 +1,11 @@
 """Email helper functions to reduce code duplication."""
 import logging
-from typing import TYPE_CHECKING, Optional, Dict
+from typing import TYPE_CHECKING, Dict
 
 from src.config import settings
 from src.identity import IdentityRepository
 from .service import EmailService
+from .invitation import INVITATION_DELIVERY_FAILED
 from .pending_email import (
     PendingEmailRepository,
     create_pending_email,
@@ -56,6 +57,34 @@ async def send_guest_transcript_email_safe(*, to_email: str, email: "GuestTransc
     except Exception:
         log.exception("Guest transcript attempt failed")
         return False
+
+
+async def send_account_invitation_email_safe(
+    *,
+    to_email: str,
+    account_name: str,
+    invited_by: str,
+    invite_url: str,
+    expires_at: str,
+) -> bool:
+    """One attempt only; the owner records failure and rotates the secret on resend.
+
+    Never enqueue a PendingEmail: its payload would persist the raw invitation token.
+    """
+    try:
+        success = await EmailService().send_account_invitation_email(
+            to_email=to_email,
+            account_name=account_name,
+            invited_by=invited_by,
+            invite_url=invite_url,
+            expires_at=expires_at,
+        )
+        if success:
+            return True
+    except Exception:
+        pass
+    log.warning(INVITATION_DELIVERY_FAILED)
+    return False
 
 
 async def send_welcome_email_safe(user_email: str) -> None:

@@ -27,7 +27,8 @@ class IamRepository:
         self.table = get_dynamodb_resource().Table(settings.dynamodb_table)
 
     def load(self, account_id: str) -> Optional[AccountIam]:
-        account = self.table.get_item(Key={"pk": f"Account#{account_id}", "sk": "Account#Metadata"}).get("Item")
+        account = self.table.get_item(Key={"pk": f"Account#{account_id}", "sk": "Account#Metadata"},
+                                      ConsistentRead=True).get("Item")
         if account is None:
             return None
         members: dict[str, str] = {}
@@ -51,22 +52,46 @@ class IamRepository:
         )
 
     def commit(self, state: AccountIam, put: Iterable[dict[str, Any]] = (),
-               delete: Iterable[dict[str, Any]] = ()) -> None:
+               delete: Iterable[dict[str, Any]] = (), *,
+               operations: Iterable[dict[str, Any]] = (),
+               account_condition: str = "",
+               account_values: Optional[dict[str, Any]] = None,
+               account_names: Optional[dict[str, str]] = None) -> None:
+        """Extra conditional operations use native values and omit TableName.
+
+        The extra account condition is ANDed with the mandatory version check, so billing
+        metadata can be guarded even when its writer does not bump authz_version.
+        """
         puts, deletes = list(put), [{"pk": key["pk"], "sk": key["sk"]} for key in delete]
-        if len(puts) + len(deletes) > MAX_CHANGE_ITEMS:
+        extra = []
+        for operation in operations:
+            if len(operation) != 1 or next(iter(operation)) not in {"Put", "Delete", "Update", "ConditionCheck"}:
+                raise ValueError("Invalid transaction operation")
+            kind, value = next(iter(operation.items()))
+            key = value.get("Key", value.get("Item", {}))
+            if key.get("pk") == f"Account#{state.account_id}" and key.get("sk") == "Account#Metadata":
+                raise ValueError("Account metadata is reserved for the version bump")
+            extra.append({kind: {**value, "TableName": self.table.name}})
+        if len(puts) + len(deletes) + len(extra) > MAX_CHANGE_ITEMS:
             raise ValueError(f"A change can touch at most {MAX_CHANGE_ITEMS} items")
         name = self.table.name
+        values = dict(account_values or {})
+        values.update({":seen": state.authz_version, ":next": state.authz_version + 1, ":now": now()})
+        condition = "authz_version = :seen"
+        if account_condition:
+            condition += f" AND ({account_condition})"
         try:
             self.table.meta.client.transact_write_items(TransactItems=[
                 *({"Put": {"TableName": name, "Item": item}} for item in puts),
                 *({"Delete": {"TableName": name, "Key": key}} for key in deletes),
+                *extra,
                 {"Update": {
                     "TableName": name,
                     "Key": {"pk": f"Account#{state.account_id}", "sk": "Account#Metadata"},
                     "UpdateExpression": "SET authz_version = :next, updated_at = :now",
-                    "ConditionExpression": "authz_version = :seen",
-                    "ExpressionAttributeValues": {":seen": state.authz_version, ":next": state.authz_version + 1,
-                                                  ":now": now()},
+                    "ConditionExpression": condition,
+                    "ExpressionAttributeValues": values,
+                    **({"ExpressionAttributeNames": account_names} if account_names else {}),
                 }},
             ])
         except ClientError as error:
@@ -89,6 +114,7 @@ class IamRepository:
     def _prefix(self, account_id: str, prefix: str) -> list[dict[str, Any]]:
         query: dict[str, Any] = {
             "KeyConditionExpression": Key("pk").eq(f"Account#{account_id}") & Key("sk").begins_with(prefix),
+            "ConsistentRead": True,
         }
         items: list[dict[str, Any]] = []
         while True:

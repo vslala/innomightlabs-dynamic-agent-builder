@@ -32,6 +32,7 @@ PUBLIC_PATHS = {
     "/auth/cognito",
     "/auth/token",
     "/auth/session",
+    "/invitations/preview",
     "/auth/refresh",
     "/auth/revoke",
     "/auth/local/signup",

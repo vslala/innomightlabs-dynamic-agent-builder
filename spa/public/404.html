@@ -2,10 +2,31 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- Cleanup precedes analytics and the fallback URL encoder. -->
+  <script>
+    (function () {
+      var target = new URL(window.location.href);
+      if (target.pathname.replace(/\/$/, '') !== '/invitations/accept') return;
+      var token = new URLSearchParams(target.hash.slice(1)).get('token');
+      target.hash = '';
+      window.history.replaceState(window.history.state, '', target.pathname + target.search);
+      if (target.searchParams.get('invitation_storage_error') === '1') return;
+      if (token !== null) {
+        try {
+          window.sessionStorage.setItem('pendingInvitationToken', token);
+        } catch (_) {
+          try { window.sessionStorage.removeItem('pendingInvitationToken'); } catch (_) {}
+          target.searchParams.set('invitation_storage_error', '1');
+          window.history.replaceState(window.history.state, '', target.pathname + target.search);
+        }
+      }
+    })();
+  </script>
   <title>Redirecting...</title>
   <!-- Google Tag Manager -->
   <script>
     (function (w, d, s, l, i) {
+      if (w.location.pathname.replace(/\/$/, '') === '/invitations/accept') return;
       w[l] = w[l] || [];
       w[l].push({ "gtm.start": new Date().getTime(), event: "gtm.js" });
       var f = d.getElementsByTagName(s)[0],
@@ -25,7 +46,8 @@
       var path = location.pathname;
 
       // Redirect to root with path info in query string
-      var redirectUrl = '/?redirect=' + encodeURIComponent(path + location.search + location.hash);
+      var invitation = path.replace(/\/$/, '') === '/invitations/accept';
+      var redirectUrl = '/?redirect=' + encodeURIComponent(path + location.search + (invitation ? '' : location.hash));
 
       location.replace(redirectUrl);
     })();

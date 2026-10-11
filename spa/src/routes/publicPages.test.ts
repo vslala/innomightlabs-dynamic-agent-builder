@@ -19,6 +19,9 @@ describe("public pages", () => {
 
     expect(paths).toContain("/whats-new");
     expect(paths).not.toContain("/login");
+    expect(paths).not.toContain("/invitations/accept");
+    expect(PUBLIC_PAGES).toContainEqual({ path: "/invitations/accept", indexed: false });
+    expect(buildRobotsTxt()).toContain("Disallow: /invitations/");
     expect(paths.some((path) => path.startsWith("/dashboard"))).toBe(false);
   });
 

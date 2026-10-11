@@ -1,4 +1,5 @@
 """Email service using Mailjet API."""
+import asyncio
 from importlib import import_module
 import logging
 from pathlib import Path
@@ -6,6 +7,7 @@ from typing import TYPE_CHECKING, Dict
 from enum import Enum
 
 from src.config import settings
+from .invitation import AccountInvitationEmail, INVITATION_DELIVERY_FAILED
 
 if TYPE_CHECKING:
     from src.widget.transcript import GuestTranscriptEmail
@@ -128,6 +130,45 @@ class EmailService:
         except Exception:
             log.exception("Guest transcript delivery failed")
             return False
+
+    async def send_account_invitation_email(
+        self,
+        *,
+        to_email: str,
+        account_name: str,
+        invited_by: str,
+        invite_url: str,
+        expires_at: str,
+    ) -> bool:
+        """Send once, without tracking or logging token-bearing payloads or provider errors."""
+        try:
+            email = AccountInvitationEmail(
+                account_name=account_name,
+                invited_by=invited_by,
+                invite_url=invite_url,
+                expires_at=expires_at,
+            )
+            result = await asyncio.to_thread(self.client.send.create, data={"Messages": [{
+                "From": {"Email": self.from_email, "Name": self.from_name},
+                "To": [{"Email": to_email}],
+                "Subject": email.subject,
+                "TextPart": email.text(),
+                "HTMLPart": email.html(),
+                "TrackClicks": "disabled",
+                "TrackOpens": "disabled",
+            }]})
+            if result.status_code == 200:
+                payload = result.json()
+                messages = payload.get("Messages") if isinstance(payload, dict) else None
+                if isinstance(messages, list) and messages and all(
+                    isinstance(message, dict) and message.get("Status") == "success"
+                    for message in messages
+                ):
+                    return True
+        except Exception:
+            pass
+        log.warning(INVITATION_DELIVERY_FAILED)
+        return False
 
     async def send_welcome_email(self, to_email: str, user_name: str) -> bool:
         """Send welcome email to new user."""

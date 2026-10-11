@@ -66,7 +66,7 @@ class CognitoOAuthProvider:
             "state": state,
         }
         url = f"{self.domain}{self.AUTHORIZATION_PATH}?{urlencode(params)}"
-        log.info(f"Redirecting to cognito: {url}")
+        log.info("Starting Cognito authorization")
         return url, state
 
     async def exchange_code_for_tokens(self, code: str) -> dict[str, Any]:

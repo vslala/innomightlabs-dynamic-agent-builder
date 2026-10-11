@@ -2,6 +2,37 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Invitation secrets must be removed before analytics or external resources. -->
+    <script>
+      (function () {
+        var target = new URL(window.location.href);
+        var redirect = target.searchParams.get('redirect');
+        if (redirect) {
+          try {
+            // Older fallbacks may have encoded the path twice. Decode only the
+            // path wrapper, not percent escapes inside the invitation token.
+            if (/^%2f/i.test(redirect)) redirect = decodeURIComponent(redirect);
+            var restored = new URL(redirect, target.origin);
+            if (restored.origin === target.origin && restored.pathname.replace(/\/$/, '') === '/invitations/accept') target = restored;
+          } catch (_) {}
+        }
+        if (target.pathname.replace(/\/$/, '') !== '/invitations/accept') return;
+        var fragment = new URLSearchParams(target.hash.slice(1));
+        var token = fragment.get('token');
+        target.hash = '';
+        window.history.replaceState(window.history.state, '', target.pathname + target.search);
+        if (target.searchParams.get('invitation_storage_error') === '1') return;
+        if (token !== null) {
+          try {
+            window.sessionStorage.setItem('pendingInvitationToken', token);
+          } catch (_) {
+            try { window.sessionStorage.removeItem('pendingInvitationToken'); } catch (_) {}
+            target.searchParams.set('invitation_storage_error', '1');
+            window.history.replaceState(window.history.state, '', target.pathname + target.search);
+          }
+        }
+      })();
+    </script>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="InnoMight Labs is one place to build and deliver AI solutions. Tell Ila, your solution builder, what you need: she plans it and builds agents, knowledge bases and chat widgets as a kit you can change or roll back." />
@@ -15,6 +46,7 @@
     <!-- Google Tag Manager -->
     <script>
       (function (w, d, s, l, i) {
+        if (w.location.pathname.replace(/\/$/, '') === '/invitations/accept') return;
         w[l] = w[l] || [];
         w[l].push({ "gtm.start": new Date().getTime(), event: "gtm.js" });
         var f = d.getElementsByTagName(s)[0],
@@ -27,14 +59,19 @@
     </script>
     <!-- End Google Tag Manager -->
     <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-LZ38HL06XF"></script>
     <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-
-      gtag('config', 'G-LZ38HL06XF');
-      gtag('config', 'AW-880600478');
+      (function () {
+        if (window.location.pathname.replace(/\/$/, '') === '/invitations/accept') return;
+        var script = document.createElement('script');
+        script.async = true;
+        script.src = 'https://www.googletagmanager.com/gtag/js?id=G-LZ38HL06XF';
+        document.head.appendChild(script);
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = function () { window.dataLayer.push(arguments); };
+        window.gtag('js', new Date());
+        window.gtag('config', 'G-LZ38HL06XF');
+        window.gtag('config', 'AW-880600478');
+      })();
     </script>
     <!-- End Google tag (gtag.js) -->
     <title>InnoMight Labs - Tell Ila what you need. She builds it, you ship it.</title>

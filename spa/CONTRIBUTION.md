@@ -32,6 +32,38 @@ Signed-in resource details use nested routes and outlet context. Keep resource s
 
 Schema-backed editing uses `components/forms/SchemaForm.tsx` and backend-owned schemas. Submit typed values and show API errors; do not duplicate credential or security policy validation in the browser. File uploads use the existing multipart transport.
 
+## Styling philosophy and design rules
+
+Read this before touching the look of any module. InnomightLabs is a working tool people return to every day, so its surfaces should feel calm, precise and trustworthy: quiet neutrals, one blue accent, colour kept for meaning, and generous but consistent space. A page should look like it belongs to the same product as its neighbours before it looks clever. `src/pages/dashboard/iam/` is a small reference implementation of these rules.
+
+**Colour**
+
+- Every colour comes from a token in `src/styles/tokens.css`. No hex, `rgb()` or Tailwind palette colours (`bg-blue-500`) in a module or page stylesheet; if a role is missing, add a semantic token with both its dark and light values.
+- Pick the semantic token, not the one that happens to look right: `--surface-page` < `--surface-panel` < `--surface-control` for depth, `--surface-subtle` for table heads and callouts, `--border-default` for edges, `--text-primary` / `--text-secondary` / `--text-muted` for the text hierarchy.
+- Blue (`--gradient-start`, `--link-color`, `--accent-blue-bg`) is the brand accent: the active tab, the primary button, focus rings, icon tiles and avatars. Use it sparingly; a screen full of blue has no emphasis left.
+- Green, amber and red (`--success`, `--warning`, `--danger` with their `-bg` pair) mean succeeded, needs attention and failed. Never use them for decoration, and never use colour alone: a status is a `StatusBadge` or `Pill` with a word, an error is an `Alert` with a sentence.
+
+**Type, space and shape**
+
+- Type scale: page title 1.5rem / 600, section heading 1.125rem / 600, panel title 1rem / 600, body 0.875rem, and table headers 0.75rem / 600 uppercase in `--text-muted` with slight letter spacing. Secondary lines (emails, dates, descriptions) step down to `--text-muted`, not a smaller font.
+- Space on the 4/8/12/16/24/32px rhythm through the `--space-*` and alias tokens (`--page-gap`, `--section-gap`, `--card-padding`, `--field-gap`). Related things sit closer than unrelated ones: a heading and its count share a row, sections are separated by a clear gutter.
+- Radius by role: `--radius-lg` for cards, panels and table containers; `--radius-md` for callouts and icon tiles; full rounding for badges, pills and avatars. One border (`1px var(--border-default)`) per surface; prefer borders and surface steps to shadows.
+
+**Composition**
+
+- Start a page with `Page` / `PageBody` from `components/layout` and the shared primitives in `components/ui` (`Button`, `Input`, `Label`, `Alert`, `StatusBadge`, `Pill`, `Spinner`, `EmptyState`). Restyling a primitive locally is a sign the change belongs in the primitive.
+- One primary action per surface (the default `Button`); secondary actions are `outline`. A destructive row action is a quiet `ghost` button in `--danger`; the `destructive` variant belongs on the confirm button of a `confirmation-dialog`. Primary actions and status come before secondary metadata.
+- Lists of records are tables or `ListRow`s inside one bordered panel: a muted header row, hairline dividers, a subtle hover, people shown with an initials avatar and their email beneath the name. Show counts as a small `Pill` next to the heading.
+- Every async surface designs all of its states: loading (`Spinner` with text, `role="status"`), empty (an `InlineEmptyState` that says what will appear there), error (`Alert` with a retry), read-only and success. None may fall back to unstyled text.
+- Icons are lucide, 16px inside buttons, tabs and notices (18-22px in icon tiles), placed before the label, `aria-hidden` when a label is present.
+- Dates read as people say them (`2 Oct 2026`, `in 5 days` via `utils/time.ts`) inside a `<time dateTime>` carrying the machine value; ids are shortened with the full value on copy or `title`.
+
+**Before you call it done**
+
+- Look at it, in both themes, at desktop width and around 600px. Wide tables scroll inside their card (`overflow-x: auto` and a table `min-width`) rather than breaking words letter by letter; grid columns that hold them use `minmax(0, 1fr)`.
+- Check keyboard focus is visible on every control, motion respects `prefers-reduced-motion`, and text stays legible on its surface in the light theme, where the subtle backgrounds are faintest.
+- Tests, `yarn lint`, `yarn build` and `yarn design:audit` do not prove any of this; say what you checked visually.
+
 ## Component, page and CSS conventions
 
 - Use existing `components/ui` primitives and `components/layout` composition first. Reusable components belong in their meaningful component module; one-off resource behavior stays in its page module.

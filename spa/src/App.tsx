@@ -6,11 +6,13 @@ import { RateLimitBanner } from './components/RateLimitBanner';
 import { SiteConcierge } from './components/SiteConcierge';
 import { LoadingState } from './components/ui';
 import { PUBLIC_PAGES, type PublicPath } from './routes/publicPages';
+import { captureInvitationToken } from './pages/invitations/continuation';
 
 const basename = import.meta.env.BASE_URL;
 
 const LandingPage = lazyRoute(() => import('./pages/LandingPage'), 'LandingPage');
 const Login = lazyRoute(() => import('./pages/Login'), 'Login');
+const AcceptInvitationPage = lazyRoute(() => import('./pages/invitations/AcceptInvitationPage'), 'AcceptInvitationPage');
 const LoginSuccess = lazyRoute(() => import('./pages/LoginSuccess'), 'LoginSuccess');
 const Pricing = lazyRoute(() => import('./pages/Pricing'), 'Pricing');
 const PaymentSuccess = lazyRoute(() => import('./pages/PaymentSuccess'), 'PaymentSuccess');
@@ -113,15 +115,25 @@ const publicPageElements: Record<PublicPath, ReactElement> = {
   '/sitemap': <SitemapPage />,
   '/login': <Login />,
   '/login-success': <LoginSuccess />,
+  '/invitations/accept': <AcceptInvitationPage />,
   '/payments/success': <PaymentSuccess />,
   '/payments/cancel': <PaymentCancel />,
 };
 
+function PublicSiteConcierge() {
+  const location = useLocation();
+  return location.pathname.replace(/\/$/, '') === '/invitations/accept' ? null : <SiteConcierge />;
+}
+
 function App() {
+  // Strip link secrets before lazy routes or external site widgets can render.
+  if (window.location.pathname.replace(/\/$/, '').endsWith('/invitations/accept')) {
+    captureInvitationToken(window.location, window.history, () => window.sessionStorage);
+  }
   return (
     <BrowserRouter basename={basename}>
       <ScrollToHash />
-      <SiteConcierge />
+      <PublicSiteConcierge />
       <RateLimitBanner />
       <Suspense fallback={<LoadingState />}>
         <Routes>
