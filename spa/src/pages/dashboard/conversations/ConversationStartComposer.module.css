@@ -43,3 +43,8 @@
 .errorBanner {
   @apply w-full rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300;
 }
+
+/* Under the cloud the composer sits close to it. */
+.docked {
+  @apply gap-3;
+}

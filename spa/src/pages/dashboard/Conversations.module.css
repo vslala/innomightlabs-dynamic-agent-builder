@@ -9,9 +9,34 @@
 }
 
 .layout {
+  @apply flex h-full min-h-0 flex-col overflow-y-auto bg-[var(--bg-dark)];
+}
+
+.classicLayout {
   @apply grid h-full grid-cols-1 bg-[var(--bg-dark)] lg:grid-cols-[28rem_minmax(0,1fr)];
 }
 
 .main {
   @apply flex min-w-0 items-center justify-center px-8 py-16 lg:px-16 xl:px-24;
+}
+
+.top {
+  @apply flex flex-wrap items-center justify-between gap-3 px-4 pt-4 md:px-8 md:pt-6;
+}
+
+.count {
+  @apply text-sm text-[var(--text-muted)];
+}
+
+.controls {
+  @apply flex w-full flex-wrap items-center gap-3 md:w-auto;
+}
+
+.search {
+  @apply min-w-0 flex-1 md:w-72 md:flex-none;
+}
+
+/* The composer stays at the bottom; the cloud takes the space above it. */
+.dock {
+  @apply px-4 pb-4 pt-2 md:px-8 md:pb-6;
 }

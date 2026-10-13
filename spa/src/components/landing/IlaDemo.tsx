@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Bot, Boxes, Check, Link2, Mail, MessageCircle, Puzzle, Sparkles, type LucideIcon } from "lucide-react";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { SCENARIOS, TYPE_MS, beatsFor, finalFrame, frameAt, type StepKind } from "./ilaScenes";
 import styles from "./IlaDemo.module.css";
 
@@ -12,22 +13,6 @@ const STEP_ICONS: Record<StepKind, LucideIcon> = {
 
 /** How long the request bubble takes to blink in before its text starts typing (matches `blinkIn` in the CSS). */
 const REQUEST_BLINK_MS = 700;
-
-const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
-
-function subscribeReducedMotion(onChange: () => void) {
-  const media = window.matchMedia(reducedMotionQuery);
-  media.addEventListener("change", onChange);
-  return () => media.removeEventListener("change", onChange);
-}
-
-function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(
-    subscribeReducedMotion,
-    () => window.matchMedia(reducedMotionQuery).matches,
-    () => false,
-  );
-}
 
 /**
  * Types its text out while active, after `delay` ms; shows all of it otherwise. Remount it (a new key) to type again.
@@ -73,7 +58,7 @@ function IlaMark({ small = false }: { small?: boolean }) {
  * picture of the first scenario instead.
  */
 export function IlaDemo() {
-  const reducedMotion = usePrefersReducedMotion();
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const [onScreen, setOnScreen] = useState(true);
   const [at, setAt] = useState({ scene: 0, beat: 0 });
   const root = useRef<HTMLElement>(null);

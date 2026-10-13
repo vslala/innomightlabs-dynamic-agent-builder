@@ -18,6 +18,8 @@ interface ConversationStartComposerProps {
   showDeepResearch: boolean;
   creating: boolean;
   error: string | null;
+  /** Docked under the conversation cloud: just the composer, without the heading above it. */
+  docked?: boolean;
   onAgentChange: (agentId: string) => void;
   onPromptChange: (value: string) => void;
   onModeChange: (mode: ConversationStartMode) => void;
@@ -37,6 +39,7 @@ export function ConversationStartComposer({
   showDeepResearch,
   creating,
   error,
+  docked = false,
   onAgentChange,
   onPromptChange,
   onModeChange,
@@ -71,23 +74,25 @@ export function ConversationStartComposer({
   }
 
   return (
-    <section className={styles.section}>
-      <div className={styles.header}>
-        <div className={styles.headerIcon}>
-          <Bot className="h-5 w-5" />
-        </div>
-        <h1 className={styles.title}>
-          Start a conversation
-        </h1>
-        <p className={styles.description}>
-          Ask your first question, create an image, or continue an older chat from the conversation list.
-        </p>
-        {selectedAgent?.agent_description && (
-          <p className={styles.agentDescription}>
-            {selectedAgent.agent_description}
+    <section className={docked ? `${styles.section} ${styles.docked}` : styles.section}>
+      {!docked && (
+        <div className={styles.header}>
+          <div className={styles.headerIcon}>
+            <Bot className="h-5 w-5" />
+          </div>
+          <h1 className={styles.title}>
+            Start a conversation
+          </h1>
+          <p className={styles.description}>
+            Ask your first question, create an image, or continue an older chat from the conversation list.
           </p>
-        )}
-      </div>
+          {selectedAgent?.agent_description && (
+            <p className={styles.agentDescription}>
+              {selectedAgent.agent_description}
+            </p>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className={styles.errorBanner}>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
+import { SearchInput } from "../../components/ui/search-input";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
 import { agentDisplayName } from "../../services/builder/ila";
@@ -8,7 +9,10 @@ import { defaultAgentService } from "../../services/settings/DefaultAgentService
 import { featureFlags } from "../../config/featureFlags";
 import type { ConversationResponse } from "../../types/conversation";
 import { userVisibleConversations } from "../../utils/conversations";
+import { ConversationCloud } from "./conversations/cloud/ConversationCloud";
+import { loadView, saveView, type ConversationView } from "./conversations/conversationView";
 import { ConversationSidebar } from "./conversations/ConversationSidebar";
+import { ConversationViewToggle } from "./conversations/ConversationViewToggle";
 import {
   ConversationStartComposer,
   type ConversationStartMode,
@@ -24,6 +28,7 @@ export function Conversations() {
   const [mode, setMode] = useState<ConversationStartMode>("chat");
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [debugEnabled, setDebugEnabled] = useState(false);
+  const [view, setView] = useState<ConversationView>(loadView);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -124,6 +129,46 @@ export function Conversations() {
     setDebugEnabled(false);
   };
 
+  const changeView = (next: ConversationView) => {
+    setView(next);
+    saveView(next);
+  };
+  const viewToggle = <ConversationViewToggle view={view} onChange={changeView} />;
+
+  const composer = (
+    <ConversationStartComposer
+      agents={agents}
+      selectedAgentId={selectedAgentId}
+      prompt={prompt}
+      mode={mode}
+      deepResearchEnabled={deepResearchEnabled}
+      debugEnabled={debugEnabled}
+      showDeepResearch={featureFlags.enableDeepResearch}
+      creating={creating}
+      error={error}
+      docked={view === "cloud"}
+      onAgentChange={(agentId) => {
+        setSelectedAgentId(agentId);
+        const nextAgent = agents.find((agent) => agent.agent_id === agentId);
+        if (!nextAgent?.capabilities?.includes("image_generation")) {
+          setMode("chat");
+        }
+      }}
+      onPromptChange={setPrompt}
+      onModeChange={(nextMode) => {
+        setMode(nextMode);
+        if (nextMode === "image") {
+          setDeepResearchEnabled(false);
+          setDebugEnabled(false);
+        }
+      }}
+      onDeepResearchChange={setDeepResearchEnabled}
+      onDebugChange={setDebugEnabled}
+      onSubmit={handleStartConversation}
+      onCreateAgent={() => navigate("/dashboard/agents/new")}
+    />
+  );
+
   if (loading) {
     return (
       <div className={styles.loadingContainer}>
@@ -132,50 +177,59 @@ export function Conversations() {
     );
   }
 
+  if (view === "classic") {
+    return (
+      <div className={styles.classicLayout}>
+        <ConversationSidebar
+          conversations={filteredConversations}
+          agents={agents}
+          search={search}
+          deletingId={deletingId}
+          viewToggle={viewToggle}
+          onSearchChange={setSearch}
+          onNewConversation={handleNewConversation}
+          onDeleteConversation={handleDelete}
+        />
+        <main className={styles.main}>{composer}</main>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.layout}>
-      <ConversationSidebar
+      <header className={styles.top}>
+        <p className={styles.count}>
+          {search.trim()
+            ? `${filteredConversations.length} of ${conversations.length} conversations`
+            : `${conversations.length} conversations`}
+        </p>
+        <div className={styles.controls}>
+          {viewToggle}
+          <div className={styles.search}>
+            <SearchInput
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search conversations"
+              aria-label="Search conversations"
+            />
+          </div>
+        </div>
+      </header>
+
+      <ConversationCloud
         conversations={filteredConversations}
         agents={agents}
-        search={search}
         deletingId={deletingId}
-        onSearchChange={setSearch}
-        onNewConversation={handleNewConversation}
-        onDeleteConversation={handleDelete}
+        emptyMessage={
+          conversations.length === 0
+            ? "No conversations yet. Ask your first question below."
+            : "No conversations match your search."
+        }
+        onDelete={handleDelete}
       />
 
-      <main className={styles.main}>
-        <ConversationStartComposer
-          agents={agents}
-          selectedAgentId={selectedAgentId}
-          prompt={prompt}
-          mode={mode}
-          deepResearchEnabled={deepResearchEnabled}
-          debugEnabled={debugEnabled}
-          showDeepResearch={featureFlags.enableDeepResearch}
-          creating={creating}
-          error={error}
-          onAgentChange={(agentId) => {
-            setSelectedAgentId(agentId);
-            const nextAgent = agents.find((agent) => agent.agent_id === agentId);
-            if (!nextAgent?.capabilities?.includes("image_generation")) {
-              setMode("chat");
-            }
-          }}
-          onPromptChange={setPrompt}
-          onModeChange={(nextMode) => {
-            setMode(nextMode);
-            if (nextMode === "image") {
-              setDeepResearchEnabled(false);
-              setDebugEnabled(false);
-            }
-          }}
-          onDeepResearchChange={setDeepResearchEnabled}
-          onDebugChange={setDebugEnabled}
-          onSubmit={handleStartConversation}
-          onCreateAgent={() => navigate("/dashboard/agents/new")}
-        />
-      </main>
+      {/* The composer stays at the bottom; the cloud takes the space above it. */}
+      <div className={styles.dock}>{composer}</div>
     </div>
   );
 }

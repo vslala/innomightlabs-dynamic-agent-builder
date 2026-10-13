@@ -80,3 +80,7 @@
 .cardDescription {
   @apply line-clamp-2 text-xs leading-5 text-[var(--text-muted)];
 }
+
+.headerActions {
+  @apply flex items-center gap-2;
+}

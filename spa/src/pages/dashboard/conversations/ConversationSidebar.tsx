@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/button";
@@ -31,6 +32,8 @@ interface ConversationSidebarProps {
   agents: AgentResponse[];
   search: string;
   deletingId: string | null;
+  /** The control that switches back to the cloud. */
+  viewToggle?: ReactNode;
   onSearchChange: (value: string) => void;
   onNewConversation: () => void;
   onDeleteConversation: (conversation: ConversationResponse) => void;
@@ -41,6 +44,7 @@ export function ConversationSidebar({
   agents,
   search,
   deletingId,
+  viewToggle,
   onSearchChange,
   onNewConversation,
   onDeleteConversation,
@@ -53,15 +57,18 @@ export function ConversationSidebar({
             <h2 className={styles.headerTitle}>Conversations</h2>
             <p className={styles.headerCount}>{conversations.length} saved</p>
           </div>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            title="New conversation"
-            onClick={onNewConversation}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          <div className={styles.headerActions}>
+            {viewToggle}
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              title="New conversation"
+              onClick={onNewConversation}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         <div className={styles.searchWrap}>

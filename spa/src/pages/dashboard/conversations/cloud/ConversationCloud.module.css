@@ -1,0 +1,125 @@
+.cloud {
+  position: relative;
+  flex: 1;
+  min-height: 18rem;
+  overflow: hidden;
+  cursor: grab;
+  /* The cloud takes the touch: a drag turns it instead of scrolling the page. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  /* A faint glow behind, so the ball reads as a ball. */
+  background: radial-gradient(ellipse 42% 46% at 50% 50%, rgba(var(--gradient-start-rgb), 0.07), transparent 100%);
+}
+
+.cloud[data-dragging] {
+  cursor: grabbing;
+}
+
+.empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 12rem;
+  padding: 0 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+/* Titles sit in the middle of the box; the motion hook moves each one with transform and opacity every frame. */
+.item {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  max-width: 17rem;
+  padding: 2px 8px;
+  overflow: hidden;
+  font-size: var(--size);
+  font-weight: 600;
+  line-height: 1.3;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 8px rgba(16, 18, 20, 0.9);
+  border-radius: 8px;
+  will-change: transform, opacity;
+  /* Hidden until the motion hook has placed it (it writes opacity inline from then on). */
+  opacity: 0;
+  transition: background-color 0.15s ease;
+}
+
+.item:hover,
+.item:focus-visible,
+.active {
+  background: var(--surface-panel);
+  outline: 1px solid var(--border-strong);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--gradient-start);
+}
+
+.legend {
+  position: absolute;
+  bottom: 10px;
+  left: 16px;
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.legendBar {
+  width: 88px;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.hint {
+  position: absolute;
+  right: 16px;
+  bottom: 8px;
+  z-index: 150;
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.hintTouch {
+  display: none;
+}
+
+@media (hover: none) {
+  .hintMouse {
+    display: none;
+  }
+
+  .hintTouch {
+    display: inline;
+  }
+}
+
+@media (max-width: 640px) {
+  .item {
+    max-width: 11rem;
+    font-size: var(--size-small);
+  }
+
+  /* One line under the other, so both fit a phone's width. */
+  .legend {
+    bottom: 28px;
+  }
+
+  .hint {
+    right: auto;
+    left: 16px;
+  }
+}
