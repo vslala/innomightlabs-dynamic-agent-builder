@@ -41,18 +41,32 @@ class ConversationMediaStorage:
             f"messages/{message_id}/{timestamp}_{image_suffix}.{safe_extension}"
         )
 
+    def build_upload_key(self, *, agent_id: str, conversation_id: str, image_id: str, extension: str) -> str:
+        """Where a user's uploaded image lives: under the conversation, so deleting it deletes the upload."""
+        return f"agents/{agent_id}/conversations/{conversation_id}/uploads/{image_id}.{extension.lower().lstrip('.')}"
+
     def put_image(
         self,
         *,
         key: str,
         body: bytes,
         content_type: str,
+        tagging: str | None = None,
     ) -> None:
+        extra = {"Tagging": tagging} if tagging else {}
         self.client.put_object(
             Bucket=self.bucket,
             Key=key,
             Body=body,
             ContentType=content_type,
+            **extra,
+        )
+
+    def retag(self, key: str, tags: dict[str, str]) -> None:
+        self.client.put_object_tagging(
+            Bucket=self.bucket,
+            Key=key,
+            Tagging={"TagSet": [{"Key": name, "Value": value} for name, value in tags.items()]},
         )
 
     def presign_get_url(self, key: str) -> str:

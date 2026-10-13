@@ -1,7 +1,9 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Annotated, Any, cast
 from dataclasses import dataclass
 import logging
@@ -49,6 +51,8 @@ from src.messages.models import Attachment, MAX_FILES, MAX_TOTAL_SIZE
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import ActorKind
 from src.exceptions import GENERIC_ERROR_MESSAGE
+from src.vision.policy import ImageInputAvailability, image_input_availability
+from src.vision.uploads import ImageUploadService
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +70,8 @@ class SendMessageRequest(BaseModel):
 
     content: str
     attachments: list[dict[str, Any]] | None = None
-    
+    #: Images uploaded to this conversation (`POST /conversations/{id}/images`) and sent with the message.
+    image_ids: list[str] = Field(default_factory=list)
 
     @field_validator("attachments")
     @classmethod
@@ -239,6 +244,17 @@ async def get_agent(
     agent = require_agent(principal, agent_id, "agents:Describe", repo)
     access = access_to(principal, agent)
     return agent.to_response(access or "admin")
+
+
+@router.get("/{agent_id}/image-input", response_model=ImageInputAvailability)
+async def get_image_input(
+    agent_id: str,
+    repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
+) -> ImageInputAvailability:
+    """Whether the caller may attach images when chatting with this agent, and the limits to check them against."""
+    agent = require_agent(principal, agent_id, "agents:Chat", repo)
+    return await asyncio.to_thread(image_input_availability, agent)
 
 
 @router.get("/{agent_id}/a2a-sharing", response_model=Agent2AgentSharingResponse)
@@ -470,11 +486,19 @@ async def send_message(
             },
         )
 
+    images = await asyncio.to_thread(
+        ImageUploadService().attach,
+        agent=target.agent,
+        conversation_id=target.conversation.conversation_id,
+        actor_id=target.caller.user_id,
+        image_ids=body.image_ids,
+    )
     running = start_turn(
         agent=target.agent,
         conversation=target.conversation,
         user_message=body.content,
         attachments=cast(list[Attachment], body.attachments or []),
+        images=images,
         # The agent runs as its owner (their provider keys, skills and connections); the caller is
         # who speaks, and whose memory it keeps
         owner_email=owner_of(target.agent).email,

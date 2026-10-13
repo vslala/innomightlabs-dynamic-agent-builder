@@ -244,6 +244,26 @@ class Settings:
     conversation_media_bucket: str = "innomightlabs-conversations-meta"
     conversation_media_region: str = "us-east-1"
     conversation_media_presign_ttl_seconds: int = 900
+    # Image input and the read_image tool. See docs/LLD-image-input-and-read-image-tool.md.
+    vision_max_image_bytes: int = 5 * 1024 * 1024
+    vision_max_images_per_message: int = 4
+    #: Uploads are downscaled to this on the longest side, which also keeps multi-image requests under provider limits.
+    vision_max_edge_px: int = 2000
+    #: Decompression-bomb guard: images with more pixels than this are refused before decoding.
+    vision_max_pixels: int = 40_000_000
+    vision_max_concurrency: int = 4
+    vision_call_timeout_seconds: int = 60
+    vision_tool_timeout_seconds: int = 120
+    #: An uploaded image nobody sent is deleted after this long. Keep it at 24 or under: the media bucket's
+    #: lifecycle rule (terraform/conversation_media.tf) deletes unsent images after a day.
+    vision_pending_upload_ttl_hours: int = 24
+    #: /v1/models lists no modalities, so OpenAI API-key models are matched by family.
+    openai_api_vision_model_prefixes: list[str] = field(
+        default_factory=lambda: ["gpt-4o", "gpt-4.1", "gpt-5", "gpt-6", "o3", "o4"]
+    )
+    widget_image_uploads_per_visitor_hour: int = 20
+    widget_image_uploads_per_key_day: int = 500
+    api_image_uploads_per_key_day: int = 1000
     a2a_supported_protocols: list[str] = field(default_factory=lambda: ["JSONRPC", "HTTP+JSON"])
     a2a_primary_protocol: str = "JSONRPC"
     a2a_oauth_access_token_ttl_seconds: int = 3600
@@ -621,6 +641,20 @@ class Settings:
             conversation_media_bucket=os.getenv("CONVERSATION_MEDIA_BUCKET", "innomightlabs-conversations-meta"),
             conversation_media_region=os.getenv("CONVERSATION_MEDIA_REGION", "us-east-1"),
             conversation_media_presign_ttl_seconds=int(os.getenv("CONVERSATION_MEDIA_PRESIGN_TTL_SECONDS", "900")),
+            vision_max_image_bytes=positive_env_int("VISION_MAX_IMAGE_BYTES", 5 * 1024 * 1024),
+            vision_max_images_per_message=positive_env_int("VISION_MAX_IMAGES_PER_MESSAGE", 4),
+            vision_max_edge_px=positive_env_int("VISION_MAX_EDGE_PX", 2000),
+            vision_max_pixels=positive_env_int("VISION_MAX_PIXELS", 40_000_000),
+            vision_max_concurrency=positive_env_int("VISION_MAX_CONCURRENCY", 4),
+            vision_call_timeout_seconds=positive_env_int("VISION_CALL_TIMEOUT_SECONDS", 60),
+            vision_tool_timeout_seconds=positive_env_int("VISION_TOOL_TIMEOUT_SECONDS", 120),
+            vision_pending_upload_ttl_hours=positive_env_int("VISION_PENDING_UPLOAD_TTL_HOURS", 24),
+            openai_api_vision_model_prefixes=parse_env_list(
+                "OPENAI_API_VISION_MODEL_PREFIXES", ["gpt-4o", "gpt-4.1", "gpt-5", "gpt-6", "o3", "o4"]
+            ),
+            widget_image_uploads_per_visitor_hour=positive_env_int("WIDGET_IMAGE_UPLOADS_PER_VISITOR_HOUR", 20),
+            widget_image_uploads_per_key_day=positive_env_int("WIDGET_IMAGE_UPLOADS_PER_KEY_DAY", 500),
+            api_image_uploads_per_key_day=positive_env_int("API_IMAGE_UPLOADS_PER_KEY_DAY", 1000),
             a2a_supported_protocols=_normalize_a2a_protocols(
                 parse_env_list("A2A_SUPPORTED_PROTOCOLS", ["JSONRPC", "HTTP+JSON"])
             ),

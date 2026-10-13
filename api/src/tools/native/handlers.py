@@ -21,6 +21,8 @@ from src.memory import (
 )
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.vectorstore.search import get_search_service
+from src.vision.analysis import ImageReader
+from src.vision.context import recalled_image_line
 
 log = logging.getLogger(__name__)
 
@@ -82,9 +84,18 @@ class NativeToolHandler:
         memory_repo: Optional[MemoryRepository] = None,
         *,
         message_repo: Optional[MessageRepository] = None,
+        image_reader: Optional[ImageReader] = None,
     ):
         self.memory_repo = memory_repo or MemoryRepository()
         self.message_repo = message_repo or get_message_repository("dynamodb")
+        self._image_reader = image_reader
+
+    @property
+    def image_reader(self) -> ImageReader:
+        # Built on first use: most conversations never hold an image.
+        if self._image_reader is None:
+            self._image_reader = ImageReader(message_repository=self.message_repo)
+        return self._image_reader
 
     async def execute(
         self,
@@ -121,8 +132,19 @@ class NativeToolHandler:
             )
             return result
 
+        if tool_name == "read_image":
+            result = await self._handle_read_image(arguments, context.agent_id, context=context)
+            return result
+
         result = await handler(arguments, context.agent_id)
         return result
+
+    async def _handle_read_image(self, args: dict, agent_id: str, *, context: NativeToolContext) -> str:
+        """Read the images with the account's vision model; the agent writes the reply from what comes back."""
+        del agent_id
+        return await self.image_reader.read(
+            context=context, image_ids=args["image_ids"], prompt=args.get("prompt")
+        )
 
     async def _handle_wait(self, args: dict, agent_id: str) -> str:
         del agent_id
@@ -414,6 +436,7 @@ class NativeToolHandler:
                 msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
             )
             lines.append(f"[{timestamp}] {role_label}: {content_preview}")
+            lines.extend(f"    {recalled_image_line(image)}" for image in msg.image_attachments)
 
         if page < total_pages:
             lines.append(f"\n(Use page={page + 1} to see older messages)")

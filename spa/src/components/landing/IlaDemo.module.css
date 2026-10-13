@@ -25,6 +25,12 @@
   to { opacity: 1; transform: none; }
 }
 
+/* While the scene is offscreen its loops (caret, thinking dots) rest too. */
+.demo[data-paused] .caret,
+.demo[data-paused] .thinking i {
+  animation-play-state: paused;
+}
+
 /* Windows */
 
 .window {
@@ -38,7 +44,8 @@
   border: 1px solid var(--border-strong);
   border-radius: 16px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-  transition: opacity 1s ease, transform 1s ease, filter 1s ease;
+  transition: opacity 1s ease, transform 1s ease;
+  will-change: transform, opacity;
 }
 
 .bar {
@@ -91,7 +98,6 @@
 
 .stage[data-view="site"] .studio {
   opacity: 0.35;
-  filter: blur(1px);
   transform: translate(-8px, -8px) scale(0.95);
 }
 
@@ -336,6 +342,7 @@
 }
 
 .approve {
+  position: relative;
   padding: 6px 12px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -345,14 +352,34 @@
   animation: rise 0.4s ease-out both, press 1.2s ease-in-out 0.8s;
 }
 
+/* The pulse is a ring that grows and fades, so it animates transform and opacity only (no repaint per frame). */
+.approve::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 4px rgba(var(--gradient-start-rgb), 0.45);
+  opacity: 0;
+  animation: ring 1.2s ease-out 0.8s;
+  pointer-events: none;
+}
+
 @keyframes press {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--gradient-start-rgb), 0.5); }
-  60% { box-shadow: 0 0 0 8px rgba(var(--gradient-start-rgb), 0); transform: scale(0.96); }
+  60% { transform: scale(0.96); }
+}
+
+@keyframes ring {
+  0% { opacity: 0.9; transform: scale(0.9); }
+  100% { opacity: 0; transform: scale(1.25); }
 }
 
 .approved {
   color: var(--success);
   background: var(--success-bg);
+  animation: none;
+}
+
+.approved::after {
   animation: none;
 }
 
@@ -439,6 +466,7 @@
   transform: scale(0.85);
   transform-origin: bottom right;
   transition: opacity 0.6s ease 0.8s, transform 0.6s ease 0.8s;
+  will-change: transform, opacity;
 }
 
 .stage[data-view="site"] .widget {
@@ -619,6 +647,7 @@
   .ila,
   .step,
   .approve,
+  .approve::after,
   .visitor,
   .answer,
   .proof,

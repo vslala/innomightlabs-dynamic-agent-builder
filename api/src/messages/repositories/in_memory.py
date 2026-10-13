@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, Tuple
 
-from src.messages.models import Message, MessageKind
+from src.messages.models import ImageAnalysis, Message, MessageKind
 from src.messages.repositories.compaction import (
     MessageCompactionStrategy,
     TemplateMessageCompactionStrategy,
@@ -28,6 +28,14 @@ class InMemoryMessageRepository:
 
     def find_by_conversation(self, conversation_id: str) -> list[Message]:
         return self._sorted(conversation_id, MessageKind.CHAT)
+
+    def save_image_analysis(
+        self, conversation_id: str, message_sk: str, index: int, image_id: str, analysis: ImageAnalysis
+    ) -> None:
+        for message in self._messages:
+            if message.conversation_id == conversation_id and message.sk == message_sk:
+                if index < len(message.image_attachments) and message.image_attachments[index].image_id == image_id:
+                    message.image_attachments[index].analysis = analysis
 
     def find_audit_by_conversation(
         self,

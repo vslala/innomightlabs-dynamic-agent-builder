@@ -18,7 +18,7 @@ from typing import Annotated, Any, Optional, cast
 from urllib.parse import urlencode
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
@@ -59,6 +59,11 @@ from src.widget.models import (
 )
 from src.widget.repository import WidgetConversationRepository
 from src.exceptions import GENERIC_ERROR_MESSAGE
+from src.messages.models import ImageAttachment, ImageAttachmentResponse
+from src.vision.http import image_response, read_image_upload
+from src.vision.models import ImageUploadResponse
+from src.vision.uploads import ImageUploadService
+from src.vision.limits import image_upload_slot, widget_upload_limits
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +93,11 @@ class WidgetMessageResponse(BaseModel):
     role: str
     content: str
     created_at: str
+    image_attachments: list[ImageAttachmentResponse] = []
+
+
+def widget_image_url(conversation_id: str, image_id: str) -> str:
+    return f"{settings.api_base_url.rstrip('/')}/widget/conversations/{conversation_id}/images/{image_id}"
 
 
 def get_widget_conversation_repository() -> WidgetConversationRepository:
@@ -802,6 +812,7 @@ async def send_message(
         raise HTTPException(status_code=403, detail="Access denied")
 
     guest_repo = GuestSessionRepository() if visitor.is_guest else None
+    images: list[ImageAttachment] = []
     turn_id = uuid4().hex
     if guest_repo:
         if len(body.content) > settings.widget_guest_max_message_chars:
@@ -818,6 +829,14 @@ async def send_message(
             enforce_guest_limit("GUEST_KEY_DAILY", api_key.key_id)
         except HTTPException:
             guest_repo.finish_turn(request.state.guest_session, turn_id)
+            raise
+
+    if body.image_ids:
+        try:
+            images = await _attach_images(agent_repo, api_key, conversation_id, visitor, body.image_ids)
+        except Exception:
+            if guest_repo:
+                guest_repo.finish_turn(request.state.guest_session, turn_id)
             raise
 
     async def heartbeat_guest_turn(stream_task: asyncio.Task | None) -> None:
@@ -873,7 +892,8 @@ async def send_message(
                 actor_email=visitor.email,
                 actor_id=visitor.visitor_id,
                 actor_kind=ActorKind.GUEST if visitor.is_guest else ActorKind.VISITOR,
-                attachments=[],  # Widget doesn't support attachments yet
+                attachments=[],  # Widget doesn't support file attachments; images go in `images`
+                images=images,
             ):
                 yield event.to_sse()
 
@@ -928,7 +948,86 @@ async def list_messages(
             role=message.role,
             content=message.content,
             created_at=message.created_at.isoformat(),
+            image_attachments=[
+                ImageAttachmentResponse(
+                    **image.model_dump(include=set(ImageAttachmentResponse.model_fields) - {"url"}),
+                    url=widget_image_url(conversation_id, image.image_id),
+                )
+                for image in message.image_attachments
+            ],
         )
         for message in messages
         if message.role in {"user", "assistant"}
     ]
+
+
+async def _attach_images(
+    agent_repo: AgentRepository,
+    api_key: AgentApiKey,
+    conversation_id: str,
+    visitor: WidgetVisitor,
+    image_ids: list[str],
+) -> list[ImageAttachment]:
+    agent = agent_repo.get(api_key.agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return await asyncio.to_thread(
+        ImageUploadService().attach,
+        agent=agent,
+        conversation_id=conversation_id,
+        actor_id=visitor.visitor_id,
+        image_ids=image_ids,
+    )
+
+
+def _own_conversation(
+    api_key: AgentApiKey, visitor: WidgetVisitor, conv_repo: WidgetConversationRepository, conversation_id: str
+) -> None:
+    conversation = conv_repo.find_by_id(api_key.agent_id, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if conversation.visitor_id != visitor.visitor_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
+@router.post("/conversations/{conversation_id}/images", response_model=ImageUploadResponse, status_code=201)
+async def upload_image(
+    conversation_id: str,
+    api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
+    visitor: Annotated[WidgetVisitor, Depends(get_visitor_from_request)],
+    conv_repo: Annotated[WidgetConversationRepository, Depends(get_widget_conversation_repository)],
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    file: UploadFile = File(...),
+) -> ImageUploadResponse:
+    """Upload an image to send with the visitor's next message; guests and signed-in visitors alike."""
+    _own_conversation(api_key, visitor, conv_repo, conversation_id)
+    agent = agent_repo.get(api_key.agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    with image_upload_slot(widget_upload_limits(visitor_id=visitor.visitor_id, key_id=api_key.key_id)):
+        upload = await asyncio.to_thread(
+            ImageUploadService().store,
+            agent=agent,
+            conversation_id=conversation_id,
+            uploaded_by=visitor.visitor_id,
+            filename=file.filename or "",
+            raw=await read_image_upload(file),
+        )
+    return ImageUploadResponse.of(upload, widget_image_url(conversation_id, upload.image_id))
+
+
+@router.get("/conversations/{conversation_id}/images/{image_id}")
+async def get_image(
+    conversation_id: str,
+    image_id: str,
+    api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
+    visitor: Annotated[WidgetVisitor, Depends(get_visitor_from_request)],
+    conv_repo: Annotated[WidgetConversationRepository, Depends(get_widget_conversation_repository)],
+) -> Response:
+    """An image from the visitor's own conversation."""
+    _own_conversation(api_key, visitor, conv_repo, conversation_id)
+    stored = await asyncio.to_thread(
+        ImageUploadService().open_bytes, conversation_id=conversation_id, image_id=image_id
+    )
+    return image_response(stored)

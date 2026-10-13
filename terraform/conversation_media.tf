@@ -52,6 +52,24 @@ resource "aws_s3_bucket_lifecycle_configuration" "guest_session_archives" {
       days = var.guest_archive_retention_days
     }
   }
+
+  # An uploaded image nobody sent. The API retags it once a message carries it, which takes it out of this rule.
+  # S3 can't expire in less than a day, so VISION_PENDING_UPLOAD_TTL_HOURS must stay at or under 24.
+  rule {
+    id     = "expire-pending-image-uploads"
+    status = "Enabled"
+
+    filter {
+      tag {
+        key   = "retention"
+        value = "pending-upload"
+      }
+    }
+
+    expiration {
+      days = 1
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "lambda_conversation_media" {

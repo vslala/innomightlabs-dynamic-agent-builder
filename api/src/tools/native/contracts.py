@@ -50,3 +50,8 @@ class KnowledgeBaseSearchInput(BaseModel):
 class WaitInput(BaseModel):
     seconds: int = Field(default=20, ge=1, le=600)
     reason: str | None = None
+
+
+class ReadImageInput(BaseModel):
+    image_ids: list[str] = Field(min_length=1, max_length=8)
+    prompt: str | None = Field(default=None, max_length=4000)

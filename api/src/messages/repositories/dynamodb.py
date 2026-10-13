@@ -16,6 +16,7 @@ from src.common.pagination import decode_cursor, encode_cursor
 from src.messages.models import (
     AUDIT_SORT_KEY_PREFIX,
     CHAT_SORT_KEY_PREFIX,
+    ImageAnalysis,
     Message,
 )
 
@@ -125,9 +126,39 @@ class DynamoDBMessageRepository:
         with self.table.batch_writer() as batch:
             for message in rows:
                 batch.delete_item(Key={"pk": message.pk, "sk": message.sk})
+            # Uploaded-image ledger rows (see src/vision) share the partition but are not messages.
+            for key in self._image_row_keys(conversation_id):
+                batch.delete_item(Key=key)
 
         log.info(f"Deleted {len(rows)} messages for conversation {conversation_id}")
         return len(rows)
+
+    def save_image_analysis(
+        self, conversation_id: str, message_sk: str, index: int, image_id: str, analysis: ImageAnalysis
+    ) -> None:
+        # The condition guards against the list having changed since the turn indexed it.
+        try:
+            self.table.update_item(
+                Key={"pk": self._pk(conversation_id), "sk": message_sk},
+                UpdateExpression=f"SET image_attachments[{int(index)}].analysis = :analysis",
+                ConditionExpression=f"image_attachments[{int(index)}].image_id = :image_id",
+                ExpressionAttributeValues={":analysis": analysis.model_dump(mode="json"), ":image_id": image_id},
+            )
+        except self.table.meta.client.exceptions.ConditionalCheckFailedException:
+            log.warning("Image %s is no longer at index %s of message %s", image_id, index, message_sk)
+
+    def _image_row_keys(self, conversation_id: str) -> list[dict[str, str]]:
+        keys: list[dict[str, str]] = []
+        params: dict[str, Any] = {
+            "KeyConditionExpression": Key("pk").eq(self._pk(conversation_id)) & Key("sk").begins_with("IMAGE#"),
+            "ProjectionExpression": "pk, sk",
+        }
+        while True:
+            response = self.table.query(**params)
+            keys += [{"pk": item["pk"], "sk": item["sk"]} for item in response.get("Items", [])]
+            if "LastEvaluatedKey" not in response:
+                return keys
+            params["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
     @staticmethod
     def _pk(conversation_id: str) -> str:

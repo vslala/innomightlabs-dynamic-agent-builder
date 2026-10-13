@@ -15,46 +15,59 @@
   overflow: hidden;
 }
 
+/* Soft glows. Radial gradients instead of blurred discs: a blur filter makes the GPU re-blur a big layer on every
+   frame of its animation (and again under the navbar's backdrop blur), which janks on laptop graphics. */
 .orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
   opacity: 0.5;
+  will-change: transform;
 }
 
 .orb1 {
-  width: 600px;
-  height: 600px;
-  background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-mid) 100%);
-  top: -200px;
-  right: -100px;
+  width: 760px;
+  height: 760px;
+  background: radial-gradient(closest-side,
+    rgba(56, 139, 255, 0.95) 0%, rgba(56, 139, 255, 0.8) 20%, rgba(var(--gradient-start-rgb), 0.5) 42%,
+    rgba(var(--gradient-start-rgb), 0.2) 65%, rgba(var(--gradient-start-rgb), 0.05) 85%, transparent 100%);
+  top: -280px;
+  right: -180px;
   animation: float 8s ease-in-out infinite;
 }
 
 .orb2 {
-  width: 400px;
-  height: 400px;
-  background: linear-gradient(135deg, var(--gradient-end) 0%, #de350b 100%);
-  bottom: -100px;
-  left: -100px;
+  width: 560px;
+  height: 560px;
+  background: radial-gradient(closest-side,
+    rgba(222, 53, 11, 0.5) 0%, rgba(150, 70, 90, 0.4) 22%, rgba(12, 102, 228, 0.3) 45%,
+    rgba(12, 102, 228, 0.12) 68%, rgba(12, 102, 228, 0.03) 86%, transparent 100%);
+  bottom: -200px;
+  left: -200px;
   animation: float 10s ease-in-out infinite;
   animation-delay: -3s;
 }
 
 .orb3 {
-  width: 300px;
-  height: 300px;
-  background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--gradient-start) 100%);
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(closest-side,
+    rgba(55, 180, 195, 0.35) 0%, rgba(70, 165, 225, 0.3) 25%, rgba(var(--gradient-start-rgb), 0.18) 50%,
+    rgba(var(--gradient-start-rgb), 0.06) 75%, transparent 100%);
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
   animation: float 6s ease-in-out infinite;
   animation-delay: -5s;
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-30px) scale(1.05); }
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -30px, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb {
+    animation: none;
+  }
 }
 
 .layout {

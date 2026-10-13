@@ -177,6 +177,10 @@ async def test_a_native_tool_receives_a_context_built_from_the_turn_state():
         user_id="actor-1",
         conversation_id="conversation-1",
         linked_kb_ids=["kb-1"],
+        account_id=state.account_id,
+        owner_email="owner@example.com",
+        api_key_id=None,
+        images={},
     )
 
 

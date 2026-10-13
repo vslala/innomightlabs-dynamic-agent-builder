@@ -12,6 +12,8 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from src.vision.context import attached_image_tag
+
 if TYPE_CHECKING:
     from src.messages.models import Message
 
@@ -112,7 +114,9 @@ class FixedWindowStrategy(ConversationStrategy):
         selected_messages: list["Message"] = []
 
         for msg in reversed(conversation_messages):
-            msg_words = len(msg.content.split())
+            msg_words = len(msg.content.split()) + sum(
+                len(attached_image_tag(image).split()) for image in msg.image_attachments
+            )
 
             # Check if adding this message would exceed the limit
             if word_count + msg_words > self.max_words:
@@ -130,14 +134,13 @@ class FixedWindowStrategy(ConversationStrategy):
 
     def _format_with_attachments(self, msg: "Message") -> str:
         """Format message content with attachments for LLM context."""
-        if not msg.attachments:
+        if not msg.attachments and not msg.image_attachments:
             return msg.content
 
-        attachment_sections = []
-        for att in msg.attachments:
-            attachment_sections.append(
-                f'<attached_file name="{att.filename}">\n{att.content}\n</attached_file>'
-            )
+        attachment_sections = [
+            f'<attached_file name="{att.filename}">\n{att.content}\n</attached_file>' for att in msg.attachments
+        ]
+        attachment_sections += [attached_image_tag(image) for image in msg.image_attachments]
 
         attachments_text = "\n\n".join(attachment_sections)
         return f"{attachments_text}\n\n{msg.content}"

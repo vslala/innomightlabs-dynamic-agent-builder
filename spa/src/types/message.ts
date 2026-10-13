@@ -65,6 +65,19 @@ export interface AttachmentInfo {
   size: number;
 }
 
+/**
+ * An image the user sent with a message. Fetch `url` with the signed-in headers, as with generated images.
+ */
+export interface ImageAttachmentInfo {
+  image_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  width: number;
+  height: number;
+  url?: string | null;
+}
+
 export interface MessageImage {
   image_id: string;
   url?: string | null;
@@ -93,6 +106,8 @@ export interface Message {
   role: MessageRole;
   content: string;
   attachments?: AttachmentInfo[];
+  /** Images the user sent (as opposed to `images`, which the agent generated). */
+  image_attachments?: ImageAttachmentInfo[];
   images?: MessageImage[];
   canvases?: MessageCanvasArtifact[];
   created_at: string;
@@ -195,6 +210,7 @@ export interface ToolActivity {
 export interface SendMessageRequest {
   content: string;
   attachments?: Attachment[];
+  image_ids?: string[];
 }
 
 export interface GenerateImageRequest {

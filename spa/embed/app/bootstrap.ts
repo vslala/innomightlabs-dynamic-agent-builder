@@ -1,3 +1,5 @@
+import type { ImageInputAvailability } from "../../packages/image-attachments/src";
+
 /** What the API's /embed/{public_key} shell inlines into the page for the app. */
 export interface Bootstrap {
   public_key: string;
@@ -5,6 +7,8 @@ export interface Bootstrap {
   agent_name: string;
   agent_description: string | null;
   api_base_url: string;
+  /** Whether visitors may attach images, and the limits to check them against. */
+  image_input?: ImageInputAvailability;
   allow_guests: boolean;
   guest_session_timeout_minutes?: number;
 }

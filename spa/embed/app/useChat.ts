@@ -3,13 +3,29 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SignedOutError, type AgentForm, type WidgetApi, type WidgetConversation } from "./api";
 import { conversationIdsOutside, conversationScope, loadConversationId, saveConversationId } from "./session";
 
+/** An image on a message: shown from the visitor's own file (`src`) while sending, or fetched from the API (`apiUrl`). */
+export interface ChatImage {
+  id: string;
+  name: string;
+  src?: string;
+  apiUrl?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  images?: ChatImage[];
   /** Shown instead of `content` (e.g. "Submitted: Contact details" for a form answer). */
   display?: string;
   isError?: boolean;
+}
+
+/** An uploaded image going out with a message, and the local file to show it from. */
+export interface SentImage {
+  imageId: string;
+  name: string;
+  src: string;
 }
 
 export interface PendingForm {
@@ -56,6 +72,7 @@ export function useChat(api: WidgetApi, publicKey: string, onSignedOut: () => vo
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const promptSentRef = useRef(false);
+  const pendingConversation = useRef<Promise<string> | null>(null);
 
   const fail = useCallback(
     (err: unknown) => {
@@ -70,6 +87,7 @@ export function useChat(api: WidgetApi, publicKey: string, onSignedOut: () => vo
 
   const openConversation = useCallback(
     async (id: string) => {
+      pendingConversation.current = null;
       setConversationId(id);
       saveConversationId(publicKey, scope, id);
       setPendingForm(null);
@@ -83,6 +101,7 @@ export function useChat(api: WidgetApi, publicKey: string, onSignedOut: () => vo
             role: message.role,
             content: message.content,
             display: message.role === "user" && prompt && message.content === prompt ? promptLabel : undefined,
+            images: message.image_attachments?.map((image) => ({ id: image.image_id, name: image.filename, apiUrl: image.url })),
           }))
         );
       } catch (err) {
@@ -96,6 +115,7 @@ export function useChat(api: WidgetApi, publicKey: string, onSignedOut: () => vo
 
   const startNewChat = useCallback(() => {
     abortRef.current?.abort();
+    pendingConversation.current = null;
     setConversationId(null);
     saveConversationId(publicKey, scope, null);
     setMessages([]);
@@ -138,30 +158,60 @@ export function useChat(api: WidgetApi, publicKey: string, onSignedOut: () => vo
     };
   }, [api, publicKey, scope, prompt, openConversation, fail]);
 
+  /** The conversation images are uploaded to: started now if the visitor hasn't sent anything yet. */
+  const ensureConversation = useCallback(
+    (title = ""): Promise<string> => {
+      if (conversationId) return Promise.resolve(conversationId);
+      // One creation however many images are pasted at once: they all wait on the same conversation.
+      pendingConversation.current ??= api.createConversation(titleFrom(title)).then(
+        (created) => {
+          setConversationId(created.conversation_id);
+          saveConversationId(publicKey, scope, created.conversation_id);
+          setConversations((prev) => [created, ...prev]);
+          return created.conversation_id;
+        },
+        (err: unknown) => {
+          pendingConversation.current = null;
+          throw err;
+        }
+      );
+      return pendingConversation.current;
+    },
+    [api, conversationId, publicKey, scope]
+  );
+
+  const uploadImage = useCallback(
+    async (file: File) => api.uploadImage(await ensureConversation(), file),
+    [api, ensureConversation]
+  );
+
   const send = useCallback(
-    async (content: string, display?: string) => {
-      if (isSending || !content.trim()) return;
+    async (content: string, display?: string, images: SentImage[] = []) => {
+      if (isSending || (!content.trim() && images.length === 0)) return;
 
       const controller = new AbortController();
       abortRef.current = controller;
       setIsSending(true);
       setError(null);
       setPendingForm(null);
-      setMessages((prev) => [...prev, { id: `local-${Date.now()}`, role: "user", content, display }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `local-${Date.now()}`,
+          role: "user",
+          content,
+          display,
+          images: images.map((image) => ({ id: image.imageId, name: image.name, src: image.src })),
+        },
+      ]);
 
       let reply = "";
       try {
-        let id = conversationId;
-        if (!id) {
-          const created = await api.createConversation(titleFrom(display ?? content));
-          if (controller.signal.aborted) return;
-          id = created.conversation_id;
-          setConversationId(id);
-          saveConversationId(publicKey, scope, id);
-          setConversations((prev) => [created, ...prev]);
-        }
+        const id = await ensureConversation(display ?? content);
+        if (controller.signal.aborted) return;
 
-        for await (const event of api.sendMessage(id, content, controller.signal)) {
+        const imageIds = images.map((image) => image.imageId);
+        for await (const event of api.sendMessage(id, content, imageIds, controller.signal)) {
           if (event.event_type === "AGENT_RESPONSE_TO_USER") {
             reply += event.content;
             setStreaming(reply);
@@ -204,7 +254,7 @@ export function useChat(api: WidgetApi, publicKey: string, onSignedOut: () => vo
         setActiveTool(null);
       }
     },
-    [api, conversationId, isSending, onSignedOut, publicKey, scope]
+    [api, ensureConversation, isSending, onSignedOut]
   );
 
   useEffect(() => {
@@ -230,6 +280,7 @@ export function useChat(api: WidgetApi, publicKey: string, onSignedOut: () => vo
     isLoading,
     error,
     suggestion,
+    uploadImage,
     dismissError: () => setError(null),
     openConversation,
     startNewChat,

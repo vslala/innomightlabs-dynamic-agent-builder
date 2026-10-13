@@ -32,7 +32,7 @@ from src.builder.tools import build_builder_tool_registry
 from src.config import settings
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
-from src.messages.models import Attachment, Message
+from src.messages.models import Attachment, ImageAttachment, Message
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import ActorKind
@@ -93,6 +93,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
         actor_id: str,
         actor_kind: ActorKind,
         attachments: list[Attachment] | None = None,
+        images: list[ImageAttachment] | None = None,
         api_key_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
         # 1. Preflight: the session this conversation builds in.

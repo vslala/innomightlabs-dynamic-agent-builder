@@ -30,7 +30,7 @@ def turn_error_message(exc: Exception, actor_kind: ActorKind) -> str:
 if TYPE_CHECKING:
     from src.agents.models import Agent
     from src.conversations.models import Conversation
-    from src.messages.models import Attachment
+    from src.messages.models import Attachment, ImageAttachment
 
 
 class AgentInvocationResult(BaseModel):
@@ -77,6 +77,7 @@ class AgentArchitecture(ABC):
         actor_id: str,
         actor_kind: "ActorKind",
         attachments: list["Attachment"] | None = None,
+        images: list["ImageAttachment"] | None = None,
         api_key_id: str | None = None,
     ) -> AsyncIterator["SSEEvent"]:
         """
@@ -95,6 +96,7 @@ class AgentArchitecture(ABC):
             actor_id: The end-user's ID (used for memory scoping)
             actor_kind: Who the end-user is to the agent; decides which tools they get
             attachments: Optional list of file attachments
+            images: Images the user sent with the message, already uploaded; see src/vision
             api_key_id: The public API secret key the turn runs under, if any (usage attribution)
 
         Yields:
@@ -111,6 +113,7 @@ class AgentArchitecture(ABC):
                 actor_id=actor_id,
                 actor_kind=actor_kind,
                 attachments=attachments,
+                images=images,
                 api_key_id=api_key_id,
             ):
                 failed = failed or event.event_type == SSEEventType.ERROR
@@ -134,6 +137,7 @@ class AgentArchitecture(ABC):
         actor_id: str,
         actor_kind: "ActorKind",
         attachments: list["Attachment"] | None = None,
+        images: list["ImageAttachment"] | None = None,
         api_key_id: str | None = None,
     ) -> AsyncIterator["SSEEvent"]:
         """Stream one turn's content events. Errors may simply be raised.

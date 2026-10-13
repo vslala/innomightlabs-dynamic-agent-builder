@@ -4,7 +4,9 @@ Conversations API router.
 
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import asyncio
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
 from src.agents.image_generation.storage import ConversationMediaStorage
@@ -25,6 +27,9 @@ from src.iam.principal import Principal
 from src.messages.models import Message, MessageResponse
 from src.messages.repositories import get_message_repository
 from src.messages.responses import MessageResponseFactory
+from src.vision.http import dashboard_image_url, image_response, read_image_upload
+from src.vision.models import ImageUploadResponse
+from src.vision.uploads import ImageUploadService
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -256,6 +261,41 @@ async def get_message_image(
             "Content-Disposition": f'inline; filename="{image.filename}"',
         },
     )
+
+
+@router.post("/{conversation_id}/images", response_model=ImageUploadResponse, status_code=201)
+async def upload_image(
+    conversation_id: str,
+    principal: Annotated[Principal, Depends(get_principal)],
+    partition: Partition,
+    file: UploadFile = File(...),
+) -> ImageUploadResponse:
+    """Upload an image to attach to the next message; send its `image_id` with that message."""
+    conversation = conversation_repository.find_by_id(conversation_id, partition)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    agent = require_agent(principal, conversation.agent_id, "agents:Chat", agent_repository)
+
+    upload = await asyncio.to_thread(
+        ImageUploadService().store,
+        agent=agent,
+        conversation_id=conversation_id,
+        uploaded_by=principal.user_id,
+        filename=file.filename or "",
+        raw=await read_image_upload(file),
+    )
+    return ImageUploadResponse.of(upload, dashboard_image_url(conversation_id, upload.image_id))
+
+
+@router.get("/{conversation_id}/images/{image_id}")
+async def get_uploaded_image(conversation_id: str, image_id: str, partition: Partition) -> Response:
+    """An image the user attached to a message, for the conversation's owner."""
+    if not conversation_repository.find_by_id(conversation_id, partition):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    stored = await asyncio.to_thread(
+        ImageUploadService().open_bytes, conversation_id=conversation_id, image_id=image_id
+    )
+    return image_response(stored)
 
 
 @router.put("/{conversation_id}", response_model=ConversationResponse)

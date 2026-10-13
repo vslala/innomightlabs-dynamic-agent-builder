@@ -7,21 +7,34 @@ without a new API version.
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from src.agents.models import Agent
 from src.conversations.models import ApiConversation
-from src.messages.models import Message
+from src.messages.models import ImageAttachmentResponse, Message
+from src.vision.policy import ImageInputAvailability, image_input_availability
+from src.config import settings
+
+
+def v1_image_url(agent_id: str, conversation_id: str, image_id: str) -> str:
+    return f"{settings.api_base_url.rstrip('/')}/v1/agents/{agent_id}/conversations/{conversation_id}/images/{image_id}"
 
 
 class V1AgentResponse(BaseModel):
     agent_id: str
     name: str
     description: Optional[str] = None
+    #: Whether messages to this agent may carry images, and the limits an image must meet.
+    image_input: ImageInputAvailability
 
     @classmethod
     def of(cls, agent: Agent) -> "V1AgentResponse":
-        return cls(agent_id=agent.agent_id, name=agent.agent_name, description=agent.agent_description)
+        return cls(
+            agent_id=agent.agent_id,
+            name=agent.agent_name,
+            description=agent.agent_description,
+            image_input=image_input_availability(agent),
+        )
 
 
 class V1CreateConversationRequest(BaseModel):
@@ -70,20 +83,38 @@ class V1MessageResponse(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
+    image_attachments: list[ImageAttachmentResponse] = Field(default_factory=list)
 
     @classmethod
-    def of(cls, message: Message) -> "V1MessageResponse":
+    def of(cls, message: Message, agent_id: str) -> "V1MessageResponse":
         return cls(
             message_id=message.message_id,
             role=message.role,  # type: ignore[arg-type]  # system rows are filtered out before this
             content=message.content,
             created_at=message.created_at,
+            image_attachments=[
+                ImageAttachmentResponse(
+                    **image.model_dump(include=set(ImageAttachmentResponse.model_fields) - {"url"}),
+                    url=v1_image_url(agent_id, message.conversation_id, image.image_id),
+                )
+                for image in message.image_attachments
+            ],
         )
 
 
 class V1SendMessageRequest(BaseModel):
-    content: str = Field(..., min_length=1)
+    content: str = ""
+    image_ids: list[str] = Field(
+        default_factory=list,
+        description="Images uploaded to this conversation with `POST .../images`, sent with the message.",
+    )
     stream: bool = Field(True, description="Stream the reply as Server-Sent Events, or wait and return it whole.")
+
+    @model_validator(mode="after")
+    def require_text_or_image(self) -> "V1SendMessageRequest":
+        if not self.content.strip() and not self.image_ids:
+            raise ValueError("A message needs content or image_ids")
+        return self
 
 
 class V1SendMessageResponse(BaseModel):

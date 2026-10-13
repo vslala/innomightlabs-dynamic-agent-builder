@@ -10,6 +10,7 @@ import type {
   PaginatedResponse,
 } from "../../types/conversation";
 import type { Message } from "../../types/message";
+import type { UploadedImage } from "../../../packages/image-attachments/src";
 
 class ConversationApiService {
   /**
@@ -65,6 +66,16 @@ class ConversationApiService {
    */
   async deleteConversation(conversationId: string): Promise<void> {
     await httpClient.delete(`/conversations/${conversationId}`);
+  }
+
+  /**
+   * Upload an image to send with the conversation's next message. The API checks it (type, size, that the
+   * account allows images) and refuses with a message fit to show.
+   */
+  async uploadImage(conversationId: string, file: File): Promise<UploadedImage> {
+    const form = new FormData();
+    form.append("file", file);
+    return httpClient.postForm<UploadedImage>(`/conversations/${conversationId}/images`, form);
   }
 
   /**

@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.agents.runtime_state import AgentTurnState
+from src.vision.models import ImageRef
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,10 @@ class NativeToolContext:
     user_id: str
     conversation_id: str
     linked_kb_ids: list[str]
+    account_id: str
+    owner_email: str
+    api_key_id: str | None
+    images: dict[str, ImageRef]
 
     @classmethod
     def of(cls, state: AgentTurnState) -> "NativeToolContext":
@@ -25,4 +30,8 @@ class NativeToolContext:
             user_id=state.actor_id,
             conversation_id=state.conversation_id,
             linked_kb_ids=list(state.linked_kb_ids),
+            account_id=state.account_id,
+            owner_email=state.owner_email,
+            api_key_id=state.api_key_id,
+            images=dict(state.images),
         )

@@ -28,7 +28,9 @@ from src.agents.tool_runtime import (
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
 from src.memory import MemoryRepository
-from src.messages.models import Message, MessageCanvasArtifact, Attachment
+from src.messages.models import Message, MessageCanvasArtifact, Attachment, ImageAttachment
+from src.vision.context import index_images
+from src.vision.policy import image_input_availability
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.memory.snapshot import CoreMemorySnapshot
 from src.settings.repository import get_provider_settings_repository
@@ -105,6 +107,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         actor_id: str,
         actor_kind: ActorKind,
         attachments: list[Attachment] | None = None,
+        images: list[ImageAttachment] | None = None,
         api_key_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """
@@ -119,6 +122,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             actor_id: The end-user's ID (for memory scoping)
             actor_kind: Who the end-user is to the agent; decides which skills and MCP tools they get
             attachments: Optional list of file attachments
+            images: Images the user sent with the message, already uploaded (read through `read_image`)
             api_key_id: The public API secret key the turn runs under, if any
 
         Yields:
@@ -152,6 +156,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             role="user",
             content=state.user_message,
             attachments=state.attachments,
+            image_attachments=images or [],
         )
         self.message_repo.save(user_msg)
         state.user_message_id = user_msg.message_id
@@ -182,6 +187,9 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         all_messages = self.message_repo.find_by_conversation(
             conversation.conversation_id
         )
+        # Every image in the conversation, not just the context window's: `read_image` can open any of them.
+        state.images = index_images(all_messages)
+        state.image_input_available = bool(state.images) and image_input_availability(agent).available
         # Pass session_timeout_minutes to filter messages by time gap
         history = self.conversation_strategy.build_context(
             all_messages,
@@ -392,6 +400,7 @@ def _tool_categories_for(state: AgentTurnState) -> set[ToolCategory]:
         *([ToolCategory.KNOWLEDGE] if state.linked_kb_ids else []),
         *([ToolCategory.SKILL] if state.enabled_skills else []),
         *([ToolCategory.MCP] if state.enabled_mcp_connections else []),
+        *([ToolCategory.IMAGE] if state.image_input_available else []),
     }
 
 

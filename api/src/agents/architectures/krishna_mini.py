@@ -14,7 +14,7 @@ from src.agents.prompts import render_system_prompt
 from src.agents.provider_session import open_provider_session
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
-from src.messages.models import Message, Attachment
+from src.messages.models import Message, Attachment, ImageAttachment
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.repository import get_provider_settings_repository
 from src.skills.models import ActorKind
@@ -68,11 +68,12 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         actor_id: str,
         actor_kind: ActorKind,
         attachments: list[Attachment] | None = None,
+        images: list[ImageAttachment] | None = None,
         api_key_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """One LLM call, streamed. `actor_id` is unused: Krishna Mini has no memory, and it
         records no token usage, so `api_key_id` is unused too. It has no tools, so `actor_kind`
-        is unused as well."""
+        is unused as well, and it can't read images: `images` is unused (see `vision.policy`)."""
         user_msg = Message(
             conversation_id=conversation.conversation_id,
             created_by=actor_email,

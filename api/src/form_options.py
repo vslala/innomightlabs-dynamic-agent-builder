@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from src.accounts.owner import Owner
+from src.agents.image_generation.capabilities import ImageCapability
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
 from src.form_models import Form, FormInput, SelectOption
@@ -18,6 +19,8 @@ class FormOptionSourceType:
     KRISHNA_MINI_AGENTS = "krishna_mini_agents"
     AGENT_MODEL_PROVIDERS = "agent_model_providers"
     AGENT_MODELS = "agent_models"
+    #: The models that read images, of the account's connected providers.
+    VISION_MODELS = "vision_models"
 
 
 @dataclass
@@ -109,10 +112,17 @@ class AgentModelsOptionsResolver:
         return _load_agent_model_choices(context).models
 
 
+class VisionModelsOptionsResolver:
+    def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
+        return _load_agent_model_choices(context).vision_models
+
+
 @dataclass(frozen=True)
 class AgentModelChoices:
     providers: list[str]
     models: list[SelectOption]
+    #: The `models` that can read images
+    vision_models: list[SelectOption]
 
 
 def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
@@ -128,10 +138,7 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
     # configured it. A provider whose model listing fails is still offered, so a
     # transient outage doesn't silently drop it from the picker.
     providers = ["Bedrock"]
-    model_options = [
-        SelectOption(value=model.model_name, label=model.display_name, group="Bedrock")
-        for model in models_service.get_bedrock_models()
-    ]
+    catalog = [("Bedrock", model) for model in models_service.get_bedrock_models()]
 
     for source in PROVIDER_MODEL_SOURCES:
         provider_settings = repo.find_by_provider(context.owner.account_id, source.provider_name)
@@ -140,10 +147,7 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
 
         providers.append(source.provider_name)
         try:
-            model_options.extend(
-                SelectOption(value=model.model_name, label=model.display_name, group=source.provider_name)
-                for model in source.load_models(provider_settings)
-            )
+            catalog.extend((source.provider_name, model) for model in source.load_models(provider_settings))
         except Exception as e:
             log.warning(
                 "Failed to load %s models for account %s: %s",
@@ -152,7 +156,16 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
                 e,
             )
 
-    choices = AgentModelChoices(providers=providers, models=model_options)
+    options = [
+        (SelectOption(value=model.model_name, label=model.display_name, group=provider), model) for provider, model in catalog
+    ]
+    choices = AgentModelChoices(
+        providers=providers,
+        models=[option for option, _ in options],
+        vision_models=[
+            option for option, model in options if ImageCapability.UNDERSTANDING.value in model.capabilities
+        ],
+    )
     context.cache["agent_model_choices"] = choices
     return choices
 
@@ -162,4 +175,5 @@ FORM_OPTIONS_RESOLVERS: dict[str, FormOptionsResolver] = {
     FormOptionSourceType.KRISHNA_MINI_AGENTS: KrishnaMiniAgentsOptionsResolver(),
     FormOptionSourceType.AGENT_MODEL_PROVIDERS: AgentModelProvidersOptionsResolver(),
     FormOptionSourceType.AGENT_MODELS: AgentModelsOptionsResolver(),
+    FormOptionSourceType.VISION_MODELS: VisionModelsOptionsResolver(),
 }

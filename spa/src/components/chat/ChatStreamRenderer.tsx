@@ -427,7 +427,7 @@ export function ChatStreamRenderer({
                 }}
               >
                 {msg.content && (
-                  <div style={msg.images?.length ? { marginBottom: "0.25rem" } : undefined}>
+                  <div style={msg.images?.length || msg.image_attachments?.length ? { marginBottom: "0.25rem" } : undefined}>
                     {isFormSubmission ? (
                       <SubmittedFormMessage message={msg} />
                     ) : msg.role === "assistant" ? (
@@ -437,6 +437,7 @@ export function ChatStreamRenderer({
                     )}
                   </div>
                 )}
+                {renderImages(msg.image_attachments)}
                 {renderImages(msg.images)}
                 {renderCanvases(msg.canvases, onExpandCanvas)}
                 {renderAttachments(msg.role, msg.attachments)}

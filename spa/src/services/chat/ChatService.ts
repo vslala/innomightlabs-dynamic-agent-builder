@@ -15,6 +15,15 @@ const TURN_ID_HEADER = "X-Turn-Id";
 const FOLLOW_TURN_MAX_ATTEMPTS = 3;
 const FOLLOW_TURN_RETRY_DELAY_MS = 500;
 
+/** An error's `detail` is a string, or `{code, message}` when the API refused something like an image. */
+function detailMessage(detail: unknown): string | undefined {
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object" && "message" in detail && typeof detail.message === "string") {
+    return detail.message;
+  }
+  return undefined;
+}
+
 export type SSEEventHandler = (event: SSEEvent) => void;
 
 export interface ChatStreamOptions {
@@ -122,6 +131,7 @@ class ChatService {
    * @param conversationId - The conversation context
    * @param content - The message text content
    * @param attachments - Optional file attachments to include
+   * @param imageIds - Images already uploaded to the conversation (`uploadImage`) to send with the message
    * @param deepResearch - Whether to enable gated research workspace tools
    * @param options - Stream event handlers
    */
@@ -130,6 +140,7 @@ class ChatService {
     conversationId: string,
     content: string,
     attachments: Attachment[] | undefined,
+    imageIds: string[],
     deepResearch: boolean,
     options: ChatStreamOptions
   ): Promise<void> {
@@ -138,11 +149,14 @@ class ChatService {
     const url = `${this.baseUrl}${chatPath(agentId, conversationId)}/send-message`;
 
     // Build request body with optional attachments
-    const body: { content: string; attachments?: Attachment[]; deep_research?: boolean } = {
+    const body: { content: string; attachments?: Attachment[]; image_ids?: string[]; deep_research?: boolean } = {
       content,
     };
     if (attachments && attachments.length > 0) {
       body.attachments = attachments;
+    }
+    if (imageIds.length > 0) {
+      body.image_ids = imageIds;
     }
     if (deepResearch) {
       body.deep_research = true;
@@ -171,7 +185,7 @@ class ChatService {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `HTTP ${response.status}`);
+        throw new Error(detailMessage(errorData.detail) || `HTTP ${response.status}`);
       }
 
       if (!response.body) {

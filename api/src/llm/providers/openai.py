@@ -4,6 +4,7 @@ OpenAI LLM Provider.
 Uses OAuth-backed Codex/ChatGPT responses endpoint.
 """
 
+import base64
 import json
 import logging
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ import httpx
 from src.auth.openai_oauth import OpenAICredentials, extract_account_id_from_access_token
 from src.config.settings import settings
 from src.llm.messages import (
+    ImageBlock,
     ChatMessage,
     TextBlock,
     ToolResultBlock,
@@ -128,6 +130,9 @@ class OpenAIProvider(LLMProvider):
             for block in message.content:
                 if isinstance(block, TextBlock):
                     texts.append({"type": text_type, "text": block.text})
+                    continue
+                if isinstance(block, ImageBlock):
+                    texts.append(_input_image(block))
                     continue
                 # Text said before a call belongs before it, so flush it into a message first.
                 items += _chat_message(message.role, texts)
@@ -334,6 +339,11 @@ class OpenAIProvider(LLMProvider):
 
 def _chat_message(role: str, texts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{"role": role, "content": texts}] if texts else []
+
+
+def _input_image(block: ImageBlock) -> dict[str, Any]:
+    data = base64.b64encode(block.data).decode("ascii")
+    return {"type": "input_image", "image_url": f"data:{block.media_type};base64,{data}", "detail": "auto"}
 
 
 def _tool_item(block: ToolUseBlock | ToolResultBlock) -> dict[str, Any]:

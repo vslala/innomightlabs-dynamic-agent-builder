@@ -44,6 +44,7 @@ import { dreamApiService } from "../../services/dream";
 import { defaultAgentService } from "../../services/settings/DefaultAgentService";
 import { getStoredTheme, setStoredTheme, type AppTheme } from "../../lib/theme";
 import { useCanManageSettings } from "../../hooks/useCanManageSettings";
+import { ImageReadingSettingsCard } from "./ImageReadingSettingsCard";
 import styles from "./Settings.module.css";
 
 type SubscriptionStatus = {
@@ -853,6 +854,8 @@ export function Settings() {
           )}
         </CardContent>
       </Card>
+
+      <ImageReadingSettingsCard />
 
       {/* Cancel Subscription Confirmation Dialog */}
       <ConfirmationDialog

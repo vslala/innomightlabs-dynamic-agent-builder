@@ -6,6 +6,7 @@ const navItems = [
   { id: 'authentication', label: 'Authentication', href: '#authentication' },
   { id: 'conversations', label: 'Conversations', href: '#conversations' },
   { id: 'messages', label: 'Sending Messages', href: '#messages' },
+  { id: 'images', label: 'Images', href: '#images' },
   { id: 'streaming', label: 'Stream Events', href: '#streaming' },
   { id: 'errors', label: 'Errors', href: '#errors' },
   { id: 'examples', label: 'Examples', href: '#examples' },
@@ -139,6 +140,50 @@ GET /v1/agents/{agent_id}/conversations/{conversation_id}/messages Messages, new
         <p>
           The agent finishes its reply even if your connection drops. Sending another message to the
           same conversation while a reply is still in progress returns <code>409</code>.
+        </p>
+      </section>
+
+      <hr />
+
+      <section id="images">
+        <h2>Images</h2>
+        <p>
+          Your users can send images, such as a screenshot of an error. Upload each image first, then
+          send its <code>image_id</code> with the message. The agent reads images with the vision
+          model its account owner chose in Settings, so images work only once the owner has turned
+          on <strong>Image Reading</strong>. <code>GET /v1/agents/{'{agent_id}'}</code> returns{' '}
+          <code>image_input</code>, which says whether images are available and the limits to
+          check against.
+        </p>
+
+        <div className={styles.codeExample}>
+          <div className={styles.codeHeader}>Upload, then send</div>
+          <pre>
+{`POST /v1/agents/{agent_id}/conversations/{conversation_id}/images
+Content-Type: multipart/form-data        // field "file": a PNG, JPEG, WebP or GIF, up to 5 MB
+
+→ 201 {"image_id": "…", "filename": "shot.png", "width": 1280, "height": 720, "url": "…"}
+
+POST /v1/agents/{agent_id}/conversations/{conversation_id}/messages
+
+{
+  "content": "What does this error mean?",    // optional when image_ids is set
+  "image_ids": ["…"]                          // up to 4 images per message
+}`}
+          </pre>
+        </div>
+
+        <p>
+          An upload nobody sends is deleted after a day. Messages list the images they carry as{' '}
+          <code>image_attachments</code>; fetch an image with{' '}
+          <code>GET …/conversations/{'{conversation_id}'}/images/{'{image_id}'}</code> and your API
+          key. Image errors carry a <code>code</code> and a <code>message</code> in{' '}
+          <code>detail</code>: <code>image_input_disabled</code>,{' '}
+          <code>image_input_not_configured</code>, <code>image_input_agent_unsupported</code>{' '}
+          (<code>403</code>); <code>image_too_large</code> (<code>413</code>);{' '}
+          <code>image_type_unsupported</code>, <code>image_unreadable</code>,{' '}
+          <code>too_many_images</code>, <code>image_not_found</code> (<code>422</code>);{' '}
+          <code>image_upload_limited</code> (<code>429</code>).
         </p>
       </section>
 

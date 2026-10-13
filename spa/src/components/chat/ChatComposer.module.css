@@ -8,6 +8,10 @@
   @apply flex flex-col gap-4 min-h-[7.25rem] p-[1.125rem] border border-[var(--border-subtle)] rounded-2xl bg-[var(--bg-secondary)] shadow-[0_10px_30px_rgba(0,0,0,0.16)];
 }
 
+.composerInner[data-dragging] {
+  @apply border-dashed border-[var(--gradient-start)];
+}
+
 .composerControls {
   @apply flex items-center justify-between gap-4;
 }

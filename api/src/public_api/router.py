@@ -9,7 +9,10 @@ See docs/LLD-public-api-and-embeddable-widget.md.
 from dataclasses import dataclass
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import asyncio
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 
 from src.agents.turns import ConversationTurnRepository, start_turn
 from src.common.pagination import Paginated
@@ -27,8 +30,13 @@ from src.public_api.models import (
     V1SendMessageRequest,
     V1SendMessageResponse,
     V1UpdateConversationRequest,
+    v1_image_url,
 )
 from src.skills.models import ActorKind
+from src.vision.http import image_response, read_image_upload
+from src.vision.limits import api_upload_limits, image_upload_slot
+from src.vision.models import ImageUploadResponse
+from src.vision.uploads import ImageUploadService
 
 router = APIRouter(prefix="/v1/agents/{agent_id}", tags=["public-api"])
 
@@ -125,10 +133,38 @@ async def list_messages(
         target.conversation.conversation_id, limit=limit, cursor=cursor
     )
     return Paginated[V1MessageResponse](
-        items=[V1MessageResponse.of(message) for message in messages],
+        items=[V1MessageResponse.of(message, target.caller.agent.agent_id) for message in messages],
         next_cursor=next_cursor,
         has_more=has_more,
     )
+
+
+@router.post("/conversations/{conversation_id}/images", response_model=ImageUploadResponse, status_code=201)
+async def upload_image(target: Target, file: UploadFile = File(...)) -> ImageUploadResponse:
+    """Upload an image (PNG, JPEG, WebP or GIF) and send its `image_id` in `image_ids` with the next message.
+
+    Unsent uploads are deleted after a day. The agent's `image_input` says whether it can read images, and the limits.
+    """
+    caller, conversation = target.caller, target.conversation
+    with image_upload_slot(api_upload_limits(key_id=caller.key.key_id)):
+        upload = await asyncio.to_thread(
+            ImageUploadService().store,
+            agent=caller.agent,
+            conversation_id=conversation.conversation_id,
+            uploaded_by=conversation.actor_id,
+            filename=file.filename or "",
+            raw=await read_image_upload(file),
+        )
+    return ImageUploadResponse.of(upload, v1_image_url(caller.agent.agent_id, conversation.conversation_id, upload.image_id))
+
+
+@router.get("/conversations/{conversation_id}/images/{image_id}")
+async def get_image(image_id: str, target: Target) -> Response:
+    """An image sent in this conversation."""
+    stored = await asyncio.to_thread(
+        ImageUploadService().open_bytes, conversation_id=target.conversation.conversation_id, image_id=image_id
+    )
+    return image_response(stored)
 
 
 @router.post("/conversations/{conversation_id}/messages", response_model=V1SendMessageResponse)
@@ -152,11 +188,19 @@ async def send_message(body: V1SendMessageRequest, target: Target):
         )
 
     owner_email = target.caller.owner_email
+    images = await asyncio.to_thread(
+        ImageUploadService().attach,
+        agent=target.caller.agent,
+        conversation_id=conversation.conversation_id,
+        actor_id=conversation.actor_id,
+        image_ids=body.image_ids,
+    )
     running = start_turn(
         agent=target.caller.agent,
         conversation=conversation,
         user_message=body.content,
         attachments=[],
+        images=images,
         owner_email=owner_email,
         actor_email=owner_email,
         actor_id=conversation.actor_id,

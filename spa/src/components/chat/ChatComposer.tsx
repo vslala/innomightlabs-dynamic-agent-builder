@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef } from "react";
-import type { KeyboardEvent, ReactNode, ClipboardEvent } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import type { DragEvent, KeyboardEvent, ReactNode, ClipboardEvent } from "react";
 import { Bug, Image as ImageIcon, Loader2, Paperclip, SearchCheck, Send, Square } from "lucide-react";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { Toggle } from "../ui/toggle";
+import { isFileDrag } from "../../../packages/image-attachments/src";
 import styles from "./ChatComposer.module.css";
 
 interface ComposerImageAction {
@@ -45,6 +46,8 @@ interface ChatComposerProps {
   onPaste?: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   onAttachFiles?: () => void;
   attachDisabled?: boolean;
+  /** Files dropped on the composer. Setting it turns the composer into a drop target. */
+  onDropFiles?: (data: DataTransfer) => void;
   imageAction?: ComposerImageAction;
   deepResearchAction?: ComposerDeepResearchAction;
   debugAction?: ComposerDebugAction;
@@ -65,6 +68,7 @@ export function ChatComposer({
   onPaste,
   onAttachFiles,
   attachDisabled = false,
+  onDropFiles,
   imageAction,
   deepResearchAction,
   debugAction,
@@ -72,6 +76,7 @@ export function ChatComposer({
   statusIndicator,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [dragging, setDragging] = useState(false);
   const showImageAction = imageAction?.visible ?? Boolean(imageAction);
   const showDeepResearch = deepResearchAction?.visible ?? Boolean(deepResearchAction);
   const showDebug = debugAction?.visible ?? Boolean(debugAction);
@@ -90,9 +95,28 @@ export function ChatComposer({
     }
   };
 
+  const dropEnabled = Boolean(onDropFiles) && !disabled && !isSubmitting;
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!dropEnabled || !isFileDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    setDragging(true);
+  };
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!dropEnabled || !onDropFiles) return;
+    event.preventDefault();
+    setDragging(false);
+    onDropFiles(event.dataTransfer);
+  };
+
   return (
     <div className={styles.composer}>
-      <div className={styles.composerInner}>
+      <div
+        className={styles.composerInner}
+        data-dragging={dragging || undefined}
+        onDragOver={handleDragOver}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+      >
         <Textarea
           ref={textareaRef}
           value={value}

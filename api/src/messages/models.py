@@ -76,6 +76,40 @@ class AttachmentResponse(BaseModel):
     size: int
 
 
+class ImageAnalysis(BaseModel):
+    """The vision model's prompt-independent description, saved the first time the image is read."""
+
+    description: str
+    provider_name: str
+    model_name: str
+    analysed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ImageAttachment(BaseModel):
+    """An image the user sent with a message. The bytes live in S3; the agent reads them through read_image."""
+
+    image_id: str
+    s3_key: str
+    filename: str
+    mime_type: str
+    size_bytes: int
+    width: int
+    height: int
+    analysis: ImageAnalysis | None = None
+
+
+class ImageAttachmentResponse(BaseModel):
+    """What a client sees of an image attachment. The description is the agent's working note, so it stays out."""
+
+    image_id: str
+    filename: str
+    mime_type: str
+    size_bytes: int
+    width: int
+    height: int
+    url: str | None = None
+
+
 class MessageImage(BaseModel):
     """Generated image metadata stored with a message."""
 
@@ -136,6 +170,7 @@ class MessageResponse(BaseModel):
     role: Literal["user", "assistant", "system"]
     content: str
     attachments: list[AttachmentResponse] = Field(default_factory=list)
+    image_attachments: list[ImageAttachmentResponse] = Field(default_factory=list)
     images: list[MessageImageResponse] = Field(default_factory=list)
     canvases: list[MessageCanvasArtifactResponse] = Field(default_factory=list)
     created_at: datetime
@@ -150,6 +185,7 @@ class Message(BaseModel):
     role: Literal["user", "assistant", "system"]
     content: str
     attachments: list[Attachment] = Field(default_factory=list)
+    image_attachments: list[ImageAttachment] = Field(default_factory=list)
     images: list[MessageImage] = Field(default_factory=list)
     canvases: list[MessageCanvasArtifact] = Field(default_factory=list)
     kind: MessageKind = MessageKind.CHAT
@@ -181,6 +217,8 @@ class Message(BaseModel):
         }
         if self.attachments:
             item["attachments"] = [att.model_dump() for att in self.attachments]
+        if self.image_attachments:
+            item["image_attachments"] = [img.model_dump(mode="json") for img in self.image_attachments]
         if self.images:
             item["images"] = [
                 img.model_dump(mode="json")
@@ -199,6 +237,9 @@ class Message(BaseModel):
         attachments = [
             Attachment(**att) for att in item.get("attachments", [])
         ]
+        image_attachments = [
+            ImageAttachment(**img) for img in item.get("image_attachments", [])
+        ]
         images = [
             MessageImage(**img) for img in item.get("images", [])
         ]
@@ -212,6 +253,7 @@ class Message(BaseModel):
             role=item["role"],
             content=item["content"],
             attachments=attachments,
+            image_attachments=image_attachments,
             images=images,
             canvases=canvases,
             # Rows written before the AUDIT# split have no `kind`.
@@ -229,6 +271,17 @@ class Message(BaseModel):
             attachments=[
                 AttachmentResponse(filename=att.filename, size=att.size)
                 for att in self.attachments
+            ],
+            image_attachments=[
+                ImageAttachmentResponse(
+                    image_id=img.image_id,
+                    filename=img.filename,
+                    mime_type=img.mime_type,
+                    size_bytes=img.size_bytes,
+                    width=img.width,
+                    height=img.height,
+                )
+                for img in self.image_attachments
             ],
             images=[
                 MessageImageResponse(

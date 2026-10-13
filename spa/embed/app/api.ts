@@ -3,8 +3,12 @@
  * origin, so every call is same-origin and uses relative URLs.
  */
 
+import { imageErrorMessage, type UploadedImage } from "../../packages/image-attachments/src";
 import type { Session } from "./session";
 import { readSSE } from "./sse";
+
+/** The code an image refusal carries in `detail.code`, which `errorDetail` returns in place of its message. */
+const IMAGE_UPLOAD_LIMITED = "image_upload_limited";
 
 export interface WidgetConversation {
   conversation_id: string;
@@ -19,7 +23,11 @@ export interface WidgetMessage {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  /** Images the visitor sent; fetch `url` with the visitor's headers (`fetchImage`). */
+  image_attachments?: UploadedImageInfo[];
 }
+
+export type UploadedImageInfo = Pick<UploadedImage, "image_id" | "filename" | "url">;
 
 export interface FormOption {
   value: string;
@@ -115,10 +123,30 @@ export class WidgetApi {
     return this.json(`/widget/conversations/${encodeURIComponent(conversationId)}/messages`);
   }
 
-  async *sendMessage(conversationId: string, content: string, signal?: AbortSignal): AsyncGenerator<StreamEvent> {
+  /** Upload an image to send with the visitor's next message. */
+  uploadImage(conversationId: string, file: File): Promise<UploadedImage> {
+    const form = new FormData();
+    form.append("file", file);
+    return this.json(`/widget/conversations/${encodeURIComponent(conversationId)}/images`, { method: "POST", body: form });
+  }
+
+  /** An image of the visitor's own conversation as a blob URL; the endpoint needs their headers, so an <img> can't load it. */
+  async fetchImage(url: string): Promise<string> {
+    // The API sends absolute URLs; the app is served from the API's own origin, so only the path is used.
+    const { pathname, search } = new URL(url, globalThis.location?.href);
+    const response = await this.request(pathname + search, {});
+    return URL.createObjectURL(await response.blob());
+  }
+
+  async *sendMessage(
+    conversationId: string,
+    content: string,
+    imageIds: string[],
+    signal?: AbortSignal
+  ): AsyncGenerator<StreamEvent> {
     const response = await this.request(`/widget/conversations/${encodeURIComponent(conversationId)}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, image_ids: imageIds }),
       headers: { Accept: "text/event-stream" },
       signal,
     });
@@ -154,7 +182,8 @@ export class WidgetApi {
     const response = await fetch(path, {
       ...init,
       headers: {
-        "Content-Type": "application/json",
+        // A FormData body sets its own multipart boundary
+        ...(init.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
         "X-API-Key": this.publicKey,
         Authorization: `Bearer ${await this.token()}`,
         ...init.headers,
@@ -198,6 +227,9 @@ async function throwResponseError(response: Response): Promise<never> {
   if (response.status === 409 && detail === "guest_turn_in_progress") {
     throw new Error("Please wait for the reply to finish before sending another message.");
   }
+  if (response.status === 429 && detail === IMAGE_UPLOAD_LIMITED) {
+    throw new Error("Too many images. Try again in a moment.");
+  }
   if (response.status === 429) throw new Error("Chat is temporarily limited. Please try again later. Guests can end this chat and continue with Google.");
   throw new Error(detail);
 }
@@ -206,6 +238,11 @@ async function errorDetail(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
     if (typeof body.detail === "string") return body.detail;
+    // An image the API refused: `{code, message}`. The code decides below; the message is what to show.
+    if (body.detail && typeof body.detail === "object" && "code" in body.detail && body.detail.code === IMAGE_UPLOAD_LIMITED) {
+      return IMAGE_UPLOAD_LIMITED;
+    }
+    if (body.detail && typeof body.detail === "object" && "message" in body.detail) return imageErrorMessage(body.detail);
   } catch {
     // Not JSON; fall through to the generic message.
   }

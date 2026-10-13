@@ -313,8 +313,16 @@ function ChatScreen({ api, bootstrap, session, greeting, placeholder, chatOption
             isLoading={chat.isLoading}
             suggestion={chat.suggestion}
             onSubmitForm={chat.send}
+            loadImage={api.fetchImage}
           />
-          <Composer ref={composerRef} placeholder={placeholder} disabled={chat.isSending || ending} onSend={(content) => chat.send(content)} />
+          <Composer
+            ref={composerRef}
+            placeholder={placeholder}
+            disabled={chat.isSending || ending}
+            imageInput={bootstrap.image_input}
+            uploadImage={chat.uploadImage}
+            onSend={(content, images) => chat.send(content, undefined, images)}
+          />
         </>
       )}
       {isGuest && <div className="ie-account">

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.agents.tool_runtime.specs import ToolCategory, ToolSpec
+from src.config import settings
 from src.tools.native.contracts import (
     ArchivalMemoryInsertInput,
     ArchivalMemorySearchInput,
@@ -12,6 +13,7 @@ from src.tools.native.contracts import (
     CoreMemoryReadInput,
     CoreMemoryReplaceInput,
     KnowledgeBaseSearchInput,
+    ReadImageInput,
     RecallConversationInput,
     WaitInput,
 )
@@ -24,6 +26,7 @@ from src.tools.native.definitions import (
     CORE_MEMORY_READ,
     CORE_MEMORY_REPLACE,
     KNOWLEDGE_BASE_SEARCH,
+    READ_IMAGE,
     RECALL_CONVERSATION,
     WAIT,
 )
@@ -53,4 +56,10 @@ NATIVE_TOOL_SPECS = [
     ToolSpec(RECALL_CONVERSATION, ToolCategory.NATIVE, RecallConversationInput),
     ToolSpec(WAIT, ToolCategory.NATIVE, WaitInput),
     ToolSpec(KNOWLEDGE_BASE_SEARCH, ToolCategory.KNOWLEDGE, KnowledgeBaseSearchInput),
+    ToolSpec(
+        READ_IMAGE,
+        ToolCategory.IMAGE,
+        ReadImageInput,
+        timeout_seconds=settings.vision_tool_timeout_seconds,
+    ),
 ]

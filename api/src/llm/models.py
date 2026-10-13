@@ -20,6 +20,7 @@ from src.config import settings
 from src.llm.ollama import DISCOVERY_TIMEOUT_SECONDS, OllamaConnection
 from src.llm.providers.openai_api import OPENAI_API_BASE_URL
 from src.settings.models import ProviderSettings
+from src.vision import capabilities as vision
 
 log = logging.getLogger(__name__)
 
@@ -132,6 +133,7 @@ class ModelsService:
                     model_name=clean_name,
                     display_name=f"[Bedrock] {display_name}",
                     provider="bedrock",
+                    capabilities=vision.understanding(vision.bedrock_reads_images(model)),
                 ))
 
             # Sort by preference (best available in eu-west-2 first)
@@ -201,18 +203,21 @@ class ModelsService:
                 model_name="claude-3-7-sonnet",
                 display_name="Claude 3.7 Sonnet",
                 provider="bedrock",
+                capabilities=vision.understanding(True),
             ),
             ModelInfo(
                 model_id="anthropic.claude-3-sonnet-20230229-v1:0",
                 model_name="claude-3-sonnet",
                 display_name="Claude 3 Sonnet",
                 provider="bedrock",
+                capabilities=vision.understanding(True),
             ),
             ModelInfo(
                 model_id="anthropic.claude-3-haiku-20240307-v1:0",
                 model_name="claude-3-haiku",
                 display_name="Claude 3 Haiku (Fast)",
                 provider="bedrock",
+                capabilities=vision.understanding(True),
             ),
         ]
 
@@ -228,7 +233,8 @@ class ModelsService:
                 model_id=m.id,
                 model_name=m.id,
                 display_name=f"[Anthropic] {m.display_name}",
-                provider="anthropic"
+                provider="anthropic",
+                capabilities=vision.understanding(vision.anthropic_reads_images(m)),
             )
             for m in models
         ]
@@ -287,7 +293,7 @@ class ModelsService:
             raise ValueError("Codex model catalog returned an unexpected payload shape")
 
         models = [
-            self._openai_model(str(entry["slug"]), entry.get("display_name"))
+            self._openai_model(str(entry["slug"]), entry.get("display_name"), vision.codex_reads_images(entry))
             for entry in sorted(
                 (entry for entry in entries if _is_listed_openai_model(entry)),
                 key=lambda entry: entry.get("priority") if isinstance(entry.get("priority"), int) else 1_000,
@@ -300,13 +306,16 @@ class ModelsService:
     def _configured_openai_models(self) -> list[ModelInfo]:
         return [self._openai_model(model.strip()) for model in settings.openai_models if model and model.strip()]
 
-    def _openai_model(self, slug: str, display_name: Any = None) -> ModelInfo:
+    def _openai_model(self, slug: str, display_name: Any = None, reads_images: bool = True) -> ModelInfo:
         return ModelInfo(
             model_id=slug,
             model_name=slug,
             display_name=f"[OpenAI] {display_name if isinstance(display_name, str) and display_name else slug}",
             provider="openai",
-            capabilities=image_capability_registry.capabilities_for("OpenAI", slug),
+            capabilities=[
+                *image_capability_registry.capabilities_for("OpenAI", slug),
+                *vision.understanding(reads_images),
+            ],
         )
 
     def get_openai_api_models(self, provider_settings: ProviderSettings) -> list[ModelInfo]:
@@ -338,7 +347,13 @@ class ModelsService:
         )
         slugs = [str(entry["id"]) for entry in listed] or [m.strip() for m in settings.openai_models if m.strip()]
         return [
-            ModelInfo(model_id=slug, model_name=slug, display_name=f"[OpenAI API] {slug}", provider="openai_api")
+            ModelInfo(
+                model_id=slug,
+                model_name=slug,
+                display_name=f"[OpenAI API] {slug}",
+                provider="openai_api",
+                capabilities=vision.understanding(vision.openai_api_reads_images(slug)),
+            )
             for slug in slugs
         ]
 
@@ -369,6 +384,7 @@ class ModelsService:
                         model_name=model_id,
                         display_name=f"[Gemini] {display_name}",
                         provider="gemini",
+                        capabilities=vision.understanding(vision.gemini_reads_images(model_id)),
                     )
                 )
 
@@ -407,12 +423,14 @@ class ModelsService:
                 model_name="gemini-2.5-flash",
                 display_name="[Gemini] Gemini 2.5 Flash",
                 provider="gemini",
+                capabilities=vision.understanding(True),
             ),
             ModelInfo(
                 model_id="gemini-2.5-pro",
                 model_name="gemini-2.5-pro",
                 display_name="[Gemini] Gemini 2.5 Pro",
                 provider="gemini",
+                capabilities=vision.understanding(True),
             ),
         ]
 
@@ -440,15 +458,17 @@ class ModelsService:
             log.error("Ollama /api/tags returned an unexpected payload shape")
             return []
 
+        tags = [tag for tag in (_ollama_model_tag(model) for model in models) if tag]
+        reads_images = vision.ollama_models_reading_images(connection, tags)
         return [
             ModelInfo(
                 model_id=tag,
                 model_name=tag,
                 display_name=f"[Ollama] {tag}",
                 provider="ollama",
+                capabilities=vision.understanding(reads_images[tag]),
             )
-            for tag in (_ollama_model_tag(model) for model in models)
-            if tag
+            for tag in tags
         ]
 
 

@@ -3,7 +3,7 @@ import { buildChatStreamRenderPlan } from "../../../packages/chat-stream-rendere
 import { ArrowDown, Sparkles, Wrench } from "lucide-react";
 
 import { parseFormSubmission } from "../../../src/components/chat/submittedFormParser";
-import type { ChatMessage, PendingForm } from "../useChat";
+import type { ChatImage, ChatMessage, PendingForm } from "../useChat";
 import { FormCard } from "./FormCard";
 import { Markdown } from "./Markdown";
 
@@ -20,6 +20,8 @@ interface MessageListProps {
   /** A question the visitor can send with one click (a default prompt that isn't sent automatically). */
   suggestion?: { label: string; onSelect: () => void } | null;
   onSubmitForm: (content: string, display: string) => void;
+  /** Fetches a visitor's image from the API as a blob URL; only needed for images already sent. */
+  loadImage: (url: string) => Promise<string>;
 }
 
 /** How close to the bottom (px) still counts as "following" the conversation. */
@@ -37,6 +39,7 @@ export function MessageList({
   isLoading,
   suggestion,
   onSubmitForm,
+  loadImage,
 }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const [greetingReady, setGreetingReady] = useState(!guestGreeting);
@@ -114,7 +117,7 @@ export function MessageList({
         )}
 
         {plan.map((item) => {
-          if (item.kind === "message") return <MessageBubble key={item.key} message={item.message} />;
+          if (item.kind === "message") return <MessageBubble key={item.key} message={item.message} loadImage={loadImage} />;
           if (item.kind === "streaming") {
             return (
               <div key={item.key} className="ie-bubble ie-bubble-assistant">
@@ -157,12 +160,20 @@ export function MessageList({
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, loadImage }: { message: ChatMessage; loadImage: (url: string) => Promise<string> }) {
   if (message.role === "user") {
     const submission = message.display ? null : parseFormSubmission(message.content);
+    const text = message.display ?? (submission ? `Submitted: ${submission.label}` : message.content);
     return (
       <div className="ie-bubble ie-bubble-user">
-        {message.display ?? (submission ? `Submitted: ${submission.label}` : message.content)}
+        {message.images && message.images.length > 0 && (
+          <div className="ie-bubble-images">
+            {message.images.map((image) => (
+              <BubbleImage key={image.id} image={image} loadImage={loadImage} />
+            ))}
+          </div>
+        )}
+        {text}
       </div>
     );
   }
@@ -172,4 +183,32 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       <Markdown content={message.content} />
     </div>
   );
+}
+
+/** A picture the visitor sent: from their own file while it is being sent, or fetched with their headers once saved. */
+function BubbleImage({ image, loadImage }: { image: ChatImage; loadImage: (url: string) => Promise<string> }) {
+  const [fetched, setFetched] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (image.src || !image.apiUrl) return;
+    let active = true;
+    let objectUrl: string | null = null;
+    loadImage(image.apiUrl).then(
+      (url) => {
+        objectUrl = url;
+        if (active) setFetched(url);
+        else URL.revokeObjectURL(url);
+      },
+      () => active && setFailed(true)
+    );
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [image.src, image.apiUrl, loadImage]);
+
+  const src = image.src ?? fetched;
+  if (failed) return <span className="ie-bubble-image-missing">Image unavailable</span>;
+  return src ? <img className="ie-bubble-image" src={src} alt={image.name} /> : <span className="ie-bubble-image-loading" aria-hidden="true" />;
 }

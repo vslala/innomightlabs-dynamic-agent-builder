@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { BookOpen, Bot, Boxes, Check, Link2, Mail, MessageCircle, Puzzle, Sparkles, type LucideIcon } from "lucide-react";
 import { SCENARIOS, TYPE_MS, beatsFor, finalFrame, frameAt, type StepKind } from "./ilaScenes";
 import styles from "./IlaDemo.module.css";
@@ -31,21 +31,23 @@ function usePrefersReducedMotion(): boolean {
 
 /**
  * Types its text out while active, after `delay` ms; shows all of it otherwise. Remount it (a new key) to type again.
- * The full text is laid out invisibly underneath, so the bubble holding it has its final size from the start
- * instead of growing as the letters arrive.
+ * How much is shown follows the frame clock, not a timer: if frames are late the text catches up on the next one
+ * instead of stuttering. The full text is laid out invisibly underneath, so the bubble holding it has its final
+ * size from the start instead of growing as the letters arrive.
  */
 function Typed({ text, active, delay = 0 }: { text: string; active: boolean; delay?: number }) {
   const [shown, setShown] = useState(0);
   useEffect(() => {
     if (!active) return;
-    let interval = 0;
-    const start = window.setTimeout(() => {
-      interval = window.setInterval(() => setShown((n) => Math.min(n + 1, text.length)), TYPE_MS);
-    }, delay);
-    return () => {
-      window.clearTimeout(start);
-      window.clearInterval(interval);
+    const begin = performance.now() + delay;
+    let frame = 0;
+    const step = (now: number) => {
+      const typed = Math.min(text.length, Math.max(0, Math.floor((now - begin) / TYPE_MS)));
+      setShown(typed);
+      if (typed < text.length) frame = requestAnimationFrame(step);
     };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
   }, [active, text, delay]);
   return (
     <span className={styles.typed}>
@@ -85,7 +87,7 @@ export function IlaDemo() {
   }, []);
 
   const scenario = SCENARIOS[at.scene];
-  const beats = beatsFor(scenario);
+  const beats = useMemo(() => beatsFor(scenario), [scenario]);
   const playing = onScreen && !reducedMotion;
 
   useEffect(() => {
@@ -103,7 +105,7 @@ export function IlaDemo() {
   const ProofIcon = shown.proofKind === "email" ? Mail : Link2;
 
   return (
-    <figure ref={root} className={styles.demo}>
+    <figure ref={root} className={styles.demo} data-paused={playing ? undefined : ""}>
       <figcaption className={styles.caption}>
         Ila at work: someone asks for a website assistant, Ila shows a plan, builds it as a kit after it is approved,
         and the new chat widget answers a visitor's question on the website.

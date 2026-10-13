@@ -39,6 +39,7 @@ dependencies = [
     "apscheduler>=3.11,<4",
     "google-genai>=2.19.0",
     "disposable-email-domains>=0.0.275",
+    "pillow>=11.0.0",
 ]
 
 [project.optional-dependencies]

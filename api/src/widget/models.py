@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class WidgetVisitorKind(str, Enum):
@@ -161,7 +161,15 @@ class WidgetConfigResponse(BaseModel):
 
 class WidgetMessageRequest(BaseModel):
     """Request model for sending a message via widget."""
-    content: str = Field(..., min_length=1)
+    content: str = ""
+    #: Images the visitor uploaded to this conversation (`POST .../images`), sent with the message.
+    image_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_text_or_image(self) -> "WidgetMessageRequest":
+        if not self.content.strip() and not self.image_ids:
+            raise ValueError("A message needs text or an image")
+        return self
 
 
 class WidgetGenerateTextRequest(BaseModel):

@@ -187,7 +187,8 @@ class GuestSessionCloser:
                         raise RuntimeError("Guest media copy verification failed")
                     mapping[source] = target
             for message in entry["messages"]:
-                for image in message.get("images", []):
+                # Generated images, and images the guest sent
+                for image in (*message.get("images", []), *message.get("image_attachments", [])):
                     if isinstance(image, dict) and image.get("s3_key"):
                         image["s3_key"] = mapping[image["s3_key"]]
         archive["media"] = mapping

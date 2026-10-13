@@ -333,3 +333,26 @@ def test_only_the_guests_own_conversations_are_read_or_deleted(closer):
     assert worker.table.get_item(Key={"pk": other["pk"], "sk": other["sk"]}).get("Item")
     assert worker.table.get_item(Key={"pk": "CONVERSATION#someone-else", "sk": "MESSAGE#1"}).get("Item")
     assert [entry["conversation"]["conversation_id"] for entry in archive(worker, session)["conversations"]] == ["c"]
+
+
+def test_images_the_guest_sent_are_archived_then_deleted_with_the_chat(closer):
+    session, rows = seed(closer)
+    worker, _ = closer
+    upload_key = "agents/a/conversations/c/uploads/img-1.png"
+    ledger = {"pk": "CONVERSATION#c", "sk": "IMAGE#img-1", "image_id": "img-1", "status": "attached", "s3_key": upload_key}
+    sent = {
+        "pk": "CONVERSATION#c", "sk": "MESSAGE#3", "role": "user", "kind": "chat", "content": "what is this?",
+        "image_attachments": [{"image_id": "img-1", "s3_key": upload_key, "filename": "shot.png"}],
+    }
+    for row in (ledger, sent):
+        worker.table.put_item(Item=row)
+    worker.s3.put_object(Bucket=BUCKET, Key=upload_key, Body=b"screenshot")
+
+    assert worker.sweep() == 1
+
+    assert_deleted(worker, [*rows, ledger, sent])
+    archived = archive(worker, session)
+    message = next(m for e in archived["conversations"] for m in e["messages"] if m["sk"] == "MESSAGE#3")
+    copied = message["image_attachments"][0]["s3_key"]
+    assert copied != upload_key and "/media/c/uploads/" in copied
+    assert worker.s3.get_object(Bucket=BUCKET, Key=copied)["Body"].read() == b"screenshot"

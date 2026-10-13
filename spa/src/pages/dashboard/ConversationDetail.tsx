@@ -3,12 +3,14 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Loader2, Maximize2, Minimize2, Image as ImageIcon } from "lucide-react";
 import { ChatFormRenderer, type FormAnswer } from "../../components/chat/ChatFormRenderer";
 import { AttachmentChip } from "../../components/chat/AttachmentChip";
+import { ImageAttachmentChip } from "../../components/chat/ImageAttachmentChip";
 import { CanvasSidePanel } from "../../components/chat/CanvasSidePanel";
 import { ChatComposer } from "../../components/chat/ChatComposer";
 import { TokenUsageIndicator, type LiveTokenUsageUpdate } from "../../components/chat/TokenUsageIndicator";
 import { ChatStreamRenderer } from "../../components/chat/ChatStreamRenderer";
 import { featureFlags } from "../../config/featureFlags";
 import { useFileAttachments } from "../../hooks/useFileAttachments";
+import { useConversationImages } from "../../hooks/useConversationImages";
 import { ALLOWED_EXTENSIONS } from "../../types/message";
 import {
   Card,
@@ -106,7 +108,6 @@ export function ConversationDetail() {
     dataUrl: string | null;
     status: string;
   } | null>(null);
-  const [imagePasteWarningOpen, setImagePasteWarningOpen] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const streamingContentRef = useRef("");
   const latestImagePreviewDataUrlRef = useRef<string | null>(null);
@@ -292,7 +293,7 @@ export function ConversationDetail() {
     ? agents.find((agent) => agent.agent_id === conversation.agent_id)
     : null;
   const supportsImageGeneration = currentAgent?.capabilities?.includes("image_generation") ?? false;
-  const supportsImageUnderstanding = currentAgent?.capabilities?.includes("image_understanding") ?? false;
+  const images = useConversationImages(conversationId, conversation?.agent_id);
 
   const formatDate = (dateString: string): string => {
     return new Date(dateString).toLocaleDateString(undefined, {
@@ -743,15 +744,19 @@ export function ConversationDetail() {
     deepResearchOverride?: boolean,
   ) => {
     const messageToSend = messageOverride || inputValue.trim();
-    // Allow sending if there's a message OR attachments
-    if ((!messageToSend && attachments.length === 0) || !conversation || isSending) return;
+    // Allow sending if there's a message OR attachments OR images, once every image has uploaded
+    const hasContent = Boolean(messageToSend) || attachments.length > 0 || images.readyImageIds.length > 0;
+    const imagesNotReady = !messageOverride && (images.isUploading || images.hasFailed);
+    if (!hasContent || !conversation || isSending || imagesNotReady) return;
 
     // Capture attachments before clearing
     const attachmentsToSend = attachments.length > 0 ? [...attachments] : undefined;
+    const imagesToSend = messageOverride ? [] : images.images.filter((image) => image.imageId);
 
     if (!messageOverride) {
       setInputValue("");
       clearAttachments();
+      images.clearImages();
     }
     setIsSending(true);
     resetTurnUiState();
@@ -762,8 +767,18 @@ export function ConversationDetail() {
       message_id: `temp-${Date.now()}`,
       conversation_id: conversation.conversation_id,
       role: "user",
-      content: optimisticUserContent ?? (messageToSend || "(attachments only)"),
+      content: optimisticUserContent ?? (messageToSend || (imagesToSend.length > 0 ? "" : "(attachments only)")),
       attachments: attachmentsToSend?.map((a) => ({ filename: a.filename, size: a.size })),
+      // Shown from the local files until the saved message arrives; the server reports the real dimensions.
+      image_attachments: imagesToSend.map((image) => ({
+        image_id: image.imageId ?? image.localId,
+        filename: image.file.name,
+        mime_type: image.file.type,
+        size_bytes: image.file.size,
+        width: 0,
+        height: 0,
+        url: image.previewUrl,
+      })),
       created_at: new Date().toISOString(),
     };
     if (!isRetryMessage) {
@@ -787,6 +802,7 @@ export function ConversationDetail() {
       conversation.conversation_id,
       messageToSend || "",
       attachmentsToSend,
+      imagesToSend.flatMap((image) => (image.imageId ? [image.imageId] : [])),
       featureFlags.enableDeepResearch && (deepResearchOverride ?? deepResearchEnabled),
       {
         onEvent: (event) => applyTurnEvent(event, ctx),
@@ -990,14 +1006,10 @@ export function ConversationDetail() {
     }
   };
 
-  const handleChatPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const hasImage = Array.from(e.clipboardData.items).some((item) =>
-      item.type.startsWith("image/")
-    );
-    if (hasImage && !supportsImageUnderstanding) {
-      e.preventDefault();
-      setImagePasteWarningOpen(true);
-    }
+  /** Files picked or dropped: images go to the image attachments, the rest to the text-file attachments. */
+  const handleFiles = (files: File[]) => {
+    const rest = images.takeImages(files);
+    if (rest.length > 0) void addFiles(rest);
   };
 
   if (loading) {
@@ -1434,10 +1446,24 @@ export function ConversationDetail() {
             </div>
           )}
 
+          {/* Image chips: thumbnails, uploading as soon as they are added */}
+          {images.images.length > 0 && (
+            <div className={styles.attachments}>
+              {images.images.map((image) => (
+                <ImageAttachmentChip
+                  key={image.localId}
+                  image={image}
+                  onRemove={() => images.removeImage(image.localId)}
+                  onRetry={() => images.retryImage(image.localId)}
+                />
+              ))}
+            </div>
+          )}
+
           {/* Attachment error */}
-          {attachmentError && (
+          {(attachmentError || images.error) && (
             <div className={styles.attachmentError}>
-              {attachmentError}
+              {attachmentError || images.error}
             </div>
           )}
 
@@ -1447,20 +1473,29 @@ export function ConversationDetail() {
             <FileInput
               ref={fileInputRef}
               multiple
-              accept={ALLOWED_EXTENSIONS.join(",")}
-              onChange={(e) => e.target.files && addFiles(e.target.files)}
+              accept={[...ALLOWED_EXTENSIONS, ...images.imageTypes].join(",")}
+              onChange={(e) => {
+                if (e.target.files) handleFiles(Array.from(e.target.files));
+                e.target.value = "";
+              }}
             />
 
             <ChatComposer
               value={inputValue}
               onChange={setInputValue}
               onSubmit={() => handleSendMessage()}
-              onPaste={handleChatPaste}
+              onPaste={images.onPaste}
+              onDropFiles={(data) => handleFiles(Array.from(data.files))}
               isSubmitting={isSending}
               statusIndicator={
                 <TokenUsageIndicator agentId={conversation.agent_id} liveUsage={liveTokenUsage} />
               }
-              submitDisabled={(!inputValue.trim() && attachments.length === 0) || isSending}
+              submitDisabled={
+                (!inputValue.trim() && attachments.length === 0 && images.readyImageIds.length === 0)
+                || isSending
+                || images.isUploading
+                || images.hasFailed
+              }
               onAttachFiles={() => fileInputRef.current?.click()}
               imageAction={
                 supportsImageGeneration
@@ -1613,16 +1648,14 @@ export function ConversationDetail() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={imagePasteWarningOpen} onOpenChange={setImagePasteWarningOpen}>
+      <Dialog open={images.unavailableOpen} onOpenChange={images.setUnavailableOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Image Attachments Unavailable</DialogTitle>
-            <DialogDescription>
-              This agent's selected model does not support image attachments. Choose a multimodal model to attach images.
-            </DialogDescription>
+            <DialogDescription>{images.unavailableMessage}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button onClick={() => setImagePasteWarningOpen(false)}>OK</Button>
+            <Button onClick={() => images.setUnavailableOpen(false)}>OK</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

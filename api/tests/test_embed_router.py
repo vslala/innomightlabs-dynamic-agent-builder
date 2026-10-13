@@ -50,7 +50,12 @@ class TestEmbedShell:
         assert response.headers["cache-control"] == "no-store"
         assert f'src="{settings.widget_cdn_url}/embed/app.js"' in response.text
         assert f'href="{settings.widget_cdn_url}/embed/app.css"' in response.text
-        assert _bootstrap(response.text) == {
+        bootstrap = _bootstrap(response.text)
+        image_input = bootstrap.pop("image_input")
+        assert image_input["available"] is False
+        assert image_input["reason"] == "image_input_agent_unsupported"
+        assert image_input["limits"]["max_images_per_message"] == settings.vision_max_images_per_message
+        assert bootstrap == {
             "public_key": key["public_key"],
             "agent_id": agent_id,
             "agent_name": "Support Agent",

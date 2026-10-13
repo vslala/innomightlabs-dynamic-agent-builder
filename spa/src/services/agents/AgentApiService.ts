@@ -4,6 +4,7 @@
 
 import { httpClient } from "../http/client";
 import type { FormSchema } from "../../types/form";
+import type { ImageInputAvailability } from "../../../packages/image-attachments/src";
 
 export type AgentAccess = "owner" | "shared" | "admin";
 
@@ -114,6 +115,13 @@ class AgentApiService {
    */
   async getAgent(agentId: string): Promise<AgentResponse> {
     return httpClient.get<AgentResponse>(`/agents/${agentId}`);
+  }
+
+  /**
+   * Whether the caller may attach images when chatting with the agent, and the limits to check them against.
+   */
+  async getImageInput(agentId: string): Promise<ImageInputAvailability> {
+    return httpClient.get<ImageInputAvailability>(`/agents/${agentId}/image-input`);
   }
 
   /**

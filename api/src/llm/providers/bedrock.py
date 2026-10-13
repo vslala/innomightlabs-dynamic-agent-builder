@@ -12,8 +12,9 @@ from typing import Any, AsyncIterator, Optional
 import boto3
 
 from src.llm.messages import (
+    ContentBlock,
+    ImageBlock,
     TextBlock,
-    ToolResultBlock,
     ToolUseBlock,
     content_text,
     normalize_messages,
@@ -240,9 +241,11 @@ class BedrockProvider(LLMProvider):
     def _normalize_tools(self, tools: list[dict]) -> list[dict[str, Any]]:
         return [tool.to_bedrock() for tool in normalize_tool_definitions(tools)]
 
-    def _convert_content_block(self, block: TextBlock | ToolUseBlock | ToolResultBlock) -> dict[str, Any]:
+    def _convert_content_block(self, block: ContentBlock) -> dict[str, Any]:
         if isinstance(block, TextBlock):
             return {"text": block.text}
+        if isinstance(block, ImageBlock):
+            return {"image": {"format": block.format, "source": {"bytes": block.data}}}
         if isinstance(block, ToolUseBlock):
             tool_use: dict[str, Any] = {
                 "toolUseId": block.id,

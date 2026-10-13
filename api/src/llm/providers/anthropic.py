@@ -1,11 +1,14 @@
+import base64
+
 from anthropic import AsyncAnthropic
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Optional, cast
 
 from src.llm.messages import (
     ChatMessage,
+    ContentBlock,
+    ImageBlock,
     TextBlock,
-    ToolResultBlock,
     ToolUseBlock,
     normalize_messages,
     split_system_messages,
@@ -44,9 +47,18 @@ class AnthropicProvider(LLMProvider):
             for message in messages
         ]
 
-    def _convert_content_block(self, block: TextBlock | ToolUseBlock | ToolResultBlock) -> dict[str, Any]:
+    def _convert_content_block(self, block: ContentBlock) -> dict[str, Any]:
         if isinstance(block, TextBlock):
             return {"type": "text", "text": block.text}
+        if isinstance(block, ImageBlock):
+            return {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": block.media_type,
+                    "data": base64.b64encode(block.data).decode("ascii"),
+                },
+            }
         if isinstance(block, ToolUseBlock):
             return {
                 "type": "tool_use",

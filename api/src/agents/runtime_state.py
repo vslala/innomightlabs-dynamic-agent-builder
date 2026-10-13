@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from src.accounts.owner import Owner
 from src.messages.models import Attachment
 from src.skills.models import ActorKind, AgentSkill, LoadedSkillRuntimeResponse
+from src.vision.models import ImageRef
 
 if TYPE_CHECKING:
     from src.connectors.mcp.models import AgentMCPConnectionResponse
@@ -47,3 +48,7 @@ class AgentTurnState:
     #: Skill actions used recently in this conversation, whose schemas stay in the prompt.
     recent_skill_actions: list[LoadedSkillRuntimeResponse] = field(default_factory=list)
     enabled_mcp_connections: list["AgentMCPConnectionResponse"] = field(default_factory=list)
+    #: Every image the user sent in this conversation, by id: what `read_image` may open.
+    images: dict[str, ImageRef] = field(default_factory=dict)
+    #: Whether this turn may offer `read_image`: the conversation has an image and the account allows reading it.
+    image_input_available: bool = False

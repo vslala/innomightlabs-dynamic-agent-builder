@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, Protocol, Tuple
 
-from src.messages.models import Message
+from src.messages.models import ImageAnalysis, Message
 
 
 class MessageRepository(Protocol):
@@ -44,4 +44,10 @@ class MessageRepository(Protocol):
         ...
 
     def delete_by_conversation(self, conversation_id: str) -> int:
+        ...
+
+    def save_image_analysis(
+        self, conversation_id: str, message_sk: str, index: int, image_id: str, analysis: ImageAnalysis
+    ) -> None:
+        """Keep the vision model's description on the message's `index`-th image, if it is still that image."""
         ...

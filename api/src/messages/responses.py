@@ -4,7 +4,14 @@ import logging
 
 from src.config import settings
 from src.agents.image_generation.storage import ConversationMediaStorage
-from src.messages.models import Message, MessageCanvasArtifactResponse, MessageImageResponse, MessageResponse
+from src.vision.http import dashboard_image_url
+from src.messages.models import (
+    ImageAttachmentResponse,
+    Message,
+    MessageCanvasArtifactResponse,
+    MessageImageResponse,
+    MessageResponse,
+)
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +30,15 @@ class MessageResponseFactory:
 
     def to_response(self, message: Message) -> MessageResponse:
         response = message.to_response()
+
+        if message.image_attachments:
+            response.image_attachments = [
+                ImageAttachmentResponse(
+                    **image.model_dump(include=set(ImageAttachmentResponse.model_fields) - {"url"}),
+                    url=dashboard_image_url(message.conversation_id, image.image_id),
+                )
+                for image in message.image_attachments
+            ]
 
         if message.images:
             signed_images: list[MessageImageResponse] = []

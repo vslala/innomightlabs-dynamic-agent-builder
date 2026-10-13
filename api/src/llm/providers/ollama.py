@@ -7,6 +7,7 @@ the rest of the Ollama integration (embeddings, model discovery via
 `/api/tags`) already speaks it, and it reports token counts directly.
 """
 
+import base64
 import json
 import logging
 from collections.abc import Mapping
@@ -16,7 +17,7 @@ from typing import Any, AsyncIterator, NoReturn, Optional
 import httpx
 
 from src.config.settings import settings
-from src.llm.messages import TextBlock, ToolResultBlock, ToolUseBlock, normalize_messages
+from src.llm.messages import ImageBlock, TextBlock, ToolResultBlock, ToolUseBlock, normalize_messages
 from src.llm.ollama import OllamaConnection
 from src.llm.tools import normalize_tool_definitions
 from .base import LLMEvent, LLMProvider, StopReason, stop_reason_of
@@ -60,6 +61,7 @@ class OllamaProvider(LLMProvider):
 
         for message in normalize_messages(messages):
             text_chunks: list[str] = []
+            images: list[str] = []
             tool_calls: list[dict[str, Any]] = []
             tool_results: list[ToolResultBlock] = []
 
@@ -67,6 +69,8 @@ class OllamaProvider(LLMProvider):
                 if isinstance(block, TextBlock):
                     if block.text.strip():
                         text_chunks.append(block.text)
+                elif isinstance(block, ImageBlock):
+                    images.append(base64.b64encode(block.data).decode("ascii"))
                 elif isinstance(block, ToolUseBlock):
                     tool_names_by_id[block.id] = block.name
                     tool_calls.append({"function": {"name": block.name, "arguments": block.input}})
@@ -81,8 +85,10 @@ class OllamaProvider(LLMProvider):
                     entry["tool_name"] = tool_name
                 converted.append(entry)
 
-            if text_chunks or tool_calls:
+            if text_chunks or tool_calls or images:
                 entry = {"role": message.role, "content": "\n".join(text_chunks)}
+                if images:
+                    entry["images"] = images
                 if tool_calls:
                     entry["tool_calls"] = tool_calls
                 converted.append(entry)

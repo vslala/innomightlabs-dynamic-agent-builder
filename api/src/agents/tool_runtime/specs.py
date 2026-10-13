@@ -24,6 +24,8 @@ class ToolCategory(str, Enum):
     MCP = "mcp"
     #: Ila's blueprint and form tools; only the Vishwakarma architecture offers them.
     BUILDER = "builder"
+    #: `read_image`: offered only when the conversation holds an image and image input is available.
+    IMAGE = "image"
 
 
 #: Runs one tool call and returns the result text for the model.

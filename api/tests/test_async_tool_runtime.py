@@ -249,6 +249,10 @@ async def test_wait_tool_defaults_clamps_and_uses_sleep(monkeypatch):
         user_id="user-1",
         conversation_id="conversation-1",
         linked_kb_ids=[],
+        account_id="account-1",
+        owner_email="owner@example.com",
+        api_key_id=None,
+        images={},
     )
     default_result = json.loads(await handler.execute("wait", {}, context))
     clamped_result = json.loads(await handler.execute("wait", {"seconds": 999}, context))

@@ -277,6 +277,18 @@ set_railway_var "DOWNLOADS_PRESIGN_TTL_SECONDS" "$(get_var_default 'DOWNLOADS_PR
 set_railway_var "CONVERSATION_MEDIA_BUCKET" "$(get_var_default 'CONVERSATION_MEDIA_BUCKET' 'innomightlabs-conversations-meta')"
 set_railway_var "CONVERSATION_MEDIA_PRESIGN_TTL_SECONDS" "$(get_var_default 'CONVERSATION_MEDIA_PRESIGN_TTL_SECONDS' '900')"
 
+set_railway_var "VISION_MAX_IMAGE_BYTES" "$(get_var_default 'VISION_MAX_IMAGE_BYTES' '5242880')"
+set_railway_var "VISION_MAX_IMAGES_PER_MESSAGE" "$(get_var_default 'VISION_MAX_IMAGES_PER_MESSAGE' '4')"
+set_railway_var "VISION_MAX_EDGE_PX" "$(get_var_default 'VISION_MAX_EDGE_PX' '2000')"
+set_railway_var "VISION_MAX_PIXELS" "$(get_var_default 'VISION_MAX_PIXELS' '40000000')"
+set_railway_var "VISION_MAX_CONCURRENCY" "$(get_var_default 'VISION_MAX_CONCURRENCY' '4')"
+set_railway_var "VISION_CALL_TIMEOUT_SECONDS" "$(get_var_default 'VISION_CALL_TIMEOUT_SECONDS' '60')"
+set_railway_var "VISION_TOOL_TIMEOUT_SECONDS" "$(get_var_default 'VISION_TOOL_TIMEOUT_SECONDS' '120')"
+set_railway_var "VISION_PENDING_UPLOAD_TTL_HOURS" "$(get_var_default 'VISION_PENDING_UPLOAD_TTL_HOURS' '24')"
+set_railway_var "WIDGET_IMAGE_UPLOADS_PER_VISITOR_HOUR" "$(get_var_default 'WIDGET_IMAGE_UPLOADS_PER_VISITOR_HOUR' '20')"
+set_railway_var "WIDGET_IMAGE_UPLOADS_PER_KEY_DAY" "$(get_var_default 'WIDGET_IMAGE_UPLOADS_PER_KEY_DAY' '500')"
+set_railway_var "API_IMAGE_UPLOADS_PER_KEY_DAY" "$(get_var_default 'API_IMAGE_UPLOADS_PER_KEY_DAY' '1000')"
+
 set_railway_var "ASYNC_JOB_BACKEND" "$(get_var_default 'ASYNC_JOB_BACKEND' 'local')"
 set_railway_var "ASYNC_JOB_LAMBDA_NAME" "$(get_var 'ASYNC_JOB_LAMBDA_NAME')"
 set_railway_var \

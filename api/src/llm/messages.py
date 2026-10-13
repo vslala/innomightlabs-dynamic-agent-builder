@@ -31,7 +31,20 @@ class ToolResultBlock(BaseModel):
     content: str
 
 
-ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+class ImageBlock(BaseModel):
+    """An image the model should look at. Only user messages carry one; each provider renders it its own way."""
+
+    type: Literal["image"] = "image"
+    media_type: str
+    data: bytes
+
+    @property
+    def format(self) -> str:
+        """`png`, `jpeg`, `gif` or `webp`: the name Bedrock gives the format."""
+        return self.media_type.removeprefix("image/")
+
+
+ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | ImageBlock
 
 
 class ChatMessage(BaseModel):
@@ -92,6 +105,8 @@ def content_text(content: Any) -> str:
                 chunks.append(item.content)
             elif isinstance(item, ToolUseBlock):
                 chunks.append(json.dumps({"name": item.name, "input": item.input}, ensure_ascii=True))
+            elif isinstance(item, ImageBlock):
+                chunks.append(f"[image: {item.media_type}]")
             elif isinstance(item, dict) and "text" in item:
                 chunks.append(str(item["text"]))
             else:
@@ -101,7 +116,7 @@ def content_text(content: Any) -> str:
 
 
 def _normalize_content_block(block: Any) -> ContentBlock:
-    if isinstance(block, TextBlock | ToolUseBlock | ToolResultBlock):
+    if isinstance(block, TextBlock | ToolUseBlock | ToolResultBlock | ImageBlock):
         return block
     if not isinstance(block, dict):
         return TextBlock(text=str(block))
@@ -116,6 +131,8 @@ def _normalize_content_block(block: Any) -> ContentBlock:
             input=block_input if isinstance(block_input := block.get("input"), dict) else {},
             thought_signature=_thought_signature(block),
         )
+    if block_type == "image":
+        return ImageBlock(media_type=str(block.get("media_type", "")), data=block.get("data", b""))
     if block_type == "tool_result":
         return ToolResultBlock(
             tool_use_id=str(block.get("tool_use_id") or block.get("toolUseId") or block.get("id") or ""),

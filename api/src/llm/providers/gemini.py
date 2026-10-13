@@ -12,9 +12,10 @@ from google import genai
 from google.genai import types
 
 from src.llm.messages import (
+    ContentBlock,
+    ImageBlock,
     ChatMessage,
     TextBlock,
-    ToolResultBlock,
     ToolUseBlock,
     content_text,
     normalize_messages,
@@ -93,11 +94,14 @@ class GeminiProvider(LLMProvider):
 
     def _convert_content_block(
         self,
-        block: TextBlock | ToolUseBlock | ToolResultBlock,
+        block: ContentBlock,
         tool_names_by_id: dict[str, str],
     ) -> list[types.Part]:
         if isinstance(block, TextBlock):
             return [types.Part.from_text(text=block.text)]
+
+        if isinstance(block, ImageBlock):
+            return [types.Part.from_bytes(data=block.data, mime_type=block.media_type)]
 
         if isinstance(block, ToolUseBlock):
             if block.id and block.name:
