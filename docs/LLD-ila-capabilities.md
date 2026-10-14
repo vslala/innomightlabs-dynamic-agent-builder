@@ -476,7 +476,8 @@ derives the same table.
 | Widget appearance | `WidgetKey.appearance` (new, snippet only) | — |
 | /v1 secret key | `SecretKey` (new) | **Reveal** side panel, after apply, shown once |
 | A2A caller secret | `SecretKey` with `for: a2a` (new) | Reveal side panel, after apply |
-| Automation (manual or schedule; agent and skill steps) | `Automation` (new) | Whatever its skills need, as for agents |
+| Automation (manual, schedule or lead captured; agent and skill steps) | `Automation` (new) | Whatever its skills need, as for agents |
+| Lead form | `LeadForm` (new, [LLD-lead-capture.md](LLD-lead-capture.md)) | — |
 | Dream (memory schedule) | — | Per account, not per agent. Ila mentions it and links to Settings. A later account-level kind, if wanted |
 | Smart suggestions, default agent | — | Account preferences; not part of a build |
 | Marketplace import | — | Ila loads a template as a draft instead (later) |
@@ -532,6 +533,9 @@ resources:
   - `title`, `description`, `enabled`.
   - `trigger`: exactly one of `manual: {}` or `schedule: {cron, timezone, input}`. Webhook triggers wait until the
     receiver route exists; today only the GSI key is written (`automations/models.py:544-548`).
+    [LLD-lead-capture.md](LLD-lead-capture.md) (KAN-97) adds a third variant, `lead_captured: {form, agent,
+    include_test_captures}`, and the `LeadForm` kind it refers to; with it, Ila can build a lead form, the agent
+    that fills it and the automation that acts on each capture in one blueprint.
   - `skills: list[SkillEntry]`, the same manifest-generated variants as `Agent.skills`.
   - `steps`: a list, each with `name` (alias pattern `^[a-z][a-z0-9_]{0,62}$`, not a reserved word; read from
     `automations/aliases.py`) and exactly one of:
