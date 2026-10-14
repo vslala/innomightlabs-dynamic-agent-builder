@@ -34,14 +34,22 @@ export interface FormOptionsSource {
   endpoint?: string | null;
 }
 
-export type FormInputValidationFormat = "email";
+export type FormInputValidationFormat = "email" | "phone" | "url" | "number" | "date";
 
+/** Enforced by the API (form_validation.py); renderers use it only as hints. */
 export interface FormInputValidation {
   format?: FormInputValidationFormat | null;
   multiple?: boolean;
   separator?: string;
   min_items?: number | null;
   max_items?: number | null;
+  min_length?: number | null;
+  max_length?: number | null;
+  pattern?: string | null;
+  minimum?: number | null;
+  maximum?: number | null;
+  max_file_bytes?: number | null;
+  accept?: string[] | null;
 }
 
 export interface SmartSuggestionConfig {

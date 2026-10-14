@@ -14,6 +14,7 @@ import {
   Textarea,
 } from "../ui";
 import type { FormInput, FormSchema } from "../../types/form";
+import { nativeInputType } from "../forms/nativeInputType";
 
 export type FormAnswer = {
   field_id: string;
@@ -240,8 +241,9 @@ export function ChatFormRenderer({
           <FieldGroup key={input.name}>
             <Label>{input.label}</Label>
             <Input
-              type="text"
+              type={nativeInputType(input)}
               value={value}
+              maxLength={input.validation?.max_length ?? undefined}
               placeholder={normalizePlaceholder(input)}
               onChange={(e) => handleChange(input.name, e.target.value)}
               disabled={isDisabled}
