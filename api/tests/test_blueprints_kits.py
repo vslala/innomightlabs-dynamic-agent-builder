@@ -12,7 +12,7 @@ from src.blueprints.catalog import example_yaml
 from src.blueprints.kinds import knowledge_base as knowledge_base_kind
 from src.blueprints.kinds.agent import UnlinkKnowledgeBase
 from src.blueprints.kinds.knowledge_base import DeleteKnowledgeBase
-from src.blueprints.kits import KitError, KitRepository, KitStatus, declared, plan_kit_removal, plan_rollback
+from src.blueprints.kits import Kit, KitError, KitRepository, KitStatus, declared, plan_kit_removal, plan_rollback
 from src.blueprints.models import DeploymentAction, DeploymentStatus
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.service import Blocked, Deployed, Invalid, apply_kit_plan, deploy_blueprint
@@ -132,18 +132,42 @@ def test_leaving_out_resources_deletes_them_dependents_first():
     assert set(result.kit.resources) == {"site_kb"}
 
 
-def test_a_knowledge_base_used_outside_the_kit_isnt_deleted_with_it():
+def _kit_sharing_its_knowledge_base() -> tuple[Kit, str]:
     kit = deploy(SITE_AGENT).kit
+    kb_id = kit.resources["site_kb"].id
     other = AgentRepository().get(kit.resources["assistant"].id).model_copy(
         update={"agent_id": "outsider", "agent_name": "Outsider"}
     )
     AgentRepository().save(other)
-    AgentKnowledgeBaseRepository().link("outsider", kit.resources["site_kb"].id, TEST_OWNER.user_id)
+    AgentKnowledgeBaseRepository().link("outsider", kb_id, TEST_OWNER.user_id)
+    return kit, kb_id
+
+
+def test_a_knowledge_base_used_outside_the_kit_is_released_not_deleted():
+    kit, kb_id = _kit_sharing_its_knowledge_base()
     without_kb = edited(SITE_AGENT, lambda r: (r.pop("site_kb"), r["assistant"].update(knowledge_bases=[])))
     document = yaml.safe_load(without_kb)
     document["outputs"].pop("crawl_job_id", None)
-    _, plan = plan_next(yaml.safe_dump(document, sort_keys=False), kit.kit_id)
-    assert any("outside this kit" in issue.message for issue in plan.blockers)
+    result = deploy(yaml.safe_dump(document, sort_keys=False), kit.kit_id)
+
+    assert result.deployment.status == DeploymentStatus.APPLIED and result.deployment.removed == ["disconnect knowledge base 'Acme website'"]
+    assert "site_kb" not in result.kit.resources
+    assert KnowledgeBaseRepository().find_in_account(owner_ids(TEST_USER_EMAIL)[0], kb_id).status != KnowledgeBaseStatus.DELETED
+    assert [link.agent_id for link in AgentKnowledgeBaseRepository().find_agents_for_kb(kb_id)] == ["outsider"]
+
+
+def test_removing_a_kit_releases_a_knowledge_base_used_outside_it():
+    kit, kb_id = _kit_sharing_its_knowledge_base()
+    planned = plan_kit_removal(TEST_OWNER.account_id, kit.kit_id)
+    assert planned.plan.ok
+    assert [step.summary for step in planned.plan.steps if step.resource == "site_kb"] == [
+        "Release knowledge base 'Acme website' from this kit: 1 agent(s) outside it use it, so it stays"
+    ]
+
+    result = apply_kit_plan(planned, TEST_OWNER.account_id, kit.kit_id, planned.plan_id)
+    assert isinstance(result, Deployed) and result.kit.status == KitStatus.REMOVED
+    assert KnowledgeBaseRepository().find_in_account(owner_ids(TEST_USER_EMAIL)[0], kb_id).status != KnowledgeBaseStatus.DELETED
+    assert [link.agent_id for link in AgentKnowledgeBaseRepository().find_agents_for_kb(kb_id)] == ["outsider"]
 
 
 def test_renaming_a_resource_carries_it_on():

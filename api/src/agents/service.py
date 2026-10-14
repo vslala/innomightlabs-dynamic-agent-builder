@@ -13,6 +13,7 @@ from src.dream.repository import DreamRepository
 from src.dream.service import DreamService
 from src.form_options import FormOptionsContext, validate_form_options
 from src.iam.shares import ShareService
+from src.knowledge.repository import AgentKnowledgeBaseRepository
 from src.public_api.keys import SecretKeyRepository
 
 log = logging.getLogger(__name__)
@@ -60,6 +61,9 @@ class AgentService:
         DreamService().delete_schedule(agent_id, owner_email, owner)
         self.repository.delete(agent.account_id, agent_id)
         ShareService().forget_resource(agent.account_id, "agent", agent_id)
+        links = AgentKnowledgeBaseRepository()
+        for link in links.find_kbs_for_agent(agent_id):
+            links.unlink(agent_id, link.kb_id)
         SecretKeyRepository().delete_all_by_agent(agent_id)
         ApiKeyRepository().delete_all_by_agent(agent_id)
         try:

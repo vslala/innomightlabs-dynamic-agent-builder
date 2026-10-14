@@ -4,7 +4,7 @@
 
 `src/components/ui/` is the reusable control and presentation layer. Read `../CONTRIBUTION.md` and `spa/SKILLS.md`. Files use kebab-case names; most have matching `.module.css`. `index.ts` exports many primitives, but not every local file: inspect it before relying on a barrel import.
 
-- Controls: `button`, `link-button`, `input`, `textarea`, `search-input`, `file-input`, `checkbox`, `radio`, `select`, `toggle`, `tabs`, and `label`.
+- Controls: `button`, `link-button`, `input`, `textarea`, `search-input`, `file-input`, `checkbox`, `radio`, `select`, `switch` (an on/off setting with a sliding knob), `toggle` (a pressable chip that holds its own label), `tabs`, and `label`.
 - Composition: `card`, `dialog`, `confirmation-dialog`, `accordion-panel`, expandable/icon cards, `grid`, `scroll-area`, and `separator`.
 - Display and feedback: avatars, pills, status badges, stats, alerts, spinners, progress, empty states, list rows, Markdown/JSON viewers, read-only content, and step inspector.
 

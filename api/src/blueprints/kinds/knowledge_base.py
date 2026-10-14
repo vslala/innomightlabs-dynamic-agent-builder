@@ -227,17 +227,8 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
             commands.append(StartCrawl(resource=name, crawl=spec.crawl, says=(said,) if said else ()))
         return commands
 
-    def delete_blockers(self, name: str, existing: Existing, kit_ids: set[str]) -> list[BlueprintIssue]:
-        outside = [link.agent_id for link in AgentKnowledgeBaseRepository().find_agents_for_kb(existing.id)
-                   if link.agent_id not in kit_ids]
-        if not outside:
-            return []
-        return [BlueprintIssue(
-            path=f"resources.{name}",
-            message=f"'{existing.record.name}' is also used by {len(outside)} agent(s) outside this kit, so it can't "
-            "be deleted with it.",
-            hint="Keep it in the blueprint, or disconnect it from those agents first.",
-        )]
+    def outside_users(self, existing: Existing, kit_ids: set[str]) -> int:
+        return sum(link.agent_id not in kit_ids for link in AgentKnowledgeBaseRepository().find_agents_for_kb(existing.id))
 
     def delete_commands(
         self, name: str, spec: KnowledgeBaseSpec, existing: Existing, removal: str

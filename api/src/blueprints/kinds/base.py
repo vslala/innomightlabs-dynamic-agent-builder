@@ -202,9 +202,9 @@ class ManagedKind(ResourceKind[SpecT]):
     #: What deleting one takes with it, in plain words, for the plan.
     deletes: ClassVar[str]
 
-    def delete_blockers(self, name: str, existing: Existing, kit_ids: set[str]) -> list[BlueprintIssue]:
-        """Why it can't be deleted with the kit: something outside the kit still uses it."""
-        return []
+    def outside_users(self, existing: Existing, kit_ids: set[str]) -> int:
+        """How many agents outside the kit use it. Leaving it out of the kit then lets it go instead of deleting it."""
+        return 0
 
     def delete_commands(self, name: str, spec: SpecT, existing: Existing, removal: str) -> list[Command]:
         """Delete an existing resource an earlier version declared and this one leaves out. `spec` is as that version

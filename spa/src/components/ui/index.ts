@@ -11,6 +11,7 @@ export * from "./label";
 export * from "./select";
 export * from "./tabs";
 export * from "./textarea";
+export * from "./switch";
 export * from "./toggle";
 
 // Layout components

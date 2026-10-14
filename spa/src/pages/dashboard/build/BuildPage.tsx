@@ -11,6 +11,7 @@ import {
   PanelTitle,
   Pill,
   StatusBadge,
+  Switch,
   Tabs,
   TabsContent,
   TabsList,
@@ -19,7 +20,7 @@ import {
 import { builderApiService, type BuilderSession } from "../../../services/builder/BuilderApiService";
 import { kitApiService, type KitAccess, type KitSummary } from "../../../services/kits/KitApiService";
 import type { FormSchema, FormValue } from "../../../types/form";
-import { kitContents, kitStatus } from "./kitView";
+import { kitContents, kitStatus, visibleKits } from "./kitView";
 import styles from "./BuildPage.module.css";
 
 const ACCESS_BADGES: Partial<Record<KitAccess, string>> = { shared: "Shared with you", admin: "Admin view" };
@@ -29,6 +30,7 @@ export function BuildPage() {
   const [form, setForm] = useState<FormSchema | null>(null);
   const [sessions, setSessions] = useState<BuilderSession[]>([]);
   const [kits, setKits] = useState<KitSummary[] | null>(null);
+  const [showRemoved, setShowRemoved] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,6 +60,8 @@ export function BuildPage() {
       setStarting(false);
     }
   };
+
+  const shownKits = kits === null ? null : visibleKits(kits, showRemoved);
 
   return (
     <div className={styles.page}>
@@ -103,20 +107,28 @@ export function BuildPage() {
             <PanelHeader className={styles.tabsHeader}>
               <PanelTitle>Your builds</PanelTitle>
               <TabsList>
-                <TabsTrigger value="kits">Kits{kits && kits.length > 0 ? ` (${kits.length})` : ""}</TabsTrigger>
+                <TabsTrigger value="kits">Kits{shownKits && shownKits.length > 0 ? ` (${shownKits.length})` : ""}</TabsTrigger>
                 <TabsTrigger value="conversations">Conversations</TabsTrigger>
               </TabsList>
             </PanelHeader>
             <PanelBody>
               <TabsContent value="kits">
-                {kits === null ? null : kits.length === 0 ? (
+                {kits?.some((kit) => kit.status === "removed") && (
+                  <label className={styles.removedFilter}>
+                    <Switch checked={showRemoved} onCheckedChange={setShowRemoved} />
+                    Show removed kits
+                  </label>
+                )}
+                {shownKits === null ? null : shownKits.length === 0 && kits && kits.length > 0 ? (
+                  <p className={styles.note}>No active kits. Turn on "Show removed kits" to see the removed ones.</p>
+                ) : shownKits.length === 0 ? (
                   <p className={styles.note}>
                     No kits yet. Everything Ila builds for you becomes a kit: its agents, knowledge bases and widgets,
                     kept together so you can change, roll back or remove them as one.
                   </p>
                 ) : (
                   <ul className={styles.sessions}>
-                    {kits.map((kit) => {
+                    {shownKits.map((kit) => {
                       const status = kitStatus(kit);
                       return (
                         <li key={kit.kit_id}>

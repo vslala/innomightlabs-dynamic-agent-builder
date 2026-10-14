@@ -112,7 +112,7 @@ def _plan(
             if found is not None:
                 ctx.matched[name] = found
             continue
-        left_out.append((name, *_removal(name, spec, managed_kind_for(spec.kind), ctx, plan)))
+        left_out.append((name, *_removal(name, spec, managed_kind_for(spec.kind), ctx, plan, kit_ids)))
 
     agents = kb_pages = 0
     for name in order:
@@ -180,14 +180,6 @@ def _plan(
             del plan.changes[name]
             plan.removed_specs.pop(name, None)
             continue
-        blockers = managed_kind_for(declared[name].kind).delete_blockers(name, existing, kit_ids) if existing else []
-        if blockers:
-            plan.blockers += blockers
-            plan.changes[name] = Change(action=Action.UNCHANGED, existing=existing)
-            plan.removed_specs.pop(name, None)
-            step = step.model_copy(update={"action": Action.UNCHANGED, "removals": [],
-                                           "summary": f"{step.summary.split(':')[0]}: not possible, it's used outside this kit"})
-            deleting = []
         first.append(step)
         commands += deleting
     plan.steps = [*first, *plan.steps]
@@ -212,10 +204,11 @@ def _title(name: str, spec: Any, existing: Existing) -> str:
 
 
 def _removal(
-    name: str, spec: Any, kind: ManagedKind[Any], ctx: PlanContext, plan: Plan
+    name: str, spec: Any, kind: ManagedKind[Any], ctx: PlanContext, plan: Plan, kit_ids: set[str]
 ) -> tuple[PlanStep, list[Command]]:
     """A resource the kit's last version declared and this one leaves out. Already gone counts as done, so
-    applying the same blueprint again is a no-op."""
+    applying the same blueprint again is a no-op. One that agents outside the kit still use isn't deleted: the kit
+    lets go of it."""
     try:
         existing = kind.find_existing(name, spec, ctx) if spec.id else None
     except NotFound:
@@ -226,6 +219,15 @@ def _removal(
                         summary=f"{kind.label} '{getattr(spec, 'name', None) or name}' is already gone")
         return step, []
     ctx.matched[name] = existing
+    outside = kind.outside_users(existing, kit_ids)
+    if outside:
+        # Not in `removing`: an agent that stays is disconnected from it, as from any base the blueprint doesn't name.
+        released = (f"release {kind.label.lower()} '{_title(name, spec, existing)}' from this kit: "
+                    f"{outside} agent(s) outside it use it, so it stays")
+        plan.changes[name] = Change(action=Action.REMOVE, existing=existing, changes=(released,))
+        step = PlanStep(resource=name, kind=spec.kind, action=Action.REMOVE, summary=released[0].upper() + released[1:],
+                        changes=[released], existing_id=existing.id)
+        return step, []
     ctx.removing.add(name)
     removal = f"delete {kind.label.lower()} '{_title(name, spec, existing)}': {kind.deletes}"
     plan.changes[name] = Change(action=Action.REMOVE, existing=existing, removals=(removal,))

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { KitPlan, KitSummary, KitVersion } from "../../../services/kits/KitApiService";
-import { canRollBackTo, changingSteps, kitContents, kitStatus, versionLabel } from "./kitView";
+import { canRollBackTo, changingSteps, kitContents, kitStatus, versionLabel, visibleKits } from "./kitView";
 
 const kit: KitSummary = {
   kit_id: "k1",
@@ -76,5 +76,14 @@ describe("changingSteps", () => {
       removals: [],
     };
     expect(changingSteps(plan).map((s) => s.resource)).toEqual(["edited", "gone"]);
+  });
+});
+
+describe("visibleKits", () => {
+  const removed: KitSummary = { ...kit, kit_id: "k2", status: "removed" };
+
+  it("hides removed kits unless asked", () => {
+    expect(visibleKits([kit, removed], false)).toEqual([kit]);
+    expect(visibleKits([kit, removed], true)).toEqual([kit, removed]);
   });
 });

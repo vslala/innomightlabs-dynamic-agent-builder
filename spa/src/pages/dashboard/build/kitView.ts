@@ -33,6 +33,11 @@ export function kitStatus(kit: KitSummary): { status: "active" | "inactive"; lab
   return kit.status === "removed" ? { status: "inactive", label: "Removed" } : { status: "active", label: `v${kit.current_version}` };
 }
 
+/** The kits to list: the active ones, plus the removed ones when asked. */
+export function visibleKits(kits: KitSummary[], showRemoved: boolean): KitSummary[] {
+  return showRemoved ? kits : kits.filter((kit) => kit.status !== "removed");
+}
+
 /** What a version did, in a few words. */
 export function versionLabel(version: KitVersion): string {
   if (version.action === "remove") return "Removed everything";
