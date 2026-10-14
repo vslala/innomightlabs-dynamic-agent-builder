@@ -53,7 +53,7 @@ src/
   crypto.py            Fernet encrypt/decrypt; encrypt_secret_fields / decrypt_secret_fields driven by a Form
   form_models.py       Schema-driven form types: Form, FormInput, FormInputType, SelectOption, validation and options models
   form_options.py      hydrate_form_options / validate_form_options; one resolver per FormOptionSourceType
-  form_validation.py   validate_form_value, parse_email_list, EMAIL_RE
+  form_validation.py   validate_submission (every problem at once), validate_form_value (formats, limits, options, upload ids), parse_email_list
   logging_config.py    CloudWatchJsonFormatter, configure_cloudwatch_logging (Lambda); see src/logging for the rest
 ```
 

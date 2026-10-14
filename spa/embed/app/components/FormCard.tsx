@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 
 import type { FormInput } from "../api";
-import { choiceOptions, choiceVariant, collectAnswers, formatSubmission } from "../forms";
+import { choiceOptions, choiceVariant, collectAnswers, formatSubmission, nativeInputType } from "../forms";
 import type { PendingForm } from "../useChat";
 
 interface FormCardProps {
@@ -123,8 +123,9 @@ function Field({ input, value, onChange }: FieldProps) {
       <span className="ie-field-label">{input.label}</span>
       <input
         className="ie-input"
-        type={input.input_type === "password" ? "password" : "text"}
+        type={nativeInputType(input)}
         value={value}
+        maxLength={input.validation?.max_length ?? undefined}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
       />

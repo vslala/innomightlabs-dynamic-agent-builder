@@ -48,16 +48,34 @@ class FormOptionsFilter(BaseModel):
 
 class FormInputValidationFormat(str, Enum):
     EMAIL = "email"
+    PHONE = "phone"
+    URL = "url"
+    NUMBER = "number"
+    DATE = "date"  # ISO 8601, YYYY-MM-DD
 
 
 class FormInputValidation(BaseModel):
-    """Declarative validation metadata for schema-driven form inputs."""
+    """Declarative validation metadata for schema-driven form inputs.
+
+    `form_validation.validate_form_value` enforces it; renderers only use it as hints.
+    """
 
     format: FormInputValidationFormat | None = None
     multiple: bool = False
     separator: str = ","
+    #: How many values: emails in a list, checked choices, uploaded files
     min_items: int | None = None
     max_items: int | None = None
+    min_length: int | None = None
+    max_length: int | None = None
+    #: A regular expression the whole value must match
+    pattern: str | None = None
+    #: Bounds for `format=number`
+    minimum: float | None = None
+    maximum: float | None = None
+    #: For `file_upload`: the largest file, and the MIME types accepted (checked against the bytes)
+    max_file_bytes: int | None = None
+    accept: list[str] | None = None
 
 
 class SmartSuggestionConfig(BaseModel):

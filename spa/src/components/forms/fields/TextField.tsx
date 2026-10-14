@@ -1,4 +1,5 @@
 import { Input } from "../../ui/input";
+import { nativeInputType } from "../nativeInputType";
 import type { FormInput, FormValue } from "../../../types/form";
 
 interface Props {
@@ -10,7 +11,6 @@ interface Props {
 export function TextField({ field, value, onChange }: Props) {
   const fieldAttributes = field.attr || {};
   const placeholderText = fieldAttributes.placeholder || `Enter ${field.label.toLowerCase()}`;
-  const inputType = fieldAttributes.type || (field.validation?.format === "email" ? "email" : "text");
 
   return (
     <Input
@@ -19,9 +19,11 @@ export function TextField({ field, value, onChange }: Props) {
       value={typeof value === "string" ? value : ""}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholderText}
-      type={inputType}
-      min={fieldAttributes.min}
-      max={fieldAttributes.max}
+      type={nativeInputType(field)}
+      min={fieldAttributes.min ?? field.validation?.minimum ?? undefined}
+      max={fieldAttributes.max ?? field.validation?.maximum ?? undefined}
+      minLength={field.validation?.min_length ?? undefined}
+      maxLength={field.validation?.max_length ?? undefined}
       multiple={field.validation?.multiple || undefined}
     />
   );

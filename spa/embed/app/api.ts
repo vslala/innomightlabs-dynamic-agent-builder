@@ -41,7 +41,17 @@ export interface FormInput {
   value?: string | null;
   values?: string[] | null;
   options?: FormOption[] | null;
+  validation?: FormInputValidation | null;
   attr?: Record<string, string> | null;
+}
+
+/** The parts of the API's validation rules the widget uses as input hints; the API enforces them. */
+export interface FormInputValidation {
+  format?: "email" | "phone" | "url" | "number" | "date" | null;
+  max_length?: number | null;
+  max_items?: number | null;
+  max_file_bytes?: number | null;
+  accept?: string[] | null;
 }
 
 export interface AgentForm {

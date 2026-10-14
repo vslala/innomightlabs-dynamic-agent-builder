@@ -12,6 +12,15 @@ export interface FormAnswer {
   value: string;
 }
 
+const NATIVE_INPUT_TYPES = { email: "email", phone: "tel", url: "url", number: "number", date: "date" } as const;
+
+/** The browser input type for a text input: an explicit `attr.type`, else its validation format. */
+export function nativeInputType(input: FormInput): string {
+  if (input.input_type === "password") return "password";
+  const format = input.validation?.format;
+  return input.attr?.type || (format ? NATIVE_INPUT_TYPES[format] : "text");
+}
+
 export function choiceOptions(input: FormInput): { value: string; label: string }[] {
   if (input.options?.length) return input.options;
   return (input.values ?? []).map((value) => ({ value, label: value }));

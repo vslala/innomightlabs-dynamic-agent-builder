@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseFormSubmission } from "../../src/components/chat/submittedFormParser";
 import type { AgentForm } from "./api";
-import { choiceVariant, collectAnswers, formatSubmission } from "./forms";
+import { choiceVariant, collectAnswers, formatSubmission, nativeInputType } from "./forms";
 
 const form: AgentForm = {
   form_name: "Contact details",
@@ -40,5 +40,15 @@ describe("form submissions", () => {
     expect(
       choiceVariant({ input_type: "choice", name: "tags", label: "Tags", values: ["a", "b"], attr: { variant: "checkbox" } })
     ).toBe("checkboxes");
+  });
+});
+
+describe("native input types", () => {
+  it("follows the validation format, with an explicit attr.type winning", () => {
+    expect(nativeInputType({ input_type: "text", name: "email", label: "Email", validation: { format: "email" } })).toBe("email");
+    expect(nativeInputType({ input_type: "text", name: "phone", label: "Phone", validation: { format: "phone" } })).toBe("tel");
+    expect(nativeInputType({ input_type: "text", name: "when", label: "When", validation: { format: "date" }, attr: { type: "datetime-local" } })).toBe("datetime-local");
+    expect(nativeInputType({ input_type: "password", name: "pin", label: "PIN" })).toBe("password");
+    expect(nativeInputType({ input_type: "text", name: "name", label: "Name" })).toBe("text");
   });
 });

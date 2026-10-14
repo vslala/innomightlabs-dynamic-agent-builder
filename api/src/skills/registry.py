@@ -11,7 +11,7 @@ from typing import Any, Callable, Optional, cast
 import yaml  # type: ignore[import-untyped,unused-ignore]
 
 import src.form_models as form_models
-from src.form_validation import validate_form_value
+from src.form_validation import validate_submission
 from src.skills.disclosure import SUGGESTION_LIMIT, search_actions
 from src.skills.models import LoadedSkill, SkillActionManifest, SkillManifest
 
@@ -87,48 +87,17 @@ class SkillRegistry:
         if not loaded:
             raise ValueError(f"Unknown skill: {skill_id}")
 
-        normalized: dict[str, Any] = {}
         for input_def in loaded.manifest.form:
-            value = config.get(input_def.name, input_def.value)
-            attr = input_def.attr or {}
-            optional = attr.get("optional", "false").lower() == "true"
-
-            if value is None or value == "":
-                if optional:
-                    continue
-                raise ValueError(f"Missing required field: {input_def.name}")
-
-            if input_def.input_type in {
-                form_models.FormInputType.TEXT,
-                form_models.FormInputType.TEXT_AREA,
-                form_models.FormInputType.PASSWORD,
-                form_models.FormInputType.SELECT,
-                form_models.FormInputType.SEARCH,
-                form_models.FormInputType.CHOICE,
-                form_models.FormInputType.KEY_VALUE,
-            }:
-                normalized[input_def.name] = (
-                    value
-                    if input_def.input_type == form_models.FormInputType.KEY_VALUE
-                    else validate_form_value(input_def, value)
-                )
-            else:
+            # Skill config is saved as JSON with the install; there is nowhere to keep an upload
+            if input_def.input_type == form_models.FormInputType.FILE_UPLOAD:
                 raise ValueError(f"Unsupported form input type for skill config: {input_def.input_type}")
 
-            if input_def.input_type in {
-                form_models.FormInputType.SELECT,
-                form_models.FormInputType.SEARCH,
-                form_models.FormInputType.CHOICE,
-            }:
-                allowed = set(input_def.values or [])
-                if input_def.options:
-                    allowed.update(opt.value for opt in input_def.options)
-                if allowed and normalized[input_def.name] not in allowed:
-                    raise ValueError(
-                        f"Invalid value for {input_def.name}. Allowed: {', '.join(sorted(allowed))}"
-                    )
-
-        return normalized
+        result = validate_submission(loaded.manifest.form, config)
+        if result.missing:
+            raise ValueError(f"Missing required field: {result.missing[0]}")
+        if result.invalid:
+            raise ValueError(next(iter(result.invalid.values())))
+        return result.values
 
     async def execute_action(
         self,

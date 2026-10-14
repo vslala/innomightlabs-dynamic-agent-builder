@@ -11,6 +11,7 @@ This module renders backend-owned form schemas for editing and viewing. Contract
 - `useHydratedFormSchema`: option loading; `optionsFilter`: group filtering and dependent-value clearing.
 - `SmartValueContext`, `SmartValueProvider`, `smartValueTokens`: opt-in template catalog and focused insertion target.
 - `SmartSuggestionControl`: schema-enabled suggestion interaction.
+- `nativeInputType`: the browser input type for a text input, from `attr.type` or the validation format (a hint; the API validates).
 - `index.ts`: public exports.
 
 ## Data flow
