@@ -1,15 +1,13 @@
 """Automations API router."""
 
-import asyncio
-import json
 import logging
 from typing import Annotated, Optional
 
-import boto3
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPBearer
 
 from src.accounts.owner import Owner
+from src.automations.dispatch import invoke_automation_run_async
 from src.automations.access import access_to, automation_with, owner_of_automation, visible_automations
 from src.automations.models import (
     Automation,
@@ -45,7 +43,6 @@ from src.automations.run_state import AutomationRunStateService
 from src.automations.errors import AutomationNotFoundError, AutomationValidationError
 from src.automations.service import AutomationService
 from src.common.pagination import Paginated
-from src.config import settings
 from src.iam.actions import ResourceRef
 from src.iam.dependencies import get_owner, get_principal
 from src.iam.principal import Principal
@@ -77,34 +74,6 @@ def get_automation_runner(
     repo: Annotated[AutomationRepository, Depends(get_automation_repository)],
 ) -> AutomationRunner:
     return AutomationRunner(automation_repo=repo)
-
-
-def invoke_automation_run_async(run_id: str, automation_id: str, owner: Owner) -> None:
-    """Runs as the automation's owner; the Lambda finds them again from the automation in its account."""
-    if settings.async_job_backend != "lambda":
-        log.info("Automation run will execute in local background task: %s", run_id)
-        asyncio.create_task(AutomationRunner().execute_run(run_id, owner))
-        return
-
-    function_name = settings.async_job_lambda_name
-    if not function_name:
-        raise AutomationValidationError("ASYNC_JOB_LAMBDA_NAME is required when ASYNC_JOB_BACKEND=lambda")
-
-    client = boto3.client("lambda", region_name=settings.aws_region)
-    response = client.invoke(
-        FunctionName=function_name,
-        InvocationType="Event",
-        Payload=json.dumps(
-            {
-                "automation_run": {
-                    "run_id": run_id,
-                    "automation_id": automation_id,
-                    "account_id": owner.account_id,
-                }
-            }
-        ).encode("utf-8"),
-    )
-    log.info("Invoked Lambda async for automation run %s, status: %s", run_id, response["StatusCode"])
 
 
 def translate_error(exc: Exception) -> HTTPException:

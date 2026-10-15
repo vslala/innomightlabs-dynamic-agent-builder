@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from src.config import settings
-from src.automations.router import invoke_automation_run_async
+from src.automations.dispatch import invoke_automation_run_async
 from src.automations.service import AutomationValidationError
 from src.knowledge.crawl_launch import invoke_crawl_async as _invoke_crawl_async
 
