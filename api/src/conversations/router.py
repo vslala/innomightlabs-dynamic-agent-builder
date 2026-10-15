@@ -6,7 +6,7 @@ from typing import Annotated, Optional
 
 import asyncio
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
 from src.agents.image_generation.storage import ConversationMediaStorage
@@ -27,6 +27,9 @@ from src.iam.principal import Principal
 from src.messages.models import Message, MessageResponse
 from src.messages.repositories import get_message_repository
 from src.messages.responses import MessageResponseFactory
+from src.leads.files import MAX_UPLOAD_READ, LeadFiles
+from src.leads.models import LeadFileResponse
+from src.leads.service import LeadsService
 from src.vision.http import dashboard_image_url, image_response, read_image_upload
 from src.vision.models import ImageUploadResponse
 from src.vision.uploads import ImageUploadService
@@ -285,6 +288,35 @@ async def upload_image(
         raw=await read_image_upload(file),
     )
     return ImageUploadResponse.of(upload, dashboard_image_url(conversation_id, upload.image_id))
+
+
+@router.post("/{conversation_id}/lead-files", response_model=LeadFileResponse, status_code=201)
+async def upload_lead_file(
+    conversation_id: str,
+    principal: Annotated[Principal, Depends(get_principal)],
+    partition: Partition,
+    form: str = Form(..., description="The lead form's slug"),
+    input_name: str = Form(..., alias="input", description="The form's file field"),
+    file: UploadFile = File(...),
+) -> LeadFileResponse:
+    """For members trying a lead form in the dashboard; the capture it goes into is a test capture."""
+    conversation = conversation_repository.find_by_id(conversation_id, partition)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    agent = require_agent(principal, conversation.agent_id, "agents:Chat", agent_repository)
+    lead_form = LeadsService().find_active_form(agent.account_id, form)
+
+    lead_file = await asyncio.to_thread(
+        LeadFiles().store,
+        lead_form,
+        input_name=input_name,
+        agent_id=agent.agent_id,
+        conversation_id=conversation_id,
+        uploaded_by=principal.user_id,
+        filename=file.filename or "",
+        raw=await file.read(MAX_UPLOAD_READ),
+    )
+    return LeadFileResponse.of(lead_file)
 
 
 @router.get("/{conversation_id}/images/{image_id}")

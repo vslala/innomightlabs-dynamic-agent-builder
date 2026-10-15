@@ -287,6 +287,8 @@ set_railway_var "VISION_TOOL_TIMEOUT_SECONDS" "$(get_var_default 'VISION_TOOL_TI
 set_railway_var "VISION_PENDING_UPLOAD_TTL_HOURS" "$(get_var_default 'VISION_PENDING_UPLOAD_TTL_HOURS' '24')"
 set_railway_var "WIDGET_IMAGE_UPLOADS_PER_VISITOR_HOUR" "$(get_var_default 'WIDGET_IMAGE_UPLOADS_PER_VISITOR_HOUR' '20')"
 set_railway_var "WIDGET_IMAGE_UPLOADS_PER_KEY_DAY" "$(get_var_default 'WIDGET_IMAGE_UPLOADS_PER_KEY_DAY' '500')"
+set_railway_var "WIDGET_LEAD_FILE_UPLOADS_PER_VISITOR_HOUR" "$(get_var_default 'WIDGET_LEAD_FILE_UPLOADS_PER_VISITOR_HOUR' '10')"
+set_railway_var "WIDGET_LEAD_FILE_UPLOADS_PER_KEY_DAY" "$(get_var_default 'WIDGET_LEAD_FILE_UPLOADS_PER_KEY_DAY' '200')"
 set_railway_var "API_IMAGE_UPLOADS_PER_KEY_DAY" "$(get_var_default 'API_IMAGE_UPLOADS_PER_KEY_DAY' '1000')"
 
 set_railway_var "ASYNC_JOB_BACKEND" "$(get_var_default 'ASYNC_JOB_BACKEND' 'local')"

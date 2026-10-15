@@ -62,6 +62,9 @@ def test_a_form_fills_in_the_lead_defaults(leads):
     FormInput(input_type=FormInputType.SELECT, name="size", label="Size"),
     FormInput(input_type=FormInputType.TEXT, name="code", label="Code", validation=FormInputValidation(pattern="(")),
     FormInput(input_type=FormInputType.TEXT, name="notes", label="Notes", attr={"smart_values": "true"}),
+    FormInput(input_type=FormInputType.FILE_UPLOAD, name="sheet", label="Sheet",
+              validation=FormInputValidation(accept=["text/csv"])),
+    FormInput(input_type=FormInputType.FILE_UPLOAD, name="many", label="Many", validation=FormInputValidation(max_items=9)),
 ])
 def test_forms_only_use_inputs_visitors_may_see(leads, bad_input):
     with pytest.raises(ValueError):

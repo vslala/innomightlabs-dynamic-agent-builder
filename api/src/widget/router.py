@@ -18,7 +18,7 @@ from typing import Annotated, Any, Optional, cast
 from urllib.parse import urlencode
 
 import jwt
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
@@ -64,6 +64,12 @@ from src.vision.http import image_response, read_image_upload
 from src.vision.models import ImageUploadResponse
 from src.vision.uploads import ImageUploadService
 from src.vision.limits import image_upload_slot, widget_upload_limits
+from src.leads.files import MAX_UPLOAD_READ, LeadFiles
+from src.leads.files import UPLOADS_LIMITED as LEAD_FILE_UPLOADS_LIMITED
+from src.leads.files import widget_upload_limits as lead_file_upload_limits
+from src.leads.models import LeadFileResponse
+from src.leads.service import LeadsService
+from src.rate_limits.slots import limit_slot
 
 log = logging.getLogger(__name__)
 
@@ -1015,6 +1021,39 @@ async def upload_image(
             raw=await read_image_upload(file),
         )
     return ImageUploadResponse.of(upload, widget_image_url(conversation_id, upload.image_id))
+
+
+@router.post("/conversations/{conversation_id}/lead-files", response_model=LeadFileResponse, status_code=201)
+async def upload_lead_file(
+    conversation_id: str,
+    api_key: Annotated[AgentApiKey, Depends(get_api_key_from_request)],
+    visitor: Annotated[WidgetVisitor, Depends(get_visitor_from_request)],
+    conv_repo: Annotated[WidgetConversationRepository, Depends(get_widget_conversation_repository)],
+    agent_repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    form: str = Form(..., description="The lead form's slug"),
+    input_name: str = Form(..., alias="input", description="The form's file field"),
+    file: UploadFile = File(...),
+) -> LeadFileResponse:
+    """Upload a file into a lead form the agent showed; put the returned `file_id` in that field's answer."""
+    _own_conversation(api_key, visitor, conv_repo, conversation_id)
+    agent = agent_repo.get(api_key.agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    lead_form = LeadsService().find_active_form(agent.account_id, form)
+
+    with limit_slot(lead_file_upload_limits(visitor_id=visitor.visitor_id, key_id=api_key.key_id),
+                    refusal=LEAD_FILE_UPLOADS_LIMITED):
+        lead_file = await asyncio.to_thread(
+            LeadFiles().store,
+            lead_form,
+            input_name=input_name,
+            agent_id=agent.agent_id,
+            conversation_id=conversation_id,
+            uploaded_by=visitor.visitor_id,
+            filename=file.filename or "",
+            raw=await file.read(MAX_UPLOAD_READ),
+        )
+    return LeadFileResponse.of(lead_file)
 
 
 @router.get("/conversations/{conversation_id}/images/{image_id}")

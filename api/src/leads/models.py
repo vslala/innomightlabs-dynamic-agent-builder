@@ -25,7 +25,18 @@ TEXT_MAX_LENGTH = 2000
 FILE_MAX_BYTES = 10 * 1024 * 1024
 FILE_MAX_BYTES_CEILING = 25 * 1024 * 1024
 FILE_MAX_ITEMS_CEILING = 5
-FILE_ACCEPT = ["image/png", "image/jpeg", "image/webp", "application/pdf"]
+#: The types a file input may accept: those we recognise from their first bytes, whatever the name claims
+FILE_SIGNATURES: dict[str, tuple[bytes, ...]] = {
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/webp": (b"RIFF",),  # with "WEBP" at offset 8, checked in sniff_file_type
+    "application/pdf": (b"%PDF-",),
+}
+FILE_EXTENSIONS = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "application/pdf": "pdf"}
+FILE_ACCEPT = list(FILE_SIGNATURES)
+#: An upload nobody captured is deleted after this; the media bucket's lifecycle rule
+#: (terraform/conversation_media.tf, tag retention=pending-upload) deletes the bytes after a day
+FILE_PENDING_HOURS = 24
 
 #: Lead forms are shown to anonymous visitors, so they use only the parts of the form schema that are safe there
 VISITOR_INPUT_TYPES = {
@@ -88,9 +99,21 @@ def _with_file_defaults(label: str, validation: FormInputValidation) -> FormInpu
         raise ValueError(f"{label}: files can be at most {FILE_MAX_BYTES_CEILING // (1024 * 1024)} MB")
     if max_items > FILE_MAX_ITEMS_CEILING:
         raise ValueError(f"{label}: at most {FILE_MAX_ITEMS_CEILING} files")
-    return validation.model_copy(
-        update={"max_file_bytes": max_file_bytes, "max_items": max_items, "accept": validation.accept or FILE_ACCEPT}
-    )
+    accept = validation.accept or FILE_ACCEPT
+    unknown = set(accept) - set(FILE_SIGNATURES)
+    if unknown:
+        raise ValueError(f"{label}: files can be {', '.join(FILE_ACCEPT)}, not {', '.join(sorted(unknown))}")
+    return validation.model_copy(update={"max_file_bytes": max_file_bytes, "max_items": max_items, "accept": accept})
+
+
+def sniff_file_type(raw: bytes) -> str | None:
+    """The file's type from its first bytes, or None when it isn't one we accept."""
+    for content_type, signatures in FILE_SIGNATURES.items():
+        if raw.startswith(signatures):
+            if content_type == "image/webp" and raw[8:12] != b"WEBP":
+                continue
+            return content_type
+    return None
 
 
 class LeadFormFields(BaseModel):
@@ -258,6 +281,83 @@ def capture_id_for(account_id: str, form_id: str, actor_id: str, answers: Answer
     return hashlib.sha256(canonical.encode()).hexdigest()[:32]
 
 
+class LeadFile(BaseModel):
+    """A file a person uploaded into a lead form, waiting for the capture that uses it.
+
+    Key: `CONVERSATION#{conversation_id}` / `LEADFILE#{file_id}`, so it goes with the conversation. A pending row
+    carries a `ttl`; claiming it removes the ttl and records the capture.
+    """
+
+    file_id: str = Field(default_factory=lambda: uuid4().hex)
+    account_id: str
+    agent_id: str
+    conversation_id: str
+    form_slug: str
+    input_name: str
+    uploaded_by: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    claimed_by: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+
+    @property
+    def extension(self) -> str:
+        return FILE_EXTENSIONS[self.content_type]
+
+    @property
+    def pending_key(self) -> str:
+        """Under the conversation, so deleting the conversation deletes an upload nobody captured."""
+        return f"agents/{self.agent_id}/conversations/{self.conversation_id}/lead-files/{self.file_id}.{self.extension}"
+
+    def as_capture_file(self) -> CaptureFile:
+        return CaptureFile(
+            file_id=self.file_id, input_name=self.input_name, filename=self.filename,
+            content_type=self.content_type, size_bytes=self.size_bytes,
+        )
+
+    def to_dynamo_item(self, ttl: int) -> dict[str, Any]:
+        return {
+            **self.model_dump(mode="json", exclude_none=True),
+            "pk": f"CONVERSATION#{self.conversation_id}",
+            "sk": f"LEADFILE#{self.file_id}",
+            "ttl": ttl,
+            "entity_type": "LeadFile",
+        }
+
+    @classmethod
+    def from_dynamo_item(cls, item: dict[str, Any]) -> LeadFile:
+        return cls.model_validate(convert_decimals(item))
+
+
+class LeadFileKey(BaseModel):
+    """Which upload a capture wants, and on whose behalf: everything the claim checks."""
+
+    conversation_id: str
+    file_id: str
+    uploaded_by: str
+    form_slug: str
+    input_name: str
+
+
+class CaptureFile(BaseModel):
+    """A file kept with its capture, as long as the capture is."""
+
+    file_id: str
+    input_name: str
+    filename: str
+    content_type: str
+    size_bytes: int
+
+    def storage_key(self, account_id: str, capture_id: str) -> str:
+        return f"{capture_files_prefix(account_id, capture_id)}{self.file_id}.{FILE_EXTENSIONS[self.content_type]}"
+
+
+def capture_files_prefix(account_id: str, capture_id: str) -> str:
+    """Outside every conversation and agent prefix, so a capture's files outlive the chat they came from."""
+    return f"leads/{account_id}/{capture_id}/"
+
+
 class LabelledAnswer(BaseModel):
     """An answer that carries its own label: what `register_lead` sends, and what leads looked like before forms."""
 
@@ -292,6 +392,7 @@ class Capture(BaseModel):
     actor_email: str | None = None
     source: CaptureSource
     status: str
+    files: list[CaptureFile] = Field(default_factory=list)
     #: Its place in its month's count, for the plan limit; None for test captures, which are not counted
     month_seq: int | None = None
     created_at: datetime = Field(default_factory=_now)
@@ -355,6 +456,24 @@ class LeadUsage(BaseModel):
     forms_limit: int
     captures: int
     captures_limit: int
+
+
+class LeadFileResponse(BaseModel):
+    """What the uploader gets back: the id to put in the form's answer."""
+
+    file_id: str
+    filename: str
+    content_type: str
+    size_bytes: int
+
+    @classmethod
+    def of(cls, lead_file: LeadFile) -> LeadFileResponse:
+        return cls(file_id=lead_file.file_id, filename=lead_file.filename, content_type=lead_file.content_type,
+                   size_bytes=lead_file.size_bytes)
+
+
+class FileDownload(BaseModel):
+    url: str
 
 
 class UpdateCaptureRequest(BaseModel):

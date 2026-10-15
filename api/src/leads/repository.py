@@ -21,7 +21,7 @@ from botocore.exceptions import ClientError
 from src.common.pagination import decode_cursor, encode_cursor
 from src.config import settings
 from src.db import get_dynamodb_resource
-from src.leads.models import Capture, CaptureFilters, LeadForm, LeadSettings
+from src.leads.models import Capture, CaptureFilters, LeadFile, LeadFileKey, LeadForm, LeadSettings
 from src.utils.dynamodb import convert_floats_to_decimals
 
 
@@ -227,6 +227,43 @@ class LeadsRepository:
             if "LastEvaluatedKey" not in response:
                 return
             query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
+    # Files uploaded into lead forms
+
+    def save_lead_file(self, lead_file: LeadFile, *, expires_at: int) -> LeadFile:
+        self.table.put_item(Item=lead_file.to_dynamo_item(ttl=expires_at))
+        return lead_file
+
+    def claim_lead_file(
+        self, lead_file_key: LeadFileKey, *, capture_id: str, now: int
+    ) -> tuple[LeadFile, bool] | None:
+        """Bind a pending upload to a capture: only its uploader's, for that form field, and before it expires.
+
+        Claiming it again for the same capture succeeds, so a retried capture still finds its files. Returns the file
+        and whether this call claimed it, or None when it may not. The conditions run in DynamoDB, so two captures
+        racing for one upload cannot both win; TTL deletion can lag, so expiry is part of the condition too.
+        """
+        try:
+            response = self.table.update_item(
+                Key={"pk": f"CONVERSATION#{lead_file_key.conversation_id}", "sk": f"LEADFILE#{lead_file_key.file_id}"},
+                UpdateExpression="SET claimed_by = :capture REMOVE #ttl",
+                ConditionExpression=(
+                    "uploaded_by = :uploader AND form_slug = :form AND input_name = :input"
+                    " AND ((attribute_not_exists(claimed_by) AND #ttl > :now) OR claimed_by = :capture)"
+                ),
+                ExpressionAttributeNames={"#ttl": "ttl"},
+                ExpressionAttributeValues={
+                    ":capture": capture_id, ":uploader": lead_file_key.uploaded_by, ":form": lead_file_key.form_slug,
+                    ":input": lead_file_key.input_name, ":now": now,
+                },
+                ReturnValues="ALL_OLD",
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return None
+            raise
+        before = response["Attributes"]
+        return LeadFile.from_dynamo_item({**before, "claimed_by": capture_id}), "claimed_by" not in before
 
     def _query_all(self, key_condition: ConditionBase) -> list[dict[str, Any]]:
         query: dict[str, Any] = {"KeyConditionExpression": key_condition}

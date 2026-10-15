@@ -15,6 +15,7 @@ from src.leads.models import (
     SOURCE_BY_ACTOR,
     Answers,
     Capture,
+    CaptureFile,
     CaptureFilters,
     CapturePage,
     CaptureSource,
@@ -28,6 +29,7 @@ from src.leads.models import (
     ad_hoc_form,
     capture_id_for,
 )
+from src.leads.files import LeadFiles
 from src.leads.repository import DuplicateCapture, FormHasCaptures, LeadsRepository, SlugTaken
 from src.rate_limits.service import RateLimitService
 from src.skills.models import ActorKind
@@ -60,9 +62,15 @@ class CaptureResult:
 
 
 class LeadsService:
-    def __init__(self, repository: LeadsRepository | None = None, limits: RateLimitService | None = None) -> None:
+    def __init__(
+        self,
+        repository: LeadsRepository | None = None,
+        limits: RateLimitService | None = None,
+        files: LeadFiles | None = None,
+    ) -> None:
         self.repository = repository or LeadsRepository()
         self.limits = limits or RateLimitService()
+        self.files = files or LeadFiles(self.repository)
 
     # Forms
 
@@ -156,34 +164,49 @@ class LeadsService:
         result = self.validate(form, answers)
         if not result.complete:
             raise LeadsError("INCOMPLETE", _what_to_fix(result))
+        _require_size(result.values)
+
+        capture_id = capture_id_for(origin.account_id, form.form_id, origin.actor_id, result.values)
+        existing = self._existing(origin.account_id, capture_id)
+        if existing:
+            return existing
+        files = self.files.claim(
+            form, result.values, conversation_id=origin.conversation_id, uploaded_by=origin.actor_id,
+            capture_id=capture_id,
+        )
         return self._save(
-            origin, answers=result.values, form_name=form.name, form_inputs=form.form_inputs, form=form
+            origin, capture_id, answers=result.values, form_name=form.name, form_inputs=form.form_inputs,
+            form=form, files=files,
         )
 
     def capture_ad_hoc(self, form_label: str, answers: list[LabelledAnswer], origin: CaptureOrigin) -> CaptureResult:
         """A lead with no lead form, from the deprecated `register_lead`: its answers carry their own labels."""
         form_inputs, values = ad_hoc_form(answers)
-        return self._save(origin, answers=values, form_name=form_label, form_inputs=form_inputs, form=None)
+        _require_size(values)
+        capture_id = capture_id_for(origin.account_id, f"ad-hoc:{form_label}", origin.actor_id, values)
+        existing = self._existing(origin.account_id, capture_id)
+        if existing:
+            return existing
+        return self._save(origin, capture_id, answers=values, form_name=form_label, form_inputs=form_inputs)
+
+    def _existing(self, account_id: str, capture_id: str) -> CaptureResult | None:
+        capture = self.repository.find_capture(account_id, capture_id)
+        if capture is None:
+            return None
+        monthly_limit = self.limits.get_account_limits(account_id).lead_captures_per_month
+        return CaptureResult(capture, duplicate=True, locked=capture.is_locked(monthly_limit))
 
     def _save(
         self,
         origin: CaptureOrigin,
+        capture_id: str,
         *,
         answers: Answers,
         form_name: str,
         form_inputs: list[FormInput],
-        form: LeadForm | None,
+        form: LeadForm | None = None,
+        files: list[CaptureFile] | None = None,
     ) -> CaptureResult:
-        if len(json.dumps(answers)) > MAX_ANSWER_BYTES:
-            raise LeadsError("TOO_LARGE", "These answers are too long to save. Shorten the longest ones.")
-
-        capture_id = capture_id_for(
-            origin.account_id, form.form_id if form else f"ad-hoc:{form_name}", origin.actor_id, answers
-        )
-        monthly_limit = self.limits.get_account_limits(origin.account_id).lead_captures_per_month
-        existing = self.repository.find_capture(origin.account_id, capture_id)
-        if existing:
-            return CaptureResult(existing, duplicate=True, locked=existing.is_locked(monthly_limit))
 
         now = _now()
         source = origin.source
@@ -196,6 +219,7 @@ class LeadsService:
             form_version=form.version if form else None,
             form_inputs=form_inputs,
             answers=answers,
+            files=files or [],
             agent_id=origin.agent_id,
             conversation_id=origin.conversation_id,
             actor_kind=origin.actor_kind,
@@ -213,10 +237,11 @@ class LeadsService:
             self.repository.save_capture(capture)
         except DuplicateCapture:
             # Saved by a call racing this one
-            existing = self.repository.find_capture(origin.account_id, capture_id)
-            if existing is None:
+            raced = self._existing(origin.account_id, capture_id)
+            if raced is None:
                 raise
-            return CaptureResult(existing, duplicate=True, locked=existing.is_locked(monthly_limit))
+            return raced
+        monthly_limit = self.limits.get_account_limits(origin.account_id).lead_captures_per_month
         return CaptureResult(capture, duplicate=False, locked=capture.is_locked(monthly_limit))
 
     def list_captures(
@@ -251,6 +276,11 @@ class LeadsService:
         if capture is None:
             raise capture_not_found()
         self.repository.delete_capture(capture)
+        self.files.delete_for(capture)
+
+    def file_download_url(self, account_id: str, capture_id: str, file_id: str) -> str:
+        """Locked like the capture itself: its files wait for the upgrade too."""
+        return self.files.download_url(self.get_capture(account_id, capture_id), file_id)
 
     def usage(self, account_id: str) -> LeadUsage:
         limits = self.limits.get_account_limits(account_id)
@@ -262,6 +292,11 @@ class LeadsService:
             captures=self.repository.monthly_counts(account_id).get(month, 0),
             captures_limit=limits.lead_captures_per_month,
         )
+
+
+def _require_size(answers: Answers) -> None:
+    if len(json.dumps(answers)) > MAX_ANSWER_BYTES:
+        raise LeadsError("TOO_LARGE", "These answers are too long to save. Shorten the longest ones.")
 
 
 def _what_to_fix(result: SubmissionResult) -> str:
