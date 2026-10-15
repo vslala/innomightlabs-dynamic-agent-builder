@@ -6,22 +6,15 @@ count against the account's subscription like any message.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
-
-from fastapi import HTTPException
+from contextlib import AbstractContextManager
 
 from src.config import settings
-from src.rate_limits.limiter import RateLimiter
-from src.rate_limits.policy import RateLimitDecision, RateLimitPolicy
+from src.rate_limits.policy import RateLimitPolicy
+from src.rate_limits.slots import Limit, limit_slot
 
 _HOUR = 3600
 _DAY = 86400
 LIMITED = {"code": "image_upload_limited", "message": "Too many images. Try again in a moment."}
-
-#: A policy and the subject it counts.
-Limit = tuple[RateLimitPolicy, str]
-
 
 def widget_upload_limits(*, visitor_id: str, key_id: str) -> list[Limit]:
     """The visitor's own uploads, then every upload through the widget key."""
@@ -55,28 +48,6 @@ def api_upload_limits(*, key_id: str) -> list[Limit]:
     ]
 
 
-@contextmanager
-def image_upload_slot(limits: list[Limit]) -> Iterator[None]:
-    """Count one upload against each limit, and give the slots back if the upload fails.
-
-    Fails closed: uploads spend the owner's money once an agent reads them.
-    """
-    taken: list[tuple[RateLimiter, RateLimitDecision]] = []
-
-    def release() -> None:
-        for limiter, decision in taken:
-            limiter.release(decision)
-
-    for policy, subject in limits:
-        limiter = RateLimiter(policy)
-        decision = limiter.acquire(subject)
-        if not decision.allowed:
-            release()
-            retry_after = decision.retry_after_seconds
-            raise HTTPException(429, detail=LIMITED, headers={"Retry-After": str(retry_after)} if retry_after else None)
-        taken.append((limiter, decision))
-    try:
-        yield
-    except BaseException:
-        release()
-        raise
+def image_upload_slot(limits: list[Limit]) -> AbstractContextManager[None]:
+    """Fails closed (every policy here has fail_open=False): uploads spend the owner's money once an agent reads them."""
+    return limit_slot(limits, refusal=LIMITED)
