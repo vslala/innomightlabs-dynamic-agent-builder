@@ -218,7 +218,8 @@ async def test_a_turn_runs_ila_with_only_her_tools(session, monkeypatch):
     )]
 
     assert seen["tools"] == [
-        "open_pages", "search_book", "show_form", "plan_blueprint", "apply_blueprint", "list_my_agents", "load_agent", "get_build_status",
+        "open_pages", "search_book", "show_form", "plan_blueprint", "apply_blueprint", "list_my_agents", "list_lead_forms", "list_my_automations",
+        "load_agent", "get_build_status",
     ]
     assert "You are Ila" in seen["first_prompt"]
     # The book's index, not its pages: the recipe is listed, its YAML isn't there until it's opened.
@@ -419,6 +420,113 @@ async def test_ila_can_find_and_load_an_existing_agent(session):
 
     missing = json.loads(await tools.load_agent("load_agent", {"agent_id": "nope"}, state))
     assert missing["loaded"] is False
+
+
+LEAD_DESK = """
+apiVersion: innomight/v2
+kind: Blueprint
+metadata: {name: lead-desk, title: Lead desk}
+resources:
+  demo_request:
+    kind: LeadForm
+    name: Demo request
+    purpose: Understand what the visitor needs.
+    form_inputs:
+      - {input_type: text, name: email, label: Work email, validation: {format: email}}
+      - {input_type: text, name: company, label: Company, attr: {optional: "true"}}
+  desk:
+    kind: Agent
+    name: Demo desk
+    provider: Bedrock
+    instructions: "Help visitors. {{ lead_form:demo-request }}"
+    skills:
+      - id: lead_capture
+        available_to: [visitor, guest]
+  tell_sales:
+    kind: Automation
+    title: Tell sales
+    enabled: true
+    trigger:
+      lead_captured: {form: demo_request, agent: desk}
+    skills:
+      - id: send_email
+        config: {to: sales@acme.example}
+    steps:
+      - name: email_sales
+        skill: send_email
+        action: send
+        arguments:
+          subject: "New lead: {{ trigger.lead.answers.email }}"
+          body: "<p>{{ trigger.lead.answers.email }}</p>"
+"""
+
+
+async def test_ila_can_see_the_accounts_lead_forms_and_automations(session):
+    """She asked what forms exist and had no tool for it. The lists are written as a blueprint writes them, so what she
+    reads can go back into a draft with its id and plan as no change."""
+    tools, state = BuilderTools(), turn_state(session)
+    assert json.loads(await tools.list_lead_forms("list_lead_forms", {}, state)) == {"lead_forms": []}
+    plan_id = json.loads(await tools.plan("plan_blueprint", {"yaml": LEAD_DESK}, state))["plan_id"]
+    say(session, "user", approval(plan_id))
+    json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))
+
+    [form] = json.loads(await tools.list_lead_forms("list_lead_forms", {}, state))["lead_forms"]
+    assert (form["slug"], form["resource_name"], form["macro"], form["status"], form["leads"]) == (
+        "demo-request", "demo_request", "{{ lead_form:demo-request }}", "active", 0
+    )
+    assert [field["name"] for field in form["form_inputs"]] == ["email", "company"], "the exact fields"
+    assert form["form_inputs"][0]["validation"]["format"] == "email"
+
+    [automation] = json.loads(await tools.list_automations("list_my_automations", {}, state))["automations"]
+    assert automation["title"] == "Tell sales" and automation["enabled"] is True and automation["editable"] is True
+    assert automation["trigger"]["lead_captured"]["form"] == "demo-request"
+    assert automation["trigger"]["lead_captured"]["agent"] == "Demo desk", "agents are named, not left as ids"
+    assert [step["name"] for step in automation["steps"]] == ["email_sales"]
+
+
+async def test_what_ila_reads_goes_back_into_a_draft_as_no_change(session):
+    tools, state = BuilderTools(), turn_state(session)
+    plan_id = json.loads(await tools.plan("plan_blueprint", {"yaml": LEAD_DESK}, state))["plan_id"]
+    say(session, "user", approval(plan_id))
+    json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))
+    [form] = json.loads(await tools.list_lead_forms("list_lead_forms", {}, state))["lead_forms"]
+
+    # She changes the form's purpose in the draft, writing it from the list: its id and every field as listed
+    draft = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id).draft_yaml
+    document = yaml.safe_load(draft)
+    document["resources"]["demo_request"] = {
+        "kind": "LeadForm", "id": form["id"], "name": form["name"], "purpose": "Qualify the visitor.",
+        "form_inputs": form["form_inputs"],
+    }
+    changed = json.loads(await tools.plan("plan_blueprint", {"yaml": yaml.safe_dump(document, sort_keys=False)}, state))
+
+    assert changed["ok"] is True, changed
+    assert {step["resource"]: step["action"] for step in changed["steps"]} == {
+        "demo_request": "update", "desk": "unchanged", "tell_sales": "unchanged",
+    }
+
+
+async def test_ila_does_not_see_automations_that_are_someone_elses_or_that_a_blueprint_cant_change(session, dynamodb_table):
+    from src.automations.models import AutomationNode, AutomationNodeType
+    from src.automations.repository import AutomationRepository
+    from src.automations.service import AutomationService
+    from src.automations.models import CreateAutomationRequest
+
+    tools, state = BuilderTools(), turn_state(session)
+    service = AutomationService()
+    branched = service.create_automation(CreateAutomationRequest(title="Has a condition"), TEST_OWNER).automation
+    repository = AutomationRepository()
+    nodes, edges, triggers = repository.get_graph(branched.automation_id)
+    repository.save_graph(branched.automation_id, [*nodes, AutomationNode(
+        automation_id=branched.automation_id, type=AutomationNodeType.CONDITION, name="Check", config={"expression": "true"}
+    )], edges, triggers)
+    elsewhere = service.create_automation(CreateAutomationRequest(title="Someone else's"), TEST_OWNER).automation
+    elsewhere.owner_id = "another-member"
+    repository.save_automation(elsewhere)
+
+    listed = json.loads(await tools.list_automations("list_my_automations", {}, state))["automations"]
+
+    assert [(item["title"], item["editable"]) for item in listed] == [("Has a condition", False)]
 
 
 async def test_ila_names_what_a_plan_removes(session):

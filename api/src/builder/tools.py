@@ -20,7 +20,12 @@ from src.blueprints.book import blueprint_book, page_for_issue
 from src.blueprints.draft import Draft
 from src.blueprints.export import export_agent
 from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
+from src.automations.service import AutomationService
 from src.blueprints.kinds import kind_for
+from src.blueprints.kinds.automation import AutomationKind
+from src.blueprints.kinds.lead_form import LeadFormKind
+from src.blueprints.spec import lead_form_resource
+from src.leads.service import LeadsService
 from src.blueprints.models import DeploymentStatus
 from src.blueprints.kits import KitError, KitRepository, active_kit, declared, pin
 from src.blueprints.repository import DeploymentRepository
@@ -136,6 +141,27 @@ def builder_tool_definitions() -> list[dict[str, Any]]:
             "description": (
                 "The person's existing agents: id, name, description, and what they use. Call it when they want "
                 "to change or add to something they already have, to find which agent they mean."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "list_lead_forms",
+            "description": (
+                "The account's lead forms, each written as a blueprint writes a LeadForm: its `id`, name, purpose and "
+                "the exact fields (`form_inputs`), plus its slug, how many leads it has and whether it is archived. "
+                "Call it when they ask what forms they have, want to see a form's fields, or want to reuse or "
+                "change one. To change one, put it in the draft as a LeadForm with its `id`; to use one as it is, name "
+                "its slug in an agent's instructions with the macro and leave it out of the draft."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "list_my_automations",
+            "description": (
+                "The person's existing automations, each written as a blueprint writes an Automation: its `id`, "
+                "title, whether it is on, its trigger, steps and skills. `editable` is false for one a blueprint can't "
+                "change (it has conditions, branches or several triggers). Call it when they ask what automations "
+                "they have, or want to change or add to one: put it in the draft as an Automation with its `id`."
             ),
             "parameters": {"type": "object", "properties": {}},
         },
@@ -341,6 +367,33 @@ class BuilderTools:
             })
         return json.dumps({"agents": agents})
 
+    async def list_lead_forms(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
+        forms = []
+        kind = LeadFormKind()
+        for form in LeadsService().list_forms(state.owner.account_id):
+            forms.append({
+                **kind.observe(form, {}),
+                "resource_name": lead_form_resource(form.slug),
+                "slug": form.slug,
+                "macro": f"{{{{ lead_form:{form.slug} }}}}",
+                "status": form.status,
+                "version": form.version,
+                "leads": form.capture_count,
+            })
+        return json.dumps({"lead_forms": forms})
+
+    async def list_automations(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
+        owner = state.owner
+        kind = AutomationKind()
+        agents = {agent.agent_id: agent.agent_name for agent in AgentRepository().list_owned(owner.account_id, owner.user_id)}
+        automations = []
+        for automation in AutomationService().list_automations(owner):
+            if automation.owner_id != owner.user_id:
+                continue
+            written = kind.observe(automation, agents)
+            automations.append({**written, "editable": "steps" in written})
+        return json.dumps({"automations": automations})
+
     async def load_agent(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
         session = self._session(state)
         agent_id = str(tool_input.get("agent_id") or "").strip()
@@ -414,7 +467,9 @@ class BuilderTools:
 
 def build_builder_tool_registry(tools: Optional[BuilderTools] = None) -> ToolRegistry:
     tools = tools or BuilderTools()
-    open_book, search, show_form, plan, apply, list_agents, load_agent, status = builder_tool_definitions()
+    open_book, search, show_form, plan, apply, list_agents, list_forms, list_automations, load_agent, status = (
+        builder_tool_definitions()
+    )
     return ToolRegistry([
         # Opening pages changes the pages Ila's prompt shows.
         BoundTool(ToolSpec(open_book, ToolCategory.BUILDER, mutates_prompt_context=True), tools.open_book_pages),
@@ -424,6 +479,8 @@ def build_builder_tool_registry(tools: Optional[BuilderTools] = None) -> ToolReg
         BoundTool(ToolSpec(plan, ToolCategory.BUILDER, mutates_prompt_context=True), tools.plan),
         BoundTool(ToolSpec(apply, ToolCategory.BUILDER, mutates_prompt_context=True), tools.apply),
         BoundTool(ToolSpec(list_agents, ToolCategory.BUILDER), tools.list_agents),
+        BoundTool(ToolSpec(list_forms, ToolCategory.BUILDER), tools.list_lead_forms),
+        BoundTool(ToolSpec(list_automations, ToolCategory.BUILDER), tools.list_automations),
         # Loading replaces the draft the prompt shows.
         BoundTool(ToolSpec(load_agent, ToolCategory.BUILDER, mutates_prompt_context=True), tools.load_agent),
         BoundTool(ToolSpec(status, ToolCategory.BUILDER), tools.build_status),
