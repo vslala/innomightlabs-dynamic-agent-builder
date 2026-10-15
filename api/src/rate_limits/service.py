@@ -19,6 +19,9 @@ from .repository import UsageRepository
 log = logging.getLogger(__name__)
 
 
+UNLIMITED = PricingTierLimits(agents=0, messages_per_month=0, kb_pages=0, memory_blocks=0)
+
+
 class RateLimitService:
     """Simple rate limiting based on subscription tiers."""
 
@@ -50,6 +53,17 @@ class RateLimitService:
                 return pricing_tier.limits
 
         return config.tiers[0].limits
+
+    def get_account_limits(self, account_id: str) -> PricingTierLimits:
+        """Limits on what an account owns, such as its leads: its owner's tier, until billing moves to accounts
+        (KAN-86)."""
+        accounts = AccountRepository()
+        account = accounts.get(account_id)
+        owner = accounts.get_member(account_id, account.owner_id) if account else None
+        owner_email = owner.email if owner else ""
+        if settings.is_superuser_email(owner_email):
+            return UNLIMITED
+        return self.get_tier_limits(self.get_user_tier(owner_email))
 
     def check_agent_limit(self, user_email: str, additional: int = 1) -> None:
         """

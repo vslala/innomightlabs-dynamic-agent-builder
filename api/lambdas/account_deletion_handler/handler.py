@@ -94,6 +94,13 @@ class AccountDeletionHandler:
             f"Account#{personal_account_id(user_id)}", "ProviderSettings#"
         )
 
+        # 9a. Delete Leads: forms, statuses, captures and their counts (the personal account's, as above)
+        counts["leads"] = sum(
+            self._delete_items_by_pattern(f"Account#{personal_account_id(user_id)}", sk_prefix)
+            # "LeadForm" also covers the slug guards, "Capture" the id guards
+            for sk_prefix in ("LeadForm", "LeadSettings", "Capture", "LeadUsage")
+        )
+
         # 9b. Delete refresh tokens issued to other apps that share this login
         counts["refresh_tokens"] = self._delete_items_by_pattern(
             f"Identity#{user_id}", "RefreshToken#"

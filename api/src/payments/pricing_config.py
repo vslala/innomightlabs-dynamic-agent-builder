@@ -7,10 +7,14 @@ from pydantic import BaseModel
 
 
 class PricingTierLimits(BaseModel):
+    """0 means unlimited."""
+
     agents: int
     messages_per_month: int
     kb_pages: int
     memory_blocks: int
+    lead_forms: int = 0
+    lead_captures_per_month: int = 0
 
 
 class PricingTierCTA(BaseModel):

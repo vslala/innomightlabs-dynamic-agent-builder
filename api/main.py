@@ -48,6 +48,7 @@ from src.automation_marketplace.router import router as automation_marketplace_r
 from src.scheduler.router import router as scheduler_router
 from src.smart_suggestions.router import router as smart_suggestions_router
 from src.vision.router import router as vision_router
+from src.leads.router import router as leads_router
 from src.dream.router import router as dream_router
 from src.scheduler.runtime import get_scheduler_runtime
 from src.exceptions import register_exception_handlers
@@ -193,6 +194,7 @@ def create_app() -> FastAPI:
     app.include_router(router=scheduler_router)
     app.include_router(router=smart_suggestions_router)
     app.include_router(router=vision_router)
+    app.include_router(router=leads_router)
     app.include_router(router=dream_router)
 
     # Skill-owned API routers (optional, mounted under /skills/{skill_id}/...)
