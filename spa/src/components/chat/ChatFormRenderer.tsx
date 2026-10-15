@@ -14,6 +14,8 @@ import {
   Textarea,
 } from "../ui";
 import type { FormInput, FormSchema } from "../../types/form";
+import type { UploadedLeadFile } from "../../types/leads";
+import { AttachmentChip } from "./AttachmentChip";
 import { nativeInputType } from "../forms/nativeInputType";
 
 export type FormAnswer = {
@@ -28,6 +30,8 @@ interface ChatFormRendererProps {
   onSubmit: (answers: FormAnswer[]) => void | Promise<void>;
   onCancel?: () => void;
   disabled?: boolean;
+  /** Set for the account's lead forms, whose file fields upload against the stored form. */
+  uploadFile?: (inputName: string, file: File) => Promise<UploadedLeadFile>;
 }
 
 function normalizePlaceholder(input: FormInput): string | undefined {
@@ -56,6 +60,7 @@ export function ChatFormRenderer({
   onSubmit,
   onCancel,
   disabled,
+  uploadFile,
 }: ChatFormRendererProps) {
   const initial = useMemo(() => {
     const values: Record<string, string> = {};
@@ -67,6 +72,8 @@ export function ChatFormRenderer({
 
   const [values, setValues] = useState<Record<string, string>>(initial);
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(0);
+  const trackUpload = (busy: boolean) => setUploading((count) => count + (busy ? 1 : -1));
 
   useEffect(() => {
     setValues(initial);
@@ -237,6 +244,27 @@ export function ChatFormRenderer({
           );
         }
 
+        if (input.input_type === "file_upload") {
+          return (
+            <FieldGroup key={input.name}>
+              <Label>{input.label}</Label>
+              {uploadFile ? (
+                <LeadFileField
+                  input={input}
+                  disabled={isDisabled}
+                  upload={(file) => uploadFile(input.name, file)}
+                  onChange={(fileIds) => handleChange(input.name, fileIds)}
+                  onUploading={trackUpload}
+                />
+              ) : (
+                <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                  File uploads aren't available in this form.
+                </span>
+              )}
+            </FieldGroup>
+          );
+        }
+
         return (
           <FieldGroup key={input.name}>
             <Label>{input.label}</Label>
@@ -265,11 +293,84 @@ export function ChatFormRenderer({
         )}
         <Button
           type="submit"
-          disabled={isDisabled}
+          disabled={isDisabled || uploading > 0}
         >
           {submitLabel}
         </Button>
       </FormActions>
     </FormStack>
+  );
+}
+
+interface LeadFileFieldProps {
+  input: FormInput;
+  disabled: boolean;
+  upload: (file: File) => Promise<UploadedLeadFile>;
+  /** The uploads' ids, comma-separated: the field's answer. */
+  onChange: (fileIds: string) => void;
+  onUploading: (busy: boolean) => void;
+}
+
+/** Each chosen file is uploaded straight away, so the form submits ids rather than bytes. */
+function LeadFileField({ input, disabled, upload, onChange, onUploading }: LeadFileFieldProps) {
+  const [files, setFiles] = useState<UploadedLeadFile[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const maxFiles = input.validation?.max_items ?? 1;
+
+  const keep = (next: UploadedLeadFile[]) => {
+    setFiles(next);
+    onChange(next.map((file) => file.file_id).join(", "));
+  };
+
+  const choose = async (chosen: File[]) => {
+    setBusy(true);
+    setError(null);
+    onUploading(true);
+    let uploaded = files;
+    try {
+      for (const file of chosen.slice(0, maxFiles - files.length)) {
+        uploaded = [...uploaded, await upload(file)];
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The upload failed. Please try again.");
+    } finally {
+      keep(uploaded);
+      setBusy(false);
+      onUploading(false);
+    }
+  };
+
+  return (
+    <Stack gap="xs">
+      {files.map((file) => (
+        <AttachmentChip
+          key={file.file_id}
+          filename={file.filename}
+          size={file.size_bytes}
+          onRemove={() => keep(files.filter((kept) => kept.file_id !== file.file_id))}
+        />
+      ))}
+      {files.length < maxFiles && (
+        <Input
+          type="file"
+          aria-label={input.label}
+          accept={input.validation?.accept?.join(",")}
+          multiple={maxFiles - files.length > 1}
+          disabled={disabled || busy}
+          onChange={(e) => {
+            const chosen = Array.from(e.target.files ?? []);
+            e.target.value = "";
+            if (chosen.length) void choose(chosen);
+          }}
+        />
+      )}
+      {busy && <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>Uploading…</span>}
+      {error && (
+        <span role="alert" style={{ fontSize: "0.75rem", color: "var(--danger)" }}>
+          {error}
+        </span>
+      )}
+    </Stack>
   );
 }

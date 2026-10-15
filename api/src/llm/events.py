@@ -71,6 +71,8 @@ class SSEEvent(BaseModel):
     submit_label: Optional[str] = None
     form_id: Optional[str] = None
     form_label: Optional[str] = None
+    #: The lead form a UI_FORM_RENDER shows, which its file fields upload against
+    lead_form: Optional[str] = None
 
     # CONNECT_REQUEST: provider, title, description, conversation_id.
     connect: Optional[dict] = None

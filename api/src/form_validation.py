@@ -178,8 +178,11 @@ def _validate_checked_choices(input_def: form_models.FormInput, values: list[Any
 
 
 def _validate_upload_ids(input_def: form_models.FormInput, value: Any) -> list[str]:
-    """Uploads are stored first and submitted by id; whoever owns the uploads checks the ids themselves."""
-    ids = value if isinstance(value, list) else [value]
+    """Uploads are stored first and submitted by id; whoever owns the uploads checks the ids themselves.
+
+    A form sends several as one comma-separated answer, like its checked choices; ids never contain commas.
+    """
+    ids = value if isinstance(value, list) else str(value).split(",")
     upload_ids = [str(upload_id).strip() for upload_id in ids if str(upload_id).strip()]
     max_items = input_def.validation.max_items if input_def.validation and input_def.validation.max_items else 1
     if len(upload_ids) > max_items:

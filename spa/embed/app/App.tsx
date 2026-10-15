@@ -313,6 +313,7 @@ function ChatScreen({ api, bootstrap, session, greeting, placeholder, chatOption
             isLoading={chat.isLoading}
             suggestion={chat.suggestion}
             onSubmitForm={chat.send}
+            uploadLeadFile={chat.uploadLeadFile}
             loadImage={api.fetchImage}
           />
           <Composer

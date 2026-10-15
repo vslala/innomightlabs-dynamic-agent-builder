@@ -152,6 +152,8 @@ export interface SSEEvent {
   submit_label?: string;
   form_id?: string;
   form_label?: string;
+  /** The lead form a UI_FORM_RENDER shows, which its file fields upload against */
+  lead_form?: string;
   // CONNECT_REQUEST
   connect?: { provider: string; title: string; description: string; conversation_id: string };
   // Tool call event fields. tool_call_id correlates a TOOL_CALL_START with

@@ -408,6 +408,28 @@ button:disabled {
   color: var(--text-muted);
 }
 
+.ie-form-error {
+  color: var(--danger);
+}
+
+.ie-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  font-size: 12px;
+}
+
+.ie-file-remove {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
 .ie-field {
   display: flex;
   flex-direction: column;

@@ -69,6 +69,16 @@ export interface StreamEvent {
   display_tool_name?: string | null;
   form?: AgentForm | null;
   submit_label?: string | null;
+  /** The lead form being shown, when it is one: its file fields upload against it. */
+  lead_form?: string | null;
+}
+
+/** A file uploaded into a lead form; its id goes in the field's answer. */
+export interface UploadedLeadFile {
+  file_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
 }
 
 interface TokenResponse {
@@ -138,6 +148,14 @@ export class WidgetApi {
     const form = new FormData();
     form.append("file", file);
     return this.json(`/widget/conversations/${encodeURIComponent(conversationId)}/images`, { method: "POST", body: form });
+  }
+
+  uploadLeadFile(conversationId: string, leadForm: string, inputName: string, file: File): Promise<UploadedLeadFile> {
+    const form = new FormData();
+    form.append("form", leadForm);
+    form.append("input", inputName);
+    form.append("file", file);
+    return this.json(`/widget/conversations/${encodeURIComponent(conversationId)}/lead-files`, { method: "POST", body: form });
   }
 
   /** An image of the visitor's own conversation as a blob URL; the endpoint needs their headers, so an <img> can't load it. */

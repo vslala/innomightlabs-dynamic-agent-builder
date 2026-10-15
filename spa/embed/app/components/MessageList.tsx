@@ -4,7 +4,7 @@ import { ArrowDown, Sparkles, Wrench } from "lucide-react";
 
 import { parseFormSubmission } from "../../../src/components/chat/submittedFormParser";
 import type { ChatImage, ChatMessage, PendingForm } from "../useChat";
-import { FormCard } from "./FormCard";
+import { FormCard, type UploadLeadFile } from "./FormCard";
 import { Markdown } from "./Markdown";
 
 interface MessageListProps {
@@ -20,6 +20,7 @@ interface MessageListProps {
   /** A question the visitor can send with one click (a default prompt that isn't sent automatically). */
   suggestion?: { label: string; onSelect: () => void } | null;
   onSubmitForm: (content: string, display: string) => void;
+  uploadLeadFile?: UploadLeadFile;
   /** Fetches a visitor's image from the API as a blob URL; only needed for images already sent. */
   loadImage: (url: string) => Promise<string>;
 }
@@ -39,6 +40,7 @@ export function MessageList({
   isLoading,
   suggestion,
   onSubmitForm,
+  uploadLeadFile,
   loadImage,
 }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -126,7 +128,15 @@ export function MessageList({
             );
           }
           if (item.kind === "extra" && pendingForm) {
-            return <FormCard key={item.key} pending={pendingForm} disabled={isSending} onSubmit={onSubmitForm} />;
+            return (
+              <FormCard
+                key={item.key}
+                pending={pendingForm}
+                disabled={isSending}
+                onSubmit={onSubmitForm}
+                uploadLeadFile={uploadLeadFile}
+              />
+            );
           }
           return activeTool ? (
             <div key={item.key} className="ie-tool">

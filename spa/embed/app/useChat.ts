@@ -31,6 +31,8 @@ export interface SentImage {
 export interface PendingForm {
   form: AgentForm;
   submitLabel: string;
+  /** Set when this is one of the account's lead forms, which is what lets its file fields take uploads. */
+  leadForm?: string;
 }
 
 const TITLE_LENGTH = 60;
@@ -180,6 +182,12 @@ export function useChat(api: WidgetApi, publicKey: string, onSignedOut: () => vo
     [api, conversationId, publicKey, scope]
   );
 
+  const uploadLeadFile = useCallback(
+    async (leadForm: string, inputName: string, file: File) =>
+      api.uploadLeadFile(await ensureConversation(), leadForm, inputName, file),
+    [api, ensureConversation]
+  );
+
   const uploadImage = useCallback(
     async (file: File) => api.uploadImage(await ensureConversation(), file),
     [api, ensureConversation]
@@ -221,7 +229,11 @@ export function useChat(api: WidgetApi, publicKey: string, onSignedOut: () => vo
           } else if (event.event_type === "TOOL_CALL_RESULT") {
             setActiveTool(null);
           } else if (event.event_type === "UI_FORM_RENDER" && event.form) {
-            setPendingForm({ form: event.form, submitLabel: event.submit_label || "Submit" });
+            setPendingForm({
+              form: event.form,
+              submitLabel: event.submit_label || "Submit",
+              leadForm: event.lead_form || undefined,
+            });
           } else if (event.event_type === "ERROR") {
             throw new Error(event.content || "The agent couldn't reply. Please try again.");
           }
@@ -281,6 +293,7 @@ export function useChat(api: WidgetApi, publicKey: string, onSignedOut: () => vo
     error,
     suggestion,
     uploadImage,
+    uploadLeadFile,
     dismissError: () => setError(null),
     openConversation,
     startNewChat,
