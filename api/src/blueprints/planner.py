@@ -26,6 +26,8 @@ from src.blueprints.kinds import (
     managed_kind_for,
 )
 from src.blueprints.validator import ValidatedBlueprint
+from src.leads.errors import LeadsError
+from src.leads.service import LeadsService
 from src.rate_limits.service import RateLimitService
 
 
@@ -114,7 +116,7 @@ def _plan(
             continue
         left_out.append((name, *_removal(name, spec, managed_kind_for(spec.kind), ctx, plan, kit_ids)))
 
-    agents = kb_pages = 0
+    agents = kb_pages = lead_forms = 0
     for name in order:
         spec = resources[name]
         kind = kind_for(spec.kind)
@@ -169,6 +171,7 @@ def _plan(
         usage = kind.usage(spec, change)
         agents += usage.agents
         kb_pages += usage.kb_pages
+        lead_forms += usage.lead_forms
 
     # A resource left out under its old name but found again under a new one (by its id, or its name) is renamed,
     # and carries on: it's not deleted.
@@ -195,6 +198,8 @@ def _plan(
         plan.blockers += _limit_issue(lambda: limits.check_agent_limit(owner.email, additional=agents))
     if kb_pages:
         plan.blockers += _limit_issue(lambda: limits.check_kb_pages_limit(owner.email, kb_pages))
+    if lead_forms:
+        plan.blockers += _lead_form_limit_issue(owner.account_id, lead_forms)
     return plan
 
 
@@ -254,6 +259,15 @@ def _renames(plan: Plan, resources: Mapping[str, Any], declared: Mapping[str, An
                     hint=f"To keep it, give '{new}' the id `{before.id}`. To replace it, give the new one a different name.",
                 ))
     return issues
+
+
+def _lead_form_limit_issue(account_id: str, lead_forms: int) -> list[BlueprintIssue]:
+    try:
+        LeadsService().require_form_slots(account_id, additional=lead_forms)
+    except LeadsError as refused:
+        return [BlueprintIssue(path="resources", message=refused.message,
+                               hint="Upgrade your plan, archive a form you no longer use, or create fewer.")]
+    return []
 
 
 def _limit_issue(check) -> list[BlueprintIssue]:

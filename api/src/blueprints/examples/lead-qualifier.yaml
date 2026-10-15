@@ -31,6 +31,33 @@ resources:
       mode: site
       max_pages: 10
 
+  sales_lead:
+    kind: LeadForm
+    name: Sales enquiry
+    purpose: Understand who the visitor is and what they need, so sales can follow up.
+    form_inputs:
+      - {input_type: text, name: name, label: Full name}
+      - input_type: text
+        name: email
+        label: Work email
+        validation: {format: email}
+        attr: {agent_hint: Ask once you have helped them with their question.}
+      - {input_type: text, name: company, label: Company}
+      - input_type: select
+        name: budget
+        label: Budget
+        options:
+          - {value: under-1k, label: Under 1k}
+          - {value: 1k-10k, label: 1k to 10k}
+          - {value: over-10k, label: Over 10k}
+        attr: {optional: "true"}
+      - {input_type: text, name: timeline, label: When they need it, attr: {optional: "true"}}
+      - input_type: choice
+        name: consent
+        label: I agree to be contacted about my enquiry
+        values: ["yes"]
+        attr: {variant: checkbox}
+
   qualifier:
     kind: Agent
     description: Answers questions, qualifies visitors and alerts sales.
@@ -38,9 +65,9 @@ resources:
     provider: "{{ params.provider }}"
     instructions: |
       You are the website assistant for {{ params.business_name }}. Answer questions from the website knowledge base.
-      When a visitor shows interest, show a short form asking for their name, email, company, budget and timeline,
-      and register them as a lead. If they look like a good fit, email the sales team a two-line summary of who they
-      are and what they need.
+      When a visitor shows interest, find out what sales needs to know:
+      {{ lead_form:sales-lead }}
+      If they look like a good fit, email the sales team a two-line summary of who they are and what they need.
     knowledge_bases: [site_kb]
     skills:
       - id: lead_capture

@@ -14,7 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from src.blueprints.diff import Each, Scalar
 from src.blueprints.params import PARAM_TYPES
 from src.connectors.mcp.providers import PROVIDERS
+from src.form_models import FormInput
 from src.knowledge.models import MAX_CRAWL_DEPTH, MAX_CRAWL_PAGES
+from src.leads.models import visitor_input
 from src.skills.models import ActorKind
 
 API_VERSION = "innomight/v2"
@@ -220,6 +222,47 @@ class WidgetKeySpec(ResourceBase):
     )
     allow_guests: Annotated[bool, Scalar(record="allow_guests", says=_guests)] = Field(
         False, description="Let visitors chat after giving only their email, without Google sign-in."
+    )
+
+
+def lead_form_slug(resource_name: str) -> str:
+    """A lead form's slug is its resource name with hyphens: `demo_request` is `{{ lead_form:demo-request }}`."""
+    return resource_name.replace("_", "-")
+
+
+def lead_form_resource(slug: str) -> str:
+    return slug.replace("-", "_")
+
+
+def _as_stored(form_inputs: list[Any]) -> list[dict[str, Any]]:
+    """Fields as a lead form stores them, defaults filled in, so leaving a default out of a blueprint isn't a change."""
+    return [
+        visitor_input(FormInput.model_validate(form_input)).model_dump(mode="json", exclude_none=True)
+        for form_input in form_inputs
+    ]
+
+
+class LeadFormSpec(ResourceBase):
+    """A lead form: what an agent should find out from the people it talks to, field by field. An agent collects it
+    when its instructions name it with `{{ lead_form:<slug> }}`, where the slug is this resource's name with hyphens
+    (`demo_request` is `{{ lead_form:demo-request }}`). Give that agent the `lead_capture` skill too."""
+
+    kind: Literal["LeadForm"] = Field(description="Which kind of resource to create.")
+    name: Annotated[str, Scalar(record="name", says="rename to '{value}'")] = Field(
+        min_length=1, max_length=80, description="The form's name, shown in the dashboard and at the top of the form."
+    )
+    purpose: Annotated[str | None, Scalar(record="purpose", omit_none=True, says="change why it collects this")] = Field(
+        None, max_length=500, description="Why you collect it, in a sentence. The agent reads it to explain itself."
+    )
+    form_inputs: Annotated[list[FormInput], Scalar(record="form_inputs", normalise=_as_stored, says="change its fields")] = (
+        Field(
+            min_length=1,
+            max_length=30,
+            description="The fields, in the platform's form schema: `input_type` (text, text_area, select, choice or "
+            "file_upload), `name`, `label`. Fields are required unless `attr.optional` is \"true\". Use "
+            "`validation.format` for email, phone, url, number or date; `options` or `values` for select and choice; "
+            "a choice with one value and `attr.variant: checkbox` for consent; `attr.agent_hint` to guide the agent.",
+        )
     )
 
 

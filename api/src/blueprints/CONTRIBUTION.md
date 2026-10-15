@@ -1,7 +1,7 @@
 # Blueprints Contribution Guide
 
 `src/blueprints/` is the solution-blueprint engine: it reads an `innomight/v2` YAML document describing agents,
-knowledge bases, MCP connections and widget keys, validates it, plans it against what the account already has, applies
+knowledge bases, MCP connections, widget keys and lead forms, validates it, plans it against what the account already has, applies
 it with an undo journal, and records each apply as a version of a kit. The dashboard (`/blueprints`, `/kits`) and Ila
 (`src/builder/`) both deploy through `service.py`. Design: `docs/LLD-solution-blueprints.md`.
 
@@ -37,7 +37,7 @@ src/blueprints/
   kinds/
     base.py        ResourceKind, ManagedKind, LookupKind and the plan/apply context types
     __init__.py    RESOURCE_KINDS, kind_for, managed_kind_for
-    agent.py, knowledge_base.py, widget_key.py   managed kinds
+    agent.py, knowledge_base.py, widget_key.py, lead_form.py   managed kinds
     mcp_connection.py                            lookup kind (a blueprint uses it, never creates it)
   examples/*.yaml  example blueprints; each is also a validated test fixture and one of Ila's recipes
 ```
