@@ -38,6 +38,14 @@ def test_ui_form_render_becomes_its_own_event():
     assert found.canvas is None
 
 
+def test_a_lead_forms_slug_travels_with_its_form_render():
+    [found] = interpret_tool_result(
+        json.dumps({"type": "ui_form_render", "form": {"form_name": "Claim"}, "lead_form": "claim"})
+    )
+
+    assert found.event is not None and found.event.lead_form == "claim"
+
+
 def test_a_form_without_identifiers_still_renders():
     [found] = interpret_tool_result(json.dumps({"type": "ui_form_render", "form": {}}))
 

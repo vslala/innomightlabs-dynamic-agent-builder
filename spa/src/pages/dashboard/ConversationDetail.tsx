@@ -87,7 +87,7 @@ export function ConversationDetail() {
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [activeForm, setActiveForm] = useState<{ form: FormSchema; submitLabel?: string } | null>(null);
+  const [activeForm, setActiveForm] = useState<{ form: FormSchema; submitLabel?: string; leadForm?: string } | null>(null);
   const [pendingFormLabel, setPendingFormLabel] = useState<string | null>(null);
   const [activeConnect, setActiveConnect] = useState<ConnectRequestPayload | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
@@ -466,6 +466,7 @@ export function ConversationDetail() {
           setActiveForm({
             form: event.form,
             submitLabel: event.submit_label || undefined,
+            leadForm: event.lead_form || undefined,
           });
         }
         break;
@@ -830,6 +831,12 @@ export function ConversationDetail() {
     setIncompleteResponse(false);
     handleSendMessage("Please continue your response from where you left off.");
   };
+
+  /** Lead forms take files, uploaded against the stored form; forms the agent made up have nothing to check them against. */
+  const uploadLeadFileFor = (leadForm: string | undefined) =>
+    leadForm && conversationId
+      ? (inputName: string, file: File) => conversationApiService.uploadLeadFile(conversationId, leadForm, inputName, file)
+      : undefined;
 
   const handleFormSubmit = async (answers: FormAnswer[]) => {
     if (!activeForm) return;
@@ -1281,6 +1288,7 @@ export function ConversationDetail() {
                               onSubmit={handleFormSubmit}
                               onCancel={() => setActiveForm(null)}
                               disabled={isSending || Boolean(pendingFormLabel)}
+                              uploadFile={uploadLeadFileFor(activeForm.leadForm)}
                             />
                           </div>
                         </div>

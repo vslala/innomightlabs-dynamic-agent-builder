@@ -98,6 +98,7 @@ def test_file_uploads_are_ids_limited_by_max_items():
 
     several = evidence.model_copy(update={"validation": FormInputValidation(max_items=3)})
     assert validate_form_value(several, ["file_1", "file_2"]) == ["file_1", "file_2"]
+    assert validate_form_value(several, "file_1, file_2") == ["file_1", "file_2"], "as a form submits several"
 
 
 def test_submission_reports_every_problem_at_once():

@@ -10,6 +10,7 @@ import type {
   PaginatedResponse,
 } from "../../types/conversation";
 import type { Message } from "../../types/message";
+import type { UploadedLeadFile } from "../../types/leads";
 import type { UploadedImage } from "../../../packages/image-attachments/src";
 
 class ConversationApiService {
@@ -76,6 +77,15 @@ class ConversationApiService {
     const form = new FormData();
     form.append("file", file);
     return httpClient.postForm<UploadedImage>(`/conversations/${conversationId}/images`, form);
+  }
+
+  /** Upload a file into a lead form's field while trying the form in chat; its id becomes the field's answer. */
+  async uploadLeadFile(conversationId: string, leadForm: string, inputName: string, file: File): Promise<UploadedLeadFile> {
+    const form = new FormData();
+    form.append("form", leadForm);
+    form.append("input", inputName);
+    form.append("file", file);
+    return httpClient.postForm<UploadedLeadFile>(`/conversations/${conversationId}/lead-files`, form);
   }
 
   /**

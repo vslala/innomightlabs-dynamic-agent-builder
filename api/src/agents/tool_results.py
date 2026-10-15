@@ -41,6 +41,7 @@ class _UiFormRenderPayload(BaseModel):
 
     form: dict[str, Any] | None = None
     submit_label: str | None = None
+    lead_form: str | None = None
 
 
 class UiFormRender:
@@ -67,6 +68,7 @@ class UiFormRender:
                 submit_label=parsed.submit_label,
                 form_id=form_id,
                 form_label=label,
+                lead_form=parsed.lead_form,
             )
         )
 
