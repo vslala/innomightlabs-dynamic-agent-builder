@@ -211,3 +211,13 @@ def test_agent_scoped_card_does_not_expose_installed_internal_skills(
     assert "Send Email" not in response.text
     assert "private@example.com" not in response.text
     assert "This should not be published" not in response.text
+
+
+def test_blocking_a2a_handlers_run_off_the_event_loop():
+    """Sync DynamoDB scans inside `async def` handlers froze the whole API in production."""
+    import inspect
+
+    from src.a2a.router import get_a2a_task, get_agent_card, list_a2a_agents, list_a2a_tasks
+
+    for handler in (list_a2a_agents, get_agent_card, list_a2a_tasks, get_a2a_task):
+        assert not inspect.iscoroutinefunction(handler), handler.__name__

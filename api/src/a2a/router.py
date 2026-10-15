@@ -69,12 +69,15 @@ async def issue_a2a_oauth_token(
     )
 
 
+# Handlers that only do blocking DynamoDB I/O are plain `def` so FastAPI runs them in its
+# threadpool. As `async def` they ran on the event loop, and one public discovery scan
+# froze every request on the instance.
 @router.get(
     "/a2a/agents",
     response_model=A2AAgentListResponse,
     response_model_exclude_none=True,
 )
-async def list_a2a_agents(
+def list_a2a_agents(
     service: Annotated[A2ADiscoveryService, Depends(get_a2a_discovery_service)],
     limit: int = Query(20, ge=1, le=100),
     cursor: str | None = Query(None),
@@ -88,7 +91,7 @@ async def list_a2a_agents(
     response_model=A2AAgentCard,
     response_model_exclude_none=True,
 )
-async def get_agent_card(
+def get_agent_card(
     agent_id: str,
     service: Annotated[A2ADiscoveryService, Depends(get_a2a_discovery_service)],
 ) -> A2AAgentCard:
@@ -177,7 +180,7 @@ async def stream_a2a_message(
 
 
 @router.get("/a2a/agents/{agent_id}/tasks", response_model=A2ATaskListResponse)
-async def list_a2a_tasks(
+def list_a2a_tasks(
     agent_id: str,
     api_key: Annotated[AgentApiKey, Depends(A2A_TASK_CLIENT)],
     service: Annotated[A2AInvocationService, Depends(get_a2a_invocation_service)],
@@ -215,7 +218,7 @@ async def subscribe_a2a_task(
 
 
 @router.get("/a2a/agents/{agent_id}/tasks/{task_id}", response_model=A2ATaskResponse)
-async def get_a2a_task(
+def get_a2a_task(
     agent_id: str,
     task_id: str,
     api_key: Annotated[AgentApiKey, Depends(A2A_TASK_CLIENT)],
