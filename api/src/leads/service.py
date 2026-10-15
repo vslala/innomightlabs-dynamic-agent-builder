@@ -209,7 +209,6 @@ class LeadsService:
         form: LeadForm | None = None,
         files: list[CaptureFile] | None = None,
     ) -> CaptureResult:
-
         now = _now()
         source = origin.source
         capture = Capture(

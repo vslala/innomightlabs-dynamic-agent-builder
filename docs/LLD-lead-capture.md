@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 📝 Proposed |
+| Status | 🚧 In progress: steps 1 to 6 built and tested; step 7 waits for the `Automation` blueprint kind |
 | Owner | vslala |
 | Last reviewed | 2026-10-15 |
 | Depends on | [LLD-leads-platform.md](LLD-leads-platform.md) (product shape), [api/src/skills/lead_capture](../api/src/skills/lead_capture/manifest.yml), [api/docs/LLD-automations-module.md](../api/docs/LLD-automations-module.md), [LLD-solution-blueprints.md](LLD-solution-blueprints.md), [LLD-ila-capabilities.md §2.1](LLD-ila-capabilities.md#21-automation) (the `Automation` blueprint kind), `docs/LLD-shared-accounts-and-iam.md` |
@@ -18,6 +18,37 @@
 > renderers show them unchanged and one shared validator checks them. Ila builds the whole solution in one
 > blueprint: a `LeadForm`, an `Agent` whose instructions carry the macro, and an `Automation` started by the
 > Lead captured trigger.
+
+## Implementation notes
+
+Built on branch `KAN-97-leads` (2026-10-15), steps 1 to 6 of the rollout. Where the code departs from the design
+below, this section is right:
+
+- **Statuses** start as the defaults in memory: `LeadSettings` is only written when an admin saves it, so there is no
+  write on first read.
+- **Text length default** (2000) is filled in by the lead profile (`leads/models.py:visitor_input`) when a form is
+  saved, not by the generic validator. Skill configs hold long values (policies, prompts) that a platform-wide default
+  would break.
+- **File uploads are for stored lead forms only.** `render_custom_form` does not gain `file_upload`: an upload is
+  checked against the stored form's own field, and a form the model made up has none.
+- **A `LeadForm`'s slug is its blueprint resource name with hyphens** (`demo_request` is `demo-request`). There is no
+  `slug` field: one name, so a macro points straight at its resource. An agent may also name a form already in the
+  account; the plan checks it exists.
+- **Counting a capture** takes the month's next number before saving it. Two identical captures racing each other can
+  leave a gap, which only ever lets one fewer capture through that month.
+- **Captures made by an agent inside an automation run** come from the owner's actor, so they are test captures
+  (`source=dashboard`): not counted, and they fire triggers only with `include_test_captures`. That also keeps an
+  automation from triggering itself.
+- **"Any form" / "any agent"** in the trigger is `*` (Radix selects can't hold an empty value); the config reads it
+  as no filter.
+- **Not built in this slice:** the agent instructions editor's "Insert lead form" picker and the unknown-slug warning
+  on agent save (the Forms page copies a form's macro, Ila writes it, and an unknown slug renders as "not found");
+  the `leads.file_url` smart value (automations get file metadata, members download from the dashboard); deleting
+  lead files from S3 on account deletion (the account-deletion Lambda handles DynamoDB only, and only the personal
+  account until KAN-83).
+- **Refactors on the way:** form submissions are validated in one place (`form_validation.validate_submission`, now
+  also used by skill installs); multi-limit upload slots moved to `rate_limits/slots.py`; automation run dispatch
+  moved to `automations/dispatch.py`; the runner's run creation is one `_create_run`.
 
 ## Decisions from the KAN-97 discussion
 
@@ -574,10 +605,9 @@ pages pick them up with no per-kind branching.
 
 ```yaml
 resources:
-  demo_form:
+  demo_request:                        # slug: demo-request
     kind: LeadForm
     description: What sales needs before a demo call.
-    slug: demo-request
     name: Demo request
     purpose: Understand what the visitor needs so sales can follow up.
     form_inputs:                       # the platform FormInput schema, lead profile
