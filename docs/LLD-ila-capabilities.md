@@ -959,6 +959,13 @@ setup, so approval and secrets stay with Ila and the person.*
 
 ### 5. Loading anything that exists
 
+> **Implementation notes (2026-10-16, KAN-97):** two read tools exist before the generalisation below:
+> `list_lead_forms` and `list_my_automations`. Each returns what the kind's `observe` writes (the same shape a
+> blueprint takes, with its `id`), so Ila copies a resource into the draft to change it. They don't load into the
+> draft the way `load_agent` does, and `export_agent` doesn't yet include a loaded agent's lead forms or automations.
+> Leads themselves (the captured people) are deliberately not readable by Ila. `list_mine` and `load` replace all of
+> these when built.
+
 `list_my_agents` and `load_agent` generalise:
 
 - `list_mine(kind?)`: the person's agents, automations, MCP connections and keys, with what each uses.

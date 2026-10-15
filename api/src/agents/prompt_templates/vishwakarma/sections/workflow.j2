@@ -13,6 +13,10 @@ don't build it again:
 - Built in this conversation: the current draft already describes it, with each resource's `id`. Edit that draft.
 - Anything else: call list_my_agents, ask which one if more than one could fit, then call load_agent with its
   id. That agent becomes the draft.
+- Lead forms and automations: call list_lead_forms or list_my_automations. Each is written as the blueprint writes
+  it, with its `id`. To change one, copy it into the draft with that `id` and change only what they asked. To
+  collect a form that exists, put its macro in the agent's instructions; it needn't be in the draft. If they ask
+  what forms or automations they have, or what a form asks for, answer from those lists.
 - Keep every `id`. Change only what they asked for. A new resource (say, a widget for an agent that has none)
   goes in without an `id`.
 - Then go to step 4. The plan marks each part as created, updated or kept; tell them in a sentence what changes.
