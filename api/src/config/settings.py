@@ -263,6 +263,9 @@ class Settings:
     )
     widget_image_uploads_per_visitor_hour: int = 20
     widget_image_uploads_per_key_day: int = 500
+    #: Files visitors upload into lead forms (src/leads/files.py)
+    widget_lead_file_uploads_per_visitor_hour: int = 10
+    widget_lead_file_uploads_per_key_day: int = 200
     api_image_uploads_per_key_day: int = 1000
     a2a_supported_protocols: list[str] = field(default_factory=lambda: ["JSONRPC", "HTTP+JSON"])
     a2a_primary_protocol: str = "JSONRPC"
@@ -654,6 +657,8 @@ class Settings:
             ),
             widget_image_uploads_per_visitor_hour=positive_env_int("WIDGET_IMAGE_UPLOADS_PER_VISITOR_HOUR", 20),
             widget_image_uploads_per_key_day=positive_env_int("WIDGET_IMAGE_UPLOADS_PER_KEY_DAY", 500),
+            widget_lead_file_uploads_per_visitor_hour=positive_env_int("WIDGET_LEAD_FILE_UPLOADS_PER_VISITOR_HOUR", 10),
+            widget_lead_file_uploads_per_key_day=positive_env_int("WIDGET_LEAD_FILE_UPLOADS_PER_KEY_DAY", 200),
             api_image_uploads_per_key_day=positive_env_int("API_IMAGE_UPLOADS_PER_KEY_DAY", 1000),
             a2a_supported_protocols=_normalize_a2a_protocols(
                 parse_env_list("A2A_SUPPORTED_PROTOCOLS", ["JSONRPC", "HTTP+JSON"])

@@ -16,6 +16,7 @@ from src.leads.models import (
     CaptureFilters,
     CapturePage,
     CreateLeadFormRequest,
+    FileDownload,
     LeadForm,
     LeadFormFields,
     LeadSettings,
@@ -156,6 +157,17 @@ async def update_capture(
     leads: Service,
 ) -> Capture:
     return leads.update_capture_status(principal.account_id, capture_id, body.status)
+
+
+@router.get("/captures/{capture_id}/files/{file_id}", response_model=FileDownload)
+async def download_file(
+    capture_id: str,
+    file_id: str,
+    principal: Annotated[Principal, Depends(allowed_to("leads:ViewCaptures"))],
+    leads: Service,
+) -> FileDownload:
+    """A short-lived link that downloads the file as an attachment."""
+    return FileDownload(url=leads.file_download_url(principal.account_id, capture_id, file_id))
 
 
 @router.delete("/captures/{capture_id}", status_code=204)

@@ -78,6 +78,33 @@ class ConversationMediaStorage:
             )
         )
 
+    def copy(self, source_key: str, target_key: str) -> None:
+        """A copy without the source's tags, so it leaves any pending-upload lifecycle rule behind."""
+        self.client.copy_object(
+            Bucket=self.bucket,
+            Key=target_key,
+            CopySource={"Bucket": self.bucket, "Key": source_key},
+            TaggingDirective="REPLACE",
+        )
+
+    def delete(self, key: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=key)
+
+    def presign_download_url(self, key: str, *, filename: str, content_type: str) -> str:
+        """A link that downloads the file, never shows it inline: what it holds came from a stranger."""
+        return str(
+            self.client.generate_presigned_url(
+                "get_object",
+                Params={
+                    "Bucket": self.bucket,
+                    "Key": key,
+                    "ResponseContentDisposition": f'attachment; filename="{filename}"',
+                    "ResponseContentType": content_type,
+                },
+                ExpiresIn=settings.conversation_media_presign_ttl_seconds,
+            )
+        )
+
     def get_image(self, key: str) -> StoredImage:
         response = self.client.get_object(Bucket=self.bucket, Key=key)
         content_type = response.get("ContentType") or "application/octet-stream"
