@@ -85,7 +85,7 @@ class LeadsService:
         return form
 
     def create_form(self, account_id: str, user_id: str, request: CreateLeadFormRequest) -> LeadForm:
-        self._require_form_slot(account_id)
+        self.require_form_slots(account_id)
         form = LeadForm(account_id=account_id, created_by=user_id, **request.model_dump())
         try:
             return self.repository.create_form(form)
@@ -103,7 +103,7 @@ class LeadsService:
         form = self.get_form(account_id, form_id)
         if form.is_active:
             return form
-        self._require_form_slot(account_id)
+        self.require_form_slots(account_id)
         return self.repository.update_form(form.model_copy(update={"status": "active", "updated_at": _now()}))
 
     def delete_form(self, account_id: str, form_id: str) -> None:
@@ -114,10 +114,11 @@ class LeadsService:
                 "FORM_HAS_CAPTURES", "This form has leads, so it can only be archived. Archiving keeps them.", 409
             ) from None
 
-    def _require_form_slot(self, account_id: str) -> None:
+    def require_form_slots(self, account_id: str, additional: int = 1) -> None:
+        """Room on the plan for `additional` more active forms; also asked by blueprint plans."""
         limit = self.limits.get_account_limits(account_id).lead_forms
         active = sum(form.is_active for form in self.repository.list_forms(account_id))
-        if limit and active >= limit:
+        if limit and active + additional > limit:
             raise plan_limit(f"Your plan includes {limit} active lead form{'s' if limit != 1 else ''}.")
 
     # Statuses

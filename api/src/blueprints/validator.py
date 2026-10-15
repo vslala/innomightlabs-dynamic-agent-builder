@@ -12,6 +12,7 @@ from typing import Any, Iterable, Iterator, Optional
 
 from pydantic import BaseModel, ValidationError
 
+from src.agents.instructions import MACRO as INSTRUCTION_MACRO
 from src.blueprints.issues import BlueprintInvalid, BlueprintIssue, IssueOwner
 from src.blueprints.document import Blueprint
 from src.blueprints.kinds import KIND_NAMES, RESOURCE_KINDS, kind_for
@@ -170,7 +171,8 @@ def strings_in(value: Any, path: str = "") -> Iterator[tuple[str, str]]:
 
 
 def check_templates(data: dict[str, Any]) -> list[BlueprintIssue]:
-    """Every {{ }} must name a declared param, or, in outputs only, an attribute a resource exposes."""
+    """Every {{ }} must name a declared param, or, in outputs only, an attribute a resource exposes. An agent's
+    instructions may also hold macros such as {{ lead_form:<slug> }}."""
     params = data.get("params")
     declared = set(params) if isinstance(params, dict) else set()
     raw_resources = data.get("resources")
@@ -213,6 +215,13 @@ def check_templates(data: dict[str, Any]) -> list[BlueprintIssue]:
                             message=f"A {spec['kind']} has no attribute '{attribute}'. It has: {', '.join(exposes)}.",
                             hint=did_you_mean(attribute, exposes),
                         ))
+            elif INSTRUCTION_MACRO.fullmatch(match.group(0)):
+                # Left as written: the agent expands it every turn (agents/instructions.py)
+                if not path.endswith(".instructions"):
+                    issues.append(BlueprintIssue(
+                        path=path,
+                        message=f"'{{{{ {expression} }}}}' only works in an agent's `instructions`.",
+                    ))
             else:
                 issues.append(BlueprintIssue(
                     path=path,

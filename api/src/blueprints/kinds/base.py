@@ -95,6 +95,7 @@ class Usage:
 
     agents: int = 0
     kb_pages: int = 0
+    lead_forms: int = 0
 
 
 class NotFound(Exception):
