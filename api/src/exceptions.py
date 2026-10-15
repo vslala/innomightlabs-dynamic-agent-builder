@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from src.common.pagination import InvalidCursor
 from src.logging.request_id import get_request_id
+from src.leads.errors import LeadsError
 from src.vision.errors import ImageInputError
 
 log = logging.getLogger(__name__)
@@ -74,6 +75,15 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def image_input_error_handler(request: Request, exc: ImageInputError) -> JSONResponse:
         """An image was refused; `code` lets the client pick its own wording, `message` is fit to show."""
         log.warning(f"Image refused on {request.method} {request.url.path}: {exc.code}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": {"code": exc.code, "message": exc.message}, "path": request.url.path},
+        )
+
+    @app.exception_handler(LeadsError)
+    async def leads_error_handler(request: Request, exc: LeadsError) -> JSONResponse:
+        """Leads refused something; `code` lets the client pick its own wording, `message` is fit to show."""
+        log.info(f"Leads refused {request.method} {request.url.path}: {exc.code}")
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": {"code": exc.code, "message": exc.message}, "path": request.url.path},

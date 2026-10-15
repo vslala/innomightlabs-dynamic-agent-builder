@@ -24,13 +24,16 @@
         "100 messages / month",
         "10 KB pages",
         "5 memory blocks",
+        "25 leads / month",
         "Community support"
       ],
       "limits": {
         "agents": 1,
         "messages_per_month": 100,
         "kb_pages": 10,
-        "memory_blocks": 5
+        "memory_blocks": 5,
+        "lead_forms": 1,
+        "lead_captures_per_month": 25
       }
     },
     {
@@ -57,13 +60,16 @@
         "10,000 messages / month",
         "100 KB pages",
         "20 memory blocks",
+        "500 leads / month",
         "Email support"
       ],
       "limits": {
         "agents": 3,
         "messages_per_month": 10000,
         "kb_pages": 100,
-        "memory_blocks": 20
+        "memory_blocks": 20,
+        "lead_forms": 5,
+        "lead_captures_per_month": 500
       }
     },
     {
@@ -90,13 +96,16 @@
         "50,000 messages / month",
         "1,000 KB pages",
         "Unlimited memory blocks",
+        "5,000 leads / month",
         "Priority support"
       ],
       "limits": {
         "agents": 10,
         "messages_per_month": 50000,
         "kb_pages": 1000,
-        "memory_blocks": 0
+        "memory_blocks": 0,
+        "lead_forms": 25,
+        "lead_captures_per_month": 5000
       }
     },
     {
@@ -119,13 +128,16 @@
         "Unlimited messages",
         "Unlimited KB pages",
         "Unlimited memory blocks",
+        "Unlimited leads",
         "Dedicated support"
       ],
       "limits": {
         "agents": 0,
         "messages_per_month": 0,
         "kb_pages": 0,
-        "memory_blocks": 0
+        "memory_blocks": 0,
+        "lead_forms": 0,
+        "lead_captures_per_month": 0
       }
     }
   ],

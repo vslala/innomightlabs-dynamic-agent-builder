@@ -65,6 +65,11 @@ CATALOG: dict[str, Action] = {
         # The account's credentials and settings: provider keys, MCP connections, A2A, dream, smart suggestions.
         # Admins manage them; every member's agents use them.
         *_service("settings", ACCOUNT, metadata=["Manage"], contents=[]),
+        # Lead forms are account configuration and captures are account data. The verbs are named apart from
+        # List/Describe so the member and view-only wildcards don't reach visitors' personal data.
+        *_service("leads", ACCOUNT, metadata=[
+            "ListForms", "ManageForms", "ManageSettings", "ViewCaptures", "ManageCaptures",
+        ], contents=[]),
     ]
 }
 

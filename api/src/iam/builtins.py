@@ -20,20 +20,21 @@ OWNER_ACCESS = _policy("OwnerAccess", {
 # Given to people who accept an invite: create your own resources, and see the directory to share with
 MEMBER_ACCESS = _policy("MemberAccess", {
     "Sid": "CreateAndListYourOwn", "Effect": "Allow",
-    "Action": ["*:Create", "*:List", "iam:ListMembers", "iam:ListGroups"], "Resource": "*",
+    "Action": ["*:Create", "*:List", "iam:ListMembers", "iam:ListGroups", "leads:ListForms"], "Resource": "*",
 })
 
 # The account's admins. No contents actions: on other members' resources an admin sees and manages
 # metadata only, and reaches contents only through ownership or a share.
 ADMINISTRATOR_ACCESS = _policy("AdministratorAccess", {
     "Sid": "RunTheAccount", "Effect": "Allow",
-    "Action": ["iam:*", "billing:*", "audit:*", "account:*", "settings:*",
+    "Action": ["iam:*", "billing:*", "audit:*", "account:*", "settings:*", "leads:*",
                "*:Create", "*:List", "*:Describe", "*:Transfer", "*:Delete"],
     "Resource": "*",
 })
 
 VIEW_ONLY_ACCESS = _policy("ViewOnlyAccess", {
-    "Sid": "SeeWhatExists", "Effect": "Allow", "Action": ["*:List", "*:Describe", "iam:List*"], "Resource": "*",
+    "Sid": "SeeWhatExists", "Effect": "Allow", "Action": ["*:List", "*:Describe", "iam:List*", "leads:ListForms"],
+    "Resource": "*",
 })
 
 BUILTINS: dict[str, NamedPolicy] = {
