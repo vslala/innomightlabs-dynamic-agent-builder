@@ -20,7 +20,7 @@ class SelectOption(BaseModel):
     value: str = Field(description="What is stored when it's picked.")
     label: str = Field(description="What the person sees.")
     group: str | None = Field(
-        None, description="What the option belongs to, such as a model's provider. Read by `options_filter`."
+        default=None, description="What the option belongs to, such as a model's provider. Read by `options_filter`."
     )
 
 
@@ -28,8 +28,8 @@ class FormOptionsSource(BaseModel):
     """Dynamic option source metadata for inputs such as select and choice."""
 
     type: str = Field(description="Dashboard forms only: where the options come from, such as `agents`.")
-    mode: Literal["hydrate", "lazy"] = Field("hydrate", description="Load the options with the form, or when opened.")
-    endpoint: str | None = Field(None, description="Not used yet.")
+    mode: Literal["hydrate", "lazy"] = Field(default="hydrate", description="Load the options with the form, or when opened.")
+    endpoint: str | None = Field(default=None, description="Not used yet.")
 
 
 class FormOptionsFilter(BaseModel):
@@ -62,30 +62,30 @@ class FormInputValidation(BaseModel):
     """
 
     format: FormInputValidationFormat | None = Field(
-        None, description="What a text value must be: email, phone, url, number, or date (YYYY-MM-DD)."
+        default=None, description="What a text value must be: email, phone, url, number, or date (YYYY-MM-DD)."
     )
-    multiple: bool = Field(False, description="For `format: email`: a list of addresses.")
-    separator: str = Field(",", description="What separates the addresses of a `multiple` list.")
-    min_items: int | None = Field(None, description="The fewest values: emails in a list, checked choices, files.")
-    max_items: int | None = Field(None, description="The most values: emails in a list, checked choices, files.")
-    min_length: int | None = Field(None, description="The fewest characters a text value may have.")
-    max_length: int | None = Field(None, description="The most characters a text value may have.")
-    pattern: str | None = Field(None, description="A regular expression the whole value must match.")
-    minimum: float | None = Field(None, description="For `format: number`: the smallest allowed.")
-    maximum: float | None = Field(None, description="For `format: number`: the largest allowed.")
-    max_file_bytes: int | None = Field(None, description="For `file_upload`: the largest file, in bytes.")
+    multiple: bool = Field(default=False, description="For `format: email`: a list of addresses.")
+    separator: str = Field(default=",", description="What separates the addresses of a `multiple` list.")
+    min_items: int | None = Field(default=None, description="The fewest values: emails in a list, checked choices, files.")
+    max_items: int | None = Field(default=None, description="The most values: emails in a list, checked choices, files.")
+    min_length: int | None = Field(default=None, description="The fewest characters a text value may have.")
+    max_length: int | None = Field(default=None, description="The most characters a text value may have.")
+    pattern: str | None = Field(default=None, description="A regular expression the whole value must match.")
+    minimum: float | None = Field(default=None, description="For `format: number`: the smallest allowed.")
+    maximum: float | None = Field(default=None, description="For `format: number`: the largest allowed.")
+    max_file_bytes: int | None = Field(default=None, description="For `file_upload`: the largest file, in bytes.")
     accept: list[str] | None = Field(
-        None, description="For `file_upload`: the MIME types accepted, checked against the file's contents."
+        default=None, description="For `file_upload`: the MIME types accepted, checked against the file's contents."
     )
 
 
 class SmartSuggestionConfig(BaseModel):
     """Optional AI suggestion metadata for text-like form inputs."""
 
-    enabled: bool = Field(True, description="Whether the Suggest button shows.")
+    enabled: bool = Field(default=True, description="Whether the Suggest button shows.")
     suggestion_type: str = Field(description="Dashboard forms only: which suggestion strategy drafts the value.")
-    button_label: str = Field("Suggest", description="The button's label.")
-    prompt_placeholder: str | None = Field(None, description="Placeholder for the prompt the person types.")
+    button_label: str = Field(default="Suggest", description="The button's label.")
+    prompt_placeholder: str | None = Field(default=None, description="Placeholder for the prompt the person types.")
 
 
 class FormInput(BaseModel):
@@ -97,19 +97,19 @@ class FormInput(BaseModel):
     )
     name: str = Field(description="The field's id: what its answer is stored under.")
     label: str = Field(description="What the person sees above the field.")
-    value: None | str = Field(None, description="The value it starts with.")
-    values: None | list[str] = Field(None, description="Choices whose label is their value, for select and choice.")
-    options: None | list[SelectOption] = Field(None, description="Choices with a value and a label, for select and choice.")
-    options_source: None | FormOptionsSource = Field(None, description="Dashboard forms only: options loaded at runtime.")
+    value: None | str = Field(default=None, description="The value it starts with.")
+    values: None | list[str] = Field(default=None, description="Choices whose label is their value, for select and choice.")
+    options: None | list[SelectOption] = Field(default=None, description="Choices with a value and a label, for select and choice.")
+    options_source: None | FormOptionsSource = Field(default=None, description="Dashboard forms only: options loaded at runtime.")
     options_filter: None | FormOptionsFilter = Field(
-        None, description="Dashboard forms only: offer the options matching another field's value."
+        default=None, description="Dashboard forms only: offer the options matching another field's value."
     )
-    validation: None | FormInputValidation = Field(None, description="What a valid value is; the API enforces it.")
+    validation: None | FormInputValidation = Field(default=None, description="What a valid value is; the API enforces it.")
     smart_suggestion: None | SmartSuggestionConfig = Field(
-        None, description="Dashboard forms only: an AI Suggest button for the field."
+        default=None, description="Dashboard forms only: an AI Suggest button for the field."
     )
     attr: None | dict[str, str] = Field(
-        None,
+        default=None,
         description="Hints as text: optional (\"true\"), help_text, placeholder, variant (radio or checkbox for "
         "choice), agent_hint (lead forms: guidance only the agent sees).",
     )
