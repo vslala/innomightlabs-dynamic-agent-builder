@@ -4,7 +4,7 @@ the build is doing.
 The book's index is always in Ila's prompt; `open_pages` puts whole pages there for a few turns, and issues from a
 plan open the pages that explain them.
 
-Forms come from the Interactive Forms module (`lead_capture`), so the chat renders them like any other
+Forms come from the Lead Capture skill (`lead_capture`), so the chat renders them like any other
 skill's forms. The blueprint tools keep the draft on the BuilderSession, which Ila's prompt shows every
 turn, so a plan made in one turn can be approved and applied in the next.
 """
@@ -44,11 +44,11 @@ from src.skills.registry import get_skill_registry
 MAX_PAGES_PER_OPEN = 6
 
 def _forms_schema() -> dict[str, Any]:
-    """The Interactive Forms module's own schema for a custom form, so there's one definition of it."""
+    """The Lead Capture skill's own schema for a custom form, so there's one definition of it."""
     loaded = get_skill_registry().get("lead_capture")
     action = loaded.manifest.find_action("render_custom_form") if loaded else None
     if action is None:
-        raise RuntimeError("Ila needs the Interactive Forms skill (lead_capture) to be installed on the platform")
+        raise RuntimeError("Ila needs the Lead Capture skill (lead_capture) to be installed on the platform")
     return action.input_schema
 
 

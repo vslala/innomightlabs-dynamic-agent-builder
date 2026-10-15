@@ -97,7 +97,7 @@ Examples:
 ```yaml
 name: Gmail
 name: Send Email
-name: Interactive Forms
+name: Lead Capture
 ```
 
 ### `description`
