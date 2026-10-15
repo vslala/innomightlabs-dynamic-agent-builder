@@ -308,6 +308,9 @@ set_railway_var \
 set_railway_var \
   "BLUEPRINT_APPLY_REAPER_INTERVAL_SECONDS" \
   "$(get_prod_var_default 'BLUEPRINT_APPLY_REAPER_INTERVAL_SECONDS' '300')"
+set_railway_var \
+  "LEAD_EVENT_DISPATCH_INTERVAL_SECONDS" \
+  "$(get_prod_var_default 'LEAD_EVENT_DISPATCH_INTERVAL_SECONDS' '5')"
 set_railway_var "ACCOUNT_DELETION_LAMBDA_NAME" "$(get_var 'ACCOUNT_DELETION_LAMBDA_NAME')"
 set_railway_var "CLI_RUNNER_BASE_URL" "$cli_runner_base_url"
 set_railway_var "CLI_RUNNER_SHARED_TOKEN" "$cli_runner_shared_token"

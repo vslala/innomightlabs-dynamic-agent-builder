@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel
 
-from src.automations.triggers.lead_captured import start_lead_captured_runs
 from src.form_models import FormInput
 from src.form_validation import SubmissionResult, validate_submission
 from src.leads.errors import LeadsError, capture_not_found, form_not_found, plan_limit
@@ -30,6 +29,7 @@ from src.leads.models import (
     ad_hoc_form,
     capture_id_for,
 )
+from src.leads.events import LeadEvent
 from src.leads.files import LeadFiles
 from src.leads.repository import DuplicateCapture, FormHasCaptures, LeadsRepository, SlugTaken
 from src.rate_limits.service import RateLimitService
@@ -234,19 +234,18 @@ class LeadsService:
             ),
             created_at=now,
         )
+        monthly_limit = self.limits.get_account_limits(origin.account_id).lead_captures_per_month
+        locked = capture.is_locked(monthly_limit)
+        # A locked lead waits for the upgrade, and so do the automations it would start
+        event = None if locked else LeadEvent(account_id=capture.account_id, capture_id=capture.capture_id)
         try:
-            self.repository.save_capture(capture)
+            self.repository.save_capture(capture, event)
         except DuplicateCapture:
             # Saved by a call racing this one
             raced = self._existing(origin.account_id, capture_id)
             if raced is None:
                 raise
             return raced
-        monthly_limit = self.limits.get_account_limits(origin.account_id).lead_captures_per_month
-        locked = capture.is_locked(monthly_limit)
-        # A locked lead waits for the upgrade, and so do the automations it would start
-        if not locked:
-            start_lead_captured_runs(capture)
         return CaptureResult(capture, duplicate=False, locked=locked)
 
     def list_captures(

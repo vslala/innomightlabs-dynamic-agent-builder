@@ -25,7 +25,8 @@ src/automations/
     models.py      ScheduleTriggerConfig (cron or one-time run_at)
     schemas.py     schema-driven trigger forms (build_schedule_trigger_form, build_manual_trigger_form)
     service.py     AutomationTriggerLifecycleService: mirrors schedule triggers into src/scheduler, lead triggers into the registry
-    lead_captured.py  the Lead captured trigger: LeadTriggerRegistry (who listens) and start_lead_captured_runs (Leads calls it)
+    lead_captured.py  the Lead captured trigger: LeadTriggerRegistry (who listens) and LeadEventDispatcher (the scheduler
+                      starts the runs for each captured lead's event, idempotently and with retries; see leads/events.py)
 ```
 
 ## Conventions

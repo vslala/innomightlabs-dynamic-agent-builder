@@ -277,6 +277,6 @@ def test_deleting_a_person_removes_their_personal_accounts_leads(dynamodb_table,
 
     counts = AccountDeletionHandler().delete_user_entities(user_id_for(TEST_USER_EMAIL), TEST_USER_EMAIL)
 
-    assert counts["leads"] == 5, "form, slug guard, capture, capture guard, monthly count"
+    assert counts["leads"] == 6, "form, slug guard, capture, capture guard, monthly count, event"
     assert leads.list_forms(personal) == []
     assert leads.list_captures(personal, CaptureFilters(include_tests=True), limit=10).items == []

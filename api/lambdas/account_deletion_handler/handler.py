@@ -98,7 +98,7 @@ class AccountDeletionHandler:
         counts["leads"] = sum(
             self._delete_items_by_pattern(f"Account#{personal_account_id(user_id)}", sk_prefix)
             # "LeadForm" also covers the slug guards, "Capture" the id guards
-            for sk_prefix in ("LeadForm", "LeadSettings", "Capture", "LeadUsage")
+            for sk_prefix in ("LeadForm", "LeadSettings", "Capture", "LeadUsage", "LeadEvent")
         )
 
         # 9b. Delete refresh tokens issued to other apps that share this login

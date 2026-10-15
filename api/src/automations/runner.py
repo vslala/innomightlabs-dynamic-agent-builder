@@ -7,6 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, TypeVar
+from uuid import uuid4
 
 from src.accounts.owner import Owner
 from src.agents.access import owner_of, usable_agent
@@ -158,12 +159,14 @@ class AutomationRunner:
         )
 
     def create_lead_captured_run(
-        self, graph: AutomationGraph, owner: Owner, trigger_id: str, lead: dict[str, Any]
+        self, graph: AutomationGraph, owner: Owner, trigger_id: str, lead: dict[str, Any], run_id: str
     ) -> AutomationRun:
-        """Steps read the lead as `{{ trigger.lead.answers.email }}` and the like."""
+        """Steps read the lead as `{{ trigger.lead.answers.email }}` and the like. The caller chooses `run_id`, so
+        a lead whose event is handled twice still makes one run."""
         return self._create_run(
             graph,
             owner,
+            run_id=run_id,
             trigger_id=trigger_id,
             trigger_context={"type": AutomationTriggerType.LEAD_CAPTURED.value, "lead": lead},
             input_data={},
@@ -176,6 +179,7 @@ class AutomationRunner:
         graph: AutomationGraph,
         owner: Owner,
         *,
+        run_id: str | None = None,
         trigger_id: str | None,
         trigger_context: dict[str, Any],
         input_data: dict[str, Any],
@@ -183,6 +187,7 @@ class AutomationRunner:
         description: str,
     ) -> AutomationRun:
         run = AutomationRun(
+            run_id=run_id or str(uuid4()),
             automation_id=graph.automation.automation_id,
             trigger_id=trigger_id,
             status=AutomationRunStatus.PENDING,

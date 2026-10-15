@@ -7,6 +7,7 @@ Key structure:
     Account#{account_id} / Capture#{created_at}#{capture_id}   a capture, newest first by key
     Account#{account_id} / CaptureId#{capture_id}              makes captures idempotent; points at the capture
     Account#{account_id} / LeadUsage#{yyyy-mm}                 captures counted towards the plan that month
+    Account#{account_id} / LeadEvent#{capture_id}              starts the capture's automations (leads/events.py)
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from botocore.exceptions import ClientError
 from src.common.pagination import decode_cursor, encode_cursor
 from src.config import settings
 from src.db import get_dynamodb_resource
+from src.leads.events import LeadEvent
 from src.leads.models import Capture, CaptureFilters, LeadFile, LeadFileKey, LeadForm, LeadSettings
 from src.utils.dynamodb import convert_floats_to_decimals
 
@@ -129,12 +131,15 @@ class LeadsRepository:
         items = self._query_all(Key("pk").eq(f"Account#{account_id}") & Key("sk").begins_with("LeadUsage#"))
         return {item["sk"].removeprefix("LeadUsage#"): int(item["captures"]) for item in items}
 
-    def save_capture(self, capture: Capture) -> Capture:
-        """The capture, its idempotency guard and its form's count, all or nothing."""
+    def save_capture(self, capture: Capture, event: LeadEvent | None = None) -> Capture:
+        """The capture, its idempotency guard, its form's count and the event that starts its automations, all or
+        nothing."""
         writes: list[dict[str, Any]] = [
             {"Put": {"Item": _capture_guard_item(capture), "ConditionExpression": "attribute_not_exists(pk)"}},
             {"Put": {"Item": capture.to_dynamo_item()}},
         ]
+        if event:
+            writes.append({"Put": {"Item": event.to_dynamo_item()}})
         if capture.form_id:
             writes.append({"Update": {
                 "Key": {"pk": capture.pk, "sk": f"LeadForm#{capture.form_id}"},
