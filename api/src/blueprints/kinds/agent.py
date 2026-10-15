@@ -11,6 +11,7 @@ from src.agents.instructions import macro_arguments
 from src.agents.service import AgentService, validate_provider_model
 from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
 from src.blueprints.issues import BlueprintIssue
+from src.blueprints.kinds.lead_form import missing_lead_forms
 from src.blueprints.kinds.base import (
     Action,
     AppliedResource,
@@ -31,7 +32,6 @@ from src.connectors.mcp.repository import get_mcp_connection_repository
 from src.connectors.mcp.service import get_mcp_connector_service
 from src.knowledge.models import KnowledgeBaseStatus
 from src.knowledge.repository import AgentKnowledgeBaseRepository
-from src.leads.repository import LeadsRepository
 from src.settings.repository import get_provider_settings_repository
 from src.skills.models import ActorKind, AgentSkill
 from src.skills.identity import installed_skill_id_for
@@ -565,7 +565,9 @@ class AgentKind(ManagedKind[AgentSpec]):
                     hint="Leave `model` out to use the provider's default.",
                 ))
 
-        issues += _missing_lead_forms(name, spec, ctx)
+        issues += missing_lead_forms(
+            macro_arguments(spec.instructions, "lead_form"), f"resources.{name}.instructions", ctx
+        )
 
         ids = ctx.ids()
         installed = {_skill_key(entry, ids) for entry in (change.existing.observed.get("skills", []) if change.existing else [])}
@@ -612,19 +614,4 @@ def _lead_form_references(name: str, spec: AgentSpec) -> list[Reference]:
             may_be_id=True,
         )
         for slug in macro_arguments(spec.instructions, "lead_form")
-    ]
-
-
-def _missing_lead_forms(name: str, spec: AgentSpec, ctx: PlanContext) -> list[BlueprintIssue]:
-    """Forms the instructions name that are neither in this blueprint (planned before the agent) nor in the account."""
-    planned = set(ctx.matched) | ctx.created
-    repository = LeadsRepository()
-    return [
-        BlueprintIssue(
-            path=f"resources.{name}.instructions",
-            message=f"There's no lead form '{slug}' in this blueprint or your account.",
-            hint=f"Add a LeadForm resource named {lead_form_resource(slug)}, or fix the slug.",
-        )
-        for slug in macro_arguments(spec.instructions, "lead_form")
-        if lead_form_resource(slug) not in planned and repository.find_form_by_slug(ctx.owner.account_id, slug) is None
     ]

@@ -497,6 +497,16 @@ parent did for agents and crawls.
 
 #### 2.1 `Automation`
 
+> **Implementation notes (2026-10-16, KAN-97):** a first version is built (`api/src/blueprints/kinds/automation.py`)
+> with the trigger and ordered steps below: triggers `manual`, `schedule` and `lead_captured`; steps that ask an agent or
+> run a skill action; skills; `enabled`. Steps are compiled to a chain of nodes, and the kind updates only automations
+> that are such a chain (anything with conditions, branches or several triggers is left alone, and the plan says so).
+> The spec's schedule fields are `cron`, `run_at`, `timezone` and `input`. Not built: `on_error`, conditions and foreach,
+> the `x-smart-values` field marker (smart values are allowed where `spec.SMART_VALUE_PATH` says), and setup
+> requirements for an automation's skills beyond the person's own settings (`skill_inputs.missing_inputs` asks for those,
+> as it does for agents). Applying goes through `AutomationService.replace_graph`, a new method that also syncs
+> triggers.
+
 The automation module stores a graph (nodes, edges, triggers; `automations/models.py`). The SPA shows that graph as a
 rule chain. The blueprint does the same: a **trigger and an ordered list of steps**, which the kind compiles into
 Start, then the action nodes, then Done, joined by `next` edges. Small models write lists more reliably than graphs.

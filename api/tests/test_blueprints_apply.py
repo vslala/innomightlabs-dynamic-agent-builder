@@ -188,7 +188,7 @@ def test_schema_and_reference_are_public(test_client):
 def test_catalog_lists_kinds_skills_and_readiness(test_client, auth_headers):
     body = test_client.get("/blueprints/catalog", headers=auth_headers).json()
 
-    assert [kind["kind"] for kind in body["kinds"]] == ["KnowledgeBase", "McpConnection", "LeadForm", "Agent", "WidgetKey"]
+    assert [kind["kind"] for kind in body["kinds"]] == ["KnowledgeBase", "McpConnection", "LeadForm", "Agent", "WidgetKey", "Automation"]
     lead_capture = next(skill for skill in body["skills"] if skill["id"] == "lead_capture")
     assert lead_capture["shareable"] is True
     assert lead_capture["ready"] is True

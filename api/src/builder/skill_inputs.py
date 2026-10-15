@@ -64,7 +64,8 @@ class SkillInput:
 
 def _name(resource: dict[str, Any], fallback: str, params: Optional[dict[str, Any]]) -> str:
     """The name the person will see, with params filled in."""
-    return str(substitute(str(resource.get("name") or fallback), params or {}))
+    # An agent has a name; an automation, a title
+    return str(substitute(str(resource.get("name") or resource.get("title") or fallback), params or {}))
 
 
 def missing_inputs(draft: Draft, params: Optional[dict[str, Any]] = None) -> list[SkillInput]:

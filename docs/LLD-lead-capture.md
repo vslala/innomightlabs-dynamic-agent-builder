@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress: steps 1 to 6 built and tested; step 7 waits for the `Automation` blueprint kind |
+| Status | ✅ Implemented (steps 1 to 7; manual provider and widget checks pending) |
 | Owner | vslala |
 | Last reviewed | 2026-10-15 |
 | Depends on | [LLD-leads-platform.md](LLD-leads-platform.md) (product shape), [api/src/skills/lead_capture](../api/src/skills/lead_capture/manifest.yml), [api/docs/LLD-automations-module.md](../api/docs/LLD-automations-module.md), [LLD-solution-blueprints.md](LLD-solution-blueprints.md), [LLD-ila-capabilities.md §2.1](LLD-ila-capabilities.md#21-automation) (the `Automation` blueprint kind), `docs/LLD-shared-accounts-and-iam.md` |
@@ -21,7 +21,7 @@
 
 ## Implementation notes
 
-Built on branch `KAN-97-leads` (2026-10-15), steps 1 to 6 of the rollout. Where the code departs from the design
+Built on branch `KAN-97-leads` (2026-10-15 and 16), all seven steps of the rollout. Where the code departs from the design
 below, this section is right:
 
 - **Statuses** start as the defaults in memory: `LeadSettings` is only written when an admin saves it, so there is no
@@ -46,6 +46,13 @@ below, this section is right:
   the `leads.file_url` smart value (automations get file metadata, members download from the dashboard); deleting
   lead files from S3 on account deletion (the account-deletion Lambda handles DynamoDB only, and only the personal
   account until KAN-83).
+- **Ila builds the whole solution** (step 7). The `Automation` kind is built as a first version of the design in
+  [LLD-ila-capabilities.md §2.1](LLD-ila-capabilities.md#21-automation), with the `lead_captured` trigger next to
+  `manual` and `schedule`. In a `lead_captured` trigger, `form` names a `LeadForm` resource (or the slug of one in the
+  account) and `agent` an Agent resource or an existing agent's id. The `lead-qualifier` recipe now uses a `LeadForm`,
+  the macro, and an `Automation` that emails sales, instead of asking the agent to improvise a form and email.
+- **Ila's book** lists nested models recursively, so a kind's page shows the fields of the models inside its models
+  (`TriggerSpec` and the three triggers, `FormInput` and its validation).
 - **Refactors on the way:** form submissions are validated in one place (`form_validation.validate_submission`, now
   also used by skill installs); multi-limit upload slots moved to `rate_limits/slots.py`; automation run dispatch
   moved to `automations/dispatch.py`; the runner's run creation is one `_create_run`.

@@ -4,6 +4,7 @@ import json
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 from src.accounts.owner import Owner
 from src.agents.repository import AgentRepository
@@ -114,8 +115,12 @@ class AutomationService:
             ]
         )
 
-    def create_automation(self, body: CreateAutomationRequest, owner: Owner) -> AutomationGraph:
+    def create_automation(
+        self, body: CreateAutomationRequest, owner: Owner, automation_id: str | None = None
+    ) -> AutomationGraph:
+        """`automation_id` lets a caller that must undo the create know the id before it returns."""
         automation = Automation(
+            automation_id=automation_id or str(uuid4()),
             title=body.title,
             description=body.description,
             status=body.status,
@@ -369,6 +374,30 @@ class AutomationService:
         self._run_removed_node_lifecycle(automation_id, existing_nodes, nodes, owner)
         self.repo.save_graph(automation_id, nodes, edges, existing_triggers)
         return AutomationGraph(automation, nodes, edges, existing_triggers)
+
+    def replace_graph(
+        self,
+        automation_id: str,
+        nodes: list[AutomationNode],
+        edges: list[AutomationEdge],
+        triggers: list[AutomationTrigger],
+        owner: Owner,
+    ) -> AutomationGraph:
+        """Swap in a whole graph, triggers included, which `save_graph` leaves as they are: a trigger owns its
+        schedule (or lead registration), so one that changes or goes must be synced too."""
+        automation = self.get_automation(automation_id, owner)
+        nodes = assign_missing_aliases(nodes)
+        existing_nodes, _, existing_triggers = self.repo.get_graph(automation_id)
+        self.validate_graph(nodes, edges, triggers, owner, automation_id, mode=self._save_mode(automation))
+        self._run_removed_node_lifecycle(automation_id, existing_nodes, nodes, owner)
+        kept = {trigger.trigger_id for trigger in triggers}
+        for trigger in existing_triggers:
+            if trigger.trigger_id not in kept:
+                self.trigger_lifecycle.delete_trigger(automation_id, trigger.trigger_id, owner)
+        self.repo.save_graph(automation_id, nodes, edges, triggers)
+        for trigger in triggers:
+            self.trigger_lifecycle.sync_trigger(automation, trigger, owner)
+        return AutomationGraph(automation, nodes, edges, triggers)
 
     def add_node(
         self, automation_id: str, body: CreateAutomationNodeRequest, owner: Owner

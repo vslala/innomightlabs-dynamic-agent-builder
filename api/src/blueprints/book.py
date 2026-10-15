@@ -78,13 +78,16 @@ class GuidePages:
 
 
 def _nested_models(model: type[BaseModel]) -> list[type[BaseModel]]:
-    """Models a spec's fields are built from (a knowledge base's `crawl`), so their fields are on the page too."""
+    """Models a spec's fields are built from (a knowledge base's `crawl`, an automation's `trigger` and what it holds),
+    so their fields are on the page too."""
     found: list[type[BaseModel]] = []
 
     def visit(annotation: Any) -> None:
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
             if annotation not in found:
                 found.append(annotation)
+                for info in annotation.model_fields.values():
+                    visit(info.annotation)
             return
         if get_origin(annotation) in (Union, types.UnionType, list, dict) or get_args(annotation):
             for arg in get_args(annotation):
