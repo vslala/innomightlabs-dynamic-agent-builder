@@ -7,6 +7,7 @@ from src.automations.models import (
     AutomationTrigger,
     AutomationTriggerType,
 )
+from src.automations.triggers.lead_captured import LeadTriggerRegistry
 from src.automations.triggers.models import ScheduleTriggerConfig
 from src.scheduler.models import CreateScheduleRequest, ScheduleStatus, ScheduleTargetType, UpdateScheduleRequest
 from src.scheduler.service import SchedulerService, SchedulerValidationError
@@ -15,10 +16,13 @@ from src.scheduler.service import SchedulerService, SchedulerValidationError
 class AutomationTriggerLifecycleService:
     """Keeps trigger-owned external resources aligned with automation triggers."""
 
-    def __init__(self, scheduler_service: SchedulerService | None = None):
+    def __init__(self, scheduler_service: SchedulerService | None = None, lead_triggers: LeadTriggerRegistry | None = None):
         self.scheduler_service = scheduler_service or SchedulerService()
+        self.lead_triggers = lead_triggers or LeadTriggerRegistry()
 
     def sync_trigger(self, automation: Automation, trigger: AutomationTrigger, owner: Owner) -> None:
+        # Every type: a trigger changed from lead captured to something else must stop listening
+        self.lead_triggers.sync(automation, trigger)
         if trigger.type != AutomationTriggerType.SCHEDULE:
             return
 
@@ -74,19 +78,22 @@ class AutomationTriggerLifecycleService:
         )
 
     def delete_trigger(self, automation_id: str, trigger_id: str, owner: Owner) -> None:
+        self.lead_triggers.remove(owner.account_id, automation_id, trigger_id)
         schedule_id = self.schedule_id_for(automation_id, trigger_id)
         try:
             self.scheduler_service.delete_schedule(schedule_id, owner)
         except SchedulerValidationError:
             return
 
-    def pause_schedule_triggers(
+    def pause_triggers(
         self,
         automation_id: str,
         triggers: list[AutomationTrigger],
         owner: Owner,
     ) -> None:
+        """An automation that is no longer active stops listening for leads and its schedules pause."""
         for trigger in triggers:
+            self.lead_triggers.remove(owner.account_id, automation_id, trigger.trigger_id)
             if trigger.type != AutomationTriggerType.SCHEDULE:
                 continue
             schedule_id = self.schedule_id_for(automation_id, trigger.trigger_id)

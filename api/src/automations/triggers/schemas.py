@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from src.automations.models import AutomationNode, AutomationNodeType
+from src.automations.triggers.models import ANY
 from src.form_models import Form, FormInput, FormInputType, SelectOption, SmartSuggestionConfig
 
 
@@ -116,6 +117,63 @@ def build_manual_trigger_form(nodes: list[AutomationNode], submit_path: str = ""
                 attr={"placeholder": "Manual run"},
             ),
             *_entry_step_input(nodes),
+            FormInput(
+                input_type=FormInputType.SELECT,
+                name="enabled",
+                label="Status",
+                value="true",
+                options=[
+                    SelectOption(value="true", label="Enabled"),
+                    SelectOption(value="false", label="Disabled"),
+                ],
+            ),
+        ],
+    )
+
+
+def build_lead_captured_trigger_form(
+    nodes: list[AutomationNode],
+    forms: list[SelectOption],
+    agents: list[SelectOption],
+    submit_path: str = "",
+) -> Form:
+    """`forms` and `agents` are the account's, as options: the slug or agent id, and its name."""
+    return Form(
+        form_name="Lead Captured Trigger",
+        submit_path=submit_path,
+        form_inputs=[
+            FormInput(
+                input_type=FormInputType.TEXT,
+                name="name",
+                label="Name",
+                attr={"placeholder": "Send new leads to the CRM"},
+            ),
+            *_entry_step_input(nodes),
+            FormInput(
+                input_type=FormInputType.SELECT,
+                name="form_slug",
+                label="Lead form",
+                value=ANY,
+                options=[SelectOption(value=ANY, label="Any form"), *forms],
+                attr={"help_text": "Steps read the lead as {{ trigger.lead.answers.<field> }}."},
+            ),
+            FormInput(
+                input_type=FormInputType.SELECT,
+                name="agent_id",
+                label="Captured by",
+                value=ANY,
+                options=[SelectOption(value=ANY, label="Any agent"), *agents],
+            ),
+            FormInput(
+                input_type=FormInputType.SELECT,
+                name="include_test_captures",
+                label="Test leads",
+                value="false",
+                options=[
+                    SelectOption(value="false", label="Ignore leads from dashboard chat"),
+                    SelectOption(value="true", label="Run for leads from dashboard chat too"),
+                ],
+            ),
             FormInput(
                 input_type=FormInputType.SELECT,
                 name="enabled",

@@ -33,3 +33,21 @@ class ScheduleTriggerConfig(BaseModel):
         if bool(self.cron_expression) == bool(self.run_at):
             raise ValueError("Set either a cron expression to repeat or a date and time to run once, not both")
         return self
+
+
+#: What the trigger form sends for "any form" or "any agent": no slug or agent id can be it
+ANY = "*"
+
+
+class LeadCapturedTriggerConfig(BaseModel):
+    """Which captures start the automation. Unset filters match everything in the account."""
+
+    form_slug: str | None = None
+    agent_id: str | None = None
+    #: Also run for the test captures owners make by chatting with their agent in the dashboard
+    include_test_captures: bool = False
+
+    @field_validator("form_slug", "agent_id", mode="before")
+    @classmethod
+    def _blank_is_any(cls, value: Any) -> Any:
+        return None if isinstance(value, str) and value.strip() in {"", ANY} else value

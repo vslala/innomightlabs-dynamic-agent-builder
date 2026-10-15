@@ -40,6 +40,8 @@ class AutomationTriggerType(str, Enum):
     MANUAL = "manual"
     WEBHOOK = "webhook"
     SCHEDULE = "schedule"
+    #: One of the account's agents captured a lead (src/automations/triggers/lead_captured.py)
+    LEAD_CAPTURED = "lead_captured"
 
 
 class AutomationRunStatus(str, Enum):

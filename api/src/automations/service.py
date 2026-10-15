@@ -233,7 +233,7 @@ class AutomationService:
 
         if previous_status == AutomationStatus.ACTIVE:
             graph = self.get_graph(automation.automation_id, owner)
-            self.trigger_lifecycle.pause_schedule_triggers(
+            self.trigger_lifecycle.pause_triggers(
                 automation.automation_id,
                 graph.triggers,
                 owner,

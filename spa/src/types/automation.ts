@@ -1,7 +1,7 @@
 export type AutomationStatus = "draft" | "active" | "disabled" | "deleted";
 export type AutomationNodeType = "start" | "action" | "condition" | "final";
 export type AutomationActionType = "skill_action" | "invoke_agent" | "send_email" | "webhook_call";
-export type AutomationTriggerType = "manual" | "webhook" | "schedule";
+export type AutomationTriggerType = "manual" | "webhook" | "schedule" | "lead_captured";
 export type AutomationRunStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 export type AutomationNodeRunStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
 export type AutomationEdgeLabel = "next" | "true" | "false" | "error" | string;

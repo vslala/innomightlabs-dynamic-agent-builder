@@ -128,36 +128,15 @@ class AutomationRunner:
         owner: Owner,
     ) -> AutomationRun:
         trigger = self._select_trigger(graph.triggers, trigger_id)
-        first_agent_id = self._first_agent_id(graph.nodes)
-        run = AutomationRun(
-            automation_id=graph.automation.automation_id,
+        return self._create_run(
+            graph,
+            owner,
             trigger_id=trigger.trigger_id if trigger else None,
-            status=AutomationRunStatus.PENDING,
-            context={
-                "input": input_data,
-                "trigger": {
-                    "type": trigger.type.value if trigger else AutomationTriggerType.MANUAL.value,
-                    "trigger_id": trigger.trigger_id if trigger else None,
-                },
-                "nodes": {},
-                "steps": {},
-                "execution": {},
-            },
-            created_by=owner.user_id,
-        )
-        # The run's conversation is the automation owner's, in its account
-        conversation = AutomationConversation(
+            trigger_context={"type": trigger.type.value if trigger else AutomationTriggerType.MANUAL.value},
+            input_data=input_data,
             title=f"Automation Run: {graph.automation.title}",
             description="Workflow execution",
-            agent_id=first_agent_id,
-            account_id=owner.account_id,
-            created_by=owner.user_id,
-            automation_id=graph.automation.automation_id,
-            automation_run_id=run.run_id,
         )
-        saved_conversation = self.conversation_repo.save(conversation)
-        run.conversation_id = saved_conversation.conversation_id
-        return self.automation_repo.save_run(run)
 
     def create_scheduled_run(
         self,
@@ -167,17 +146,49 @@ class AutomationRunner:
         schedule_id: str,
         trigger_id: str | None = None,
     ) -> AutomationRun:
-        first_agent_id = self._first_agent_id(graph.nodes)
+        return self._create_run(
+            graph,
+            owner,
+            trigger_id=None,
+            trigger_context={"type": AutomationTriggerType.SCHEDULE.value, "trigger_id": trigger_id,
+                             "schedule_id": schedule_id},
+            input_data=input_data,
+            title=f"Scheduled Automation Run: {graph.automation.title}",
+            description="Scheduled workflow execution",
+        )
+
+    def create_lead_captured_run(
+        self, graph: AutomationGraph, owner: Owner, trigger_id: str, lead: dict[str, Any]
+    ) -> AutomationRun:
+        """Steps read the lead as `{{ trigger.lead.answers.email }}` and the like."""
+        return self._create_run(
+            graph,
+            owner,
+            trigger_id=trigger_id,
+            trigger_context={"type": AutomationTriggerType.LEAD_CAPTURED.value, "lead": lead},
+            input_data={},
+            title=f"Lead captured: {graph.automation.title}",
+            description="Started by a captured lead",
+        )
+
+    def _create_run(
+        self,
+        graph: AutomationGraph,
+        owner: Owner,
+        *,
+        trigger_id: str | None,
+        trigger_context: dict[str, Any],
+        input_data: dict[str, Any],
+        title: str,
+        description: str,
+    ) -> AutomationRun:
         run = AutomationRun(
             automation_id=graph.automation.automation_id,
+            trigger_id=trigger_id,
             status=AutomationRunStatus.PENDING,
             context={
                 "input": input_data,
-                "trigger": {
-                    "type": AutomationTriggerType.SCHEDULE.value,
-                    "trigger_id": trigger_id,
-                    "schedule_id": schedule_id,
-                },
+                "trigger": {"trigger_id": trigger_id, **trigger_context},
                 "nodes": {},
                 "steps": {},
                 "execution": {},
@@ -186,9 +197,9 @@ class AutomationRunner:
         )
         # The run's conversation is the automation owner's, in its account
         conversation = AutomationConversation(
-            title=f"Scheduled Automation Run: {graph.automation.title}",
-            description="Scheduled workflow execution",
-            agent_id=first_agent_id,
+            title=title,
+            description=description,
+            agent_id=self._first_agent_id(graph.nodes),
             account_id=owner.account_id,
             created_by=owner.user_id,
             automation_id=graph.automation.automation_id,

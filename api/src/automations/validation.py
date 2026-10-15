@@ -23,7 +23,7 @@ from src.automations.models import (
     ConditionNodeConfig,
     SkillActionConfig,
 )
-from src.automations.triggers.models import ScheduleTriggerConfig
+from src.automations.triggers.models import LeadCapturedTriggerConfig, ScheduleTriggerConfig
 from src.connectors.service import ConnectorService
 from src.scheduler.cron import ScheduleExpression, validate_schedule_expression, zone
 from src.skills.registry import SkillRegistry
@@ -342,6 +342,11 @@ class AutomationGraphValidator:
                     zone(config.timezone)
             except Exception as exc:
                 raise AutomationValidationError(f"Invalid schedule trigger: {exc}") from exc
+        if trigger.type == AutomationTriggerType.LEAD_CAPTURED:
+            try:
+                LeadCapturedTriggerConfig.model_validate(trigger.config)
+            except ValueError as exc:
+                raise AutomationValidationError(f"Invalid lead captured trigger: {exc}") from exc
 
     def _validate_reachability(
         self,

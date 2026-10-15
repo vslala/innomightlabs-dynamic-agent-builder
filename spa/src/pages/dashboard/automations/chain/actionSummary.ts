@@ -151,6 +151,11 @@ export function describeTrigger(trigger: AutomationTrigger): string {
     return cron ? `${describeCron(cron)} · ${timezone}` : "Schedule not set";
   }
   if (trigger.type === "webhook") return "Incoming webhook";
+  if (trigger.type === "lead_captured") {
+    // "*" is how the trigger form says "any form"
+    const form = typeof trigger.config.form_slug === "string" && trigger.config.form_slug !== "*" ? trigger.config.form_slug : "";
+    return form ? `When a lead is captured on ${form}` : "When any lead is captured";
+  }
   return "Run manually or from a test";
 }
 

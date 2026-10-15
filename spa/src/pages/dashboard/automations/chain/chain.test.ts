@@ -797,6 +797,14 @@ describe("summaries", () => {
     );
     expect(describeRunAt("next tuesday")).toBe("Once at next tuesday");
   });
+
+  it("describes a lead trigger by the form it listens to", () => {
+    const lead = (config: Record<string, unknown>) =>
+      ({ type: "lead_captured", config }) as unknown as Parameters<typeof describeTrigger>[0];
+    expect(describeTrigger(lead({ form_slug: "demo-request" }))).toBe("When a lead is captured on demo-request");
+    expect(describeTrigger(lead({}))).toBe("When any lead is captured");
+    expect(describeTrigger(lead({ form_slug: "*" }))).toBe("When any lead is captured");
+  });
 });
 
 describe("chain round trip", () => {
