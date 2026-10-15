@@ -10,6 +10,7 @@ connectors and provider settings. Schedules are delegated to `src/scheduler/`; p
 ```text
 src/automations/
   router.py        /automations routes; maps domain errors to HTTP in translate_error()
+  dispatch.py      invoke_automation_run_async: start a created run in a local task or the async job Lambda
   access.py        require_automation(), automation_with(action) dependency, visibility, owner_of_automation()
   service.py       AutomationService: CRUD, graph save, status changes, skills, action catalog, smart-value preview
   runner.py        AutomationRunner: executes a graph node by node (start/condition/action executors)
@@ -54,7 +55,7 @@ src/automations/
   `src/scheduler` schedule with id `automation:{id}:trigger:{trigger_id}`. A completed one-time schedule is not re-run.
 - **Forms.** Trigger forms are built in `triggers/schemas.py` and served at `GET /automations/{id}/triggers/forms/{type}`;
   keep field names stable (the SPA renders them with `SchemaForm`).
-- **Run execution.** `POST /{id}/test-run` creates a PENDING run, then `invoke_automation_run_async` runs it with
+- **Run execution.** `POST /{id}/test-run` creates a PENDING run, then `invoke_automation_run_async` (`dispatch.py`) runs it with
   `asyncio.create_task` locally or invokes a Lambda when `ASYNC_JOB_BACKEND=lambda` (`ASYNC_JOB_LAMBDA_NAME`); `runner.py` updates heartbeats through `AutomationRunStateService`,
   and reading a run with an expired heartbeat marks it failed.
 
