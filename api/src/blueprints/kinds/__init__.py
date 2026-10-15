@@ -2,6 +2,7 @@
 the blueprint document's `resources` are read from this list (see `blueprints/document.py`)."""
 
 from src.blueprints.kinds.agent import AgentKind
+from src.blueprints.kinds.automation import AutomationKind
 from src.blueprints.kinds.base import (
     Action,
     AppliedResource,
@@ -21,7 +22,7 @@ from src.blueprints.kinds.mcp_connection import McpConnectionKind
 from src.blueprints.kinds.widget_key import WidgetKeyKind
 
 RESOURCE_KINDS: tuple[ResourceKind, ...] = (
-    KnowledgeBaseKind(), McpConnectionKind(), LeadFormKind(), AgentKind(), WidgetKeyKind()
+    KnowledgeBaseKind(), McpConnectionKind(), LeadFormKind(), AgentKind(), WidgetKeyKind(), AutomationKind()
 )
 
 KIND_NAMES: list[str] = [kind.kind for kind in RESOURCE_KINDS]

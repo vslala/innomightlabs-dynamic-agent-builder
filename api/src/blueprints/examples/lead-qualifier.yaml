@@ -67,13 +67,29 @@ resources:
       You are the website assistant for {{ params.business_name }}. Answer questions from the website knowledge base.
       When a visitor shows interest, find out what sales needs to know:
       {{ lead_form:sales-lead }}
-      If they look like a good fit, email the sales team a two-line summary of who they are and what they need.
     knowledge_bases: [site_kb]
     skills:
       - id: lead_capture
         available_to: [visitor, guest]
+
+  alert_sales:
+    kind: Automation
+    title: "{{ params.business_name }} sales alert"
+    description: Emails your sales team as soon as the agent captures a lead.
+    enabled: true
+    trigger:
+      lead_captured:
+        form: sales_lead
+        agent: qualifier
+    skills:
       - id: send_email
-        available_to: [visitor, guest]
+    steps:
+      - name: email_sales
+        skill: send_email
+        action: send
+        arguments:
+          subject: "New lead: {{ trigger.lead.answers.name }} at {{ trigger.lead.answers.company }}"
+          body: "<p>{{ trigger.lead.answers.name }} ({{ trigger.lead.answers.email }}) from {{ trigger.lead.answers.company }} would like to talk.</p>"
 
   widget:
     kind: WidgetKey

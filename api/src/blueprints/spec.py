@@ -6,10 +6,11 @@ Schema, the generated reference and the Builder's catalog. Skill config is not d
 generated from each skill's manifest (see `skills_schema.py`). See docs/LLD-solution-blueprints.md.
 """
 
+import re
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from src.blueprints.diff import Each, Scalar
 from src.blueprints.params import PARAM_TYPES
@@ -263,6 +264,155 @@ class LeadFormSpec(ResourceBase):
             "`validation.format` for email, phone, url, number or date; `options` or `values` for select and choice; "
             "a choice with one value and `attr.variant: checkbox` for consent; `attr.agent_hint` to guide the agent.",
         )
+    )
+
+
+#: Where an Automation spec holds smart values (`{{ steps.draft.output }}`, `{{ trigger.lead.answers.email }}`),
+#: which the automation resolves each run, so the blueprint leaves them as written. Every path is under
+#: `resources.<name>.`.
+SMART_VALUE_PATH = re.compile(
+    r"^resources\.[a-z][a-z0-9_]*\.(steps\[\d+\]\.(prompt|arguments\b.*)|trigger\.schedule\.input\b.*)$"
+)
+
+STEP_NAME = r"^[a-z][a-z0-9_]{0,62}$"
+
+
+class ManualTriggerSpec(Strict):
+    """Started by hand, or by a test run."""
+
+
+class ScheduleTriggerSpec(Strict):
+    """Started by the clock, once or repeatedly."""
+
+    cron: str | None = Field(
+        None, description="To repeat: a 5-field cron expression (minute hour day month weekday), such as `0 9 * * 1`."
+    )
+    run_at: str | None = Field(
+        None, description="To run once: a date and time (ISO 8601) in `timezone`. Set this or `cron`, not both."
+    )
+    timezone: str = Field("UTC", description="The timezone `cron` and `run_at` are read in, such as Europe/London.")
+    input: dict[str, str] = Field(
+        default_factory=dict, description="Fixed values every run gets, read in steps as `{{ input.<key> }}`."
+    )
+
+
+class LeadCapturedTriggerSpec(Strict):
+    """Started whenever one of the account's agents captures a lead. Steps read it as
+    `{{ trigger.lead.answers.<field> }}`, `{{ trigger.lead.capture_id }}`, `{{ trigger.lead.form_slug }}`."""
+
+    form: str | None = Field(
+        None,
+        description="Only leads from this form: the LeadForm resource's name in this blueprint, or the slug of one "
+        "already in the account. Leave it out for any form.",
+    )
+    agent: str | None = Field(
+        None,
+        description="Only leads this agent captured: an Agent in this blueprint, or an existing agent's id. Leave it "
+        "out for any agent.",
+    )
+    include_test_captures: bool = Field(
+        False, description="Also run for the test leads you make by chatting with the agent in the dashboard."
+    )
+
+
+class TriggerSpec(Strict):
+    """What starts the automation: exactly one of `manual`, `schedule` or `lead_captured`."""
+
+    manual: ManualTriggerSpec | None = Field(None, description="Start it by hand: `manual: {}`.")
+    schedule: ScheduleTriggerSpec | None = Field(None, description="Start it on a schedule.")
+    lead_captured: LeadCapturedTriggerSpec | None = Field(None, description="Start it when a lead is captured.")
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> "TriggerSpec":
+        chosen = [name for name in ("manual", "schedule", "lead_captured") if getattr(self, name) is not None]
+        if len(chosen) != 1:
+            raise ValueError("Give exactly one of `manual`, `schedule` or `lead_captured`")
+        return self
+
+
+class StepSpec(Strict):
+    """One step: ask an agent (`agent` and `prompt`), or run a skill action (`skill`, `action`, `arguments`)."""
+
+    name: str = Field(
+        pattern=STEP_NAME,
+        description="The step's name, used by later steps to read its result: `{{ steps.<name>.output }}`.",
+    )
+    agent: str | None = Field(
+        None,
+        description="Ask this agent: an Agent in this blueprint, or an existing agent's id.",
+        json_schema_extra={REF_KIND: "Agent"},
+    )
+    prompt: str | None = Field(
+        None, description="What to ask the agent. May use smart values such as `{{ trigger.lead.answers.email }}`."
+    )
+    skill: str | None = Field(None, description="Run an action of this skill, one listed in the automation's `skills`.")
+    action: str | None = Field(None, description="The skill action to run.")
+    arguments: dict[str, Any] = Field(
+        default_factory=dict, description="The action's arguments. Values may use smart values."
+    )
+
+    @model_validator(mode="after")
+    def _agent_or_skill(self) -> "StepSpec":
+        asks_agent = self.agent is not None or self.prompt is not None
+        runs_skill = self.skill is not None or self.action is not None
+        if asks_agent == runs_skill:
+            raise ValueError("A step either asks an agent (`agent` and `prompt`) or runs a skill action (`skill` and `action`)")
+        if asks_agent and (self.agent is None or self.prompt is None):
+            raise ValueError("Asking an agent needs both `agent` and `prompt`")
+        if runs_skill and (self.skill is None or self.action is None):
+            raise ValueError("Running a skill action needs both `skill` and `action`")
+        return self
+
+
+def _trigger_as_written(value: Any) -> dict[str, Any]:
+    """A trigger as the spec dumps it, reduced to what it asks for, so defaults left out aren't differences."""
+    plain = value.model_dump() if isinstance(value, BaseModel) else dict(value)
+    name = next(key for key in ("manual", "schedule", "lead_captured") if plain.get(key) is not None)
+    chosen = {key: item for key, item in plain[name].items() if item not in (None, "", {}, False)}
+    if name == "lead_captured" and "form" in chosen:
+        chosen["form"] = chosen["form"].replace("-", "_")  # a slug and its resource name are the same form
+    if name == "schedule":
+        chosen.setdefault("timezone", "UTC")
+    return {name: chosen}
+
+
+def _steps_as_written(steps: list[Any]) -> list[dict[str, Any]]:
+    plain = [step.model_dump(exclude_none=True) if isinstance(step, BaseModel) else dict(step) for step in steps]
+    return [{key: value for key, value in step.items() if value not in ({}, None)} for step in plain]
+
+
+class AutomationSpec(ResourceBase):
+    """A workflow that starts on its own and runs its steps in order: ask an agent, run a skill action. Use it to act
+    on what happens elsewhere, such as emailing sales or posting to a CRM each time a lead is captured. It belongs to
+    you and runs as you."""
+
+    kind: Literal["Automation"] = Field(description="Which kind of resource to create.")
+    title: Annotated[str, Scalar(record="title", says="rename to '{value}'")] = Field(
+        min_length=1, max_length=200, description="The automation's name in the dashboard."
+    )
+    description: Annotated[str | None, Scalar(record="description", omit_none=True, says="update its description")] = (
+        Field(None, description=DESCRIPTION)
+    )
+    enabled: Annotated[bool, Scalar(says=lambda value, spec: "turn it on" if value else "turn it off")] = Field(
+        False,
+        description="Turn it on, so its trigger starts it. Off, it's saved as a draft you can test in the dashboard.",
+    )
+    trigger: Annotated[TriggerSpec, Scalar(normalise=_trigger_as_written, says="change what starts it")] = Field(
+        description="What starts it."
+    )
+    skills: Annotated[
+        list[SkillEntry],
+        Each(
+            adds="add skill {label}",
+            changes="update skill {label}",
+            removes="remove skill {label}",
+        ),
+    ] = Field(
+        default_factory=list,
+        description="Skills the steps use, such as `send_email` or `rest_template`, set up like an agent's.",
+    )
+    steps: Annotated[list[StepSpec], Scalar(normalise=_steps_as_written, says="change its steps")] = Field(
+        min_length=1, description="What it does, in order. Each step may read earlier steps' results."
     )
 
 

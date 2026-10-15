@@ -1,7 +1,7 @@
 # Blueprints Contribution Guide
 
 `src/blueprints/` is the solution-blueprint engine: it reads an `innomight/v2` YAML document describing agents,
-knowledge bases, MCP connections, widget keys and lead forms, validates it, plans it against what the account already has, applies
+knowledge bases, MCP connections, widget keys, lead forms and automations, validates it, plans it against what the account already has, applies
 it with an undo journal, and records each apply as a version of a kit. The dashboard (`/blueprints`, `/kits`) and Ila
 (`src/builder/`) both deploy through `service.py`. Design: `docs/LLD-solution-blueprints.md`.
 
@@ -37,7 +37,7 @@ src/blueprints/
   kinds/
     base.py        ResourceKind, ManagedKind, LookupKind and the plan/apply context types
     __init__.py    RESOURCE_KINDS, kind_for, managed_kind_for
-    agent.py, knowledge_base.py, widget_key.py, lead_form.py   managed kinds
+    agent.py, knowledge_base.py, widget_key.py, lead_form.py, automation.py   managed kinds
     mcp_connection.py                            lookup kind (a blueprint uses it, never creates it)
   examples/*.yaml  example blueprints; each is also a validated test fixture and one of Ila's recipes
 ```
@@ -72,6 +72,16 @@ flowchart LR
   E --> K[record_version on kit]
   P -->|blockers| B[Blocked]
 ```
+
+## Automations
+
+`kinds/automation.py` writes an automation as a chain, as the dashboard shows it: Start, the steps in order, Done, with
+one trigger (manual, schedule or lead captured). `compile_chain` turns the spec into the stored graph and `read_chain`
+reads a stored graph back; a graph with conditions, branches or several triggers isn't a chain, so the plan says a
+blueprint can't change it. Steps are named, and those names are the aliases later steps read
+(`{{ steps.<name>.output }}`). Smart values are allowed only where `spec.SMART_VALUE_PATH` says, and are left as
+written for the automation to resolve each run. Applying goes through `AutomationService`, never the repository
+alone, so triggers sync their schedule or lead registration (`AutomationService.replace_graph`).
 
 ## How to add a resource kind
 

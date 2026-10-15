@@ -17,11 +17,14 @@ from src.blueprints.issues import BlueprintInvalid, BlueprintIssue, IssueOwner
 from src.blueprints.document import Blueprint
 from src.blueprints.kinds import KIND_NAMES, RESOURCE_KINDS, kind_for
 from src.blueprints.params import param_type
+from src.automations.smart_values import CONTEXT_ROOTS
 from src.blueprints.parser import join_path, parse_yaml
 from src.blueprints.references import Reference
 from src.blueprints.skills_schema import SkillSetup, SkillVariant, skill_variants
 from src.blueprints.spec import (
+    SMART_VALUE_PATH,
     AgentSpec,
+    AutomationSpec,
     CrawlSpec,
     Metadata,
     OutputSpec,
@@ -32,6 +35,7 @@ from src.config import settings
 from src.skills.registry import SkillRegistry
 
 TEMPLATE = re.compile(r"\{\{\s*(.*?)\s*\}\}")
+SMART_VALUE_ROOT = re.compile(r"^(?:\$\.)?(?:" + "|".join(sorted(CONTEXT_ROOTS)) + r")\b")
 PARAM_REF = re.compile(r"^params\.([A-Za-z0-9_]+)$")
 RESOURCE_REF = re.compile(r"^resources\.([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)$")
 
@@ -215,6 +219,9 @@ def check_templates(data: dict[str, Any]) -> list[BlueprintIssue]:
                             message=f"A {spec['kind']} has no attribute '{attribute}'. It has: {', '.join(exposes)}.",
                             hint=did_you_mean(attribute, exposes),
                         ))
+            elif SMART_VALUE_PATH.match(path) and SMART_VALUE_ROOT.match(expression):
+                # Left as written: the automation resolves it each run (automations/smart_values.py)
+                continue
             elif INSTRUCTION_MACRO.fullmatch(match.group(0)):
                 # Left as written: the agent expands it every turn (agents/instructions.py)
                 if not path.endswith(".instructions"):
@@ -341,7 +348,7 @@ def check_skills(blueprint: Blueprint, data: dict[str, Any], variants: dict[str,
     """Each skill entry against the variant generated from that skill's manifest."""
     issues = []
     for name, resource in blueprint.resources.items():
-        if not isinstance(resource, AgentSpec):
+        if not isinstance(resource, (AgentSpec, AutomationSpec)):
             continue
         raw_entries = data["resources"][name].get("skills") or []
         installed: set[str] = set()

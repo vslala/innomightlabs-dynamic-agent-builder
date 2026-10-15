@@ -16,10 +16,10 @@ import yaml  # type: ignore[import-untyped,unused-ignore]
 
 @dataclass(frozen=True)
 class SkillEntryRef:
-    #: The agent resource it's on.
+    #: The agent or automation resource it's on.
     resource: str
     agent: dict[str, Any]
-    #: Its position in the agent's `skills`, for issue paths.
+    #: Its position in the resource's `skills`, for issue paths.
     index: int
     entry: dict[str, Any]
     #: "<agent>/<skill id>/<n>": the n-th entry of that skill on that agent. Survives the draft being rewritten,
@@ -47,8 +47,8 @@ class Draft:
         return [(name, spec) for name, spec in self.resources.items() if spec.get("kind") == kind and not spec.get("remove")]
 
     def skill_entries(self) -> Iterator[SkillEntryRef]:
-        """Every skill entry on every agent the draft keeps or builds."""
-        for name, agent in self.kept("Agent"):
+        """Every skill entry on every agent and automation the draft keeps or builds."""
+        for name, agent in [*self.kept("Agent"), *self.kept("Automation")]:
             entries = agent.get("skills")
             seen: dict[str, int] = {}
             for index, entry in enumerate(entries if isinstance(entries, list) else []):

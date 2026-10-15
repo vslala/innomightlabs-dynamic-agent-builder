@@ -20,7 +20,7 @@ from src.blueprints.kinds.base import (
     Usage,
 )
 from src.blueprints.reconcile import Outcome
-from src.blueprints.spec import LeadFormSpec, lead_form_slug
+from src.blueprints.spec import LeadFormSpec, lead_form_resource, lead_form_slug
 from src.leads.errors import LeadsError
 from src.leads.models import CreateLeadFormRequest, LeadForm, LeadFormFields
 from src.leads.service import LeadsService
@@ -109,6 +109,22 @@ class RemoveLeadForm(Command):
             if refused.code != "FORM_HAS_CAPTURES":
                 raise
             leads.archive_form(ctx.owner.account_id, self.form_id)
+
+
+def missing_lead_forms(slugs: list[str], path: str, ctx: PlanContext) -> list[BlueprintIssue]:
+    """Forms named by `slugs` that are neither in this blueprint (planned before whatever names them) nor in the
+    account."""
+    planned = set(ctx.matched) | ctx.created
+    repository = LeadsService().repository
+    return [
+        BlueprintIssue(
+            path=path,
+            message=f"There's no lead form '{slug}' in this blueprint or your account.",
+            hint=f"Add a LeadForm resource named {lead_form_resource(slug)}, or fix the slug.",
+        )
+        for slug in slugs
+        if lead_form_resource(slug) not in planned and repository.find_form_by_slug(ctx.owner.account_id, slug) is None
+    ]
 
 
 # --- The kind -----------------------------------------------------------------------------------------------

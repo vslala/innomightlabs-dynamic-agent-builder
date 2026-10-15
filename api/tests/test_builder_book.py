@@ -58,6 +58,14 @@ def test_a_kind_page_has_its_fields_nested_models_and_an_example():
     assert "kind: KnowledgeBase\n  description: The documentation" in page.split("### Example")[1]
 
 
+def test_a_kind_page_documents_models_nested_inside_nested_models():
+    page = BOOK.get("kind/Automation").body
+    assert "### LeadCapturedTriggerSpec" in page and "| `include_test_captures` |" in page
+    assert "| `cron` |" in page
+
+    assert "### FormInputValidation" in BOOK.get("kind/LeadForm").body
+
+
 def test_every_kind_has_an_example_from_the_recipes():
     for kind in RESOURCE_KINDS:
         assert "### Example" in BOOK.get(f"kind/{kind.kind}").body, kind.kind
