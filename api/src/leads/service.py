@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel
 
+from src.form_models import FormInput
 from src.form_validation import SubmissionResult, validate_submission
 from src.leads.errors import LeadsError, capture_not_found, form_not_found, plan_limit
 from src.leads.models import (
@@ -22,7 +23,9 @@ from src.leads.models import (
     LeadFormFields,
     LeadSettings,
     LeadSettingsRequest,
+    LabelledAnswer,
     LeadUsage,
+    ad_hoc_form,
     capture_id_for,
 )
 from src.leads.repository import DuplicateCapture, FormHasCaptures, LeadsRepository, SlugTaken
@@ -153,10 +156,30 @@ class LeadsService:
         result = self.validate(form, answers)
         if not result.complete:
             raise LeadsError("INCOMPLETE", _what_to_fix(result))
-        if len(json.dumps(result.values)) > MAX_ANSWER_BYTES:
+        return self._save(
+            origin, answers=result.values, form_name=form.name, form_inputs=form.form_inputs, form=form
+        )
+
+    def capture_ad_hoc(self, form_label: str, answers: list[LabelledAnswer], origin: CaptureOrigin) -> CaptureResult:
+        """A lead with no lead form, from the deprecated `register_lead`: its answers carry their own labels."""
+        form_inputs, values = ad_hoc_form(answers)
+        return self._save(origin, answers=values, form_name=form_label, form_inputs=form_inputs, form=None)
+
+    def _save(
+        self,
+        origin: CaptureOrigin,
+        *,
+        answers: Answers,
+        form_name: str,
+        form_inputs: list[FormInput],
+        form: LeadForm | None,
+    ) -> CaptureResult:
+        if len(json.dumps(answers)) > MAX_ANSWER_BYTES:
             raise LeadsError("TOO_LARGE", "These answers are too long to save. Shorten the longest ones.")
 
-        capture_id = capture_id_for(origin.account_id, form.form_id, origin.actor_id, result.values)
+        capture_id = capture_id_for(
+            origin.account_id, form.form_id if form else f"ad-hoc:{form_name}", origin.actor_id, answers
+        )
         monthly_limit = self.limits.get_account_limits(origin.account_id).lead_captures_per_month
         existing = self.repository.find_capture(origin.account_id, capture_id)
         if existing:
@@ -167,12 +190,12 @@ class LeadsService:
         capture = Capture(
             capture_id=capture_id,
             account_id=origin.account_id,
-            form_id=form.form_id,
-            form_slug=form.slug,
-            form_name=form.name,
-            form_version=form.version,
-            form_inputs=form.form_inputs,
-            answers=result.values,
+            form_id=form.form_id if form else None,
+            form_slug=form.slug if form else None,
+            form_name=form_name,
+            form_version=form.version if form else None,
+            form_inputs=form_inputs,
+            answers=answers,
             agent_id=origin.agent_id,
             conversation_id=origin.conversation_id,
             actor_kind=origin.actor_kind,

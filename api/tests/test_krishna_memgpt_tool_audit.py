@@ -366,6 +366,60 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
     assert prompt_calls[1]["enabled_mcp_connections"] == ["mcp-connection"]
 
 
+async def test_every_prompt_of_the_turn_gets_the_instructions_with_macros_expanded(monkeypatch, dynamodb_table):
+    monkeypatch.setattr(
+        "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
+        fake_prompt_refresh_loop,
+    )
+    monkeypatch.setattr(
+        "src.agents.provider_session.get_llm_provider",
+        lambda provider_name: object(),
+    )
+    monkeypatch.setattr(
+        "src.agents.provider_session.load_provider_credentials",
+        fake_load_provider_credentials,
+    )
+
+    architecture = KrishnaMemGPTArchitecture()
+    architecture.message_repo = FakeMessageRepository()
+    architecture.provider_settings_repo = FakeProviderSettingsRepository()
+    architecture.skill_runtime = FakeSkillRuntime()
+    architecture.mcp_connector_service = FakeMCPConnectorService()
+    architecture._get_linked_kb_ids = lambda agent: []
+    architecture._load_core_memory_snapshot = lambda agent_id, user_id: EMPTY_MEMORY
+
+    instructions_seen = []
+
+    def fake_build_system_prompt(instructions, **kwargs):
+        instructions_seen.append(instructions)
+        return "system prompt"
+
+    architecture._build_system_prompt = fake_build_system_prompt
+
+    agent = Agent(
+        agent_name="Audit Agent",
+        agent_architecture="krishna-memgpt",
+        agent_provider="Bedrock",
+        agent_persona="Helpful. {{ lead_form:demo-request }}",
+        **agent_fields("owner@example.com"),
+    )
+    conversation = Conversation(title="Audit", agent_id=agent.agent_id, **conversation_fields("owner@example.com"))
+
+    async for _ in architecture.handle_message(
+        agent=agent,
+        conversation=conversation,
+        user_message="Remember and then use Jira",
+        owner_email="owner@example.com",
+        actor_email="owner@example.com",
+        actor_id="owner@example.com",
+        actor_kind=ActorKind.OWNER,
+        attachments=[],
+    ):
+        pass
+
+    assert instructions_seen == ['Helpful. [lead form "demo-request" not found]'] * 2
+
+
 async def test_krishna_memgpt_empty_tool_turn_emits_and_persists_a_record_of_what_ran(monkeypatch):
     monkeypatch.setattr(
         "src.agents.architectures.krishna_memgpt.run_agentic_tool_loop",
