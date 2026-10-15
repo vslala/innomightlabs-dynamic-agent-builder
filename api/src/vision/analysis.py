@@ -18,11 +18,13 @@ from src.agents.tool_runtime.contexts import NativeToolContext
 from src.config import settings
 from src.llm.credentials import load_provider_credentials
 from src.llm.messages import ImageBlock, TextBlock
+from src.llm.model_fallback import ModelFallbackProvider
 from src.llm.providers.factory import get_llm_provider
 from src.messages.models import ImageAnalysis
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.token_usage.service import TokenUsageService
+from src.vision import capabilities as vision
 from src.vision.errors import ImageInputError
 from src.vision.models import ImageRef, VisionSettings
 from src.vision.policy import UNAVAILABLE_MESSAGES, ImageInputUnavailable
@@ -135,7 +137,12 @@ class ImageReader:
 
         text: list[str] = []
         prompt_tokens = completion_tokens = 0
-        async for event in get_llm_provider(provider_name).stream_response(
+        # A substitute for a refused model must read images too.
+        provider = ModelFallbackProvider(
+            get_llm_provider(provider_name), provider_name, provider_settings,
+            capabilities=vision.understanding(True),
+        )
+        async for event in provider.stream_response(
             messages, credentials, tools=None, model=vision_settings.model_name
         ):
             if event.type == "text":

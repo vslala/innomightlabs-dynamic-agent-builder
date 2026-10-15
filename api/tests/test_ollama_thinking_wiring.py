@@ -25,6 +25,7 @@ class FakeMessageRepository:
 class FakeProviderSettingsRepository:
     def find_by_provider(self, user_email, provider_name):
         class FakeProviderSettings:
+            account_id = "account-1"
             encrypted_credentials = "encrypted"
 
         return FakeProviderSettings()

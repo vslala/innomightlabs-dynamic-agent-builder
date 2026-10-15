@@ -26,6 +26,7 @@ from src.dream.repository import DreamRepository
 from src.dream.sessions import SessionChunker
 from src.dream.window import DreamWindowBuilder
 from src.llm.credentials import load_provider_credentials
+from src.llm.model_fallback import ModelFallbackProvider
 from src.llm.providers import get_llm_provider
 from src.memory.repository import MemoryRepository
 from src.messages.repositories import MessageRepository, get_message_repository
@@ -155,7 +156,9 @@ class DreamService:
                 provider_settings=provider_settings,
                 provider_settings_repo=self.provider_settings_repository,
             )
-            provider = get_llm_provider(dream_settings.provider_name)
+            provider = ModelFallbackProvider(
+                get_llm_provider(dream_settings.provider_name), dream_settings.provider_name, provider_settings
+            )
             cursor = cursor or DreamCursor(agent_id=agent_id, user_id=user_id)
             action_index = 0
             for session_index, session in enumerate(window.sessions):

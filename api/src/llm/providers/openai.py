@@ -48,6 +48,8 @@ class OpenAIRequestInput:
 class OpenAIProvider(LLMProvider):
     """OpenAI provider using Responses API streaming."""
 
+    default_model = DEFAULT_MODEL_NAME
+
     #: Names the endpoint in logs and errors; the API-key subclass talks to a different one.
     endpoint_label = "OpenAI OAuth"
 

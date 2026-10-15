@@ -56,6 +56,9 @@ class LLMProvider(ABC):
     4. Handling tool use if tools are provided
     """
 
+    #: The model a call with no `model` uses, or None when there is none (Ollama needs one chosen).
+    default_model: Optional[str] = None
+
     @abstractmethod
     async def stream_response(
         self,

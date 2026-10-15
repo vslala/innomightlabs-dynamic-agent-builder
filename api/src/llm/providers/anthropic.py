@@ -31,6 +31,8 @@ class AnthropicRequestInput:
 
 
 class AnthropicProvider(LLMProvider):
+    default_model = "claude-sonnet-4-5-20250929"
+
     def _extract_system_and_messages(self, messages: list[dict]) -> AnthropicRequestInput:
         split = split_system_messages(normalize_messages(messages))
         return AnthropicRequestInput(
@@ -94,7 +96,7 @@ class AnthropicProvider(LLMProvider):
         Yields:
             LLMEvent objects for text, tool_use, or stop
         """
-        model_id = model or "claude-sonnet-4-5-20250929"
+        model_id = model or self.default_model
         
         # Extract API key
         api_key = credentials.get("api_key")

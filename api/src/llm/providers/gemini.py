@@ -46,6 +46,8 @@ class GeminiMessageConversion:
 class GeminiProvider(LLMProvider):
     """Google Gemini provider using google-genai generate_content streaming."""
 
+    default_model = DEFAULT_MODEL_NAME
+
     def _build_client(self, credentials: dict[str, Any]) -> genai.Client:
         api_key = credentials.get("api_key")
         if not api_key:

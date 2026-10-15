@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from src.llm.credentials import load_provider_credentials
+from src.llm.model_fallback import ModelFallbackProvider
 from src.llm.ollama import merge_thinking_override
 from src.llm.providers import get_llm_provider
 from src.settings.repository import ProviderSettingsRepository
@@ -65,6 +66,8 @@ async def open_provider_session(
         )
 
     return ProviderSession(
-        provider=get_llm_provider(agent.agent_provider),
+        provider=ModelFallbackProvider(
+            get_llm_provider(agent.agent_provider), agent.agent_provider, provider_settings
+        ),
         credentials=credentials,
     )

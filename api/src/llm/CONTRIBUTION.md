@@ -18,6 +18,7 @@ src/llm/
     gemini.py        Gemini API key
     ollama.py        user-hosted Ollama (native /api/chat NDJSON)
   models.py          ModelInfo, ModelsService (catalogs), PROVIDER_MODEL_SOURCES, find_model_source
+  model_fallback.py  ModelFallbackProvider: retries a vendor-refused stored model on a catalog substitute
   router.py          GET /llm/models/{provider}
   credentials.py     load_provider_credentials (decrypt, OpenAI token refresh)
   ollama.py          OllamaConnection: endpoint validation and headers, shared by chat and discovery
@@ -55,6 +56,11 @@ The Codex catalog is cached per account for `OPENAI_CATALOG_TTL_SECONDS`. Filter
 (`OPENAI_API_NON_CHAT_MARKERS` etc.) record what the live API refused and when it was checked; update the date when
 you re-check.
 
+**Stored models go stale.** Vendors retire models and gate them per account, so wrap a provider that runs a stored
+model in `ModelFallbackProvider(get_llm_provider(name), name, provider_settings)`. It tries the stored model, and on a
+vendor refusal (`MODEL_REFUSALS`, one rule per vendor) retries once on the first suitable catalog model, remembering the
+swap for an hour. Set `default_model` on a provider that has one. See the wiki page `LLM-Model-Fallback`.
+
 **Router.** `GET /llm/models/{provider}` returns `[]` for an unknown or unconfigured provider so callers can probe.
 It scopes by `principal.account_id`.
 
@@ -71,7 +77,7 @@ strategies only select history.
 1. `providers/<name>.py`: subclass `LLMProvider`, implement `stream_response` using `normalize_messages`,
    `split_system_messages` and the matching `ToolDefinition.to_*` (add a converter in `tools.py` if the wire format is new).
    Emit `usage` and exactly one `stop`. Model on `anthropic.py` (simple) or `openai_api.py` (reuse by subclassing).
-2. Register it in `providers/factory.py`.
+2. Register it in `providers/factory.py`. Set `default_model` and add a `ModelRefusal` in `model_fallback.py`.
 3. Add a settings form in `src/settings/schemas.py` (`PROVIDER_SCHEMAS`) so accounts can store credentials.
 4. Add `get_<name>_models` to `ModelsService` and a `ProviderModelSource` entry in `PROVIDER_MODEL_SOURCES`.
 5. If credentials need refresh or parsing beyond decrypt-and-JSON, extend `credentials.py`. A catalog (sync) that needs
