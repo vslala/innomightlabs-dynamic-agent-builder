@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { Archive, Bot, MessageSquare, Settings, LogOut, Home, Database, Workflow, Plug, Sparkles, Hammer, ShieldCheck, X } from "lucide-react";
+import { Archive, Bot, MessageSquare, Settings, LogOut, Home, Database, Workflow, Plug, Sparkles, Hammer, ShieldCheck, UserPlus, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { authService } from "../../services/auth";
@@ -12,6 +12,7 @@ const navItems = [
   { to: "/dashboard/build", icon: Hammer, label: "Build with Ila" },
   { to: "/dashboard/agents", icon: Bot, label: "Agents" },
   { to: "/dashboard/automations", icon: Workflow, label: "Automations" },
+  { to: "/dashboard/leads", icon: UserPlus, label: "Leads" },
   { to: "/dashboard/conversations", icon: MessageSquare, label: "Conversations" },
   { to: "/dashboard/artifacts", icon: Archive, label: "Artifacts" },
   { to: "/dashboard/knowledge-bases", icon: Database, label: "Knowledge Bases" },

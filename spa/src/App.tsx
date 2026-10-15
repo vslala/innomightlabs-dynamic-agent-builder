@@ -57,6 +57,11 @@ const AgentSkillsPage = lazyRoute(() => import('./pages/dashboard/agent-detail/A
 const AgentMCPToolsPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentMCPToolsPage'), 'AgentMCPToolsPage');
 const AgentA2ATasksPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentA2ATasksPage'), 'AgentA2ATasksPage');
 const AgentAnalyticsPage = lazyRoute(() => import('./pages/dashboard/agent-detail/AgentAnalyticsPage'), 'AgentAnalyticsPage');
+const LeadsLayout = lazyRoute(() => import('./pages/dashboard/leads/LeadsLayout'), 'LeadsLayout');
+const CapturesPage = lazyRoute(() => import('./pages/dashboard/leads/CapturesPage'), 'CapturesPage');
+const LeadFormsPage = lazyRoute(() => import('./pages/dashboard/leads/FormsPage'), 'FormsPage');
+const LeadFormEditorPage = lazyRoute(() => import('./pages/dashboard/leads/FormEditorPage'), 'FormEditorPage');
+const LeadSettingsPage = lazyRoute(() => import('./pages/dashboard/leads/LeadSettingsPage'), 'LeadSettingsPage');
 const AutomationsListPage = lazyRoute(() => import('./pages/dashboard/automations/AutomationsListPage'), 'AutomationsListPage');
 const AutomationDetailLayout = lazyRoute(() => import('./pages/dashboard/automations/AutomationDetailLayout'), 'AutomationDetailLayout');
 const AutomationWorkspacePage = lazyRoute(() => import('./pages/dashboard/automations/AutomationWorkspacePage'), 'AutomationWorkspacePage');
@@ -176,6 +181,13 @@ function App() {
             <Route path="triggers" element={<WorkspaceRedirect step="trigger" />} />
             <Route path="runs" element={<WorkspaceRedirect panel="runs" />} />
             <Route path="analytics" element={<WorkspaceRedirect panel="analytics" />} />
+          </Route>
+          <Route path="leads" element={<LeadsLayout />}>
+            <Route index element={<CapturesPage />} />
+            <Route path="forms" element={<LeadFormsPage />} />
+            <Route path="forms/new" element={<LeadFormEditorPage />} />
+            <Route path="forms/:formId" element={<LeadFormEditorPage />} />
+            <Route path="settings" element={<LeadSettingsPage />} />
           </Route>
           <Route path="conversations" element={<Conversations />} />
           <Route path="conversations/:conversationId" element={<ConversationDetail />} />
