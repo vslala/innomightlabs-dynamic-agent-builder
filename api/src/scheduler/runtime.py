@@ -32,6 +32,7 @@ CHAT_TURN_REAPER_ID = "internal:stale-chat-turn-reaper"
 TOOL_JOB_REAPER_ID = "internal:stale-tool-job-reaper"
 WIDGET_GUEST_CLOSER_ID = "internal:widget-guest-session-closer"
 BLUEPRINT_APPLY_REAPER_ID = "internal:interrupted-blueprint-apply-reaper"
+LEAD_EVENT_DISPATCHER_ID = "internal:lead-event-dispatcher"
 
 
 class SchedulerRuntime:
@@ -65,6 +66,7 @@ class SchedulerRuntime:
             (self._reap_stale_tool_jobs, settings.tool_job_reaper_interval_seconds, TOOL_JOB_REAPER_ID),
             (self._close_ended_guest_sessions, settings.widget_guest_sweep_interval_seconds, WIDGET_GUEST_CLOSER_ID),
             (self._recover_blueprint_applies, settings.blueprint_apply_reaper_interval_seconds, BLUEPRINT_APPLY_REAPER_ID),
+            (self._dispatch_lead_events, settings.lead_event_dispatch_interval_seconds, LEAD_EVENT_DISPATCHER_ID),
         ):
             self.scheduler.add_job(
                 reaper,
@@ -138,6 +140,13 @@ class SchedulerRuntime:
         from src.blueprints.executor import recover_interrupted
 
         self._reap("blueprint apply", recover_interrupted)
+
+    async def _dispatch_lead_events(self) -> None:
+        # Imported here: the automations module loads the agents, which the scheduler doesn't otherwise need.
+        from src.automations.triggers.lead_captured import LeadEventDispatcher
+
+        # In this thread, not another: starting a run schedules a task on this event loop.
+        self._reap("lead event", LeadEventDispatcher().dispatch_due)
 
     async def _close_ended_guest_sessions(self) -> None:
         from src.widget.guest_closer import GuestSessionCloser

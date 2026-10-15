@@ -46,6 +46,17 @@ below, this section is right:
   the `leads.file_url` smart value (automations get file metadata, members download from the dashboard); deleting
   lead files from S3 on account deletion (the account-deletion Lambda handles DynamoDB only, and only the personal
   account until KAN-83).
+- **Firing the trigger is durable, through an outbox, not inline.** Production runs on Railway with
+  `ASYNC_JOB_BACKEND=local`, so a run started inside the capture request would be lost to a restart and never retried.
+  Instead a capture writes a `LeadEvent` (`leads/events.py`) in its own transaction, and a scheduler job,
+  `internal:lead-event-dispatcher` every `LEAD_EVENT_DISPATCH_INTERVAL_SECONDS` (default 5), starts the runs
+  (`LeadEventDispatcher` in `automations/triggers/lead_captured.py`). An event is claimed with a compare-and-swap on
+  its due time, which is also its lease, so replicas don't both take it and a dead worker's event comes due again
+  after two minutes. A run has one fixed id per lead and trigger, and the event remembers which triggers it has
+  started, so retries (30 s, doubling, five attempts, then marked failed) neither duplicate nor skip. An automation
+  that can't run (deleted, owner gone, invalid graph) is skipped, not retried; the lead and the others are
+  untouched. A run that dies midway is still failed by its heartbeat, not resumed. The dispatcher adds one more
+  interval job to the existing scheduler, not a new one.
 - **Ila builds the whole solution** (step 7). The `Automation` kind is built as a first version of the design in
   [LLD-ila-capabilities.md §2.1](LLD-ila-capabilities.md#21-automation), with the `lead_captured` trigger next to
   `manual` and `schedule`. In a `lead_captured` trigger, `form` names a `LeadForm` resource (or the slug of one in the
@@ -567,11 +578,8 @@ class LeadCapturedTriggerConfig(BaseModel):   # automations/triggers/models.py
 - **Registration.** `AutomationTriggerLifecycleService.sync_trigger` already mirrors schedule triggers into
   the scheduler. Give it a second strategy that writes `LEAD_TRIGGER` when the automation is active and the
   trigger enabled, and deletes it otherwise (also on trigger or automation delete).
-- **Firing.** After a capture is saved and not a duplicate, `LeadsService` queries `LeadTrigger#` for the
-  account, keeps those whose filters match, and for each loads the graph and starts a run as the automation's
-  owner through a new `AutomationRunner.create_event_run(graph, owner, trigger, event)` (same shape as
-  `create_scheduled_run`), then dispatches it the way test runs are dispatched. `invoke_automation_run_async`
-  moves from `automations/router.py` into `automations/dispatch.py` so both can call it.
+- **Firing.** See "Implementation notes": a capture saves a lead event, and the scheduler starts the runs.
+  `invoke_automation_run_async` moved from `automations/router.py` into `automations/dispatch.py` so both can call it.
 - **Run context.** `context.trigger = {"type": "lead_captured", "trigger_id": ..., "lead": <payload>}`, so
   steps use `{{ trigger.lead.answers.email }}`, `{{ trigger.lead.capture_id }}`, `{{ trigger.lead.form_slug }}`.
 - **Failures.** Starting a run never fails the capture; errors are logged with the capture id. The run's own

@@ -1,9 +1,11 @@
 """The Lead captured trigger: an active automation runs for each new lead it listens for, and only those."""
 
+from datetime import datetime
+
 import pytest
 
 from src.automations.repository import AutomationRepository
-from src.automations.triggers.lead_captured import LeadTriggerRegistry
+from src.automations.triggers.lead_captured import LeadEventDispatcher, LeadTriggerRegistry
 from src.form_models import FormInput, FormInputType
 from src.leads.models import CreateLeadFormRequest
 from src.leads.service import CaptureOrigin, LeadsService
@@ -49,14 +51,22 @@ def automation_listening(test_client, auth_headers, *, active: bool = True, **co
 
 def capture(account: str, email: str = "jane@acme.com", *, agent_id: str = "agent-1", kind=ActorKind.VISITOR,
             leads: LeadsService | None = None):
+    """A lead captured; the automations it starts wait for the scheduler's next pass (`dispatch`)."""
     origin = CaptureOrigin(account_id=account, agent_id=agent_id, actor_kind=kind, actor_id="visitor-1")
     return (leads or LeadsService(limits=LeadsPlan())).capture("demo-request", {"email": email}, origin)
+
+
+def dispatch(now: datetime | None = None) -> int:
+    """What the scheduler does every few seconds."""
+    return LeadEventDispatcher().dispatch_due(now)
 
 
 def test_a_new_lead_starts_the_automation_with_the_lead_in_its_trigger(test_client, auth_headers, account, started):
     automation_id = automation_listening(test_client, auth_headers, form_slug="demo-request")
 
     lead = capture(account).capture
+    assert started == [], "a capture only saves the lead and its event"
+    dispatch()
 
     assert len(started) == 1
     run = AutomationRepository().find_run_by_id(started[0])
@@ -72,9 +82,11 @@ def test_only_matching_leads_start_it(test_client, auth_headers, account, starte
 
     capture(account, "other@acme.com", agent_id="another-agent")
     capture(account, "owner@acme.com", agent_id=agent_id, kind=ActorKind.OWNER)
+    dispatch()
     assert started == [], "another agent's lead, and a test lead from the dashboard"
 
     capture(account, agent_id=agent_id)
+    dispatch()
     assert len(started) == 1
 
 
@@ -82,6 +94,7 @@ def test_test_leads_start_it_when_asked_to(test_client, auth_headers, account, s
     automation_listening(test_client, auth_headers, include_test_captures=True)
 
     capture(account, kind=ActorKind.OWNER)
+    dispatch()
 
     assert len(started) == 1
 
@@ -90,12 +103,13 @@ def test_a_repeated_or_locked_lead_starts_nothing(test_client, auth_headers, acc
     automation_listening(test_client, auth_headers)
     capture(account)
     capture(account)
-    assert len(started) == 1, "the duplicate"
+    assert dispatch() == 1 and len(started) == 1, "one event, so the duplicate starts nothing"
 
     limited = LeadsService(limits=LeadsPlan(lead_captures_per_month=1))
     locked = capture(account, "late@acme.com", leads=limited)
 
-    assert locked.locked and len(started) == 1
+    assert locked.locked and dispatch() == 0, "a locked lead has no event"
+    assert len(started) == 1
 
 
 def test_only_active_automations_listen(test_client, auth_headers, account, started):
@@ -106,6 +120,7 @@ def test_only_active_automations_listen(test_client, auth_headers, account, star
     disabled = test_client.patch(f"/automations/{live}", json={"status": "disabled"}, headers=auth_headers)
     assert disabled.status_code == 200, disabled.text
     capture(account)
+    dispatch()
 
     assert started == []
     assert LeadTriggerRegistry().listening(account) == []
@@ -129,20 +144,6 @@ def test_a_trigger_for_a_form_the_account_doesnt_have_cant_go_live(test_client, 
     assert "no-such-form" in refused.json()["detail"]
 
 
-def test_a_broken_automation_doesnt_lose_the_lead(test_client, auth_headers, account, monkeypatch):
-    automation_listening(test_client, auth_headers)
-
-    def explode(*args, **kwargs):
-        raise RuntimeError("Lambda unavailable")
-
-    monkeypatch.setattr("src.automations.dispatch.invoke_automation_run_async", explode)
-
-    result = capture(account)
-
-    assert not result.duplicate
-    assert LeadsService(limits=LeadsPlan()).get_capture(account, result.capture.capture_id)
-
-
 def test_the_trigger_form_offers_the_accounts_forms_and_agents(test_client, auth_headers, account):
     graph = test_client.post("/automations", json=AUTOMATION_CREATE_REQUEST, headers=auth_headers).json()
 
@@ -160,6 +161,7 @@ def test_steps_read_the_lead_through_smart_values(test_client, auth_headers, acc
 
     automation_listening(test_client, auth_headers)
     capture(account)
+    dispatch()
     run = AutomationRepository().find_run_by_id(started[0])
 
     rendered = SmartValueResolver(run.context).render_template("New lead: {{ trigger.lead.answers.email }} via {{ trigger.lead.form_slug }}")

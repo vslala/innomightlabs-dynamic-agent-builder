@@ -12,6 +12,7 @@ src/leads/
   service.py     LeadsService: forms, statuses, capture (validate, count, save), list and read with plan locking
   repository.py  LeadsRepository: every DynamoDB access; the key structure is in its docstring
   router.py      /leads: forms, settings, usage, captures (admins; members may only list forms)
+  events.py      LeadEvent and its repository: the durable note that a lead was captured, which starts automations
   errors.py      LeadsError(code, message, status), rendered by the handler in src/exceptions.py
 ```
 
@@ -28,6 +29,9 @@ src/leads/
   conversation, so a lead can be gathered over several visits). The `CaptureId#` guard is the real check; the
   read-first lookup only spares a write.
 - **Form edits update fields in place** (`update_form`), because the capture transaction keeps `capture_count`.
+- **A capture starts automations through an event, never directly.** `save_capture` writes a `LeadEvent` in the
+  capture's own transaction (none for a locked lead); the scheduler's `LeadEventDispatcher` handles it. Don't call
+  automations from `LeadsService`.
 - **Plan locking is computed, not stored.** A capture keeps `month_seq`; `Capture.is_locked(limit)` decides with the
   current plan, so an upgrade unlocks at once. Test captures (`source=dashboard`) have no `month_seq`.
 - **Permissions.** `leads:ListForms` (members), `leads:ManageForms`, `leads:ManageSettings`, `leads:ViewCaptures`,

@@ -6,6 +6,7 @@ from src.agents.repository import AgentRepository
 from src.automations.models import AutomationNode, AutomationNodeType, AutomationStatus, AutomationTriggerType
 from src.automations.repository import AutomationRepository
 from src.automations.smart_values import SmartValueResolver
+from src.automations.triggers.lead_captured import LeadEventDispatcher
 from fastapi import BackgroundTasks
 
 from src.blueprints import service as blueprints_service
@@ -119,6 +120,7 @@ def test_a_captured_lead_runs_what_the_blueprint_built(monkeypatch):
                            actor_id="visitor-1")
 
     LeadsService(limits=LeadsPlan()).capture("demo-request", {"email": "jane@acme.com"}, origin)
+    LeadEventDispatcher().dispatch_due()
 
     [run_id] = started
     run = AutomationRepository().find_run_by_id(run_id)

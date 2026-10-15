@@ -3,25 +3,30 @@
 Leads delivers to other systems this way, rather than through webhooks of its own: the automation's steps (the REST
 skill, email, an agent) do the delivering, and its runs are the record of what happened.
 
-An active automation's enabled lead trigger is registered in the account's partition, so a capture finds every
-automation listening with one query instead of reading every automation's graph.
+An active automation's enabled lead trigger is registered in the account's partition, so the dispatcher finds every
+automation listening with one query instead of reading every automation's graph. A capture doesn't start them itself:
+it saves a lead event (`leads/events.py`) with the lead, and `LeadEventDispatcher`, run by the scheduler, works
+through the events. That keeps a capture fast, and no lead is lost to a restart between saving and starting.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from boto3.dynamodb.conditions import Key
+from fastapi import HTTPException
 from pydantic import BaseModel
 
-from src.accounts.owner import Owner
-from src.automations.errors import AutomationValidationError
+from src.automations.errors import AutomationNotFoundError, AutomationValidationError
 from src.automations.models import Automation, AutomationStatus, AutomationTrigger, AutomationTriggerType
 from src.automations.triggers.models import LeadCapturedTriggerConfig
 from src.agents.repository import AgentRepository
 from src.config import settings
 from src.db import get_dynamodb_resource
+from src.leads.events import LeadEvent, LeadEventRepository
 from src.leads.repository import LeadsRepository
 
 if TYPE_CHECKING:
@@ -96,46 +101,96 @@ class LeadTriggerRegistry:
 
 def _require_targets(account_id: str, config: LeadCapturedTriggerConfig) -> None:
     """A live trigger names a form and an agent of its own account, or none."""
-
     if config.form_slug and LeadsRepository().find_form_by_slug(account_id, config.form_slug) is None:
         raise AutomationValidationError(f"There is no lead form '{config.form_slug}' in this account")
     if config.agent_id and AgentRepository().find_in_account(account_id, config.agent_id) is None:
         raise AutomationValidationError("The lead trigger's agent isn't in this account")
 
 
-def start_lead_captured_runs(capture: Capture) -> list[str]:
-    """Start every automation listening for this capture; the ids of the runs started.
+#: Mistakes in one automation that trying again won't fix, so they're skipped rather than retried
+NOT_RETRYABLE = (AutomationValidationError, AutomationNotFoundError, HTTPException)
+BATCH = 25
 
-    A run that can't start is logged and skipped: the lead is already saved, and one broken automation must not stop
-    the others.
+
+def run_id_for(capture_id: str, trigger_id: str) -> str:
+    """One run per lead and trigger, however often the lead's event is handled."""
+    return hashlib.sha256(f"{capture_id}:{trigger_id}".encode()).hexdigest()[:32]
+
+
+class LeadEventDispatcher:
+    """Starts the automations listening for each captured lead. The scheduler runs it every few seconds.
+
+    Every attempt is safe to repeat: an event is claimed before it is handled, a trigger whose run is started is
+    remembered on the event, and a run has one fixed id. A failure leaves the event to come due again, a few times.
     """
-    # Imported here: AutomationService keeps this module's registry in step with its triggers, so it imports us
-    from src.automations.access import owner_of_automation
-    from src.automations.dispatch import invoke_automation_run_async
-    from src.automations.repository import AutomationRepository
-    from src.automations.runner import AutomationRunner
-    from src.automations.service import AutomationService
 
-    repository = AutomationRepository()
-    run_ids: list[str] = []
-    for registration in LeadTriggerRegistry().listening(capture.account_id):
-        if not registration.matches(capture):
-            continue
-        try:
-            automation = repository.find_in_account(capture.account_id, registration.automation_id)
-            if automation is None or automation.status != AutomationStatus.ACTIVE:
+    def __init__(self, events: LeadEventRepository | None = None, leads: LeadsRepository | None = None) -> None:
+        self.events = events or LeadEventRepository()
+        self.leads = leads or LeadsRepository()
+        self.registry = LeadTriggerRegistry()
+
+    def dispatch_due(self, now: datetime | None = None) -> int:
+        """Handle the events that are due; how many this pass took."""
+        now = now or datetime.now(timezone.utc)
+        taken = 0
+        for event in self.events.due(now, BATCH):
+            claimed = self.events.claim(event, now)
+            if claimed is None:  # another worker has it
                 continue
-            owner: Owner = owner_of_automation(automation)
+            taken += 1
+            self._handle(claimed, now)
+        return taken
+
+    def _handle(self, event: LeadEvent, now: datetime) -> None:
+        capture = self.leads.find_capture(event.account_id, event.capture_id)
+        if capture is None:  # deleted since, such as for a privacy request
+            self.events.complete(event, now)
+            return
+        failed = False
+        for registration in self.registry.listening(event.account_id):
+            if registration.trigger_id in event.started or not registration.matches(capture):
+                continue
+            try:
+                self._start(registration, capture)
+            except NOT_RETRYABLE:
+                log.warning(
+                    "Skipping automation %s for lead %s", registration.automation_id, capture.capture_id, exc_info=True
+                )
+            except Exception:
+                log.exception("Couldn't start automation %s for lead %s", registration.automation_id, capture.capture_id)
+                failed = True
+                continue
+            self.events.record_started(event, registration.trigger_id)
+        if failed:
+            self.events.retry_later(event, now)
+        else:
+            self.events.complete(event, now)
+
+    @staticmethod
+    def _start(registration: LeadTriggerRegistration, capture: Capture) -> None:
+        # Imported here: AutomationService keeps this module's registry in step with its triggers, so it imports us
+        from src.automations.access import owner_of_automation
+        from src.automations.dispatch import invoke_automation_run_async
+        from src.automations.models import AutomationRunStatus
+        from src.automations.repository import AutomationRepository
+        from src.automations.runner import AutomationRunner
+        from src.automations.service import AutomationService
+
+        repository = AutomationRepository()
+        automation = repository.find_in_account(capture.account_id, registration.automation_id)
+        if automation is None or automation.status != AutomationStatus.ACTIVE:
+            return
+        owner = owner_of_automation(automation)
+        run = repository.find_run_by_id(run_id_for(capture.capture_id, registration.trigger_id))
+        if run is None:
             service = AutomationService(repo=repository)
             graph = service.get_graph(automation.automation_id, owner)
             service.validate_graph(graph.nodes, graph.edges, graph.triggers, owner)
             run = AutomationRunner(automation_repo=repository).create_lead_captured_run(
-                graph, owner, registration.trigger_id, capture.event_payload()
+                graph, owner, registration.trigger_id, capture.event_payload(),
+                run_id=run_id_for(capture.capture_id, registration.trigger_id),
             )
-            invoke_automation_run_async(run.run_id, automation.automation_id, owner)
-            run_ids.append(run.run_id)
-        except Exception:
-            log.exception(
-                "Couldn't start automation %s for lead %s", registration.automation_id, capture.capture_id
-            )
-    return run_ids
+        elif run.status != AutomationRunStatus.PENDING:
+            return  # an earlier attempt got it going
+        # A run still pending here was created by an attempt that never got to start it
+        invoke_automation_run_async(run.run_id, automation.automation_id, owner)
