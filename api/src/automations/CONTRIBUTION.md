@@ -1,7 +1,7 @@
 # Automations Contribution Guide
 
 `src/automations/` owns automation graphs (start, action, condition and final nodes joined by edges), their triggers
-(manual, webhook, schedule), per-automation skill installs, and runs. An automation runs as its owner: their agents,
+(manual, webhook, schedule, lead captured), per-automation skill installs, and runs. An automation runs as its owner: their agents,
 connectors and provider settings. Schedules are delegated to `src/scheduler/`; publishing and importing live in
 `src/automation_marketplace/`.
 
@@ -24,7 +24,8 @@ src/automations/
   triggers/
     models.py      ScheduleTriggerConfig (cron or one-time run_at)
     schemas.py     schema-driven trigger forms (build_schedule_trigger_form, build_manual_trigger_form)
-    service.py     AutomationTriggerLifecycleService: mirrors schedule triggers into src/scheduler
+    service.py     AutomationTriggerLifecycleService: mirrors schedule triggers into src/scheduler, lead triggers into the registry
+    lead_captured.py  the Lead captured trigger: LeadTriggerRegistry (who listens) and start_lead_captured_runs (Leads calls it)
 ```
 
 ## Conventions

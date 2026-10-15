@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel
 
+from src.automations.triggers.lead_captured import start_lead_captured_runs
 from src.form_models import FormInput
 from src.form_validation import SubmissionResult, validate_submission
 from src.leads.errors import LeadsError, capture_not_found, form_not_found, plan_limit
@@ -242,7 +243,11 @@ class LeadsService:
                 raise
             return raced
         monthly_limit = self.limits.get_account_limits(origin.account_id).lead_captures_per_month
-        return CaptureResult(capture, duplicate=False, locked=capture.is_locked(monthly_limit))
+        locked = capture.is_locked(monthly_limit)
+        # A locked lead waits for the upgrade, and so do the automations it would start
+        if not locked:
+            start_lead_captured_runs(capture)
+        return CaptureResult(capture, duplicate=False, locked=locked)
 
     def list_captures(
         self, account_id: str, filters: CaptureFilters, *, limit: int, cursor: str | None = None

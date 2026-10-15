@@ -406,6 +406,26 @@ class Capture(BaseModel):
     def month(self) -> str:
         return self.created_at.strftime("%Y-%m")
 
+    def event_payload(self) -> dict[str, Any]:
+        """The lead as automations see it (`{{ trigger.lead.* }}`): stable, documented in docs/LLD-lead-capture.md.
+
+        Files are listed without links; a step that needs the bytes can't reach them from here by design.
+        """
+        return {
+            "capture_id": self.capture_id,
+            "form_slug": self.form_slug,
+            "form_name": self.form_name,
+            "form_version": self.form_version,
+            "agent_id": self.agent_id,
+            "conversation_id": self.conversation_id,
+            "source": self.source,
+            "status": self.status,
+            "answers": self.answers,
+            "fields": [{"name": form_input.name, "label": form_input.label} for form_input in self.form_inputs],
+            "files": [file.model_dump(mode="json") for file in self.files],
+            "created_at": self.created_at.isoformat(),
+        }
+
     def is_locked(self, monthly_limit: int) -> bool:
         """Past the plan's monthly limit: kept, but hidden until the account upgrades. Zero means unlimited."""
         return monthly_limit > 0 and self.month_seq is not None and self.month_seq > monthly_limit

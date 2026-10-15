@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { CalendarClock, ChevronDown, ChevronUp, Play, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronUp, Play, Plus, Trash2, UserPlus } from "lucide-react";
 
 import {
   Button,
@@ -34,7 +34,22 @@ import { useChain } from "./chainContext";
 const TRIGGER_TYPES: { value: AutomationTriggerType; label: string; hint: string }[] = [
   { value: "manual", label: "Manually or from a test", hint: "You start it" },
   { value: "schedule", label: "On a schedule", hint: "Cron, in a timezone" },
+  { value: "lead_captured", label: "When a lead is captured", hint: "An agent saved a lead form" },
 ];
+
+/** A lead trigger's "any form" / "any agent"; no slug or agent id can be it. */
+const ANY = "*";
+
+const DEFAULT_NAMES: Partial<Record<AutomationTriggerType, string>> = {
+  schedule: "Schedule",
+  lead_captured: "Lead captured",
+};
+
+function TriggerIcon({ type }: { type: AutomationTriggerType | undefined }) {
+  if (type === "schedule") return <CalendarClock className="h-4 w-4" />;
+  if (type === "lead_captured") return <UserPlus className="h-4 w-4" />;
+  return <Play className="h-4 w-4" />;
+}
 
 export function TriggerCard({ item }: { item: TriggerChainItem }) {
   const { gateway, readOnly, expandedNodeId, onToggleExpand, onEditTriggers } = useChain();
@@ -125,11 +140,7 @@ export function TriggerCard({ item }: { item: TriggerChainItem }) {
           aria-expanded={expanded}
         >
           <span className="chain-card__icon">
-            {primary?.type === "schedule" ? (
-              <CalendarClock className="h-4 w-4" />
-            ) : (
-              <Play className="h-4 w-4" />
-            )}
+            <TriggerIcon type={primary?.type} />
           </span>
           <span className="chain-card__labels">
             <strong>{primary ? describeTrigger(primary) : "No trigger yet"}</strong>
@@ -175,11 +186,7 @@ export function TriggerCard({ item }: { item: TriggerChainItem }) {
                   onClick={() => openEditor(trigger)}
                 >
                   <span className="chain-trigger__row-icon">
-                    {trigger.type === "schedule" ? (
-                      <CalendarClock className="h-4 w-4" />
-                    ) : (
-                      <Play className="h-4 w-4" />
-                    )}
+                    <TriggerIcon type={trigger.type} />
                   </span>
                   <span className="chain-trigger__row-text">
                     <strong>{trigger.name}</strong>
@@ -270,6 +277,9 @@ function initialValues(trigger: AutomationTrigger): Record<string, FormValue> {
     run_at: String(trigger.config.run_at ?? ""),
     timezone: String(trigger.config.timezone ?? "UTC"),
     input: asStringMap(trigger.config.input),
+    form_slug: String(trigger.config.form_slug ?? ANY),
+    agent_id: String(trigger.config.agent_id ?? ANY),
+    include_test_captures: String(trigger.config.include_test_captures ?? false),
   };
 }
 
@@ -280,7 +290,7 @@ function toRequest(
 ): CreateAutomationTriggerRequest {
   const base = {
     type,
-    name: text(values.name) || (type === "schedule" ? "Schedule" : "Manual"),
+    name: text(values.name) || DEFAULT_NAMES[type] || "Manual",
     enabled: String(values.enabled ?? "true") === "true",
     // Single-start graphs no longer ask for an entry step, so supply it here.
     entry_node_id: text(values.entry_node_id) || startNodeId,
@@ -294,6 +304,16 @@ function toRequest(
         run_at: text(values.run_at),
         timezone: text(values.timezone) || "UTC",
         input: asStringMap(values.input),
+      },
+    };
+  }
+  if (type === "lead_captured") {
+    return {
+      ...base,
+      config: {
+        form_slug: text(values.form_slug) || ANY,
+        agent_id: text(values.agent_id) || ANY,
+        include_test_captures: text(values.include_test_captures) === "true",
       },
     };
   }
