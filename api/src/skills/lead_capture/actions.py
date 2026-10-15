@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 import src.form_models as form_models
-from src.config import settings
-from src.db import get_dynamodb_resource
 from src.email import send_email
+from src.leads.errors import LeadsError
+from src.leads.models import LabelledAnswer
+from src.leads.service import CaptureOrigin, LeadsService
+from src.skills.models import ActorKind
+from src.skills.runtime_context import account_of
 
 from .forms import parse_custom_inputs
-
-
-def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _require_str(value: Any, name: str) -> str:
@@ -103,76 +100,82 @@ def render_custom_form(*, arguments: dict[str, Any], config: dict[str, Any], con
     return _ui_form_payload(form, submit_label=submit_label)
 
 
+def validate_lead(*, arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """What a lead form still needs, without saving anything."""
+    leads = LeadsService()
+    try:
+        form = leads.find_active_form(account_of(context), _require_str(arguments.get("form"), "form"))
+    except LeadsError as refused:
+        return _refusal(refused)
+    result = leads.validate(form, _answers(arguments))
+    return {"complete": result.complete, "missing": result.missing, "invalid": result.invalid}
+
+
+def render_lead_form(*, arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """The account's own form, so the person sees the owner's fields rather than ones the model made up."""
+    try:
+        form = LeadsService().find_active_form(account_of(context), _require_str(arguments.get("form"), "form"))
+    except LeadsError as refused:
+        return _refusal(refused)
+    known = _answers(arguments, key="prefill")
+    only_missing = arguments.get("only_missing", True) is not False
+    inputs = [
+        form_input.model_copy(update={"value": str(known[form_input.name])}) if form_input.name in known else form_input
+        for form_input in form.form_inputs
+        if not (only_missing and form_input.name in known)
+    ]
+    payload = _ui_form_payload(
+        form.as_form(_submit_path(context)).model_copy(update={"form_inputs": inputs}),
+        submit_label=str(arguments.get("submit_label") or "Submit").strip() or "Submit",
+    )
+    # The widget sends uploads against the stored form, so it needs to know which one this is
+    payload["lead_form"] = form.slug
+    return payload
+
+
+def capture_lead(*, arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """Save a completed lead form. Anything missing or invalid comes back as a message to act on."""
+    try:
+        result = LeadsService().capture(_require_str(arguments.get("form"), "form"), _answers(arguments), _origin(context))
+    except LeadsError as refused:
+        return _refusal(refused)
+    return {"ok": True, "capture_id": result.capture.capture_id, "duplicate": result.duplicate}
+
+
 def register_lead(*, arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    """Persist lead submission for an agent and send an acknowledgement email."""
+    """Deprecated: save a lead without a lead form, and send the acknowledgement email it always has."""
     form_label = _require_str(arguments.get("form_label"), "form_label")
 
     raw_answers = arguments.get("answers")
     if not isinstance(raw_answers, list):
         raise ValueError("'answers' must be an array")
-
-    answers: list[dict[str, str]] = []
-    for item in raw_answers:
-        if not isinstance(item, dict):
-            continue
-        field_id = str(item.get("field_id") or "").strip()
-        label = str(item.get("label") or "").strip()
-        value = str(item.get("value") or "").strip()
-        if field_id and label and value:
-            answers.append({"field_id": field_id, "label": label, "value": value})
-
+    answers = [
+        LabelledAnswer(
+            field_id=str(item.get("field_id") or "").strip(),
+            label=str(item.get("label") or "").strip(),
+            value=str(item.get("value") or "").strip(),
+        )
+        for item in raw_answers
+        if isinstance(item, dict)
+    ]
+    answers = [answer for answer in answers if answer.field_id and answer.label and answer.value]
     if not answers:
         raise ValueError("No valid answers provided")
 
-    agent_id = str(context.get("agent_id") or "").strip()
-    owner_email = str(context.get("owner_email") or "").strip()
-    actor_email = str(context.get("actor_email") or "").strip()
-    actor_id = str(context.get("actor_id") or "").strip()
-    conversation_id = str(context.get("conversation_id") or "").strip()
-
-    lead_id = uuid.uuid4().hex
-    created_at = _iso_now()
-
-    # Extract email + consent for acknowledgement.
-    submitted_email = ""
-    consent = ""
-    for a in answers:
-        fid = a["field_id"].lower()
-        if fid in {"email", "work_email"} and not submitted_email:
-            submitted_email = a["value"]
-        if fid in {"contact_consent", "consent"} and not consent:
-            consent = a["value"].strip().lower()
-
+    by_field = {answer.field_id.lower(): answer.value for answer in answers}
+    submitted_email = by_field.get("email") or by_field.get("work_email") or ""
+    consent = (by_field.get("contact_consent") or by_field.get("consent") or "").lower()
     if not submitted_email:
         raise ValueError("Missing email. Ask the user for a work email before registering the lead.")
-
     if consent not in {"yes", "true", "1", "on"}:
         raise ValueError(
             "Missing consent. Ask the user to confirm they agree to be contacted before registering the lead."
         )
 
-    dynamodb = get_dynamodb_resource()
-    table = dynamodb.Table(settings.dynamodb_table)
-
-    item = {
-        "pk": f"Agent#{agent_id}",
-        "sk": f"Lead#{created_at}#{lead_id}",
-        "entity_type": "LeadSubmission",
-        "lead_id": lead_id,
-        "agent_id": agent_id,
-        "owner_email": owner_email,
-        "conversation_id": conversation_id,
-        "actor_email": actor_email,
-        "actor_id": actor_id,
-        "form_label": form_label,
-        "answers": answers,
-        "created_at": created_at,
-    }
-
-    table.put_item(Item=item)
+    result = LeadsService().capture_ad_hoc(form_label, answers, _origin(context))
 
     email_sent = False
-    if submitted_email:
+    if not result.duplicate:
         subject = f"We received your request: {form_label}"
         body = (
             "Thanks — we’ve received your request and someone will get back to you soon.\n\n"
@@ -184,8 +187,31 @@ def register_lead(*, arguments: dict[str, Any], config: dict[str, Any], context:
 
     return {
         "ok": True,
-        "lead_id": lead_id,
+        "lead_id": result.capture.capture_id,
         "form_label": form_label,
         "answer_count": len(answers),
         "email_sent": email_sent,
     }
+
+
+def _origin(context: dict[str, Any]) -> CaptureOrigin:
+    """Who and where from the run itself; a lead never names its own account."""
+    return CaptureOrigin(
+        account_id=account_of(context),
+        agent_id=str(context.get("agent_id") or ""),
+        conversation_id=str(context.get("conversation_id") or "") or None,
+        actor_kind=ActorKind(context.get("actor_kind") or ActorKind.OWNER.value),
+        actor_id=str(context.get("actor_id") or context.get("actor_email") or ""),
+        actor_email=str(context.get("actor_email") or "") or None,
+    )
+
+
+def _answers(arguments: dict[str, Any], key: str = "answers") -> dict[str, Any]:
+    answers = arguments.get(key) or {}
+    if not isinstance(answers, dict):
+        raise ValueError(f"'{key}' must be an object of field name to value")
+    return answers
+
+
+def _refusal(refused: LeadsError) -> dict[str, Any]:
+    return {"ok": False, "code": refused.code, "message": refused.message}

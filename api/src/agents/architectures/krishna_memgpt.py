@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator, Iterator
 
 from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete, run_agentic_tool_loop
+from src.agents.instructions import MacroContext, expand_instructions
 from src.agents.models import MemoryCapacityWarning
 from src.agents.provider_session import open_provider_session
 from src.agents.runtime_state import AgentTurnState
@@ -147,6 +148,10 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         state.linked_kb_ids = self._get_linked_kb_ids(agent)
 
         state.enabled_skills = self.skill_runtime.list_usable(agent.agent_id, actor_kind)
+        state.instructions = expand_instructions(
+            agent.agent_persona,
+            MacroContext(agent.account_id, frozenset(skill.skill_id for skill in state.enabled_skills)),
+        )
         state.enabled_mcp_connections = self._mcp_connections_for(state)
 
         # 2. Save user message (with attachments if any)
@@ -277,7 +282,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
 
     def _build_system_prompt(
         self,
-        agent: "Agent",
+        instructions: str,
         *,
         conversation_context: str | None = None,
         kb_count: int | None = None,
@@ -290,7 +295,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
     ) -> str:
         """Build the system prompt, rendered from data already loaded this turn."""
         return build_krishna_memgpt_system_prompt(
-            agent_persona=agent.agent_persona,
+            agent_persona=instructions,
             conversation_context=conversation_context,
             kb_count=kb_count,
             enabled_skills=enabled_skills,
@@ -315,7 +320,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         """
         snapshot = self._load_core_memory_snapshot(agent.agent_id, actor_id)
         return self._build_system_prompt(
-            agent,
+            state.instructions,
             conversation_context=state.conversation_context,
             kb_count=kb_count,
             enabled_skills=state.enabled_skills or None,

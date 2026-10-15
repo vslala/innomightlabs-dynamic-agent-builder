@@ -10,6 +10,7 @@ A simple architecture that:
 import logging
 from typing import TYPE_CHECKING, AsyncIterator
 
+from src.agents.instructions import MacroContext, expand_instructions
 from src.agents.prompts import render_system_prompt
 from src.agents.provider_session import open_provider_session
 from src.llm.conversation_strategy import FixedWindowStrategy
@@ -103,7 +104,8 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         )
         context = self._build_context(
             self.message_repo.find_by_conversation(conversation.conversation_id),
-            agent.agent_persona,
+            # Krishna Mini has no tools, so no skill can act on what a macro describes
+            expand_instructions(agent.agent_persona, MacroContext(agent.account_id, frozenset())),
             conversation.context,
         )
 

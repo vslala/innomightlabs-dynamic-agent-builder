@@ -3,6 +3,7 @@ Reusable mock data for tests.
 """
 
 from uuid import NAMESPACE_URL, uuid5
+from src.payments.pricing_config import PricingTierLimits
 
 # Test user data
 TEST_USER_EMAIL = "testuser@example.com"
@@ -160,3 +161,16 @@ def turn_owner_fields(email: str = TEST_USER_EMAIL) -> dict:
     """What an `AgentTurnState(...)` built in a test needs for the member it runs as."""
     account_id, user_id = owner_ids(email)
     return {"account_id": account_id, "owner_id": user_id}
+
+
+class LeadsPlan:
+    """The account's plan, as RateLimitService would read it from the owner's subscription."""
+
+    def __init__(self, lead_forms: int = 0, lead_captures_per_month: int = 0) -> None:
+        self.limits = PricingTierLimits(
+            agents=0, messages_per_month=0, kb_pages=0, memory_blocks=0,
+            lead_forms=lead_forms, lead_captures_per_month=lead_captures_per_month,
+        )
+
+    def get_account_limits(self, account_id: str) -> PricingTierLimits:
+        return self.limits

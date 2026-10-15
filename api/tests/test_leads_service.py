@@ -7,23 +7,10 @@ from src.leads.errors import LeadsError
 from src.leads.repository import DuplicateCapture
 from src.leads.models import CaptureFilters, CreateLeadFormRequest, LeadFormFields, LeadSettingsRequest, LeadStatus
 from src.leads.service import CaptureOrigin, LeadsService
-from src.payments.pricing_config import PricingTierLimits
 from src.skills.models import ActorKind
+from tests.mock_data import LeadsPlan as Plan
 
 ACCOUNT = "acct-1"
-
-
-class Plan:
-    """The account's plan, as RateLimitService would read it from the owner's subscription."""
-
-    def __init__(self, lead_forms: int = 0, lead_captures_per_month: int = 0) -> None:
-        self.limits = PricingTierLimits(
-            agents=0, messages_per_month=0, kb_pages=0, memory_blocks=0,
-            lead_forms=lead_forms, lead_captures_per_month=lead_captures_per_month,
-        )
-
-    def get_account_limits(self, account_id: str) -> PricingTierLimits:
-        return self.limits
 
 
 DEMO_INPUTS = [

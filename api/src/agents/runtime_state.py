@@ -45,6 +45,8 @@ class AgentTurnState:
     # Enrichment (populated during preflight)
     linked_kb_ids: list[str] = field(default_factory=list)
     enabled_skills: list[AgentSkill] = field(default_factory=list)
+    #: The agent's instructions with their macros expanded (`agents/instructions.py`), once for the whole turn
+    instructions: str = ""
     #: Skill actions used recently in this conversation, whose schemas stay in the prompt.
     recent_skill_actions: list[LoadedSkillRuntimeResponse] = field(default_factory=list)
     enabled_mcp_connections: list["AgentMCPConnectionResponse"] = field(default_factory=list)

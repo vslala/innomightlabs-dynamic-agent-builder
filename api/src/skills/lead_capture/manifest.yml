@@ -1,9 +1,21 @@
 id: lead_capture
 namespace: growth.leads
-name: Interactive Forms
-description: Render interactive forms in the widget to collect structured inputs. Optionally register submissions as leads.
+name: Lead Capture
+description: Capture leads into the account's lead forms, and show interactive forms in the chat to collect structured input.
 system_prompt: |
-  Use this skill to collect structured input from the user via interactive forms.
+  Lead forms: when your instructions contain a <lead_form> block, the account wants those details captured.
+  - Gather them naturally over the conversation and across visits; keep what you learn about the person in memory.
+  - action=validate_lead with the form's slug and the answers you have tells you what is still missing or invalid.
+  - action=render_lead_form shows the person the account's own form (pass what you know as prefill); use it for
+    file uploads, and whenever a form is easier than asking.
+  - When everything required is known, call action=capture_lead with the form's slug and the answers by field name.
+  - If capture_lead returns ok=false, read its message, ask for what it names, and call it again.
+  - Only tell the person their details are saved after capture_lead returns ok=true.
+  Example:
+    action=capture_lead
+    arguments={"form": "demo-request", "answers": {"name": "Jane Doe", "email": "jane@acme.com", "consent": "yes"}}
+
+  Use this skill also to collect structured input from the user via interactive forms.
 
   You can use forms for:
   - Lead capture (demo requests, contact sales)
@@ -11,10 +23,11 @@ system_prompt: |
   - Asking the user to choose from multiple options
   - Multi-step clarification to gather missing fields
 
-  Recommended flow:
+  Recommended flow without a lead form:
   1) Call action=render_custom_form for most cases. Use action=render_form only for the built-in contact/lead form.
   2) After the user submits, the conversation will contain a <form_submission> block.
-  3) If appropriate, call action=register_lead with the same form label and answers.
+  3) If appropriate, call action=register_lead with the same form label and answers. Prefer lead forms and
+     capture_lead when your instructions have one: register_lead is kept for agents set up before lead forms.
 
   Critical reliability rule:
   - Never say that you have sent, shown, rendered, or displayed a form unless you actually call render_form or render_custom_form in that same turn.
@@ -167,8 +180,59 @@ actions:
       required: [form_label, form_inputs]
     handler: actions:render_custom_form
 
+  - name: validate_lead
+    description: Check answers against one of the account's lead forms without saving. Returns what is missing or invalid.
+    input_schema:
+      type: object
+      properties:
+        form:
+          type: string
+          description: The lead form's slug, as in <lead_form slug="...">.
+        answers:
+          type: object
+          description: Answers by field name. Use a list of values for fields that take several; file fields take upload ids.
+          additionalProperties: true
+      required: [form]
+    handler: actions:validate_lead
+
+  - name: render_lead_form
+    description: Show the person one of the account's lead forms, optionally with what you already know filled in.
+    input_schema:
+      type: object
+      properties:
+        form:
+          type: string
+          description: The lead form's slug.
+        prefill:
+          type: object
+          description: Answers you already know, by field name.
+          additionalProperties: true
+        only_missing:
+          type: boolean
+          description: Show only the fields not in prefill (default true).
+        submit_label:
+          type: string
+          description: Button label (defaults to "Submit").
+      required: [form]
+    handler: actions:render_lead_form
+
+  - name: capture_lead
+    description: Save a completed lead form. Returns ok=false with a message naming what to fix when it isn't complete.
+    input_schema:
+      type: object
+      properties:
+        form:
+          type: string
+          description: The lead form's slug.
+        answers:
+          type: object
+          description: Answers by field name. Use a list of values for fields that take several; file fields take upload ids.
+          additionalProperties: true
+      required: [form, answers]
+    handler: actions:capture_lead
+
   - name: register_lead
-    description: Store a lead submission for this agent and optionally send an acknowledgement email.
+    description: Deprecated; prefer capture_lead with a lead form. Store a lead without a form and send an acknowledgement email.
     input_schema:
       type: object
       properties:
