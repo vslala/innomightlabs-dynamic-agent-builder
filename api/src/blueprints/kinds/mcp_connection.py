@@ -8,10 +8,12 @@ blueprint finds that connection and links agents to it. Applying the same bluepr
 from typing import Any, Mapping, Optional
 
 from src.blueprints.issues import BlueprintIssue
+from src.accounts.owner import Owner
 from src.blueprints.kinds.base import (
     AppliedResource,
     Change,
     Existing,
+    Found,
     LookupKind,
     NotFound,
     PlanContext,
@@ -48,6 +50,17 @@ def provider_name(spec: McpConnectionSpec) -> str:
     return provider.display_name if provider else (spec.name or "MCP server")
 
 
+def _found(connection: MCPConnection) -> Found:
+    provider = PROVIDERS.get(connection.provider_key or "")
+    ready = "connected" if is_ready(connection) else "not connected: an admin must sign in again"
+    return Found(
+        id=connection.mcp_id,
+        name=connection.name,
+        summary=f"Tools from {provider.display_name if provider else 'a custom MCP server'}, {ready}",
+        record=connection,
+    )
+
+
 class McpConnectionKind(LookupKind[McpConnectionSpec]):
     kind = "McpConnection"
     label = "MCP connection"
@@ -59,6 +72,13 @@ class McpConnectionKind(LookupKind[McpConnectionSpec]):
     exposes = ("id", "name")
     feeds = "tools for"
     export_name = "tools"
+
+    def existing(self, owner: Owner) -> list[Found]:
+        return [_found(connection) for connection in get_mcp_connection_repository().list_connections(owner.account_id)]
+
+    def read(self, owner: Owner, resource_id: str) -> Optional[Found]:
+        connection = get_mcp_connection_repository().find_connection(owner.account_id, resource_id)
+        return _found(connection) if connection else None
 
     def observe(self, record: MCPConnection, names: Mapping[str, str]) -> dict[str, Any]:
         return {

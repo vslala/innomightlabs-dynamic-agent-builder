@@ -135,3 +135,11 @@
   margin-bottom: 12px;
   font-size: 13px;
 }
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}

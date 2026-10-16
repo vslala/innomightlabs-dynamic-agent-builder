@@ -12,10 +12,12 @@ from src.blueprints.kinds.base import (
     ApplyContext,
     Change,
     Existing,
+    Found,
     ManagedKind,
     NotFound,
     PlanContext,
     Usage,
+    one_line,
 )
 from src.blueprints.spec import CrawlSpec, KnowledgeBaseSpec
 from src.config import settings
@@ -157,6 +159,10 @@ class DeleteKnowledgeBase(Command):
 # --- The kind -----------------------------------------------------------------------------------------------
 
 
+def _found(kb: KnowledgeBase) -> Found:
+    return Found(id=kb.kb_id, name=kb.name, summary=one_line(kb.description) or "A knowledge base", record=kb)
+
+
 class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
     kind = "KnowledgeBase"
     label = "Knowledge base"
@@ -167,6 +173,13 @@ class KnowledgeBaseKind(ManagedKind[KnowledgeBaseSpec]):
     feeds = "knowledge for"
     dashboard_path = "/dashboard/knowledge-bases/{id}"
     export_name = "knowledge"
+
+    def existing(self, owner: Owner) -> list[Found]:
+        return [_found(kb) for kb in KnowledgeBaseRepository().list_owned(owner.account_id, owner.user_id)]
+
+    def read(self, owner: Owner, resource_id: str) -> Optional[Found]:
+        kb = owned_kb(resource_id, owner)
+        return _found(kb) if kb and kb.status != KnowledgeBaseStatus.DELETED else None
 
     def observe(self, record: KnowledgeBase, names: Mapping[str, str]) -> dict[str, Any]:
         resource: dict[str, Any] = {"kind": self.kind, "id": record.kb_id, "name": record.name}

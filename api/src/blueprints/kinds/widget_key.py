@@ -1,10 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html import escape
 from typing import Any, ClassVar, Mapping, Optional
 from uuid import uuid4
 
 from src.accounts.owner import Owner
 from src.apikeys.models import AgentApiKey
+from src.agents.repository import AgentRepository
 from src.apikeys.repository import ApiKeyRepository
 from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
 from src.blueprints.issues import BlueprintIssue
@@ -12,6 +13,7 @@ from src.blueprints.kinds.base import (
     AppliedResource,
     ApplyContext,
     Existing,
+    Found,
     ManagedKind,
     NotFound,
     PlanContext,
@@ -127,6 +129,11 @@ class DeleteWidgetKey(Command):
 # --- The kind -----------------------------------------------------------------------------------------------
 
 
+def _found(key: AgentApiKey) -> Found:
+    guests = ", guests may chat" if key.allow_guests else ""
+    return Found(id=key.key_id, name=key.name, summary=f"On {', '.join(key.allowed_origins)}{guests}", record=key)
+
+
 class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
     kind = "WidgetKey"
     label = "Chat widget"
@@ -135,6 +142,15 @@ class WidgetKeyKind(ManagedKind[WidgetKeySpec]):
     spec_model = WidgetKeySpec
     exposes = ("id", "public_key", "snippet")
     export_name = "widget"
+
+    def existing(self, owner: Owner) -> list[Found]:
+        return [_found(key) for agent in AgentRepository().list_owned(owner.account_id, owner.user_id)
+                for key in self.for_agent(agent.agent_id)]
+
+    def read(self, owner: Owner, resource_id: str) -> Optional[Found]:
+        """Keys are stored under their agent, so it's found through the owner's agents."""
+        key = next((found for found in self.existing(owner) if found.id == resource_id), None)
+        return replace(key, links={key.record.agent_id: "Agent"}) if key else None
 
     def observe(self, record: AgentApiKey, names: Mapping[str, str]) -> dict[str, Any]:
         return {

@@ -10,6 +10,7 @@ import {
   PanelHeader,
   PanelTitle,
   Pill,
+  Spinner,
   StatusBadge,
   Switch,
   Tabs,
@@ -119,7 +120,12 @@ export function BuildPage() {
                     Show removed kits
                   </label>
                 )}
-                {shownKits === null ? null : shownKits.length === 0 && kits && kits.length > 0 ? (
+                {shownKits === null ? (
+                  <p role="status" className={styles.loading}>
+                    <Spinner size="sm" aria-hidden="true" />
+                    Loading your kits…
+                  </p>
+                ) : shownKits.length === 0 && kits && kits.length > 0 ? (
                   <p className={styles.note}>No active kits. Turn on "Show removed kits" to see the removed ones.</p>
                 ) : shownKits.length === 0 ? (
                   <p className={styles.note}>

@@ -1,83 +1,59 @@
-.card {
+.line {
   display: flex;
-  gap: 12px;
   align-items: center;
-  max-width: 420px;
+  gap: 10px;
   margin: 8px 0;
-  padding: 10px 14px 10px 10px;
-  border: 1px solid rgba(103, 232, 249, 0.25);
-  border-radius: 12px;
-  background: linear-gradient(135deg, rgba(12, 58, 116, 0.55), rgba(8, 40, 79, 0.35));
-  animation: card-in 0.35s ease both;
+  min-height: 24px;
+  font-size: 0.875rem;
 }
 
-@keyframes card-in {
-  from { opacity: 0; transform: translateY(4px); }
+/* A small breathing dot: the sign that something is in progress, before the words say what. */
+.pulse {
+  position: relative;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gradient-start);
+}
+
+.pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--gradient-start);
+  animation: ripple 1.6s ease-out infinite;
+}
+
+@keyframes ripple {
+  from { transform: scale(1); opacity: 0.55; }
+  to { transform: scale(2.8); opacity: 0; }
+}
+
+/* The words fade in each time the step changes, with a light passing over them while it runs. */
+.label {
+  background: linear-gradient(90deg, var(--text-secondary) 0%, var(--text-primary) 45%, var(--text-secondary) 90%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--text-secondary);
+  font-weight: 500;
+  animation: appear 0.3s ease both, sweep 2s linear infinite;
+}
+
+@keyframes appear {
+  from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: none; }
 }
 
-.tile {
-  flex-shrink: 0;
-  width: 52px;
-  height: 44px;
-  border-radius: 8px;
-  background-color: #0c3a74;
-  background-image:
-    linear-gradient(rgba(232, 241, 255, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(232, 241, 255, 0.12) 1px, transparent 1px);
-  background-size: 8px 8px;
-}
-
-.stroke {
-  fill: none;
-  stroke: #67e8f9;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  filter: drop-shadow(0 0 2px rgba(103, 232, 249, 0.6));
-  animation: sketch 2.4s ease-in-out infinite;
-}
-
-@keyframes sketch {
-  0% { stroke-dashoffset: 1; opacity: 1; }
-  45%, 80% { stroke-dashoffset: 0; opacity: 1; }
-  100% { stroke-dashoffset: 0; opacity: 0; }
-}
-
-.text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.detail {
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-}
-
-.dots span {
-  display: inline-block;
-  animation: dot 1.2s ease-in-out infinite;
-}
-
-.dots span:nth-child(2) { animation-delay: 0.15s; }
-.dots span:nth-child(3) { animation-delay: 0.3s; }
-
-@keyframes dot {
-  0%, 60%, 100% { transform: none; opacity: 0.4; }
-  30% { transform: translateY(-3px); opacity: 1; }
+@keyframes sweep {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .card, .stroke, .dots span { animation: none; }
-  .stroke { stroke-dashoffset: 0; }
+  .pulse::after { animation: none; opacity: 0; }
+  .label { animation: appear 0.01s both; background: none; -webkit-text-fill-color: currentColor; color: var(--text-secondary); }
 }

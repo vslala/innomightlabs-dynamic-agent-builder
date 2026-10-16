@@ -8,7 +8,8 @@ approved, and explain how to try it. It has no memory or knowledge tools; its to
 
 What Ila can build is a book (`blueprints/book.py`): her prompt carries its index, the blueprint rules and the
 draft, and only the pages she has opened in the last few turns (`page_retention_turns`). So a new resource kind or
-skill adds a page, not prompt weight.
+skill adds a page, not prompt weight. What the person already has is in the book too, under Your account
+(`blueprints/account_pages.py`), read from the account only when she opens a page.
 
 It is not in the architecture factory, so no agent can be created with it. The builder module creates
 it explicitly. See docs/LLD-solution-blueprints.md.
@@ -145,7 +146,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
             self.message_repo.find_by_conversation(conversation.conversation_id),
             session_timeout_minutes=agent.session_timeout_minutes,
         )
-        book = self._book(agent.account_id)
+        book = self._book(state)
         context: list[dict[str, Any]] = [
             {"role": "system", "content": self._prompt(book, session, conversation.context)},
             *history,
@@ -173,8 +174,10 @@ class VishwakarmaArchitecture(AgentArchitecture):
                 outputs.stop_reason = item.stop_reason
                 continue
             if isinstance(item, PromptRefreshNeeded):
-                # Opening pages, planning or building changed what the prompt shows.
+                # Opening pages, planning or building changed what the prompt shows. A new book too: what it read
+                # from the account may have changed, if this was a build.
                 refreshed = self.sessions.find(agent.owner_partition, conversation.conversation_id) or session
+                book = self._book(state)
                 context[0]["content"] = self._prompt(book, refreshed, conversation.context)
                 continue
 
@@ -206,12 +209,13 @@ class VishwakarmaArchitecture(AgentArchitecture):
             message_id=assistant_msg.message_id,
         )
 
-    def _book(self, account_id: str) -> Book:
+    def _book(self, state: AgentTurnState) -> Book:
+        """The book for the person building: which skills they can use, and their account's pages."""
         ready = {
             item.skill_id: item.available and item.oauth_connected is not False
-            for item in self.skill_service.list_catalog(account_id)
+            for item in self.skill_service.list_catalog(state.owner.account_id)
         }
-        return blueprint_book(ready=ready)
+        return blueprint_book(ready=ready, owner=state.owner)
 
     def _prompt(self, book: Book, session: BuilderSession, conversation_context: str | None) -> str:
         return build_vishwakarma_system_prompt(

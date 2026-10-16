@@ -42,7 +42,7 @@ import { agentDisplayName, isIla, showsToolActivity } from "../../services/build
 import { connectedMessage } from "../../services/builder/connect";
 import { ConnectAccountCard, type ConnectRequestPayload } from "../../components/chat/ConnectAccountCard";
 import { IlaWorking } from "../../components/chat/IlaWorking";
-import { ilaStep } from "../../components/chat/ilaSteps";
+import { ilaStatus } from "../../components/chat/ilaStatus";
 import { chatService, type ActiveTurn } from "../../services/chat";
 import { authService } from "../../services/auth";
 import type { ConversationResponse } from "../../types/conversation";
@@ -286,8 +286,8 @@ export function ConversationDetail() {
 
   const getAgentName = (agentId: string): string => agentDisplayName(agents, agentId);
   const isIlaConversation = isIla(conversation?.agent_id);
-  // Ila shows what she's doing as a drawing instead of a tool list; it steps aside once her reply streams in.
-  const ilaWorkingStep = isIlaConversation ? ilaStep(toolActivities, isSending && !streamingContent) : null;
+  // Ila shows the tool she's running as one line instead of a list, then the next; it steps aside once her reply streams in.
+  const ilaWorkingStatus = isIlaConversation ? ilaStatus(toolActivities, isSending && !streamingContent) : null;
 
   const currentAgent = conversation
     ? agents.find((agent) => agent.agent_id === conversation.agent_id)
@@ -1252,7 +1252,7 @@ export function ConversationDetail() {
                   onExpandCanvas={setExpandedCanvas}
                   extraNode={
                     <>
-                      {ilaWorkingStep && <IlaWorking step={ilaWorkingStep} />}
+                      {ilaWorkingStatus && <IlaWorking label={ilaWorkingStatus} />}
                       {activeConnect && (
                         <ConnectAccountCard
                           request={activeConnect}

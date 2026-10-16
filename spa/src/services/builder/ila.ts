@@ -21,8 +21,9 @@ export function agentDisplayName(agents: { agent_id: string; agent_name: string 
 }
 
 /**
- * Whether a conversation shows the tools its turns ran. Never for Ila: her tools (forms, plans) are how
- * she talks to the person, and the person sees their results, not the calls.
+ * Whether a conversation lists the tools its turns ran. Never for Ila: her tools (forms, plans) are how
+ * she talks to the person, and the person sees their results, not a list of the calls. While she works, the
+ * current one shows as a single line (`IlaWorking`) and goes with it.
  */
 export function showsToolActivity(agentId: string | undefined | null, flagEnabled: boolean): boolean {
   return flagEnabled && !isIla(agentId);

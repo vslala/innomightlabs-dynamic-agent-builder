@@ -178,7 +178,7 @@ async def test_loading_an_agent_forgets_answers_for_the_old_draft(session):  # n
         agent_name="Docs", agent_architecture="krishna-memgpt", agent_provider="Bedrock",
         agent_persona="Docs.", **agent_fields(TEST_USER_EMAIL),
     ))
-    await BuilderTools().load_agent("load_agent", {"agent_id": agent.agent_id}, turn_state(session))
+    await BuilderTools().add_to_draft("add_to_draft", {"page_id": f"account/Agent/{agent.agent_id}"}, turn_state(session))
     assert reload(session).skill_inputs == {} and reload(session).pending_input is None
 
 
