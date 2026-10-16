@@ -8,6 +8,7 @@ blueprint adds its page with no change here or in Ila's prompt:
 - `skill/<id>`: one per skill manifest, from the same variants the schema and the validator use. Skills come in
   one chapter per `SkillSetup` tier (what they need before they work), easiest first.
 - `recipe/<name>`: one per example blueprint, which is also one of Ila's ideas.
+- `account/...`: what the person already has, read when opened (`blueprints/account_pages.py`).
 
 See docs/LLD-ila-capabilities.md.
 """
@@ -21,7 +22,9 @@ from typing import Any, Optional, Union, get_args, get_origin
 import yaml  # type: ignore[import-untyped,unused-ignore]
 from pydantic import BaseModel
 
+from src.accounts.owner import Owner
 from src.agents.book import Book, Chapter, Page
+from src.blueprints.account_pages import AccountPages
 from src.blueprints.catalog import build_ideas, field_rows, markdown_table, skill_config_rows
 from src.blueprints.kinds import RESOURCE_KINDS, ResourceKind
 from src.blueprints.skills_schema import SkillSetup, SkillVariant, requirement_note, skill_variants
@@ -217,7 +220,7 @@ def _settings_section(variant: SkillVariant) -> list[str]:
         names = ", ".join(f"`{field.name}` ({field.label})" for field in variant.builder_settings)
         lines.append(
             f"- You write: {names}. They come from what the person asked for. A setting naming an agent takes an "
-            "Agent in this blueprint by its resource name, or an agent id from list_my_agents."
+            "Agent in this blueprint by its resource name, or an agent's id from its page under Your account."
         )
     if variant.person_settings and variant.setup != SkillSetup.SECRETS:
         labels = ", ".join(field.label for field in variant.person_settings)
@@ -267,7 +270,6 @@ def skill_page(variant: SkillVariant, ready: bool = True) -> Page:
         summary=summarize(manifest.description),
         body="\n".join(body).strip(),
         note=note,
-        related=(kind_page_id("Agent"),),
     )
 
 
@@ -301,8 +303,6 @@ class RecipePages:
     def chapter(self) -> Chapter:
         pages = []
         for idea in build_ideas():
-            resources = (yaml.safe_load(idea.yaml) or {}).get("resources", {})
-            kinds = dict.fromkeys(spec.get("kind") for spec in resources.values() if isinstance(spec, dict))
             pages.append(Page(
                 id=recipe_page_id(idea.name),
                 title=idea.title,
@@ -313,7 +313,6 @@ class RecipePages:
                     idea.yaml.strip(),
                     "```",
                 ]),
-                related=tuple(kind_page_id(kind) for kind in kinds if kind),
             ))
         return Chapter(
             title="Recipes",
@@ -322,10 +321,14 @@ class RecipePages:
         )
 
 
-def blueprint_book(registry: Optional[SkillRegistry] = None, ready: Optional[dict[str, bool]] = None) -> Book:
-    """`ready` marks skills the person can't use yet (an account to connect), by skill id."""
+def blueprint_book(
+    registry: Optional[SkillRegistry] = None, ready: Optional[dict[str, bool]] = None, owner: Optional[Owner] = None
+) -> Book:
+    """`ready` marks skills the person can't use yet (an account to connect), by skill id. `owner` adds the "Your
+    account" branch, whose pages are read from their account when they're opened."""
     skills = [SkillPages(setup, registry, ready) for setup in SkillSetup]
-    return Book.from_sources([GuidePages(), KindPages(), *skills, RecipePages()])
+    account = [AccountPages(owner)] if owner else []
+    return Book.from_sources([GuidePages(), KindPages(), *skills, RecipePages(), *account], resolvers=account)
 
 
 # --- Issues point at pages ------------------------------------------------------------------------------------

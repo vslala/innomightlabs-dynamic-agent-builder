@@ -11,17 +11,20 @@ SKILL SETTINGS. Each skill page says which settings you write and which the pers
 CHANGING SOMETHING THAT EXISTS. When the person wants to change, extend or add to something they already have,
 don't build it again:
 - Built in this conversation: the current draft already describes it, with each resource's `id`. Edit that draft.
-- Anything else: call list_my_agents, ask which one if more than one could fit, then call load_agent with its
-  id. That agent becomes the draft.
-- Lead forms and automations: call list_lead_forms or list_my_automations. Each is written as the blueprint writes
-  it, with its `id`. To change one, copy it into the draft with that `id` and change only what they asked. To
-  collect a form that exists, put its macro in the agent's instructions; it needn't be in the draft. If they ask
-  what forms or automations they have, or what a form asks for, answer from those lists.
+- Anything else: it's under Your account in the book. Open the kind's page (such as account/Agent) to list what
+  they have, or when they name it, search_book for the name with that prefix. Ask which one if more than one could
+  fit, and open it to read it. Its long texts, such as an agent's
+  instructions, are pages under it: open them before you change them, and keep what they didn't ask to change word
+  for word. Never ask the person to paste what you can open.
+- To change it, call add_to_draft with its page id. An agent becomes the whole draft, with its knowledge, skills
+  and widgets; a lead form or an automation joins the draft. To collect a form as it is, put its macro (on its
+  page) in the agent's instructions; it needn't be in the draft. If they only ask what they have, answer from the
+  pages.
 - Keep every `id`. Change only what they asked for. A new resource (say, a widget for an agent that has none)
   goes in without an `id`.
 - Then go to step 4. The plan marks each part as created, updated or kept; tell them in a sentence what changes.
 - Never rename something to get past a plan blocker. That would build a second copy.
-- To take something away (disconnect a knowledge base, uninstall a skill, delete something), load it the same
+- To take something away (disconnect a knowledge base, uninstall a skill, delete something), add it to the draft the same
   way, then leave it out of the draft as the blueprint language describes. Before they approve, tell them
   plainly what will be removed.
 - Never tell them to do something in the dashboard that a blueprint can do. Do it for them.

@@ -25,9 +25,10 @@ src/blueprints/
   service.py       deploy_blueprint / apply_planned / apply_kit_plan; typed outcomes (Invalid, Blocked, RateLimited, Deployed)
   approval.py      plan_id hash so an agent can only apply what the person approved
   draft.py         raw (maybe invalid) document view used by Ila before validation
-  export.py        write an existing agent out as a blueprint
+  export.py        write an existing agent out as a blueprint; new_document for a draft started from one resource
   catalog.py       JSON Schema, Markdown reference, compact catalog, params form, example loading
   book.py          Ila's book pages generated from kinds, skills and examples
+  account_pages.py the book's Your account branch: the owner's resources as pages, made when opened, from the kinds
   kits.py          Kit model, KitRepository, pin/declared/record_version, rollback and removal plans
   kits_router.py   /kits routes
   router.py        /blueprints routes (schema and reference are public)
@@ -73,6 +74,111 @@ flowchart LR
   P -->|blockers| B[Blocked]
 ```
 
+## Entities
+
+What the engine stores is a **kit** (an account's versioned record of what a blueprint built) and one **deployment** per
+version. The platform records it builds are the ones on the right; a kit and a deployment hold their ids, not copies.
+
+```mermaid
+erDiagram
+    KIT ||--o{ DEPLOYMENT : "one per version"
+    KIT ||--o{ KIT_RESOURCE : "holds, by blueprint name"
+    DEPLOYMENT ||--o{ DEPLOYED_RESOURCE : "built, by blueprint name"
+    DEPLOYMENT ||--o{ JOURNAL_ENTRY : "undo log"
+    KIT_RESOURCE }o..|| PLATFORM_RECORD : "kind + id"
+    DEPLOYED_RESOURCE }o..|| PLATFORM_RECORD : "kind + id"
+
+    KIT {
+        string kit_id
+        string owner_id "its versions apply as them"
+        int current_version
+        string current_deployment_id "what the kit declares now"
+        string conversation_id "the Ila chat it came from"
+    }
+    DEPLOYMENT {
+        string deployment_id
+        string blueprint_yaml "the version, as applied"
+        string status "applying, applied, failed, failed_partial"
+        string action "apply or rollback"
+        bool committed "irreversible commands may now run"
+    }
+    KIT_RESOURCE {
+        string kind
+        string id
+    }
+    DEPLOYED_RESOURCE {
+        string kind
+        string id
+        json attributes "what outputs may show"
+    }
+    JOURNAL_ENTRY {
+        string command
+        string resource
+        string state
+        json undo "how it is undone"
+    }
+    PLATFORM_RECORD {
+        string kind "one of RESOURCE_KINDS"
+        string id
+    }
+```
+
+*Keys: kit `Account#{account_id}` / `Kit#{kit_id}`; deployment `Account#{account_id}` /
+`BlueprintDeployment#{created_at}#{deployment_id}`. A resource is one of the six kinds below; `PLATFORM_RECORD` stands
+for any of them. Dotted lines are references by kind and id, with no database link.*
+
+The six kinds wrap records that other modules own. How they refer to each other is what the validator's references
+check (`references.py`), the plan orders by, and the drawing draws as wires:
+
+```mermaid
+erDiagram
+    AGENT }o--o{ KNOWLEDGE_BASE : "answers from (knowledge_bases)"
+    AGENT }o--o{ MCP_CONNECTION : "uses tools from (mcp_connections)"
+    AGENT ||--o{ WIDGET_KEY : "chats through (agent)"
+    AGENT ||--o{ AGENT_SKILL : "skills"
+    AGENT }o--o{ AGENT : "a skill's settings name another agent"
+    AGENT }o--o{ LEAD_FORM : "collects: {{ lead_form:slug }} in instructions"
+    AUTOMATION ||--o{ AUTOMATION_SKILL : "skills"
+    AUTOMATION }o--o{ AGENT : "steps and trigger agent"
+    AUTOMATION }o--o| LEAD_FORM : "triggered when a lead is captured (form)"
+
+    AGENT {
+        string kind "Agent"
+        string instructions
+    }
+    KNOWLEDGE_BASE {
+        string kind "KnowledgeBase"
+        json crawl "what it reads"
+    }
+    MCP_CONNECTION {
+        string kind "McpConnection: lookup only"
+        string provider "the person signs in; a blueprint never creates it"
+    }
+    WIDGET_KEY {
+        string kind "WidgetKey"
+        json allowed_origins
+    }
+    LEAD_FORM {
+        string kind "LeadForm"
+        string slug "never changes; agents name it by slug"
+    }
+    AUTOMATION {
+        string kind "Automation"
+        json trigger "manual, schedule or lead_captured"
+        json steps "a chain, in order"
+    }
+    AGENT_SKILL {
+        string skill_id "from a skill manifest"
+    }
+    AUTOMATION_SKILL {
+        string skill_id "from a skill manifest"
+    }
+```
+
+*Skill entries aren't kinds: they are generated from the skill manifests (`skills_schema.py`) and written under an agent
+or automation. A blueprint names a link by the other resource's name in the document, or by id for one that already
+exists.*
+
 ## Automations
 
 `kinds/automation.py` writes an automation as a chain, as the dashboard shows it: Start, the steps in order, Done, with
@@ -87,8 +193,10 @@ alone, so triggers sync their schedule or lead registration (`AutomationService.
 
 1. Add the spec model to `spec.py` (with `Field(description=...)`, `Scalar`/`Each` diff rules, `x-ref-kind` for links).
 2. Create `kinds/<name>.py` subclassing `ManagedKind` (or `LookupKind`): set `kind`, `label`, `use_when`, `spec_model`,
-   `exposes`, `export_name`, `deletes`; implement `observe`, `commands`, `describe`, `applied`, `delete_commands`; add
-   `check`/`validate`/`usage` as needed. Use `kinds/widget_key.py` as the smallest managed example and
+   `exposes`, `export_name`, `deletes`; implement `observe`, `commands`, `describe`, `applied`, `delete_commands`, and
+   `existing`/`read` (what Ila reads under Your account; `tests/test_builder_account_pages.py` checks every kind has
+   them); add `check`/`validate`/`usage` as needed, and `draft_name` if its resource name carries meaning (a lead
+   form's slug). Use `kinds/widget_key.py` as the smallest managed example and
    `kinds/mcp_connection.py` for a lookup.
 3. Register an instance in `RESOURCE_KINDS` (order matters for readability only; the planner sorts commands).
 4. Add an example in `examples/` using it, so the book page and tests have one.

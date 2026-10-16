@@ -8,7 +8,7 @@ These are dashboard/builder chat surfaces. They do not own the entire SSE lifecy
 - `ChatComposer.tsx` and module CSS: controlled textarea, attachment/image/research/debug actions, send/stop UI.
 - `AttachmentChip`, `TokenUsageIndicator`: attachment and usage display.
 - `ToolActivityCard`, `ToolActivitySummary`, `toolActivityFormat`: detailed versus compact tool display.
-- `IlaWorking`, `ilaSteps`: builder activity labels.
+- `IlaWorking`, `ilaStatus`, `useHeldLabel`: Ila's live status line. `ilaStatus` words the tool she is running (from its name and arguments, never a page id) or "Thinking" between tools, and nothing once the turn ends; `useHeldLabel` keeps each line up long enough to read (`MIN_SHOWN_MS`). It is one line in the widget's "current tool, then gone" manner, styled like ChatGPT and Claude, not a list; her tools are never listed (`showsToolActivity`). A new Ila tool gets a phrase in `TOOL_PHRASES`; one without falls back to "Working on it".
 - `ChatFormRenderer`, `SubmittedFormMessage`, `submittedFormParser`: interactive chat questions and saved answer presentation.
 - `InlineCanvasCard`, `CanvasSidePanel`, `CanvasPlaceholder`: artifact previews and expanded canvas.
 - `ConnectAccountCard`: popup connection prompt and fallback link.
@@ -34,7 +34,7 @@ Newer surfaces have local `.module.css`; the transcript and some older cards sti
 From `spa/`:
 
 ```bash
-yarn test src/components/chat/ilaSteps.test.ts src/components/chat/toolActivityFormat.test.ts
+yarn test src/components/chat/ilaStatus.test.ts src/components/chat/toolActivityFormat.test.ts
 ```
 
 Add helper regressions beside these tests; they do not exercise the SSE network lifecycle. Manually check saved plus streaming messages, tool success/error/running states, Enter/Shift+Enter, parent submission guards, stop, popup blocked/error flows, lazy canvas loading/failure, image fallback, and narrow screens. For implementation changes run focused ESLint, `yarn build`, and `yarn design:audit`.

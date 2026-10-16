@@ -43,6 +43,22 @@ class Existing:
 
 
 @dataclass(frozen=True)
+class Found:
+    """One of the owner's resources, as Ila's account pages show it (see `blueprints/account_pages.py`)."""
+
+    id: str
+    name: str
+    #: One line saying what it is, for the list it's in.
+    summary: str
+    #: The stored model, for `observe`.
+    record: Any
+    #: Other resources it links to, by id, with their kind: {"kb-1": "KnowledgeBase"}. Filled in by `read` only.
+    links: dict[str, str] = field(default_factory=dict)
+    #: Facts its blueprint doesn't hold, one line each: a lead form's macro, how many leads it has.
+    facts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Change:
     action: Action
     existing: Optional[Existing] = None
@@ -98,6 +114,21 @@ class Usage:
     lead_forms: int = 0
 
 
+#: A text this long, or on more than one line, is read as a text of its own: a page in Ila's book, a line-by-line
+#: before and after in the plan's drawing.
+LONG_TEXT_CHARS = 200
+
+
+def is_long_text(value: Any) -> bool:
+    return isinstance(value, str) and (len(value) > LONG_TEXT_CHARS or "\n" in value.strip())
+
+
+def one_line(text: Optional[str], limit: int = 100) -> str:
+    """The first line of a text, cut to `limit` characters: a summary for lists."""
+    line = next((line.strip() for line in (text or "").splitlines() if line.strip()), "")
+    return line if len(line) <= limit else line[: limit - 1].rstrip() + "…"
+
+
 class NotFound(Exception):
     """A resource names an `id` that isn't in the owner's account."""
 
@@ -123,12 +154,27 @@ class ResourceKind(Generic[SpecT]):
     dashboard_path: ClassVar[str] = ""
     #: The resource name it gets when an existing one is written out as a blueprint ("knowledge", "knowledge_2").
     export_name: ClassVar[str]
+    #: Whether adding an existing one to a draft makes the draft that one with all it uses (`export.py`), rather than
+    #: joining what the draft holds. An agent does: its knowledge, skills and widgets come with it.
+    drafted_whole: ClassVar[bool] = False
 
     def observe(self, record: Any, names: Mapping[str, str]) -> dict[str, Any]:
         """The existing resource as a blueprint writes it, with its `id`: the one place a kind maps what it stores
         back to its spec. `names` gives the blueprint name of each resource it links to, by id; links to
         anything not in `names` are left out."""
         raise NotImplementedError
+
+    def existing(self, owner: Owner) -> list[Found]:
+        """What the owner already has of this kind, for Ila to read. Cheap: no links, since it lists them all."""
+        raise NotImplementedError
+
+    def read(self, owner: Owner, resource_id: str) -> Optional[Found]:
+        """One of them, with what it links to; None when there's no such resource of the owner's."""
+        raise NotImplementedError
+
+    def draft_name(self, record: Any) -> str:
+        """The resource name an existing one is written under when it's added to a draft."""
+        return self.export_name
 
     def title(self, name: str, spec: SpecT, resources: dict[str, Any]) -> str:
         """How this resource is named to people when the spec may not say."""

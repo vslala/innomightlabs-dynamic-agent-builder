@@ -18,14 +18,10 @@ from src.agents.tool_runtime import BoundTool, ToolCategory, ToolRegistry, ToolS
 from src.blueprints.approval import approves
 from src.blueprints.book import blueprint_book, page_for_issue
 from src.blueprints.draft import Draft
-from src.blueprints.export import export_agent
+from src.blueprints.account_pages import account_page_id, account_resource, named
+from src.blueprints.export import export_agent, new_document, numbered
 from src.blueprints.issues import BlueprintInvalid, BlueprintIssue
-from src.automations.service import AutomationService
-from src.blueprints.kinds import kind_for
-from src.blueprints.kinds.automation import AutomationKind
-from src.blueprints.kinds.lead_form import LeadFormKind
-from src.blueprints.spec import lead_form_resource
-from src.leads.service import LeadsService
+from src.blueprints.kinds import ResourceKind, kind_for
 from src.blueprints.models import DeploymentStatus
 from src.blueprints.kits import KitError, KitRepository, active_kit, declared, pin
 from src.blueprints.repository import DeploymentRepository
@@ -36,11 +32,8 @@ from src.builder.models import BuilderSession
 from src.builder.plan_gates import PLAN_GATES, PlanAttempt
 from src.builder.requirements import REQUIREMENTS
 from src.builder.repository import BuilderSessionRepository
-from src.agents.repository import AgentRepository
-from src.apikeys.repository import ApiKeyRepository
 from src.config import settings
-from src.skills.repository import AgentSkillRepository
-from src.knowledge.repository import AgentKnowledgeBaseRepository, CrawlJobRepository
+from src.knowledge.repository import CrawlJobRepository
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.skills.lead_capture.actions import render_custom_form
 from src.skills.registry import get_skill_registry
@@ -97,13 +90,26 @@ def builder_tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "search_book",
             "description": (
-                "Search the blueprint book when the index doesn't make clear which page covers what the person "
-                "wants. Returns page ids to open."
+                "Search the blueprint book, including what the person already has under Your account (their "
+                "agents, lead forms, automations and so on, by name). Use it when the index doesn't make clear which "
+                "page covers what they want, or to find one of their resources by name. Returns page ids to open."
             ),
             "parameters": {
                 "type": "object",
-                "properties": {"query": {"type": "string", "description": "What the person wants, in a few words."}},
-                "required": ["query"],
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "What to look for, in a few words: what the person wants, or a resource's name.",
+                    },
+                    "prefix": {
+                        "type": "string",
+                        "description": (
+                            "Search only pages whose ids start with this: account/Agent for their agents, "
+                            "account/ for everything they have, skill/, kind/ or recipe/. A narrow prefix is faster "
+                            "and surer. With a prefix and no query, lists the pages under it."
+                        ),
+                    },
+                },
             },
         },
         {
@@ -137,45 +143,19 @@ def builder_tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "list_my_agents",
+            "name": "add_to_draft",
             "description": (
-                "The person's existing agents: id, name, description, and what they use. Call it when they want "
-                "to change or add to something they already have, to find which agent they mean."
-            ),
-            "parameters": {"type": "object", "properties": {}},
-        },
-        {
-            "name": "list_lead_forms",
-            "description": (
-                "The account's lead forms, each written as a blueprint writes a LeadForm: its `id`, name, purpose and "
-                "the exact fields (`form_inputs`), plus its slug, how many leads it has and whether it is archived. "
-                "Call it when they ask what forms they have, want to see a form's fields, or want to reuse or "
-                "change one. To change one, put it in the draft as a LeadForm with its `id`; to use one as it is, name "
-                "its slug in an agent's instructions with the macro and leave it out of the draft."
-            ),
-            "parameters": {"type": "object", "properties": {}},
-        },
-        {
-            "name": "list_my_automations",
-            "description": (
-                "The person's existing automations, each written as a blueprint writes an Automation: its `id`, "
-                "title, whether it is on, its trigger, steps and skills. `editable` is false for one a blueprint can't "
-                "change (it has conditions, branches or several triggers). Call it when they ask what automations "
-                "they have, or want to change or add to one: put it in the draft as an Automation with its `id`."
-            ),
-            "parameters": {"type": "object", "properties": {}},
-        },
-        {
-            "name": "load_agent",
-            "description": (
-                "Make an existing agent the current draft: the agent, its knowledge bases, skills and widget keys "
-                "written as a blueprint with their ids. Change only what the person asks, then plan it; applying "
-                "updates those resources instead of creating new ones."
+                "Put one of the person's resources in the draft, written as a blueprint writes it with its id, so "
+                "planning changes it rather than building another. Name it by its page under Your account, such as "
+                "account/LeadForm/<id>. An agent becomes the whole draft, with its knowledge, skills and widgets: "
+                "what the draft held is set aside. Anything else joins what the draft holds."
             ),
             "parameters": {
                 "type": "object",
-                "properties": {"agent_id": {"type": "string", "description": "An id from list_my_agents."}},
-                "required": ["agent_id"],
+                "properties": {
+                    "page_id": {"type": "string", "description": "The resource's page, account/<Kind>/<id>."},
+                },
+                "required": ["page_id"],
             },
         },
         {
@@ -184,6 +164,11 @@ def builder_tool_definitions() -> list[dict[str, Any]]:
             "parameters": {"type": "object", "properties": {}},
         },
     ]
+
+
+def _free_name(base: str, draft: Draft) -> str:
+    """`base`, or `base_2`, `base_3`... when the draft already has a resource by that name."""
+    return next(name for index in range(len(draft.resources) + 1) if (name := numbered(base, index)) not in draft.resources)
 
 
 def _issue(issue: BlueprintIssue) -> dict[str, Any]:
@@ -207,7 +192,8 @@ class BuilderTools:
         self,
         sessions: Optional[BuilderSessionRepository] = None,
         messages: Optional[MessageRepository] = None,
-        book: Optional[Callable[[], Book]] = None,
+        #: Called with `owner=` for the book with their account branch; with nothing for the reference pages alone.
+        book: Optional[Callable[..., Book]] = None,
     ) -> None:
         self.sessions = sessions or BuilderSessionRepository()
         self.messages = messages or get_message_repository()
@@ -226,7 +212,7 @@ class BuilderTools:
             page_ids = [page_ids]
         if not isinstance(page_ids, list) or not page_ids:
             raise ValueError("open_pages needs `page_ids`: a list of ids from the book index.")
-        opened = self.book().open(str(page_id) for page_id in page_ids[:MAX_PAGES_PER_OPEN])
+        opened = self.book(owner=state.owner).open(str(page_id) for page_id in page_ids[:MAX_PAGES_PER_OPEN])
         session.opened_pages = open_pages(session.opened_pages, [page.id for page in opened.pages], session.turn)
         self.sessions.save(session)
         return json.dumps({
@@ -241,9 +227,10 @@ class BuilderTools:
 
     async def search_book(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
         query = str(tool_input.get("query") or "").strip()
-        if not query:
-            raise ValueError("search_book needs a `query`.")
-        pages = self.book().search(query)
+        prefix = str(tool_input.get("prefix") or "").strip()
+        if not query and not prefix:
+            raise ValueError("search_book needs a `query`, a `prefix`, or both.")
+        pages = self.book(owner=state.owner).search(query, prefix=prefix)
         return json.dumps({
             "pages": [
                 {"id": page.id, "title": page.title, "summary": page.summary, **({"note": page.note} if page.note else {})}
@@ -352,52 +339,41 @@ class BuilderTools:
             ),
         })
 
-    async def list_agents(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
-        agents = []
-        # Ila builds in the person's personal account, where kits live until they move into accounts
-        owner = state.owner
-        for agent in AgentRepository().list_owned(owner.account_id, owner.user_id):
-            agents.append({
-                "agent_id": agent.agent_id,
-                "name": agent.agent_name,
-                "description": agent.agent_description or "",
-                "knowledge_bases": len(AgentKnowledgeBaseRepository().find_kbs_for_agent(agent.agent_id)),
-                "skills": [skill.skill_id for skill in AgentSkillRepository().list_by_agent(agent.agent_id)],
-                "widget_keys": len(ApiKeyRepository().find_all_by_agent(agent.agent_id)),
-            })
-        return json.dumps({"agents": agents})
-
-    async def list_lead_forms(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
-        forms = []
-        kind = LeadFormKind()
-        for form in LeadsService().list_forms(state.owner.account_id):
-            forms.append({
-                **kind.observe(form, {}),
-                "resource_name": lead_form_resource(form.slug),
-                "slug": form.slug,
-                "macro": f"{{{{ lead_form:{form.slug} }}}}",
-                "status": form.status,
-                "version": form.version,
-                "leads": form.capture_count,
-            })
-        return json.dumps({"lead_forms": forms})
-
-    async def list_automations(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
-        owner = state.owner
-        kind = AutomationKind()
-        agents = {agent.agent_id: agent.agent_name for agent in AgentRepository().list_owned(owner.account_id, owner.user_id)}
-        automations = []
-        for automation in AutomationService().list_automations(owner):
-            if automation.owner_id != owner.user_id:
-                continue
-            written = kind.observe(automation, agents)
-            automations.append({**written, "editable": "steps" in written})
-        return json.dumps({"automations": automations})
-
-    async def load_agent(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
+    async def add_to_draft(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
         session = self._session(state)
-        agent_id = str(tool_input.get("agent_id") or "").strip()
-        kit = KitRepository().holding(state.owner.account_id, agent_id) if agent_id else None
+        page_id = str(tool_input.get("page_id") or "").strip()
+        target = account_resource(page_id)
+        if target is None:
+            return json.dumps({
+                "added": False,
+                "reason": "That isn't one of the person's resources. Use its page id, account/<Kind>/<id>, from Your account.",
+            })
+        kind, resource_id = target
+        if kind.drafted_whole:
+            return self._load_whole(session, state, kind, resource_id)
+        found = kind.read(state.owner, resource_id)
+        if found is None:
+            return json.dumps({"added": False, "reason": f"There's no such {named(kind, 1)}. Open {account_page_id(kind.kind)}."})
+
+        draft = Draft(session.draft_yaml or new_document(found.name))
+        in_draft = {str(spec["id"]): name for name, spec in draft.resources.items() if spec.get("id")}
+        # What it links to is named as the draft names it, or by id when the draft doesn't hold it.
+        resource = kind.observe(found.record, {linked_id: in_draft.get(linked_id, linked_id) for linked_id in found.links})
+        name = in_draft.get(found.id) or _free_name(kind.draft_name(found.record), draft)
+        session.draft_yaml, session.plan_id = draft.with_resource(name, resource).text, None
+        self.sessions.save(session)
+        return json.dumps({
+            "added": True,
+            "resource": name,
+            "next": (
+                f"It's in the draft as `{name}`, with its id. Keep the id and the name, change only what the person "
+                "asked, then call plan_blueprint with the whole YAML."
+            ),
+        })
+
+    def _load_whole(self, session: BuilderSession, state: AgentTurnState, kind: ResourceKind[Any], resource_id: str) -> str:
+        """The draft becomes the resource with all it uses: its kit's last version, or else written out as it is."""
+        kit = KitRepository().holding(state.owner.account_id, resource_id)
         current = (
             DeploymentRepository().find_by_id(state.owner.account_id, kit.current_deployment_id)
             if kit and kit.current_deployment_id else None
@@ -407,9 +383,10 @@ class BuilderTools:
             session.draft_yaml = pin(Draft(current.blueprint_yaml).without_ids().text, kit)
             session.draft_params, session.kit_id, session.baseline_yaml = dict(current.params), kit.kit_id, None
         else:
-            yaml = export_agent(agent_id, state.owner)
+            # Agents are the one kind drafted whole, and `export_agent` writes one out.
+            yaml = export_agent(resource_id, state.owner)
             if yaml is None:
-                return json.dumps({"loaded": False, "reason": "There's no agent with that id. Call list_my_agents."})
+                return json.dumps({"added": False, "reason": f"There's no such {named(kind, 1)}. Open {account_page_id(kind.kind)}."})
             # Not in a kit yet: what it is now is the baseline, and its first apply here starts a kit.
             session.draft_yaml, session.draft_params, session.kit_id, session.baseline_yaml = yaml, {}, None, yaml
         session.plan_id = None
@@ -417,12 +394,13 @@ class BuilderTools:
         session.skill_inputs, session.pending_input = {}, None
         self.sessions.save(session)
         return json.dumps({
-            "loaded": True,
+            "added": True,
+            "replaced_draft": True,
             **({"kit": kit.title} if kit else {}),
             "next": (
-                "The draft is now in your prompt. Keep every `id` and resource name. Change only what the person "
-                "asked for: add new resources without an id, and leave out anything they want gone. Then call "
-                "plan_blueprint with the whole YAML."
+                f"The {named(kind, 1)} is now the whole draft, in your prompt. Keep every `id` and resource name. Change only "
+                "what the person asked for: add new resources without an id, and leave out anything they want gone. "
+                "Then call plan_blueprint with the whole YAML."
             ),
         })
 
@@ -467,9 +445,7 @@ class BuilderTools:
 
 def build_builder_tool_registry(tools: Optional[BuilderTools] = None) -> ToolRegistry:
     tools = tools or BuilderTools()
-    open_book, search, show_form, plan, apply, list_agents, list_forms, list_automations, load_agent, status = (
-        builder_tool_definitions()
-    )
+    open_book, search, show_form, plan, apply, add, status = builder_tool_definitions()
     return ToolRegistry([
         # Opening pages changes the pages Ila's prompt shows.
         BoundTool(ToolSpec(open_book, ToolCategory.BUILDER, mutates_prompt_context=True), tools.open_book_pages),
@@ -478,11 +454,8 @@ def build_builder_tool_registry(tools: Optional[BuilderTools] = None) -> ToolReg
         # Planning and applying change the draft that Ila's prompt shows.
         BoundTool(ToolSpec(plan, ToolCategory.BUILDER, mutates_prompt_context=True), tools.plan),
         BoundTool(ToolSpec(apply, ToolCategory.BUILDER, mutates_prompt_context=True), tools.apply),
-        BoundTool(ToolSpec(list_agents, ToolCategory.BUILDER), tools.list_agents),
-        BoundTool(ToolSpec(list_forms, ToolCategory.BUILDER), tools.list_lead_forms),
-        BoundTool(ToolSpec(list_automations, ToolCategory.BUILDER), tools.list_automations),
-        # Loading replaces the draft the prompt shows.
-        BoundTool(ToolSpec(load_agent, ToolCategory.BUILDER, mutates_prompt_context=True), tools.load_agent),
+        # Adding to the draft changes the draft the prompt shows.
+        BoundTool(ToolSpec(add, ToolCategory.BUILDER, mutates_prompt_context=True), tools.add_to_draft),
         BoundTool(ToolSpec(status, ToolCategory.BUILDER), tools.build_status),
     ])
 

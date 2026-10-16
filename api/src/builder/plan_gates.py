@@ -123,9 +123,8 @@ class AwaitApproval:
         plan, session = attempt.plan, attempt.session
         assert attempt.validated is not None
         session.plan_id = plan_id_for(attempt.draft.text, attempt.params)
-        canvas = save_blueprint_canvas(
-            drawing_for(attempt.validated, plan, stage="plan", plan_id=session.plan_id), attempt.state
-        )
+        drawing = drawing_for(attempt.validated, plan, stage="plan", plan_id=session.plan_id)
+        canvas = save_blueprint_canvas(drawing, attempt.state)
         return {
             **approval_form(session.plan_id, plan, attempt.context),
             **({"canvas": canvas} if canvas else {}),
@@ -139,6 +138,8 @@ class AwaitApproval:
                 "the steps. Nothing is built until they choose 'Apply this plan'."
                 + (" This plan also removes things, which can't be undone: name each one plainly so they know "
                    "before they approve." if plan.removals else "")
+                + (" The drawing opens on the before and after of each text it rewrites, line by line: say in a "
+                   "sentence what you changed, and don't quote it." if drawing.text_diffs else "")
             ),
         }
 

@@ -12,16 +12,19 @@ from src.agents.service import AgentService, validate_provider_model
 from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.kinds.lead_form import missing_lead_forms
+from src.blueprints.kinds.widget_key import WidgetKeyKind
 from src.blueprints.kinds.base import (
     Action,
     AppliedResource,
     ApplyContext,
     Change,
     Existing,
+    Found,
     ManagedKind,
     NotFound,
     PlanContext,
     Usage,
+    one_line,
     reconcile_context,
 )
 from src.blueprints.reconcile import Context, Outcome, reconcile
@@ -47,6 +50,16 @@ def _owned_agent(agent_id: str, owner: Owner, repository: Optional[AgentReposito
     """One of this member's agents in their account: a blueprint changes only what its owner owns."""
     agent = (repository or AgentRepository()).find_in_account(owner.account_id, agent_id)
     return agent if agent and agent.owner_id == owner.user_id else None
+
+
+def _found(agent: Agent, links: Optional[dict[str, str]] = None) -> Found:
+    return Found(
+        id=agent.agent_id,
+        name=agent.agent_name,
+        summary=one_line(agent.agent_description or agent.agent_persona),
+        record=agent,
+        links=links or {},
+    )
 
 
 def skill_audience(entry: SkillEntry) -> list[ActorKind] | None:
@@ -402,6 +415,7 @@ class AgentKind(ManagedKind[AgentSpec]):
     feeds = "chats through"
     dashboard_path = "/dashboard/agents/{id}"
     export_name = "agent"
+    drafted_whole = True
 
     def linked(self, agent_id: str, owner: Owner) -> list[tuple[str, str, Any]]:
         """(kind, id, record) of every resource the agent links to, in link order."""
@@ -416,6 +430,17 @@ class AgentKind(ManagedKind[AgentSpec]):
             if connection is not None:
                 found.append(("McpConnection", connection.mcp_id, connection))
         return found
+
+    def existing(self, owner: Owner) -> list[Found]:
+        return [_found(agent) for agent in AgentRepository().list_owned(owner.account_id, owner.user_id)]
+
+    def read(self, owner: Owner, resource_id: str) -> Optional[Found]:
+        agent = _owned_agent(resource_id, owner)
+        if agent is None:
+            return None
+        links = {linked_id: kind for kind, linked_id, _ in self.linked(agent.agent_id, owner)}
+        links.update({key.key_id: WidgetKeyKind.kind for key in WidgetKeyKind().for_agent(agent.agent_id)})
+        return _found(agent, links)
 
     def observe(self, record: Agent, names: Mapping[str, str]) -> dict[str, Any]:
         """Skills a blueprint can't describe (ones that need a secret to install) are left out; applying never

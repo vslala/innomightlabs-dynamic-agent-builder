@@ -10,6 +10,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from graphlib import TopologicalSorter
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -22,6 +23,7 @@ from src.artifacts.models import ArtifactSource
 from src.artifacts.service import ArtifactService
 from src.blueprints.models import Deployment
 from src.blueprints.kinds import kind_for
+from src.blueprints.kinds.base import Existing, is_long_text
 from src.blueprints.planner import Plan
 from src.blueprints.spec import API_VERSION
 from src.blueprints.validator import ValidatedBlueprint
@@ -56,6 +58,65 @@ class Card:
     removals: tuple[str, ...] = ()
 
 
+#: Unchanged lines kept around each change, so it's read where it sits.
+DIFF_CONTEXT = 2
+
+DiffLine = tuple[Literal["same", "add", "remove", "gap"], str]
+
+
+@dataclass(frozen=True)
+class TextDiff:
+    """A long text an update rewrites, such as an agent's instructions, line by line: so the person approves the words
+    that change, not a description of them."""
+
+    #: The resource as the drawing names it.
+    title: str
+    field: str
+    #: Each line kept, added or removed; a gap stands for unchanged lines left out.
+    lines: tuple[DiffLine, ...]
+    added: int
+    removed: int
+
+
+def text_diffs(title: str, spec: Any, existing: Optional[Existing]) -> list[TextDiff]:
+    """Every long text the spec changes on the resource it updates."""
+    if existing is None:
+        return []
+    diffs = []
+    for field_name, before in existing.observed.items():
+        after = getattr(spec, field_name, None)
+        if isinstance(before, str) and isinstance(after, str) and before.strip() != after.strip() and (
+            is_long_text(before) or is_long_text(after)
+        ):
+            diffs.append(_diff(title, field_name, before, after))
+    return diffs
+
+
+def _diff(title: str, field_name: str, before: str, after: str) -> TextDiff:
+    old, new = before.strip().splitlines(), after.strip().splitlines()
+    lines: list[DiffLine] = []
+    shown_to = 0
+    for group in SequenceMatcher(None, old, new, autojunk=False).get_grouped_opcodes(DIFF_CONTEXT):
+        if group[0][1] > shown_to:
+            lines.append(("gap", ""))
+        for tag, i1, i2, j1, j2 in group:
+            if tag == "equal":
+                lines += [("same", line) for line in old[i1:i2]]
+            else:
+                lines += [("remove", line) for line in old[i1:i2]]
+                lines += [("add", line) for line in new[j1:j2]]
+        shown_to = group[-1][2]
+    if shown_to < len(old):
+        lines.append(("gap", ""))
+    return TextDiff(
+        title=title,
+        field=field_name,
+        lines=tuple(lines),
+        added=sum(kind == "add" for kind, _ in lines),
+        removed=sum(kind == "remove" for kind, _ in lines),
+    )
+
+
 @dataclass(frozen=True)
 class BlueprintDrawing:
     title: str
@@ -70,6 +131,8 @@ class BlueprintDrawing:
     params: list[tuple[str, str]]
     yaml_html: Markup
     outputs: list[tuple[str, str, str]] = field(default_factory=list)
+    #: The long texts the plan rewrites, before and after.
+    text_diffs: list[TextDiff] = field(default_factory=list)
     api_version: str = API_VERSION
 
 
@@ -152,16 +215,19 @@ def drawing_for(
     names = [*validated.order, *removed]
     shown = {**blueprint.resources, **removed}
     depth = _columns(names, edges)
-    cards = []
+    cards, diffs = [], []
     for name in names:
         spec = shown[name]
         kind = kind_for(spec.kind)
         change = plan.changes.get(name)
+        title = kind.title(name, spec, shown)
+        if change and name in blueprint.resources:
+            diffs += text_diffs(title, spec, change.existing)
         cards.append(Card(
             name=name,
             kind=spec.kind,
             label=kind.label,
-            title=kind.title(name, spec, shown),
+            title=title,
             summary=spec.description or "",
             details=kind.card_details(spec),
             depth=depth[name],
@@ -189,6 +255,7 @@ def drawing_for(
         params=params,
         yaml_html=highlight_yaml(validated.yaml),
         outputs=outputs,
+        text_diffs=diffs,
     )
 
 

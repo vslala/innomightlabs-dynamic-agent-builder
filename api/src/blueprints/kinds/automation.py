@@ -39,9 +39,11 @@ from src.blueprints.kinds.base import (
     ApplyContext,
     Change,
     Existing,
+    Found,
     ManagedKind,
     NotFound,
     PlanContext,
+    one_line,
     reconcile_context,
 )
 from src.blueprints.kinds.lead_form import missing_lead_forms
@@ -489,6 +491,16 @@ def _entry_differs(item: Any, installed: Any) -> bool:
     return any(there.config.get(key) != value for key, value in skill_config(entry).items()) or entry.enabled != there.enabled
 
 
+def _found(automation: Automation) -> Found:
+    state = "on" if automation.status == AutomationStatus.ACTIVE else automation.status.value.lower()
+    return Found(
+        id=automation.automation_id,
+        name=automation.title,
+        summary=f"{one_line(automation.description) or 'An automation'} ({state})",
+        record=automation,
+    )
+
+
 class AutomationKind(ManagedKind[AutomationSpec]):
     kind = "Automation"
     label = "Automation"
@@ -502,6 +514,23 @@ class AutomationKind(ManagedKind[AutomationSpec]):
     feeds = "triggers"
     dashboard_path = "/dashboard/automations/{id}"
     export_name = "automation"
+
+    def existing(self, owner: Owner) -> list[Found]:
+        return [_found(automation) for automation in AutomationService().list_automations(owner)
+                if automation.owner_id == owner.user_id]
+
+    def read(self, owner: Owner, resource_id: str) -> Optional[Found]:
+        automation = AutomationRepository().find_in_account(owner.account_id, resource_id)
+        if automation is None or automation.owner_id != owner.user_id:
+            return None
+        chain = read_chain(*AutomationRepository().get_graph(automation.automation_id))
+        if chain is None:
+            return replace(_found(automation), facts=(
+                "It has branches or loops a blueprint can't describe, so it can't be changed here: the person edits "
+                "it on the Automations page.",
+            ))
+        agents = [chain.trigger.config.get("agent_id"), *[node.config.get("agent_id") for node in chain.steps]]
+        return replace(_found(automation), links={agent_id: "Agent" for agent_id in agents if agent_id})
 
     def observe(self, record: Automation, names: Mapping[str, str]) -> dict[str, Any]:
         repository = AutomationRepository()

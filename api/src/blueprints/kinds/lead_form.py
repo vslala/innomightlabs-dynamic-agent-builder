@@ -14,10 +14,12 @@ from src.blueprints.kinds.base import (
     ApplyContext,
     Change,
     Existing,
+    Found,
     ManagedKind,
     NotFound,
     PlanContext,
     Usage,
+    one_line,
 )
 from src.blueprints.reconcile import Outcome
 from src.blueprints.spec import LeadFormSpec, lead_form_resource, lead_form_slug
@@ -130,6 +132,21 @@ def missing_lead_forms(slugs: list[str], path: str, ctx: PlanContext) -> list[Bl
 # --- The kind -----------------------------------------------------------------------------------------------
 
 
+def _found(form: LeadForm) -> Found:
+    """Forms are named by slug, so its blueprint resource name and macro are facts worth saying."""
+    return Found(
+        id=form.form_id,
+        name=form.name,
+        summary=f"{one_line(form.purpose) or 'A lead form'} ({form.status}, {form.capture_count} leads)",
+        record=form,
+        facts=(
+            f"Slug: `{form.slug}`. Its resource name in a blueprint is `{lead_form_resource(form.slug)}`.",
+            f"An agent collects it with `{{{{ lead_form:{form.slug} }}}}` in its instructions.",
+            f"Status: {form.status}. Version {form.version}. {form.capture_count} leads.",
+        ),
+    )
+
+
 class LeadFormKind(ManagedKind[LeadFormSpec]):
     kind = "LeadForm"
     label = "Lead form"
@@ -140,6 +157,17 @@ class LeadFormKind(ManagedKind[LeadFormSpec]):
     feeds = "collected by"
     dashboard_path = "/dashboard/leads/forms/{id}"
     export_name = "lead_form"
+
+    def existing(self, owner: Owner) -> list[Found]:
+        return [_found(form) for form in LeadsService().list_forms(owner.account_id)]
+
+    def read(self, owner: Owner, resource_id: str) -> Optional[Found]:
+        form = LeadsService().repository.find_form(owner.account_id, resource_id)
+        return _found(form) if form else None
+
+    def draft_name(self, record: LeadForm) -> str:
+        """A form's slug comes from its resource name, so the name must be the one its slug was made from."""
+        return lead_form_resource(record.slug)
 
     def observe(self, record: LeadForm, names: Mapping[str, str]) -> dict[str, Any]:
         return {

@@ -87,6 +87,14 @@ class Draft:
                 draft.data["resources"][name] = pinned
         return Draft(draft.dump())
 
+    def with_resource(self, name: str, resource: dict[str, Any]) -> "Draft":
+        """The draft with `resource` under `name`, replacing what was there."""
+        draft = self._copy()
+        if not isinstance(draft.data.get("resources"), dict):
+            draft.data["resources"] = {}
+        draft.data["resources"][name] = resource
+        return Draft(draft.dump())
+
     def without_ids(self) -> "Draft":
         """The draft with no `id`s, so a kit's own map says which resource each name is (an old version's ids may be
         of resources deleted since)."""

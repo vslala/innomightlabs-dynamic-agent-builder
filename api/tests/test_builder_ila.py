@@ -12,6 +12,8 @@ from src.agents.architectures import vishwakarma
 from src.agents.repository import AgentRepository
 from src.agents.runtime_state import AgentTurnState
 from src.blueprints.approval import APPROVE, REVISE, approval_label
+from src.agents.models import Agent
+from src.blueprints.book import blueprint_book
 from src.blueprints.catalog import example_yaml
 from src.blueprints.executor import apply_blueprint
 from src.blueprints.kinds import knowledge_base as knowledge_base_kind
@@ -33,7 +35,7 @@ from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
 from src.skills.registry import get_skill_registry
-from tests.mock_data import account_for, TEST_USER_EMAIL, owner_ids, conversation_fields, conversations_of, session_fields, turn_owner_fields
+from tests.mock_data import account_for, agent_fields, TEST_USER_EMAIL, owner_ids, conversation_fields, conversations_of, session_fields, turn_owner_fields
 from tests.mock_data import test_owner as _test_owner
 
 TEST_OWNER = _test_owner()
@@ -218,8 +220,7 @@ async def test_a_turn_runs_ila_with_only_her_tools(session, monkeypatch):
     )]
 
     assert seen["tools"] == [
-        "open_pages", "search_book", "show_form", "plan_blueprint", "apply_blueprint", "list_my_agents", "list_lead_forms", "list_my_automations",
-        "load_agent", "get_build_status",
+        "open_pages", "search_book", "show_form", "plan_blueprint", "apply_blueprint", "add_to_draft", "get_build_status",
     ]
     assert "You are Ila" in seen["first_prompt"]
     # The book's index, not its pages: the recipe is listed, its YAML isn't there until it's opened.
@@ -393,6 +394,17 @@ async def test_after_a_build_the_draft_is_pinned_to_what_was_built(session):
     assert [step["action"] for step in replanned["steps"]] == ["unchanged", "unchanged", "update"]
 
 
+def opened(page_id: str):
+    """A page of the person's book, as open_pages would put it in Ila's prompt."""
+    page = blueprint_book(owner=TEST_OWNER).get(page_id)
+    assert page is not None, page_id
+    return page
+
+
+async def add(tools: BuilderTools, state: AgentTurnState, page_id: str) -> dict:
+    return json.loads(await tools.add_to_draft("add_to_draft", {"page_id": page_id}, state))
+
+
 async def test_ila_can_find_and_load_an_existing_agent(session):
     tools, state = BuilderTools(), turn_state(session)
     plan_id = json.loads(await tools.plan("plan_blueprint", {"yaml": SITE_AGENT, "params": PARAMS}, state))["plan_id"]
@@ -400,14 +412,15 @@ async def test_ila_can_find_and_load_an_existing_agent(session):
     built = json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))
     agent_id = built["resources"]["assistant"]["id"]
 
-    [listed] = json.loads(await tools.list_agents("list_my_agents", {}, state))["agents"]
-    assert listed == {
-        "agent_id": agent_id, "name": "Acme assistant", "description": "The agent visitors chat with.",
-        "knowledge_bases": 1, "skills": ["lead_capture"], "widget_keys": 1,
-    }
+    [listed] = opened("account/Agent").children
+    assert (listed.id, listed.title) == (f"account/Agent/{agent_id}", "Acme assistant")
+    agent = opened(listed.id)
+    assert f"id: {agent_id}" in agent.body and "lead_capture" in agent.body
+    knowledge = next(child for child in opened("account/KnowledgeBase").children)
+    assert f"`{knowledge.id}`" in agent.body, "it points at the knowledge base it answers from"
 
-    loaded = json.loads(await tools.load_agent("load_agent", {"agent_id": agent_id}, state))
-    assert loaded["loaded"] is True
+    loaded = await add(tools, state, listed.id)
+    assert loaded["added"] is True and loaded["replaced_draft"] is True
     draft = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id).draft_yaml
     assert f"id: {agent_id}" in draft
     # In its kit, the draft is the kit's last version with its params.
@@ -418,8 +431,26 @@ async def test_ila_can_find_and_load_an_existing_agent(session):
     assert replanned["nothing_to_change"] is True
     assert "type" not in replanned and "plan_id" not in replanned
 
-    missing = json.loads(await tools.load_agent("load_agent", {"agent_id": "nope"}, state))
-    assert missing["loaded"] is False
+    missing = await add(tools, state, "account/Agent/nope")
+    assert missing["added"] is False
+    assert (await add(tools, state, "kind/Agent"))["added"] is False, "only the person's own resources"
+
+
+async def test_ila_reads_a_long_instruction_set_in_full_from_its_own_page(session):
+    """She once said the instructions weren't exposed to her: a long text is a page of its own, whole."""
+    instructions = "You are Acme's assistant.\n" + "\n".join(f"Rule {n}: be precise." for n in range(80))
+    agent = AgentRepository().save(Agent(
+        agent_name="Long", agent_architecture="krishna-memgpt", agent_provider="Bedrock",
+        agent_persona=instructions, **agent_fields(TEST_USER_EMAIL),
+    ))
+
+    page = opened(f"account/Agent/{agent.agent_id}")
+    assert "Rule 79" not in page.body, "the agent's page stays short"
+    assert f"open account/Agent/{agent.agent_id}/instructions" in page.body
+    [child] = page.children
+    assert child.id == f"account/Agent/{agent.agent_id}/instructions" and child.summary.startswith("81 lines")
+
+    assert "Rule 79: be precise." in opened(child.id).body
 
 
 LEAD_DESK = """
@@ -461,48 +492,58 @@ resources:
 """
 
 
+async def build_lead_desk(session) -> None:
+    tools, state = BuilderTools(), turn_state(session)
+    plan_id = json.loads(await tools.plan("plan_blueprint", {"yaml": LEAD_DESK}, state))["plan_id"]
+    say(session, "user", approval(plan_id))
+    assert json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))["applied"]
+
+
+def start_afresh(session) -> None:
+    """A new conversation's empty draft, with what was built still in the account."""
+    fresh = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id)
+    fresh.draft_yaml, fresh.kit_id, fresh.deployment_id = None, None, None
+    BuilderSessionRepository().save(fresh)
+
+
 async def test_ila_can_see_the_accounts_lead_forms_and_automations(session):
-    """She asked what forms exist and had no tool for it. The lists are written as a blueprint writes them, so what she
-    reads can go back into a draft with its id and plan as no change."""
+    """She asked what forms exist and had no way to know. Each is a page, written as a blueprint writes it."""
+    assert opened("account/LeadForm").children == ()
+    await build_lead_desk(session)
+
+    [listed] = opened("account/LeadForm").children
+    assert listed.title == "Demo request" and "0 leads" in listed.summary
+    form = opened(listed.id)
+    assert "{{ lead_form:demo-request }}" in form.body and "`demo_request`" in form.body
+    assert "name: email" in form.body and "format: email" in form.body, "the exact fields"
+
+    [automation] = opened("account/Automation").children
+    assert automation.title == "Tell sales" and "(on)" in automation.summary
+    page = opened(automation.id)
+    assert "form: demo-request" in page.body and "name: email_sales" in page.body
+    desk = AgentRepository().find_by_name(TEST_OWNER.account_id, TEST_OWNER.user_id, "Demo desk")
+    assert f"`account/Agent/{desk.agent_id}`" in page.body, "it points at the agent it acts for"
+
+
+async def test_what_ila_adds_to_a_draft_plans_as_a_change_to_it(session):
+    await build_lead_desk(session)
+    start_afresh(session)
     tools, state = BuilderTools(), turn_state(session)
-    assert json.loads(await tools.list_lead_forms("list_lead_forms", {}, state)) == {"lead_forms": []}
-    plan_id = json.loads(await tools.plan("plan_blueprint", {"yaml": LEAD_DESK}, state))["plan_id"]
-    say(session, "user", approval(plan_id))
-    json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))
+    [form] = opened("account/LeadForm").children
+    [automation] = opened("account/Automation").children
 
-    [form] = json.loads(await tools.list_lead_forms("list_lead_forms", {}, state))["lead_forms"]
-    assert (form["slug"], form["resource_name"], form["macro"], form["status"], form["leads"]) == (
-        "demo-request", "demo_request", "{{ lead_form:demo-request }}", "active", 0
-    )
-    assert [field["name"] for field in form["form_inputs"]] == ["email", "company"], "the exact fields"
-    assert form["form_inputs"][0]["validation"]["format"] == "email"
-
-    [automation] = json.loads(await tools.list_automations("list_my_automations", {}, state))["automations"]
-    assert automation["title"] == "Tell sales" and automation["enabled"] is True and automation["editable"] is True
-    assert automation["trigger"]["lead_captured"]["form"] == "demo-request"
-    assert automation["trigger"]["lead_captured"]["agent"] == "Demo desk", "agents are named, not left as ids"
-    assert [step["name"] for step in automation["steps"]] == ["email_sales"]
-
-
-async def test_what_ila_reads_goes_back_into_a_draft_as_no_change(session):
-    tools, state = BuilderTools(), turn_state(session)
-    plan_id = json.loads(await tools.plan("plan_blueprint", {"yaml": LEAD_DESK}, state))["plan_id"]
-    say(session, "user", approval(plan_id))
-    json.loads(await tools.apply("apply_blueprint", {"plan_id": plan_id}, state))
-    [form] = json.loads(await tools.list_lead_forms("list_lead_forms", {}, state))["lead_forms"]
-
-    # She changes the form's purpose in the draft, writing it from the list: its id and every field as listed
+    assert (await add(tools, state, form.id))["resource"] == "demo_request", "the name its slug came from"
+    assert (await add(tools, state, automation.id))["resource"] == "automation"
     draft = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id).draft_yaml
-    document = yaml.safe_load(draft)
-    document["resources"]["demo_request"] = {
-        "kind": "LeadForm", "id": form["id"], "name": form["name"], "purpose": "Qualify the visitor.",
-        "form_inputs": form["form_inputs"],
-    }
-    changed = json.loads(await tools.plan("plan_blueprint", {"yaml": yaml.safe_dump(document, sort_keys=False)}, state))
+    unchanged = json.loads(await tools.plan("plan_blueprint", {"yaml": draft}, state))
+    assert unchanged.get("nothing_to_change") is True, unchanged
 
+    changed = json.loads(await tools.plan("plan_blueprint", {
+        "yaml": draft.replace("Understand what the visitor needs.", "Qualify the visitor."),
+    }, state))
     assert changed["ok"] is True, changed
     assert {step["resource"]: step["action"] for step in changed["steps"]} == {
-        "demo_request": "update", "desk": "unchanged", "tell_sales": "unchanged",
+        "demo_request": "update", "automation": "unchanged",
     }
 
 
@@ -512,7 +553,6 @@ async def test_ila_does_not_see_automations_that_are_someone_elses_or_that_a_blu
     from src.automations.service import AutomationService
     from src.automations.models import CreateAutomationRequest
 
-    tools, state = BuilderTools(), turn_state(session)
     service = AutomationService()
     branched = service.create_automation(CreateAutomationRequest(title="Has a condition"), TEST_OWNER).automation
     repository = AutomationRepository()
@@ -524,9 +564,9 @@ async def test_ila_does_not_see_automations_that_are_someone_elses_or_that_a_blu
     elsewhere.owner_id = "another-member"
     repository.save_automation(elsewhere)
 
-    listed = json.loads(await tools.list_automations("list_my_automations", {}, state))["automations"]
-
-    assert [(item["title"], item["editable"]) for item in listed] == [("Has a condition", False)]
+    assert [page.title for page in opened("account/Automation").children] == ["Has a condition"]
+    assert "can't be changed here" in opened(f"account/Automation/{branched.automation_id}").body
+    assert blueprint_book(owner=TEST_OWNER).get(f"account/Automation/{elsewhere.automation_id}") is None
 
 
 async def test_ila_names_what_a_plan_removes(session):
@@ -534,7 +574,7 @@ async def test_ila_names_what_a_plan_removes(session):
     validated = validate_blueprint(SITE_AGENT, PARAMS)
     built = apply_blueprint(validated, plan_blueprint(validated, TEST_OWNER), TEST_OWNER)
     tools, state = BuilderTools(), turn_state(session)
-    assert json.loads(await tools.load_agent("load_agent", {"agent_id": built.resources["assistant"].id}, state))["loaded"]
+    assert (await add(tools, state, f"account/Agent/{built.resources['assistant'].id}"))["added"]
     draft = BuilderSessionRepository().find(TEST_OWNER.member_pk, session.conversation_id).draft_yaml
     document = yaml.safe_load(draft)
     document["resources"]["agent"]["skills"] = []

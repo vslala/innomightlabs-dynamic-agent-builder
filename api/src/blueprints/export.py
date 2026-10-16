@@ -21,8 +21,14 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60] or "agent"
 
 
-def _numbered(base: str, index: int) -> str:
+def numbered(base: str, index: int) -> str:
     return base if index == 0 else f"{base}_{index + 1}"
+
+
+def new_document(title: str) -> str:
+    """An empty blueprint named after `title`, for a draft that starts from one existing resource."""
+    document = {"apiVersion": API_VERSION, "kind": "Blueprint", "metadata": {"name": _slug(title), "title": title}, "resources": {}}
+    return yaml.safe_dump(document, sort_keys=False, allow_unicode=True, width=100)
 
 
 def export_agent(agent_id: str, owner: Owner) -> Optional[str]:
@@ -42,7 +48,7 @@ def export_agent(agent_id: str, owner: Owner) -> Optional[str]:
         *agent_kind.linked(agent_id, owner), (agent_kind.kind, agent_id, agent), *keys,
     ]:
         base = kind_for(kind).export_name
-        names[resource_id] = _numbered(base, counts.get(base, 0))
+        names[resource_id] = numbered(base, counts.get(base, 0))
         counts[base] = counts.get(base, 0) + 1
         records.append((kind, names[resource_id], record))
 
