@@ -362,6 +362,9 @@ private struct LaneLabel: View {
     private var menu: some View {
         if let audio = lane.audioLane {
             Button(isMuted ? "Unmute" : "Mute") { viewModel.setLaneMuted(audio, !isMuted) }
+            Button(viewModel.isStudioSoundOn(audio) ? "Turn Off Studio Sound" : "Studio Sound") {
+                viewModel.toggleStudioSound(audio)
+            }
             Divider()
             Menu("Level") {
                 ForEach([0.0, 0.25, 0.5, 0.75, 1.0], id: \.self) { gain in

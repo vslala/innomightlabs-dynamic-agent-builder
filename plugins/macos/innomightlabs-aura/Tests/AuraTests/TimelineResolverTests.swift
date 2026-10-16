@@ -220,6 +220,31 @@ final class TimelineResolverTests: XCTestCase {
         XCTAssertEqual(lane.keyframes.map(\.gain), [0])
     }
 
+    func testStudioSoundPlaysTheDenoisedCopyOnlyWhereAskedAndAvailable() throws {
+        var mic = probe(.microphone)
+        let copy = URL(fileURLWithPath: "/tmp/aura-tests/microphone.studio.m4a")
+        mic.studioSoundURL = copy
+        let probes = [mic, probe(.systemAudio)]
+
+        let on = try SessionEdit.initial(duration: 30)
+            .applying(.setLaneStudioSound(lane: .microphone, enabled: true))
+        let resolved = TimelineResolver.resolve(document: on, probes: probes)
+        XCTAssertEqual(resolved.audio.first { $0.lane == .microphone }?.probe?.url, copy)
+        XCTAssertEqual(resolved.audio.first { $0.lane == .systemAudio }?.probe?.url, probes[1].url)
+
+        let off = TimelineResolver.resolve(document: .initial(duration: 30), probes: probes)
+        XCTAssertEqual(off.audio.first { $0.lane == .microphone }?.probe?.url, mic.url)
+    }
+
+    func testStudioSoundFallsBackToTheRecordingUntilTheCopyExists() throws {
+        // Playing the original is right; dropping the lane would be silence.
+        let on = try SessionEdit.initial(duration: 30)
+            .applying(.setLaneStudioSound(lane: .microphone, enabled: true))
+        let resolved = TimelineResolver.resolve(document: on, probes: [probe(.microphone)])
+
+        XCTAssertEqual(resolved.audio.first?.probe?.url, probe(.microphone).url)
+    }
+
     func testLanesResolveIndependently() throws {
         let edit = try SessionEdit.initial(duration: 30)
             .applying(.setLaneMuted(lane: .systemAudio, muted: true))

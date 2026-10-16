@@ -112,6 +112,9 @@ enum EditSuggestionPrompt {
               side; cornerRadius applies to "rounded" only.
         {"op":"set_lane_gain","lane":"microphone"|"system_audio","t":<s>,"gain":0-1}
         {"op":"set_lane_muted","lane":"microphone"|"system_audio","muted":<bool>}
+        {"op":"set_lane_studio_sound","lane":"microphone"|"system_audio","enabled":<bool>}
+              remove steady background noise (fans, hiss, room tone) from that lane. Use it
+              on the microphone when the user complains about noise; leave system_audio alone.
         {"op":"set_lane_offset","lane":"microphone"|"system_audio","seconds":<-5..5>}
               nudge that lane's audio sync
 

@@ -54,6 +54,19 @@ final class CameraCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
         return AVCaptureDevice.default(for: .video)
     }
 
+    /// The largest format up to 1920 wide, preferring the most landscape one at equal width.
+    /// Capped at 1080p to keep files and encoding cost bounded.
+    private static func widestFormat(of device: AVCaptureDevice) -> AVCaptureDevice.Format? {
+        let candidates = device.formats.map { format -> (format: AVCaptureDevice.Format, size: CMVideoDimensions) in
+            (format, CMVideoFormatDescriptionGetDimensions(format.formatDescription))
+        }.filter { $0.size.width <= 1920 && $0.size.width > $0.size.height }
+
+        return candidates.max { a, b in
+            if a.size.width != b.size.width { return a.size.width < b.size.width }
+            return Double(a.size.width) / Double(a.size.height) < Double(b.size.width) / Double(b.size.height)
+        }?.format
+    }
+
     func prepare() async throws {
         try await CaptureAuthorization.request(.video, denied: .cameraPermissionDenied)
 
@@ -63,11 +76,16 @@ final class CameraCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
         let input = try AVCaptureDeviceInput(device: device)
 
         session.beginConfiguration()
-        if session.canSetSessionPreset(.hd1920x1080) {
-            session.sessionPreset = .hd1920x1080
-        }
         if session.canAddInput(input) {
             session.addInput(input)
+        }
+        // A preset lets the camera fall back to a cropped or 4:3 format. Choosing the format
+        // ourselves records whatever the camera natively offers at its widest.
+        if let format = Self.widestFormat(of: device), (try? device.lockForConfiguration()) != nil {
+            device.activeFormat = format  // on macOS this takes the session off any preset
+            device.unlockForConfiguration()
+        } else if session.canSetSessionPreset(.hd1920x1080) {
+            session.sessionPreset = .hd1920x1080
         }
         output.setSampleBufferDelegate(self, queue: queue)
         if session.canAddOutput(output) {

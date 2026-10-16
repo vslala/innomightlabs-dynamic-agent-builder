@@ -191,6 +191,15 @@ final class ReviewViewModel: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([folder.rootURL])
     }
 
+    /// Set by the window presenter, which owns the window and so must close it before the
+    /// files go — closing flushes `edit.json`, which would recreate a deleted folder.
+    var onDiscard: (() -> Void)?
+
+    /// Deletes the whole recording from disk, for rehearsals the user doesn't want to keep.
+    func discardRecording() {
+        onDiscard?()
+    }
+
     func toggleCommandPalette() {
         isCommandPaletteOpen.toggle()
     }
@@ -406,6 +415,7 @@ final class ReviewViewModel: ObservableObject {
     }
 
     private func rebuild(document: SessionEdit, preservingPlayhead: Bool) async {
+        await renderMissingStudioSound(for: document)
         let resolved = TimelineResolver.resolve(document: document, probes: probes)
         let wasReady = state == .ready
 
@@ -452,6 +462,37 @@ final class ReviewViewModel: ObservableObject {
                 state = .failed(error.localizedDescription)
             }
         }
+    }
+
+    /// Renders the denoised copy of every lane that asks for one and has none yet.
+    ///
+    /// Done here, ahead of resolving, so that every route to the flag — the button, the agent,
+    /// undo and redo, reopening a session — gets its audio without each having to know about
+    /// rendering. A failure leaves the original playing, and says so.
+    private func renderMissingStudioSound(for document: SessionEdit) async {
+        for lane in AudioLane.allCases where document.settings(for: lane).studioSound {
+            for probe in probes where probe.kind.lane == lane && probe.studioSoundURL == nil {
+                let destination = SessionFolder.studioSoundURL(for: probe.url)
+                do {
+                    try await StudioSoundRenderer.render(source: probe.url, to: destination) { [weak self] fraction in
+                        Task { @MainActor in self?.showStudioSoundProgress(fraction) }
+                    }
+                    if let index = probes.firstIndex(where: { $0.url == probe.url }) {
+                        probes[index].studioSoundURL = destination
+                    }
+                    lastNotice = "Studio Sound is on."
+                } catch is CancellationError {
+                    return
+                } catch {
+                    lastError = "Studio Sound couldn't clean this audio, so the original is playing. \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func showStudioSoundProgress(_ fraction: Double) {
+        let text = String(format: "Studio Sound: cleaning up the audio… %.0f%%", fraction * 100)
+        if lastNotice != text { lastNotice = text }
     }
 
     /// Recomputes the projection without rebuilding the composition.
@@ -953,6 +994,22 @@ final class ReviewViewModel: ObservableObject {
         // having done nothing.
         if shape == .rounded, style.cornerRadius <= 0 { style.cornerRadius = 0.2 }
         setCameraStyle(style)
+    }
+
+    func isStudioSoundOn(_ lane: AudioLane) -> Bool {
+        store?.document.settings(for: lane).studioSound ?? false
+    }
+
+    /// Switches Studio Sound for a lane. The audio itself is rendered by the rebuild this
+    /// operation triggers, so switching it off again is instant and undo brings it back.
+    func toggleStudioSound(_ lane: AudioLane = .microphone) {
+        guard probes.contains(where: { $0.kind.lane == lane }) else {
+            lastNotice = "There is no \(lane == .microphone ? "voice" : "system audio") recording to clean up."
+            return
+        }
+        let enabled = !isStudioSoundOn(lane)
+        guard apply(.setLaneStudioSound(lane: lane, enabled: enabled)) else { return }
+        if !enabled { lastNotice = "Studio Sound is off — playing the original recording." }
     }
 
     func setLaneMuted(_ lane: AudioLane, _ muted: Bool) {
@@ -1527,7 +1584,9 @@ final class ReviewViewModel: ObservableObject {
             removeFillerWords()
         case .generateCaptions:
             generateCaptions()
-        case .createHighlights, .shortenVideo, .cleanAudio:
+        case .cleanAudio:
+            toggleStudioSound()
+        case .createHighlights, .shortenVideo:
             // Not local; `perform` routes these elsewhere. Kept exhaustive so adding an action
             // without deciding how it runs fails to compile.
             break

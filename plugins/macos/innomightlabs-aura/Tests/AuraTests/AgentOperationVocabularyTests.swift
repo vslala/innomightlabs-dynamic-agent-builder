@@ -99,6 +99,10 @@ final class AgentOperationVocabularyTests: XCTestCase {
             .setLaneMuted(lane: .systemAudio, muted: true)
         )
         assertDecodes(
+            #"{"op":"set_lane_studio_sound","lane":"microphone","enabled":true}"#,
+            .setLaneStudioSound(lane: .microphone, enabled: true)
+        )
+        assertDecodes(
             #"{"op":"set_lane_offset","lane":"microphone","seconds":-0.25}"#,
             .setLaneOffset(lane: .microphone, seconds: -0.25)
         )
@@ -144,7 +148,7 @@ final class AgentOperationVocabularyTests: XCTestCase {
         // entry — the actual failure mode — trips this list first.
         let documented = [
             "remove_range", "split_clip", "set_overlay_keyframe", "remove_overlay_keyframe",
-            "set_lane_gain", "set_lane_muted", "set_lane_offset", "exclude_words",
+            "set_lane_gain", "set_lane_muted", "set_lane_studio_sound", "set_lane_offset", "exclude_words",
             "restore_words", "set_camera_style", "uncut", "remove_split", "add_marker",
             "remove_marker", "rename_marker", "move_marker",
         ]

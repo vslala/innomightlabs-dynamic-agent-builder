@@ -31,6 +31,8 @@ enum EditOperationDescription {
             )
         case .setLaneMuted(let lane, let muted):
             return "\(muted ? "Mute" : "Unmute") \(name(lane))"
+        case .setLaneStudioSound(let lane, let enabled):
+            return "Studio Sound \(enabled ? "on" : "off") for \(name(lane))"
         case .setLaneOffset(let lane, let seconds):
             return String(format: "Slip %@ by %+.0fms", name(lane), seconds * 1000)
         case .excludeWords(let words):

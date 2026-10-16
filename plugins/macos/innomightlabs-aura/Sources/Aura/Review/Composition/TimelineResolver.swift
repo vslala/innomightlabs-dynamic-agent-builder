@@ -60,9 +60,15 @@ enum TimelineResolver {
                 // Automatic per-segment correction plus the user's one manual slip for the
                 // whole lane.
                 let slip = Timeline.time(seconds: document.offset(for: lane))
+                let studioSound = document.settings(for: lane).studioSound
                 return ResolvedAudioLane(
                     lane: lane,
-                    segments: segments.map { PlacedSegment(probe: $0, timeOffset: $0.alignmentCorrection + slip) },
+                    segments: segments.map {
+                        PlacedSegment(
+                            probe: $0.playing(studioSound: studioSound),
+                            timeOffset: $0.alignmentCorrection + slip
+                        )
+                    },
                     keyframes: resolveGain(document: document, lane: lane, timeMap: timeMap)
                 )
             },

@@ -8,9 +8,9 @@ import SwiftUI
 /// `EditDocumentStore.apply` a drag does — so an AI edit is reviewable before it lands and
 /// undoable after.
 ///
-/// The suggested actions are not prompts dressed as buttons. Three of them are computed
+/// The suggested actions are not prompts dressed as buttons. Four of them are computed
 /// locally and deterministically; the ones that go to the agent say so by behaving like the
-/// rest of the conversation. One is unavailable and admits it.
+/// rest of the conversation.
 struct AgentEditPanelView: View {
     @ObservedObject var viewModel: ReviewViewModel
     @StateObject private var voice = VoiceInstructionRecorder()

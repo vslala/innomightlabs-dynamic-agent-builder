@@ -301,6 +301,29 @@ final class EditOperationTests: XCTestCase {
         XCTAssertEqual(edit.gain(for: .systemAudio, at: 0), 1)
     }
 
+    func testStudioSoundIsPerLaneAndReversible() throws {
+        let on = try initial().applying(.setLaneStudioSound(lane: .microphone, enabled: true))
+
+        XCTAssertTrue(on.settings(for: .microphone).studioSound)
+        XCTAssertFalse(on.settings(for: .systemAudio).studioSound)
+
+        let off = try on.applying(.setLaneStudioSound(lane: .microphone, enabled: false))
+        XCTAssertFalse(off.settings(for: .microphone).studioSound)
+    }
+
+    func testStudioSoundSurvivesSavingAndDocumentsWithoutItStillLoad() throws {
+        let on = try initial().applying(.setLaneStudioSound(lane: .microphone, enabled: true))
+        let reloaded = try JSONDecoder().decode(SessionEdit.self, from: JSONEncoder().encode(on))
+        XCTAssertTrue(reloaded.settings(for: .microphone).studioSound)
+
+        // A lane written before the flag existed.
+        let old = try JSONDecoder().decode(
+            AudioLaneSettings.self,
+            from: Data(#"{"lane":"microphone","muted":false,"gain":[]}"#.utf8)
+        )
+        XCTAssertFalse(old.studioSound)
+    }
+
     func testMutingIsReversible() throws {
         let edit = try initial()
             .applying(.setLaneMuted(lane: .microphone, muted: true))

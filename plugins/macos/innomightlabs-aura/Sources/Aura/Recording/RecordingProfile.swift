@@ -56,6 +56,7 @@ enum RecordingPreset: String, CaseIterable, Identifiable, Sendable {
     case screenAndSystemAudio
     case screenAndVoice
     case voiceAndCamera
+    case voiceCameraSystemAudio
     case voiceOnly
 
     var id: String { rawValue }
@@ -68,6 +69,7 @@ enum RecordingPreset: String, CaseIterable, Identifiable, Sendable {
         case .screenAndSystemAudio: return "Screen + System Audio"
         case .screenAndVoice: return "Screen + Voice"
         case .voiceAndCamera: return "Voice + Camera"
+        case .voiceCameraSystemAudio: return "Voice + Camera + System Audio"
         case .voiceOnly: return "Voice Only"
         }
     }
@@ -89,6 +91,10 @@ enum RecordingPreset: String, CaseIterable, Identifiable, Sendable {
         // With the mic, because a talking head with no voice is not a thing anyone records.
         case .voiceAndCamera:
             return RecordingProfile(tracks: [.camera, .microphone])
+        // A talking head over a remote call or played media: no screen video, but system audio
+        // still goes through ScreenCaptureKit, so this asks for Screen Recording permission.
+        case .voiceCameraSystemAudio:
+            return RecordingProfile(tracks: [.camera, .microphone, .systemAudio])
         // Voice only, not voice + system audio: system audio would drag in the Screen
         // Recording permission that an audio-only recording otherwise never needs. A remote
         // guest is one visible toggle away, which makes it a choice rather than a surprise.

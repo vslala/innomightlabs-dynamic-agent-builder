@@ -151,4 +151,23 @@ final class SessionFolderTests: XCTestCase {
         let folder = SessionFolder.make(date: fixedDate, suffix: "ab12", baseDirectory: baseDirectory)
         XCTAssertTrue(folder.segmentURLs(for: .systemAudio).isEmpty)
     }
+
+    func testStudioSoundCopiesAreNotMistakenForRecordedSegments() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aura-studio-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let folder = SessionFolder.make(date: fixedDate, suffix: "ab12", baseDirectory: base)
+        try FileManager.default.createDirectory(at: folder.rootURL, withIntermediateDirectories: true)
+        try Data().write(to: folder.microphoneURL)
+        try Data().write(to: SessionFolder.studioSoundURL(for: folder.microphoneURL))
+        try Data().write(to: SessionFolder.studioSoundURL(for: folder.url(for: .microphone, segment: 1)))
+
+        XCTAssertEqual(folder.segmentURLs(for: .microphone).map(\.lastPathComponent), ["microphone.m4a"])
+        XCTAssertEqual(
+            SessionFolder.studioSoundURL(for: folder.microphoneURL).lastPathComponent,
+            "microphone.studio.m4a"
+        )
+    }
 }

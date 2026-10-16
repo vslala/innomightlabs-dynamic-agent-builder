@@ -188,16 +188,26 @@ struct AudioLaneSettings: Codable, Hashable, Sendable {
     /// cases automation can't cover: recordings made before those offsets were logged, and
     /// residual device latency the user can hear but nothing can measure.
     var offset: TimeInterval
+    /// Play the denoised copy of this lane's audio instead of the recording. The copy is
+    /// derived data (see `SessionFolder.studioSoundURL`), so this flag is the whole edit.
+    var studioSound: Bool
 
-    init(lane: AudioLane, muted: Bool = false, gain: [GainKeyframe] = [], offset: TimeInterval = 0) {
+    init(
+        lane: AudioLane,
+        muted: Bool = false,
+        gain: [GainKeyframe] = [],
+        offset: TimeInterval = 0,
+        studioSound: Bool = false
+    ) {
         self.lane = lane
         self.muted = muted
         self.gain = gain
         self.offset = offset
+        self.studioSound = studioSound
     }
 
     private enum CodingKeys: String, CodingKey {
-        case lane, muted, gain, offset
+        case lane, muted, gain, offset, studioSound
     }
 
     init(from decoder: Decoder) throws {
@@ -207,6 +217,7 @@ struct AudioLaneSettings: Codable, Hashable, Sendable {
         gain = try container.decode([GainKeyframe].self, forKey: .gain)
         // Optional so documents written before slip existed still load.
         offset = try container.decodeIfPresent(TimeInterval.self, forKey: .offset) ?? 0
+        studioSound = try container.decodeIfPresent(Bool.self, forKey: .studioSound) ?? false
     }
 }
 

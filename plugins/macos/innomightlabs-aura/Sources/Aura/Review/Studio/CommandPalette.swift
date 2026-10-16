@@ -77,6 +77,13 @@ enum CommandPalette {
             action: .studio(.generateCaptions)
         ),
         StudioCommand(
+            id: "studio-sound",
+            title: "Studio Sound",
+            subtitle: "Reduce background noise in your voice",
+            keywords: ["noise", "clean audio", "denoise", "hiss", "fan", "enhance"],
+            action: .studio(.cleanAudio)
+        ),
+        StudioCommand(
             id: "create-highlights",
             title: "Create highlights",
             subtitle: "Ask the agent to mark key moments",

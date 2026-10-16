@@ -70,8 +70,18 @@ final class ReviewWindowPresenter {
             keyMonitor: Self.installKeyMonitor(window: window, viewModel: viewModel),
             scrollMonitor: Self.installScrollMonitor(window: window, viewModel: viewModel)
         )
+        viewModel.onDiscard = { [weak self] in self?.discard(folder) }
         presented[folder.id]?.controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Tears the window down first, so the view model's final flush cannot write back into the
+    /// folder, then removes the recording from disk to free the space immediately.
+    private func discard(_ folder: SessionFolder) {
+        let window = presented[folder.id]?.controller.window
+        dismiss(folder.id)
+        window?.close()
+        try? FileManager.default.removeItem(at: folder.rootURL)
     }
 
     private func dismiss(_ id: String) {

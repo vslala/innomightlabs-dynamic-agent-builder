@@ -63,7 +63,9 @@ enum TrackKind: String, Sendable, CaseIterable, Codable {
 /// `CameraCaptureSource` reads `activeFormat` before the capture session applies its preset, so
 /// its declared size can disagree with what actually got encoded.
 struct SourceTrackProbe: Sendable, Equatable {
-    let url: URL
+    /// The file to play. `playing(studioSound:)` is the only thing that points this anywhere
+    /// but the recording.
+    var url: URL
     let kind: TrackKind
     let duration: CMTime
     /// Upright display size, i.e. `naturalSize` with `preferredTransform` applied. Nil for audio.
@@ -84,6 +86,21 @@ struct SourceTrackProbe: Sendable, Equatable {
     /// How far behind the session start this track's first sample actually was, as recorded
     /// at capture time. Zero for sessions recorded before that was logged.
     var recordedStartOffset: CMTime = .zero
+    /// The denoised copy of this file, when one has been rendered. Same length and format as
+    /// the recording, so it can replace it without anything on the timeline moving.
+    var studioSoundURL: URL? = nil
+
+    /// This file, or its denoised copy when asked for and available.
+    ///
+    /// Falls back to the recording rather than failing: a copy that hasn't been rendered yet
+    /// (the edit arrived from the agent, or the cache was deleted) must play the original, not
+    /// silence.
+    func playing(studioSound enabled: Bool) -> SourceTrackProbe {
+        guard enabled, let studioSoundURL else { return self }
+        var copy = self
+        copy.url = studioSoundURL
+        return copy
+    }
 
     /// How much later this file's content must play than its own timeline implies.
     ///
@@ -165,6 +182,10 @@ struct SourceTrackProbe: Sendable, Equatable {
                 guard var probe = await probe(url: url, kind: kind) else { continue }
                 if let offset = recordedOffsets[url.lastPathComponent] {
                     probe.recordedStartOffset = Timeline.time(seconds: offset)
+                }
+                let derived = SessionFolder.studioSoundURL(for: url)
+                if !kind.isVideo, FileManager.default.fileExists(atPath: derived.path) {
+                    probe.studioSoundURL = derived
                 }
                 probes.append(probe)
             }

@@ -67,6 +67,10 @@ final class RecordingProfileTests: XCTestCase {
         XCTAssertEqual(RecordingPreset.voiceAndCamera.profile.tracks, [.camera, .microphone])
     }
 
+    func testVoiceCameraSystemAudioPresetHasNoScreen() {
+        XCTAssertEqual(RecordingPreset.voiceCameraSystemAudio.profile.tracks, [.camera, .microphone, .systemAudio])
+    }
+
     func testFullStudioPresetIsEveryTrack() {
         XCTAssertEqual(RecordingPreset.fullStudio.profile.tracks, Set(TrackKind.allCases))
     }

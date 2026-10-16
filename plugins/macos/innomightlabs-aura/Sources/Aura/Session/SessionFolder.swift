@@ -31,6 +31,15 @@ struct SessionFolder {
         source.deletingPathExtension().appendingPathExtension("filmstrip")
     }
 
+    /// The denoised copy of an audio file, beside it for the same reason. Derived data: it can
+    /// always be deleted and rebuilt from the recording.
+    ///
+    /// The doubled extension keeps it out of `segmentURLs(for:)`, which only accepts
+    /// `<stem>.m4a` and `<stem>-<n>.m4a`.
+    static func studioSoundURL(for source: URL) -> URL {
+        source.deletingPathExtension().appendingPathExtension("studio.m4a")
+    }
+
     private static let idFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"

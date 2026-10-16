@@ -9,6 +9,7 @@ struct StudioHeaderView: View {
 
     @State private var isRenaming = false
     @State private var draftName = ""
+    @State private var isConfirmingDelete = false
 
     var body: some View {
         HStack(spacing: AuraTheme.Space.md) {
@@ -22,12 +23,25 @@ struct StudioHeaderView: View {
             Spacer(minLength: AuraTheme.Space.md)
 
             history
+            iconButton("trash", help: "Delete this recording", enabled: true) {
+                isConfirmingDelete = true
+            }
             ExportButton(viewModel: viewModel)
         }
         .padding(.leading, AuraTheme.trafficLightInset)
         .padding(.trailing, AuraTheme.Space.md)
         .frame(height: 52)
         .background(AuraTheme.background)
+        .confirmationDialog(
+            "Delete this recording?",
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Recording", role: .destructive) { viewModel.discardRecording() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The screen, camera and audio files are removed from your disk. This can't be undone.")
+        }
     }
 
     private var identity: some View {
@@ -50,6 +64,8 @@ struct StudioHeaderView: View {
                 isRenaming = true
             }
             Button("Reveal in Finder") { viewModel.revealInFinder() }
+            Divider()
+            Button("Delete Recording…", role: .destructive) { isConfirmingDelete = true }
         } label: {
             HStack(spacing: AuraTheme.Space.xs + 2) {
                 Text(viewModel.sessionName)

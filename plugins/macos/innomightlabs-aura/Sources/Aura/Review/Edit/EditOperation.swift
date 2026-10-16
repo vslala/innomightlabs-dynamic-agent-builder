@@ -20,6 +20,9 @@ enum EditOperation: Codable, Equatable, Sendable {
     case removeOverlayKeyframe(at: TimeInterval)
     case setLaneGain(lane: AudioLane, keyframe: GainKeyframe)
     case setLaneMuted(lane: AudioLane, muted: Bool)
+    /// Swap a lane's audio for its noise-reduced copy, or back. Rendering the copy is I/O and
+    /// happens outside the document; this only records that the user wants it.
+    case setLaneStudioSound(lane: AudioLane, enabled: Bool)
     case setLaneOffset(lane: AudioLane, seconds: TimeInterval)
     /// Cut individual words, reversibly. Spans are resolved from the transcript before the
     /// operation is built, so the document never needs the transcript to play back.
@@ -51,6 +54,7 @@ enum EditOperation: Codable, Equatable, Sendable {
         case removeOverlayKeyframe = "remove_overlay_keyframe"
         case setLaneGain = "set_lane_gain"
         case setLaneMuted = "set_lane_muted"
+        case setLaneStudioSound = "set_lane_studio_sound"
         case setLaneOffset = "set_lane_offset"
         case excludeWords = "exclude_words"
         case restoreWords = "restore_words"
@@ -66,7 +70,7 @@ enum EditOperation: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case op, start, end, t, rect, visible, lane, gain, muted, seconds, words, ids
+        case op, start, end, t, rect, visible, lane, gain, muted, enabled, seconds, words, ids
         case shape, cornerRadius, borderWidth, borderColor, shadowOpacity, shadowRadius
         case cutIds, id, label, name, spans
         // Accepted on decode only, never written: a language model reaches for these names
@@ -105,6 +109,11 @@ enum EditOperation: Codable, Equatable, Sendable {
             self = .setLaneMuted(
                 lane: try container.decode(AudioLane.self, forKey: .lane),
                 muted: try container.decode(Bool.self, forKey: .muted)
+            )
+        case .setLaneStudioSound:
+            self = .setLaneStudioSound(
+                lane: try container.decode(AudioLane.self, forKey: .lane),
+                enabled: try container.decode(Bool.self, forKey: .enabled)
             )
         case .setLaneOffset:
             self = .setLaneOffset(
@@ -183,6 +192,10 @@ enum EditOperation: Codable, Equatable, Sendable {
             try container.encode(Op.setLaneMuted, forKey: .op)
             try container.encode(lane, forKey: .lane)
             try container.encode(muted, forKey: .muted)
+        case .setLaneStudioSound(let lane, let enabled):
+            try container.encode(Op.setLaneStudioSound, forKey: .op)
+            try container.encode(lane, forKey: .lane)
+            try container.encode(enabled, forKey: .enabled)
         case .setLaneOffset(let lane, let seconds):
             try container.encode(Op.setLaneOffset, forKey: .op)
             try container.encode(lane, forKey: .lane)
@@ -360,6 +373,9 @@ extension SessionEdit {
 
         case .setLaneMuted(let lane, let muted):
             edit.audioLanes = Self.updatingLane(lane, in: audioLanes) { $0.muted = muted }
+
+        case .setLaneStudioSound(let lane, let enabled):
+            edit.audioLanes = Self.updatingLane(lane, in: audioLanes) { $0.studioSound = enabled }
 
         case .setLaneOffset(let lane, let seconds):
             guard seconds.isFinite, abs(seconds) <= Self.maximumLaneOffset else {

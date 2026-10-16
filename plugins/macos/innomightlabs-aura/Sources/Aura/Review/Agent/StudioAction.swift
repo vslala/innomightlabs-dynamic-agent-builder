@@ -25,7 +25,7 @@ enum StudioAction: String, CaseIterable, Identifiable, Sendable {
         case .generateCaptions: return "Generate captions"
         case .createHighlights: return "Create highlights"
         case .shortenVideo: return "Shorten clip"
-        case .cleanAudio: return "Clean audio"
+        case .cleanAudio: return "Studio Sound"
         }
     }
 
@@ -36,7 +36,7 @@ enum StudioAction: String, CaseIterable, Identifiable, Sendable {
         case .generateCaptions: return "Subtitles from the transcript"
         case .createHighlights: return "Find key moments"
         case .shortenVideo: return "Turn this into a short version"
-        case .cleanAudio: return "Noise reduction — not built yet"
+        case .cleanAudio: return "Reduce background noise"
         }
     }
 
@@ -63,7 +63,7 @@ enum StudioAction: String, CaseIterable, Identifiable, Sendable {
 
     var kind: Kind {
         switch self {
-        case .removeSilences, .removeFillerWords, .generateCaptions:
+        case .removeSilences, .removeFillerWords, .generateCaptions, .cleanAudio:
             return .local
 
         case .createHighlights:
@@ -77,12 +77,6 @@ enum StudioAction: String, CaseIterable, Identifiable, Sendable {
             Shorten this recording to roughly a third of its length while keeping it coherent. \
             Cut whole passages that repeat, digress, or add nothing, using remove_range, and \
             explain each cut in its "why".
-            """)
-
-        case .cleanAudio:
-            return .unavailable(reason: """
-            Noise reduction isn't implemented yet. You can mute or level a lane from its name \
-            in the timeline.
             """)
         }
     }

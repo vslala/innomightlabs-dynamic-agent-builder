@@ -142,8 +142,8 @@ about 2 MB.
 
 ## 7. Unfinished work is visible, not hidden
 
-- An unbuilt capability appears as visibly disabled with a stated reason, as `StudioAction.cleanAudio`
-  does today. It never appears as a button that silently does nothing.
+- An unbuilt capability appears as visibly disabled with a stated reason (`StudioAction.Kind.unavailable`).
+  It never appears as a button that silently does nothing.
 - Work that isn't ready goes behind a flag in `FeatureFlags`, off by default, with a comment saying what
   it costs. When the work ships, delete the flag.
 - Delete dead code and finished flags in the same change that makes them dead.
