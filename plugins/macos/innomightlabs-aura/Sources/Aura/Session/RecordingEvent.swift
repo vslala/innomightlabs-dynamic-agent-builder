@@ -6,6 +6,7 @@ enum RecordingEventKind: String, Codable {
     case resume
     case recordStop = "record_stop"
     case userMarker = "user_marker"
+    case browserStep = "browser_step"
     case screenSnapshot = "screen_snapshot"
     case trackFailed = "track_failed"
     case trackStart = "track_start"

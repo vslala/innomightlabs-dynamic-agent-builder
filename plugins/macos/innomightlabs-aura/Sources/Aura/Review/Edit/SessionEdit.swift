@@ -42,8 +42,8 @@ struct TimelineClip: Codable, Hashable, Sendable {
     }
 }
 
-/// A rect normalized against the render size, top-left origin — so a layout survives a
-/// change of output resolution, and the preview and the export agree.
+/// A top-left-origin normalized rect. Overlay rects use render size; screen crops use
+/// source frame size, so both survive a change in output resolution.
 struct NormalizedRect: Codable, Hashable, Sendable {
     var x: Double
     var y: Double
@@ -54,6 +54,10 @@ struct NormalizedRect: Codable, Hashable, Sendable {
 
     var isValid: Bool {
         [x, y, width, height].allSatisfy(\.isFinite) && width > 0 && height > 0
+    }
+
+    var isValidScreenCrop: Bool {
+        isValid && x >= 0 && y >= 0 && x + width <= 1 && y + height <= 1
     }
 
     func scaled(to size: CGSize) -> CGRect {
@@ -236,7 +240,9 @@ struct SessionEdit: Codable, Equatable, Sendable {
     /// v2 made the document declarative: `cuts`/`splitPoints`/`markers` replaced a mutable
     /// clip list and a separate word-exclusion list. A v1 document is migrated by
     /// `SessionEditMigration`, never decoded directly — see there for why.
-    static let currentSchemaVersion = 2
+    // v3 adds source-frame screen cropping and the once-only viewport seed marker.
+    // v4 adds the browser-demo effects: zooms, the rendered cursor's style, and narration.
+    static let currentSchemaVersion = 4
 
     var schemaVersion: Int
     /// The original recording's full extent, in session time.
@@ -277,11 +283,23 @@ struct SessionEdit: Codable, Equatable, Sendable {
     /// Selections re-spoken from text. Each is a derived clip played in place of the voice
     /// recording over its span; see `SpeechReplacement`.
     var speechReplacements: [SpeechReplacement]
+    var screenCrop: NormalizedRect?
+    /// Bookkeeping, not an effect: undoing the seed must not make the next open seed again.
+    var hasSeededBrowserViewport: Bool
+    /// Magnified stretches of the screen. See `ZoomSegment`.
+    var zooms: [ZoomSegment]
+    var cursorStyle: CursorStyle
+    /// A browser demo's voice-over, one clip per line. See `NarrationLine`.
+    var narration: [NarrationLine]
+    /// Bookkeeping like `hasSeededBrowserViewport`: undoing the seed must not make the next open
+    /// seed again.
+    var hasSeededDemoEffects: Bool
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, recordingDuration, cuts, splitPoints, markers
         case micTimeOffset, cameraOverlay, audioLanes, cameraStyle, transcriptIdentity, name
-        case speechReplacements
+        case speechReplacements, screenCrop, hasSeededBrowserViewport
+        case zooms, cursorStyle, narration, hasSeededDemoEffects
     }
 
     init(
@@ -296,7 +314,13 @@ struct SessionEdit: Codable, Equatable, Sendable {
         cameraStyle: PiPStyle = .plain,
         transcriptIdentity: String? = nil,
         name: String? = nil,
-        speechReplacements: [SpeechReplacement] = []
+        speechReplacements: [SpeechReplacement] = [],
+        screenCrop: NormalizedRect? = nil,
+        hasSeededBrowserViewport: Bool = false,
+        zooms: [ZoomSegment] = [],
+        cursorStyle: CursorStyle = .standard,
+        narration: [NarrationLine] = [],
+        hasSeededDemoEffects: Bool = false
     ) {
         self.schemaVersion = schemaVersion
         self.recordingDuration = recordingDuration
@@ -310,6 +334,12 @@ struct SessionEdit: Codable, Equatable, Sendable {
         self.transcriptIdentity = transcriptIdentity
         self.name = name
         self.speechReplacements = speechReplacements
+        self.screenCrop = screenCrop
+        self.hasSeededBrowserViewport = hasSeededBrowserViewport
+        self.zooms = zooms
+        self.cursorStyle = cursorStyle
+        self.narration = narration
+        self.hasSeededDemoEffects = hasSeededDemoEffects
     }
 
     /// Strict about the two keys that define the timeline.
@@ -334,6 +364,15 @@ struct SessionEdit: Codable, Equatable, Sendable {
         name = try container.decodeIfPresent(String.self, forKey: .name)
         // Additive, like `studioSound`: documents from before replacement existed still load.
         speechReplacements = try container.decodeIfPresent([SpeechReplacement].self, forKey: .speechReplacements) ?? []
+        screenCrop = try container.decodeIfPresent(NormalizedRect.self, forKey: .screenCrop)
+        if let screenCrop, !screenCrop.isValidScreenCrop {
+            throw DecodingError.dataCorruptedError(forKey: .screenCrop, in: container, debugDescription: "Screen crop must lie within the source frame.")
+        }
+        hasSeededBrowserViewport = try container.decodeIfPresent(Bool.self, forKey: .hasSeededBrowserViewport) ?? false
+        zooms = try container.decodeIfPresent([ZoomSegment].self, forKey: .zooms) ?? []
+        cursorStyle = try container.decodeIfPresent(CursorStyle.self, forKey: .cursorStyle) ?? .standard
+        narration = try container.decodeIfPresent([NarrationLine].self, forKey: .narration) ?? []
+        hasSeededDemoEffects = try container.decodeIfPresent(Bool.self, forKey: .hasSeededDemoEffects) ?? false
     }
 
     /// A fresh document for an unedited recording: nothing cut, both lanes at unity gain, and

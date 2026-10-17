@@ -57,7 +57,17 @@ enum SessionEditMigration {
             return .current(document)
         }
 
-        guard let v1 = try? JSONDecoder().decode(V1.self, from: data) else { return .unreadable }
+        // v2 and v3 already have the declarative timeline, and every later field is additive. Decode
+        // strictly, preserving every existing edit, and supply the new fields' defaults.
+        if version == 2 || version == 3 {
+            guard var document = try? JSONDecoder().decode(SessionEdit.self, from: data) else {
+                return .unreadable
+            }
+            document.schemaVersion = SessionEdit.currentSchemaVersion
+            return .migrated(document)
+        }
+
+        guard version == 1, let v1 = try? JSONDecoder().decode(V1.self, from: data) else { return .unreadable }
         guard let migrated = migrate(v1, recordingDuration: recordingDuration) else { return .unreadable }
         return .migrated(migrated)
     }

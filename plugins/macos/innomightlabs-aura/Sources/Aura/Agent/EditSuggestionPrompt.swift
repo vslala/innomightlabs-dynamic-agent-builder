@@ -77,6 +77,10 @@ enum EditSuggestionPrompt {
         `markers[]` are facts from the recording session and are NOT editable.
         `editMarkers[]` are the editor's own markers — {id, at, label} — and are editable.
         `cameraOverlay[].rect` is [x, y, width, height] normalized to the frame.
+        `demo` is present for a recorded browser demo, and says what was done and how it has been
+        dressed up: `steps[]` {id, intent, start, end} is what the person did and when it played;
+        `zooms[]` {id, start, end, rect} are magnified stretches; `cursor` is how the drawn pointer
+        looks; `narration[]` {id, at, end, text} is the spoken voice-over.
 
         PREFER WORD IDS. Cutting by word id is exact; cutting by timestamp is not, and a
         timestamp you compute yourself will usually be slightly wrong.
@@ -103,6 +107,11 @@ enum EditSuggestionPrompt {
         {"op":"remove_marker","id":"<editMarkers[].id>"}
 
         OPERATIONS — camera and audio
+        {"op":"set_screen_crop","rect":{"x":0-1,"y":0-1,"width":0-1,"height":0-1}}
+              crop the screen layer for the whole recording. Top-left origin, normalized to
+              the SOURCE frame, not the output; positive size, entirely within [0,1].
+              {"op":"set_screen_crop","rect":null} restores the whole screen frame.
+              `screenCrop` in the digest is the current crop (absent means no crop).
         {"op":"set_overlay_keyframe","t":<s>,"rect":{"x":0-1,"y":0-1,"width":0-1,"height":0-1},"visible":<bool>}
               move/resize/hide the camera from t onwards
         {"op":"remove_overlay_keyframe","t":<s>}
@@ -126,6 +135,22 @@ enum EditSuggestionPrompt {
               speech, roughly as long as what it replaces; a much longer text holds the picture
               still while it finishes. The speaker reviews it before it is made.
         {"op":"restore_speech","ids":["<speechReplacements[].id>"]}  bring the original voice back
+
+        OPERATIONS — browser demos (only when the digest has `demo`)
+        {"op":"set_zoom","start":<s>,"end":<s>,"rect":{"x":0-1,"y":0-1,"width":0.25-1,"height":0.25-1}}
+              magnify a region between start and end; add "id":"<demo.zooms[].id>" to change an
+              existing zoom instead of adding one. `rect` is normalized to the VISIBLE frame, top-left
+              origin. Give width and height the same value, which keeps the frame's own shape; at most
+              4x magnification (0.25) and at least 0.6s long. Place it from `demo.steps[]`: a step's
+              span is when its action and its words play.
+        {"op":"remove_zooms","ids":["<demo.zooms[].id>"]}
+        {"op":"set_cursor_style","visible":<bool>,"scale":0.5-3,"ripple":<bool>}
+              the drawn pointer: hide it, make it bigger, or turn the click ripple off
+        {"op":"set_narration","id":"<demo.narration[].id>","t":<s>,"text":"<new words>"}
+              rewrite a spoken line (it is spoken again in the narration voice, so write it as speech,
+              about as long as what it replaces); leave out "id" to add a line at t. A line may not
+              overlap another.
+        {"op":"remove_narration","ids":["<demo.narration[].id>"]}
 
         REQUESTS (not edits — Aura answers these and you continue)
         {"op":"request_transcript","from":<s>,"to":<s>}

@@ -17,6 +17,7 @@ final class ScreenCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
 
     private let target: CaptureTarget
     private let requested: Set<TrackKind>
+    private let hidesSystemCursor: Bool
 
     private var stream: SCStream?
     private let videoQueue = DispatchQueue(label: "com.innomightlabs.aura.screencapture.video")
@@ -44,8 +45,9 @@ final class ScreenCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
     private var capturesVideo: Bool { requested.contains(.screen) }
     private var capturesAudio: Bool { requested.contains(.systemAudio) }
 
-    init(target: CaptureTarget, kinds: Set<TrackKind>) {
+    init(target: CaptureTarget, kinds: Set<TrackKind>, hidesSystemCursor: Bool = false) {
         self.target = target
+        self.hidesSystemCursor = hidesSystemCursor
         self.requested = kinds.intersection(Self.supportedKinds)
     }
 
@@ -75,7 +77,8 @@ final class ScreenCaptureSource: NSObject, CaptureSource, @unchecked Sendable {
         // `droppedFrameCount` would otherwise report happening more than necessary.
         configuration.queueDepth = 8
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.showsCursor = true
+        configuration.showsCursor = !hidesSystemCursor
+        if hidesSystemCursor { configuration.ignoreShadowsSingleWindow = true }
         configuration.capturesAudio = capturesAudio
         configuration.excludesCurrentProcessAudio = true
 

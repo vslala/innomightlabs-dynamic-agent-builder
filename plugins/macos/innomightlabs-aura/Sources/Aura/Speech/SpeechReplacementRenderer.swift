@@ -59,6 +59,34 @@ enum SpeechReplacementRenderer {
         return SpokenText(samples: fitted(joined, to: fit, selection: selection), fit: fit, sentenceCount: sentences.count)
     }
 
+    /// Speech at the pace the voice naturally has, with nothing to fit it to. For narration, which
+    /// has no selection: the take is paced to the clip, not the clip to the take.
+    static func speakNaturally(
+        text: String,
+        voice: VoiceSample,
+        using synthesizer: any SpeechSynthesizing,
+        progress: @Sendable (Double) -> Void = { _ in }
+    ) async throws -> SpokenText {
+        let sentences = SentenceSplitter.split(text)
+        guard !sentences.isEmpty else { throw SpeechRenderError.nothingToSay }
+
+        let rate = SpeechAudio.sampleRate
+        let gap = [Float](repeating: 0, count: Int(gapBetweenSentences * rate))
+        var joined: [Float] = []
+        for (index, sentence) in sentences.enumerated() {
+            try Task.checkCancellation()
+            if index > 0 { joined += gap }
+            joined += try await synthesizer.synthesize(sentence: sentence, voice: voice)
+            progress(Double(index + 1) / Double(sentences.count))
+        }
+        let duration = Double(joined.count) / rate
+        return SpokenText(
+            samples: joined,
+            fit: DurationFit(action: .hold, clipDuration: duration, hold: 0),
+            sentenceCount: sentences.count
+        )
+    }
+
     /// Writes the clip. Atomic: a cancelled or failed write leaves nothing at `destination`.
     /// - Returns: the clip's length, which is what the document stores.
     @discardableResult

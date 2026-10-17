@@ -7,6 +7,7 @@ struct MenuBarContentView: View {
     @StateObject private var cameraPicker = CameraPickerViewModel()
     @StateObject private var microphonePicker = MicrophonePickerViewModel()
     let reviewWindows: ReviewWindowPresenter
+    @ObservedObject var browserDemos: BrowserDemoPresenter
 
     /// Enumerated once when the menu opens rather than on every body pass — reading it
     /// twice per pass meant a directory scan per redraw on the main thread.
@@ -25,24 +26,35 @@ struct MenuBarContentView: View {
                 }
             }
 
-            switch controller.state {
-            case .idle:
-                idleContent
+            if browserDemos.isRunning {
+                Text("Browser demo in progress").font(.headline)
+                Button("Show browser demo controls…") { browserDemos.open() }
+                Button("Stop browser demo") { browserDemos.stop() }
+            } else {
+                switch controller.state {
+                case .idle:
+                    idleContent
 
-            case .starting:
-                HStack {
-                    ProgressView().controlSize(.small)
-                    Text("Starting…")
+                case .starting:
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("Starting…")
+                    }
+
+                case .recording, .paused:
+                    recordingContent
+
+                case .stopping:
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("Saving…")
+                    }
                 }
+            }
 
-            case .recording, .paused:
-                recordingContent
-
-            case .stopping:
-                HStack {
-                    ProgressView().controlSize(.small)
-                    Text("Saving…")
-                }
+            if FeatureFlags.isBrowserDemoEnabled, !browserDemos.isRunning {
+                Button("Record browser demo…") { browserDemos.open() }
+                    .disabled(controller.state != .idle)
             }
 
             Divider()
@@ -56,7 +68,10 @@ struct MenuBarContentView: View {
             }
 
             Button("Quit") {
-                NSApplication.shared.terminate(nil)
+                Task {
+                    if browserDemos.isRunning { await browserDemos.stopAll() }
+                    NSApplication.shared.terminate(nil)
+                }
             }
         }
         .padding(12)

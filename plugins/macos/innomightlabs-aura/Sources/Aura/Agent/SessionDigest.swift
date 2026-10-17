@@ -97,6 +97,7 @@ struct SessionDigest: Codable, Equatable, Sendable {
     /// The current edit: which spans of the recording survive, in order.
     let keptSpans: [Span]
     var keptSpansOmitted: Int
+    var screenCrop: NormalizedRect? = nil
     let cameraOverlay: [Overlay]
     let audioLanes: [Lane]
     struct EditMark: Codable, Equatable, Sendable {
@@ -147,6 +148,48 @@ struct SessionDigest: Codable, Equatable, Sendable {
     /// Stretches already re-spoken from text, with the handle needed to bring the original back.
     let speechReplacements: [SpeechRef]
     var speechReplacementsOmitted: Int
+    /// A browser demo's steps and the polish on them. Absent for any other recording, so an
+    /// ordinary session's digest is exactly what it always was.
+    var demo: Demo? = nil
+
+    /// What happened in a browser take and how it has been dressed up, in recording time.
+    ///
+    /// Bounded at construction like every list the trimmer cannot shrink.
+    struct Demo: Codable, Equatable, Sendable {
+        struct Step: Codable, Equatable, Sendable {
+            let id: String
+            let intent: String
+            let start: Double
+            let end: Double
+        }
+        struct Zoom: Codable, Equatable, Sendable {
+            let id: String
+            let start: Double
+            let end: Double
+            /// `[x, y, width, height]`, normalized to the visible frame.
+            let rect: [Double]
+        }
+        struct Line: Codable, Equatable, Sendable {
+            let id: String
+            let at: Double
+            let end: Double
+            let text: String
+        }
+        let steps: [Step]
+        let zooms: [Zoom]
+        let cursor: CursorStyle
+        let narration: [Line]
+        var omitted: Int
+    }
+
+    static let maxDemoEntries = 40
+
+    /// One step of a browser take: what the user did, and when it played.
+    struct DemoStepSpan: Equatable, Sendable {
+        let id: String
+        let intent: String
+        let span: TimeSpan
+    }
 
     struct SpeechRef: Codable, Equatable, Sendable {
         let id: String
@@ -171,7 +214,8 @@ struct SessionDigest: Codable, Equatable, Sendable {
         /// actually applies to the microphone lane.
         transcriptOffset: TimeInterval? = nil,
         focus: TimeInterval? = nil,
-        detailRange: TimeSpan? = nil
+        detailRange: TimeSpan? = nil,
+        demoSteps: [DemoStepSpan] = []
     ) -> SessionDigest {
         let offset = transcriptOffset ?? document.micTimeOffset
         let allWords = (transcript?.allWords ?? []).map {
@@ -228,6 +272,7 @@ struct SessionDigest: Codable, Equatable, Sendable {
             // on its own — and `fitting` can only reclaim from `outline` and `words`.
             keptSpans: allKeptSpans.prefix(maxKeptSpans).map { $0 },
             keptSpansOmitted: max(0, allKeptSpans.count - maxKeptSpans),
+            screenCrop: document.screenCrop,
             cameraOverlay: document.cameraOverlay.sorted { $0.t < $1.t }.map { keyframe in
                 Overlay(
                     at: round2(keyframe.t),
@@ -267,7 +312,30 @@ struct SessionDigest: Codable, Equatable, Sendable {
             speechReplacements: document.speechReplacements.prefix(maxSpeechReplacements).map {
                 SpeechRef(id: $0.id.uuidString, start: round2($0.span.start), end: round2($0.span.end), text: String($0.text.prefix(200)))
             },
-            speechReplacementsOmitted: max(0, document.speechReplacements.count - maxSpeechReplacements)
+            speechReplacementsOmitted: max(0, document.speechReplacements.count - maxSpeechReplacements),
+            demo: demo(steps: demoSteps, document: document)
+        )
+    }
+
+    private static func demo(steps: [DemoStepSpan], document: SessionEdit) -> Demo? {
+        guard !steps.isEmpty || !document.zooms.isEmpty || !document.narration.isEmpty else { return nil }
+        let cap = maxDemoEntries
+        let omitted = max(0, steps.count - cap) + max(0, document.zooms.count - cap) + max(0, document.narration.count - cap)
+        return Demo(
+            steps: steps.prefix(cap).map {
+                Demo.Step(id: $0.id, intent: String($0.intent.prefix(120)), start: round2($0.span.start), end: round2($0.span.end))
+            },
+            zooms: document.zooms.prefix(cap).map {
+                Demo.Zoom(
+                    id: $0.id.uuidString, start: round2($0.span.start), end: round2($0.span.end),
+                    rect: [$0.rect.x, $0.rect.y, $0.rect.width, $0.rect.height].map { round2($0) }
+                )
+            },
+            cursor: document.cursorStyle,
+            narration: document.narration.prefix(cap).map {
+                Demo.Line(id: $0.id.uuidString, at: round2($0.at), end: round2($0.end), text: String($0.text.prefix(200)))
+            },
+            omitted: omitted
         )
     }
 

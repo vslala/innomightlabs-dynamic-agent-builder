@@ -6,10 +6,16 @@ import XCTest
 enum TestMedia {
     /// A blank-picture 160×90 movie. A low frame rate by default: these tests care that frames
     /// exist, not how many, and encoding fewer keeps them quick.
-    static func writeVideo(to url: URL, seconds: Int, framesPerSecond: Int = 10) async throws {
+    /// - Parameters:
+    ///   - size: defaults to 160×90, small enough to encode quickly.
+    ///   - grey: a flat grey level 0–255 for every frame, for tests that need something to draw on.
+    static func writeVideo(
+        to url: URL, seconds: Int, framesPerSecond: Int = 10,
+        size: CGSize = CGSize(width: 160, height: 90), grey: UInt8? = nil
+    ) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 160, AVVideoHeightKey: 90
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: Int(size.width), AVVideoHeightKey: Int(size.height)
         ])
         input.expectsMediaDataInRealTime = false
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: nil)
@@ -18,8 +24,15 @@ enum TestMedia {
         writer.startSession(atSourceTime: .zero)
 
         var pixels: CVPixelBuffer?
-        CVPixelBufferCreate(kCFAllocatorDefault, 160, 90, kCVPixelFormatType_32BGRA, nil, &pixels)
+        CVPixelBufferCreate(kCFAllocatorDefault, Int(size.width), Int(size.height), kCVPixelFormatType_32BGRA, nil, &pixels)
         let buffer = try XCTUnwrap(pixels)
+        if let grey {
+            CVPixelBufferLockBaseAddress(buffer, [])
+            if let base = CVPixelBufferGetBaseAddress(buffer) {
+                memset(base, Int32(grey), CVPixelBufferGetBytesPerRow(buffer) * CVPixelBufferGetHeight(buffer))
+            }
+            CVPixelBufferUnlockBaseAddress(buffer, [])
+        }
         for frame in 0..<(seconds * framesPerSecond) {
             while !input.isReadyForMoreMediaData { try await Task.sleep(for: .milliseconds(2)) }
             adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(framesPerSecond)))

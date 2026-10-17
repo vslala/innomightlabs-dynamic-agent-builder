@@ -1,16 +1,10 @@
 import SwiftUI
 
-/// The menu bar's mode picker, plus whichever device pickers the selected preset actually
-/// needs.
+/// The menu bar's source picker — one clickable tile per `TrackKind` — plus whichever device
+/// pickers the selected sources actually need.
 ///
-/// Presets only — no per-source toggles. A `MenuBarExtra` with no `.menuBarExtraStyle(.window)`
-/// silently degrades every custom control to a native `NSMenu` item (a `Picker` becomes a
-/// nested submenu, a `Toggle` becomes a bare checkmark, a hand-drawn view like the level meter
-/// doesn't render at all), which made the four-toggle "Sources" disclosure read as a maze of
-/// checkmarks and submenus rather than a settings panel. `AuraApp` now forces `.window` style,
-/// but the simpler surface — one mode picker, and only the device controls that mode needs — is
-/// worth keeping regardless: "what am I recording" is one decision, not four independent ones
-/// most people never touch.
+/// Tiles rather than `Toggle`s: they rely on `AuraApp` forcing `.menuBarExtraStyle(.window)`,
+/// without which every custom control degrades to a bare `NSMenu` checkmark.
 struct RecordingProfileView: View {
     @ObservedObject var setup: RecordingSetupViewModel
     @ObservedObject var screenPicker: ShareablePickerViewModel
@@ -20,7 +14,7 @@ struct RecordingProfileView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            modeMenu
+            sourceTiles
 
             if setup.profile.tracks.contains(.screen) {
                 ShareablePickerView(viewModel: screenPicker)
@@ -51,20 +45,14 @@ struct RecordingProfileView: View {
         }
     }
 
-    private var modeMenu: some View {
-        Picker("Mode", selection: modeBinding) {
-            ForEach(RecordingPreset.allCases) { preset in
-                Text(preset.title).tag(preset)
+    private var sourceTiles: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+            ForEach(TrackKind.allCases, id: \.self) { kind in
+                SourceTile(kind: kind, isOn: setup.profile.tracks.contains(kind)) {
+                    setup.toggle(kind)
+                }
             }
         }
-        .labelsHidden()
-    }
-
-    private var modeBinding: Binding<RecordingPreset> {
-        Binding(
-            get: { setup.preset ?? .fullStudio },
-            set: { setup.apply($0) }
-        )
     }
 
     private var microphoneControls: some View {
@@ -84,6 +72,42 @@ struct RecordingProfileView: View {
         .onChange(of: microphonePicker.selectedDeviceID) { _, newDeviceID in
             levelMonitor.start(deviceID: newDeviceID)
         }
+    }
+}
+
+/// One source the user can switch on or off with a click.
+private struct SourceTile: View {
+    let kind: TrackKind
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: kind.symbol)
+                    .frame(width: 16)
+                Text(kind.title)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+            }
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isOn ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(isOn ? Color.accentColor.opacity(0.6) : Color.clear)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+        .help(isOn ? "Stop recording \(kind.title)" : "Record \(kind.title)")
     }
 }
 

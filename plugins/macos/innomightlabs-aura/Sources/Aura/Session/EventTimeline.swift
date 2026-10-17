@@ -15,7 +15,7 @@ struct EventTimeline: Equatable {
 
     let entries: [Entry]
 
-    var markers: [Entry] { entries.filter { $0.event.type == .userMarker } }
+    var markers: [Entry] { entries.filter { $0.event.type == .userMarker || $0.event.type == .browserStep } }
     var screenshots: [Entry] { entries.filter { $0.event.type == .screenSnapshot } }
     var failedTracks: [Entry] { entries.filter { $0.event.type == .trackFailed } }
 

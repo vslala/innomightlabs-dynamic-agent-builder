@@ -1,5 +1,14 @@
 import Foundation
 
+struct BrowserTakeMetadata: Codable, Equatable, Sendable {
+    enum Status: String, Codable, Sendable { case recording, finished, stopped, failed }
+    var specID: UUID
+    var revision: Int
+    var status: Status = .recording
+    /// A fixed diagnostic code, never a page value or a host error containing private content.
+    var failureReason: String? = nil
+}
+
 /// What the user asked to record when the session *started*, as distinct from what came back.
 ///
 /// **Behaviour is never derived from this.** The editor decides what it can do from the files
@@ -25,6 +34,7 @@ struct RecordingManifest: Codable, Equatable, Sendable {
     var screenTargetName: String?
     var cameraName: String?
     var microphoneName: String?
+    var browserTake: BrowserTakeMetadata? = nil
 
     init(
         schemaVersion: Int = currentSchemaVersion,
@@ -32,7 +42,8 @@ struct RecordingManifest: Codable, Equatable, Sendable {
         startedAt: Date,
         screenTargetName: String? = nil,
         cameraName: String? = nil,
-        microphoneName: String? = nil
+        microphoneName: String? = nil,
+        browserTake: BrowserTakeMetadata? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.profile = profile
@@ -40,6 +51,7 @@ struct RecordingManifest: Codable, Equatable, Sendable {
         self.screenTargetName = screenTargetName
         self.cameraName = cameraName
         self.microphoneName = microphoneName
+        self.browserTake = browserTake
     }
 
     private static func makeEncoder() -> JSONEncoder {

@@ -5,7 +5,7 @@ import Foundation
 import ImageIO
 
 @MainActor
-final class RecordingController: ObservableObject {
+final class RecordingController: ObservableObject, BrowserTakeRecording {
     @Published private(set) var state: RecordingState = .idle
     @Published var lastError: RecordingError?
     @Published private(set) var currentTargetName: String?
@@ -33,6 +33,8 @@ final class RecordingController: ObservableObject {
     private var segmentCounts: [TrackKind: Int] = [:]
 
     private var sessionManager: SessionManager?
+    private var pendingBrowserTakeResult: (status: BrowserTakeMetadata.Status, failureReason: String?)?
+    private var browserTakeFinalizationFailed = false
     private var sessionStartTime: CMTime = .zero
 
     /// Mirrors the paused duration every `TrackWriter`'s `PauseClock` accumulates —
@@ -53,7 +55,19 @@ final class RecordingController: ObservableObject {
 
     private var allTrackWriters: [TrackWriter] { writersByKind.map(\.1) }
 
-    func start(_ request: RecordingRequest) async {
+    var currentSessionFolder: SessionFolder? { sessionManager?.folder }
+
+    func currentSessionTime() -> TimeInterval? {
+        guard state == .recording || state == .paused else { return nil }
+        return mediaElapsed(CMClockGetTime(CMClockGetHostTimeClock()))
+    }
+
+    func browserStep(label: String) {
+        guard state == .recording else { return }
+        logEvent(.browserStep, at: CMClockGetTime(CMClockGetHostTimeClock()), label: label)
+    }
+
+    func start(_ request: RecordingRequest, prepareSession: ((SessionFolder) throws -> Void)? = nil) async {
         guard request.isValid else {
             lastError = request.profile.isRecordable
                 ? .writerSetupFailed("Choose a display or window to record.")
@@ -61,6 +75,7 @@ final class RecordingController: ObservableObject {
             return
         }
         guard applyTransition(.start) else { return }
+        browserTakeFinalizationFailed = false
 
         let sources = CaptureSourceFactory.sources(for: request)
 
@@ -69,13 +84,22 @@ final class RecordingController: ObservableObject {
             // so a refusal leaves nothing behind.
             for source in sources {
                 try await source.prepare()
+                try Task.checkCancellation()
             }
 
             let manager = SessionManager()
             try manager.createSessionDirectory()
+            self.sessionManager = manager
+            try manager.writeManifest(RecordingManifest(
+                profile: request.profile,
+                startedAt: Date(),
+                screenTargetName: request.profile.tracks.contains(.screen) ? request.screenTarget?.displayName : nil,
+                browserTake: request.browserTake
+            ))
+            try prepareSession?(manager.folder)
+            try Task.checkCancellation()
 
             let startTime = CMClockGetTime(CMClockGetHostTimeClock())
-            self.sessionManager = manager
             self.sessionStartTime = startTime
             // Assigned before starting, not after: a source that throws partway through the
             // loop below is handled by `rollbackFailedStart`, which cancels every entry in
@@ -88,20 +112,17 @@ final class RecordingController: ObservableObject {
                 source.onFailure = makeFailureHandler()
                 source.onNotice = makeNoticeHandler()
                 try await source.start(context: context)
+                try Task.checkCancellation()
             }
             advanceSegmentCounts(for: sources.flatMap { $0.kinds })
             activeRequest = request
-
-            try manager.writeManifest(RecordingManifest(
-                profile: request.profile,
-                startedAt: Date(),
-                screenTargetName: request.profile.tracks.contains(.screen) ? request.screenTarget?.displayName : nil
-            ))
 
             currentProfile = request.profile
             currentTargetName = request.profile.tracks.contains(.screen) ? request.screenTarget?.displayName : nil
             logEvent(.recordStart, at: startTime, app: currentTargetName, label: request.profile.eventLabel)
             applyTransition(.didStart)
+        } catch is CancellationError {
+            await rollbackFailedStart()
         } catch let error as RecordingError {
             await rollbackFailedStart()
             lastError = error
@@ -109,6 +130,45 @@ final class RecordingController: ObservableObject {
             await rollbackFailedStart()
             lastError = .writerSetupFailed(error.localizedDescription)
         }
+    }
+
+    func startBrowserTake(_ request: RecordingRequest, spec: DemoSpec, viewport: BrowserViewportMetadata) async throws -> SessionFolder {
+        guard state == .idle else { throw ReplayError.recorderBusy }
+        await start(request, prepareSession: { folder in
+            try JSONEncoder().encode(spec).write(to: folder.demoSpecURL, options: .atomic)
+            try JSONEncoder().encode(viewport).write(to: folder.viewportURL, options: .atomic)
+            try Data().write(to: folder.actionLogJournalURL, options: .atomic)
+        })
+        guard state == .recording, let folder = currentSessionFolder else {
+            throw ReplayError.recordingInterrupted
+        }
+        return folder
+    }
+
+    /// Must precede host interruption, including task cancellation: the host can close its
+    /// window as soon as cancellation reaches an in-flight command.
+    func prepareToStopBrowserTake(sessionID: String) {
+        guard currentSessionFolder?.id == sessionID, state == .recording || state == .paused else { return }
+        pendingBrowserTakeResult = (.stopped, nil)
+        if state == .recording { pause() }
+    }
+
+    func stopBrowserTake(sessionID: String, status: BrowserTakeMetadata.Status, failureReason: String?) async throws {
+        // App owns the shared controller. If its ordinary controls already ended this take,
+        // replay cleanup must never stop a different session the user has since started.
+        guard currentSessionFolder?.id == sessionID else { return }
+        if state == .recording || state == .paused || (state == .stopping && status == .failed) {
+            // Keep the on-disk status incomplete until media and action-log finalization both
+            // succeed. A crash during teardown must never leave a take labelled finished.
+            pendingBrowserTakeResult = (status, failureReason)
+        }
+        await stop()
+        // A source failure may already be finalizing the shared controller. Do not let the
+        // engine announce completion while the partial media are still being written.
+        while state == .stopping {
+            await Task { try? await Task.sleep(for: .milliseconds(20)) }.value
+        }
+        if browserTakeFinalizationFailed { throw ReplayError.persistenceFailed }
     }
 
     func pause() {
@@ -200,6 +260,37 @@ final class RecordingController: ObservableObject {
         }
 
         let completedSession = sessionManager?.folder
+        if let folder = completedSession,
+           var manifest = RecordingManifest.load(from: folder.manifestURL), manifest.browserTake != nil {
+            if !failures.isEmpty {
+                manifest.browserTake?.status = .failed
+                manifest.browserTake?.failureReason = "captureFailed"
+            } else if manifest.browserTake?.status == .recording {
+                // Only replay can finish or deliberately stop a browser take. A stop from
+                // ordinary recorder controls interrupts orchestration, even if files finalize.
+                manifest.browserTake?.status = pendingBrowserTakeResult?.status ?? .failed
+                manifest.browserTake?.failureReason = pendingBrowserTakeResult?.failureReason
+                    ?? (pendingBrowserTakeResult == nil ? "recordingInterrupted" : nil)
+            }
+            do {
+                try await Task.detached(priority: .utility) {
+                    try ActionLog.finalizeJournal(in: folder)
+                }.value
+                // The replay watchdog can report interruption while media or the journal
+                // are being finalized. Do not overwrite that late failure with stopped.
+                if manifest.browserTake?.status != .failed, pendingBrowserTakeResult?.status == .failed {
+                    manifest.browserTake?.status = .failed
+                    manifest.browserTake?.failureReason = pendingBrowserTakeResult?.failureReason
+                }
+                try manifest.write(to: folder.manifestURL)
+            } catch {
+                browserTakeFinalizationFailed = true
+                manifest.browserTake?.status = .failed
+                manifest.browserTake?.failureReason = "persistenceFailed"
+                try? manifest.write(to: folder.manifestURL)
+                lastError = .writerSetupFailed("Browser take metadata could not be finalized.")
+            }
+        }
         tearDownSessionState()
 
         applyTransition(.didStop)
@@ -273,7 +364,17 @@ final class RecordingController: ObservableObject {
 
     private func handleSourceFailure(_ error: Error) {
         guard state == .recording || state == .paused else { return }
+        // Replay explicitly paused this take before closing its own Chrome window. The
+        // resulting SCStream window-loss notice is expected, not a failed recording.
+        // Writer/finalization failures still surface through retire(sources).
+        if state == .paused, pendingBrowserTakeResult?.status == .stopped { return }
         lastError = .captureStreamStopped(error.localizedDescription)
+        if let folder = currentSessionFolder,
+           var manifest = RecordingManifest.load(from: folder.manifestURL), manifest.browserTake != nil {
+            manifest.browserTake?.status = .failed
+            manifest.browserTake?.failureReason = "captureFailed"
+            try? manifest.write(to: folder.manifestURL)
+        }
         Task { await stop() }
     }
 
@@ -299,6 +400,13 @@ final class RecordingController: ObservableObject {
 
     private func rollbackFailedStart() async {
         for source in sources { source.cancel() }
+        allTrackWriters.forEach { $0.cancel() }
+        if let folder = currentSessionFolder,
+           var manifest = RecordingManifest.load(from: folder.manifestURL), manifest.browserTake != nil {
+            manifest.browserTake?.status = .failed
+            manifest.browserTake?.failureReason = "startFailed"
+            try? manifest.write(to: folder.manifestURL)
+        }
         tearDownSessionState()
         applyTransition(.startFailed)
     }
@@ -306,6 +414,7 @@ final class RecordingController: ObservableObject {
     private func tearDownSessionState() {
         sessionManager?.close()
         sessionManager = nil
+        pendingBrowserTakeResult = nil
         sources = []
         activeRequest = nil
         segmentCounts = [:]

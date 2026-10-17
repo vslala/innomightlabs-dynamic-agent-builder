@@ -71,6 +71,11 @@ final class AgentOperationVocabularyTests: XCTestCase {
 
     func testCameraAndAudioOperations() {
         assertDecodes(
+            #"{"op":"set_screen_crop","rect":{"x":0.1,"y":0.2,"width":0.8,"height":0.7}}"#,
+            .setScreenCrop(NormalizedRect(x: 0.1, y: 0.2, width: 0.8, height: 0.7))
+        )
+        assertDecodes(#"{"op":"set_screen_crop","rect":null}"#, .setScreenCrop(nil))
+        assertDecodes(
             #"{"op":"set_overlay_keyframe","t":0,"rect":{"x":0,"y":0,"width":0.25,"height":0.25},"visible":true}"#,
             .setOverlayKeyframe(OverlayKeyframe(
                 t: 0,
@@ -149,8 +154,9 @@ final class AgentOperationVocabularyTests: XCTestCase {
         let documented = [
             "remove_range", "split_clip", "set_overlay_keyframe", "remove_overlay_keyframe",
             "set_lane_gain", "set_lane_muted", "set_lane_studio_sound", "set_lane_offset", "exclude_words",
-            "restore_words", "set_camera_style", "uncut", "remove_split", "add_marker",
+            "restore_words", "set_camera_style", "set_screen_crop", "uncut", "remove_split", "add_marker",
             "remove_marker", "rename_marker", "move_marker", "replace_speech", "restore_speech",
+            "set_zoom", "remove_zooms", "set_cursor_style", "set_narration", "remove_narration",
         ]
         for op in documented {
             XCTAssertTrue(prompt.contains("\"op\":\"\(op)\""), "prompt never shows the \(op) shape")

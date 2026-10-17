@@ -238,6 +238,11 @@ final class ReviewViewModel: ObservableObject {
     // Speech replacement (see `ReviewViewModel+Speech`). Stored here because extensions cannot.
     let speech: SpeechEngineHub
     /// Something the user has to decide before a replacement goes on.
+    /// The recorded pointer of a browser take, loaded once when the window opens. Nil for any other
+    /// recording, which then has nothing to draw.
+    var cursorPath: CursorPath?
+    /// What the user did in a browser take, and when. Empty for any other recording.
+    var demoSteps: [SessionDigest.DemoStepSpan] = []
     @Published var pendingSpeech: PendingSpeech?
     /// Fraction of the sentences spoken so far, or nil when nothing is being spoken.
     @Published var speakingFraction: Double?
@@ -339,6 +344,12 @@ final class ReviewViewModel: ObservableObject {
             screenWindows: screenWindows
         )
         self.store = store
+        if probes.contains(where: { $0.kind == .screen }) {
+            store.seedBrowserViewport(from: folder.rootURL.appendingPathComponent("viewport.json"))
+            cursorPath = Self.loadCursorPath(from: folder)
+            demoSteps = Self.loadDemoSteps(from: folder)
+            store.seedDemoEffects(from: folder)
+        }
 
         // Rebuild whenever the document changes, from whatever source — a drag, an agent
         // suggestion, or an undo.
@@ -443,7 +454,10 @@ final class ReviewViewModel: ObservableObject {
     private func rebuild(document: SessionEdit, preservingPlayhead: Bool) async {
         await renderMissingStudioSound(for: document)
         let clips = availableSpeechClips(for: document)
-        let resolved = TimelineResolver.resolve(document: document, probes: probes, speechClips: clips)
+        let resolved = TimelineResolver.resolve(
+            document: document, probes: probes, speechClips: clips,
+            cursorPath: cursorPath, narrationClips: availableNarrationClips(for: document)
+        )
         let wasReady = state == .ready
 
         do {
@@ -1580,7 +1594,8 @@ final class ReviewViewModel: ObservableObject {
             // Word detail centres on the playhead when the whole transcript won't fit: that
             // is the part of the recording the user is actually looking at.
             focus: playheadSourceTime,
-            detailRange: detailRange
+            detailRange: detailRange,
+            demoSteps: demoSteps
         )
         digest.write(to: folder.digestURL)
         return digest
@@ -1816,6 +1831,10 @@ final class ReviewViewModel: ObservableObject {
             )
             return
         }
+        if case .setNarration(let draft) = suggestion.operation, draft.isDraft {
+            speakNarration(draft, suggestionID: suggestion.id)
+            return
+        }
         guard apply(suggestion.operation) else { return }
         suggestions.removeAll { $0.id == suggestion.id }
     }
@@ -1826,11 +1845,16 @@ final class ReviewViewModel: ObservableObject {
             if case .replaceSpeech(let draft) = suggestion.operation, draft.isDraft { return (suggestion, draft) }
             return nil
         }
+        let narrationDrafts = suggestions.compactMap { suggestion -> (EditSuggestion, NarrationLine)? in
+            if case .setNarration(let draft) = suggestion.operation, draft.isDraft { return (suggestion, draft) }
+            return nil
+        }
         let operations = suggestions.map(\.operation).filter { operation in
             if case .replaceSpeech(let draft) = operation, draft.isDraft { return false }
+            if case .setNarration(let draft) = operation, draft.isDraft { return false }
             return true
         }
-        guard !operations.isEmpty || !drafts.isEmpty else { return }
+        guard !operations.isEmpty || !drafts.isEmpty || !narrationDrafts.isEmpty else { return }
 
         // All-or-nothing, and one undo step: a half-applied set of suggestions is worse
         // than none. Speech is the exception, since it has to be made first: it is queued and
@@ -1843,8 +1867,11 @@ final class ReviewViewModel: ObservableObject {
         }
         suggestions.removeAll { suggestion in
             if case .replaceSpeech(let draft) = suggestion.operation, draft.isDraft { return false }
+            if case .setNarration(let draft) = suggestion.operation, draft.isDraft { return false }
             return true
         }
+        // Narration is spoken one line at a time, so two rewrites cannot both claim the same gap.
+        for (suggestion, draft) in narrationDrafts { speakNarration(draft, suggestionID: suggestion.id) }
         enqueueSpeech(drafts.map { suggestion, draft in
             SpeechRequest(
                 id: draft.id, span: draft.span, text: draft.text,

@@ -17,7 +17,9 @@ enum TimelineResolver {
         document: SessionEdit,
         probes: [SourceTrackProbe],
         style: PiPStyle? = nil,
-        speechClips: [UUID: URL] = [:]
+        speechClips: [UUID: URL] = [:],
+        cursorPath: CursorPath? = nil,
+        narrationClips: [UUID: URL] = [:]
     ) -> ResolvedTimeline {
         // The document owns the style; the parameter is an override for previews and tests.
         let style = style ?? document.cameraStyle
@@ -36,7 +38,9 @@ enum TimelineResolver {
         let baseSegments = screenSegments ?? cameraSegments
         let overlaySegments = screenSegments != nil ? cameraSegments : nil
 
-        let renderSize = renderSize(for: baseSegments?.first)
+        // A crop never applies to a camera promoted to the base layer.
+        let screenCrop = screenSegments == nil ? nil : document.screenCrop
+        let renderSize = renderSize(for: baseSegments?.first, crop: screenCrop)
         let overlayKeyframes = resolveOverlay(document: document, timeMap: timeMap)
         let speech = document.speechReplacements.compactMap { replacement in
             speechClips[replacement.id].map {
@@ -51,6 +55,16 @@ enum TimelineResolver {
         // Where the original voice must be silent: wherever new speech plays over it.
         let replacedRanges = speech.flatMap { timeMap.compositionRanges(forSource: $0.span.cmRange) }
         let voiceKeyframes = resolveGain(document: document, lane: .microphone, timeMap: timeMap)
+        // Effects draw on the screen picture, so a camera promoted to the base has none.
+        let cursor = document.cursorStyle.visible ? cursorPath.flatMap { $0.isEmpty ? nil : $0 } : nil
+        let effects = screenSegments == nil || (document.zooms.isEmpty && cursor == nil)
+            ? nil
+            : ResolvedDemoEffects(zooms: document.zooms, cursor: cursor, cursorStyle: document.cursorStyle, timeMap: timeMap)
+        let narration = document.narration.compactMap { line in
+            narrationClips[line.id].map {
+                ResolvedNarration(id: line.id, url: $0, at: line.at, duration: Timeline.time(seconds: line.duration))
+            }
+        }
 
         return ResolvedTimeline(
             timeMap: timeMap,
@@ -92,8 +106,11 @@ enum TimelineResolver {
                 )
             },
             style: style,
+            screenCrop: screenCrop,
             speech: speech,
-            speechKeyframes: voiceKeyframes
+            speechKeyframes: voiceKeyframes,
+            effects: effects,
+            narration: narration
         )
     }
 
@@ -144,12 +161,13 @@ enum TimelineResolver {
     /// The base track's display size, floored to even dimensions because HEVC wants them.
     /// Read from the written file rather than `composition.naturalSize`, which is documented
     /// as the first video track's size and ignores `preferredTransform`.
-    private static func renderSize(for probe: SourceTrackProbe?) -> CGSize {
+    private static func renderSize(for probe: SourceTrackProbe?, crop: NormalizedRect?) -> CGSize {
         guard let size = probe?.displaySize, size.width >= 2, size.height >= 2 else {
             return fallbackRenderSize
         }
         let even = { (value: CGFloat) in max(2, (value / 2).rounded(.down) * 2) }
-        return CGSize(width: even(size.width), height: even(size.height))
+        let cropped = crop?.scaled(to: size).size ?? size
+        return CGSize(width: even(cropped.width), height: even(cropped.height))
     }
 
     private static func resolveOverlay(document: SessionEdit, timeMap: TimeMap) -> [ResolvedOverlayKeyframe] {

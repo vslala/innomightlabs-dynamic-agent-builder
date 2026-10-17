@@ -11,6 +11,8 @@ struct RecordingRequest: Sendable {
     var screenTarget: CaptureTarget?
     var cameraDeviceID: String?
     var microphoneDeviceID: String?
+    var hidesSystemCursor: Bool = false
+    var browserTake: BrowserTakeMetadata? = nil
 
     var isValid: Bool {
         guard profile.isRecordable else { return false }
@@ -26,7 +28,9 @@ struct RecordingRequest: Sendable {
             profile: profile,
             screenTarget: screenTarget,
             cameraDeviceID: cameraDeviceID,
-            microphoneDeviceID: microphoneDeviceID
+            microphoneDeviceID: microphoneDeviceID,
+            hidesSystemCursor: hidesSystemCursor,
+            browserTake: browserTake
         )
     }
 }

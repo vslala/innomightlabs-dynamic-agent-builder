@@ -45,6 +45,18 @@ enum EditOperationDescription {
             return "Re-speak \(TimeFormatting.timecode(replacement.span.start)) as “\(preview)”"
         case .restoreSpeech(let ids):
             return "Restore the original voice (\(ids.count) replacement\(ids.count == 1 ? "" : "s"))"
+        case .setZoom(let zoom):
+            return "Zoom in at \(TimeFormatting.timecode(zoom.span.start))"
+        case .removeZooms(let ids):
+            return "Remove \(ids.count) zoom\(ids.count == 1 ? "" : "s")"
+        case .setCursorStyle(let style):
+            return style.visible ? "Cursor: \(style.ripple ? "with" : "without") click ripples" : "Hide the cursor"
+        case .setNarration(let line):
+            let words = line.text.split(separator: " ")
+            let preview = words.prefix(7).joined(separator: " ") + (words.count > 7 ? "…" : "")
+            return "Narrate at \(TimeFormatting.timecode(line.at)): “\(preview)”"
+        case .removeNarration(let ids):
+            return "Remove \(ids.count) narration line\(ids.count == 1 ? "" : "s")"
         case .restoreWords(let ids):
             return "Restore \(ids.count) cut word\(ids.count == 1 ? "" : "s")"
         case .uncut(let ids):
@@ -60,7 +72,9 @@ enum EditOperationDescription {
             return "Rename marker to “\(label)”"
         case .moveMarker(_, let time):
             return "Move marker to \(TimeFormatting.timecode(time))"
-        case .setCameraStyle(let style):
+        case .setScreenCrop(let rect):
+                    return rect == nil ? "Show the whole screen frame" : "Crop the screen frame"
+                case .setCameraStyle(let style):
             var parts = [style.shape.rawValue]
             if style.borderWidth > 0 { parts.append("border") }
             if style.shadowOpacity > 0 { parts.append("shadow") }

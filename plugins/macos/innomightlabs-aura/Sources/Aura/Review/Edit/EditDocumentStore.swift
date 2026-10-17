@@ -56,7 +56,9 @@ final class EditDocumentStore: ObservableObject {
             // within 400ms of the window opening, so without this the only copy of the old
             // format is gone before the user has done anything — and rolling a build back
             // would then mean losing their edits.
-            let backup = folder.editURL.appendingPathExtension("v1.bak")
+            struct StoredVersion: Decodable { let schemaVersion: Int }
+            let version = (try? JSONDecoder().decode(StoredVersion.self, from: data).schemaVersion) ?? 1
+            let backup = folder.editURL.appendingPathExtension("v\(version).bak")
             if !FileManager.default.fileExists(atPath: backup.path) {
                 try? data.write(to: backup, options: .atomic)
             }

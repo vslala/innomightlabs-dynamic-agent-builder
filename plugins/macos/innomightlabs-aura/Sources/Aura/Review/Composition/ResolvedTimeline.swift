@@ -136,6 +136,29 @@ struct ResolvedSpeechReplacement: Equatable, Sendable {
     let duration: CMTime
 }
 
+/// A line of narration whose clip is on disk and ready to play.
+struct ResolvedNarration: Equatable, Sendable {
+    let id: UUID
+    let url: URL
+    /// Session time the clip starts. The clip's own time zero sits here.
+    let at: TimeInterval
+    let duration: CMTime
+}
+
+/// What the compositor draws over the screen: the magnified region and the rendered cursor.
+///
+/// Carries the `TimeMap` because the compositor is handed composition time, while zooms and the
+/// recorded pointer path are in session time.
+struct ResolvedDemoEffects: Equatable, Sendable {
+    var zooms: [ZoomSegment]
+    /// Nil when the session has no recorded pointer, or the user hid the cursor.
+    var cursor: CursorPath?
+    var cursorStyle: CursorStyle
+    let timeMap: TimeMap
+
+    var isEmpty: Bool { zooms.isEmpty && cursor == nil }
+}
+
 /// Everything needed to build a composition, as Sendable value types with no AVFoundation
 /// objects and — crucially — no way left to be invalid.
 ///
@@ -157,12 +180,17 @@ struct ResolvedTimeline: Equatable, Sendable {
     let overlay: ResolvedVideoLayer?
     let audio: [ResolvedAudioLane]
     let style: PiPStyle
+    /// Source-frame coordinates, only when the base is a screen track.
+    var screenCrop: NormalizedRect? = nil
     /// Replacement speech that can actually be played. A replacement whose clip is missing is
     /// absent here, so the original voice keeps playing rather than going silent.
     var speech: [ResolvedSpeechReplacement] = []
     /// The voice lane's own level and mute, **without** the silences cut under each
     /// replacement, so the new speech obeys the same controls the old voice did.
     var speechKeyframes: [ResolvedGainKeyframe] = []
+    /// Nil when there is nothing to draw, so the cheap path stays available.
+    var effects: ResolvedDemoEffects? = nil
+    var narration: [ResolvedNarration] = []
 
     var duration: CMTime { timeMap.cmDuration }
     var hasVideo: Bool { base != nil }
@@ -176,7 +204,7 @@ struct ResolvedTimeline: Equatable, Sendable {
     /// with a visible gap beside it. Core Image fills the rect instead, so a mismatched rect
     /// routes there rather than being drawn wrongly by the cheaper path.
     var canUseLayerInstructions: Bool {
-        guard style.isPlainRectangle else { return false }
+        guard screenCrop == nil, effects == nil, style.isPlainRectangle else { return false }
         guard let overlay, let camera = overlay.probe?.displaySize, camera.height > 0 else { return true }
 
         let cameraAspect = camera.width / camera.height

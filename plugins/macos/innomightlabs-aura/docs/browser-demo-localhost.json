@@ -1,0 +1,26 @@
+{
+  "format": "aura-demo/v1",
+  "id": "9b21ddc0-c690-4b83-b617-9d34fd7c06bf",
+  "revision": 1,
+  "title": "Localhost dashboard smoke test",
+  "startURL": "http://localhost:5173/login",
+  "allowedOrigins": ["http://localhost:5173"],
+  "window": { "width": 1440, "height": 900 },
+  "parameters": {},
+  "steps": [
+    {
+      "id": "sign-in",
+      "action": "handover",
+      "reason": "login",
+      "intent": "Sign in manually in Chrome, then Resume when the dashboard is ready",
+      "doneWhen": { "url": "/dashboard" }
+    },
+    {
+      "id": "dashboard-ready",
+      "action": "wait",
+      "seconds": 2,
+      "intent": "Hold the dashboard without changing site data",
+      "expect": { "url": "/dashboard" }
+    }
+  ]
+}

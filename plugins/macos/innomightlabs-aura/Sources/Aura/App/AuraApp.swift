@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct AuraApp: App {
     @StateObject private var recordingController: RecordingController
+    @StateObject private var browserDemos: BrowserDemoPresenter
     /// Held by the app, not by a view: review windows outlive the menu that opened them, and
     /// the menu's content view does not exist most of the time.
     private let reviewWindows = ReviewWindowPresenter()
@@ -49,6 +50,7 @@ struct AuraApp: App {
         let presenter = reviewWindows
         controller.onSessionCompleted = { folder in presenter.open(folder) }
         _recordingController = StateObject(wrappedValue: controller)
+        _browserDemos = StateObject(wrappedValue: BrowserDemoPresenter(recorder: controller))
 
         Task { @MainActor in Self.openSessionFromEnvironment(using: presenter) }
 
@@ -63,7 +65,7 @@ struct AuraApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarContentView(controller: recordingController, reviewWindows: reviewWindows)
+            MenuBarContentView(controller: recordingController, reviewWindows: reviewWindows, browserDemos: browserDemos)
         } label: {
             // `.original` keeps the mark's colour. A menu bar image is templated by default,
             // and the silhouette of this logo is a shapeless blob — the gradient *is* the

@@ -11,7 +11,7 @@ enum CaptureSourceFactory {
         // One source for both, because one `SCStream` produces both. See `ScreenCaptureSource`.
         let screenKinds = request.profile.screenCaptureKinds
         if !screenKinds.isEmpty, let target = request.screenTarget {
-            sources.append(ScreenCaptureSource(target: target, kinds: screenKinds))
+            sources.append(ScreenCaptureSource(target: target, kinds: screenKinds, hidesSystemCursor: request.hidesSystemCursor))
         }
         if request.profile.tracks.contains(.camera) {
             sources.append(CameraCaptureSource(deviceID: request.cameraDeviceID))

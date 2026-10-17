@@ -10,7 +10,6 @@ import Foundation
 final class PiPCompositionInstruction: NSObject, AVVideoCompositionInstructionProtocol {
     let timeRange: CMTimeRange
     let enablePostProcessing = false
-    let containsTweening = false
     let requiredSourceTrackIDs: [NSValue]?
     let passthroughTrackID: CMPersistentTrackID
 
@@ -21,6 +20,10 @@ final class PiPCompositionInstruction: NSObject, AVVideoCompositionInstructionPr
     let overlayOpacity: Double
     let renderSize: CGSize
     let style: PiPStyle
+    let screenCrop: NormalizedRect?
+    let effects: ResolvedDemoEffects?
+    /// Zoom and the cursor move every frame, which AVFoundation must be told or it may reuse one.
+    var containsTweening: Bool { effects != nil }
 
     init(
         timeRange: CMTimeRange,
@@ -29,7 +32,9 @@ final class PiPCompositionInstruction: NSObject, AVVideoCompositionInstructionPr
         overlayRect: CGRect,
         overlayOpacity: Double,
         renderSize: CGSize,
-        style: PiPStyle
+        style: PiPStyle,
+        screenCrop: NormalizedRect? = nil,
+        effects: ResolvedDemoEffects? = nil
     ) {
         self.timeRange = timeRange
         self.baseTrackID = baseTrackID
@@ -38,6 +43,8 @@ final class PiPCompositionInstruction: NSObject, AVVideoCompositionInstructionPr
         self.overlayOpacity = overlayOpacity
         self.renderSize = renderSize
         self.style = style
+        self.screenCrop = screenCrop
+        self.effects = effects
         requiredSourceTrackIDs = ([baseTrackID] + [overlayTrackID].compactMap { $0 })
             .map { NSNumber(value: $0) }
         // Never a passthrough: even with the overlay hidden the base may need scaling into
@@ -51,8 +58,8 @@ final class PiPCompositionInstruction: NSObject, AVVideoCompositionInstructionPr
 /// compositor can do, since it offers only an affine transform, opacity, and a rectangular
 /// crop.
 ///
-/// Used only when `PiPStyle` actually asks for something beyond a plain rectangle; the
-/// layer-instruction path stays in place for the common case because it is markedly cheaper.
+/// Used for source-frame screen crops or a `PiPStyle` beyond a plain rectangle; the
+/// layer-instruction path stays in place for the common unstyled, uncropped case.
 final class CoreImagePiPCompositor: NSObject, AVVideoCompositing {
     /// BGRA rather than YUV: Core Image works in RGB, and this avoids a conversion per frame.
     let sourcePixelBufferAttributes: [String: any Sendable]? = [
@@ -90,7 +97,16 @@ final class CoreImagePiPCompositor: NSObject, AVVideoCompositing {
             var image = CIImage(color: .black).cropped(to: CGRect(origin: .zero, size: renderSize))
 
             if let base = request.sourceFrame(byTrackID: instruction.baseTrackID) {
-                image = Self.fitted(CIImage(cvPixelBuffer: base), into: renderSize).composited(over: image)
+                let frame = Self.demoFrame(for: instruction, at: request.compositionTime)
+                let screen = Self.screenImage(CIImage(cvPixelBuffer: base), crop: instruction.screenCrop,
+                                              zoom: frame.zoom, renderSize: renderSize)
+                image = screen.composited(over: image)
+                if let effects = instruction.effects, let time = frame.sessionTime {
+                    image = DemoEffectsRenderer.drawCursor(
+                        over: image, placed: screen.extent, crop: instruction.screenCrop ?? SessionEdit.fullFrame,
+                        zoom: frame.zoom, effects: effects, sessionTime: time, renderSize: renderSize
+                    )
+                }
             }
 
             if
@@ -114,6 +130,37 @@ final class CoreImagePiPCompositor: NSObject, AVVideoCompositing {
     }
 
     func cancelAllPendingVideoCompositionRequests() {}
+
+    /// The zoom in force and the session time it is for, at one composition time.
+    static func demoFrame(
+        for instruction: PiPCompositionInstruction, at compositionTime: CMTime
+    ) -> (zoom: NormalizedRect, sessionTime: TimeInterval?) {
+        guard let effects = instruction.effects,
+              let source = effects.timeMap.sourceTime(forComposition: compositionTime) else {
+            return (SessionEdit.fullFrame, nil)
+        }
+        let time = Timeline.seconds(source)
+        return (ZoomTrack.rect(at: time, in: effects.zooms), time)
+    }
+
+    /// Convert the edit's top-left source rect to Core Image's bottom-left space before
+    /// fitting. Cropping first ensures toolbar pixels cannot leak into preview or export. The
+    /// zoom then narrows the crop, so a zoomed frame is cut from the source, not scaled up from
+    /// the cropped picture.
+    static func screenImage(
+        _ image: CIImage, crop: NormalizedRect?, zoom: NormalizedRect = SessionEdit.fullFrame, renderSize: CGSize
+    ) -> CIImage {
+        guard crop != nil || zoom != SessionEdit.fullFrame else { return fitted(image, into: renderSize) }
+        let extent = image.extent
+        let region = DemoEffectsRenderer.sourceRegion(crop: crop ?? SessionEdit.fullFrame, zoom: zoom)
+        let rect = CGRect(
+            x: extent.minX + region.x * extent.width,
+            y: extent.minY + (1 - region.y - region.height) * extent.height,
+            width: region.width * extent.width,
+            height: region.height * extent.height
+        )
+        return fitted(image.cropped(to: rect), into: renderSize)
+    }
 
     /// Aspect-fits a source frame into the render size and centres it, matching what the
     /// layer-instruction path does for the base layer.

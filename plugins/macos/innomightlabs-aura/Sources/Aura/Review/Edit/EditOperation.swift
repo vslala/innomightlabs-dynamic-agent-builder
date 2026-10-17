@@ -31,6 +31,8 @@ enum EditOperation: Codable, Equatable, Sendable {
     case restoreWords(ids: [Int])
     /// Shape, border, and shadow for the camera overlay.
     case setCameraStyle(PiPStyle)
+    /// Top-left origin, normalized against the screen source frame. Nil restores the whole frame.
+    case setScreenCrop(NormalizedRect?)
     /// Restore specific cuts by id — what clicking a shaded region on the waveform does.
     case uncut(ids: [UUID])
     /// Remove an edit boundary previously added by `splitClip`.
@@ -52,6 +54,15 @@ enum EditOperation: Codable, Equatable, Sendable {
     case replaceSpeech(SpeechReplacement)
     /// Bring the original voice back, by replacement id.
     case restoreSpeech(ids: [UUID])
+    /// Add or replace (by id) a magnified stretch of the screen.
+    case setZoom(ZoomSegment)
+    case removeZooms(ids: [UUID])
+    case setCursorStyle(CursorStyle)
+    /// Add or replace (by id) a line of narration. Like `replaceSpeech`, applied only once its
+    /// clip has been made (`duration` set): an agent suggests a rewrite as a draft, and
+    /// accepting it speaks the line first.
+    case setNarration(NarrationLine)
+    case removeNarration(ids: [UUID])
 
     private enum Op: String, Codable {
         case removeRange = "remove_range"
@@ -65,6 +76,7 @@ enum EditOperation: Codable, Equatable, Sendable {
         case excludeWords = "exclude_words"
         case restoreWords = "restore_words"
         case setCameraStyle = "set_camera_style"
+        case setScreenCrop = "set_screen_crop"
         case uncut
         case removeSplit = "remove_split"
         case addMarker = "add_marker"
@@ -75,6 +87,11 @@ enum EditOperation: Codable, Equatable, Sendable {
         case removeRanges = "remove_ranges"
         case replaceSpeech = "replace_speech"
         case restoreSpeech = "restore_speech"
+        case setZoom = "set_zoom"
+        case removeZooms = "remove_zooms"
+        case setCursorStyle = "set_cursor_style"
+        case setNarration = "set_narration"
+        case removeNarration = "remove_narration"
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -82,6 +99,7 @@ enum EditOperation: Codable, Equatable, Sendable {
         case shape, cornerRadius, borderWidth, borderColor, shadowOpacity, shadowRadius
         case cutIds, id, label, name, spans
         case text, originalText, duration
+        case ease, scale, ripple
         // Accepted on decode only, never written: a language model reaches for these names
         // regardless of what we document, and losing a whole operation to a synonym is worse
         // than accepting one.
@@ -104,6 +122,9 @@ enum EditOperation: Codable, Equatable, Sendable {
                 rect: try container.decode(NormalizedRect.self, forKey: .rect),
                 visible: try container.decodeIfPresent(Bool.self, forKey: .visible) ?? true
             ))
+        case .setScreenCrop:
+            // Require the field: a missing rect is a malformed suggestion, not a request to clear.
+            self = .setScreenCrop(try container.decode(NormalizedRect?.self, forKey: .rect))
         case .removeOverlayKeyframe:
             self = .removeOverlayKeyframe(at: try container.decode(TimeInterval.self, forKey: .t))
         case .setLaneGain:
@@ -177,6 +198,27 @@ enum EditOperation: Codable, Equatable, Sendable {
             ))
         case .restoreSpeech:
             self = .restoreSpeech(ids: try container.decode([UUID].self, forKey: .ids))
+        case .setZoom:
+            self = .setZoom(try ZoomSegment(from: decoder))
+        case .removeZooms:
+            self = .removeZooms(ids: try container.decode([UUID].self, forKey: .ids))
+        case .setCursorStyle:
+            self = .setCursorStyle(CursorStyle(
+                visible: try container.decodeIfPresent(Bool.self, forKey: .visible) ?? true,
+                scale: try container.decodeIfPresent(Double.self, forKey: .scale) ?? 1,
+                ripple: try container.decodeIfPresent(Bool.self, forKey: .ripple) ?? true
+            ))
+        case .setNarration:
+            // An agent proposes only `t` and `text`; the clip is made when the suggestion is accepted.
+            self = .setNarration(NarrationLine(
+                id: (try? container.decode(UUID.self, forKey: .id)) ?? UUID(),
+                at: try container.decodeIfPresent(TimeInterval.self, forKey: .t)
+                    ?? container.decode(TimeInterval.self, forKey: .at),
+                text: try container.decode(String.self, forKey: .text),
+                duration: try container.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0
+            ))
+        case .removeNarration:
+            self = .removeNarration(ids: try container.decode([UUID].self, forKey: .ids))
         case .setCameraStyle:
             self = .setCameraStyle(PiPStyle(
                 shape: try container.decodeIfPresent(PiPStyle.Shape.self, forKey: .shape) ?? .rectangle,
@@ -204,6 +246,9 @@ enum EditOperation: Codable, Equatable, Sendable {
             try container.encode(keyframe.t, forKey: .t)
             try container.encode(keyframe.rect, forKey: .rect)
             try container.encode(keyframe.visible, forKey: .visible)
+        case .setScreenCrop(let rect):
+            try container.encode(Op.setScreenCrop, forKey: .op)
+            try container.encode(rect, forKey: .rect)
         case .removeOverlayKeyframe(let t):
             try container.encode(Op.removeOverlayKeyframe, forKey: .op)
             try container.encode(t, forKey: .t)
@@ -265,6 +310,26 @@ enum EditOperation: Codable, Equatable, Sendable {
         case .restoreSpeech(let ids):
             try container.encode(Op.restoreSpeech, forKey: .op)
             try container.encode(ids, forKey: .ids)
+        case .setZoom(let zoom):
+            try container.encode(Op.setZoom, forKey: .op)
+            try zoom.encode(to: encoder)
+        case .removeZooms(let ids):
+            try container.encode(Op.removeZooms, forKey: .op)
+            try container.encode(ids, forKey: .ids)
+        case .setCursorStyle(let style):
+            try container.encode(Op.setCursorStyle, forKey: .op)
+            try container.encode(style.visible, forKey: .visible)
+            try container.encode(style.scale, forKey: .scale)
+            try container.encode(style.ripple, forKey: .ripple)
+        case .setNarration(let line):
+            try container.encode(Op.setNarration, forKey: .op)
+            try container.encode(line.id, forKey: .id)
+            try container.encode(line.at, forKey: .t)
+            try container.encode(line.text, forKey: .text)
+            try container.encode(line.duration, forKey: .duration)
+        case .removeNarration(let ids):
+            try container.encode(Op.removeNarration, forKey: .op)
+            try container.encode(ids, forKey: .ids)
         case .removeRanges(let spans):
             try container.encode(Op.removeRanges, forKey: .op)
             try container.encode(spans, forKey: .spans)
@@ -306,6 +371,13 @@ enum EditOperationError: Error, Equatable, LocalizedError {
     case speechHoldTooLong(TimeInterval)
     case speechOverlaps
     case noSuchSpeech
+    case invalidZoom
+    case noSuchZoom
+    case invalidCursorStyle
+    case emptyNarrationText
+    case narrationNotRendered
+    case narrationOverlaps
+    case noSuchNarration
 
     var errorDescription: String? {
         switch self {
@@ -355,6 +427,20 @@ enum EditOperationError: Error, Equatable, LocalizedError {
             return "Part of that is already replaced with new speech."
         case .noSuchSpeech:
             return "That replacement is no longer there."
+        case .invalidZoom:
+            return "A zoom needs a span of at least 0.6s and a region no smaller than a quarter of the frame, inside the frame."
+        case .noSuchZoom:
+            return "That zoom is no longer there."
+        case .invalidCursorStyle:
+            return "The cursor size must be between 0.5 and 3."
+        case .emptyNarrationText:
+            return "There is no narration text to speak."
+        case .narrationNotRendered:
+            return "The narration has not been spoken yet."
+        case .narrationOverlaps:
+            return "Another line of narration is already playing then."
+        case .noSuchNarration:
+            return "That narration line is no longer there."
         }
     }
 }
@@ -529,6 +615,30 @@ extension SessionEdit {
             guard appended.count > cuts.count else { throw EditOperationError.emptyRange }
             edit.cuts = try Self.validated(appended, recordingDuration: recordingDuration)
 
+        case .setScreenCrop(let rect):
+            if let rect, !rect.isValidScreenCrop { throw EditOperationError.invalidRect }
+            edit.screenCrop = rect
+
+        case .setZoom(let zoom):
+            edit.zooms = try validatedZoom(adding: zoom)
+
+        case .removeZooms(let ids):
+            let wanted = Set(ids)
+            guard zooms.contains(where: { wanted.contains($0.id) }) else { throw EditOperationError.noSuchZoom }
+            edit.zooms = zooms.filter { !wanted.contains($0.id) }
+
+        case .setCursorStyle(let style):
+            guard style.isValid else { throw EditOperationError.invalidCursorStyle }
+            edit.cursorStyle = style
+
+        case .setNarration(let line):
+            edit.narration = try validatedNarration(adding: line)
+
+        case .removeNarration(let ids):
+            let wanted = Set(ids)
+            guard narration.contains(where: { wanted.contains($0.id) }) else { throw EditOperationError.noSuchNarration }
+            edit.narration = narration.filter { !wanted.contains($0.id) }
+
         case .setCameraStyle(let style):
             guard style.isValid else { throw EditOperationError.invalidCameraStyle }
             edit.cameraStyle = style
@@ -601,6 +711,30 @@ extension SessionEdit {
         stored.text = text
         stored.duration = duration
         return (others + [stored]).sorted { $0.span.start < $1.span.start }
+    }
+
+    private func validatedZoom(adding new: ZoomSegment) throws -> [ZoomSegment] {
+        var stored = new
+        stored.span = TimeSpan(start: try Self.snapped(new.span.start), end: try Self.snapped(new.span.end))
+        guard stored.isValid, stored.span.end <= recordingDuration else { throw EditOperationError.invalidZoom }
+        return (zooms.filter { $0.id != new.id } + [stored]).sorted { $0.span.start < $1.span.start }
+    }
+
+    private func validatedNarration(adding new: NarrationLine) throws -> [NarrationLine] {
+        var stored = new
+        stored.at = try Self.snapped(new.at)
+        stored.text = new.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !stored.text.isEmpty else { throw EditOperationError.emptyNarrationText }
+        guard !stored.isDraft, stored.duration.isFinite, stored.duration <= NarrationLine.maximumDuration else {
+            throw EditOperationError.narrationNotRendered
+        }
+        guard stored.at <= recordingDuration else { throw EditOperationError.timeOutsideTimeline(stored.at) }
+        let others = narration.filter { $0.id != new.id }
+        // Two voices at once is never what anyone wants, so overlap is refused rather than mixed.
+        guard !others.contains(where: { $0.at < stored.end && stored.at < $0.end }) else {
+            throw EditOperationError.narrationOverlaps
+        }
+        return (others + [stored]).sorted { $0.at < $1.at }
     }
 
     static func snapped(_ t: TimeInterval) throws -> TimeInterval {

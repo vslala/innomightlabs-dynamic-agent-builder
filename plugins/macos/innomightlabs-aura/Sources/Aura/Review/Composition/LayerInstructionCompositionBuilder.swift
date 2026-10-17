@@ -35,6 +35,9 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         }
 
         let speechTrackID = await insertSpeech(timeline, into: composition)
+        // Narration is mixed at unity and needs no entry in the audio mix: a track the mix does not
+        // name plays at full volume.
+        _ = await insertNarration(timeline, into: composition)
 
         guard base != nil || overlay != nil || !audio.isEmpty else {
             throw CompositionError.noUsableMedia
@@ -322,6 +325,55 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         return track.trackID
     }
 
+    // MARK: - Narration
+
+    /// Lays each narration clip on one extra audio track at its session time.
+    ///
+    /// A cut inside a clip's span trims it, because each stretch of the timeline takes the matching
+    /// stretch of the clip — the same rule `insertSpeech` follows. Narration never makes a hold:
+    /// the take was paced to its own narration, so the lines already fit.
+    private func insertNarration(
+        _ timeline: ResolvedTimeline,
+        into composition: AVMutableComposition
+    ) async -> CMPersistentTrackID? {
+        guard !timeline.narration.isEmpty,
+              let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+        else { return nil }
+
+        var inserted = false
+        for line in timeline.narration {
+            let asset = AVURLAsset(url: line.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+            guard let source = try? await asset.loadTracks(withMediaType: .audio).first,
+                  let length = try? await asset.load(.duration), length.isNumeric
+            else { continue }
+
+            let available = CMTimeRange(start: .zero, duration: Timeline.normalized(length))
+            let span = CMTimeRange(start: Timeline.time(seconds: line.at), duration: line.duration)
+
+            for segment in timeline.timeMap.segments where !segment.isHold {
+                let overlap = segment.source.intersection(span)
+                guard overlap.duration > .zero else { continue }
+                let wanted = CMTimeRange(start: overlap.start - span.start, duration: overlap.duration)
+                let at = segment.composition.start + (overlap.start - segment.source.start)
+
+                let usable = wanted.intersection(available)
+                guard usable.duration > .zero else { continue }
+                do {
+                    try track.insertTimeRange(usable, of: source, at: at + (usable.start - wanted.start))
+                    inserted = true
+                } catch {
+                    continue
+                }
+            }
+        }
+
+        guard inserted else {
+            composition.removeTrack(track)
+            return nil
+        }
+        return track.trackID
+    }
+
     // MARK: - Video composition
 
     private func makeVideoComposition(
@@ -399,7 +451,9 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
                     // passed through and squared there — one place decides the geometry.
                     overlayOpacity: (state?.visible ?? false) ? 1 : 0,
                     renderSize: renderSize,
-                    style: timeline.style
+                    style: timeline.style,
+                    screenCrop: timeline.screenCrop,
+                    effects: timeline.effects
                 )
             }
 

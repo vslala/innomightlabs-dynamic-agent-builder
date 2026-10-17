@@ -42,8 +42,8 @@ struct RecordingProfile: Equatable, Codable, Sendable {
     }
 }
 
-/// The named modes in the menu bar. A preset is a shortcut that *writes* a profile; the
-/// profile remains the source of truth, and a profile matching no preset is "Custom".
+/// Named shortcuts in the menu bar. A preset *writes* a profile; the profile remains the source
+/// of truth, picked source by source, and a profile matching no preset is "Custom".
 ///
 /// Declaration order is display order: `allCases` drives both preset pickers directly, widest
 /// combination (every track) down to the narrowest (voice alone) — not alphabetical or by
@@ -57,6 +57,7 @@ enum RecordingPreset: String, CaseIterable, Identifiable, Sendable {
     case screenAndVoice
     case voiceAndCamera
     case voiceCameraSystemAudio
+    case voiceAndSystemAudio
     case voiceOnly
 
     var id: String { rawValue }
@@ -70,6 +71,7 @@ enum RecordingPreset: String, CaseIterable, Identifiable, Sendable {
         case .screenAndVoice: return "Screen + Voice"
         case .voiceAndCamera: return "Voice + Camera"
         case .voiceCameraSystemAudio: return "Voice + Camera + System Audio"
+        case .voiceAndSystemAudio: return "Voice + System Audio"
         case .voiceOnly: return "Voice Only"
         }
     }
@@ -95,6 +97,9 @@ enum RecordingPreset: String, CaseIterable, Identifiable, Sendable {
         // still goes through ScreenCaptureKit, so this asks for Screen Recording permission.
         case .voiceCameraSystemAudio:
             return RecordingProfile(tracks: [.camera, .microphone, .systemAudio])
+        // A podcast with a remote guest: both sides of the call, no video.
+        case .voiceAndSystemAudio:
+            return RecordingProfile(tracks: [.microphone, .systemAudio])
         // Voice only, not voice + system audio: system audio would drag in the Screen
         // Recording permission that an audio-only recording otherwise never needs. A remote
         // guest is one visible toggle away, which makes it a choice rather than a surprise.

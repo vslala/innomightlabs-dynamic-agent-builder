@@ -49,7 +49,23 @@ struct SessionFolder {
     /// The reference clip the model last learned the speaker's voice from.
     var voiceSampleURL: URL { replacementsURL.appendingPathComponent("voice-sample.wav") }
 
+    /// A browser demo's narration, one clip per line. Derived data like `replacements/`: the text
+    /// is in the edit document, so a clip lost from here can be spoken again.
+    /// The lines a take narrated, written when it ends so the review window can place them.
+    var narrationLinesURL: URL { rootURL.appendingPathComponent("narration.json") }
+
+    var narrationURL: URL { rootURL.appendingPathComponent("narration", isDirectory: true) }
+
+    func narrationClipURL(for lineID: UUID) -> URL {
+        narrationURL.appendingPathComponent(lineID.uuidString).appendingPathExtension("m4a")
+    }
+
     var replacementsURL: URL { rootURL.appendingPathComponent("replacements", isDirectory: true) }
+
+    var demoSpecURL: URL { rootURL.appendingPathComponent("demo-spec.json") }
+    var actionLogURL: URL { rootURL.appendingPathComponent("action-log.json") }
+    var actionLogJournalURL: URL { rootURL.appendingPathComponent("action-log.jsonl") }
+    var viewportURL: URL { rootURL.appendingPathComponent("viewport.json") }
 
     private static let idFormatter: DateFormatter = {
         let formatter = DateFormatter()
