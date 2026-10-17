@@ -6,9 +6,16 @@ options:
     macOS: "15.0"
 
 packages:
+  # The repository's old name, on purpose: `speech-swift` depends on it under that name, and
+  # SwiftPM treats the new name as a second package with the same targets and refuses to resolve.
   WhisperKit:
-    url: https://github.com/argmaxinc/argmax-oss-swift
+    url: https://github.com/argmaxinc/WhisperKit
     from: "1.1.0"
+  # Speech Replacement's voice model. Pinned to a commit, not a branch: it runs a model on the
+  # user's machine, so what it does should only change when this line does.
+  SpeechSwift:
+    url: https://github.com/soniqo/speech-swift
+    revision: 839127e237314d01fab392727261b9d9d3ba5951
 
 targets:
   Aura:
@@ -19,6 +26,8 @@ targets:
       - path: Sources/Aura
     dependencies:
       - package: WhisperKit
+      - package: SpeechSwift
+        product: F5TTS
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.innomightlabs.aura

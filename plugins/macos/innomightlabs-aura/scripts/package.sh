@@ -25,6 +25,8 @@
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# mlx-swift (the speech model's runtime) ships a build plugin that command-line builds refuse to
+# run until it is trusted; Xcode asks once interactively.
 
 BUILD_DIR="build"
 ARCHIVE="$BUILD_DIR/Aura.xcarchive"
@@ -59,6 +61,7 @@ xcodebuild \
   -configuration Release \
   -archivePath "$ARCHIVE" \
   archive \
+  -skipPackagePluginValidation \
   > "$BUILD_DIR/archive.log" 2>&1 || { tail -40 "$BUILD_DIR/archive.log"; fail "Archive failed"; }
 
 APP_IN_ARCHIVE="$ARCHIVE/Products/Applications/Aura.app"

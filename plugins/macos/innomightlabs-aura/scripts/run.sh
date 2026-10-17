@@ -5,12 +5,14 @@
 # DerivedData can be a different app to it than the one in /Applications.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# mlx-swift (the speech model's runtime) ships a build plugin that command-line builds refuse to
+# run until it is trusted; Xcode asks once interactively.
 
 BUNDLE_ID="com.innomightlabs.aura"
 INSTALLED_APP="/Applications/Aura.app"
 
 xcodegen generate
-xcodebuild -project InnomightLabsAura.xcodeproj -scheme Aura -configuration Debug build
+xcodebuild -project InnomightLabsAura.xcodeproj -scheme Aura -configuration Debug build -skipPackagePluginValidation
 BUILT_PRODUCTS_DIR=$(xcodebuild -project InnomightLabsAura.xcodeproj -scheme Aura -configuration Debug -showBuildSettings 2>/dev/null | awk -F'= ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')
 
 # A running Aura would otherwise just be brought to the front by `open`, so the new build
