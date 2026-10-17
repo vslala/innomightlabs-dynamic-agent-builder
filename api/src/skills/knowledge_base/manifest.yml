@@ -1,0 +1,32 @@
+id: knowledge_base
+namespace: core.knowledge
+owner_only: true
+name: Knowledge Base
+description: Keep a knowledge base up to date by reading its site again.
+system_prompt: |
+  Use action=recrawl to read a knowledge base's site again with the settings it was last read with.
+  Only what changed on the site is re-embedded.
+actions:
+  - name: recrawl
+    description: Read the knowledge base's site again. Skipped, with a message, when a crawl of it is already running.
+    input_schema:
+      type: object
+      required: [knowledge_base_id]
+      properties:
+        knowledge_base_id:
+          type: string
+          description: The knowledge base to read again. It must have been crawled before.
+    automation:
+      owner_scoped_arguments: [knowledge_base_id]
+      reference_arguments:
+        knowledge_base_id: KnowledgeBase
+    action_form:
+      form_name: Recrawl Knowledge Base
+      submit_path: ""
+      form_inputs:
+        - input_type: select
+          name: knowledge_base_id
+          label: Knowledge base
+          options_source:
+            type: knowledge_bases
+    handler: actions:recrawl

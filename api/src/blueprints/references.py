@@ -1,7 +1,8 @@
 """Where one resource in a blueprint names another.
 
-A reference is a field marked `x-ref-kind` (an agent's `knowledge_bases`, a widget key's `agent`), or a skill
-setting whose manifest says it names an agent (`agent_invocation`'s `target_agent_id`). Each kind lists its
+A reference is a field marked `x-ref-kind` (an agent's `knowledge_bases`, a widget key's `agent`), a skill
+setting whose manifest says it names an agent (`agent_invocation`'s `target_agent_id`), or an automation step's
+argument whose action says it names a resource (`knowledge_base`'s `recrawl`). Each kind lists its
 references (`ResourceKind.references`), and everything that follows them reads that one list: the validator
 checks them and orders the resources, the drawing wires them, and apply resolves their names to ids.
 """
@@ -13,7 +14,7 @@ from pydantic import BaseModel
 
 from src.blueprints.parser import join_path
 from src.blueprints.skills_schema import skill_variants
-from src.blueprints.spec import REF_KIND, SkillEntry
+from src.blueprints.spec import REF_KIND, SkillEntry, StepSpec
 
 
 @dataclass(frozen=True)
@@ -68,4 +69,25 @@ def skill_references(name: str, skills: list[SkillEntry]) -> Iterator[Reference]
                     where="this skill",
                     may_be_id=True,
                     outward_wire="hands work to",
+                )
+
+
+def step_reference_arguments(skill: str | None, action: str | None) -> dict[str, str]:
+    """The arguments of a skill step that name a resource, with the kind each must be, as its action's manifest says."""
+    variant = skill_variants().get(skill or "")
+    manifest_action = variant.skill.manifest.find_action(action or "") if variant else None
+    return manifest_action.automation.reference_arguments if manifest_action else {}
+
+
+def step_references(name: str, steps: list[StepSpec]) -> Iterator[Reference]:
+    for index, step in enumerate(steps):
+        for argument, kind in step_reference_arguments(step.skill, step.action).items():
+            value = step.arguments.get(argument)
+            if isinstance(value, str) and value and "{{" not in value:
+                yield Reference(
+                    path=f"resources.{name}.steps[{index}].arguments.{argument}",
+                    target=value,
+                    kind=kind,
+                    where="this step",
+                    may_be_id=True,
                 )

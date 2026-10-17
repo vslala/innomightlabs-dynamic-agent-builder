@@ -14,6 +14,7 @@ src/knowledge/
   router.py       /knowledge-bases/* and agent_kb_router (agent<->KB links), search, crawl jobs
   schemas.py      Form schemas (create KB, crawl config, content upload)
   crawl_launch.py launch_crawl: Lambda or in-process, shared with blueprints
+  recrawl.py      recrawl(): read a KB's site again with its last settings; the `knowledge_base` skill's action
   run_state.py    CrawlJobStateService: heartbeat and stale-job failing
 ```
 

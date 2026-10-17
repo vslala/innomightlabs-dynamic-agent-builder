@@ -48,7 +48,7 @@ from src.blueprints.kinds.base import (
 )
 from src.blueprints.kinds.lead_form import missing_lead_forms
 from src.blueprints.reconcile import Context, Outcome, reconcile
-from src.blueprints.references import Reference
+from src.blueprints.references import Reference, step_reference_arguments, step_references
 from src.blueprints.skills_schema import skill_variants
 from src.blueprints.spec import (
     AutomationSpec,
@@ -149,12 +149,12 @@ def _observed_step(node: AutomationNode, names: Mapping[str, str]) -> dict[str, 
     if config["action_type"] == AutomationActionType.INVOKE_AGENT.value:
         agent_id = config["agent_id"]
         return {"name": name, "agent": names.get(agent_id, agent_id), "prompt": config["prompt_template"]}
-    return {
-        "name": name,
-        "skill": config.get("skill_id") or str(config.get("installed_skill_id", "")).split(":")[0],
-        "action": config["action"],
-        "arguments": config.get("arguments") or {},
-    }
+    skill = config.get("skill_id") or str(config.get("installed_skill_id", "")).split(":")[0]
+    arguments = dict(config.get("arguments") or {})
+    for argument in step_reference_arguments(skill, config["action"]):
+        if isinstance(arguments.get(argument), str):
+            arguments[argument] = names.get(arguments[argument], arguments[argument])
+    return {"name": name, "skill": skill, "action": config["action"], "arguments": arguments}
 
 
 def _observed_skill(skill: AutomationSkill) -> Optional[dict[str, Any]]:
@@ -191,7 +191,15 @@ def _step_node(automation_id: str, step: StepSpec, index: int, ctx: ApplyContext
             "action_type": AutomationActionType.SKILL_ACTION.value,
             "skill_id": step.skill,
             "action": step.action,
-            "arguments": step.arguments,
+            "arguments": {
+                **step.arguments,
+                # A resource of this blueprint written by name becomes its id
+                **{
+                    argument: ctx.applied[step.arguments[argument]].id
+                    for argument in step_reference_arguments(step.skill, step.action)
+                    if step.arguments.get(argument) in ctx.applied
+                },
+            },
         }
     return AutomationNode(
         node_id=node_id or str(uuid4()),
@@ -571,6 +579,11 @@ class AutomationKind(ManagedKind[AutomationSpec]):
             "Steps read the event with smart values: `{{ trigger.lead.answers.email }}`, `{{ trigger.lead.capture_id }}` "
             "and `{{ trigger.lead.form_slug }}` for a captured lead, `{{ input.<key> }}` for a schedule's input, and "
             "`{{ steps.<name>.output }}` for an earlier step. Steps run in order; later ones may read earlier ones.",
+            "### Keeping a knowledge base up to date\n\n"
+            "To read a site again on a schedule, add `- id: knowledge_base` under `skills`, use a `schedule` trigger, and add "
+            "a step `skill: knowledge_base`, `action: recrawl`, `arguments: {knowledge_base_id: <the KnowledgeBase's name "
+            "in this blueprint, or its id>}`. It re-reads with the settings the site was last read with, and only what "
+            "changed is re-embedded, so a weekly or daily schedule is cheap. The knowledge base must have been crawled once.",
         ]
 
     def references(self, name: str, spec: AutomationSpec) -> list[Reference]:
@@ -582,6 +595,7 @@ class AutomationKind(ManagedKind[AutomationSpec]):
             for index, step in enumerate(spec.steps)
             if step.agent
         ]
+        references += step_references(name, spec.steps)
         lead = spec.trigger.lead_captured
         if lead and lead.form:
             references.append(Reference(

@@ -534,6 +534,22 @@ class ContentChunkRepository:
                 batch.put_item(Item=chunk.to_dynamo_item())
         log.info(f"Batch saved {len(chunks)} content chunks")
 
+    def find_all_by_kb(self, kb_id: str) -> list[ContentChunk]:
+        """Every chunk of a knowledge base."""
+        query = {"KeyConditionExpression": Key("pk").eq(f"KnowledgeBase#{kb_id}") & Key("sk").begins_with("Chunk#")}
+        chunks: list[ContentChunk] = []
+        while True:
+            response = self.table.query(**query)
+            chunks += [ContentChunk.from_dynamo_item(item) for item in response.get("Items", [])]
+            if "LastEvaluatedKey" not in response:
+                return chunks
+            query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
+    def delete_by_ids(self, kb_id: str, chunk_ids: list[str]) -> None:
+        with self.table.batch_writer() as batch:
+            for chunk_id in chunk_ids:
+                batch.delete_item(Key={"pk": f"KnowledgeBase#{kb_id}", "sk": f"Chunk#{chunk_id}"})
+
     def delete_all_by_kb(self, kb_id: str) -> int:
         """Delete all chunks for a knowledge base."""
         deleted_count = 0

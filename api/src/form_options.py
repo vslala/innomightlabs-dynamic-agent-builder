@@ -16,6 +16,8 @@ log = logging.getLogger(__name__)
 
 class FormOptionSourceType:
     AGENTS = "agents"
+    #: The knowledge bases the member owns.
+    KNOWLEDGE_BASES = "knowledge_bases"
     KRISHNA_MINI_AGENTS = "krishna_mini_agents"
     AGENT_MODEL_PROVIDERS = "agent_model_providers"
     AGENT_MODELS = "agent_models"
@@ -90,6 +92,19 @@ def _owned_agents(context: FormOptionsContext) -> list[Agent]:
 class AgentsOptionsResolver:
     def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
         return [SelectOption(value=agent.agent_id, label=agent.agent_name) for agent in _owned_agents(context)]
+
+
+class KnowledgeBasesOptionsResolver:
+    def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
+        from src.knowledge.models import KnowledgeBaseStatus
+        from src.knowledge.repository import KnowledgeBaseRepository
+
+        owner = context.owner
+        return [
+            SelectOption(value=kb.kb_id, label=kb.name)
+            for kb in KnowledgeBaseRepository().list_in_account(owner.account_id)
+            if kb.owner_id == owner.user_id and kb.status != KnowledgeBaseStatus.DELETED
+        ]
 
 
 class KrishnaMiniAgentsOptionsResolver:
@@ -172,6 +187,7 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
 
 FORM_OPTIONS_RESOLVERS: dict[str, FormOptionsResolver] = {
     FormOptionSourceType.AGENTS: AgentsOptionsResolver(),
+    FormOptionSourceType.KNOWLEDGE_BASES: KnowledgeBasesOptionsResolver(),
     FormOptionSourceType.KRISHNA_MINI_AGENTS: KrishnaMiniAgentsOptionsResolver(),
     FormOptionSourceType.AGENT_MODEL_PROVIDERS: AgentModelProvidersOptionsResolver(),
     FormOptionSourceType.AGENT_MODELS: AgentModelsOptionsResolver(),

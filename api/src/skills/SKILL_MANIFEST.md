@@ -582,6 +582,7 @@ Use this when an action makes sense for agents but not as an automation action. 
 Two more fields cover arguments that matter only in automations:
 
 - `required_arguments`: arguments an automation step must set, on top of `input_schema.required`. A blank string counts as missing. The action catalog merges them into the `required` list it returns, so the step editor flags them too.
+- `reference_arguments`: arguments that name a resource, by the kind it must be (`knowledge_base_id: KnowledgeBase`). A blueprint may write the name of a resource it is making there; applying fills in its id, and the blueprint orders the two resources by it.
 - `owner_scoped_arguments`: arguments that name something the owner owns. Publishing to the automation marketplace rejects a step whose value is not an `{{ inputs.* }}` placeholder, so a template never carries the publisher's id.
 
 Example from `agent_invocation.invoke`. In a chat the agent comes from the installed config, but an automation step must pick one:

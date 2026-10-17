@@ -13,7 +13,6 @@ Supports Lambda continuation via checkpoints for long-running crawls.
 """
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
@@ -51,7 +50,8 @@ from src.knowledge.repository import (
 from src.knowledge.run_state import CrawlJobStateService, CrawlJobStoppedError
 from src.crawler.discovery import UrlDiscovery, DiscoveryConfig, DiscoveredUrl
 from src.crawler.extractor import ContentExtractor, ExtractedContent
-from src.crawler.chunking import get_chunking_strategy, ContentChunkData
+from src.crawler.chunking import get_chunking_strategy
+from src.crawler.page_chunks import PageChunks, prepare_page, vectors_for
 from src.crawler.events import (
     CrawlEvent,
     job_started_event,
@@ -75,30 +75,6 @@ log = logging.getLogger(__name__)
 # Lambda timeout buffer (save checkpoint 30s before timeout)
 LAMBDA_TIMEOUT_BUFFER_MS = 30000
 DEFAULT_LAMBDA_TIMEOUT_MS = 300000  # 5 minutes
-
-
-def generate_chunk_id(kb_id: str, source_url: str, chunk_index: int, level: int) -> str:
-    """
-    Generate a deterministic chunk ID based on content identifiers.
-
-    This enables deduplication: re-crawling the same page produces the same
-    chunk IDs, so Pinecone upsert overwrites instead of creating duplicates.
-
-    Args:
-        kb_id: Knowledge base ID
-        source_url: Source URL of the page
-        chunk_index: Index of the chunk within the page
-        level: Hierarchical level (0=document, 1=section, 2=paragraph)
-
-    Returns:
-        Deterministic chunk ID (MD5 hash truncated to UUID-like format)
-    """
-    # Create a unique string from the identifiers
-    identifier = f"{kb_id}:{source_url}:{chunk_index}:{level}"
-    # Generate MD5 hash and format as UUID-like string
-    hash_bytes = hashlib.md5(identifier.encode()).hexdigest()
-    # Format: 8-4-4-4-12 to match UUID format
-    return f"{hash_bytes[:8]}-{hash_bytes[8:12]}-{hash_bytes[12:16]}-{hash_bytes[16:20]}-{hash_bytes[20:32]}"
 
 
 @dataclass
@@ -132,6 +108,16 @@ class CrawlContext:
 
     # Event callback (for SSE streaming)
     event_callback: Optional[Callable[[CrawlEvent], None]] = None
+
+    # The knowledge base's stored chunks by page, read once per run: what a page is compared with before it's embedded.
+    stored_chunks: Optional[dict[str, dict[str, ContentChunk]]] = None
+
+    def stored_for(self, url: str) -> dict[str, ContentChunk]:
+        if self.stored_chunks is None:
+            self.stored_chunks = {}
+            for chunk in self.chunk_repo.find_all_by_kb(self.kb.kb_id):
+                self.stored_chunks.setdefault(chunk.source_url, {})[chunk.chunk_id] = chunk
+        return self.stored_chunks.get(url, {})
 
     def emit_event(self, event: CrawlEvent) -> None:
         """Emit an event if callback is registered."""
@@ -534,10 +520,13 @@ class CrawlerWorker:
             log.warning(f"No chunks generated for {url}")
             return
 
-        # Step 4: Generate embeddings
+        # Step 4: Embed the chunks that changed since the page was last read
+        page_chunks = prepare_page(kb_id, url, extracted.title, chunk_data_list, ctx.stored_for(url))
         embed_start = time.time()
-        texts = [c.content for c in chunk_data_list]
-        embedding_results = await self.embeddings.embed_texts_async(texts)
+        embedding_results = (
+            await self.embeddings.embed_texts_async([chunk.content for chunk in page_chunks.changed])
+            if page_chunks.changed else []
+        )
         timing.embed_duration_ms = int((time.time() - embed_start) * 1000)
 
         ctx.emit_event(page_embed_complete_event(
@@ -547,21 +536,21 @@ class CrawlerWorker:
         ))
         self._log_step(ctx, CrawlStepType.PAGE_EMBED_COMPLETE, url=url,
                        duration_ms=timing.embed_duration_ms,
-                       details={"embedding_count": len(embedding_results)})
+                       details={"embedding_count": len(embedding_results), "unchanged_count": page_chunks.reused})
 
         # Step 5: Store in Pinecone and DynamoDB
         ingest_start = time.time()
-        await self._store_chunks(ctx, chunk_data_list, embedding_results, url, extracted.title)
+        self._store_chunks(ctx, page_chunks, embedding_results)
         timing.ingest_duration_ms = int((time.time() - ingest_start) * 1000)
 
         ctx.emit_event(page_ingest_complete_event(
             job_id, kb_id, url,
-            vector_count=len(chunk_data_list),
+            vector_count=len(page_chunks.changed),
             duration_ms=timing.ingest_duration_ms,
         ))
         self._log_step(ctx, CrawlStepType.PAGE_INGEST_COMPLETE, url=url,
                        duration_ms=timing.ingest_duration_ms,
-                       details={"vector_count": len(chunk_data_list)})
+                       details={"vector_count": len(page_chunks.changed), "removed_count": len(page_chunks.stale)})
 
         # Calculate total timing
         timing.total_duration_ms = (
@@ -593,84 +582,14 @@ class CrawlerWorker:
         ctx.total_chunks += len(chunk_data_list)
         ctx.total_embeddings += len(embedding_results)
 
-    async def _store_chunks(
-        self,
-        ctx: CrawlContext,
-        chunk_data_list: list[ContentChunkData],
-        embedding_results: list,
-        url: str,
-        title: str,
-    ) -> None:
-        """Store chunks in DynamoDB and vectors in Pinecone."""
-        from src.vectorstore.pinecone_client import VectorRecord, VectorMetadata
-
-        # Build mapping from old random UUID to chunk info for parent_chunk_id resolution
-        # This allows us to generate deterministic parent_chunk_ids
-        old_id_to_info: dict[str, tuple[int, int]] = {}  # old_uuid -> (chunk_index, level)
-        for chunk_data in chunk_data_list:
-            old_id_to_info[chunk_data.chunk_id] = (chunk_data.chunk_index, chunk_data.level)
-
-        # Create ContentChunk entities and VectorRecords
-        chunks = []
-        vectors = []
-
-        for chunk_data, emb_result in zip(chunk_data_list, embedding_results):
-            # Generate deterministic chunk ID for deduplication
-            # Same kb_id + url + chunk_index + level = same ID
-            # This allows Pinecone upsert to overwrite instead of duplicate
-            chunk_id = generate_chunk_id(
-                kb_id=ctx.kb.kb_id,
-                source_url=url,
-                chunk_index=chunk_data.chunk_index,
-                level=chunk_data.level,
-            )
-
-            # Generate deterministic parent_chunk_id if parent exists
-            parent_chunk_id = None
-            if chunk_data.parent_chunk_id and chunk_data.parent_chunk_id in old_id_to_info:
-                parent_index, parent_level = old_id_to_info[chunk_data.parent_chunk_id]
-                parent_chunk_id = generate_chunk_id(
-                    kb_id=ctx.kb.kb_id,
-                    source_url=url,
-                    chunk_index=parent_index,
-                    level=parent_level,
-                )
-
-            # Create DynamoDB chunk
-            chunk = ContentChunk(
-                chunk_id=chunk_id,
-                kb_id=ctx.kb.kb_id,
-                source_url=url,
-                page_title=title,
-                chunk_index=chunk_data.chunk_index,
-                content=chunk_data.content,
-                word_count=chunk_data.word_count,
-                parent_chunk_id=parent_chunk_id,
-                level=chunk_data.level,
-            )
-            chunks.append(chunk)
-
-            # Create Pinecone vector
-            vector = VectorRecord(
-                id=chunk_id,
-                values=emb_result.embedding,
-                metadata=VectorMetadata(
-                    kb_id=ctx.kb.kb_id,
-                    chunk_id=chunk_id,
-                    source_url=url,
-                    page_title=title or "",
-                    chunk_index=chunk_data.chunk_index,
-                    level=chunk_data.level,
-                    word_count=chunk_data.word_count,
-                ),
-            )
-            vectors.append(vector)
-
-        # Batch save to DynamoDB
-        ctx.chunk_repo.batch_save(chunks)
-
-        # Upsert to Pinecone
-        self.pinecone.upsert(vectors, ctx.kb.kb_id)
+    def _store_chunks(self, ctx: CrawlContext, page_chunks: PageChunks, embedding_results: list) -> None:
+        """Save the changed chunks and their vectors, and remove what the page no longer has."""
+        if page_chunks.changed:
+            ctx.chunk_repo.batch_save(page_chunks.changed)
+            self.pinecone.upsert(vectors_for(page_chunks.changed, embedding_results), ctx.kb.kb_id)
+        if page_chunks.stale:
+            self.pinecone.delete_by_ids(page_chunks.stale, ctx.kb.kb_id)
+            ctx.chunk_repo.delete_by_ids(ctx.kb.kb_id, page_chunks.stale)
 
     def _update_progress(self, ctx: CrawlContext) -> None:
         """Update job progress in database."""

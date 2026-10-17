@@ -17,7 +17,7 @@ src/vectorstore/
 - One Pinecone index, one namespace per knowledge base: `kb_{kb_id}` (`_get_namespace`). Deleting a KB deletes its namespace. Never query across namespaces.
 - The embedding backend is `settings.embedding_backend` (`bedrock` or `ollama`), chosen in `create_embeddings_service`; `get_embeddings_service` is the process singleton. The dimension (`embedding_dimension`, 1024) must match the Pinecone index: changing the model or backend means re-embedding every KB.
 - Pinecone credentials are `pinecone_api_key`, `pinecone_host`, `pinecone_index` in `config/settings.py`; `get_pinecone_client(validate=True)` fails early when unset.
-- Batched upserts (default 100). Vector ids are the chunk ids from `crawler.worker.generate_chunk_id`, so re-upserts overwrite.
+- Batched upserts (default 100). Vector ids are the chunk ids from `crawler.page_chunks.generate_chunk_id`, so re-upserts overwrite.
 - Pinecone failures on delete are logged and reported as a boolean; callers (`KnowledgeBaseService`) decide what to do.
 
 ## Add an embedding backend

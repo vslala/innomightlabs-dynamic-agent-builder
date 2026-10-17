@@ -7,7 +7,8 @@
 ```text
 src/crawler/
   __init__.py       Public exports
-  worker.py         CrawlerWorker: the whole pipeline, checkpoints, events; generate_chunk_id
+  worker.py         CrawlerWorker: the whole pipeline, checkpoints, events
+  page_chunks.py    generate_chunk_id, and prepare_page: which chunks of a re-read page changed (the only ones embedded)
   discovery.py      Sitemap parsing and link crawling (UrlDiscovery)
   robots.py         robots.txt parsing and rules
   extractor.py      HTML -> ExtractedContent / ExtractedSection
@@ -22,6 +23,8 @@ src/crawler/
 - Pipeline order: discovery, fetch, extract, chunk, embed, upsert. Each stage emits a `CrawlEvent` and records a `CrawlStep`/`CrawledPage` through the knowledge repositories. The crawler owns no DynamoDB keys of its own.
 - Long crawls checkpoint (`CrawlCheckpoint`) so Lambda can continue; the worker heartbeats via `CrawlJobStateService` and stops when `CrawlJobStoppedError` is raised.
 - `generate_chunk_id(kb_id, source_url, chunk_index, level)` is deterministic: re-crawling a page overwrites its chunks and vectors rather than duplicating them. Do not change its inputs.
+- **Re-reading is cheap.** `prepare_page` compares each chunk with the one stored under its id (text, title, parent, level) and only the ones that differ are embedded, saved and upserted; chunks a shorter page no longer has are deleted from DynamoDB and Pinecone. The stored chunks are read once per run (`CrawlContext.stored_for`). Anything the vector is made from must be in `_same`, or an edit to it would never be re-embedded. Changing the embedding model needs a new index and a full re-crawl, as before.
+- Uploads (`KnowledgeBaseService.ingest_text_content`) still embed every chunk of a file when it is uploaded again.
 - Embeddings and Pinecone are lazy properties on `CrawlerWorker` so import stays cheap and tests can inject fakes.
 - Outbound fetches respect robots.txt and `CrawlConfig` limits (max pages, depth). Honour them in any new fetching code.
 - Chunk strategies are selected by name in `get_chunking_strategy` (unknown names fall back to hierarchical). The enum of names is `ChunkingStrategy` in `knowledge/models.py`.

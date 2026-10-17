@@ -60,6 +60,9 @@ class SkillActionAutomationConfig(BaseModel):
     #: Arguments naming something the owner owns, such as an agent. A published template
     #: cannot carry the publisher's value, so these must be import input placeholders.
     owner_scoped_arguments: list[str] = Field(default_factory=list)
+    #: Arguments naming a resource, by the kind it must be (`KnowledgeBase`). A blueprint may write the name of one it
+    #: is making there instead of an id, and applying fills in the id.
+    reference_arguments: dict[str, str] = Field(default_factory=dict)
 
 
 class ActionDisclosureMode(str, Enum):

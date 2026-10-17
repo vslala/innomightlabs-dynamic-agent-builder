@@ -11,7 +11,7 @@ from typing import Optional
 
 from src.knowledge.models import KnowledgeBase, KnowledgeBaseStatus, ContentChunk, ChunkingStrategy
 from src.crawler.chunking import get_chunking_strategy
-from src.crawler.worker import generate_chunk_id
+from src.crawler.page_chunks import generate_chunk_id
 from src.vectorstore.pinecone_client import VectorRecord, VectorMetadata
 from src.knowledge.repository import (
     KnowledgeBaseRepository,
