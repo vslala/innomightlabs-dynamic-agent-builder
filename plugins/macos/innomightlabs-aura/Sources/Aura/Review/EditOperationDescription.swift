@@ -39,6 +39,12 @@ enum EditOperationDescription {
             // Quote what is being cut: with word-level edits the times mean far less to the
             // reader than the words themselves.
             return "Cut \(words.count) word\(words.count == 1 ? "" : "s"): \(quoted(words.map(\.text)))"
+        case .replaceSpeech(let replacement):
+            let words = replacement.text.split(separator: " ")
+            let preview = words.prefix(7).joined(separator: " ") + (words.count > 7 ? "…" : "")
+            return "Re-speak \(TimeFormatting.timecode(replacement.span.start)) as “\(preview)”"
+        case .restoreSpeech(let ids):
+            return "Restore the original voice (\(ids.count) replacement\(ids.count == 1 ? "" : "s"))"
         case .restoreWords(let ids):
             return "Restore \(ids.count) cut word\(ids.count == 1 ? "" : "s")"
         case .uncut(let ids):

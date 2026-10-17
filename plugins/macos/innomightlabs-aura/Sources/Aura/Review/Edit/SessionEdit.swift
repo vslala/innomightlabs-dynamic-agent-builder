@@ -274,10 +274,14 @@ struct SessionEdit: Codable, Equatable, Sendable {
     /// something derived from the capture date rather than persisting a default it would then
     /// have to distinguish from a real choice.
     var name: String?
+    /// Selections re-spoken from text. Each is a derived clip played in place of the voice
+    /// recording over its span; see `SpeechReplacement`.
+    var speechReplacements: [SpeechReplacement]
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, recordingDuration, cuts, splitPoints, markers
         case micTimeOffset, cameraOverlay, audioLanes, cameraStyle, transcriptIdentity, name
+        case speechReplacements
     }
 
     init(
@@ -291,7 +295,8 @@ struct SessionEdit: Codable, Equatable, Sendable {
         audioLanes: [AudioLaneSettings],
         cameraStyle: PiPStyle = .plain,
         transcriptIdentity: String? = nil,
-        name: String? = nil
+        name: String? = nil,
+        speechReplacements: [SpeechReplacement] = []
     ) {
         self.schemaVersion = schemaVersion
         self.recordingDuration = recordingDuration
@@ -304,6 +309,7 @@ struct SessionEdit: Codable, Equatable, Sendable {
         self.cameraStyle = cameraStyle
         self.transcriptIdentity = transcriptIdentity
         self.name = name
+        self.speechReplacements = speechReplacements
     }
 
     /// Strict about the two keys that define the timeline.
@@ -326,6 +332,8 @@ struct SessionEdit: Codable, Equatable, Sendable {
         cameraStyle = try container.decodeIfPresent(PiPStyle.self, forKey: .cameraStyle) ?? .plain
         transcriptIdentity = try container.decodeIfPresent(String.self, forKey: .transcriptIdentity)
         name = try container.decodeIfPresent(String.self, forKey: .name)
+        // Additive, like `studioSound`: documents from before replacement existed still load.
+        speechReplacements = try container.decodeIfPresent([SpeechReplacement].self, forKey: .speechReplacements) ?? []
     }
 
     /// A fresh document for an unedited recording: nothing cut, both lanes at unity gain, and
@@ -359,7 +367,11 @@ struct SessionEdit: Codable, Equatable, Sendable {
         Self.deriveClips(recordingDuration: recordingDuration, cuts: cuts)
     }
 
-    var timeMap: TimeMap { TimeMap(clips: clips) }
+    /// Includes the pauses in the picture that longer-than-the-original speech asks for, so
+    /// `duration` is the length of what plays, not of what was recorded.
+    var timeMap: TimeMap {
+        TimeMap(clips: clips, holds: speechReplacements.compactMap(\.timeMapHold))
+    }
 
     /// Total played duration: the recording minus what was cut.
     var duration: TimeInterval { timeMap.duration }

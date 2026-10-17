@@ -34,6 +34,8 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
             }
         }
 
+        let speechTrackID = await insertSpeech(timeline, into: composition)
+
         guard base != nil || overlay != nil || !audio.isEmpty else {
             throw CompositionError.noUsableMedia
         }
@@ -54,7 +56,7 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
                 base: base,
                 overlay: overlay
             )
-        let audioMix = makeAudioMix(lanes: audio)
+        let audioMix = makeAudioMix(lanes: audio, speech: speechTrackID.map { ($0, timeline.speechKeyframes) })
 
         // A snapshot, so nothing that happens to the mutable composition afterwards can
         // affect an export already in flight.
@@ -197,6 +199,18 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         var covered: [CMTimeRange] = []
 
         for segment in timeline.timeMap.segments {
+            if segment.isHold {
+                // Audio simply goes quiet through a hold; only the picture has to be kept up.
+                if probe.kind.isVideo,
+                   let held = Self.insertHeldFrame(
+                       for: segment, of: source, offset: offset, available: available,
+                       into: track, frameDuration: timeline.frameDuration
+                   ) {
+                    covered.append(held)
+                }
+                continue
+            }
+
             // `offset` says this file's content plays that much later than its own timeline
             // implies, so the file range for a session range is the range shifted back by it.
             // Clipping against what the file actually holds then naturally leaves silence (or
@@ -218,6 +232,94 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
         }
 
         return covered.isEmpty ? nil : covered
+    }
+
+    /// Fills a hold with the frame on screen at the instant it holds, stretched to the hold's
+    /// length — the standard freeze-frame for an `AVMutableComposition`.
+    ///
+    /// Returns what the track now covers, or nil when this file had no picture at that instant
+    /// (a camera that was not recording there), in which case the hold is just empty for it.
+    private static func insertHeldFrame(
+        for segment: TimeMap.Segment,
+        of source: AVAssetTrack,
+        offset: CMTime,
+        available: CMTimeRange,
+        into track: AVMutableCompositionTrack,
+        frameDuration: CMTime
+    ) -> CMTimeRange? {
+        let instant = segment.source.start - offset
+        let frame = CMTimeRange(start: instant - frameDuration, end: instant).intersection(available)
+        guard frame.duration > .zero else { return nil }
+
+        do {
+            try track.insertTimeRange(frame, of: source, at: segment.composition.start)
+            track.scaleTimeRange(
+                CMTimeRange(start: segment.composition.start, duration: frame.duration),
+                toDuration: segment.composition.duration
+            )
+            return segment.composition
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - Speech
+
+    /// Lays each replacement's clip on one extra audio track, where the original voice has been
+    /// silenced (see `TimelineResolver.silencing`).
+    ///
+    /// The clip's time zero is the start of the span it replaces, so a stretch of it maps to the
+    /// composition exactly as a stretch of the recording does — which is why a cut inside the
+    /// span simply trims the clip. The part beyond the span's length plays through the hold.
+    private func insertSpeech(
+        _ timeline: ResolvedTimeline,
+        into composition: AVMutableComposition
+    ) async -> CMPersistentTrackID? {
+        guard !timeline.speech.isEmpty,
+              let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+        else { return nil }
+
+        var inserted = false
+        for speech in timeline.speech {
+            let asset = AVURLAsset(url: speech.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+            guard let source = try? await asset.loadTracks(withMediaType: .audio).first,
+                  let length = try? await asset.load(.duration), length.isNumeric
+            else { continue }
+
+            let available = CMTimeRange(start: .zero, duration: Timeline.normalized(length))
+            let span = speech.span.cmRange
+
+            for segment in timeline.timeMap.segments {
+                let wanted: CMTimeRange
+                let at: CMTime
+                if segment.isHold {
+                    guard segment.source.start == span.end else { continue }
+                    wanted = CMTimeRange(start: span.duration, duration: segment.composition.duration)
+                    at = segment.composition.start
+                } else {
+                    let overlap = segment.source.intersection(span)
+                    guard overlap.duration > .zero else { continue }
+                    wanted = CMTimeRange(start: overlap.start - span.start, duration: overlap.duration)
+                    at = segment.composition.start + (overlap.start - segment.source.start)
+                }
+
+                // The encoder can leave a clip a few samples short of its stored length.
+                let usable = wanted.intersection(available)
+                guard usable.duration > .zero else { continue }
+                do {
+                    try track.insertTimeRange(usable, of: source, at: at + (usable.start - wanted.start))
+                    inserted = true
+                } catch {
+                    continue
+                }
+            }
+        }
+
+        guard inserted else {
+            composition.removeTrack(track)
+            return nil
+        }
+        return track.trackID
     }
 
     // MARK: - Video composition
@@ -397,14 +499,20 @@ struct LayerInstructionCompositionBuilder: CompositionBuilding {
 
     // MARK: - Audio
 
-    private func makeAudioMix(lanes: [InsertedAudioLane]) -> AVAudioMix? {
-        guard !lanes.isEmpty else { return nil }
+    private func makeAudioMix(
+        lanes: [InsertedAudioLane],
+        speech: (trackID: CMPersistentTrackID, keyframes: [ResolvedGainKeyframe])?
+    ) -> AVAudioMix? {
+        guard !lanes.isEmpty || speech != nil else { return nil }
 
         let mix = AVMutableAudioMix()
-        mix.inputParameters = lanes.map { inserted in
+        var tracks = lanes.map { ($0.trackID, $0.lane.keyframes) }
+        if let speech { tracks.append((speech.trackID, speech.keyframes)) }
+
+        mix.inputParameters = tracks.map { trackID, keyframes in
             let parameters = AVMutableAudioMixInputParameters()
-            parameters.trackID = inserted.trackID
-            for keyframe in inserted.lane.keyframes {
+            parameters.trackID = trackID
+            for keyframe in keyframes {
                 parameters.setVolume(Float(keyframe.gain), at: keyframe.at)
             }
             return parameters

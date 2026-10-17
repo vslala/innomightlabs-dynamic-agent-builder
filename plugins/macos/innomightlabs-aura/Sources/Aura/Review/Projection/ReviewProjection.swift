@@ -63,6 +63,9 @@ struct ProjectedCue: Identifiable, Equatable, Sendable {
     let source: StampSpan<Source>
     let composition: [StampSpan<Composition>]
     let wordIDs: [Int]
+    /// Set when this cue is new speech standing in for the recording's, so the transcript can
+    /// say so and offer to restore the original.
+    var replacementID: UUID? = nil
 
     var isCut: Bool { composition.isEmpty }
 }

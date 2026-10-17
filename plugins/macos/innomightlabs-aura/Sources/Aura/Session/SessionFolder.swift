@@ -40,6 +40,17 @@ struct SessionFolder {
         source.deletingPathExtension().appendingPathExtension("studio.m4a")
     }
 
+    /// Where a replacement's generated speech is kept. Derived data, like the other caches
+    /// here: deleting `replacements/` loses nothing that cannot be spoken again.
+    func speechClipURL(for replacementID: UUID) -> URL {
+        replacementsURL.appendingPathComponent(replacementID.uuidString).appendingPathExtension("m4a")
+    }
+
+    /// The reference clip the model last learned the speaker's voice from.
+    var voiceSampleURL: URL { replacementsURL.appendingPathComponent("voice-sample.wav") }
+
+    var replacementsURL: URL { rootURL.appendingPathComponent("replacements", isDirectory: true) }
+
     private static let idFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"

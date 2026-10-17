@@ -46,6 +46,12 @@ enum EditOperation: Codable, Equatable, Sendable {
     /// Applying N single cuts would put N entries on the stack, and a user who asks to remove
     /// silences expects one Cmd+Z to bring them all back.
     case removeRanges([TimeSpan])
+    /// Re-speak a selection from text, in the user's voice. Applied only once its clip has been
+    /// rendered (`duration` set), because the document must never describe audio that does not
+    /// exist; an agent suggests it as a draft and accepting renders first.
+    case replaceSpeech(SpeechReplacement)
+    /// Bring the original voice back, by replacement id.
+    case restoreSpeech(ids: [UUID])
 
     private enum Op: String, Codable {
         case removeRange = "remove_range"
@@ -67,12 +73,15 @@ enum EditOperation: Codable, Equatable, Sendable {
         case moveMarker = "move_marker"
         case rename
         case removeRanges = "remove_ranges"
+        case replaceSpeech = "replace_speech"
+        case restoreSpeech = "restore_speech"
     }
 
     private enum CodingKeys: String, CodingKey {
         case op, start, end, t, rect, visible, lane, gain, muted, enabled, seconds, words, ids
         case shape, cornerRadius, borderWidth, borderColor, shadowOpacity, shadowRadius
         case cutIds, id, label, name, spans
+        case text, originalText, duration
         // Accepted on decode only, never written: a language model reaches for these names
         // regardless of what we document, and losing a whole operation to a synonym is worse
         // than accepting one.
@@ -153,6 +162,21 @@ enum EditOperation: Codable, Equatable, Sendable {
             self = .rename(try container.decode(String.self, forKey: .name))
         case .removeRanges:
             self = .removeRanges(try container.decode([TimeSpan].self, forKey: .spans))
+        case .replaceSpeech:
+            // An agent proposes only `start`, `end` and `text`; the rest is filled in when the
+            // suggestion is accepted and rendered.
+            self = .replaceSpeech(SpeechReplacement(
+                id: (try? container.decode(UUID.self, forKey: .id)) ?? UUID(),
+                span: TimeSpan(
+                    start: try container.decode(TimeInterval.self, forKey: .start),
+                    end: try container.decode(TimeInterval.self, forKey: .end)
+                ),
+                text: try container.decode(String.self, forKey: .text),
+                originalText: try container.decodeIfPresent(String.self, forKey: .originalText) ?? "",
+                duration: try container.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0
+            ))
+        case .restoreSpeech:
+            self = .restoreSpeech(ids: try container.decode([UUID].self, forKey: .ids))
         case .setCameraStyle:
             self = .setCameraStyle(PiPStyle(
                 shape: try container.decodeIfPresent(PiPStyle.Shape.self, forKey: .shape) ?? .rectangle,
@@ -230,6 +254,17 @@ enum EditOperation: Codable, Equatable, Sendable {
         case .rename(let name):
             try container.encode(Op.rename, forKey: .op)
             try container.encode(name, forKey: .name)
+        case .replaceSpeech(let replacement):
+            try container.encode(Op.replaceSpeech, forKey: .op)
+            try container.encode(replacement.id, forKey: .id)
+            try container.encode(replacement.span.start, forKey: .start)
+            try container.encode(replacement.span.end, forKey: .end)
+            try container.encode(replacement.text, forKey: .text)
+            try container.encode(replacement.originalText, forKey: .originalText)
+            try container.encode(replacement.duration, forKey: .duration)
+        case .restoreSpeech(let ids):
+            try container.encode(Op.restoreSpeech, forKey: .op)
+            try container.encode(ids, forKey: .ids)
         case .removeRanges(let spans):
             try container.encode(Op.removeRanges, forKey: .op)
             try container.encode(spans, forKey: .spans)
@@ -265,6 +300,12 @@ enum EditOperationError: Error, Equatable, LocalizedError {
     case noSuchMarker
     case alreadySplit(TimeInterval)
     case noSplit(at: TimeInterval)
+    case emptySpeechText
+    case speechSpanTooShort
+    case speechNotRendered
+    case speechHoldTooLong(TimeInterval)
+    case speechOverlaps
+    case noSuchSpeech
 
     var errorDescription: String? {
         switch self {
@@ -302,6 +343,18 @@ enum EditOperationError: Error, Equatable, LocalizedError {
             return String(format: "There is already a split at %.2fs.", t)
         case .noSplit(let t):
             return String(format: "There is no split at %.2fs.", t)
+        case .emptySpeechText:
+            return "There is no text to speak."
+        case .speechSpanTooShort:
+            return "That stretch is too short to replace with speech."
+        case .speechNotRendered:
+            return "The new speech has not been generated yet."
+        case .speechHoldTooLong(let seconds):
+            return String(format: "That text would hold the picture for %.0fs, which is too long.", seconds)
+        case .speechOverlaps:
+            return "Part of that is already replaced with new speech."
+        case .noSuchSpeech:
+            return "That replacement is no longer there."
         }
     }
 }
@@ -449,6 +502,16 @@ extension SessionEdit {
             // stays a simple nil check.
             edit.name = trimmed.isEmpty ? nil : String(trimmed.prefix(120))
 
+        case .replaceSpeech(let replacement):
+            edit.speechReplacements = try validatedSpeech(adding: replacement)
+
+        case .restoreSpeech(let ids):
+            let wanted = Set(ids)
+            guard speechReplacements.contains(where: { wanted.contains($0.id) }) else {
+                throw EditOperationError.noSuchSpeech
+            }
+            edit.speechReplacements = speechReplacements.filter { !wanted.contains($0.id) }
+
         case .removeRanges(let spans):
             // Validated once over the whole set. Folding `appendingCut` would reject a span
             // that only overlaps a clip the *previous* span in this batch removed — which is
@@ -510,6 +573,36 @@ extension SessionEdit {
 
     /// Snaps to `Timeline.timescale` so that a time authored by the UI, by an agent, or read
     /// back from `edit.json` all land on the same tick and compare equal.
+    /// The replacements with `new` added (or swapped in, if its id is already there), after
+    /// checking everything the playback layer relies on.
+    private func validatedSpeech(adding new: SpeechReplacement) throws -> [SpeechReplacement] {
+        let start = try Self.snapped(new.span.start)
+        let end = try Self.snapped(new.span.end)
+        guard end <= recordingDuration else { throw EditOperationError.timeOutsideTimeline(end) }
+        guard end - start >= SpeechReplacement.minimumSpan else { throw EditOperationError.speechSpanTooShort }
+
+        let text = new.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw EditOperationError.emptySpeechText }
+
+        guard !new.isDraft, new.duration.isFinite else { throw EditOperationError.speechNotRendered }
+        // A clip is never shorter than the words it replaces: shorter speech is padded to fit.
+        let duration = max(new.duration, end - start)
+        guard duration - (end - start) <= SpeechReplacement.maximumHold else {
+            throw EditOperationError.speechHoldTooLong(duration - (end - start))
+        }
+
+        let others = speechReplacements.filter { $0.id != new.id }
+        guard !others.contains(where: { $0.span.start < end && start < $0.span.end }) else {
+            throw EditOperationError.speechOverlaps
+        }
+
+        var stored = new
+        stored.span = TimeSpan(start: start, end: end)
+        stored.text = text
+        stored.duration = duration
+        return (others + [stored]).sorted { $0.span.start < $1.span.start }
+    }
+
     static func snapped(_ t: TimeInterval) throws -> TimeInterval {
         guard t.isFinite, t >= 0 else { throw EditOperationError.timeNotFinite }
         return Timeline.seconds(Timeline.time(seconds: t))

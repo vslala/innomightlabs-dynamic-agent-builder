@@ -40,7 +40,12 @@ enum ReviewProjector {
             edited: StampSpan(start: 0, end: Timeline.seconds(timeline.duration)),
             regions: regions,
             words: words,
-            cues: cues(transcript: transcript, words: words),
+            cues: cues(
+                transcript: transcript,
+                words: words,
+                replacements: document.speechReplacements,
+                timeMap: timeline.timeMap
+            ),
             markers: markers(document: document, events: events, segments: segments),
             splits: document.splitPoints.sorted().map(Stamp.init),
             micOffset: micOffset,
@@ -201,11 +206,16 @@ enum ReviewProjector {
     }
 
     /// Cues, assembled from their already-placed words so the two can never disagree.
-    private static func cues(transcript: Transcript?, words: [ProjectedWord]) -> [ProjectedCue] {
+    private static func cues(
+        transcript: Transcript?,
+        words: [ProjectedWord],
+        replacements: [SpeechReplacement],
+        timeMap: TimeMap
+    ) -> [ProjectedCue] {
         guard let transcript else { return [] }
         let byCue = Dictionary(grouping: words, by: \.cueID)
 
-        return transcript.segments.compactMap { segment -> ProjectedCue? in
+        let original = transcript.segments.compactMap { segment -> ProjectedCue? in
             let cueWords = (byCue[segment.id] ?? []).sorted { $0.source.start < $1.source.start }
             guard let first = cueWords.first, let last = cueWords.last else { return nil }
 
@@ -216,6 +226,52 @@ enum ReviewProjector {
                 // Merged from the words, so a cue straddling a cut reports both halves.
                 composition: merged(cueWords.flatMap(\.composition)),
                 wordIDs: cueWords.map(\.id)
+            )
+        }
+        return replacing(original, with: replacements, timeMap: timeMap)
+    }
+
+    /// Where new speech stands in for the recording's, the transcript shows the new text — once,
+    /// at the first cue it covers, because the cues after it are no longer said by anyone.
+    private static func replacing(
+        _ cues: [ProjectedCue],
+        with replacements: [SpeechReplacement],
+        timeMap: TimeMap
+    ) -> [ProjectedCue] {
+        guard !replacements.isEmpty else { return cues }
+
+        var shown: Set<UUID> = []
+        return cues.compactMap { cue in
+            // A cue belongs to a replacement when most of it lies inside the replaced span.
+            let length = cue.source.end.seconds - cue.source.start.seconds
+            guard let replacement = replacements.first(where: { replacement in
+                let overlap = min(cue.source.end.seconds, replacement.span.end)
+                    - max(cue.source.start.seconds, replacement.span.start)
+                return length > 0 && overlap / length > 0.5
+            }) else { return cue }
+
+            guard shown.insert(replacement.id).inserted else { return nil }
+
+            var placed = timeMap.compositionSpans(forSource: replacement.span).map {
+                StampSpan<Composition>(start: $0.start, end: $0.end)
+            }
+            // The picture is held while the extra speech finishes, and the caption should be too.
+            if let hold = timeMap.segments.first(where: {
+                $0.isHold && $0.source.start == replacement.span.cmRange.end
+            }) {
+                placed.append(StampSpan(
+                    start: Timeline.seconds(hold.composition.start),
+                    end: Timeline.seconds(hold.composition.end)
+                ))
+            }
+
+            return ProjectedCue(
+                id: cue.id,
+                text: replacement.text,
+                source: StampSpan(start: replacement.span.start, end: replacement.span.end),
+                composition: merged(placed),
+                wordIDs: [],
+                replacementID: replacement.id
             )
         }
     }

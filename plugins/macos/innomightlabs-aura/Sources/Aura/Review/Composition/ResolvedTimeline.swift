@@ -126,6 +126,16 @@ struct ResolvedAudioLane: Equatable, Sendable {
     var probe: SourceTrackProbe? { segments.first?.probe }
 }
 
+/// A re-spoken selection whose clip is on disk and ready to play.
+struct ResolvedSpeechReplacement: Equatable, Sendable {
+    let id: UUID
+    let url: URL
+    /// The session time the clip replaces. The clip's own time zero sits at `span.start`.
+    let span: TimeSpan
+    /// The clip's length. Beyond the span's length the clip plays through a hold in the picture.
+    let duration: CMTime
+}
+
 /// Everything needed to build a composition, as Sendable value types with no AVFoundation
 /// objects and — crucially — no way left to be invalid.
 ///
@@ -147,6 +157,12 @@ struct ResolvedTimeline: Equatable, Sendable {
     let overlay: ResolvedVideoLayer?
     let audio: [ResolvedAudioLane]
     let style: PiPStyle
+    /// Replacement speech that can actually be played. A replacement whose clip is missing is
+    /// absent here, so the original voice keeps playing rather than going silent.
+    var speech: [ResolvedSpeechReplacement] = []
+    /// The voice lane's own level and mute, **without** the silences cut under each
+    /// replacement, so the new speech obeys the same controls the old voice did.
+    var speechKeyframes: [ResolvedGainKeyframe] = []
 
     var duration: CMTime { timeMap.cmDuration }
     var hasVideo: Bool { base != nil }

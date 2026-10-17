@@ -11,10 +11,13 @@ enum TimelineResolver {
     /// render size rather than a zero one.
     static let fallbackRenderSize = CGSize(width: 1280, height: 720)
 
+    /// - Parameter speechClips: the rendered clip for each replacement that has one. Passed in
+    ///   so this stays pure; a replacement missing from it plays as the original voice.
     static func resolve(
         document: SessionEdit,
         probes: [SourceTrackProbe],
-        style: PiPStyle? = nil
+        style: PiPStyle? = nil,
+        speechClips: [UUID: URL] = [:]
     ) -> ResolvedTimeline {
         // The document owns the style; the parameter is an override for previews and tests.
         let style = style ?? document.cameraStyle
@@ -35,6 +38,19 @@ enum TimelineResolver {
 
         let renderSize = renderSize(for: baseSegments?.first)
         let overlayKeyframes = resolveOverlay(document: document, timeMap: timeMap)
+        let speech = document.speechReplacements.compactMap { replacement in
+            speechClips[replacement.id].map {
+                ResolvedSpeechReplacement(
+                    id: replacement.id,
+                    url: $0,
+                    span: replacement.span,
+                    duration: Timeline.time(seconds: replacement.duration)
+                )
+            }
+        }
+        // Where the original voice must be silent: wherever new speech plays over it.
+        let replacedRanges = speech.flatMap { timeMap.compositionRanges(forSource: $0.span.cmRange) }
+        let voiceKeyframes = resolveGain(document: document, lane: .microphone, timeMap: timeMap)
 
         return ResolvedTimeline(
             timeMap: timeMap,
@@ -61,6 +77,9 @@ enum TimelineResolver {
                 // whole lane.
                 let slip = Timeline.time(seconds: document.offset(for: lane))
                 let studioSound = document.settings(for: lane).studioSound
+                let keyframes = lane == .microphone
+                    ? silencing(voiceKeyframes, over: replacedRanges, duration: timeMap.cmDuration)
+                    : resolveGain(document: document, lane: lane, timeMap: timeMap)
                 return ResolvedAudioLane(
                     lane: lane,
                     segments: segments.map {
@@ -69,11 +88,53 @@ enum TimelineResolver {
                             timeOffset: $0.alignmentCorrection + slip
                         )
                     },
-                    keyframes: resolveGain(document: document, lane: lane, timeMap: timeMap)
+                    keyframes: keyframes
                 )
             },
-            style: style
+            style: style,
+            speech: speech,
+            speechKeyframes: voiceKeyframes
         )
+    }
+
+    /// The lane's gain with silence cut under each range, returning to whatever level was in
+    /// force when the range ends.
+    ///
+    /// Derived rather than authored, so it never touches the document's own gain keyframes: the
+    /// user's level is still theirs, and restoring the original voice needs no cleanup.
+    static func silencing(
+        _ keyframes: [ResolvedGainKeyframe],
+        over ranges: [CMTimeRange],
+        duration: CMTime
+    ) -> [ResolvedGainKeyframe] {
+        let merged = ranges
+            .filter { $0.duration > .zero }
+            .sorted { $0.start < $1.start }
+            .reduce(into: [CMTimeRange]()) { result, range in
+                // Touching ranges merge, or the level returning at one's end would collide with
+                // the next one's silence at the same instant.
+                if let last = result.last, range.start <= last.end {
+                    result[result.count - 1] = CMTimeRange(start: last.start, end: max(last.end, range.end))
+                } else {
+                    result.append(range)
+                }
+            }
+        guard !merged.isEmpty else { return keyframes }
+
+        func level(at time: CMTime) -> Double {
+            keyframes.last { $0.at <= time }?.gain ?? keyframes.first?.gain ?? 1
+        }
+
+        var result = keyframes.filter { keyframe in
+            !merged.contains { $0.start <= keyframe.at && keyframe.at < $0.end }
+        }
+        for range in merged {
+            result.append(ResolvedGainKeyframe(at: range.start, gain: 0))
+            if range.end < duration {
+                result.append(ResolvedGainKeyframe(at: range.end, gain: level(at: range.end)))
+            }
+        }
+        return result.sorted { $0.at < $1.at }
     }
 
     private static func placeSegments(_ probes: [SourceTrackProbe]) -> [PlacedSegment] {

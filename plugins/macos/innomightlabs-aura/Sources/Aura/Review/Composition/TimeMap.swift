@@ -14,8 +14,19 @@ struct TimeMap: Equatable, Sendable {
     struct Segment: Equatable, Sendable {
         /// Half-open `[start, end)` on the composition timeline.
         let composition: CMTimeRange
-        /// Half-open `[start, end)` on the session timeline.
+        /// Half-open `[start, end)` on the session timeline. Zero-length for a hold.
         let source: CMTimeRange
+
+        /// A stretch where one instant of the recording stays on screen while something else
+        /// plays — new speech that runs longer than the words it replaced. The only segment
+        /// whose two durations differ, so every consumer that assumes they match must skip it.
+        var isHold: Bool { source.duration == .zero }
+    }
+
+    /// Time added after a session instant. `at` is the last instant of whatever precedes it.
+    struct Hold: Equatable, Sendable {
+        let at: CMTime
+        let duration: CMTime
     }
 
     let segments: [Segment]
@@ -23,18 +34,37 @@ struct TimeMap: Equatable, Sendable {
     var cmDuration: CMTime { segments.last?.composition.end ?? .zero }
     var duration: TimeInterval { Timeline.seconds(cmDuration) }
 
-    init(clips: [TimelineClip]) {
+    init(clips: [TimelineClip], holds: [Hold] = []) {
         var built: [Segment] = []
         var cursor = CMTime.zero
+
+        func append(_ piece: CMTimeRange) {
+            guard piece.duration > .zero else { return }
+            built.append(Segment(
+                composition: CMTimeRange(start: cursor, duration: piece.duration),
+                source: piece
+            ))
+            cursor = cursor + piece.duration
+        }
 
         for clip in clips {
             let source = clip.source.cmRange
             guard source.duration > .zero else { continue }
-            built.append(Segment(
-                composition: CMTimeRange(start: cursor, duration: source.duration),
-                source: source
-            ))
-            cursor = cursor + source.duration
+
+            // A hold belongs to the clip it ends: it splits that clip after `at`. A hold whose
+            // instant was cut away has nothing to hold, so it simply never matches.
+            var pieceStart = source.start
+            for hold in holds.sorted(by: { $0.at < $1.at })
+            where hold.at > source.start && hold.at <= source.end && hold.duration > .zero {
+                append(CMTimeRange(start: pieceStart, end: hold.at))
+                built.append(Segment(
+                    composition: CMTimeRange(start: cursor, duration: hold.duration),
+                    source: CMTimeRange(start: hold.at, duration: .zero)
+                ))
+                cursor = cursor + hold.duration
+                pieceStart = hold.at
+            }
+            append(CMTimeRange(start: pieceStart, end: source.end))
         }
 
         segments = built
@@ -48,6 +78,8 @@ struct TimeMap: Equatable, Sendable {
             time >= $0.composition.start && time < $0.composition.end
         }) else { return nil }
 
+        // Throughout a hold the recording is at one instant, however long the hold has run.
+        if segment.isHold { return segment.source.start }
         return segment.source.start + (time - segment.composition.start)
     }
 
