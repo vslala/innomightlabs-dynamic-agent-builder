@@ -114,12 +114,18 @@ struct TranscriptPanelView: View {
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(cue.isCut ? ReviewPalette.cut.opacity(0.8) : AuraTheme.textTertiary)
 
-            FlowLayout(spacing: 3, lineSpacing: 2) {
-                ForEach(words) { word in
-                    wordView(word)
+            if viewModel.editingCueID == cue.id {
+                CueEditor(cue: cue, viewModel: viewModel)
+            } else if cue.replacementID != nil {
+                replacedText(cue)
+            } else {
+                FlowLayout(spacing: 3, lineSpacing: 2) {
+                    ForEach(words) { word in
+                        wordView(word)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(AuraTheme.Space.sm)
         .background {
@@ -140,10 +146,35 @@ struct TranscriptPanelView: View {
                 viewModel.addMarker(at: cue.source.start, label: String(cue.text.prefix(40)))
             }
             Divider()
+            Button("Re-speak This Line…", systemImage: "waveform") {
+                viewModel.beginEditing(cue: cue)
+            }
+            .disabled(cue.isCut && cue.replacementID == nil)
+            if cue.replacementID != nil {
+                Button("Restore Original Voice", systemImage: "arrow.uturn.backward") {
+                    viewModel.restoreOriginalVoice(of: cue)
+                }
+            }
+            Divider()
             Button("Ask Aura About This", systemImage: "sparkles") {
                 viewModel.askAboutCue(cue)
             }
         }
+    }
+
+    /// A line the user has re-spoken: its new words, marked as such so it is never mistaken for
+    /// what was recorded.
+    private func replacedText(_ cue: ProjectedCue) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: AuraTheme.Space.xs + 2) {
+            Image(systemName: "waveform")
+                .font(.system(size: 10))
+                .foregroundStyle(AuraTheme.accent)
+            Text(cue.text)
+                .font(.system(size: 13))
+                .foregroundStyle(AuraTheme.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .help("Spoken from text in your voice. Right-click to edit it or restore the original.")
     }
 
     /// One tappable word. Cut words are struck through and tinted with the same token the
@@ -166,5 +197,51 @@ struct TranscriptPanelView: View {
             .help(word.isCut
                   ? "Click to bring “\(word.text)” back"
                   : "Click to cut “\(word.text)”")
+    }
+}
+
+/// Editing one line of the transcript. Committing speaks the new words in the user's voice.
+private struct CueEditor: View {
+    let cue: ProjectedCue
+    @ObservedObject var viewModel: ReviewViewModel
+
+    @State private var text: String
+    @FocusState private var isFocused: Bool
+
+    init(cue: ProjectedCue, viewModel: ReviewViewModel) {
+        self.cue = cue
+        self.viewModel = viewModel
+        _text = State(initialValue: cue.text.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AuraTheme.Space.sm) {
+            TextEditor(text: $text)
+                .font(.system(size: 13))
+                .scrollContentBackground(.hidden)
+                .padding(AuraTheme.Space.xs)
+                .frame(minHeight: 64)
+                .background {
+                    RoundedRectangle(cornerRadius: AuraTheme.Radius.sm).fill(AuraTheme.surfaceElevated)
+                }
+                .focused($isFocused)
+
+            Text("The whole line is spoken again in your voice, in place of the original.")
+                .font(.system(size: 10))
+                .foregroundStyle(AuraTheme.textTertiary)
+
+            HStack {
+                Spacer()
+                Button("Cancel") { viewModel.cancelEditing() }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AuraTheme.textSecondary)
+                Button("Speak") { viewModel.commitEdit(of: cue, to: text) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(AuraTheme.accent)
+                    .keyboardShortcut(.return, modifiers: .command)
+            }
+            .font(.system(size: 12, weight: .medium))
+        }
+        .onAppear { isFocused = true }
     }
 }

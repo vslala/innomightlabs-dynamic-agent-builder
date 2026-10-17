@@ -30,7 +30,23 @@ struct ReviewWindowView: View {
         .frame(minWidth: 1100, minHeight: 720)
         .environment(\.colorScheme, .dark)
         .task { await viewModel.load() }
-        .sheet(isPresented: $showingSettings) { AgentSettingsView() }
+        .sheet(isPresented: $showingSettings) { StudioSettingsView(speech: viewModel.speech) }
+        .sheet(isPresented: $viewModel.speechSetupRequested) {
+            // Raised when a replacement is attempted before the feature is on.
+            SpeechSettingsView(installer: viewModel.speech.installer)
+        }
+        .sheet(item: $viewModel.pendingSpeech) { pending in
+            SpeechConfirmationView(
+                pending: pending,
+                onProceed: { remember in
+                    switch pending {
+                    case .cameraWarning: viewModel.confirmCameraWarning(rememberChoice: remember)
+                    case .longHold: viewModel.acceptLongHold()
+                    }
+                },
+                onCancel: { viewModel.declinePendingSpeech() }
+            )
+        }
     }
 
     // MARK: - States
@@ -137,9 +153,41 @@ struct ReviewWindowView: View {
             if let notice = viewModel.lastNotice {
                 banner(notice, tint: AuraTheme.accent) { viewModel.lastNotice = nil }
             }
+            if let fraction = viewModel.speakingFraction {
+                speakingBanner(fraction)
+            }
         }
         .padding(.top, 60)
         .padding(.horizontal, AuraTheme.Space.lg)
+    }
+
+    /// Shown while new speech is being made, which takes long enough to need a cancel button.
+    private func speakingBanner(_ fraction: Double) -> some View {
+        HStack(spacing: AuraTheme.Space.sm) {
+            ProgressView(value: fraction)
+                .progressViewStyle(.linear)
+                .frame(width: 120)
+            Text("Speaking in your voice…")
+                .font(.system(size: 12))
+                .foregroundStyle(AuraTheme.textPrimary)
+            Spacer(minLength: AuraTheme.Space.md)
+            Button("Cancel") { viewModel.cancelSpeaking() }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(AuraTheme.textSecondary)
+        }
+        .padding(.horizontal, AuraTheme.Space.md)
+        .padding(.vertical, AuraTheme.Space.sm + 2)
+        .background {
+            RoundedRectangle(cornerRadius: AuraTheme.Radius.md)
+                .fill(AuraTheme.surfaceElevated)
+                .overlay {
+                    RoundedRectangle(cornerRadius: AuraTheme.Radius.md)
+                        .stroke(AuraTheme.accent.opacity(0.35), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
+        }
+        .frame(maxWidth: 560)
     }
 
     private func banner(

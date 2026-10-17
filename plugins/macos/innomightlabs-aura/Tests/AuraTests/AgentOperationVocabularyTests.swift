@@ -150,7 +150,7 @@ final class AgentOperationVocabularyTests: XCTestCase {
             "remove_range", "split_clip", "set_overlay_keyframe", "remove_overlay_keyframe",
             "set_lane_gain", "set_lane_muted", "set_lane_studio_sound", "set_lane_offset", "exclude_words",
             "restore_words", "set_camera_style", "uncut", "remove_split", "add_marker",
-            "remove_marker", "rename_marker", "move_marker",
+            "remove_marker", "rename_marker", "move_marker", "replace_speech", "restore_speech",
         ]
         for op in documented {
             XCTAssertTrue(prompt.contains("\"op\":\"\(op)\""), "prompt never shows the \(op) shape")

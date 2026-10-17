@@ -118,6 +118,15 @@ enum EditSuggestionPrompt {
         {"op":"set_lane_offset","lane":"microphone"|"system_audio","seconds":<-5..5>}
               nudge that lane's audio sync
 
+        OPERATIONS — speech
+        {"op":"replace_speech","start":<s>,"end":<s>,"text":"<new words>"}
+              re-speak that stretch in the speaker's own voice from the text, replacing what was
+              said. Use it for a sentence that is garbled, abandoned, or full of fillers: write
+              the sentence the speaker meant to say. The text is spoken aloud, so write it as
+              speech, roughly as long as what it replaces; a much longer text holds the picture
+              still while it finishes. The speaker reviews it before it is made.
+        {"op":"restore_speech","ids":["<speechReplacements[].id>"]}  bring the original voice back
+
         REQUESTS (not edits — Aura answers these and you continue)
         {"op":"request_transcript","from":<s>,"to":<s>}
               get word detail for another range. Use this instead of guessing.

@@ -234,6 +234,25 @@ final class ReviewViewModel: ObservableObject {
     private let exporter: any ExportEngine
     private let suggester: any EditSuggesting
     private var suggestTask: Task<Void, Never>?
+
+    // Speech replacement (see `ReviewViewModel+Speech`). Stored here because extensions cannot.
+    let speech: SpeechEngineHub
+    /// Something the user has to decide before a replacement goes on.
+    @Published var pendingSpeech: PendingSpeech?
+    /// Fraction of the sentences spoken so far, or nil when nothing is being spoken.
+    @Published var speakingFraction: Double?
+    /// The transcript line being edited, if any.
+    @Published var editingCueID: Int?
+    /// Raised when a replacement needs the model and it is not installed, so the window can open
+    /// the settings where it is turned on.
+    @Published var speechSetupRequested = false
+    var speechQueue: [SpeechRequest] = []
+    var speechTask: Task<Void, Never>?
+    /// A finished render waiting for the user to accept a long hold.
+    var heldSpeech: SpokenText?
+    /// Clips already tried and failed to rebuild, so a failure is reported once, not on every
+    /// rebuild.
+    var speechRepairsAttempted: Set<UUID> = []
     private let extractor = WaveformExtractor()
     private let filmstripExtractor = FilmstripExtractor()
     private(set) var probes: [SourceTrackProbe] = []
@@ -272,12 +291,14 @@ final class ReviewViewModel: ObservableObject {
         folder: SessionFolder,
         builder: any CompositionBuilding = LayerInstructionCompositionBuilder(),
         exporter: any ExportEngine = AVAssetExportEngine(),
-        suggester: any EditSuggesting = InnomightLabsEditSuggester()
+        suggester: any EditSuggesting = InnomightLabsEditSuggester(),
+        speech: SpeechEngineHub = SpeechEngineHub()
     ) {
         self.folder = folder
         self.builder = builder
         self.exporter = exporter
         self.suggester = suggester
+        self.speech = speech
     }
 
     // MARK: - Loading
@@ -405,6 +426,11 @@ final class ReviewViewModel: ObservableObject {
         return normalised == before
     }
 
+    /// For `ReviewViewModel+Speech`, which cannot reach the private `scheduleRebuild`.
+    func scheduleRebuildForSpeech(document: SessionEdit) {
+        scheduleRebuild(document: document)
+    }
+
     private func scheduleRebuild(document: SessionEdit) {
         let previous = rebuildTask
         rebuildTask = Task { @MainActor [weak self] in
@@ -416,7 +442,8 @@ final class ReviewViewModel: ObservableObject {
 
     private func rebuild(document: SessionEdit, preservingPlayhead: Bool) async {
         await renderMissingStudioSound(for: document)
-        let resolved = TimelineResolver.resolve(document: document, probes: probes)
+        let clips = availableSpeechClips(for: document)
+        let resolved = TimelineResolver.resolve(document: document, probes: probes, speechClips: clips)
         let wasReady = state == .ready
 
         do {
@@ -444,6 +471,7 @@ final class ReviewViewModel: ObservableObject {
                 events: eventTimeline
             )
             state = .ready
+            repairMissingSpeechClips(for: document, available: clips)
 
             if resumeAt > .zero, resumeAt < built.duration {
                 await seek(to: resumeAt, exact: true)
@@ -585,6 +613,7 @@ final class ReviewViewModel: ObservableObject {
         rebuildTask?.cancel()
         suggestTask?.cancel()
         detailTask?.cancel()
+        speechTask?.cancel()
         cancellables.removeAll()
         store?.flush()
     }
@@ -1778,22 +1807,54 @@ final class ReviewViewModel: ObservableObject {
     var isAwaitingAgent: Bool { agentState == .thinking }
 
     func accept(_ suggestion: EditSuggestion) {
+        // Speech has to be made before it can be applied, so accepting it starts the work and
+        // the suggestion leaves the list when it lands.
+        if case .replaceSpeech(let draft) = suggestion.operation, draft.isDraft {
+            replaceSpeech(
+                span: draft.span, text: draft.text, originalText: spokenText(in: draft.span),
+                id: draft.id, suggestionID: suggestion.id
+            )
+            return
+        }
         guard apply(suggestion.operation) else { return }
         suggestions.removeAll { $0.id == suggestion.id }
     }
 
     func acceptAllSuggestions() {
         guard let store else { return }
-        let operations = suggestions.map(\.operation)
-        guard !operations.isEmpty else { return }
+        let drafts = suggestions.compactMap { suggestion -> (EditSuggestion, SpeechReplacement)? in
+            if case .replaceSpeech(let draft) = suggestion.operation, draft.isDraft { return (suggestion, draft) }
+            return nil
+        }
+        let operations = suggestions.map(\.operation).filter { operation in
+            if case .replaceSpeech(let draft) = operation, draft.isDraft { return false }
+            return true
+        }
+        guard !operations.isEmpty || !drafts.isEmpty else { return }
 
         // All-or-nothing, and one undo step: a half-applied set of suggestions is worse
-        // than none.
-        if store.apply(operations) {
-            suggestions = []
-        } else {
-            lastError = store.lastError?.localizedDescription
+        // than none. Speech is the exception, since it has to be made first: it is queued and
+        // lands one replacement at a time.
+        if !operations.isEmpty {
+            guard store.apply(operations) else {
+                lastError = store.lastError?.localizedDescription
+                return
+            }
         }
+        suggestions.removeAll { suggestion in
+            if case .replaceSpeech(let draft) = suggestion.operation, draft.isDraft { return false }
+            return true
+        }
+        enqueueSpeech(drafts.map { suggestion, draft in
+            SpeechRequest(
+                id: draft.id, span: draft.span, text: draft.text,
+                originalText: spokenText(in: draft.span), suggestionID: suggestion.id
+            )
+        })
+    }
+
+    func dismissSuggestion(id: UUID) {
+        suggestions.removeAll { $0.id == id }
     }
 
     func reject(_ suggestion: EditSuggestion) {

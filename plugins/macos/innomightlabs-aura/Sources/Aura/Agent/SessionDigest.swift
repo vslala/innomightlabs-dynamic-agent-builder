@@ -26,6 +26,7 @@ struct SessionDigest: Codable, Equatable, Sendable {
     /// recover. A filler sweep is the realistic case: it can mint hundreds of cuts at once,
     /// and each carries a 36-character UUID.
     static let maxRangeCuts = 40
+    static let maxSpeechReplacements = 30
     static let maxEditMarkers = 40
     static let maxSplits = 60
     static let maxKeptSpans = 60
@@ -143,6 +144,16 @@ struct SessionDigest: Codable, Equatable, Sendable {
     /// travel in `excludedWordIds` and are reversed with `restore_words`.
     let rangeCuts: [CutRef]
     var rangeCutsOmitted: Int
+    /// Stretches already re-spoken from text, with the handle needed to bring the original back.
+    let speechReplacements: [SpeechRef]
+    var speechReplacementsOmitted: Int
+
+    struct SpeechRef: Codable, Equatable, Sendable {
+        let id: String
+        let start: Double
+        let end: Double
+        let text: String
+    }
 
     // MARK: - Building
 
@@ -252,7 +263,11 @@ struct SessionDigest: Codable, Equatable, Sendable {
                 .sorted { $0.end - $0.start > $1.end - $1.start }
                 .prefix(maxRangeCuts)
                 .sorted { $0.start < $1.start },
-            rangeCutsOmitted: max(0, allRangeCuts.count - maxRangeCuts)
+            rangeCutsOmitted: max(0, allRangeCuts.count - maxRangeCuts),
+            speechReplacements: document.speechReplacements.prefix(maxSpeechReplacements).map {
+                SpeechRef(id: $0.id.uuidString, start: round2($0.span.start), end: round2($0.span.end), text: String($0.text.prefix(200)))
+            },
+            speechReplacementsOmitted: max(0, document.speechReplacements.count - maxSpeechReplacements)
         )
     }
 

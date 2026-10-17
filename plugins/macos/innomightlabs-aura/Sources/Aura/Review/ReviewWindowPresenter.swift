@@ -24,6 +24,13 @@ final class ReviewWindowPresenter {
     /// instead of building a second composition over the same files.
     private var presented: [String: Presented] = [:]
 
+    /// Shared by every review window: the loaded voice model is large, and one is enough.
+    private let speech: SpeechEngineHub
+
+    init(speech: SpeechEngineHub = SpeechEngineHub()) {
+        self.speech = speech
+    }
+
     func open(_ folder: SessionFolder) {
         if let existing = presented[folder.id] {
             existing.controller.showWindow(nil)
@@ -32,7 +39,7 @@ final class ReviewWindowPresenter {
             return
         }
 
-        let viewModel = ReviewViewModel(folder: folder)
+        let viewModel = ReviewViewModel(folder: folder, speech: speech)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
             // `.fullSizeContentView` lets the content run under the titlebar so the studio's

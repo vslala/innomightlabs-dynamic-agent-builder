@@ -35,6 +35,21 @@ final class EditSuggestionTests: XCTestCase {
         XCTAssertTrue(result.reply.contains("Let me know"))
     }
 
+    func testAReplaceSpeechSuggestionArrivesAsAnUnspokenDraft() throws {
+        let reply = #"""
+        [{"op":"replace_speech","start":12.5,"end":18,"text":"The sentence they meant to say.","why":"abandoned start"}]
+        """#
+
+        let result = EditSuggestionParser.parse(reply)
+
+        let suggestion = try XCTUnwrap(result.suggestions.first)
+        guard case .replaceSpeech(let draft) = suggestion.operation else { return XCTFail("wrong operation") }
+        XCTAssertTrue(draft.isDraft, "no audio exists yet, so it cannot be applied as it stands")
+        XCTAssertEqual(draft.text, "The sentence they meant to say.")
+        XCTAssertEqual(draft.span, TimeSpan(start: 12.5, end: 18))
+        XCTAssertEqual(suggestion.rationale, "abandoned start")
+    }
+
     func testParsesAnOperationsWrapperObject() {
         let reply = #"{"operations":[{"op":"split_clip","t":8.0}]}"#
 
