@@ -119,7 +119,7 @@ class CliRunnerService:
             requirements_path.write_text(request.requirements, encoding="utf-8")
 
             execution_directory = workspace or work_dir
-            env = self._build_python_env(work_dir, write_root=execution_directory)
+            env = self._build_python_env(work_dir, write_root=execution_directory, browser=request.browser)
             deadline = started + request.timeout_seconds
             results: list[PythonCommandResult] = []
             failed_index: int | None = None
@@ -144,7 +144,16 @@ class CliRunnerService:
             if setup_status != "succeeded":
                 failed_index = 0
 
-            for request_index, command in enumerate(request.commands):
+            commands = list(request.commands)
+            if request.browser:
+                for command_index, command in enumerate(commands):
+                    if isinstance(command, InstallRequirementsCommand):
+                        break
+                    if isinstance(command, RunScriptCommand):
+                        commands.insert(command_index, InstallRequirementsCommand(operation="install_requirements"))
+                        break
+
+            for request_index, command in enumerate(commands):
                 index = request_index + 1
                 if failed_index is not None:
                     results.append(
@@ -290,7 +299,7 @@ class CliRunnerService:
                 env[key] = value
         return env
 
-    def _build_python_env(self, work_dir: Path, *, write_root: Path) -> dict[str, str]:
+    def _build_python_env(self, work_dir: Path, *, write_root: Path, browser: bool = False) -> dict[str, str]:
         env = dict(BASE_ENV)
         env.update(
             {
@@ -304,6 +313,9 @@ class CliRunnerService:
                 "UV_NO_PROGRESS": "1",
             }
         )
+        if browser:
+            env["PLAYWRIGHT_BROWSERS_PATH"] = os.getenv("PLAYWRIGHT_BROWSERS_PATH", "/opt/ms-playwright")
+            env["INFRA_CLI_RUNNER_BROWSER_VENV"] = str(work_dir / VIRTUAL_ENV_DIRECTORY)
         return env
 
     async def _execute_with_deadline(

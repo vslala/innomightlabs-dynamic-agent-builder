@@ -7,11 +7,13 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_PYTHON_TIMEOUT_SECONDS = 60
+PLAYWRIGHT_VERSION = "1.64.0"
 DEFAULT_MAX_STDOUT_BYTES = 64 * 1024
 DEFAULT_MAX_STDERR_BYTES = 16 * 1024
 MAX_ARGV_ITEMS = 128
@@ -130,6 +132,7 @@ class PythonExecutionRequest(BaseModel):
     max_stdout_bytes: int = DEFAULT_MAX_STDOUT_BYTES
     max_stderr_bytes: int = DEFAULT_MAX_STDERR_BYTES
     workspace_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{48}$")
+    browser: bool = False
 
     @field_validator("script")
     @classmethod
@@ -159,11 +162,24 @@ class PythonExecutionRequest(BaseModel):
                 raise ValueError("direct URL and local-path requirements are not allowed")
         return value
 
-    @field_validator("timeout_seconds")
-    @classmethod
-    def validate_timeout(cls, value: int) -> int:
-        max_timeout = int(os.getenv("CLI_RUNNER_MAX_TIMEOUT_SECONDS", "120"))
-        return max(1, min(value, max_timeout))
+    @model_validator(mode="after")
+    def validate_browser_execution(self) -> "PythonExecutionRequest":
+        cap = 300 if self.browser else int(os.getenv("CLI_RUNNER_MAX_TIMEOUT_SECONDS", "120"))
+        self.timeout_seconds = max(1, min(self.timeout_seconds, cap))
+        if self.browser:
+            pin = f"playwright=={PLAYWRIGHT_VERSION}"
+            for raw_line in self.requirements.splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                requirement = Requirement(line)
+                if canonicalize_name(requirement.name) == "playwright":
+                    if not requirement.specifier.contains(PLAYWRIGHT_VERSION):
+                        raise ValueError(f"browser execution requires {pin}")
+            # Always unconditional: a caller's marker must not suppress the browser dependency.
+            if pin not in self.requirements.splitlines():
+                self.requirements = self.requirements.rstrip() + "\n" + pin + "\n"
+        return self
 
     @field_validator("max_stdout_bytes", "max_stderr_bytes")
     @classmethod

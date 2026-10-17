@@ -65,6 +65,46 @@ Environment creation is returned as the non-agent-controllable first command res
 
 Requirements are limited to package-index requirement specifiers and binary wheels. Options, nested requirement files, local paths, direct URLs, and source distributions are rejected. Binary-extension packages such as NumPy are supported when a compatible wheel is available. Python receives a sanitized environment and a startup audit policy that rejects normal filesystem writes outside its run directory and prevents child-process execution. The production container also runs the service as an unprivileged user. This is controlled script execution, not unrestricted shell or host isolation.
 
+### Browser executions
+
+Set `"browser": true` on a Python execution to use Playwright Chromium:
+
+```json
+{
+  "request_id": "browser-example",
+  "browser": true,
+  "script": "from playwright.sync_api import sync_playwright\nwith sync_playwright() as p:\n    browser = p.chromium.launch()\n    page = browser.new_page()\n    page.goto('https://example.com')\n    print(page.title())\n    page.screenshot(path='page.png')\n    browser.close()",
+  "commands": [{"operation": "run_script"}],
+  "timeout_seconds": 300
+}
+```
+
+Browser requests add an unconditional `playwright==1.64.0` requirement. Caller-supplied Playwright
+specifiers must permit that version (names are normalized); conditional markers cannot remove the
+unconditional pin. If no install precedes the first script, the runner inserts `install_requirements`
+before it. This inserted operation appears in the response and counts toward result indexes and the
+same fail-fast deadline. Normal requests keep their command lists unchanged.
+
+Browser deadlines are capped at 300 seconds; the default remains 60 seconds. Normal executions retain
+`CLI_RUNNER_MAX_TIMEOUT_SECONDS` (120 by default). The image installs Chromium and its OS dependencies
+as root into `/opt/ms-playwright`, then runs as the existing unprivileged `runner` user. Only browser
+execution environments receive `PLAYWRIGHT_BROWSERS_PATH` (the service environment may override its
+`/opt/ms-playwright` default). No browser downloads are needed at execution time, but Python wheel
+installation still requires package-index access. Local browser integration tests skip unless the
+matching Playwright wheel and Chromium are installed at that location or the configured override.
+
+The browser audit policy allows `_posixsubprocess` imports and `subprocess.Popen` only for the exact,
+resolved `.venv/lib/python*/site-packages/playwright/driver/node` executable, without symlink escapes.
+It makes that execution's `.venv` read-only through audited writes, including rename/removal of its
+ancestors, to prevent replacing the approved executable. Direct exec, fork and posix_spawn remain
+blocked. Browser output files use the same run directory or persistent conversation workspace rules.
+
+**This is a guardrail, not a true sandbox.** Native code/`ctypes` is already allowed and can bypass
+Python audit hooks. The child Node driver and Chromium execute outside the Python audit policy;
+the executable allowlist does not restrict Node arguments or enforce browser network/filesystem
+isolation. Do not rely on this service to isolate hostile code or protect same-user secrets. Stronger
+isolation requires separate OS/container controls.
+
 The operation-to-argv mapping in `CliRunnerService._python_command_argv` is the policy extension point for future project-scoped `uv` support. Any future operations must remain typed and allowlisted; do not expose arbitrary `uv` argv or general shell execution.
 
 The API remains responsible for user identity, skill installation, command policy validation, STS credential generation, large-output paging, and future analytics.

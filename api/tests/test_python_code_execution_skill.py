@@ -67,6 +67,14 @@ def test_manifest_loads_without_install_config_and_disables_automations() -> Non
     assert loaded.manifest.automation.enabled is False
     assert [action.name for action in loaded.manifest.actions] == ["run_script"]
     assert loaded.manifest.actions[0].automation.enabled is False
+    schema = loaded.manifest.actions[0].input_schema
+    assert schema["properties"]["browser"]["type"] == "boolean"
+    assert schema["properties"]["browser"]["default"] is False
+    assert "browser" not in schema["required"]
+    assert "300" in schema["properties"]["timeout_seconds"]["description"]
+    assert "Playwright Chromium" in loaded.manifest.system_prompt
+    assert 'page.screenshot(path="screenshot.png"' in loaded.manifest.system_prompt
+    assert 'record_video_dir="videos"' in loaded.manifest.system_prompt
 
 
 def test_skill_installs_without_configuration(test_client, auth_headers) -> None:
@@ -104,6 +112,7 @@ def test_request_defaults_to_sixty_seconds_and_builds_restricted_commands() -> N
         }
     )
 
+    assert without_requirements.browser is False
     assert without_requirements.timeout_seconds == 60
     assert without_requirements.runner_commands() == [
         {"operation": "run_script", "args": []}
@@ -112,6 +121,23 @@ def test_request_defaults_to_sixty_seconds_and_builds_restricted_commands() -> N
         {"operation": "install_requirements"},
         {"operation": "run_script", "args": ["one"]},
     ]
+
+
+@pytest.mark.parametrize("browser", [False, True])
+@pytest.mark.parametrize("timeout_seconds", [-1, 0, 1, 60, 120, 121, 300, 301])
+def test_request_timeout_is_capped_by_browser_mode(browser: bool, timeout_seconds: int) -> None:
+    request = RunScriptRequest.model_validate(
+        {"script": "print('ok')", "timeout_seconds": timeout_seconds, "browser": browser}
+    )
+
+    assert request.browser is browser
+    assert request.timeout_seconds == max(1, min(timeout_seconds, 300 if browser else 120))
+
+
+def test_browser_request_keeps_default_timeout_and_rejects_invalid_browser() -> None:
+    assert RunScriptRequest(script="print('ok')", browser=True).timeout_seconds == 60
+    with pytest.raises(ValidationError, match="browser"):
+        RunScriptRequest.model_validate({"script": "print('ok')", "browser": "chromium"})
 
 
 def test_request_rejects_empty_script_null_args_and_runner_controls() -> None:
@@ -124,7 +150,10 @@ def test_request_rejects_empty_script_null_args_and_runner_controls() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_script_calls_runner_with_uv_environment_flow(monkeypatch) -> None:
+@pytest.mark.parametrize("browser, timeout_seconds, expected_timeout", [(None, 60, 60), (False, 999, 120), (True, 999, 300)])
+async def test_run_script_calls_runner_with_uv_environment_flow(
+    monkeypatch, browser: bool | None, timeout_seconds: int, expected_timeout: int
+) -> None:
     captured: dict[str, Any] = {}
 
     class FakeResponse:
@@ -155,15 +184,15 @@ async def test_run_script_calls_runner_with_uv_environment_flow(monkeypatch) -> 
     monkeypatch.setattr(client.settings, "cli_runner_shared_token", "runner-token")
     monkeypatch.setattr(client.settings, "cli_runner_timeout_seconds", 30)
 
-    result = await actions.run_script(
-        {
-            "script": "import httpx\nprint(httpx.__version__)",
-            "requirements_txt": "httpx==0.28.1",
-            "args": ["one"],
-        },
-        {},
-        RUNTIME_CONTEXT,
-    )
+    arguments: dict[str, Any] = {
+        "script": "import httpx\nprint(httpx.__version__)",
+        "requirements_txt": "httpx==0.28.1",
+        "args": ["one"],
+        "timeout_seconds": timeout_seconds,
+    }
+    if browser is not None:
+        arguments["browser"] = browser
+    result = await actions.run_script(arguments, {}, RUNTIME_CONTEXT)
 
     assert result["ok"] is True
     assert result["execution_status"] == "succeeded"
@@ -174,16 +203,17 @@ async def test_run_script_calls_runner_with_uv_environment_flow(monkeypatch) -> 
         "request_id": "msg_123",
         "script": "import httpx\nprint(httpx.__version__)",
         "requirements": "httpx==0.28.1",
+        "browser": browser is True,
         "commands": [
             {"operation": "install_requirements"},
             {"operation": "run_script", "args": ["one"]},
         ],
-        "timeout_seconds": 60,
+        "timeout_seconds": expected_timeout,
         "max_stdout_bytes": 16 * 1024,
         "max_stderr_bytes": 8 * 1024,
         "workspace_id": workspace_id_from_context(RUNTIME_CONTEXT),
     }
-    assert captured["httpx_init"]["timeout"].read == 65
+    assert captured["httpx_init"]["timeout"].read == expected_timeout + 5
 
 
 @pytest.mark.asyncio

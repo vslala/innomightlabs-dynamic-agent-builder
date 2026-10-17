@@ -4,6 +4,17 @@ Date: 2026-08-27
 Status: Draft
 Owner: InnomightLabs API
 
+## Implementation notes — browser Python extension (implemented 2026-10-16)
+
+These notes describe the implemented extension; the original design below is preserved.
+
+- **API contract:** `run_script` accepts a `browser` input, which the API forwards to the private runner for browser-enabled Python execution.
+- **Dependencies:** Browser execution requires the pinned `playwright==1.64.0`; incompatible Playwright requirements are rejected. The browser dependency is automatically installed unconditionally, including when general dependency auto-install is disabled.
+- **Deadline:** Dependency setup and script execution share one deadline. Browser execution defaults to 60 seconds and is capped at 300 seconds, versus the normal 120-second default; runner timeout settings remain configurable.
+- **Container:** Chromium and its system dependencies are installed as root at image-build time, with browser binaries under `/opt/ms-playwright`. The runtime remains non-root.
+- **Audit policy:** Browser mode alone permits the exact virtualenv Playwright Node executable through `subprocess.Popen` and adds read-only audit access to the virtualenv. Other process-execution blocks remain unchanged. This Python audit policy is not a real sandbox: native code such as `ctypes` can bypass it, and Node/Chromium execute outside the Python audit policy.
+- **Validation reported:** Runner suite: 59 passed, 1 skipped. API suite: 2,328 passed, 1 skipped. Chromium execution in Docker has not been verified.
+
 ## Summary
 
 Create a generic CLI execution service that runs approved infrastructure CLIs, starting with AWS CLI, behind the existing manifest-backed skill system.

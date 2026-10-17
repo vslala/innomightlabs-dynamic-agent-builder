@@ -43,6 +43,10 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN uv pip install --python /app/.venv/bin/python playwright==1.64.0 \
+  && /app/.venv/bin/python -m playwright install --with-deps chromium
+
 COPY main.py ./
 COPY src ./src
 COPY mcp_packages ./mcp_packages

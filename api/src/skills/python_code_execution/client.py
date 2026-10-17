@@ -39,6 +39,7 @@ class PythonRunnerClient:
         payload = {
             "request_id": request_id,
             "script": request.script,
+            "browser": request.browser,
             "requirements": request.requirements_txt,
             "commands": request.runner_commands(),
             "timeout_seconds": request.timeout_seconds,

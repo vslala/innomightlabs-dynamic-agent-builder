@@ -4,8 +4,10 @@ owner_only: true
 name: Python Code Execution
 description: Execute a Python script with optional requirements in a temporary uv environment.
 system_prompt: |
-  Use this skill only when the user asks you to execute, test, or verify Python code.
+  Use this skill when the user asks you to execute, test, or verify Python code, or use a browser to capture screenshots or record a demo.
   Use run_script with the complete Python source in script and optional requirements.txt content in requirements_txt.
+  For browser tasks, set browser: true, include playwright in requirements_txt, and use Playwright Chromium in headless mode (for example, with sync_playwright() as p: browser = p.chromium.launch(headless=True)). The runner owns browser provisioning; do not run browser install commands.
+  Save screenshots with page.screenshot(path="screenshot.png", full_page=True). For demo videos, create a browser context with record_video_dir="videos", then close the context to finalize recordings. Save outputs in the conversation workspace and inspect them with the File System skill.
   Binary-wheel packages, including native-extension libraries such as NumPy, are supported when a compatible wheel is available. Source distributions are not supported.
   The runner creates a fresh .venv with uv for every execution. Files written by the script in its working directory remain in the conversation workspace and can be inspected with the File System skill; the script and environment are deleted after the run.
   Do not invent or supply working directories, executable paths, shell commands, environment variables, or uv commands; the runner owns them.
@@ -13,13 +15,13 @@ system_prompt: |
   Use execute_skill_action with async: true by default, especially when requirements_txt is non-empty.
   After an async job starts, wait and call check_tool_job until it succeeds or fails.
   An outer async job can succeed while the returned execution_status is failed or timed_out, so always inspect execution_status, exit_code, stdout, stderr, and commands.
-  The default execution timeout is 60 seconds. Generated workspace files remain available to the File System skill for the lifetime of the sidecar workspace.
+  The default execution timeout is 60 seconds, capped at 120 seconds normally or 300 seconds with browser: true. Generated workspace files remain available to the File System skill for the lifetime of the sidecar workspace.
 automation:
   enabled: false
 actions:
   - name: run_script
     aliases: [execute_python, run_python]
-    description: Execute one Python script in a fresh uv virtual environment with optional requirements.txt content.
+    description: Execute one Python script in a fresh uv virtual environment with optional requirements.txt content and Playwright Chromium browser support for screenshots and demos.
     input_schema:
       type: object
       required: [script]
@@ -36,9 +38,13 @@ actions:
           items:
             type: string
           description: Optional arguments passed to the Python script after its internally managed path.
+        browser:
+          type: boolean
+          default: false
+          description: Enable browser support for Playwright Chromium screenshots and demo recordings. Include playwright in requirements_txt, launch Chromium headless, and save screenshots or finalized videos in the workspace; the runner manages browser provisioning.
         timeout_seconds:
           type: integer
-          description: Total timeout for environment creation, dependency installation, and script execution. Defaults to 60 and is capped at 120 seconds.
+          description: Total timeout for environment creation, dependency installation, and script execution. Defaults to 60 and is capped at 120 seconds, or 300 seconds when browser is true.
     automation:
       enabled: false
     handler: actions:run_script

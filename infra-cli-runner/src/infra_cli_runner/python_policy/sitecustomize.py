@@ -11,6 +11,14 @@ if not _WRITE_ROOT_VALUE:
     raise RuntimeError("Python runner write policy is not configured")
 
 WRITE_ROOT = Path(_WRITE_ROOT_VALUE).resolve()
+_BROWSER_VENV_VALUE = os.environ.get("INFRA_CLI_RUNNER_BROWSER_VENV", "")
+BROWSER_VENV = Path(_BROWSER_VENV_VALUE).resolve() if _BROWSER_VENV_VALUE else None
+# Resolve candidates before scripts can mutate their environment or import search path.
+BROWSER_NODES = frozenset(
+    path.absolute()
+    for path in BROWSER_VENV.glob("lib/python*/site-packages/playwright/driver/node")
+    if path.resolve() == path.absolute() and path.is_file()
+) if BROWSER_VENV else frozenset()
 WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC
 BLOCKED_PROCESS_EVENTS = {
     "os.exec",
@@ -57,13 +65,24 @@ def _require_managed_path(value: Any) -> None:
     if not path.is_absolute():
         path = Path.cwd() / path
     try:
-        path.resolve(strict=False).relative_to(WRITE_ROOT)
+        resolved = path.resolve(strict=False)
+        resolved.relative_to(WRITE_ROOT)
+        if BROWSER_VENV is not None:
+            # Check both names: unlink/rename acts on the symlink, not its resolved target.
+            lexical = Path(os.path.abspath(path))
+            for candidate in (lexical, resolved):
+                if (
+                    candidate == BROWSER_VENV
+                    or BROWSER_VENV in candidate.parents
+                    or candidate in BROWSER_VENV.parents
+                ):
+                    raise PermissionError("Browser virtual environment is read-only")
     except ValueError as exc:
         raise PermissionError(f"Writes are restricted to {WRITE_ROOT}") from exc
 
 
 def _audit(event: str, args: tuple[Any, ...]) -> None:
-    if event == "import" and args and args[0] == "_posixsubprocess":
+    if event == "import" and args and args[0] == "_posixsubprocess" and BROWSER_VENV is None:
         raise PermissionError("Low-level process execution is not allowed in Python scripts")
     if event == "open":
         path, mode, flags = args
@@ -87,6 +106,10 @@ def _audit(event: str, args: tuple[Any, ...]) -> None:
     if event == "os.symlink":
         _require_managed_path(args[1])
         return
+    if event == "subprocess.Popen" and BROWSER_VENV is not None:
+        executable = Path(os.fsdecode(args[0]))
+        if executable.is_absolute() and executable in BROWSER_NODES and executable.resolve() == executable:
+            return
     if event in BLOCKED_PROCESS_EVENTS:
         raise PermissionError("Child process execution is not allowed in Python scripts")
 

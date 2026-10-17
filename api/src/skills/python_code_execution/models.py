@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 
 DEFAULT_TIMEOUT_SECONDS = 60
 MAX_TIMEOUT_SECONDS = 120
+MAX_BROWSER_TIMEOUT_SECONDS = 300
 MAX_SCRIPT_BYTES = 128 * 1024
 MAX_REQUIREMENTS_BYTES = 32 * 1024
 MAX_SCRIPT_ARGS = 128
@@ -25,6 +26,7 @@ class RunScriptRequest(BaseModel):
         max_length=MAX_SCRIPT_ARGS,
     )
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
+    browser: bool = False
 
     @field_validator("script")
     @classmethod
@@ -52,10 +54,11 @@ class RunScriptRequest(BaseModel):
                 raise ValueError("script argument is too large")
         return args
 
-    @field_validator("timeout_seconds")
-    @classmethod
-    def validate_timeout(cls, value: int) -> int:
-        return max(1, min(int(value), MAX_TIMEOUT_SECONDS))
+    @model_validator(mode="after")
+    def normalize_timeout(self) -> "RunScriptRequest":
+        maximum = MAX_BROWSER_TIMEOUT_SECONDS if self.browser else MAX_TIMEOUT_SECONDS
+        self.timeout_seconds = max(1, min(self.timeout_seconds, maximum))
+        return self
 
     def runner_commands(self) -> list[dict[str, object]]:
         commands: list[dict[str, object]] = []
