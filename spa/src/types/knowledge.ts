@@ -68,19 +68,39 @@ export type CrawlStepType =
   | "PAGE_EMBED_COMPLETE"
   | "PAGE_INGEST_START"
   | "PAGE_INGEST_COMPLETE"
-  | "PAGE_REMOVED";
+  | "PAGE_REMOVED"
+  | "PAGE_DUPLICATE";
 
-export type CrawledPageStatus = "pending" | "success" | "failed" | "skipped" | "unchanged" | "gone";
+export type CrawledPageStatus = "pending" | "success" | "failed" | "skipped" | "unchanged" | "gone" | "duplicate";
 
-/** A page of a knowledge base as it is now. `failing` keeps the chunks of its last good read; `gone` has none. */
-export type KnowledgePageState = "live" | "failing" | "gone";
+/**
+ * A page of a knowledge base as it is now. `failing` keeps the chunks of its last good read; `gone` has none;
+ * `duplicate` says what another page (`duplicate_of`) says, so only that one is searched.
+ */
+export type KnowledgePageState = "live" | "failing" | "gone" | "duplicate";
+
+/** A chunk of a page as search returns it. */
+export interface PageChunk {
+  chunk_id: string;
+  /** 0 the whole page, 1 a section, 2 a paragraph. */
+  level: number;
+  section_heading: string;
+  content: string;
+  word_count: number;
+}
+
+export type KnowledgePageCounts = Record<KnowledgePageState, number>;
 
 export interface KnowledgePage {
   url: string;
   title: string;
+  /** The page's own summary (its meta description). */
+  description: string;
   /** The crawl source URL that keeps it current, or "upload". */
   source: string;
   state: KnowledgePageState;
+  /** For a duplicate, the page that stands for it. */
+  duplicate_of: string;
   chunk_count: number;
   last_read_at: string | null;
   consecutive_failures: number;
@@ -88,6 +108,12 @@ export interface KnowledgePage {
   needs_attention: boolean;
   /** Why it's failing or gone: "HTTP 404". */
   reason: string;
+}
+
+/** A page with what's in the index of it, in page order, and the pages that say the same. */
+export interface KnowledgePageDetail extends KnowledgePage {
+  chunks: PageChunk[];
+  duplicates: string[];
 }
 
 // =============================================================================
@@ -176,6 +202,8 @@ export interface CrawlProgress {
   removed_urls: number;
   /** Pages read that said what they said last time (part of `successful_urls`): nothing was embedded. */
   unchanged_urls: number;
+  /** Pages that say what another page says, kept out of the index (part of `successful_urls`). */
+  duplicate_urls: number;
   total_chunks: number;
   total_embeddings: number;
 }

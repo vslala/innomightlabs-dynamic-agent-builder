@@ -27,7 +27,7 @@ src/knowledge/
   - KB: `pk=Account#{account_id}`, `sk=KnowledgeBase#{kb_id}`. Always read through `find_in_account`.
   - CrawlJob / ContentChunk / uploads: `pk=KnowledgeBase#{kb_id}`, `sk=CrawlJob#{id}` / `Chunk#{id}` / `Upload#...`.
     Job ids are random, so the newest job is found by reading the partition's jobs and sorting (`find_all_by_kb`).
-  - KnowledgePage (a page as it is now: its chunk ids, state, validators): `pk=KnowledgeBase#{kb_id}`,
+  - KnowledgePage (a page as it is now: its chunk ids, state (live, failing, gone, duplicate), validators): `pk=KnowledgeBase#{kb_id}`,
     `sk=KnowledgePage#{url_hash}`, saved conditionally on its `version`. `sk=KnowledgePagesAdopted` marks a KB whose
     older chunks have been given pages. Gone pages expire after `GONE_PAGE_DAYS`.
   - CrawlLease (the one crawl a KB runs): `pk=KnowledgeBase#{kb_id}`, `sk=CrawlLease`, claimed with a conditional put
@@ -47,6 +47,12 @@ src/knowledge/
 - Create crawl jobs only with `create_crawl_job`: a second crawl of a KB is refused while one holds its lease (409 from
   the route, a message from `recrawl`, an error from a blueprint apply). The lease lapses after
   `crawl_job_stale_timeout_seconds` if its worker died.
+- Crawl jobs and pages are listed a page at a time (`Paginated`, `limit` and `cursor`): `GET .../crawl-jobs` (5 newest by
+  default) and `GET .../pages` (filter by `state`, `search`), with `GET .../pages/counts` for the tabs. Job keys are random
+  and page keys are hashes, so neither order is a DynamoDB sort order: the repository reads the partition, sorts, and
+  the cursor holds the last item's place in that order (`created_at`; or rank and address). Don't make a list in this
+  module return everything; the SPA shows a few and loads more. `GET .../pages/detail?url=` gives one page with its
+  chunks in page order (what the dashboard's side panel shows) and the pages that say the same.
 - A KB's stats count what it holds (its pages with chunks, from the ledger), not what the last run read.
 - `access.py` registers `RESOLVERS["knowledge-base"]` at import so shares can resolve a KB. Importing the module is what wires it.
 

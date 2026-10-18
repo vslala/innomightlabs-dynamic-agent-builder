@@ -18,6 +18,7 @@ Only `remove` deletes a whole page, and only because the site said it's gone.
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
+from urllib.parse import urlparse
 
 from src.crawler.chunking import ContentChunkData
 from src.crawler.extractor import same_site
@@ -26,6 +27,13 @@ from src.knowledge.models import UPLOAD_SOURCE, KnowledgePage, KnowledgePageStat
 from src.knowledge.repository import ContentChunkRepository, CrawlJobRepository, KnowledgePageRepository
 from src.vectorstore.embeddings import EmbeddingProvider
 from src.vectorstore.pinecone_client import PineconeClient
+
+
+def address_rank(url: str) -> tuple[bool, bool, int, str]:
+    """Which of two addresses for one page is kept: no query string, then not the bare domain (discovery writes the
+    root as "/"), then the shorter."""
+    parsed = urlparse(url)
+    return bool(parsed.query), parsed.path == "", len(url), url
 
 
 def held(pages: Iterable[KnowledgePage]) -> tuple[int, int]:
@@ -115,6 +123,7 @@ class PageIndex:
             "chunk_ids": [chunk.chunk_id for chunk in prepared.chunks],
             "pending_ids": [],
             "state": KnowledgePageState.LIVE,
+            "duplicate_of": "",
             "title": title,
             "last_seen_job": job_id,
             "last_read_at": datetime.now(timezone.utc),
@@ -126,6 +135,26 @@ class PageIndex:
 
     def remove(self, page: KnowledgePage, *, reason: str, job_id: str) -> KnowledgePage:
         """Take a page the site said is gone out of the knowledge base: its chunks first, so search stops returning it."""
+        return self._empty(page, {"state": KnowledgePageState.GONE, "reason": reason, "last_seen_job": job_id})
+
+    def alias(self, page: KnowledgePage, *, of: KnowledgePage, text_hash: str, job_id: str) -> KnowledgePage:
+        """The page says what `of` says: it keeps no chunks of its own, so the passage isn't in search twice."""
+        return self._empty(page, {
+            "state": KnowledgePageState.DUPLICATE,
+            "duplicate_of": of.url,
+            "text_hash": text_hash,
+            "last_seen_job": job_id,
+            "consecutive_failures": 0,
+            "reason": "",
+        })
+
+    def repoint(self, page: KnowledgePage, *, to: KnowledgePage) -> KnowledgePage:
+        """A duplicate whose page was itself made a duplicate of `to` now stands behind `to`."""
+        return self.pages.save(page.model_copy(update={"duplicate_of": to.url}))
+
+    def _empty(self, page: KnowledgePage, changes: dict[str, object]) -> KnowledgePage:
+        """Delete the page's chunks and vectors and record why it has none. Chunks first: search returns a vector's text
+        only while its chunk exists."""
         dropped = list(dict.fromkeys(page.chunk_ids + page.pending_ids))
         if dropped:
             page = self._pending(page, keep=set(), touching=dropped)
@@ -133,10 +162,8 @@ class PageIndex:
         page = self.pages.save(page.model_copy(update={
             "chunk_ids": [],
             "pending_ids": [],
-            "state": KnowledgePageState.GONE,
-            "last_seen_job": job_id,
             "last_read_at": datetime.now(timezone.utc),
-            "reason": reason,
+            **changes,
         }))
         return self._delete_vectors(page, dropped)
 

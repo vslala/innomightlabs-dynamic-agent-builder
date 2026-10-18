@@ -21,6 +21,12 @@
 
 All six parts and all four phases are built. Where the build departs from the design below, this section is the truth.
 
+**Page and job lists are paged** (the dashboard).
+- A site with hundreds of pages made the page list too long, so `GET /pages` takes `state`, `search`, `limit` and
+  `cursor`, and `GET /pages/counts` gives the tab counts. `GET /crawl-jobs` returns the 5 newest and a cursor to older ones.
+- Both read the KB's partition and sort in memory; the cursor is the last item's place in the sort. This is fine to a
+  few thousand pages. Past that, a GSI by state would let each tab be a keyed query.
+
 **One crawl per knowledge base is a lease, not a status check** (Part 4, rule 5).
 - Implementing the check turned up a bug: `CrawlJobRepository.find_all_by_kb` applied `Limit` before sorting job ids,
   which are random. Past the limit, which a daily `recrawl` reaches in 50 days, "the newest job" and "is one running"
@@ -95,6 +101,25 @@ moves the page: its content is indexed under the new URL and the old page is rem
   deleted.
 - `scripts/reconcile_kb_vectors.py --deleted` lists and (with `--apply`) deletes the namespaces of deleted knowledge
   bases that still have vectors.
+
+**Content quality, found by crawling innomight.com (all of it older than this work).** A real crawl gave 187 chunks
+from 15 pages and only 67 distinct texts. The fixes, each with tests built from that site's markup:
+- Each section was stored twice, at level 1 and level 2. No level-2 chunk that repeats its section is made now.
+- Home (`/` and the bare domain) and the contact page with four `?topic=` variants were separate pages. Discovery
+  treats the root as one URL, a `rel=canonical` link is honoured, and pages with the same text are indexed once
+  (state `DUPLICATE`, `duplicate_of`; the best address keeps the chunks).
+- Section headings inside `<header>` were deleted by the extractor's boilerplate rule. A `<header>` inside `<main>` or
+  `<article>` is kept. Hidden (Cloudflare) emails are decoded, fact lists read as `label: value`, list cards become
+  headings, and inline elements keep a space between them.
+- Chunks of a few words (eyebrows, bare headings) are joined to the next section. The Cloudflare `/cdn-cgi/` links
+  are no longer discovered (they were a failed read in every crawl).
+- Search over-fetches, drops a vector with no chunk and repeated text, then trims to `top_k`. It also stops returning a
+  result with placeholder text for a vector that has no chunk: the earlier statement that such vectors are dropped
+  was wrong, they were returned with empty or "[Content not available…]" text.
+- Chunks and vectors carry `section_heading`; pages carry `description`.
+- `BedrockEmbeddings` raises instead of returning an all-zero vector for a text it couldn't embed, and backs off on
+  throttling.
+- Previewed on the live pages: 187 chunks become 109, of which 13 are sections the site really repeats on two pages.
 
 **Not built.** The dashboard has no "remove this page" action for a failing page; its chunks stay until the site
 answers or the knowledge base is deleted. The open question on unlinked-but-live pages is unchanged: they're kept.

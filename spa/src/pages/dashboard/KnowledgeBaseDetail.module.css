@@ -135,3 +135,23 @@
 .maxDepthHint {
   @apply text-xs text-[var(--text-muted)];
 }
+
+/* The cards on the left, the chosen page's details beside them */
+.layout {
+  @apply grid min-w-0 items-start gap-6;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.side {
+  @apply min-w-0;
+}
+
+@media (min-width: 1100px) {
+  .layout {
+    grid-template-columns: minmax(0, 46rem) minmax(20rem, 1fr);
+  }
+
+  .side {
+    @apply sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto;
+  }
+}

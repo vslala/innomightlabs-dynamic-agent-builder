@@ -131,6 +131,8 @@ class CrawlStepType(str, Enum):
     PAGE_INGEST_COMPLETE = "PAGE_INGEST_COMPLETE"
     #: The site said the page is gone, and its chunks were deleted.
     PAGE_REMOVED = "PAGE_REMOVED"
+    #: The page says what another page says, so it was kept out of the index.
+    PAGE_DUPLICATE = "PAGE_DUPLICATE"
 
 
 class CrawledPageStatus(str, Enum):
@@ -142,6 +144,8 @@ class CrawledPageStatus(str, Enum):
     UNCHANGED = "unchanged"
     #: The site said it's gone, and it was removed.
     GONE = "gone"
+    #: It says what another page says, so it was kept out of the index.
+    DUPLICATE = "duplicate"
 
 
 class KnowledgePageState(str, Enum):
@@ -151,6 +155,9 @@ class KnowledgePageState(str, Enum):
     FAILING = "failing"
     #: The site said it's gone; its chunks were deleted. Kept a while so the page list can say so.
     GONE = "gone"
+    #: It says exactly what another page of the knowledge base says (`duplicate_of`), so it has no chunks of its own:
+    #: the same passage would only turn up in search twice.
+    DUPLICATE = "duplicate"
 
 
 #: Pages crawled from a site are owned by the crawl's source URL; uploaded files by this.
@@ -217,6 +224,8 @@ class CrawlProgress(BaseModel):
     removed_urls: int = 0
     #: Pages read that said what they said last time (part of `successful_urls`).
     unchanged_urls: int = 0
+    #: Pages that say what another page says, kept out of the index (part of `successful_urls`).
+    duplicate_urls: int = 0
     total_chunks: int = 0
     total_embeddings: int = 0
 
@@ -327,15 +336,45 @@ class KnowledgePageResponse(BaseModel):
 
     url: str
     title: str
+    description: str = ""
     #: The crawl source that keeps it current, or "upload".
     source: str
     state: KnowledgePageState
+    #: For a duplicate, the page that stands for it.
+    duplicate_of: str = ""
     chunk_count: int
     last_read_at: Optional[datetime] = None
     consecutive_failures: int = 0
     #: It's failed enough runs in a row that the owner should look.
     needs_attention: bool = False
     reason: str = ""
+
+
+class PageChunkResponse(BaseModel):
+    """A chunk of a page as search returns it."""
+
+    chunk_id: str
+    #: 0 the whole page, 1 a section, 2 a paragraph.
+    level: int
+    section_heading: str = ""
+    content: str
+    word_count: int
+
+
+class KnowledgePageDetail(KnowledgePageResponse):
+    """A page and what's in the index of it: its chunks in page order, and the pages that say the same."""
+
+    chunks: list[PageChunkResponse]
+    duplicates: list[str] = Field(default_factory=list)
+
+
+class KnowledgePageCounts(BaseModel):
+    """How many pages a knowledge base has in each state, for the page list's tabs."""
+
+    live: int = 0
+    failing: int = 0
+    gone: int = 0
+    duplicate: int = 0
 
 
 class CrawlStepResponse(BaseModel):
@@ -760,8 +799,14 @@ class KnowledgePage(BaseModel):
     #: Vectors whose delete failed, deleted on a later write of the page.
     orphan_vector_ids: list[str] = Field(default_factory=list)
     title: str = ""
+    #: The page's own summary (its meta description), as its last read said it.
+    description: str = ""
+    #: For a `DUPLICATE` page, the page whose chunks stand for it.
+    duplicate_of: str = ""
     #: What its last full read said, to skip one that says the same (`crawler/page_chunks.text_hash`).
     text_hash: str = ""
+    #: The `crawler/page_chunks.READER_VERSION` that made its chunks; an older one is read in full, never skipped.
+    reader_version: int = 0
     #: The site's validators from that read, sent back so an unchanged page costs a 304.
     etag: Optional[str] = None
     last_modified: Optional[str] = None
@@ -796,8 +841,10 @@ class KnowledgePage(BaseModel):
         return KnowledgePageResponse(
             url=self.url,
             title=self.title,
+            description=self.description,
             source=self.source,
             state=self.state,
+            duplicate_of=self.duplicate_of,
             chunk_count=len(self.chunk_ids),
             last_read_at=self.last_read_at,
             consecutive_failures=self.consecutive_failures,
@@ -817,7 +864,10 @@ class KnowledgePage(BaseModel):
             "pending_ids": self.pending_ids,
             "orphan_vector_ids": self.orphan_vector_ids,
             "title": self.title,
+            "description": self.description,
+            "duplicate_of": self.duplicate_of,
             "text_hash": self.text_hash,
+            "reader_version": self.reader_version,
             "etag": self.etag,
             "last_modified": self.last_modified,
             "last_seen_job": self.last_seen_job,
@@ -843,7 +893,10 @@ class KnowledgePage(BaseModel):
             pending_ids=list(item.get("pending_ids") or []),
             orphan_vector_ids=list(item.get("orphan_vector_ids") or []),
             title=item.get("title") or "",
+            description=item.get("description") or "",
+            duplicate_of=item.get("duplicate_of") or "",
             text_hash=item.get("text_hash") or "",
+            reader_version=int(item.get("reader_version") or 0),
             etag=item.get("etag"),
             last_modified=item.get("last_modified"),
             last_seen_job=item.get("last_seen_job") or "",
@@ -866,6 +919,8 @@ class ContentChunk(BaseModel):
     word_count: int = 0
     parent_chunk_id: Optional[str] = None
     level: int = 0  # 0=document, 1=section, 2=paragraph
+    #: The heading of the section it's from, if any.
+    section_heading: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def model_post_init(self, __context: Any) -> None:
@@ -894,6 +949,7 @@ class ContentChunk(BaseModel):
             "word_count": self.word_count,
             "parent_chunk_id": self.parent_chunk_id,
             "level": self.level,
+            "section_heading": self.section_heading,
             "created_at": self.created_at.isoformat(),
             "entity_type": "ContentChunk",
         }
@@ -910,20 +966,9 @@ class ContentChunk(BaseModel):
             word_count=item.get("word_count", 0),
             parent_chunk_id=item.get("parent_chunk_id"),
             level=item.get("level", 0),
+            section_heading=item.get("section_heading", ""),
             created_at=datetime.fromisoformat(item["created_at"]),
         )
-
-    def to_pinecone_metadata(self) -> dict[str, Any]:
-        """Generate metadata for Pinecone vector."""
-        return {
-            "kb_id": self.kb_id,
-            "chunk_id": self.chunk_id,
-            "source_url": self.source_url,
-            "page_title": self.page_title or "",
-            "chunk_index": self.chunk_index,
-            "level": self.level,
-            "word_count": self.word_count,
-        }
 
 
 class ContentUpload(BaseModel):

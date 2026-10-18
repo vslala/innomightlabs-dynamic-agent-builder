@@ -9,16 +9,19 @@ This module provides two discovery strategies:
 import httpx
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse, urljoin, urldefrag
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import AsyncIterator, Optional, Set, cast
 from bs4 import BeautifulSoup
 import logging
-import re
 
 from src.crawler.robots import RobotsParser, RobotsTxt
 from src.common import outbound
 
 log = logging.getLogger(__name__)
+
+
+#: Paths a site's CDN serves, not its pages: Cloudflare's email-protection link is a 404 for anything but a browser.
+NOT_PAGES = ("/cdn-cgi/",)
 
 
 @dataclass
@@ -247,6 +250,8 @@ class UrlCrawler:
 
             # Resolve relative URLs
             absolute_url = urljoin(url, href)
+            if urlparse(absolute_url).path.startswith(NOT_PAGES):
+                continue
 
             # Normalize
             normalized = self._normalize_url(absolute_url)
@@ -275,10 +280,9 @@ class UrlCrawler:
         if parsed.scheme not in ("http", "https"):
             return ""
 
-        # Normalize path (remove trailing slash for non-root paths)
-        path = parsed.path
-        if path != "/" and path.endswith("/"):
-            path = path.rstrip("/")
+        # Normalize path: no trailing slash, except the root, which is always "/" (so "example.com" and "example.com/"
+        # are one page)
+        path = parsed.path.rstrip("/") or "/"
 
         # Reconstruct URL without fragment
         normalized = f"{parsed.scheme}://{parsed.netloc}{path}"

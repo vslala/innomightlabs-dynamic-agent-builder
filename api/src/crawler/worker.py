@@ -53,8 +53,8 @@ from src.knowledge.run_state import CrawlJobStateService, CrawlJobStoppedError
 from src.crawler.discovery import UrlDiscovery, DiscoveryConfig
 from src.crawler.extractor import ContentExtractor, ExtractedContent, Fetched, FetchOutcome
 from src.crawler.chunking import get_chunking_strategy
-from src.crawler.page_chunks import text_hash
-from src.crawler.page_index import PageIndex, held
+from src.crawler.page_chunks import READER_VERSION, text_hash
+from src.crawler.page_index import PageIndex, address_rank, held
 from src.crawler.robots import RobotsParser, RobotsTxt
 from src.crawler.events import (
     CrawlEvent,
@@ -87,6 +87,8 @@ class PageRead(str, Enum):
     UNCHANGED = "unchanged"
     #: The site said it's gone, and it was taken out.
     REMOVED = "removed"
+    #: It says what another page says, so it was kept out of the index.
+    DUPLICATE = "duplicate"
 
 
 # Lambda timeout buffer (save checkpoint 30s before timeout)
@@ -121,6 +123,7 @@ class CrawlContext:
     failed_count: int = 0
     removed_count: int = 0
     unchanged_count: int = 0
+    duplicate_count: int = 0
     total_chunks: int = 0
     total_embeddings: int = 0
     last_heartbeat_monotonic: float = 0.0
@@ -164,6 +167,7 @@ class CrawlContext:
             failed_urls=self.failed_count,
             removed_urls=self.removed_count,
             unchanged_urls=self.unchanged_count,
+            duplicate_urls=self.duplicate_count,
             total_chunks=self.total_chunks,
             total_embeddings=self.total_embeddings,
         )
@@ -340,6 +344,7 @@ class CrawlerWorker:
                 ctx.failed_count = job.progress.failed_urls
                 ctx.removed_count = job.progress.removed_urls
                 ctx.unchanged_count = job.progress.unchanged_urls
+                ctx.duplicate_count = job.progress.duplicate_urls
                 ctx.total_chunks = job.progress.total_chunks
                 ctx.total_embeddings = job.progress.total_embeddings
             log.info(f"Resuming from checkpoint at index {ctx.current_url_index}, previously processed {ctx.processed_count} URLs")
@@ -445,7 +450,9 @@ class CrawlerWorker:
         found = set(ctx.discovered_urls)
         unseen = [
             page for page in ctx.pages.values()
-            if page.source == ctx.job.config.source_url and page.state != KnowledgePageState.GONE and page.url not in found
+            if page.source == ctx.job.config.source_url and page.url not in found
+            # A gone page is read again only to delete the vectors it couldn't
+            and (page.state != KnowledgePageState.GONE or page.orphan_vector_ids)
         ]
         unseen.sort(key=lambda page: page.last_read_at or datetime.min.replace(tzinfo=timezone.utc))
         return [page.url for page in unseen[: ctx.job.config.max_pages]]
@@ -473,6 +480,8 @@ class CrawlerWorker:
                     ctx.successful_count += 1
                     if read is PageRead.UNCHANGED:
                         ctx.unchanged_count += 1
+                    if read is PageRead.DUPLICATE:
+                        ctx.duplicate_count += 1
             except Exception as e:
                 log.error(f"Failed to process {url}: {e}")
                 ctx.failed_count += 1
@@ -532,9 +541,32 @@ class CrawlerWorker:
         said = text_hash(content.title, content.full_text, ctx.job.config.chunking_strategy.value)
         if read.settled and read.text_hash == said:
             return self._unchanged(ctx, read, fetched, timing)
-        read = read.model_copy(update={"text_hash": said, "etag": fetched.etag, "last_modified": fetched.last_modified})
+        twin = self._twin(ctx, read.url, said)
+        if twin is not None and address_rank(twin.url) <= address_rank(read.url):
+            return self._duplicate(ctx, read, twin, said, timing)
+        read = read.model_copy(update={
+            "text_hash": said, "etag": fetched.etag, "last_modified": fetched.last_modified,
+            "description": content.description, "reader_version": READER_VERSION,
+        })
         await self._index_page(ctx, read, content, timing)
+        if twin is not None:
+            # This is the better address for what both say: the other one now stands behind it
+            better, index = ctx.pages[read.url], self._index(ctx)
+            ctx.keep(index.alias(twin, of=better, text_hash=said, job_id=ctx.job.job_id))
+            for other in [page for page in ctx.pages.values() if page.state == KnowledgePageState.DUPLICATE and page.duplicate_of == twin.url]:
+                ctx.keep(index.repoint(other, to=better))
         return PageRead.INDEXED
+
+    @staticmethod
+    def _twin(ctx: CrawlContext, url: str, said: str) -> Optional[KnowledgePage]:
+        """Another page of the knowledge base that's in the index and says exactly what this one says."""
+        return next((page for page in ctx.pages.values() if page.url != url and page.settled and page.text_hash == said), None)
+
+    def _duplicate(self, ctx: CrawlContext, page: KnowledgePage, twin: KnowledgePage, said: str, timing: PageTiming) -> PageRead:
+        ctx.keep(self._index(ctx).alias(page, of=twin, text_hash=said, job_id=ctx.job.job_id))
+        self._record(ctx, page.url, CrawledPageStatus.DUPLICATE, timing, error=f"says what {twin.url} says")
+        self._log_step(ctx, CrawlStepType.PAGE_DUPLICATE, url=page.url, details={"duplicate_of": twin.url})
+        return PageRead.DUPLICATE
 
     async def _allowed(self, ctx: CrawlContext, url: str) -> bool:
         if not ctx.job.config.respect_robots_txt:
@@ -560,12 +592,18 @@ class CrawlerWorker:
     def _take_out(self, ctx: CrawlContext, url: str, reason: str) -> bool:
         """Remove the page if the knowledge base has anything of it; whether it did."""
         page = ctx.pages.get(url)
-        # A removal that stopped halfway left the page pending: it's finished here
-        if page is None or (page.state == KnowledgePageState.GONE and not page.pending_ids):
+        # A removal that stopped halfway left the page pending, or vectors it couldn't delete: it's finished here
+        if page is None or (page.state == KnowledgePageState.GONE and not page.pending_ids and not page.orphan_vector_ids):
             return False
         removed = len(page.chunk_ids)
         ctx.keep(self._index(ctx).remove(page, reason=reason, job_id=ctx.job.job_id))
         self._log_step(ctx, CrawlStepType.PAGE_REMOVED, url=url, details={"reason": reason, "removed_count": removed})
+        # Pages that stood behind this one may be the only copy of its text left: read them again this run
+        queued = set(ctx.discovered_urls[ctx.current_url_index + 1:])
+        ctx.discovered_urls += [
+            other.url for other in ctx.pages.values()
+            if other.state == KnowledgePageState.DUPLICATE and other.duplicate_of == url and other.url not in queued
+        ]
         return True
 
     def _unchanged(self, ctx: CrawlContext, page: KnowledgePage, fetched: Fetched, timing: PageTiming) -> PageRead:
@@ -620,7 +658,8 @@ class CrawlerWorker:
         self._log_step(ctx, CrawlStepType.PAGE_FETCH_START, url=url)
 
         fetch_start = time.time()
-        etag, last_modified = (page.etag, page.last_modified) if page.settled else (None, None)
+        current = page.settled and page.reader_version == READER_VERSION
+        etag, last_modified = (page.etag, page.last_modified) if current else (None, None)
         fetched = await self.extractor.fetch(url, etag=etag, last_modified=last_modified)
         timing.fetch_duration_ms = int((time.time() - fetch_start) * 1000)
         if fetched.outcome is FetchOutcome.NOT_MODIFIED:
@@ -728,6 +767,13 @@ class CrawlerWorker:
             if ctx.processed_count > 0:
                 job.timing.avg_page_duration_ms = job.timing.total_duration_ms / ctx.processed_count
 
+        # Duplicates as the knowledge base ends the crawl with them: a page read early may have become one later
+        ctx.duplicate_count = sum(1 for page in ctx.pages.values() if page.state == KnowledgePageState.DUPLICATE)
+        # Chunks of the pages this run read, each once: a page reached by several links or a redirect is read several times
+        ctx.total_chunks = sum(
+            len(page.chunk_ids) for page in ctx.pages.values()
+            if page.state == KnowledgePageState.LIVE and page.last_seen_job == job.job_id
+        )
         job.progress = ctx.get_progress()
         job.checkpoint = None  # Clear checkpoint
 

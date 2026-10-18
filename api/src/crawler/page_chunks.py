@@ -23,9 +23,14 @@ def chunk_id(kb_id: str, url: str, title: str, level: int, content: str, occurre
     return f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:32]}"
 
 
+#: Bump it when the extractor or a chunker changes what a page becomes. Pages read by an older version are fetched in
+#: full, without validators, so a site that answers 304 can't keep them as the old reader made them.
+READER_VERSION = 2
+
+
 def text_hash(title: str, text: str, chunking: str) -> str:
     """What a read of a page said, as chunked: two reads with the same hash make the same chunks."""
-    return hashlib.sha256("\n".join((chunking, title, text)).encode()).hexdigest()
+    return hashlib.sha256("\n".join((str(READER_VERSION), chunking, title, text)).encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -61,6 +66,7 @@ def prepare_page(
             word_count=data.word_count,
             parent_chunk_id=ids.get(data.parent_chunk_id or ""),
             level=data.level,
+            section_heading=data.section_heading,
         )
         for data in chunk_data_list
     ]
@@ -80,6 +86,7 @@ def vectors_for(chunks: list[ContentChunk], embeddings: list[EmbeddingResult]) -
                 chunk_index=chunk.chunk_index,
                 level=chunk.level,
                 word_count=chunk.word_count,
+                section_heading=chunk.section_heading,
             ),
         )
         for chunk, result in zip(chunks, embeddings)

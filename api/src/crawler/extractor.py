@@ -5,12 +5,12 @@ This module fetches web pages and extracts clean, structured content
 by converting HTML to Markdown for reliable text extraction.
 """
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 from markdownify import markdownify as md
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 import httpx
 import logging
 import re
@@ -38,12 +38,30 @@ class ExtractedContent:
     sections: list[ExtractedSection] = field(default_factory=list)
     word_count: int = 0
     content_length: int = 0
+    #: The address the page says is its own (`<link rel="canonical">`), made absolute; empty when it doesn't say.
+    canonical_url: str = ""
 
     def __post_init__(self):
         if not self.word_count and self.full_text:
             self.word_count = len(self.full_text.split())
         if not self.content_length and self.full_text:
             self.content_length = len(self.full_text)
+
+
+def decode_cloudflare_email(encoded: str) -> str:
+    """The address Cloudflare's email obfuscation hid: the first byte is a key every other byte is XORed with.
+    Empty when it isn't a valid encoding."""
+    try:
+        key = int(encoded[:2], 16)
+        return "".join(chr(int(encoded[i:i + 2], 16) ^ key) for i in range(2, len(encoded), 2))
+    except ValueError:
+        return ""
+
+
+#: Elements that run into the text beside them when their tags are dropped: "<a>Talk</a><a>to us</a>" is one word.
+INLINE_TAGS = ["a", "button", "span", "strong", "b", "em", "i", "small", "label", "time"]
+#: What may follow an inline element without a space: "<a>link</a>." stays "link.".
+NO_SPACE_BEFORE = set(".,;:!?)]}%'’\"”")
 
 
 class FetchOutcome(str, Enum):
@@ -148,8 +166,10 @@ class ContentExtractor:
         content = self.extract(final_url, response.text)
         if not content.full_text.strip():
             return Fetched(FetchOutcome.FAILED, final_url, reason="no text on the page")
+        # The page's own address, when it says it's another one on this site: `/contact?topic=product` is `/contact`
+        address = content.canonical_url if content.canonical_url and same_site(final_url, content.canonical_url) else final_url
         return Fetched(
-            FetchOutcome.OK, final_url, content,
+            FetchOutcome.OK, address, content,
             etag=response.headers.get("etag"), last_modified=response.headers.get("last-modified"),
         )
 
@@ -168,8 +188,12 @@ class ContentExtractor:
 
         title = self._extract_title(soup)
         description = self._extract_description(soup)
+        canonical_url = self._extract_canonical(soup, url)
 
+        self._decode_emails(soup)
         self._remove_noise(soup)
+        self._flatten_structure(soup)
+        self._separate_inline(soup)
 
         main_content = self._find_main_content(soup)
 
@@ -194,6 +218,7 @@ class ContentExtractor:
             sections=sections,
             word_count=len(markdown.split()),
             content_length=len(markdown),
+            canonical_url=canonical_url,
         )
 
     def _extract_title(self, soup: BeautifulSoup) -> str:
@@ -229,6 +254,50 @@ class ContentExtractor:
 
         return ""
 
+    def _extract_canonical(self, soup: BeautifulSoup, url: str) -> str:
+        link = soup.find("link", rel="canonical")
+        href = link.get("href") if isinstance(link, Tag) else None
+        return urljoin(url, href.strip()) if isinstance(href, str) and href.strip() else ""
+
+    def _decode_emails(self, soup: BeautifulSoup) -> None:
+        """Put back the addresses Cloudflare hides behind "[email protected]", so the text says them."""
+        for element in soup.select("[data-cfemail]"):
+            address = decode_cloudflare_email(str(element.get("data-cfemail", "")))
+            if address:
+                element.string = address
+
+    def _flatten_structure(self, soup: BeautifulSoup) -> None:
+        """Rewrite markup that turns into confusing markdown into what it says.
+
+        - A fact list (`<dl>` of terms and definitions) becomes one "term: definition" line each, not a term on one
+          line and ": definition" on the next.
+        - A list item with a heading in it is a card, not a bullet: it becomes a heading and its text, which makes the
+          heading a section of its own instead of "- ### Heading".
+        """
+        for facts in soup.find_all("dl"):
+            lines = soup.new_tag("div")
+            for term in facts.find_all("dt"):
+                definition = term.find_next_sibling("dd")
+                line = soup.new_tag("p")
+                line.string = f"{term.get_text(' ', strip=True)}: {definition.get_text(' ', strip=True) if definition else ''}".strip()
+                lines.append(line)
+            facts.replace_with(lines)
+        for item in soup.find_all("li"):
+            if item.find(["h1", "h2", "h3", "h4", "h5", "h6"]):
+                item.unwrap()
+        for group in soup.find_all(["ul", "ol"]):
+            if not group.find("li"):
+                group.unwrap()
+
+    def _separate_inline(self, soup: BeautifulSoup) -> None:
+        """Keep neighbouring inline elements and text apart once their tags are gone."""
+        for element in soup.find_all(INLINE_TAGS):
+            text = element.get_text()
+            following = element.next_sibling
+            beside = following.get_text() if isinstance(following, Tag) else str(following) if isinstance(following, NavigableString) else ""
+            if text and beside and not text[-1].isspace() and not beside[0].isspace() and beside[0] not in NO_SPACE_BEFORE:
+                element.insert_after(" ")
+
     def _remove_noise(self, soup: BeautifulSoup) -> None:
         """Remove scripts, styles, and common boilerplate elements."""
         for tag_name in self.REMOVE_TAGS:
@@ -238,6 +307,8 @@ class ContentExtractor:
         for selector in self.BOILERPLATE_SELECTORS:
             try:
                 for element in soup.select(selector):
+                    if element.name == "header" and element.find_parent(["main", "article"]):
+                        continue  # a section's heading, not the site's header
                     if not self._is_main_content(element):
                         element.decompose()
             except Exception:

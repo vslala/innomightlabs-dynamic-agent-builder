@@ -15,6 +15,7 @@ src/crawler/
   page_index.py     PageIndex: the only code that writes, removes or marks a page, in the order that's safe to stop
   page_chunks.py    chunk_id (content-addressed), prepare_page (which chunks are new), text_hash, vectors_for
   extractor.py      fetch() -> Fetched with a FetchOutcome (OK, NOT_MODIFIED, GONE, FAILED); HTML -> ExtractedContent
+                    (decoding emails, flattening cards and fact lists, keeping words apart)
   discovery.py      Sitemap parsing and link crawling (UrlDiscovery)
   robots.py         robots.txt parsing and rules
   events.py         CrawlEvent and one builder function per event type
@@ -58,6 +59,22 @@ src/crawler/
 - **Unchanged pages are skipped only when settled.** A settled page has validators sent back (ETag, Last-Modified), so
   it may answer 304, and it's skipped when its `text_hash` matches. A page with pending ids or failed reads is always
   read in full.
+- **Changing the reader means bumping `READER_VERSION`** (`page_chunks.py`). A site that answers 304 would otherwise keep
+  every page as the old extractor or chunker made it. A page whose `reader_version` is older is fetched without
+  validators and re-chunked once; chunks whose text didn't change keep their ids and aren't embedded again.
+- **One page, once.** A page that says exactly what another page of the knowledge base says (same `text_hash`: title,
+  text and chunking strategy) is kept as a `DUPLICATE`: it has no chunks and points at the other (`duplicate_of`).
+  The kept address is the best one (`address_rank`: no query string, then the shorter), whichever is read first, and
+  the others are repointed. If the page standing behind them is removed, they're read again in that run. Discovery
+  makes `example.com` and `example.com/` one URL, skips the CDN's own paths (`NOT_PAGES`), and a `rel=canonical` link
+  to another address on the site is that page's address (`extractor._read`).
+- **Chunks say something once.** The chunker makes no level-2 chunk that repeats its section (`_chunk_section`), and a
+  section too short to say anything (under `section_min_words`: an eyebrow, a heading with no body) is joined to the
+  next (`_merge_tiny_sections`). Each chunk carries its `section_heading`.
+- **The extractor keeps the page's words.** It removes the site's header, footer and navigation, not a `<header>`
+  inside `<main>` or an `<article>` (that's a section's heading). It decodes Cloudflare-hidden emails, writes fact
+  lists as `label: value`, turns list cards (`<li>` with a heading) into headings, and puts a space between inline
+  elements whose tags are dropped. Tests use trimmed markup of real pages (`test_extraction.py`).
 - **One crawl per knowledge base.** Jobs are created with `create_crawl_job`, which takes the knowledge base's
   `CrawlLease`. The worker takes it again before starting and renews it on every heartbeat. It stops with
   `CrawlJobStoppedError` if another job holds it, and releases it when the job ends.
@@ -98,6 +115,8 @@ through the real worker, and `crawl()` runs a whole job. Never fetch real sites.
 - `test_keeping_pages_current.py`: whole crawls removing, keeping and verifying pages, adoption, crash recovery.
 - `test_unchanged_pages.py`: 304s and text hashes, and never skipping an unsettled page.
 - `test_fetch_outcomes.py`: how an HTTP response classifies.
+- `test_duplicate_pages.py`: pages that say the same thing, and who keeps the chunks.
+- `test_extraction.py`, `test_chunk_quality.py`, `test_discovery.py`: what a real site's markup becomes.
 
 ## Do / Don't
 

@@ -51,6 +51,7 @@ import { Page, PageHeader, PageActions, PageBody, Stack, Inline, FieldGroup } fr
 import { SchemaForm } from "../../components/forms";
 import styles from "./KnowledgeBaseDetail.module.css";
 import { knowledgeApiService } from "../../services/knowledge";
+import { KnowledgePageDetailPanel } from "./knowledge-base/KnowledgePageDetailPanel";
 import { KnowledgePagesCard } from "./knowledge-base/KnowledgePagesCard";
 import { KB_UPLOAD_ALLOWED_EXTENSIONS, KB_UPLOAD_MAX_FILE_SIZE } from "../../types/knowledge";
 import type {
@@ -64,6 +65,8 @@ import type {
 import type { FormSchema, FormValue } from "../../types/form";
 
 const POLL_INTERVAL_MS = 5000; // 5 seconds
+// Crawl runs shown first, and added by each "Show older runs"
+const RECENT_JOBS = 5;
 
 export function KnowledgeBaseDetail() {
   const { kbId } = useParams<{ kbId: string }>();
@@ -78,6 +81,11 @@ export function KnowledgeBaseDetail() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [crawlJobs, setCrawlJobs] = useState<CrawlJob[]>([]);
+  const [selectedPageUrl, setSelectedPageUrl] = useState<string | null>(null);
+  // Runs older than the latest few, loaded on request
+  const [olderJobs, setOlderJobs] = useState<CrawlJob[]>([]);
+  const [olderJobsCursor, setOlderJobsCursor] = useState<string | null>(null);
+  const [loadingOlderJobs, setLoadingOlderJobs] = useState(false);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
@@ -128,8 +136,10 @@ export function KnowledgeBaseDetail() {
     if (!kbId) return;
     setLoadingJobs(true);
     try {
-      const jobs = await knowledgeApiService.listCrawlJobs(kbId, 10);
+      const { items: jobs, next_cursor } = await knowledgeApiService.listCrawlJobs(kbId, RECENT_JOBS);
       setCrawlJobs(jobs);
+      setOlderJobs([]);
+      setOlderJobsCursor(next_cursor);
 
       // Check if any job is in progress and start polling
       const hasInProgressJob = jobs.some((j) => j.status === "in_progress");
@@ -188,11 +198,25 @@ export function KnowledgeBaseDetail() {
     [kbId]
   );
 
+  const loadOlderJobs = useCallback(async () => {
+    if (!kbId || !olderJobsCursor) return;
+    setLoadingOlderJobs(true);
+    try {
+      const { items, next_cursor } = await knowledgeApiService.listCrawlJobs(kbId, RECENT_JOBS, olderJobsCursor);
+      setOlderJobs((jobs) => [...jobs, ...items]);
+      setOlderJobsCursor(next_cursor);
+    } catch (err) {
+      console.error("Error loading older crawl jobs:", err);
+    } finally {
+      setLoadingOlderJobs(false);
+    }
+  }, [kbId, olderJobsCursor]);
+
   const pollJobProgress = useCallback(async () => {
     if (!kbId) return;
 
     try {
-      const jobs = await knowledgeApiService.listCrawlJobs(kbId, 10);
+      const { items: jobs } = await knowledgeApiService.listCrawlJobs(kbId, RECENT_JOBS);
       setCrawlJobs(jobs);
 
       // Check if any job is still in progress
@@ -463,8 +487,11 @@ export function KnowledgeBaseDetail() {
 
   if (!kb) return null;
 
+  // Changes when a crawl starts or ends, so the page list and its details show what the index holds now
+  const pagesRefreshKey = crawlJobs.map((job) => `${job.job_id}:${job.status}`).join(",");
+
   return (
-    <Page style={{ maxWidth: "48rem" }}>
+    <Page style={{ maxWidth: "80rem" }}>
       <PageHeader>
         <Inline gap="sm">
           <Button
@@ -496,6 +523,7 @@ export function KnowledgeBaseDetail() {
         )}
       </PageHeader>
 
+      <div className={styles.layout}>
       <PageBody>
       <Card>
         <CardHeader>
@@ -599,7 +627,7 @@ export function KnowledgeBaseDetail() {
             />
           ) : (
             <Stack gap="md">
-              {crawlJobs.map((job) => (
+              {[...crawlJobs, ...olderJobs].map((job) => (
                 <ExpandableCard
                   key={job.job_id}
                   expanded={expandedJobId === job.job_id}
@@ -738,6 +766,11 @@ export function KnowledgeBaseDetail() {
                   </Stack>
                 </ExpandableCard>
               ))}
+              {olderJobsCursor && (
+                <Button variant="outline" size="sm" onClick={loadOlderJobs} disabled={loadingOlderJobs}>
+                  {loadingOlderJobs ? "Loading..." : "Show older runs"}
+                </Button>
+              )}
             </Stack>
           )}
         </CardContent>
@@ -745,7 +778,9 @@ export function KnowledgeBaseDetail() {
 
       <KnowledgePagesCard
         kbId={kb.kb_id}
-        refreshKey={crawlJobs.map((job) => `${job.job_id}:${job.status}`).join(",")}
+        refreshKey={pagesRefreshKey}
+        selectedUrl={selectedPageUrl}
+        onSelect={setSelectedPageUrl}
         formatDate={formatDate}
       />
 
@@ -841,6 +876,15 @@ export function KnowledgeBaseDetail() {
         </CardContent>
       </Card>
       </PageBody>
+      <aside className={styles.side}>
+        <KnowledgePageDetailPanel
+          kbId={kb.kb_id}
+          url={selectedPageUrl}
+          refreshKey={pagesRefreshKey}
+          formatDate={formatDate}
+        />
+      </aside>
+      </div>
 
       <Dialog
         open={isStartCrawlDialogOpen}

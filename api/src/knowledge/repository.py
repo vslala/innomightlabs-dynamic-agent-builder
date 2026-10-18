@@ -45,6 +45,7 @@ AgentKnowledgeBase:
 from ..db import get_dynamodb_resource
 import base64
 import json
+from collections import Counter
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 from datetime import datetime, timezone
@@ -58,13 +59,15 @@ from src.knowledge.models import (
     CrawlJob,
     CrawlLease,
     KnowledgePage,
+    KnowledgePageState,
+    url_hash,
     CrawlStep,
     CrawledPage,
     ContentChunk,
     ContentUpload,
     AgentKnowledgeBase,
 )
-from src.common.pagination import decode_cursor
+from src.common.pagination import InvalidCursor, decode_cursor, encode_cursor
 
 log = logging.getLogger(__name__)
 
@@ -307,6 +310,21 @@ class CrawlJobRepository:
         jobs.sort(key=lambda job: job.created_at, reverse=True)
         return jobs[:limit]
 
+    def find_page_by_kb(self, kb_id: str, limit: int, cursor: Optional[str] = None) -> tuple[list[CrawlJob], Optional[str]]:
+        """A page of the knowledge base's jobs, newest first, and the cursor of the next (None after the last).
+
+        The cursor is the `created_at` of the page's last job: job keys are random, so time is the only order.
+        """
+        jobs = self.find_all_by_kb(kb_id, limit=None)
+        if start := decode_cursor(cursor, key_names=("created_at",)):
+            try:
+                after = datetime.fromisoformat(start["created_at"])
+            except ValueError as exc:
+                raise InvalidCursor("Invalid pagination cursor") from exc
+            jobs = [job for job in jobs if job.created_at < after]
+        shown = jobs[:limit]
+        return shown, encode_cursor({"created_at": shown[-1].created_at.isoformat()}) if len(jobs) > limit else None
+
     def cancel_if_active(self, job_id: str, kb_id: str) -> bool:
         """Cancel a pending or running job without overwriting a terminal state."""
         cancelled_at = datetime.now(timezone.utc).isoformat()
@@ -372,6 +390,16 @@ class CrawlJobRepository:
 ADOPTED_SK = "KnowledgePagesAdopted"
 
 
+_LISTING_ORDER = {
+    KnowledgePageState.FAILING: 1, KnowledgePageState.LIVE: 2, KnowledgePageState.DUPLICATE: 3, KnowledgePageState.GONE: 4,
+}
+
+
+def _listing_place(page: KnowledgePage) -> tuple[int, str]:
+    """Where a page stands in the page list: those that need a look (0), then each state in turn, by address."""
+    return (0 if page.needs_attention else _LISTING_ORDER[page.state], page.url)
+
+
 class PageWrittenElsewhere(RuntimeError):
     """Another writer saved the page since it was read: this write would have undone theirs."""
 
@@ -393,6 +421,42 @@ class KnowledgePageRepository:
             if "LastEvaluatedKey" not in response:
                 return pages
             query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
+    def find(self, kb_id: str, url: str) -> Optional[KnowledgePage]:
+        item = self.table.get_item(Key={"pk": f"KnowledgeBase#{kb_id}", "sk": f"KnowledgePage#{url_hash(url)}"}).get("Item")
+        return KnowledgePage.from_dynamo_item(item) if item else None
+
+    def duplicates_of(self, kb_id: str, url: str) -> list[str]:
+        """The addresses of the pages whose text is this page's, and so have no chunks of their own."""
+        return sorted(
+            page.url for page in self.list_by_kb(kb_id)
+            if page.state == KnowledgePageState.DUPLICATE and page.duplicate_of == url
+        )
+
+    def count_by_state(self, kb_id: str) -> dict[KnowledgePageState, int]:
+        """How many pages the knowledge base has in each state."""
+        counts = Counter(page.state for page in self.list_by_kb(kb_id))
+        return {state: counts[state] for state in KnowledgePageState}
+
+    def list_page(
+        self, kb_id: str, *, state: Optional[KnowledgePageState] = None, search: str = "", limit: int, cursor: Optional[str] = None
+    ) -> tuple[list[KnowledgePage], Optional[str]]:
+        """A page of the knowledge base's pages, and the cursor of the next (None after the last).
+
+        Pages that need a look come first, then failing, live, duplicate and removed ones, each by address. The cursor
+        is the last page's place in that order, so it holds when pages change between requests.
+        """
+        needle = search.strip().lower()
+        pages = [
+            page for page in self.list_by_kb(kb_id)
+            if (state is None or page.state == state) and needle in f"{page.url} {page.title}".lower()
+        ]
+        pages.sort(key=_listing_place)
+        if start := decode_cursor(cursor, key_names=("rank", "url")):
+            pages = [page for page in pages if _listing_place(page) > (int(start["rank"]), start["url"])]
+        shown = pages[:limit]
+        last = _listing_place(shown[-1]) if len(pages) > limit else None
+        return shown, encode_cursor({"rank": str(last[0]), "url": last[1]}) if last else None
 
     def save(self, page: KnowledgePage) -> KnowledgePage:
         """The page as written, with its next version; `PageWrittenElsewhere` if it changed since it was read."""

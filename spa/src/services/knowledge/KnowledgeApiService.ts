@@ -18,6 +18,9 @@ import type {
   CrawlStep,
   CrawledPage,
   KnowledgePage,
+  KnowledgePageCounts,
+  KnowledgePageDetail,
+  KnowledgePageState,
   SearchResponse,
   ContentUploadResponse,
   ContentUploadItem,
@@ -148,11 +151,16 @@ class KnowledgeApiService {
   }
 
   /**
-   * List crawl jobs for a knowledge base
+   * A page of a knowledge base's crawl jobs, newest first
    */
-  async listCrawlJobs(kbId: string, limit = 5): Promise<CrawlJob[]> {
-    return httpClient.get<CrawlJob[]>(
-      `/knowledge-bases/${kbId}/crawl-jobs?limit=${limit}`
+  async listCrawlJobs(
+    kbId: string,
+    limit = 5,
+    cursor?: string | null
+  ): Promise<PaginatedResponse<CrawlJob>> {
+    const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+    return httpClient.get<PaginatedResponse<CrawlJob>>(
+      `/knowledge-bases/${kbId}/crawl-jobs?limit=${limit}${cursorParam}`
     );
   }
 
@@ -208,10 +216,31 @@ class KnowledgeApiService {
   }
 
   /**
-   * The knowledge base's pages as they are now, those that need a look first
+   * A page of the knowledge base's pages as they are now, those that need a look first
    */
-  async listPages(kbId: string): Promise<KnowledgePage[]> {
-    return httpClient.get<KnowledgePage[]>(`/knowledge-bases/${kbId}/pages`);
+  async listPages(
+    kbId: string,
+    filter: { state?: KnowledgePageState; search?: string; limit?: number; cursor?: string | null } = {}
+  ): Promise<PaginatedResponse<KnowledgePage>> {
+    const params = new URLSearchParams({ limit: String(filter.limit ?? 25) });
+    if (filter.state) params.set("state", filter.state);
+    if (filter.search) params.set("search", filter.search);
+    if (filter.cursor) params.set("cursor", filter.cursor);
+    return httpClient.get<PaginatedResponse<KnowledgePage>>(`/knowledge-bases/${kbId}/pages?${params}`);
+  }
+
+  /**
+   * One page with its chunks
+   */
+  async getPage(kbId: string, url: string): Promise<KnowledgePageDetail> {
+    return httpClient.get<KnowledgePageDetail>(`/knowledge-bases/${kbId}/pages/detail?url=${encodeURIComponent(url)}`);
+  }
+
+  /**
+   * How many pages the knowledge base has in each state
+   */
+  async countPages(kbId: string): Promise<KnowledgePageCounts> {
+    return httpClient.get<KnowledgePageCounts>(`/knowledge-bases/${kbId}/pages/counts`);
   }
 
   // ===========================================================================

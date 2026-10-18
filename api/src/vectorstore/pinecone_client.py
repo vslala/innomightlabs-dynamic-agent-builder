@@ -34,6 +34,7 @@ class VectorMetadata:
     chunk_index: int = 0
     level: int = 0  # 0=document, 1=section, 2=paragraph
     word_count: int = 0
+    section_heading: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +45,7 @@ class VectorMetadata:
             "chunk_index": self.chunk_index,
             "level": self.level,
             "word_count": self.word_count,
+            "section_heading": self.section_heading,
         }
 
     @classmethod
@@ -56,6 +58,7 @@ class VectorMetadata:
             chunk_index=data.get("chunk_index", 0),
             level=data.get("level", 0),
             word_count=data.get("word_count", 0),
+            section_heading=data.get("section_heading", ""),
         )
 
 
@@ -253,9 +256,20 @@ class PineconeClient:
             try:
                 self._index.delete(ids=batch, namespace=namespace)
             except Exception as e:
-                log.warning(f"Failed to delete {len(batch)} vectors from {namespace}: {e}")
-                failed += batch
+                # An error doesn't say the delete didn't happen (a server whose reply the SDK can't parse has applied it)
+                log.warning(f"Deleting {len(batch)} vectors from {namespace} raised, checking what's left: {e}")
+                failed += self._still_stored(batch, namespace)
         return failed
+
+    def _still_stored(self, ids: list[str], namespace: str) -> list[str]:
+        """Which of these vectors the index still has; all of them when it can't say."""
+        if not self._index:
+            return ids
+        try:
+            return list(self._index.fetch(ids=ids, namespace=namespace).vectors)
+        except Exception as e:
+            log.warning(f"Couldn't check {len(ids)} vectors in {namespace}: {e}")
+            return ids
 
     def list_ids(self, kb_id: str) -> Iterator[str]:
         """Every vector id in the knowledge base's namespace. Only serverless indexes can be listed."""

@@ -8,10 +8,14 @@ from typing import Protocol
 
 import boto3
 import httpx
+from botocore.config import Config
 
 from src.config import settings
 
 log = logging.getLogger(__name__)
+
+#: Attempts at one Bedrock call, with backoff between them, when it's throttled.
+BEDROCK_RETRY_ATTEMPTS = 8
 
 
 @dataclass
@@ -70,10 +74,11 @@ class BedrockEmbeddings:
         self.region = region or settings.aws_region
         self.dimension = dimension or settings.bedrock_embedding_dimension
 
-        # Initialize Bedrock runtime client
+        # Titan is rate limited per account: back off and retry when it says to slow down, before giving up
         self._client = boto3.client(
             "bedrock-runtime",
             region_name=self.region,
+            config=Config(retries={"max_attempts": BEDROCK_RETRY_ATTEMPTS, "mode": "adaptive"}),
         )
 
     def embed_text(self, text: str, normalize: bool = True) -> EmbeddingResult:
@@ -126,6 +131,9 @@ class BedrockEmbeddings:
         so we process texts sequentially. For large batches, consider
         using async processing.
 
+        Raises if any text can't be embedded: a vector made up in its place (all zeros) would be saved as that text's
+        meaning and never found again.
+
         Args:
             texts: List of texts to embed
             normalize: Whether to normalize embeddings
@@ -134,21 +142,7 @@ class BedrockEmbeddings:
         Returns:
             List of EmbeddingResult objects
         """
-        results = []
-
-        for text in texts:
-            try:
-                result = self.embed_text(text, normalize=normalize)
-                results.append(result)
-            except Exception as e:
-                log.error(f"Failed to embed text: {e}")
-                # Add empty embedding for failed texts to maintain index alignment
-                results.append(EmbeddingResult(
-                    embedding=[0.0] * self.dimension,
-                    input_text_token_count=0,
-                ))
-
-        return results
+        return [self.embed_text(text, normalize=normalize) for text in texts]
 
     async def embed_text_async(self, text: str, normalize: bool = True) -> EmbeddingResult:
         """
@@ -166,7 +160,7 @@ class BedrockEmbeddings:
         max_concurrent: int = 5,
     ) -> list[EmbeddingResult]:
         """
-        Generate embeddings for multiple texts asynchronously.
+        Generate embeddings for multiple texts asynchronously. Raises if any can't be embedded.
 
         Args:
             texts: List of texts to embed
@@ -180,19 +174,10 @@ class BedrockEmbeddings:
 
         async def embed_with_semaphore(text: str) -> EmbeddingResult:
             async with semaphore:
-                try:
-                    return await self.embed_text_async(text, normalize)
-                except Exception as e:
-                    log.error(f"Failed to embed text: {e}")
-                    return EmbeddingResult(
-                        embedding=[0.0] * self.dimension,
-                        input_text_token_count=0,
-                    )
+                return await self.embed_text_async(text, normalize)
 
-        tasks = [embed_with_semaphore(text) for text in texts]
-        results = await asyncio.gather(*tasks)
-
-        return list(results)
+        # If any text can't be embedded this raises: see `embed_texts`
+        return list(await asyncio.gather(*(embed_with_semaphore(text) for text in texts)))
 
 
 class OllamaEmbeddings:

@@ -108,3 +108,38 @@ def test_a_namespace_that_never_existed_counts_as_deleted(monkeypatch):
     client._index = Index()
 
     assert client.delete_namespace("kb-1") is True
+
+
+class IndexThatErrorsAfterDeleting:
+    """A server whose reply the SDK can't parse: the delete happens, then the call raises."""
+
+    def __init__(self, stored: set[str], applies: bool = True):
+        self.stored, self.applies = stored, applies
+
+    def delete(self, ids, namespace):
+        if self.applies:
+            self.stored -= set(ids)
+        raise TypeError("'str' object has no attribute '_response_info'")
+
+    def fetch(self, ids, namespace):
+        return SimpleNamespace(vectors={vector_id: {} for vector_id in ids if vector_id in self.stored})
+
+
+def a_client(index):
+    from src.vectorstore.pinecone_client import PineconeClient
+
+    client = PineconeClient.__new__(PineconeClient)
+    client._index = index
+    return client
+
+
+def test_a_delete_that_raised_after_applying_isnt_reported_as_failed():
+    client = a_client(IndexThatErrorsAfterDeleting({"a", "b", "c"}))
+
+    assert client.delete_by_ids(["a", "b"], "kb-1") == []
+
+
+def test_a_delete_that_raised_and_didnt_apply_is_reported_as_failed():
+    client = a_client(IndexThatErrorsAfterDeleting({"a", "b", "c"}, applies=False))
+
+    assert client.delete_by_ids(["a", "b"], "kb-1") == ["a", "b"]

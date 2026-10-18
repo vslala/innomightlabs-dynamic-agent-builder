@@ -81,3 +81,24 @@ async def test_a_broken_link_to_a_page_the_knowledge_base_never_had_is_a_failed_
 
     assert isinstance(run.error, PageNotRead) and str(run.error) == "HTTP 404"
     assert f"{SITE}/never-existed" not in crawl.pages()
+
+
+async def test_a_page_reached_by_several_links_is_counted_once_in_the_job(crawl):
+    other = f"{SITE}/pricing?ref=nav"
+    crawl.site.pages[other] = Redirect(URL)
+    crawl.site.linked.append(other)
+
+    job = await crawl.crawl()
+
+    assert job.progress.total_chunks == len(crawl.chunks()), "read twice, held once"
+
+
+async def test_a_removed_pages_vectors_that_couldnt_be_deleted_are_deleted_when_it_is_read_again(crawl):
+    crawl.site.pages[URL] = 404
+    crawl.index.failing_deletes = 1
+    await crawl.read(URL)
+    assert crawl.pages()[URL].orphan_vector_ids and crawl.index.vectors
+
+    await crawl.read(URL)
+
+    assert crawl.pages()[URL].orphan_vector_ids == [] and crawl.index.vectors == {}

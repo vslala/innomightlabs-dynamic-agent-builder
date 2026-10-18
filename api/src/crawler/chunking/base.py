@@ -27,6 +27,8 @@ class ContentChunkData:
     source_url: str = ""
     page_title: str = ""
     word_count: int = 0
+    #: The heading of the section the chunk is from, if it's from one.
+    section_heading: str = ""
 
     def __post_init__(self):
         if not self.word_count and self.content:
@@ -50,6 +52,10 @@ class ChunkingConfig:
 
     # Whether to create section-level chunks
     create_section_chunks: bool = True
+
+    # A section with fewer words than this (its heading counted) isn't a chunk of its own: it's joined to the next
+    # section. Page eyebrows and headings with no body ("Contact", "About us") match queries by title and say nothing.
+    section_min_words: int = 8
 
 
 class ChunkingStrategy(ABC):

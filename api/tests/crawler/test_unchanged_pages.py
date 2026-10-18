@@ -2,9 +2,10 @@
 
 import pytest
 
+from src.crawler.page_chunks import READER_VERSION
 from src.crawler.worker import PageRead
 from src.knowledge.models import KnowledgePageState
-from src.knowledge.repository import ContentChunkRepository
+from src.knowledge.repository import ContentChunkRepository, KnowledgePageRepository
 from tests.crawler.fakes import SITE, a_crawl, paragraphs
 
 URL = f"{SITE}/pricing"
@@ -77,3 +78,15 @@ async def test_a_page_that_couldnt_be_read_is_read_in_full_next_time(crawl):
     run = await crawl.read(URL)
 
     assert run.read is PageRead.INDEXED and crawl.pages()[URL].state == KnowledgePageState.LIVE
+
+
+async def test_a_page_made_by_an_older_reader_is_read_in_full_even_if_the_site_says_304(crawl):
+    crawl.site.etags = True
+    await crawl.read(URL)
+    KnowledgePageRepository().save(crawl.pages()[URL].model_copy(update={"reader_version": 0, "text_hash": "made-by-the-old-reader"}))
+
+    run = await crawl.read(URL)
+
+    assert run.read is PageRead.INDEXED, "an unchanged page is still re-read when the reader has improved"
+    assert crawl.pages()[URL].reader_version == READER_VERSION
+    assert (await crawl.read(URL)).read is PageRead.UNCHANGED, "and skipped again once it was read by this one"

@@ -10,7 +10,7 @@ src/vectorstore/
   embeddings.py       EmbeddingProvider protocol; BedrockEmbeddings, OllamaEmbeddings; create_embeddings_service
   pinecone_client.py  PineconeClient (upsert, query, delete, list_ids, namespace ops); VectorRecord/VectorMetadata;
                       VectorStoreError
-  search.py           SemanticSearch: embed query, query Pinecone, shape results
+  search.py           SemanticSearch: embed query, query Pinecone, answer with each passage once
 ```
 
 ## Conventions
@@ -24,6 +24,11 @@ src/vectorstore/
   configured): a caller must not record the write as done. `delete_by_ids` returns the ids it couldn't delete, which
   `crawler/page_index.py` keeps as orphans to retry. Never swallow a write failure into a log line: a chunk whose
   vector silently failed can never be found.
+- **Search answers with what DynamoDB has.** It asks Pinecone for `OVERFETCH` times `top_k`, drops a vector whose chunk
+  no longer exists (never a placeholder result), drops text it already has (whitespace aside), and keeps the best
+  `top_k`. A new way to return results goes through `SemanticSearch._distinct`.
+- `BedrockEmbeddings` retries throttling with adaptive backoff (`BEDROCK_RETRY_ATTEMPTS`) and raises when a text still
+  can't be embedded. It never returns a made-up vector: that would be saved as the text's meaning and never found.
 - `delete_namespace` is true when the namespace is gone or never existed (Pinecone answers 404 for one that was never
   written to), false when it couldn't be deleted. Knowledge-base deletion depends on that to stop and be retried.
 - `list_ids` lists a namespace (serverless indexes only); `scripts/reconcile_kb_vectors.py` uses it to clean up what

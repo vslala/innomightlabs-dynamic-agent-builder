@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { KnowledgePage } from "../../../types/knowledge";
-import { pageBadge, pageCounts, pageSummary } from "./knowledgePages";
+import { pageBadge, pageSummary, pageTabs } from "./knowledgePages";
 
 const page = (overrides: Partial<KnowledgePage> = {}): KnowledgePage => ({
   url: "https://example.com/pricing",
   title: "Pricing",
+  description: "What it costs.",
   source: "https://example.com",
   state: "live",
   chunk_count: 12,
   last_read_at: "2026-10-18T09:00:00Z",
   consecutive_failures: 0,
+  duplicate_of: "",
   needs_attention: false,
   reason: "",
   ...overrides,
@@ -40,9 +42,25 @@ describe("a knowledge base page", () => {
     expect(pageSummary(gone, day)).toBe("Removed Oct 18: HTTP 404");
   });
 
-  it("counts pages by state", () => {
-    expect(pageCounts([page(), page({ state: "gone" }), page({ state: "failing" }), page()])).toEqual({
-      live: 2, failing: 1, gone: 1,
-    });
+  it("says which page a duplicate stands behind", () => {
+    const duplicate = page({ state: "duplicate", chunk_count: 0, duplicate_of: "https://example.com/contact" });
+
+    expect(pageBadge(duplicate)).toEqual({ status: "info", label: "Duplicate" });
+    expect(pageSummary(duplicate, day)).toBe("Says what https://example.com/contact says, so only that page is searched.");
+  });
+
+  it("offers a tab for each state that has pages, after one for all of them", () => {
+    expect(pageTabs({ live: 40, failing: 0, gone: 2, duplicate: 3 })).toEqual([
+      { state: undefined, label: "All", count: 45 },
+      { state: "live", label: "Live", count: 40 },
+      { state: "duplicate", label: "Duplicates", count: 3 },
+      { state: "gone", label: "Removed", count: 2 },
+    ]);
+  });
+
+  it("puts the pages that couldn't be read first, as the list does", () => {
+    const [, first] = pageTabs({ live: 1, failing: 1, gone: 0, duplicate: 0 });
+
+    expect(first).toEqual({ state: "failing", label: "Couldn't be read", count: 1 });
   });
 });

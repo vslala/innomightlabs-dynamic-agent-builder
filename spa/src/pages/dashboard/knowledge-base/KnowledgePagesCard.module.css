@@ -4,10 +4,19 @@
   @apply h-4 w-4 text-[var(--text-muted)];
 }
 
-.counts {
-  @apply text-xs text-[var(--text-muted)];
-}
-
 .loading {
   @apply h-24;
+}
+
+.row,
+.selectedRow {
+  @apply block w-full rounded-lg text-left;
+}
+
+.row:hover > div {
+  @apply border-[var(--border-default)];
+}
+
+.selectedRow > div {
+  @apply border-[var(--button-primary-bg)];
 }

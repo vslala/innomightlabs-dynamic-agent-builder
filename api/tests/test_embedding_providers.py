@@ -105,3 +105,41 @@ def test_embedding_provider_factory_selects_ollama() -> None:
 def test_embedding_provider_factory_rejects_unknown_backend() -> None:
     with pytest.raises(ValueError, match="Unsupported embedding backend"):
         create_embeddings_service("unknown")
+
+
+def throttled_bedrock(mock_aws_context) -> BedrockEmbeddings:
+    from botocore.exceptions import ClientError
+
+    provider = create_embeddings_service("bedrock")
+    assert isinstance(provider, BedrockEmbeddings)
+
+    def invoke_model(**_):
+        raise ClientError({"Error": {"Code": "ThrottlingException", "Message": "Too many requests"}}, "InvokeModel")
+
+    provider._client.invoke_model = invoke_model  # type: ignore[method-assign]
+    return provider
+
+
+@pytest.mark.asyncio
+async def test_bedrock_raises_when_it_cant_embed_a_text_instead_of_returning_a_made_up_vector(mock_aws_context) -> None:
+    provider = throttled_bedrock(mock_aws_context)
+
+    with pytest.raises(Exception, match="ThrottlingException"):
+        await provider.embed_texts_async(["Seats cost ten pounds."])
+
+
+def test_bedrock_raises_for_the_sequential_api_too(mock_aws_context) -> None:
+    provider = throttled_bedrock(mock_aws_context)
+
+    with pytest.raises(Exception, match="ThrottlingException"):
+        provider.embed_texts(["Seats cost ten pounds."])
+
+
+def test_bedrock_backs_off_and_retries_when_throttled(mock_aws_context) -> None:
+    from src.vectorstore.embeddings import BEDROCK_RETRY_ATTEMPTS
+
+    provider = create_embeddings_service("bedrock")
+    assert isinstance(provider, BedrockEmbeddings)
+
+    retries = provider._client.meta.config.retries
+    assert retries["mode"] == "adaptive" and retries["total_max_attempts"] == BEDROCK_RETRY_ATTEMPTS + 1 > 5

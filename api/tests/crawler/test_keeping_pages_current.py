@@ -262,6 +262,19 @@ async def test_the_page_list_puts_pages_that_need_a_look_first(crawl, test_clien
     response = test_client.get(f"/knowledge-bases/{crawl.kb.kb_id}/pages", headers=auth_headers)
 
     assert response.status_code == 200, response.text
-    assert [(page["url"], page["state"], page["needs_attention"]) for page in response.json()] == [
+    assert [(page["url"], page["state"], page["needs_attention"]) for page in response.json()["items"]] == [
         (FAQ, "failing", True), (PRICING, "live", False), (TEAM, "gone", False),
     ]
+
+
+async def test_a_gone_page_nothing_links_to_still_has_its_undeleted_vectors_deleted(crawl):
+    crawl.site.linked.remove(TEAM)
+    crawl.site.pages[TEAM] = 404
+    crawl.index.failing_deletes = 1
+    await crawl.crawl()
+    assert crawl.pages()[TEAM].orphan_vector_ids, "the delete failed"
+
+    await crawl.crawl()
+
+    assert crawl.pages()[TEAM].orphan_vector_ids == []
+    assert set(crawl.index.vectors) == {chunk.chunk_id for chunk in crawl.chunks()}

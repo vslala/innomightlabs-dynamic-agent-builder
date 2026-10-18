@@ -25,6 +25,7 @@ Design principles:
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from typing import Optional, List, Tuple, Set
 from uuid import uuid4
 from collections import Counter
@@ -86,6 +87,7 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
 
         # Level 1 & 2: Section and paragraph chunks
         if sections:
+            sections = self._merge_tiny_sections(sections)
             for section_idx, section in enumerate(sections):
                 section_chunks = self._chunk_section(
                     section=section,
@@ -113,6 +115,37 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
             chunks.extend(paragraph_chunks)
 
         return chunks
+
+    # -------- tiny sections --------
+
+    def _merge_tiny_sections(self, sections: list[ExtractedSection]) -> list[ExtractedSection]:
+        """Join each section too short to say anything (a page's eyebrow, a heading with no body) to the next one, as
+        part of its heading, or of its text when the next has no heading. A tiny last section joins the one before."""
+        minimum = int(self._cfg("section_min_words", default=8))
+
+        def label(section: ExtractedSection) -> str:
+            return " ".join(part for part in ((section.heading or "").strip(), (section.content or "").strip()) if part)
+
+        def is_tiny(section: ExtractedSection) -> bool:
+            return len(label(section).split()) < minimum
+
+        merged: list[ExtractedSection] = []
+        carried = ""
+        for index, section in enumerate(sections):
+            if carried:
+                if section.heading:
+                    section = replace(section, heading=f"{carried} — {section.heading}")
+                else:
+                    section = replace(section, content=f"{carried}\n\n{section.content}".strip())
+                carried = ""
+            if is_tiny(section) and index < len(sections) - 1:
+                carried = label(section)
+                continue
+            merged.append(section)
+        if len(merged) > 1 and is_tiny(merged[-1]):
+            last = merged.pop()
+            merged[-1] = replace(merged[-1], content=f"{merged[-1].content}\n\n{label(last)}".strip())
+        return merged
 
     # -------- document chunk --------
 
@@ -334,6 +367,7 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
                 parent_chunk_id=parent_chunk_id,
                 source_url=source_url,
                 page_title=page_title,
+                section_heading=section_heading,
             )
             self._ensure_chunk_id(section_chunk)
             section_chunk_id = getattr(section_chunk, "chunk_id", None)
@@ -354,7 +388,9 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
                 heading_context=section_heading or None,
                 metadata_hints=metadata_hints,
             )
-            chunks.extend(paragraph_chunks)
+            # A section that fits one chunk is its own paragraph: storing it twice only makes search return it twice
+            section_text = " ".join(chunks[-1].content.split()) if create_section_chunks and chunks else None
+            chunks.extend(chunk for chunk in paragraph_chunks if " ".join(chunk.content.split()) != section_text)
 
         return chunks
 
@@ -433,6 +469,7 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
                 parent_chunk_id=parent_chunk_id,
                 source_url=source_url,
                 page_title=page_title,
+                section_heading=heading_context or "",
             )
             self._ensure_chunk_id(chunk)
             chunks.append(chunk)

@@ -10,10 +10,14 @@ from typing import Optional
 from dataclasses import dataclass
 
 from src.vectorstore.embeddings import EmbeddingProvider, get_embeddings_service
-from src.vectorstore.pinecone_client import PineconeClient, get_pinecone_client, QueryResult
+from src.vectorstore.pinecone_client import PineconeClient, QueryResult, get_pinecone_client
+from src.knowledge.models import ContentChunk
 from src.knowledge.repository import ContentChunkRepository
 
 log = logging.getLogger(__name__)
+
+#: How many times `top_k` candidates to ask the index for: some are dropped as duplicates, or as having no text.
+OVERFETCH = 3
 
 
 @dataclass
@@ -26,6 +30,7 @@ class SearchResult:
     score: float
     level: int  # 0=document, 1=section, 2=paragraph
     word_count: int
+    section_heading: str = ""
 
 
 @dataclass
@@ -99,54 +104,16 @@ class SemanticSearch:
         if level_filter:
             pinecone_filter = {"level": {"$in": level_filter}}
 
-        # Step 3: Query Pinecone
+        # Step 3: Query Pinecone, for more than top_k: some will be dropped as duplicates or as scoring too low
         response = self.pinecone.query(
             vector=query_vector,
             kb_id=kb_id,
-            top_k=top_k * 2,  # Get more results to filter by score
+            top_k=top_k * OVERFETCH,
             filter=pinecone_filter,
         )
 
-        # Step 4: Filter by score and limit
-        filtered_results = [
-            r for r in response.results
-            if r.score >= min_score
-        ][:top_k]
-
-        if not filtered_results:
-            return SearchResponse(results=[], query=query, kb_id=kb_id)
-
-        # Step 5: Retrieve full content from DynamoDB
-        chunk_ids = [r.id for r in filtered_results]
-        chunks = self.chunk_repo.find_by_ids(chunk_ids, kb_id)
-        chunk_map = {c.chunk_id: c for c in chunks}
-
-        # Step 6: Build enriched results
-        results = []
-        for r in filtered_results:
-            chunk = chunk_map.get(r.id)
-            if chunk:
-                results.append(SearchResult(
-                    chunk_id=r.id,
-                    content=chunk.content,
-                    source_url=chunk.source_url,
-                    page_title=chunk.page_title or "",
-                    score=r.score,
-                    level=chunk.level,
-                    word_count=chunk.word_count,
-                ))
-            else:
-                # Fallback to metadata if chunk not found in DynamoDB
-                results.append(SearchResult(
-                    chunk_id=r.id,
-                    content="",  # Content not available
-                    source_url=r.metadata.source_url,
-                    page_title=r.metadata.page_title,
-                    score=r.score,
-                    level=r.metadata.level,
-                    word_count=r.metadata.word_count,
-                ))
-
+        # Step 4: The text of what was found, from DynamoDB
+        results = self._distinct(response.results, self._chunks_of(response.results, kb_id), top_k, min_score)
         return SearchResponse(results=results, query=query, kb_id=kb_id)
 
     async def search_multiple_kbs(
@@ -175,62 +142,49 @@ class SemanticSearch:
             log.error(f"Failed to embed query: {e}")
             return []
 
-        # Query all KBs
-        all_vector_results = self.pinecone.query_multiple_kbs(
-            vector=query_vector,
-            kb_ids=kb_ids,
-            top_k=top_k,
-        )
+        # Query all KBs, for more than top_k: some will be dropped as duplicates or as scoring too low
+        found = self.pinecone.query_multiple_kbs(vector=query_vector, kb_ids=kb_ids, top_k=top_k * OVERFETCH)
+        chunks: dict[str, ContentChunk] = {}
+        for kb_id in {r.metadata.kb_id for r in found}:
+            chunks |= self._chunks_of(found, kb_id)
+        return self._distinct(found, chunks, top_k, min_score)
 
-        # Filter by score
-        filtered_results = [
-            r for r in all_vector_results
-            if r.score >= min_score
-        ][:top_k]
+    def _chunks_of(self, found: list[QueryResult], kb_id: str) -> dict[str, ContentChunk]:
+        """The chunks of this knowledge base's vectors that still exist, by id."""
+        ids = [r.id for r in found if r.metadata.kb_id in (kb_id, "")]
+        return {chunk.chunk_id: chunk for chunk in self.chunk_repo.find_by_ids(ids, kb_id)}
 
-        if not filtered_results:
-            return []
+    @staticmethod
+    def _distinct(
+        found: list[QueryResult], chunks: dict[str, ContentChunk], top_k: int, min_score: float
+    ) -> list[SearchResult]:
+        """The best `top_k` results with text, each text once.
 
-        # Group by KB for efficient content retrieval
-        kb_chunks: dict[str, list[str]] = {}
-        for r in filtered_results:
-            kb_id = r.metadata.kb_id
-            if kb_id not in kb_chunks:
-                kb_chunks[kb_id] = []
-            kb_chunks[kb_id].append(r.id)
-
-        # Retrieve content from each KB
-        all_chunks = {}
-        for kb_id, chunk_ids in kb_chunks.items():
-            chunks = self.chunk_repo.find_by_ids(chunk_ids, kb_id)
-            for c in chunks:
-                all_chunks[c.chunk_id] = c
-
-        results = []
-        for r in filtered_results:
-            chunk = all_chunks.get(r.id)
-            if chunk:
-                results.append(SearchResult(
-                    chunk_id=r.id,
-                    content=chunk.content,
-                    source_url=chunk.source_url,
-                    page_title=chunk.page_title or "",
-                    score=r.score,
-                    level=chunk.level,
-                    word_count=chunk.word_count,
-                ))
-            else:
-                log.warning(f"Chunk {r.id} not found in DynamoDB for KB {r.metadata.kb_id}")
-                results.append(SearchResult(
-                    chunk_id=r.id,
-                    content="[Content not available - chunk not found in database]",
-                    source_url=r.metadata.source_url,
-                    page_title=r.metadata.page_title,
-                    score=r.score,
-                    level=r.metadata.level,
-                    word_count=r.metadata.word_count,
-                ))
-
+        Search answers only with what DynamoDB has: a vector with no chunk (left behind by a delete that failed) has
+        nothing to say, and the same text under two chunks (two pages that say the same) is one answer, not two.
+        """
+        results: list[SearchResult] = []
+        said: set[str] = set()
+        for result in found:
+            chunk = chunks.get(result.id)
+            if result.score < min_score or chunk is None:
+                continue
+            text = " ".join(chunk.content.split())
+            if not text or text in said:
+                continue
+            said.add(text)
+            results.append(SearchResult(
+                chunk_id=chunk.chunk_id,
+                content=chunk.content,
+                source_url=chunk.source_url,
+                page_title=chunk.page_title or "",
+                score=result.score,
+                level=chunk.level,
+                word_count=chunk.word_count,
+                section_heading=chunk.section_heading,
+            ))
+            if len(results) == top_k:
+                break
         return results
 
     def search_sync(

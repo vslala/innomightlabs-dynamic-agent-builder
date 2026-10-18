@@ -12,7 +12,7 @@ Endpoints:
     Crawl Jobs:
         GET    /knowledge-bases/{kb_id}/crawl-config-schema   Get form schema for crawl config
         POST   /knowledge-bases/{kb_id}/crawl-jobs            Start new crawl job (auto_start=true by default)
-        GET    /knowledge-bases/{kb_id}/crawl-jobs            List crawl jobs
+        GET    /knowledge-bases/{kb_id}/crawl-jobs            List crawl jobs (a page, newest first)
         GET    /knowledge-bases/{kb_id}/crawl-jobs/{job_id}   Get job details
         POST   /knowledge-bases/{kb_id}/crawl-jobs/{job_id}/run        Manually run pending job
         POST   /knowledge-bases/{kb_id}/crawl-jobs/{job_id}/run-stream Run and stream events (SSE)
@@ -62,7 +62,10 @@ from src.knowledge.models import (
     ContentUploadResponse,
     ContentUploadItemResponse,
     ContentUpload,
+    KnowledgePageCounts,
+    KnowledgePageDetail,
     KnowledgePageResponse,
+    PageChunkResponse,
     KnowledgePageState,
 )
 from src.knowledge.repository import (
@@ -73,6 +76,7 @@ from src.knowledge.repository import (
     AgentKnowledgeBaseRepository,
     ContentUploadRepository,
     KnowledgePageRepository,
+    ContentChunkRepository,
 )
 from src.knowledge.schemas import (
     get_content_upload_form_schema,
@@ -344,7 +348,7 @@ async def start_crawl_job(
     return saved_job.to_response()
 
 
-@router.get("/{kb_id}/crawl-jobs", response_model=list[CrawlJobResponse])
+@router.get("/{kb_id}/crawl-jobs", response_model=Paginated[CrawlJobResponse])
 async def list_crawl_jobs(
     request: Request,
     principal: Annotated[Principal, Depends(get_principal)],
@@ -352,21 +356,57 @@ async def list_crawl_jobs(
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
     job_repo: Annotated[CrawlJobRepository, Depends(get_crawl_job_repository)],
     limit: int = Query(default=5, ge=1, le=50),
-) -> list[CrawlJobResponse]:
-    """List crawl jobs for a knowledge base (most recent first)."""
+    cursor: Optional[str] = Query(default=None),
+) -> Paginated[CrawlJobResponse]:
+    """A page of a knowledge base's crawl jobs, most recent first."""
     require_kb(principal, kb_id, "knowledge:Get", kb_repo)
 
-    jobs = job_repo.find_all_by_kb(kb_id, limit=limit)
-    return [job.to_response() for job in jobs]
+    jobs, next_cursor = job_repo.find_page_by_kb(kb_id, limit, cursor)
+    return Paginated(items=[job.to_response() for job in jobs], next_cursor=next_cursor, has_more=next_cursor is not None)
 
 
-@router.get("/{kb_id}/pages", response_model=list[KnowledgePageResponse])
-async def list_pages(kb: Annotated[KnowledgeBase, Depends(can_read_kb)]) -> list[KnowledgePageResponse]:
-    """The knowledge base's pages as they are now: those that need a look first, then removed ones last."""
-    order = {KnowledgePageState.FAILING: 1, KnowledgePageState.LIVE: 2, KnowledgePageState.GONE: 3}
-    pages = KnowledgePageRepository().list_by_kb(kb.kb_id)
-    pages.sort(key=lambda page: (not page.needs_attention, order[page.state], page.url))
-    return [page.to_response() for page in pages]
+@router.get("/{kb_id}/pages", response_model=Paginated[KnowledgePageResponse])
+async def list_pages(
+    kb: Annotated[KnowledgeBase, Depends(can_read_kb)],
+    state: Optional[KnowledgePageState] = Query(default=None),
+    search: str = Query(default="", max_length=200, description="Part of the page's address or title"),
+    limit: int = Query(default=25, ge=1, le=100),
+    cursor: Optional[str] = Query(default=None),
+) -> Paginated[KnowledgePageResponse]:
+    """A page of the knowledge base's pages as they are now: those that need a look first, then removed ones last."""
+    pages, next_cursor = KnowledgePageRepository().list_page(kb.kb_id, state=state, search=search, limit=limit, cursor=cursor)
+    return Paginated(items=[page.to_response() for page in pages], next_cursor=next_cursor, has_more=next_cursor is not None)
+
+
+@router.get("/{kb_id}/pages/detail", response_model=KnowledgePageDetail)
+async def get_page(
+    kb: Annotated[KnowledgeBase, Depends(can_read_kb)],
+    url: str = Query(max_length=2048, description="The page's address"),
+) -> KnowledgePageDetail:
+    """One page with its chunks as search returns them, and the pages that say the same."""
+    pages = KnowledgePageRepository()
+    page = pages.find(kb.kb_id, url)
+    if page is None:
+        raise HTTPException(status_code=404, detail="Page not found")
+    chunks = ContentChunkRepository().find_by_ids(page.chunk_ids, kb.kb_id)
+    return KnowledgePageDetail(
+        **page.to_response().model_dump(),
+        chunks=[
+            PageChunkResponse(
+                chunk_id=chunk.chunk_id, level=chunk.level, section_heading=chunk.section_heading,
+                content=chunk.content, word_count=chunk.word_count,
+            )
+            for chunk in chunks
+        ],
+        duplicates=pages.duplicates_of(kb.kb_id, url),
+    )
+
+
+@router.get("/{kb_id}/pages/counts", response_model=KnowledgePageCounts)
+async def count_pages(kb: Annotated[KnowledgeBase, Depends(can_read_kb)]) -> KnowledgePageCounts:
+    """How many pages the knowledge base has in each state."""
+    counts = KnowledgePageRepository().count_by_state(kb.kb_id)
+    return KnowledgePageCounts(**{state.value: count for state, count in counts.items()})
 
 
 @router.get("/{kb_id}/crawl-jobs/{job_id}", response_model=CrawlJobResponse)
