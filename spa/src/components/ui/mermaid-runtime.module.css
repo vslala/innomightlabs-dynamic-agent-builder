@@ -1,0 +1,12 @@
+.measurementStage {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 0;
+  overflow: hidden;
+  contain: strict;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}

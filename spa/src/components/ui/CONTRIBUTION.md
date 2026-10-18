@@ -20,6 +20,10 @@ CSS modules often use Tailwind v4 `@reference "tailwindcss"` and `@apply`; other
 
 Keep focus-visible and disabled states. Dialog consumers need a meaningful title and appropriate description; preserve focus trapping, Escape, and focus return. Inputs need programmatic labels, icon-only buttons need accessible names, and selected/error states must not rely on color alone. A tooltip or placeholder alone is not an input label. Keep HTML semantics when changing `asChild`, row actions, and nested controls.
 
+## Mermaid diagrams
+
+Use `MermaidDiagram({ source, pending?, className?, label? })` and its shared CSS module; Markdown consumers use `MermaidMarkdownPre` at the whole `pre` boundary. Pass the live stream flag through: diagrams wait for the full response, not just a closed fence. Keep official themes, serialized rendering, stale-result/unique-ID guards and conservative source validation in the shared runtime; do not add direct Mermaid value imports to application graphs. See [Mermaid chat diagrams](../../../../docs/LLD-mermaid-chat-diagrams.md) for the build/security contract and validation limits.
+
 ## Verification
 
-There are no colocated UI test files at present. Add focused behavioral tests for new logic using the existing Vitest setup; do not assume a DOM rendering library is installed (`package.json` currently has no Testing Library dependency). Check the consuming page manually: Tab/Shift+Tab, activation keys, select/tabs navigation, dialog Escape and focus return, long content, disabled state, mobile width, and both themes. From `spa/`, run focused ESLint on touched TSX, `yarn build`, and `yarn design:audit`. Treat the audit as a raw-control inventory, not proof of accessibility.
+Colocated Mermaid tests cover runtime logic and static Markdown integration, not browser effects. Add focused behavioral tests for new logic using the existing Vitest setup; do not assume a DOM rendering library is installed (`package.json` currently has no Testing Library dependency). Check the consuming page manually: Tab/Shift+Tab, activation keys, select/tabs navigation, dialog Escape and focus return, long content, disabled state, mobile width, and both themes. From `spa/`, run focused ESLint on touched TSX, `yarn build`, and `yarn design:audit`. Treat the audit as a raw-control inventory, not proof of accessibility.

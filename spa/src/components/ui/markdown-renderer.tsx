@@ -2,7 +2,9 @@
  * Markdown renderer component with syntax highlighting for code blocks.
  */
 
+import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
+import { MermaidMarkdownPre } from "./mermaid-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -11,10 +13,10 @@ import type { Components } from "react-markdown";
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  isStreaming?: boolean;
 }
 
-export function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
-  const components: Components = {
+const baseComponents: Components = {
     // Code blocks with syntax highlighting
     code({ className, children, ...props }) {
       const match = /language-(\w+)/.exec(className || "");
@@ -219,7 +221,13 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
     em({ children }) {
       return <em style={{ fontStyle: "italic" }}>{children}</em>;
     },
-  };
+};
+
+export function MarkdownRenderer({ content, className, isStreaming = false }: MarkdownRendererProps) {
+  const components = useMemo<Components>(() => ({
+    ...baseComponents,
+    pre: (props) => <MermaidMarkdownPre {...props} pending={isStreaming} />,
+  }), [isStreaming]);
 
   return (
     <div className={className} style={{ minWidth: 0, overflowWrap: "anywhere" }}>

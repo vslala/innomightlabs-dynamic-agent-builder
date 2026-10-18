@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-render-state="loading">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mermaid in conversations · InnomightLabs</title>
+  <link rel="stylesheet" href="../src/styles/tokens.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg-primary); color: var(--text-primary); font: 14px/1.6 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button { font: inherit; cursor: pointer; }
+    button:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--gradient-start); outline-offset: 4px; }
+    button { border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-card); color: var(--text-secondary); padding: 6px 12px; }
+    button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 28px; border-bottom: 1px solid var(--border-subtle); }
+    .brand { font-size: 15px; font-weight: 650; letter-spacing: -.4px; }
+    .brand-mark { display: inline-grid; place-items: center; width: 28px; height: 28px; margin-right: 8px; border-radius: 8px; background: var(--button-primary-bg); color: white; }
+    .top-actions { display: flex; align-items: center; gap: 12px; }
+    .badge, .eyebrow { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 650; color: var(--text-muted); }
+    .badge { border: 1px solid var(--border-subtle); border-radius: 5px; padding: 3px 7px; }
+    main { max-width: 1440px; margin: 0 auto; padding: 38px 28px 64px; }
+    h1 { font-size: clamp(26px, 3vw, 36px); font-weight: 600; letter-spacing: -1.4px; margin: 8px 0; line-height: 1.2; }
+    .intro { color: var(--text-secondary); margin: 12px 0 28px; max-width: 720px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; align-items: start; gap: 28px; }
+    .section-label { display: flex; align-items: center; justify-content: space-between; margin: 0 0 10px; color: var(--text-muted); font-size: 12px; }
+    .panel { border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--bg-card); overflow: hidden; }
+    .panel-header { padding: 16px 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border-subtle); }
+    .avatar { display: inline-grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 10px; background: var(--bg-tertiary); color: var(--gradient-start); font-weight: 700; }
+    .panel-header strong { display: block; font-size: 13px; font-weight: 600; }
+    .panel-header small { display: block; font-size: 11px; color: var(--text-muted); }
+    .header-label { margin-left: auto; color: var(--text-muted); font-size: 11px; }
+    .conversation { padding: 24px; }
+    .user-message { max-width: 85%; margin: 0 0 26px auto; padding: 12px 16px; border-radius: 12px 12px 3px 12px; background: var(--bg-tertiary); color: var(--text-primary); }
+    .assistant-label { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 11px; margin-bottom: 10px; }
+    .assistant-label .avatar { width: 22px; height: 22px; border-radius: 6px; font-size: 10px; }
+    .response p { margin: 0 0 16px; color: var(--text-secondary); }
+    .response h2 { font-size: 14px; font-weight: 600; margin: 22px 0 10px; }
+    .diagram-card { border: 1px solid var(--border-subtle); border-radius: 10px; overflow: hidden; margin: 14px 0 20px; background: var(--bg-primary); }
+    .diagram-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); }
+    .diagram-title { color: var(--text-secondary); font-size: 11px; font-weight: 550; margin-right: auto; }
+    .diagram-icon { color: var(--gradient-start); font-size: 16px; }
+    .diagram-toolbar button { border-color: transparent; background: transparent; font-size: 11px; padding: 3px 7px; }
+    .diagram-toolbar button:hover { background: var(--bg-tertiary); }
+    .layout > *, .sidebar, .diagram-card { min-width: 0; }
+    .diagram-toolbar { flex-wrap: wrap; }
+    .diagram-title { min-width: 0; overflow-wrap: anywhere; }
+    .diagram-toolbar button { flex-shrink: 0; }
+    .diagram-viewport { padding: 20px 16px; overflow: auto; overscroll-behavior-x: contain; scrollbar-gutter: stable; }
+    .diagram-viewport:focus-visible { outline: 2px solid var(--gradient-start); outline-offset: -3px; }
+    .diagram-viewport svg { display: block; max-width: none; height: auto; margin: 0 auto; }
+    .gallery { margin-top: 36px; }
+    .gallery h2 { font-size: 22px; letter-spacing: -.6px; margin-bottom: 8px; }
+    .gallery > p { color: var(--text-secondary); max-width: 780px; }
+    .gallery-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .gallery-grid .diagram-card { margin: 0; }
+    .gallery-grid .diagram-viewport { max-height: 640px; }
+    .gallery-grid .diagram-caption { text-align: left; }
+    .gallery-controls { display: flex; align-items: center; gap: 12px; margin: 18px 0; }
+    .gallery-controls span { color: var(--text-muted); font-size: 12px; }
+    .gallery-grid[data-narrow="true"] { grid-template-columns: minmax(0, 380px); justify-content: center; }
+    @media (max-width: 760px) { .gallery-grid { grid-template-columns: minmax(0, 1fr); } }
+    .diagram-caption { font-size: 10px; color: var(--text-muted); padding: 0 14px 10px; text-align: center; }
+    .source { margin: 0; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--code-bg); color: var(--code-text); font: 11px/1.7 ui-monospace, monospace; border-top: 1px solid var(--border-subtle); }
+    [hidden] { display: none !important; }
+    .composer { border-top: 1px solid var(--border-subtle); margin-top: 12px; padding: 16px 20px; }
+    .composer-inner { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 12px 14px; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between; }
+    .send { display: grid; place-items: center; background: var(--button-primary-bg); color: white; border-radius: 7px; width: 28px; height: 28px; }
+    .widget .panel-header { padding: 14px 16px; }
+    .widget .conversation { padding: 18px 16px 8px; font-size: 12px; }
+    .widget .user-message { max-width: 93%; padding: 10px 12px; margin-bottom: 20px; }
+    .widget .diagram-viewport { padding: 16px 10px; }
+    .widget .diagram-toolbar { padding: 6px 8px; gap: 3px; }
+    .widget .diagram-toolbar button { padding: 3px 5px; }
+    .widget .composer { margin: 0; padding: 12px; }
+    .widget-footer { font-size: 9px; text-align: center; color: var(--text-muted); padding: 0 0 12px; }
+    .notes { margin-top: 18px; padding: 18px; border: 1px solid var(--border-subtle); border-radius: 10px; color: var(--text-secondary); font-size: 12px; }
+    .notes h2 { margin: 0 0 10px; font-size: 12px; color: var(--text-primary); }
+    .notes ul { padding-left: 16px; margin: 0; }
+    .notes li + li { margin-top: 7px; }
+    .status { margin-top: 26px; color: var(--text-muted); font-size: 11px; }
+    dialog { width: min(1100px, 94vw); max-height: 90vh; padding: 0; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 14px; }
+    dialog::backdrop { background: rgb(0 0 0 / .7); }
+    dialog .diagram-viewport { max-height: 75vh; padding: 32px; }
+    dialog .diagram-toolbar { position: sticky; top: 0; background: var(--bg-card); z-index: 1; }
+    @media (max-width: 1000px) { .layout { grid-template-columns: minmax(0, 1fr); } .sidebar { width: min(100%, 400px); margin: 0 auto; } }
+    @media (max-width: 560px) { main { padding: 24px 12px; } .topbar { padding: 14px 16px; } .badge { display: none; } .conversation { padding: 16px; } .header-label { display: none; } .diagram-toolbar { flex-wrap: wrap; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">i</span>innomightlabs</div>
+    <div class="top-actions"><span class="badge">Interactive concept</span><button id="theme-toggle" type="button" aria-pressed="false">Switch to light</button></div>
+  </header>
+  <main>
+    <div class="eyebrow">Conversation experience / Mermaid</div>
+    <h1>A little less explaining.<br>A lot more understanding.</h1>
+    <p class="intro">Diagrams that feel like part of the conversation. Official Mermaid rendering, colorful theme-aware visuals, and room to explore the details.</p>
+    <div class="layout">
+      <section aria-label="Dashboard conversation preview">
+        <div class="section-label"><span>01 / Dashboard conversation</span><span>Full-width response</span></div>
+        <div class="panel">
+          <header class="panel-header"><span class="avatar" aria-hidden="true">I</span><div><strong>Ila</strong><small>Your solution builder</small></div><span class="header-label">Customer support architecture</span></header>
+          <div class="conversation">
+            <div class="user-message">How would a support agent use our knowledge base and hand off questions it can't answer?</div>
+            <div class="assistant-label"><span class="avatar" aria-hidden="true">I</span>Ila <span aria-hidden="true">·</span> Just now</div>
+            <article class="response">
+              <p>Here's the flow I'd recommend. The agent searches your knowledge base first, answers when there's a strong match, and routes anything uncertain to your team.</p>
+              <div class="diagram-card" data-diagram="support-flow">
+                <div class="diagram-toolbar"><span class="diagram-icon" aria-hidden="true">◇</span><span class="diagram-title">Support resolution flow</span><button type="button" data-action="source" aria-expanded="false">Source</button><button type="button" data-action="copy">Copy</button><button type="button" data-action="expand">Expand ↗</button></div>
+                <div class="diagram-viewport" aria-label="Support resolution flow diagram" aria-busy="true">Loading diagram…</div>
+                <div class="diagram-caption">A grounded answer when possible. A human handoff when it matters.</div>
+                <pre class="source" hidden></pre>
+              </div>
+              <h2>What happens behind the scenes</h2>
+              <p>Each answer stays grounded in retrieved content. When a question needs a human, the handoff carries the conversation context.</p>
+              <div class="diagram-card" data-diagram="support-sequence">
+                <div class="diagram-toolbar"><span class="diagram-icon" aria-hidden="true">◇</span><span class="diagram-title">Question → grounded response</span><button type="button" data-action="source" aria-expanded="false">Source</button><button type="button" data-action="copy">Copy</button><button type="button" data-action="expand">Expand ↗</button></div>
+                <div class="diagram-viewport" aria-label="Support response sequence diagram" aria-busy="true">Loading diagram…</div>
+                <pre class="source" hidden></pre>
+              </div>
+              <p><strong>The key decision:</strong> keep the handoff explicit, so your customers never mistake a guess for a confirmed answer.</p>
+            </article>
+          </div>
+          <div class="composer" aria-label="Non-interactive composer preview"><div class="composer-inner">Ask a follow-up…<span class="send" aria-hidden="true">↑</span></div></div>
+        </div>
+      </section>
+      <aside class="sidebar">
+        <div class="section-label"><span>02 / Embedded widget</span><span>Up to 380 px</span></div>
+        <section class="panel widget" aria-label="Embedded widget conversation preview">
+          <header class="panel-header"><span class="avatar" aria-hidden="true">M</span><div><strong>Mira</strong><small>Here to help you get started</small></div><span class="header-label">Preview</span></header>
+          <div class="conversation">
+            <div class="user-message">How do I get my agent live on my website?</div>
+            <div class="assistant-label"><span class="avatar" aria-hidden="true">M</span>Mira</div>
+            <article class="response"><p>Three steps, and you're ready to go:</p>
+              <div class="diagram-card" data-diagram="widget-flow">
+                <div class="diagram-toolbar"><span class="diagram-icon" aria-hidden="true">◇</span><span class="diagram-title">Go live</span><button type="button" data-action="source" aria-expanded="false">Source</button><button type="button" data-action="expand">Expand ↗</button></div>
+                <div class="diagram-viewport" aria-label="Three steps to publish a widget" aria-busy="true">Loading diagram…</div>
+                <pre class="source" hidden></pre>
+              </div>
+              <p>You can test the widget before sharing it with your customers. Want me to walk you through the first step?</p>
+            </article>
+          </div>
+          <div class="composer" aria-label="Non-interactive widget composer preview"><div class="composer-inner">Type your message…<span class="send" aria-hidden="true">↑</span></div></div>
+          <div class="widget-footer">Powered by InnomightLabs</div>
+        </section>
+        <section class="notes"><h2>What to look for</h2><ul><li>Colors come from the renderer, not agent-authored styling.</li><li>Dark and light diagrams adapt alongside the page.</li><li>A top-to-bottom flow stays readable in the widget.</li><li>Wide diagrams scroll inside their card instead of shrinking text until it is unreadable.</li></ul></section>
+        <section class="notes"><h2>Also works for structured relationships</h2><p>A compact ER example with the same theme.</p>
+          <div class="diagram-card" data-diagram="knowledge-er">
+            <div class="diagram-toolbar"><span class="diagram-title">Knowledge model</span><button type="button" data-action="expand">Expand ↗</button></div>
+            <div class="diagram-viewport" aria-label="Agent and knowledge base relationships" aria-busy="true">Loading diagram…</div>
+            <pre class="source" hidden></pre>
+          </div>
+        </section>
+      </aside>
+    </div>
+    <section class="gallery" aria-labelledby="gallery-title">
+      <div class="eyebrow">03 / Diagram gallery</div>
+      <h2 id="gallery-title">More shapes. Same conversation.</h2>
+      <p>Detailed entities, class relationships, state transitions, project timelines, proportions, and a branching mindmap. Try the widget-width setting to see how each behaves in a tight space.</p>
+      <div class="gallery-controls"><button type="button" id="gallery-width" aria-pressed="false">Preview widget width</button><span>Fit to card, with readable-size scrolling for wide diagrams.</span></div>
+      <div class="gallery-grid" id="gallery-grid" data-narrow="false"></div>
+    </section>
+    <p class="status" id="status" role="status">Loading official Mermaid 12.2.0…</p>
+    <p class="status">Visual prototype only — chat inputs are illustrative. Mermaid is loaded from jsDelivr; diagram text is rendered locally and is not submitted to a rendering service. Internet access is required on first load.</p>
+    <noscript>This preview requires JavaScript to render the diagrams.</noscript>
+  </main>
+  <dialog id="expanded-diagram" aria-labelledby="expanded-title"><div class="diagram-toolbar"><span class="diagram-title" id="expanded-title">Diagram</span><button type="button" id="close-dialog">Close ✕</button></div><div class="diagram-viewport"></div></dialog>
+  <script type="module">
+    const sources = {
+      'support-flow': `flowchart TD
+        Q[Customer asks a question] --> A[Support agent]
+        A --> K[Search knowledge base]
+        K --> D{Strong match?}
+        D -->|Yes| R[Answer with sources]
+        D -->|No| H[Hand off to your team]
+        R --> C[Customer gets an answer]
+        H --> C`,
+      'support-sequence': `sequenceDiagram
+        participant C as Customer
+        participant A as Support agent
+        participant K as Knowledge base
+        C->>A: Ask a question
+        A->>K: Retrieve relevant content
+        K-->>A: Matching passages + sources
+        A-->>C: Grounded answer
+        Note over A,C: Human handoff when confidence is low`,
+      'widget-flow': `flowchart TD
+        A[1. Create your agent] --> B[2. Add your knowledge]
+        B --> C[3. Embed on your site]
+        C --> D[Ready to help your customers]`,
+      'knowledge-er': `erDiagram
+        AGENT }o--o{ KNOWLEDGE_BASE : searches
+        KNOWLEDGE_BASE ||--o{ PAGE : contains
+        PAGE ||--o{ CHUNK : indexes`,
+      'detailed-er': `erDiagram
+        direction TB
+        CUSTOMER ||--o{ CONVERSATION : starts
+        AGENT ||--o{ CONVERSATION : handles
+        CONVERSATION ||--o{ MESSAGE : contains
+        CUSTOMER {
+          string id PK
+          string email
+          datetime created_at
+        }
+        AGENT {
+          string id PK
+          string display_name
+          string model
+        }
+        CONVERSATION {
+          string id PK
+          string customer_id FK
+          string agent_id FK
+          string status
+        }
+        MESSAGE {
+          string id PK
+          string conversation_id FK
+          string role
+          string content
+        }`,
+      'class-model': `classDiagram
+        direction TB
+        class SupportAgent {
+          +String name
+          +answer(question) Response
+          +handoff(context) Ticket
+        }
+        class KnowledgeBase {
+          +String title
+          +search(query) Passage[]
+        }
+        class Response {
+          +String content
+          +String[] sources
+          +Boolean needsHuman
+        }
+        SupportAgent --> KnowledgeBase : retrieves context
+        SupportAgent --> Response : produces`,
+      'conversation-state': `stateDiagram-v2
+        direction TB
+        [*] --> Received
+        Received --> Searching: Question accepted
+        Searching --> Answered: Relevant sources found
+        Searching --> NeedsHuman: Insufficient evidence
+        NeedsHuman --> Assigned: Team member available
+        Assigned --> Resolved: Customer helped
+        Answered --> Resolved: Customer confirms
+        Resolved --> [*]`,
+      'launch-gantt': `gantt
+        title Support agent launch plan
+        dateFormat YYYY-MM-DD
+        axisFormat %d %b
+        section Prepare
+        Organize knowledge sources :done, kb, 2026-10-19, 3d
+        Configure agent instructions :active, agent, after kb, 2d
+        section Validate
+        Test answers and handoffs :test, after agent, 3d
+        section Launch
+        Embed on your website :embed, after test, 1d
+        Go live :milestone, after embed, 0d`,
+      'resolution-pie': `pie showData
+        title Example support outcomes
+        "Answered from knowledge" : 62
+        "Human handoff" : 24
+        "Customer follow-up" : 14`,
+      'support-mindmap': `mindmap
+        root((Customer support))
+          Knowledge
+            Product documentation
+            Frequently asked questions
+          Conversations
+            Grounded answers
+            Clear source references
+          Human handoff
+            Conversation context
+            Team notification`
+    };
+    const gallery = [
+      ['detailed-er', 'Entity relationships', 'ER diagram with primary keys, foreign keys, and attributes.'],
+      ['class-model', 'Class diagram', 'Methods and typed properties test denser labels inside boxes.'],
+      ['conversation-state', 'Conversation lifecycle', 'Branching transitions and longer edge labels.'],
+      ['launch-gantt', 'Launch timeline', 'Wide timelines scroll locally rather than compressing every label.'],
+      ['resolution-pie', 'Support outcomes', 'Illustrative data only; a chart with labels and a legend.'],
+      ['support-mindmap', 'Support mindmap', 'A branching layout with longer leaf labels.']
+    ];
+    for (const [key, title, caption] of gallery) {
+      const card = document.createElement('article');
+      card.className = 'diagram-card';
+      card.dataset.diagram = key;
+      card.innerHTML = `<div class="diagram-toolbar"><span class="diagram-icon" aria-hidden="true">◇</span><span class="diagram-title"></span><button type="button" data-action="source" aria-expanded="false">Source</button><button type="button" data-action="expand">Expand ↗</button></div><div class="diagram-viewport" aria-busy="true">Loading diagram…</div><div class="diagram-caption"></div><pre class="source" hidden></pre>`;
+      card.querySelector('.diagram-title').textContent = title;
+      card.querySelector('.diagram-viewport').setAttribute('aria-label', title);
+      card.querySelector('.diagram-caption').textContent = caption;
+      document.querySelector('#gallery-grid').append(card);
+    }
+    const cards = [...document.querySelectorAll('[data-diagram]')];
+    const themeButton = document.querySelector('#theme-toggle');
+    const status = document.querySelector('#status');
+    const dialog = document.querySelector('#expanded-diagram');
+    let mermaid;
+    let renderId = 0;
+    let expandedCard;
+
+    for (const card of cards) {
+      card.querySelector('.source').textContent = sources[card.dataset.diagram];
+      const viewport = card.querySelector('.diagram-viewport');
+      viewport.tabIndex = 0;
+      viewport.setAttribute('role', 'region');
+    }
+
+    function fitDiagram(viewport) {
+      const svg = viewport.querySelector('svg');
+      if (!svg?.viewBox.baseVal.width) return;
+      const { width, height } = svg.viewBox.baseVal;
+      const style = getComputedStyle(viewport);
+      const available = viewport.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      // Fit small graphs, but never shrink a diagram below 85% of its measured size.
+      const displayWidth = Math.min(width, Math.max(available, width * .85));
+      svg.style.width = `${displayWidth}px`;
+      svg.style.height = `${height * displayWidth / width}px`;
+    }
+    const resizeObserver = new ResizeObserver(entries => {
+      for (const { target } of entries) fitDiagram(target);
+    });
+    for (const viewport of document.querySelectorAll('.diagram-viewport')) resizeObserver.observe(viewport);
+    document.querySelector('#gallery-width').addEventListener('click', event => {
+      const grid = document.querySelector('#gallery-grid');
+      const narrow = grid.dataset.narrow !== 'true';
+      grid.dataset.narrow = String(narrow);
+      event.currentTarget.setAttribute('aria-pressed', String(narrow));
+      event.currentTarget.textContent = narrow ? 'Preview full width' : 'Preview widget width';
+    });
+
+    function refreshExpanded() {
+      if (!expandedCard) return;
+      const viewport = dialog.querySelector('.diagram-viewport');
+      // Re-rendering isn't needed for expansion; cloned SVG IDs must remain unique in the document.
+      const svg = expandedCard.querySelector('.diagram-viewport svg');
+      viewport.replaceChildren();
+      if (!svg) { viewport.textContent = 'Diagram unavailable. Close this view to inspect the source.'; return; }
+      const clone = svg.cloneNode(true);
+      const identifiers = [clone, ...clone.querySelectorAll('[id]')].filter(node => node.id).map(node => node.id);
+      let markup = clone.outerHTML;
+      for (const id of identifiers.sort((a, b) => b.length - a.length)) markup = markup.replaceAll(id, `expanded-${id}`);
+      viewport.innerHTML = markup;
+      document.querySelector('#expanded-title').textContent = expandedCard.querySelector('.diagram-title').textContent;
+      requestAnimationFrame(() => fitDiagram(viewport));
+    }
+
+    async function renderAll() {
+      themeButton.disabled = true;
+      document.documentElement.dataset.renderState = 'loading';
+      const dark = document.documentElement.dataset.theme === 'dark';
+      let failures = 0;
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        htmlLabels: false,
+        theme: dark ? 'redux-dark-color' : 'redux-color',
+        look: 'neo',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        suppressErrorRendering: true,
+        flowchart: { useMaxWidth: true, htmlLabels: false, nodeSpacing: 24, rankSpacing: 32 },
+        // Match measurement fonts to the SVG theme's 16px labels; defaults use different fonts/sizes.
+        sequence: {
+          useMaxWidth: true, wrap: true, wrapPadding: 16,
+          actorFontFamily: 'system-ui, -apple-system, sans-serif', actorFontSize: 16,
+          noteFontFamily: 'system-ui, -apple-system, sans-serif', noteFontSize: 16,
+          messageFontFamily: 'system-ui, -apple-system, sans-serif', messageFontSize: 16
+        }
+      });
+      for (const card of cards) {
+        const viewport = card.querySelector('.diagram-viewport');
+        viewport.setAttribute('aria-busy', 'true');
+        try {
+          const { svg } = await mermaid.render(`preview-${++renderId}`, sources[card.dataset.diagram]);
+          viewport.innerHTML = svg;
+          fitDiagram(viewport);
+        } catch (error) {
+          failures++;
+          viewport.textContent = 'Could not render this diagram. Its Mermaid source is shown below.';
+          card.querySelector('.source').hidden = false;
+          const sourceButton = card.querySelector('[data-action="source"]');
+          sourceButton?.setAttribute('aria-expanded', 'true');
+          console.error(error);
+        } finally { viewport.setAttribute('aria-busy', 'false'); }
+      }
+      if (dialog.open) refreshExpanded();
+      themeButton.disabled = false;
+      document.documentElement.dataset.renderState = failures ? 'error' : 'ready';
+      status.textContent = failures ? `${failures} diagram(s) failed — source preserved for inspection.` : `${cards.length} diagrams rendered · Official Mermaid 12.2.0 · ${dark ? 'redux-dark-color' : 'redux-color'} / neo · Strict security`;
+    }
+
+    themeButton.addEventListener('click', async () => {
+      const dark = document.documentElement.dataset.theme !== 'dark';
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      themeButton.textContent = dark ? 'Switch to light' : 'Switch to dark';
+      themeButton.setAttribute('aria-pressed', String(!dark));
+      if (mermaid) await renderAll();
+    });
+
+    document.addEventListener('click', async event => {
+      const button = event.target.closest('button[data-action]');
+      if (!button) return;
+      const card = button.closest('[data-diagram]');
+      if (button.dataset.action === 'source') {
+        const source = card.querySelector('.source');
+        source.hidden = !source.hidden;
+        button.setAttribute('aria-expanded', String(!source.hidden));
+      } else if (button.dataset.action === 'copy') {
+        try {
+          await navigator.clipboard.writeText(sources[card.dataset.diagram]);
+          button.textContent = 'Copied ✓';
+          setTimeout(() => { button.textContent = 'Copy'; }, 1800);
+        } catch {
+          card.querySelector('.source').hidden = false;
+          card.querySelector('[data-action="source"]')?.setAttribute('aria-expanded', 'true');
+          status.textContent = 'Clipboard unavailable here. Select and copy the visible source instead.';
+        }
+      } else {
+        expandedCard = card;
+        refreshExpanded();
+        dialog.showModal();
+      }
+    });
+    document.querySelector('#close-dialog').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => { expandedCard = undefined; dialog.querySelector('.diagram-viewport').replaceChildren(); });
+
+    try {
+      ({ default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@12.2.0/dist/mermaid.esm.min.mjs'));
+      await document.fonts.ready;
+      await renderAll();
+    } catch (error) {
+      document.documentElement.dataset.renderState = 'error';
+      status.textContent = 'Mermaid could not load. Check your internet connection or CDN access; diagram sources are shown below.';
+      for (const card of cards) {
+        card.querySelector('.diagram-viewport').textContent = 'Renderer unavailable';
+        card.querySelector('.diagram-viewport').setAttribute('aria-busy', 'false');
+        card.querySelector('.source').hidden = false;
+        card.querySelector('[data-action="source"]')?.setAttribute('aria-expanded', 'true');
+      }
+      themeButton.disabled = false;
+      console.error(error);
+    }
+  </script>
+</body>
+</html>

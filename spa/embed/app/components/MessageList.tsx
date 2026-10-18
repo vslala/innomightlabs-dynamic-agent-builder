@@ -123,7 +123,7 @@ export function MessageList({
           if (item.kind === "streaming") {
             return (
               <div key={item.key} className="ie-bubble ie-bubble-assistant">
-                <Markdown content={item.content} />
+                <Markdown content={item.content} isStreaming />
               </div>
             );
           }

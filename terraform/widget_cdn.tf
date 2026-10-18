@@ -254,10 +254,14 @@ resource "null_resource" "embed_build_upload" {
     embed_src_hash = sha256(join("", [
       for file in concat(
         [for file in fileset("${path.module}/../spa/embed", "{app,loader,shared}/**/*") : "embed/${file}"],
+        [for file in fileset("${path.module}/../spa/src/components/ui", "**/*") : "src/components/ui/${file}"],
         [
           "embed/vite.app.config.ts",
           "embed/vite.loader.config.ts",
           "src/styles/tokens.css",
+          "src/lib/utils.ts",
+          "scripts/mermaid-renderer.ts",
+          "scripts/vite-plugin-mermaid-runtime.ts",
           "src/components/chat/submittedFormParser.ts",
           "packages/chat-stream-renderer/src/index.tsx",
         ]

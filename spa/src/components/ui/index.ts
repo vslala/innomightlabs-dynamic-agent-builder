@@ -22,6 +22,7 @@ export * from "./separator";
 // Display components
 export * from "./avatar";
 export * from "./markdown-renderer";
+export * from "./mermaid-diagram";
 export * from "./json-viewer";
 export * from "./read-only-content";
 export * from "./step-inspector";

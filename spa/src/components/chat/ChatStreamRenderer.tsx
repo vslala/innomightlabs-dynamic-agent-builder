@@ -461,7 +461,7 @@ export function ChatStreamRenderer({
                   fontSize: "1rem",
                 }}
               >
-                <MarkdownRenderer content={item.content} />
+                <MarkdownRenderer content={item.content} isStreaming />
                 <span
                   style={{
                     display: "inline-block",

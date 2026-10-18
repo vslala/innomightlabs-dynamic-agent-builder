@@ -6,11 +6,15 @@
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { mermaidRuntimePlugin } from "../scripts/vite-plugin-mermaid-runtime";
 
 const embedDir = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), mermaidRuntimePlugin("embed/mermaid")],
+  define: {
+    "import.meta.env.MERMAID_EMBED": JSON.stringify("true"),
+  },
   publicDir: false,
   build: {
     outDir: `${embedDir}dist`,
