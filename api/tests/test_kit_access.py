@@ -29,7 +29,7 @@ def account(dynamodb_table, monkeypatch) -> str:
     """Owned by ADMIN, with Bedrock set up; Alice and Bob are members with MemberAccess, as after accepting invites."""
     monkeypatch.setattr(knowledge_base_kind, "launch_crawl", lambda job_id, *_: None)
     monkeypatch.setattr(settings, "require_pinecone", lambda: None)
-    monkeypatch.setattr(KnowledgeBaseService, "_delete_pinecone_namespace", lambda self, kb_id: 0)
+    monkeypatch.setattr(KnowledgeBaseService, "_delete_pinecone_namespace", lambda self, kb_id: True)
     created = AccountService().create_account(IdentityRepository().get(user_id_for(ADMIN_EMAIL)), "Team")
     for email in (ALICE_EMAIL, BOB_EMAIL):
         identity = IdentityRepository().find_by_email(email)

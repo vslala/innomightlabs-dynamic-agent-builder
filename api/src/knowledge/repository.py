@@ -630,6 +630,13 @@ class ContentChunkRepository:
                 batch.put_item(Item=chunk.to_dynamo_item())
         log.info(f"Batch saved {len(chunks)} content chunks")
 
+    def has_any(self, kb_id: str) -> bool:
+        response = self.table.query(
+            KeyConditionExpression=Key("pk").eq(f"KnowledgeBase#{kb_id}") & Key("sk").begins_with("Chunk#"),
+            Limit=1,
+        )
+        return bool(response.get("Items"))
+
     def find_all_by_kb(self, kb_id: str) -> list[ContentChunk]:
         """Every chunk of a knowledge base."""
         query = {"KeyConditionExpression": Key("pk").eq(f"KnowledgeBase#{kb_id}") & Key("sk").begins_with("Chunk#")}

@@ -31,6 +31,8 @@ class DeleteResult:
     vectors_deleted: bool = False
     agents_unlinked: int = 0
     error: Optional[str] = None
+    #: The vectors couldn't be deleted, so nothing was: the caller may try again, and the KB is as it was.
+    retryable: bool = False
 
 
 @dataclass
@@ -75,10 +77,12 @@ class KnowledgeBaseService:
         Soft delete a knowledge base with full cleanup.
 
         This method:
-        1. Marks the KB as deleted with a TTL for auto-expiration (30 days)
-        2. Immediately deletes all content chunks, and the pages that list them, from DynamoDB
-        3. Immediately deletes the Pinecone namespace (all vectors)
-        4. Unlinks the KB from all agents, and forgets its shares
+        1. Deletes the Pinecone namespace (all vectors). If that can't be done it stops: nothing else is deleted,
+           the result is `retryable`, and the KB is as it was. Chunks are what record that vectors exist, so deleting
+           them first would leave vectors nothing could find to delete.
+        2. Deletes all content chunks, and the pages that list them, from DynamoDB
+        3. Unlinks the KB from all agents, and forgets its shares
+        4. Marks the KB as deleted with a TTL for auto-expiration (30 days)
 
         The KB record itself remains for 30 days to handle orphan cleanup,
         then DynamoDB TTL auto-deletes it. Callers have found the KB and
@@ -98,6 +102,10 @@ class KnowledgeBaseService:
             result.vectors_deleted = self._delete_pinecone_namespace(kb_id)
         except Exception as e:
             log.error(f"Failed to delete Pinecone namespace for KB {kb_id}: {e}", exc_info=True)
+        if not result.vectors_deleted:
+            result.error = "The knowledge base's vectors couldn't be deleted, so nothing was deleted. Try again."
+            result.retryable = True
+            return result
 
         try:
             result.chunks_deleted = self.chunk_repo.delete_all_by_kb(kb_id)
@@ -188,11 +196,11 @@ class KnowledgeBaseService:
         )
 
     def _delete_pinecone_namespace(self, kb_id: str) -> bool:
-        """Delete the Pinecone namespace for this KB."""
+        """Whether the knowledge base's namespace is gone (or never was). Without Pinecone configured nothing could have
+        been indexed, unless the KB has content: then it isn't known to be gone."""
         if self.pinecone._index is None:
-            log.warning("Pinecone not configured, skipping namespace deletion")
-            return False
-
+            log.warning(f"Pinecone not configured, so the vectors of KB {kb_id} can't be deleted")
+            return not self.chunk_repo.has_any(kb_id)
         deleted: bool = self.pinecone.delete_namespace(kb_id)
         return deleted
 

@@ -85,6 +85,17 @@ moves the page: its content is indexed under the new URL and the old page is rem
 - `knowledge/service.py` now imports the crawler inside the upload function. This breaks an import cycle that failed
   whenever the crawler was imported before the knowledge package.
 
+**Deleting a knowledge base now deletes its vectors or nothing.**
+- Found after the first real crawl. Four knowledge bases deleted together on 2026-10-09 kept 943 vectors in Pinecone.
+  `soft_delete` logged a failed or skipped namespace delete and carried on, deleting the chunks (the only record that
+  vectors exist) and marking the KB deleted, and both callers checked only `result.success`. Nothing could find the
+  vectors afterwards.
+- Now the namespace delete comes first and a failure stops the delete before anything else changes, so it can be
+  retried (`DeleteResult.retryable`, 503 from the route). `delete_namespace` treats a namespace that never existed as
+  deleted.
+- `scripts/reconcile_kb_vectors.py --deleted` lists and (with `--apply`) deletes the namespaces of deleted knowledge
+  bases that still have vectors.
+
 **Not built.** The dashboard has no "remove this page" action for a failing page; its chunks stay until the site
 answers or the knowledge base is deleted. The open question on unlinked-but-live pages is unchanged: they're kept.
 

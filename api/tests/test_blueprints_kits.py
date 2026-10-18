@@ -40,7 +40,7 @@ def account(monkeypatch, dynamodb_table) -> None:
     monkeypatch.setattr(knowledge_base_kind, "launch_crawl", lambda job_id, *_: None)
     monkeypatch.setattr(settings, "require_pinecone", lambda: None)
     monkeypatch.setattr(settings, "is_superuser_email", lambda email: True)
-    monkeypatch.setattr(KnowledgeBaseService, "_delete_pinecone_namespace", lambda self, kb_id: 0)
+    monkeypatch.setattr(KnowledgeBaseService, "_delete_pinecone_namespace", lambda self, kb_id: True)
     ProviderSettingsRepository().save(
         ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")
     )

@@ -44,7 +44,7 @@ def load_script():
 def test_ila_builds_are_removed_and_the_persons_own_things_stay(dynamodb_table, monkeypatch):
     monkeypatch.setattr(knowledge_base_kind, "launch_crawl", lambda *_: None)
     monkeypatch.setattr(settings, "require_pinecone", lambda: None)
-    monkeypatch.setattr(KnowledgeBaseService, "_delete_pinecone_namespace", lambda self, kb_id: 0)
+    monkeypatch.setattr(KnowledgeBaseService, "_delete_pinecone_namespace", lambda self, kb_id: True)
     monkeypatch.setattr(settings, "conversation_media_bucket", "")
     ProviderSettingsRepository().save(
         ProviderSettings(account_id=account_for(TEST_USER_EMAIL), provider_name="Bedrock", encrypted_credentials="{}")

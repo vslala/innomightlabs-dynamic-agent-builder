@@ -254,7 +254,7 @@ async def delete_knowledge_base(
     Soft delete a knowledge base.
 
     This operation:
-    1. Immediately deletes all vectors from Pinecone
+    1. Immediately deletes all vectors from Pinecone (if that fails, nothing is deleted: 503, try again)
     2. Immediately deletes all content chunks from DynamoDB
     3. Unlinks the KB from all agents
     4. Marks the KB as deleted with 30-day TTL for auto-expiration
@@ -262,6 +262,8 @@ async def delete_knowledge_base(
     kb_id = kb.kb_id
     result = service.soft_delete(kb)
 
+    if result.retryable:
+        raise HTTPException(status_code=503, detail=result.error)
     if not result.success:
         raise HTTPException(status_code=404, detail=result.error or "Failed to delete knowledge base")
 

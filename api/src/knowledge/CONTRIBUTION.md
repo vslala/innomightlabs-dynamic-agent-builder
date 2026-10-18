@@ -36,7 +36,11 @@ src/knowledge/
   - Agent link: `pk=Agent#{agent_id}`, `sk=KnowledgeBase#{kb_id}`, `gsi2_pk=KnowledgeBase#{kb_id}`, `gsi2_sk=Agent#{agent_id}` (the reverse lookup uses index `gsi2`).
 - Access: every route gets its KB from a dependency in `router.py` built with `kb_with(action)`: `can_describe_kb`, `can_read_kb`, `can_update_kb`, `can_crawl_kb`, `can_delete_kb` (actions `knowledge:Describe|Get|Update|Crawl|Delete`, defined in `src/iam/actions.py`; share roles in `src/iam/shares.py`). Creation checks `knowledge:Create`. A KB the caller cannot see is 404, one they can see but not act on is 403. KBs are private to their owner unless shared; admins see metadata only (`KnowledgeBaseAccess`: owner, shared, admin).
 - An agent searches only KBs `readable_by_agent` returns: the link outlives a share, so reads are checked against the agent owner each time.
-- Delete is soft: status `DELETED`, 30-day `ttl` (`SOFT_DELETE_TTL_DAYS`), vectors/chunks/links/shares removed first. `DELETED` KBs count as missing everywhere.
+- Delete is soft: status `DELETED`, 30-day `ttl` (`SOFT_DELETE_TTL_DAYS`). **The vectors go first, and if they can't be
+  deleted nothing else is** (`DeleteResult.retryable`, 503 from the route, the KB stays as it was): chunks are what
+  record that vectors exist, so deleting them first leaves vectors nothing can find. Pinecone not being configured
+  counts as "can't" for a KB with content. Then chunks, pages, links and shares go. `DELETED` KBs count as missing everywhere.
+- A deleted KB's namespace left by the old behaviour: `scripts/reconcile_kb_vectors.py --deleted` (dry run by default).
 - Forms: `schemas.py` builds `Form`/`FormInput` (see `src/form_models.py`), served at `GET .../forms/<name>`; keep field names stable.
 - Crawl settings (`crawl_job_*`, `pinecone_*`, `embedding_*`) are in `config/settings.py`. A heartbeat failing, or the
   lease taken by another job, means the job was stopped: `CrawlJobStoppedError`.
@@ -56,7 +60,7 @@ src/knowledge/
 ## Testing
 
 ```bash
-uv run pytest tests/test_knowledge_access.py tests/test_agent_knowledge_links.py tests/test_crawl_job_liveness.py tests/test_crawl_launch.py tests/test_crawl_lease.py tests/test_knowledge_recrawl.py tests/test_knowledge_uploads.py -q
+uv run pytest tests/test_knowledge_access.py tests/test_agent_knowledge_links.py tests/test_crawl_job_liveness.py tests/test_crawl_launch.py tests/test_crawl_lease.py tests/test_knowledge_recrawl.py tests/test_knowledge_uploads.py tests/test_knowledge_delete.py -q
 uv run ruff check src/knowledge && uv run mypy src/knowledge
 ```
 

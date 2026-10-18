@@ -24,6 +24,8 @@ src/vectorstore/
   configured): a caller must not record the write as done. `delete_by_ids` returns the ids it couldn't delete, which
   `crawler/page_index.py` keeps as orphans to retry. Never swallow a write failure into a log line: a chunk whose
   vector silently failed can never be found.
+- `delete_namespace` is true when the namespace is gone or never existed (Pinecone answers 404 for one that was never
+  written to), false when it couldn't be deleted. Knowledge-base deletion depends on that to stop and be retried.
 - `list_ids` lists a namespace (serverless indexes only); `scripts/reconcile_kb_vectors.py` uses it to clean up what
   crawls before the page ledger left.
 

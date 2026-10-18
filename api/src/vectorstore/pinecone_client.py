@@ -10,6 +10,7 @@ from typing import Any, Iterator, Optional, cast
 from dataclasses import dataclass, field
 
 from pinecone import Pinecone
+from pinecone.exceptions import NotFoundException
 
 from src.config import settings
 
@@ -264,15 +265,7 @@ class PineconeClient:
             yield from ids
 
     def delete_namespace(self, kb_id: str) -> bool:
-        """
-        Delete all vectors in a namespace (entire knowledge base).
-
-        Args:
-            kb_id: Knowledge base ID
-
-        Returns:
-            True if successful
-        """
+        """Delete all vectors in a namespace (entire knowledge base). True when it's gone, or never existed."""
         if not self._index:
             return False
 
@@ -282,6 +275,8 @@ class PineconeClient:
             self._index.delete(delete_all=True, namespace=namespace)
             log.info(f"Deleted all vectors from namespace {namespace}")
             return True
+        except NotFoundException:
+            return True  # a knowledge base that never held a vector has no namespace
         except Exception as e:
             log.error(f"Failed to delete namespace: {e}", exc_info=True)
             return False

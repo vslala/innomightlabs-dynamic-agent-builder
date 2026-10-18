@@ -10,10 +10,16 @@ Search finds vectors in Pinecone and returns the text of their chunks in DynamoD
 Crawls keep them matched now (crawler/page_index.py). This cleans up what older crawls left: orphans are deleted,
 and chunks with no vector are embedded and indexed.
 
+It also finds the vectors of deleted knowledge bases. Deleting used to carry on when Pinecone couldn't be reached, so a
+deleted KB could leave its namespace behind (and nothing recorded that it did). Only the namespaces of knowledge bases
+this table marks deleted are touched, never any other namespace of the index.
+
 Usage:
     uv run python scripts/reconcile_kb_vectors.py --kb <kb_id>     # dry run: counts what's off
     uv run python scripts/reconcile_kb_vectors.py --all            # every live knowledge base
     uv run python scripts/reconcile_kb_vectors.py --all --apply    # fix it
+    uv run python scripts/reconcile_kb_vectors.py --deleted        # dry run: deleted KBs that still have vectors
+    uv run python scripts/reconcile_kb_vectors.py --deleted --apply
 
 Needs a serverless Pinecone index (only those can be listed). Uses the API's own settings; against production, run
 it through `railway run` so they come from the service, never from a file.
@@ -64,9 +70,20 @@ async def reconcile(
     return Reconciled(kb_id, len(orphans), len(unindexed), len(not_deleted))
 
 
-def live_knowledge_bases() -> list[str]:
+def leaked_vectors(kb_ids: list[str], *, vectors: PineconeClient, apply: bool) -> dict[str, int]:
+    """The deleted knowledge bases that still have vectors, with how many; deletes their namespaces when applying."""
+    leaked = {kb_id: count for kb_id in kb_ids if (count := len(list(vectors.list_ids(kb_id))))}
+    if apply:
+        for kb_id in leaked:
+            if not vectors.delete_namespace(kb_id):
+                print(f"  {kb_id}: the namespace couldn't be deleted; run again")
+    return leaked
+
+
+def knowledge_bases(*, deleted: bool) -> list[str]:
     table = get_dynamodb_resource().Table(settings.dynamodb_table)
-    scan = {"FilterExpression": Attr("entity_type").eq("KnowledgeBase") & Attr("status").ne("deleted")}
+    status = Attr("status").eq("deleted") if deleted else Attr("status").ne("deleted")
+    scan = {"FilterExpression": Attr("entity_type").eq("KnowledgeBase") & status}
     kb_ids: list[str] = []
     while True:
         response = table.scan(**scan)
@@ -81,11 +98,20 @@ async def main() -> int:
     which = parser.add_mutually_exclusive_group(required=True)
     which.add_argument("--kb", action="append", help="a knowledge base id (repeatable)")
     which.add_argument("--all", action="store_true", help="every live knowledge base")
-    parser.add_argument("--apply", action="store_true", help="delete orphans and index unindexed chunks")
+    which.add_argument("--deleted", action="store_true", help="knowledge bases deleted, whose vectors may be left")
+    parser.add_argument("--apply", action="store_true", help="fix what's off: delete orphans, index unindexed chunks")
     args = parser.parse_args()
 
-    vectors, embeddings, chunks = get_pinecone_client(validate=True), get_embeddings_service(), ContentChunkRepository()
-    kb_ids = args.kb or live_knowledge_bases()
+    vectors = get_pinecone_client(validate=True)
+    if args.deleted:
+        leaked = leaked_vectors(knowledge_bases(deleted=True), vectors=vectors, apply=args.apply)
+        for kb_id, count in leaked.items():
+            print(f"  {kb_id}: {count} vectors of a deleted knowledge base")
+        print(f"{len(leaked)} deleted knowledge base(s) had vectors left" + ("" if args.apply else "; run with --apply to delete them"))
+        return 0
+
+    embeddings, chunks = get_embeddings_service(), ContentChunkRepository()
+    kb_ids = args.kb or knowledge_bases(deleted=False)
     print(f"{'Fixing' if args.apply else 'Checking'} {len(kb_ids)} knowledge base(s)")
     off = 0
     for kb_id in kb_ids:

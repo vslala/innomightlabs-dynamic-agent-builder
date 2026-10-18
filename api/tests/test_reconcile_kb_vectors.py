@@ -52,3 +52,25 @@ async def test_applying_deletes_orphans_and_indexes_what_had_no_vector(script, k
 
     assert set(knowledge_base.vectors) == {"indexed", "unindexed"}
     assert embeddings.texts == ["Refunds take five days."] and result.not_deleted == 0
+
+
+def test_a_deleted_knowledge_bases_left_vectors_are_found_and_only_those_deleted(script):
+    class Namespaces(FakeIndex):
+        def __init__(self):
+            super().__init__()
+            self.namespaces = {"gone-1": 3, "gone-2": 0, "someone-elses": 9}
+
+        def list_ids(self, kb_id):
+            return iter(range(self.namespaces[kb_id]))
+
+        def delete_namespace(self, kb_id):
+            self.namespaces[kb_id] = 0
+            return True
+
+    index = Namespaces()
+
+    dry = script.leaked_vectors(["gone-1", "gone-2"], vectors=index, apply=False)
+    assert dry == {"gone-1": 3} and index.namespaces["gone-1"] == 3, "a dry run changes nothing"
+
+    script.leaked_vectors(["gone-1", "gone-2"], vectors=index, apply=True)
+    assert index.namespaces == {"gone-1": 0, "gone-2": 0, "someone-elses": 9}, "a namespace not asked about is never touched"
