@@ -1,6 +1,7 @@
-"""Starting a saved crawl job on whichever backend this deployment runs crawls on.
+"""Creating crawl jobs, one at a time per knowledge base, and starting them on whichever backend this deployment runs
+crawls on.
 
-Shared by the knowledge-base routes and by blueprints, so both start crawls the same way.
+Shared by the knowledge-base routes, blueprints and the `recrawl` action, so all of them start crawls the same way.
 """
 
 import asyncio
@@ -11,8 +12,29 @@ from typing import Any, Optional
 from fastapi import BackgroundTasks, HTTPException
 
 from src.config import settings
+from src.knowledge.models import CrawlConfig, CrawlJob
+from src.knowledge.repository import CrawlJobRepository
+from src.knowledge.run_state import CrawlJobStateService
 
 log = logging.getLogger(__name__)
+
+
+class CrawlAlreadyRunning(Exception):
+    """The knowledge base is being crawled by another job, which holds its crawl lease."""
+
+    def __init__(self, kb_id: str, job_id: Optional[str]):
+        super().__init__(f"Knowledge base {kb_id} is already being crawled")
+        self.job_id = job_id
+
+
+def create_crawl_job(kb_id: str, config: CrawlConfig, created_by: str) -> CrawlJob:
+    """A new pending job holding the knowledge base's crawl lease, or `CrawlAlreadyRunning`."""
+    job = CrawlJob(kb_id=kb_id, config=config, created_by=created_by)
+    state = CrawlJobStateService()
+    if not state.hold(job):
+        holder = state.leases.find(kb_id)
+        raise CrawlAlreadyRunning(kb_id, holder.job_id if holder else None)
+    return CrawlJobRepository().save(job)
 
 
 #: Crawls started outside a request (from a chat turn), held so they aren't garbage-collected mid-run.

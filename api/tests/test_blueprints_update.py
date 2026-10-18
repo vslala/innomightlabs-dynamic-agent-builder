@@ -16,7 +16,7 @@ from src.blueprints.models import DeploymentStatus
 from src.blueprints.planner import plan_blueprint
 from src.blueprints.validator import validate_blueprint
 from src.config import settings
-from src.knowledge.repository import KnowledgeBaseRepository
+from src.knowledge.repository import CrawlLeaseRepository, KnowledgeBaseRepository
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.models import ActorKind
@@ -103,14 +103,33 @@ def test_an_edited_blueprint_updates_the_same_resources(launched):
     assert len(launched) == 1
 
 
+def crawl_ended(built) -> None:
+    """The crawl a build started has finished, as its worker would have said."""
+    kb_id = built.resources["site_kb"].id
+    lease = CrawlLeaseRepository().find(kb_id)
+    assert lease is not None
+    CrawlLeaseRepository().release(kb_id, lease.job_id)
+
+
 def test_changing_the_crawl_reads_the_site_again(launched):
-    build()
+    _, first = build()
+    crawl_ended(first)
     plan, _ = build(SITE_AGENT.replace("max_pages: 10", "max_pages: 5"))
 
     assert plan.steps[0].action == "update"
     assert plan.steps[0].changes == ["read https://acme.example again, up to 5 pages"]
     assert len(launched) == 2
     assert counts() == (1, 1)
+
+
+def test_changing_the_crawl_while_the_site_is_being_read_says_to_apply_again_later(launched):
+    build()
+
+    _, second = build(SITE_AGENT.replace("max_pages: 10", "max_pages: 5"))
+
+    assert second.status == DeploymentStatus.FAILED_PARTIAL
+    assert "being crawled now" in (second.error or "")
+    assert len(launched) == 1, "the running crawl is left to finish"
 
 
 def test_a_failed_update_puts_things_back(launched, monkeypatch):

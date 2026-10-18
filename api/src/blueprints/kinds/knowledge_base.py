@@ -22,8 +22,8 @@ from src.blueprints.kinds.base import (
 from src.blueprints.spec import CrawlSpec, KnowledgeBaseSpec
 from src.config import settings
 from src.knowledge.access import owned_kb
-from src.knowledge.crawl_launch import launch_crawl
-from src.knowledge.models import CrawlConfig, CrawlJob, CrawlSourceType, KnowledgeBase, KnowledgeBaseStatus
+from src.knowledge.crawl_launch import CrawlAlreadyRunning, create_crawl_job, launch_crawl
+from src.knowledge.models import CrawlConfig, CrawlSourceType, KnowledgeBase, KnowledgeBaseStatus
 from src.knowledge.repository import AgentKnowledgeBaseRepository, CrawlJobRepository, KnowledgeBaseRepository
 from src.knowledge.service import get_knowledge_base_service
 
@@ -33,8 +33,7 @@ CRAWL_MODE: dict[CrawlSourceType, Literal["site", "sitemap"]] = {CrawlSourceType
 
 def last_crawl(kb_id: str) -> Optional[CrawlSpec]:
     """The settings the knowledge base was last read with, as a blueprint would write them."""
-    # Job keys are ids, not times, so fetch a batch; the repository sorts it newest first.
-    jobs = CrawlJobRepository().find_all_by_kb(kb_id, limit=50)
+    jobs = CrawlJobRepository().find_all_by_kb(kb_id, limit=1)
     if not jobs:
         return None
     config = jobs[0].config
@@ -125,16 +124,16 @@ class StartCrawl(Command):
     def run(self, ctx: ApplyContext) -> None:
         applied = ctx.applied[self.resource]
         owner = ctx.owner
-        job = CrawlJobRepository().save(CrawlJob(
-            kb_id=applied.id,
-            config=CrawlConfig(
-                source_type=CRAWL_SOURCE[self.crawl.mode],
-                source_url=self.crawl.url,
-                max_pages=self.crawl.max_pages,
-                max_depth=self.crawl.max_depth,
-            ),
-            created_by=owner.user_id,
-        ))
+        config = CrawlConfig(
+            source_type=CRAWL_SOURCE[self.crawl.mode],
+            source_url=self.crawl.url,
+            max_pages=self.crawl.max_pages,
+            max_depth=self.crawl.max_depth,
+        )
+        try:
+            job = create_crawl_job(applied.id, config, owner.user_id)
+        except CrawlAlreadyRunning as running:
+            raise RuntimeError("The knowledge base is being crawled now. Apply again once that crawl ends.") from running
         applied.attributes["crawl_job_id"] = job.job_id
         launch_crawl(job.job_id, applied.id, owner.account_id, ctx.background_tasks)
 

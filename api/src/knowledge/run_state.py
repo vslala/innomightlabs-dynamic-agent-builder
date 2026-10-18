@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from src.config import settings
-from src.knowledge.models import CrawlJob
-from src.knowledge.repository import CrawlJobRepository
+from src.knowledge.models import CrawlJob, CrawlLease
+from src.knowledge.repository import CrawlJobRepository, CrawlLeaseRepository
 
 
 class CrawlJobStoppedError(RuntimeError):
@@ -14,10 +14,22 @@ class CrawlJobStoppedError(RuntimeError):
 
 
 class CrawlJobStateService:
-    """Own crawl-job liveness checks and stale-run transitions."""
+    """Own crawl-job liveness checks, stale-run transitions, and the one crawl a knowledge base runs at a time."""
 
-    def __init__(self, repository: CrawlJobRepository | None = None):
+    def __init__(self, repository: CrawlJobRepository | None = None, leases: CrawlLeaseRepository | None = None):
         self.repository = repository or CrawlJobRepository()
+        self.leases = leases or CrawlLeaseRepository()
+
+    def hold(self, job: CrawlJob, *, at: datetime | None = None) -> bool:
+        """Take or renew the knowledge base's crawl lease for this job. False when another job holds it."""
+        now = at or _utcnow()
+        lease = CrawlLease(
+            kb_id=job.kb_id, job_id=job.job_id, expires_at=now + timedelta(seconds=settings.crawl_job_stale_timeout_seconds)
+        )
+        return self.leases.claim(lease, now=now)
+
+    def release(self, job: CrawlJob) -> None:
+        self.leases.release(job.kb_id, job.job_id)
 
     def heartbeat(self, job: CrawlJob, *, at: datetime | None = None) -> None:
         heartbeat_at = at or _utcnow()
@@ -31,6 +43,8 @@ class CrawlJobStateService:
             raise CrawlJobStoppedError(
                 f"Crawl job {job.job_id} is no longer in progress"
             )
+        if not self.hold(job, at=heartbeat_at):
+            raise CrawlJobStoppedError(f"Another crawl of knowledge base {job.kb_id} holds it")
         job.last_heartbeat_at = heartbeat_at
         job.updated_at = heartbeat_at
 

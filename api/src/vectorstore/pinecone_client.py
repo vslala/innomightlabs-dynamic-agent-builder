@@ -6,7 +6,7 @@ Uses namespace isolation per knowledge base.
 """
 
 import logging
-from typing import Optional, Any, cast
+from typing import Any, Iterator, Optional, cast
 from dataclasses import dataclass, field
 
 from pinecone import Pinecone
@@ -14,6 +14,13 @@ from pinecone import Pinecone
 from src.config import settings
 
 log = logging.getLogger(__name__)
+
+#: Pinecone takes at most this many ids in one delete.
+DELETE_BATCH = 1000
+
+
+class VectorStoreError(RuntimeError):
+    """A write to the index didn't happen. Callers must not record it as done."""
 
 
 @dataclass
@@ -134,47 +141,27 @@ class PineconeClient:
         kb_id: str,
         batch_size: int = 100,
     ) -> int:
-        """
-        Upsert vectors into the index.
+        """Write the vectors into the knowledge base's namespace, or raise `VectorStoreError`.
 
-        Args:
-            vectors: List of VectorRecord objects to upsert
-            kb_id: Knowledge base ID for namespace
-            batch_size: Number of vectors per batch
-
-        Returns:
-            Number of vectors upserted
+        A batch that fails stops the write: what came before it is in the index, but the caller can't tell which
+        records those are, so it treats the whole write as not done and writes it again.
         """
         if not self._index:
-            log.warning("Pinecone index not available, skipping upsert")
-            return 0
+            raise VectorStoreError("Pinecone isn't configured, so nothing can be indexed")
 
         namespace = self._get_namespace(kb_id)
-        total_upserted = 0
-
-        # Process in batches
-        for i in range(0, len(vectors), batch_size):
-            batch = vectors[i:i + batch_size]
-
-            # Convert to Pinecone format
+        for start in range(0, len(vectors), batch_size):
             records: list[dict[str, Any]] = [
-                {
-                    "id": v.id,
-                    "values": v.values,
-                    "metadata": v.metadata.to_dict(),
-                }
-                for v in batch
+                {"id": vector.id, "values": vector.values, "metadata": vector.metadata.to_dict()}
+                for vector in vectors[start:start + batch_size]
             ]
-
             try:
                 self._index.upsert(vectors=cast(Any, records), namespace=namespace)
-                total_upserted += len(batch)
-                log.debug(f"Upserted {len(batch)} vectors to namespace {namespace}")
             except Exception as e:
-                log.error(f"Failed to upsert batch: {e}", exc_info=True)
+                raise VectorStoreError(f"Pinecone upsert failed in {namespace}: {e}") from e
 
-        log.info(f"Upserted {total_upserted} vectors to namespace {namespace}")
-        return total_upserted
+        log.info(f"Upserted {len(vectors)} vectors to namespace {namespace}")
+        return len(vectors)
 
     def query(
         self,
@@ -253,29 +240,28 @@ class PineconeClient:
         all_results.sort(key=lambda r: r.score, reverse=True)
         return all_results[:top_k]
 
-    def delete_by_ids(self, ids: list[str], kb_id: str) -> bool:
-        """
-        Delete vectors by ID.
-
-        Args:
-            ids: List of vector IDs to delete
-            kb_id: Knowledge base ID for namespace
-
-        Returns:
-            True if successful
-        """
+    def delete_by_ids(self, ids: list[str], kb_id: str) -> list[str]:
+        """Delete the vectors; the ids that couldn't be deleted, for the caller to try again later."""
         if not self._index:
-            return False
+            return list(ids)
 
         namespace = self._get_namespace(kb_id)
+        failed: list[str] = []
+        for start in range(0, len(ids), DELETE_BATCH):
+            batch = ids[start:start + DELETE_BATCH]
+            try:
+                self._index.delete(ids=batch, namespace=namespace)
+            except Exception as e:
+                log.warning(f"Failed to delete {len(batch)} vectors from {namespace}: {e}")
+                failed += batch
+        return failed
 
-        try:
-            self._index.delete(ids=ids, namespace=namespace)
-            log.info(f"Deleted {len(ids)} vectors from namespace {namespace}")
-            return True
-        except Exception as e:
-            log.error(f"Failed to delete vectors: {e}", exc_info=True)
-            return False
+    def list_ids(self, kb_id: str) -> Iterator[str]:
+        """Every vector id in the knowledge base's namespace. Only serverless indexes can be listed."""
+        if not self._index:
+            raise VectorStoreError("Pinecone isn't configured, so nothing can be listed")
+        for ids in self._index.list(namespace=self._get_namespace(kb_id)):
+            yield from ids
 
     def delete_namespace(self, kb_id: str) -> bool:
         """

@@ -10,13 +10,21 @@ Key Structure:
         pk: KnowledgeBase#{kb_id}
         sk: CrawlJob#{job_id}
 
+    CrawlLease (the one crawl a KB runs at a time):
+        pk: KnowledgeBase#{kb_id}
+        sk: CrawlLease
+
     CrawlStep (Audit Log):
         pk: CrawlJob#{job_id}
         sk: Step#{timestamp}#{step_id}
 
-    CrawledPage:
+    CrawledPage (what one run did to a page):
         pk: CrawlJob#{job_id}
         sk: Page#{url_hash}
+
+    KnowledgePage (what a page has in the knowledge base now):
+        pk: KnowledgeBase#{kb_id}
+        sk: KnowledgePage#{url_hash}
 
     ContentChunk:
         pk: KnowledgeBase#{kb_id}
@@ -65,6 +73,11 @@ def convert_floats_to_decimals(obj: Any) -> Any:
 
 def dynamo_item(value: Any) -> dict[str, Any]:
     return cast(dict[str, Any], convert_floats_to_decimals(value))
+
+
+def url_hash(url: str) -> str:
+    """A page's key in the keys of items about it."""
+    return hashlib.md5(url.encode()).hexdigest()
 
 
 # =============================================================================
@@ -116,6 +129,8 @@ class CrawlStepType(str, Enum):
     PAGE_EMBED_COMPLETE = "PAGE_EMBED_COMPLETE"
     PAGE_INGEST_START = "PAGE_INGEST_START"
     PAGE_INGEST_COMPLETE = "PAGE_INGEST_COMPLETE"
+    #: The site said the page is gone, and its chunks were deleted.
+    PAGE_REMOVED = "PAGE_REMOVED"
 
 
 class CrawledPageStatus(str, Enum):
@@ -123,6 +138,27 @@ class CrawledPageStatus(str, Enum):
     SUCCESS = "success"
     FAILED = "failed"
     SKIPPED = "skipped"
+    #: Read, and it said what it said last time: nothing was chunked or embedded.
+    UNCHANGED = "unchanged"
+    #: The site said it's gone, and it was removed.
+    GONE = "gone"
+
+
+class KnowledgePageState(str, Enum):
+    #: Read; its chunks are in the knowledge base.
+    LIVE = "live"
+    #: The last reads failed (a timeout, a 5xx, no text); the chunks of its last good read are kept.
+    FAILING = "failing"
+    #: The site said it's gone; its chunks were deleted. Kept a while so the page list can say so.
+    GONE = "gone"
+
+
+#: Pages crawled from a site are owned by the crawl's source URL; uploaded files by this.
+UPLOAD_SOURCE = "upload"
+#: A page failing this many runs in a row is flagged to the owner. Its chunks stay: an outage shouldn't empty an agent.
+FAILING_RUNS_TO_FLAG = 3
+#: How long a gone page's tombstone stays in the page list.
+GONE_PAGE_DAYS = 90
 
 
 # =============================================================================
@@ -177,6 +213,10 @@ class CrawlProgress(BaseModel):
     processed_urls: int = 0
     successful_urls: int = 0
     failed_urls: int = 0
+    #: Pages the site said were gone, removed from the knowledge base.
+    removed_urls: int = 0
+    #: Pages read that said what they said last time (part of `successful_urls`).
+    unchanged_urls: int = 0
     total_chunks: int = 0
     total_embeddings: int = 0
 
@@ -280,6 +320,22 @@ class CrawledPageResponse(BaseModel):
     timing: PageTiming
     error: Optional[str] = None
     crawled_at: datetime
+
+
+class KnowledgePageResponse(BaseModel):
+    """A page of a knowledge base as it is now: what agents can find from it, or why they can't."""
+
+    url: str
+    title: str
+    #: The crawl source that keeps it current, or "upload".
+    source: str
+    state: KnowledgePageState
+    chunk_count: int
+    last_read_at: Optional[datetime] = None
+    consecutive_failures: int = 0
+    #: It's failed enough runs in a row that the owner should look.
+    needs_attention: bool = False
+    reason: str = ""
 
 
 class CrawlStepResponse(BaseModel):
@@ -519,6 +575,42 @@ class CrawlJob(BaseModel):
         )
 
 
+class CrawlLease(BaseModel):
+    """The one crawl a knowledge base may run at a time.
+
+    The job that holds it renews it on every heartbeat; one whose worker died lets it lapse after the stale timeout,
+    the same time the reaper fails the job. It's its own item, so saving the knowledge base can't erase it.
+    """
+
+    kb_id: str
+    job_id: str
+    expires_at: datetime
+
+    @property
+    def pk(self) -> str:
+        return f"KnowledgeBase#{self.kb_id}"
+
+    @property
+    def sk(self) -> str:
+        return "CrawlLease"
+
+    def to_dynamo_item(self) -> dict[str, Any]:
+        return {
+            "pk": self.pk,
+            "sk": self.sk,
+            "kb_id": self.kb_id,
+            "job_id": self.job_id,
+            "expires_at": self.expires_at.isoformat(),
+            # A lapsed lease is harmless, so TTL may take its time
+            "ttl": int(self.expires_at.timestamp()) + 24 * 60 * 60,
+            "entity_type": "CrawlLease",
+        }
+
+    @classmethod
+    def from_dynamo_item(cls, item: dict[str, Any]) -> "CrawlLease":
+        return cls(kb_id=item["kb_id"], job_id=item["job_id"], expires_at=datetime.fromisoformat(item["expires_at"]))
+
+
 class CrawlStep(BaseModel):
     """Audit log entry for crawl job steps."""
 
@@ -593,7 +685,7 @@ class CrawledPage(BaseModel):
     def model_post_init(self, __context: Any) -> None:
         """Set url_hash from URL if not already set."""
         if not self.url_hash:
-            self.url_hash = hashlib.md5(self.url.encode()).hexdigest()
+            self.url_hash = url_hash(self.url)
 
     @property
     def pk(self) -> str:
@@ -644,6 +736,121 @@ class CrawledPage(BaseModel):
             timing=self.timing,
             error=self.error,
             crawled_at=self.crawled_at,
+        )
+
+
+class KnowledgePage(BaseModel):
+    """One page of a knowledge base, and the chunks it has in the index now.
+
+    It's the truth about which chunks belong to the page, so stale ones are found without reading the knowledge base's
+    chunks. A write lists what it's about to write in `pending_ids` first, so a write that stops halfway leaves nothing
+    the next one can't find (see `crawler/page_index.py`).
+    """
+
+    kb_id: str
+    url: str
+    #: What owns the page: the crawl source URL that read it, or `UPLOAD_SOURCE`. A crawl only verifies its own pages.
+    source: str
+    state: KnowledgePageState = KnowledgePageState.LIVE
+    #: The page's chunks: each one's chunk and vector were both written.
+    chunk_ids: list[str] = Field(default_factory=list)
+    #: Chunks a write that didn't finish may have left, in DynamoDB, Pinecone, or both. Never trusted to exist: the
+    #: next write writes them again if the page still has them, and deletes them if it doesn't.
+    pending_ids: list[str] = Field(default_factory=list)
+    #: Vectors whose delete failed, deleted on a later write of the page.
+    orphan_vector_ids: list[str] = Field(default_factory=list)
+    title: str = ""
+    #: What its last full read said, to skip one that says the same (`crawler/page_chunks.text_hash`).
+    text_hash: str = ""
+    #: The site's validators from that read, sent back so an unchanged page costs a 304.
+    etag: Optional[str] = None
+    last_modified: Optional[str] = None
+    #: The job that last read it, and when.
+    last_seen_job: str = ""
+    last_read_at: Optional[datetime] = None
+    consecutive_failures: int = 0
+    #: Why it's failing or gone, for the page list: "HTTP 404".
+    reason: str = ""
+    #: Each save is conditional on the version it read, so two writers can't interleave.
+    version: int = 0
+
+    @property
+    def pk(self) -> str:
+        return f"KnowledgeBase#{self.kb_id}"
+
+    @property
+    def sk(self) -> str:
+        return f"KnowledgePage#{url_hash(self.url)}"
+
+    @property
+    def settled(self) -> bool:
+        """Read and written in full, so a read that finds it unchanged may skip it. A page with a write left halfway,
+        or that couldn't be read, is never skipped: its validators may be from a write that didn't finish."""
+        return self.state == KnowledgePageState.LIVE and bool(self.chunk_ids) and not self.pending_ids
+
+    @property
+    def needs_attention(self) -> bool:
+        return self.state == KnowledgePageState.FAILING and self.consecutive_failures >= FAILING_RUNS_TO_FLAG
+
+    def to_response(self) -> "KnowledgePageResponse":
+        return KnowledgePageResponse(
+            url=self.url,
+            title=self.title,
+            source=self.source,
+            state=self.state,
+            chunk_count=len(self.chunk_ids),
+            last_read_at=self.last_read_at,
+            consecutive_failures=self.consecutive_failures,
+            needs_attention=self.needs_attention,
+            reason=self.reason,
+        )
+
+    def to_dynamo_item(self) -> dict[str, Any]:
+        item: dict[str, Any] = {
+            "pk": self.pk,
+            "sk": self.sk,
+            "kb_id": self.kb_id,
+            "url": self.url,
+            "source": self.source,
+            "state": self.state.value,
+            "chunk_ids": self.chunk_ids,
+            "pending_ids": self.pending_ids,
+            "orphan_vector_ids": self.orphan_vector_ids,
+            "title": self.title,
+            "text_hash": self.text_hash,
+            "etag": self.etag,
+            "last_modified": self.last_modified,
+            "last_seen_job": self.last_seen_job,
+            "last_read_at": self.last_read_at.isoformat() if self.last_read_at else None,
+            "consecutive_failures": self.consecutive_failures,
+            "reason": self.reason,
+            "version": self.version,
+            "entity_type": "KnowledgePage",
+        }
+        if self.state == KnowledgePageState.GONE:
+            gone_at = self.last_read_at or datetime.now(timezone.utc)
+            item["ttl"] = int(gone_at.timestamp()) + GONE_PAGE_DAYS * 24 * 60 * 60
+        return item
+
+    @classmethod
+    def from_dynamo_item(cls, item: dict[str, Any]) -> "KnowledgePage":
+        return cls(
+            kb_id=item["kb_id"],
+            url=item["url"],
+            source=item["source"],
+            state=KnowledgePageState(item["state"]),
+            chunk_ids=list(item.get("chunk_ids") or []),
+            pending_ids=list(item.get("pending_ids") or []),
+            orphan_vector_ids=list(item.get("orphan_vector_ids") or []),
+            title=item.get("title") or "",
+            text_hash=item.get("text_hash") or "",
+            etag=item.get("etag"),
+            last_modified=item.get("last_modified"),
+            last_seen_job=item.get("last_seen_job") or "",
+            last_read_at=datetime.fromisoformat(item["last_read_at"]) if item.get("last_read_at") else None,
+            consecutive_failures=int(item.get("consecutive_failures", 0)),
+            reason=item.get("reason") or "",
+            version=int(item.get("version", 0)),
         )
 
 

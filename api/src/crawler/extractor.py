@@ -8,7 +8,10 @@ by converting HTML to Markdown for reliable text extraction.
 from bs4 import BeautifulSoup, Tag
 from markdownify import markdownify as md
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Optional
+from urllib.parse import urlparse
+import httpx
 import logging
 import re
 from src.common import outbound
@@ -41,6 +44,40 @@ class ExtractedContent:
             self.word_count = len(self.full_text.split())
         if not self.content_length and self.full_text:
             self.content_length = len(self.full_text)
+
+
+class FetchOutcome(str, Enum):
+    """What a page's fetch says about the page. Only `GONE` lets the crawler delete what it had of it."""
+
+    OK = "ok"
+    #: 304: it's what it was when its validators were given.
+    NOT_MODIFIED = "not_modified"
+    #: 404 or 410, or it now redirects to another site.
+    GONE = "gone"
+    #: Anything that doesn't prove the page is gone: a timeout, a 5xx, a 403, a page with no text, not HTML.
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class Fetched:
+    outcome: FetchOutcome
+    #: The page the content is from: the URL asked for, or the page on the same site it redirected to.
+    url: str
+    content: Optional[ExtractedContent] = None
+    #: Why it isn't OK, for the run's log: "HTTP 404", "no text on the page".
+    reason: str = ""
+    #: The site's validators for what was read, to send back next time.
+    etag: Optional[str] = None
+    last_modified: Optional[str] = None
+
+
+def same_site(url: str, other: str) -> bool:
+    """`example.com` and `www.example.com` are one site: sites redirect between them."""
+
+    def host(value: str) -> str:
+        return urlparse(value).netloc.lower().removeprefix("www.")
+
+    return host(url) == host(other)
 
 
 class ContentExtractor:
@@ -78,36 +115,43 @@ class ContentExtractor:
         self.user_agent = user_agent
         self.timeout = timeout
 
-    async def fetch_and_extract(self, url: str) -> ExtractedContent:
+    async def fetch(self, url: str, *, etag: Optional[str] = None, last_modified: Optional[str] = None) -> Fetched:
+        """Fetch a page and extract its content, saying whether it's there, gone, or couldn't be read this time.
+
+        Given the validators of the last read, a page that hasn't changed answers 304 and nothing is downloaded.
         """
-        Fetch a URL and extract its content.
+        headers = {"User-Agent": self.user_agent}
+        if etag:
+            headers["If-None-Match"] = etag
+        if last_modified:
+            headers["If-Modified-Since"] = last_modified
+        try:
+            async with outbound.async_client() as client:
+                response = await client.get(url, timeout=self.timeout, follow_redirects=True, headers=headers)
+        except httpx.HTTPError as e:
+            return Fetched(FetchOutcome.FAILED, url, reason=f"couldn't fetch it: {e.__class__.__name__}")
+        return self._read(url, response)
 
-        Args:
-            url: The URL to fetch
-
-        Returns:
-            ExtractedContent with the parsed content
-
-        Raises:
-            httpx.RequestError: If the request fails
-        """
-        async with outbound.async_client() as client:
-            response = await client.get(
-                url,
-                timeout=self.timeout,
-                follow_redirects=True,
-                headers={"User-Agent": self.user_agent},
-            )
-            response.raise_for_status()
-
-            content_type = response.headers.get("content-type", "")
-            if "text/html" not in content_type:
-                log.warning(f"Non-HTML content type for {url}: {content_type}")
-                return ExtractedContent(url=url)
-
-            html = response.text
-
-        return self.extract(url, html)
+    def _read(self, url: str, response: httpx.Response) -> Fetched:
+        final_url = str(response.url)
+        if response.status_code == 304:
+            return Fetched(FetchOutcome.NOT_MODIFIED, url)
+        if response.status_code in (404, 410):
+            return Fetched(FetchOutcome.GONE, url, reason=f"HTTP {response.status_code}")
+        if not response.is_success:
+            return Fetched(FetchOutcome.FAILED, url, reason=f"HTTP {response.status_code}")
+        if not same_site(url, final_url):
+            return Fetched(FetchOutcome.GONE, url, reason=f"moved to {final_url}")
+        content_type = response.headers.get("content-type", "")
+        if "text/html" not in content_type:
+            return Fetched(FetchOutcome.FAILED, final_url, reason=f"not HTML ({content_type or 'no content type'})")
+        content = self.extract(final_url, response.text)
+        if not content.full_text.strip():
+            return Fetched(FetchOutcome.FAILED, final_url, reason="no text on the page")
+        return Fetched(
+            FetchOutcome.OK, final_url, content,
+            etag=response.headers.get("etag"), last_modified=response.headers.get("last-modified"),
+        )
 
     def extract(self, url: str, html: str) -> ExtractedContent:
         """

@@ -67,9 +67,28 @@ export type CrawlStepType =
   | "PAGE_EMBED_START"
   | "PAGE_EMBED_COMPLETE"
   | "PAGE_INGEST_START"
-  | "PAGE_INGEST_COMPLETE";
+  | "PAGE_INGEST_COMPLETE"
+  | "PAGE_REMOVED";
 
-export type CrawledPageStatus = "pending" | "success" | "failed" | "skipped";
+export type CrawledPageStatus = "pending" | "success" | "failed" | "skipped" | "unchanged" | "gone";
+
+/** A page of a knowledge base as it is now. `failing` keeps the chunks of its last good read; `gone` has none. */
+export type KnowledgePageState = "live" | "failing" | "gone";
+
+export interface KnowledgePage {
+  url: string;
+  title: string;
+  /** The crawl source URL that keeps it current, or "upload". */
+  source: string;
+  state: KnowledgePageState;
+  chunk_count: number;
+  last_read_at: string | null;
+  consecutive_failures: number;
+  /** It has failed enough crawls in a row that the owner should look. */
+  needs_attention: boolean;
+  /** Why it's failing or gone: "HTTP 404". */
+  reason: string;
+}
 
 // =============================================================================
 // Knowledge Base
@@ -153,6 +172,10 @@ export interface CrawlProgress {
   processed_urls: number;
   successful_urls: number;
   failed_urls: number;
+  /** Pages the site said were gone, removed from the knowledge base. */
+  removed_urls: number;
+  /** Pages read that said what they said last time (part of `successful_urls`): nothing was embedded. */
+  unchanged_urls: number;
   total_chunks: number;
   total_embeddings: number;
 }

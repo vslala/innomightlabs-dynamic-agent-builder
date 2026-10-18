@@ -19,8 +19,8 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, AsyncIterator, Callable
-from urllib.parse import urlparse
+from enum import Enum
+from typing import AsyncIterator, Callable, NoReturn, Optional
 
 import boto3
 
@@ -33,12 +33,13 @@ from src.knowledge.models import (
     CrawlStepType,
     CrawledPage,
     CrawledPageStatus,
-    ContentChunk,
     CrawlProgress,
     CrawlCheckpoint,
     PageMetadata,
     PageTiming,
     CrawlSourceType,
+    KnowledgePage,
+    KnowledgePageState,
 )
 from src.knowledge.repository import (
     KnowledgeBaseRepository,
@@ -46,12 +47,15 @@ from src.knowledge.repository import (
     CrawlStepRepository,
     CrawledPageRepository,
     ContentChunkRepository,
+    KnowledgePageRepository,
 )
 from src.knowledge.run_state import CrawlJobStateService, CrawlJobStoppedError
-from src.crawler.discovery import UrlDiscovery, DiscoveryConfig, DiscoveredUrl
-from src.crawler.extractor import ContentExtractor, ExtractedContent
+from src.crawler.discovery import UrlDiscovery, DiscoveryConfig
+from src.crawler.extractor import ContentExtractor, ExtractedContent, Fetched, FetchOutcome
 from src.crawler.chunking import get_chunking_strategy
-from src.crawler.page_chunks import PageChunks, prepare_page, vectors_for
+from src.crawler.page_chunks import text_hash
+from src.crawler.page_index import PageIndex, held
+from src.crawler.robots import RobotsParser, RobotsTxt
 from src.crawler.events import (
     CrawlEvent,
     job_started_event,
@@ -60,17 +64,30 @@ from src.crawler.events import (
     job_completed_event,
     job_failed_event,
     url_discovered_event,
-    url_skipped_event,
     page_fetch_start_event,
     page_fetch_complete_event,
     page_parse_complete_event,
     page_chunk_complete_event,
-    page_embed_complete_event,
     page_ingest_complete_event,
     page_error_event,
 )
 
 log = logging.getLogger(__name__)
+
+
+class PageNotRead(Exception):
+    """The page couldn't be read this time; what the knowledge base had of it is kept."""
+
+
+class PageRead(str, Enum):
+    """What reading a page did to the knowledge base. A read that failed raises `PageNotRead` instead."""
+
+    INDEXED = "indexed"
+    #: It said what it said last time (a 304, or the same text): nothing was chunked or embedded.
+    UNCHANGED = "unchanged"
+    #: The site said it's gone, and it was taken out.
+    REMOVED = "removed"
+
 
 # Lambda timeout buffer (save checkpoint 30s before timeout)
 LAMBDA_TIMEOUT_BUFFER_MS = 30000
@@ -102,6 +119,8 @@ class CrawlContext:
     processed_count: int = 0
     successful_count: int = 0
     failed_count: int = 0
+    removed_count: int = 0
+    unchanged_count: int = 0
     total_chunks: int = 0
     total_embeddings: int = 0
     last_heartbeat_monotonic: float = 0.0
@@ -109,15 +128,18 @@ class CrawlContext:
     # Event callback (for SSE streaming)
     event_callback: Optional[Callable[[CrawlEvent], None]] = None
 
-    # The knowledge base's stored chunks by page, read once per run: what a page is compared with before it's embedded.
-    stored_chunks: Optional[dict[str, dict[str, ContentChunk]]] = None
+    knowledge_pages: KnowledgePageRepository = field(default_factory=KnowledgePageRepository)
+    #: The knowledge base's pages by URL, read once per run (`PageIndex.load`) and kept current as pages are written.
+    pages: dict[str, KnowledgePage] = field(default_factory=dict)
+    #: The site's robots.txt, read the first time a page is checked against it.
+    robots: Optional[RobotsTxt] = None
 
-    def stored_for(self, url: str) -> dict[str, ContentChunk]:
-        if self.stored_chunks is None:
-            self.stored_chunks = {}
-            for chunk in self.chunk_repo.find_all_by_kb(self.kb.kb_id):
-                self.stored_chunks.setdefault(chunk.source_url, {})[chunk.chunk_id] = chunk
-        return self.stored_chunks.get(url, {})
+    def page(self, url: str) -> KnowledgePage:
+        """The page as the knowledge base has it, or a new one this crawl owns."""
+        return self.pages.get(url) or KnowledgePage(kb_id=self.kb.kb_id, url=url, source=self.job.config.source_url)
+
+    def keep(self, page: KnowledgePage) -> None:
+        self.pages[page.url] = page
 
     def emit_event(self, event: CrawlEvent) -> None:
         """Emit an event if callback is registered."""
@@ -140,6 +162,8 @@ class CrawlContext:
             processed_urls=self.processed_count,
             successful_urls=self.successful_count,
             failed_urls=self.failed_count,
+            removed_urls=self.removed_count,
+            unchanged_urls=self.unchanged_count,
             total_chunks=self.total_chunks,
             total_embeddings=self.total_embeddings,
         )
@@ -177,8 +201,9 @@ class CrawlerWorker:
             yield event.to_sse()
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.extractor = ContentExtractor()
+        self.robots = RobotsParser()
         self._embeddings = None
         self._pinecone = None
 
@@ -313,9 +338,15 @@ class CrawlerWorker:
                 ctx.processed_count = job.progress.processed_urls
                 ctx.successful_count = job.progress.successful_urls
                 ctx.failed_count = job.progress.failed_urls
+                ctx.removed_count = job.progress.removed_urls
+                ctx.unchanged_count = job.progress.unchanged_urls
                 ctx.total_chunks = job.progress.total_chunks
                 ctx.total_embeddings = job.progress.total_embeddings
             log.info(f"Resuming from checkpoint at index {ctx.current_url_index}, previously processed {ctx.processed_count} URLs")
+
+        if not ctx.state_service.hold(job):
+            log.info("Did not start crawl job %s because another crawl of the knowledge base holds it", job_id)
+            return job
 
         try:
             expected_status = job.status.value
@@ -344,6 +375,7 @@ class CrawlerWorker:
             })
             ctx.heartbeat(force=True)
 
+            ctx.pages = self._index(ctx).load()
             if not ctx.discovered_urls:
                 await self._discover_urls(ctx)
 
@@ -404,6 +436,19 @@ class CrawlerWorker:
                 break
 
         log.info(f"Discovered {len(ctx.discovered_urls)} URLs")
+        ctx.discovered_urls += self._pages_to_verify(ctx)
+
+    def _pages_to_verify(self, ctx: CrawlContext) -> list[str]:
+        """This crawl's pages that discovery didn't find, to read like any other: one gone from the site says so with a
+        404, one that's merely unlinked or past `max_pages` is read and kept. Least recently read first, at most
+        `max_pages` of them a run; the rest wait for the next."""
+        found = set(ctx.discovered_urls)
+        unseen = [
+            page for page in ctx.pages.values()
+            if page.source == ctx.job.config.source_url and page.state != KnowledgePageState.GONE and page.url not in found
+        ]
+        unseen.sort(key=lambda page: page.last_read_at or datetime.min.replace(tzinfo=timezone.utc))
+        return [page.url for page in unseen[: ctx.job.config.max_pages]]
 
     async def _process_urls(self, ctx: CrawlContext) -> None:
         """Process discovered URLs."""
@@ -421,8 +466,13 @@ class CrawlerWorker:
             url = ctx.discovered_urls[ctx.current_url_index]
 
             try:
-                await self._process_single_url(ctx, url)
-                ctx.successful_count += 1
+                read = await self._process_single_url(ctx, url)
+                if read is PageRead.REMOVED:
+                    ctx.removed_count += 1
+                else:
+                    ctx.successful_count += 1
+                    if read is PageRead.UNCHANGED:
+                        ctx.unchanged_count += 1
             except Exception as e:
                 log.error(f"Failed to process {url}: {e}")
                 ctx.failed_count += 1
@@ -456,57 +506,160 @@ class CrawlerWorker:
             if ctx.current_url_index < len(ctx.discovered_urls):
                 await asyncio.sleep(rate_limit_s)
 
-    async def _process_single_url(self, ctx: CrawlContext, url: str) -> None:
-        """Process a single URL through the full pipeline."""
-        job_id = ctx.job.job_id
-        kb_id = ctx.kb.kb_id
-        timing = PageTiming()
+    async def _process_single_url(self, ctx: CrawlContext, url: str) -> PageRead:
+        """Read one page: index what it says now, skip it if it says the same, or remove it if the site says it's gone.
 
+        A page that can't be read this time (a timeout, a 5xx, no text) raises `PageNotRead` and keeps what the
+        knowledge base had of it: only the site saying the page is gone deletes anything.
+        """
+        timing = PageTiming()
+        if not await self._allowed(ctx, url):
+            return self._gone(ctx, url, "robots.txt disallows it", timing)
+        page = ctx.page(url)
+        fetched = await self._fetch_page(ctx, url, timing, page)
+        if fetched.outcome is FetchOutcome.NOT_MODIFIED:
+            return self._unchanged(ctx, page, fetched, timing)
+        if fetched.outcome is FetchOutcome.GONE:
+            return self._gone(ctx, url, fetched.reason, timing)
+        if fetched.outcome is FetchOutcome.FAILED or fetched.content is None:
+            self._failed(ctx, url, fetched.reason, timing)
+        if fetched.url != url:
+            # It moved within the site: what it says is kept under its new address
+            self._take_out(ctx, url, f"moved to {fetched.url}")
+
+        content = fetched.content
+        read = ctx.page(fetched.url)
+        said = text_hash(content.title, content.full_text, ctx.job.config.chunking_strategy.value)
+        if read.settled and read.text_hash == said:
+            return self._unchanged(ctx, read, fetched, timing)
+        read = read.model_copy(update={"text_hash": said, "etag": fetched.etag, "last_modified": fetched.last_modified})
+        await self._index_page(ctx, read, content, timing)
+        return PageRead.INDEXED
+
+    async def _allowed(self, ctx: CrawlContext, url: str) -> bool:
+        if not ctx.job.config.respect_robots_txt:
+            return True
+        if ctx.robots is None:
+            ctx.robots = await self.robots.fetch_and_parse(ctx.job.config.source_url)
+        return self.robots.is_allowed(url, ctx.robots)
+
+    def _index(self, ctx: CrawlContext) -> PageIndex:
+        return PageIndex(
+            ctx.kb.kb_id, vectors=self.pinecone, embeddings=self.embeddings,
+            chunks=ctx.chunk_repo, pages=ctx.knowledge_pages,
+        )
+
+    def _gone(self, ctx: CrawlContext, url: str, reason: str, timing: PageTiming) -> PageRead:
+        """The site says the page is gone: take it out. One the knowledge base never had is a broken link, a failed read."""
+        if not self._take_out(ctx, url, reason):
+            self._record(ctx, url, CrawledPageStatus.FAILED, timing, error=reason)
+            raise PageNotRead(reason)
+        self._record(ctx, url, CrawledPageStatus.GONE, timing, error=reason)
+        return PageRead.REMOVED
+
+    def _take_out(self, ctx: CrawlContext, url: str, reason: str) -> bool:
+        """Remove the page if the knowledge base has anything of it; whether it did."""
+        page = ctx.pages.get(url)
+        # A removal that stopped halfway left the page pending: it's finished here
+        if page is None or (page.state == KnowledgePageState.GONE and not page.pending_ids):
+            return False
+        removed = len(page.chunk_ids)
+        ctx.keep(self._index(ctx).remove(page, reason=reason, job_id=ctx.job.job_id))
+        self._log_step(ctx, CrawlStepType.PAGE_REMOVED, url=url, details={"reason": reason, "removed_count": removed})
+        return True
+
+    def _unchanged(self, ctx: CrawlContext, page: KnowledgePage, fetched: Fetched, timing: PageTiming) -> PageRead:
+        ctx.keep(self._index(ctx).seen(
+            page, job_id=ctx.job.job_id,
+            etag=fetched.etag or page.etag, last_modified=fetched.last_modified or page.last_modified,
+        ))
+        self._record(ctx, page.url, CrawledPageStatus.UNCHANGED, timing, chunk_count=len(page.chunk_ids))
+        ctx.total_chunks += len(page.chunk_ids)  # covered by this run, though none was embedded
+        return PageRead.UNCHANGED
+
+    def _failed(self, ctx: CrawlContext, url: str, reason: str, timing: PageTiming) -> NoReturn:
+        ctx.keep(self._index(ctx).failed(ctx.page(url), reason=reason, job_id=ctx.job.job_id))
+        self._record(ctx, url, CrawledPageStatus.FAILED, timing, error=reason)
+        raise PageNotRead(reason)
+
+    def _record(
+        self,
+        ctx: CrawlContext,
+        url: str,
+        status: CrawledPageStatus,
+        timing: PageTiming,
+        *,
+        content: Optional[ExtractedContent] = None,
+        chunk_count: int = 0,
+        error: Optional[str] = None,
+    ) -> None:
+        """What this run did to the page, for the run's page list."""
+        timing.total_duration_ms = sum(
+            duration or 0 for duration in (timing.fetch_duration_ms, timing.chunk_duration_ms, timing.ingest_duration_ms)
+        )
+        ctx.page_repo.save(CrawledPage(
+            job_id=ctx.job.job_id,
+            created_by=ctx.kb.owner_id,
+            url=url,
+            status=status,
+            page_metadata=PageMetadata(
+                title=content.title,
+                description=content.description,
+                content_length=content.content_length,
+                word_count=content.word_count,
+            ) if content else PageMetadata(),
+            chunk_count=chunk_count,
+            timing=timing,
+            error=error,
+        ))
+
+    async def _fetch_page(self, ctx: CrawlContext, url: str, timing: PageTiming, page: KnowledgePage) -> Fetched:
+        """Fetch the page, sending back the validators of its last read when it's settled, so it may answer 304."""
+        job_id, kb_id = ctx.job.job_id, ctx.kb.kb_id
         ctx.emit_event(page_fetch_start_event(job_id, kb_id, url))
         self._log_step(ctx, CrawlStepType.PAGE_FETCH_START, url=url)
 
         fetch_start = time.time()
-        try:
-            extracted = await self.extractor.fetch_and_extract(url)
-        except Exception as e:
-            self._log_step(ctx, CrawlStepType.PAGE_FETCH_ERROR, url=url, details={"error": str(e)})
-            raise
+        etag, last_modified = (page.etag, page.last_modified) if page.settled else (None, None)
+        fetched = await self.extractor.fetch(url, etag=etag, last_modified=last_modified)
         timing.fetch_duration_ms = int((time.time() - fetch_start) * 1000)
+        if fetched.outcome is FetchOutcome.NOT_MODIFIED:
+            return fetched
+        if fetched.outcome is not FetchOutcome.OK or fetched.content is None:
+            self._log_step(ctx, CrawlStepType.PAGE_FETCH_ERROR, url=url,
+                           details={"outcome": fetched.outcome.value, "error": fetched.reason})
+            return fetched
 
+        content = fetched.content
         ctx.emit_event(page_fetch_complete_event(
             job_id, kb_id, url,
             status_code=200,
-            content_length=extracted.content_length,
+            content_length=content.content_length,
             duration_ms=timing.fetch_duration_ms,
         ))
-        self._log_step(ctx, CrawlStepType.PAGE_FETCH_COMPLETE, url=url,
-                       duration_ms=timing.fetch_duration_ms)
-
-        # Step 2: Parse content
-        parse_start = time.time()
-        timing.parse_duration_ms = int((time.time() - parse_start) * 1000)
-
+        self._log_step(ctx, CrawlStepType.PAGE_FETCH_COMPLETE, url=url, duration_ms=timing.fetch_duration_ms)
         ctx.emit_event(page_parse_complete_event(
             job_id, kb_id, url,
-            title=extracted.title,
-            word_count=extracted.word_count,
-            duration_ms=timing.parse_duration_ms,
+            title=content.title,
+            word_count=content.word_count,
+            duration_ms=0,  # extraction is part of the fetch
         ))
         self._log_step(ctx, CrawlStepType.PAGE_PARSE_COMPLETE, url=url,
-                       duration_ms=timing.parse_duration_ms,
-                       details={"title": extracted.title, "word_count": extracted.word_count})
+                       details={"title": content.title, "word_count": content.word_count})
+        return fetched
 
-        # Step 3: Chunk content
+    async def _index_page(self, ctx: CrawlContext, page: KnowledgePage, content: ExtractedContent, timing: PageTiming) -> None:
+        """Chunk the page and write it into the knowledge base (`PageIndex.write`)."""
+        job_id, kb_id, url = ctx.job.job_id, ctx.kb.kb_id, page.url
+
         chunk_start = time.time()
-        chunking_strategy = get_chunking_strategy(ctx.job.config.chunking_strategy.value)
-        chunk_data_list = chunking_strategy.chunk(
-            content=extracted.full_text,
+        chunk_data_list = get_chunking_strategy(ctx.job.config.chunking_strategy.value).chunk(
+            content=content.full_text,
             source_url=url,
-            page_title=extracted.title,
-            sections=extracted.sections,
+            page_title=content.title,
+            sections=content.sections,
         )
         timing.chunk_duration_ms = int((time.time() - chunk_start) * 1000)
-
         ctx.emit_event(page_chunk_complete_event(
             job_id, kb_id, url,
             chunk_count=len(chunk_data_list),
@@ -515,81 +668,30 @@ class CrawlerWorker:
         self._log_step(ctx, CrawlStepType.PAGE_CHUNK_COMPLETE, url=url,
                        duration_ms=timing.chunk_duration_ms,
                        details={"chunk_count": len(chunk_data_list)})
-
         if not chunk_data_list:
-            log.warning(f"No chunks generated for {url}")
-            return
+            # A page with text but nothing to chunk is a bad read, not an empty page: keep what it had
+            self._failed(ctx, url, "the page gave no chunks", timing)
 
-        # Step 4: Embed the chunks that changed since the page was last read
-        page_chunks = prepare_page(kb_id, url, extracted.title, chunk_data_list, ctx.stored_for(url))
-        embed_start = time.time()
-        embedding_results = (
-            await self.embeddings.embed_texts_async([chunk.content for chunk in page_chunks.changed])
-            if page_chunks.changed else []
-        )
-        timing.embed_duration_ms = int((time.time() - embed_start) * 1000)
-
-        ctx.emit_event(page_embed_complete_event(
-            job_id, kb_id, url,
-            embedding_count=len(embedding_results),
-            duration_ms=timing.embed_duration_ms,
-        ))
-        self._log_step(ctx, CrawlStepType.PAGE_EMBED_COMPLETE, url=url,
-                       duration_ms=timing.embed_duration_ms,
-                       details={"embedding_count": len(embedding_results), "unchanged_count": page_chunks.reused})
-
-        # Step 5: Store in Pinecone and DynamoDB
         ingest_start = time.time()
-        self._store_chunks(ctx, page_chunks, embedding_results)
+        written = await self._index(ctx).write(page, content.title, chunk_data_list, job_id=job_id)
+        ctx.keep(written.page)
         timing.ingest_duration_ms = int((time.time() - ingest_start) * 1000)
-
         ctx.emit_event(page_ingest_complete_event(
             job_id, kb_id, url,
-            vector_count=len(page_chunks.changed),
+            vector_count=written.embedded,
             duration_ms=timing.ingest_duration_ms,
         ))
         self._log_step(ctx, CrawlStepType.PAGE_INGEST_COMPLETE, url=url,
                        duration_ms=timing.ingest_duration_ms,
-                       details={"vector_count": len(page_chunks.changed), "removed_count": len(page_chunks.stale)})
+                       details={
+                           "embedding_count": written.embedded,
+                           "unchanged_count": written.chunks - written.embedded,
+                           "removed_count": written.removed,
+                       })
 
-        # Calculate total timing
-        timing.total_duration_ms = (
-            (timing.fetch_duration_ms or 0) +
-            (timing.parse_duration_ms or 0) +
-            (timing.chunk_duration_ms or 0) +
-            (timing.embed_duration_ms or 0) +
-            (timing.ingest_duration_ms or 0)
-        )
-
-        # Save crawled page record
-        page = CrawledPage(
-            job_id=job_id,
-            created_by=ctx.kb.owner_id,
-            url=url,
-            status=CrawledPageStatus.SUCCESS,
-            page_metadata=PageMetadata(
-                title=extracted.title,
-                description=extracted.description,
-                content_length=extracted.content_length,
-                word_count=extracted.word_count,
-            ),
-            chunk_count=len(chunk_data_list),
-            timing=timing,
-        )
-        ctx.page_repo.save(page)
-
-        # Update counters
-        ctx.total_chunks += len(chunk_data_list)
-        ctx.total_embeddings += len(embedding_results)
-
-    def _store_chunks(self, ctx: CrawlContext, page_chunks: PageChunks, embedding_results: list) -> None:
-        """Save the changed chunks and their vectors, and remove what the page no longer has."""
-        if page_chunks.changed:
-            ctx.chunk_repo.batch_save(page_chunks.changed)
-            self.pinecone.upsert(vectors_for(page_chunks.changed, embedding_results), ctx.kb.kb_id)
-        if page_chunks.stale:
-            self.pinecone.delete_by_ids(page_chunks.stale, ctx.kb.kb_id)
-            ctx.chunk_repo.delete_by_ids(ctx.kb.kb_id, page_chunks.stale)
+        self._record(ctx, url, CrawledPageStatus.SUCCESS, timing, content=content, chunk_count=written.chunks)
+        ctx.total_chunks += written.chunks
+        ctx.total_embeddings += written.embedded
 
     def _update_progress(self, ctx: CrawlContext) -> None:
         """Update job progress in database."""
@@ -631,14 +733,12 @@ class CrawlerWorker:
 
         if not ctx.job_repo.save_if_in_progress(job):
             raise CrawlJobStoppedError(f"Crawl job {job.job_id} is no longer active")
+        ctx.state_service.release(job)
 
-        # Update KB stats
+        # The knowledge base as it is now, not what this run read
+        total_pages, total_chunks = held(ctx.pages.values())
         ctx.kb_repo.update_stats(
-            ctx.account_id,
-            ctx.kb.kb_id,
-            total_pages=ctx.successful_count,
-            total_chunks=ctx.total_chunks,
-            total_vectors=ctx.total_embeddings,
+            ctx.account_id, ctx.kb.kb_id, total_pages=total_pages, total_chunks=total_chunks, total_vectors=total_chunks
         )
 
         # Log completion
@@ -736,6 +836,7 @@ class CrawlerWorker:
         if not ctx.job_repo.save_if_in_progress(job):
             log.info("Did not overwrite terminal state for crawl job %s", job.job_id)
             return
+        ctx.state_service.release(job)
 
         # Log failure
         self._log_step(ctx, CrawlStepType.JOB_FAILED, details={"error": error})

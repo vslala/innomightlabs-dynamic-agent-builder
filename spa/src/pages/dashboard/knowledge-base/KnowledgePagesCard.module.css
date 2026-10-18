@@ -1,0 +1,13 @@
+@reference "tailwindcss";
+
+.rowIcon {
+  @apply h-4 w-4 text-[var(--text-muted)];
+}
+
+.counts {
+  @apply text-xs text-[var(--text-muted)];
+}
+
+.loading {
+  @apply h-24;
+}

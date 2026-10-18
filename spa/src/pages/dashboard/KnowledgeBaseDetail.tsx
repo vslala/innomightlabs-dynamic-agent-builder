@@ -51,6 +51,7 @@ import { Page, PageHeader, PageActions, PageBody, Stack, Inline, FieldGroup } fr
 import { SchemaForm } from "../../components/forms";
 import styles from "./KnowledgeBaseDetail.module.css";
 import { knowledgeApiService } from "../../services/knowledge";
+import { KnowledgePagesCard } from "./knowledge-base/KnowledgePagesCard";
 import { KB_UPLOAD_ALLOWED_EXTENSIONS, KB_UPLOAD_MAX_FILE_SIZE } from "../../types/knowledge";
 import type {
   KnowledgeBase,
@@ -695,9 +696,9 @@ export function KnowledgeBaseDetail() {
                     <Stack gap="sm">
                       <StatsGrid columns={4}>
                         <StatItem label="Discovered" value={job.progress.discovered_urls} />
-                        <StatItem label="Processed" value={job.progress.processed_urls} />
                         <StatItem label="Success" value={job.progress.successful_urls} valueClassName={styles.successStatValue} />
                         <StatItem label="Failed" value={job.progress.failed_urls} valueClassName={styles.failedStatValue} />
+                        <StatItem label="Removed" value={job.progress.removed_urls} />
                       </StatsGrid>
 
                       <StatsGrid columns={4}>
@@ -741,6 +742,12 @@ export function KnowledgeBaseDetail() {
           )}
         </CardContent>
       </Card>
+
+      <KnowledgePagesCard
+        kbId={kb.kb_id}
+        refreshKey={crawlJobs.map((job) => `${job.job_id}:${job.status}`).join(",")}
+        formatDate={formatDate}
+      />
 
       <Card>
         <CardHeader>

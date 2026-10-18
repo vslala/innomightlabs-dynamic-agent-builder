@@ -34,6 +34,8 @@ from src.crawler.extractor import (
     ContentExtractor,
     ExtractedContent,
     ExtractedSection,
+    Fetched,
+    FetchOutcome,
 )
 
 from src.crawler.chunking import (
@@ -78,6 +80,8 @@ __all__ = [
     "ContentExtractor",
     "ExtractedContent",
     "ExtractedSection",
+    "Fetched",
+    "FetchOutcome",
     # Chunking
     "ChunkingStrategy",
     "ChunkingConfig",

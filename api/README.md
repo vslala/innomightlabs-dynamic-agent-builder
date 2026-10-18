@@ -97,6 +97,9 @@ erDiagram
     KNOWLEDGE_BASE ||--o{ CRAWL_JOB : runs
     KNOWLEDGE_BASE ||--o{ CONTENT_CHUNK : stores
     KNOWLEDGE_BASE ||--o{ CONTENT_UPLOAD : receives
+    KNOWLEDGE_BASE ||--o{ KNOWLEDGE_PAGE : "has pages"
+    KNOWLEDGE_PAGE ||--o{ CONTENT_CHUNK : "lists by chunk_ids"
+    KNOWLEDGE_BASE ||--o| CRAWL_LEASE : "is crawled by one job"
 
     USER {
         string email PK
@@ -215,6 +218,8 @@ erDiagram
 | **CrawlJob** | `KnowledgeBase#{kb_id}` | `CrawlJob#{job_id}` | List crawl jobs for KB |
 | **ContentChunk** | `KnowledgeBase#{kb_id}` | `Chunk#{chunk_id}` | Get chunk by ID, batch save |
 | **ContentUpload** | `KnowledgeBase#{kb_id}` | `Upload#{created_at}#{upload_id}` | List uploads by KB (cursor-based) |
+| **KnowledgePage** | `KnowledgeBase#{kb_id}` | `KnowledgePage#{url_hash}` | A page as it is now: its chunk ids, state, validators (see `src/crawler/page_index.py`) |
+| **CrawlLease** | `KnowledgeBase#{kb_id}` | `CrawlLease` | The one crawl a KB runs at a time (conditional put) |
 | **MemoryBlockDef** | `Agent#{agent_id}#User#{user_id}` | `MemoryBlockDef#{block_id}` | List memory block definitions for agent + user |
 | **CoreMemory** | `Agent#{agent_id}#User#{user_id}` | `CoreMemory#{block_id}` | Get/update memory block content |
 | **ArchivalMemory** | `Agent#{agent_id}#User#{user_id}` | `Archival#{timestamp}#{memory_id}` | Search archival memories (chronological) |

@@ -167,6 +167,7 @@ async def test_url_discovery_offers_heartbeat_on_each_url(monkeypatch):
     context.job = job
     context.kb.kb_id = job.kb_id
     context.discovered_urls = []
+    context.pages = {}
     context.emit_event = Mock()
     context.heartbeat = Mock()
     context.step_repo.save = Mock()

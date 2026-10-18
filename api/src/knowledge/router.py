@@ -53,7 +53,6 @@ from src.knowledge.models import (
     KnowledgeBaseResponse,
     CreateKnowledgeBaseRequest,
     UpdateKnowledgeBaseRequest,
-    CrawlJob,
     CrawlJobResponse,
     CrawlJobStatus,
     CrawlConfig,
@@ -63,6 +62,8 @@ from src.knowledge.models import (
     ContentUploadResponse,
     ContentUploadItemResponse,
     ContentUpload,
+    KnowledgePageResponse,
+    KnowledgePageState,
 )
 from src.knowledge.repository import (
     KnowledgeBaseRepository,
@@ -71,6 +72,7 @@ from src.knowledge.repository import (
     CrawledPageRepository,
     AgentKnowledgeBaseRepository,
     ContentUploadRepository,
+    KnowledgePageRepository,
 )
 from src.knowledge.schemas import (
     get_content_upload_form_schema,
@@ -79,7 +81,9 @@ from src.knowledge.schemas import (
     CONTENT_UPLOAD_ALLOWED_EXTENSIONS,
 )
 from src.knowledge.service import get_knowledge_base_service, KnowledgeBaseService
-from src.knowledge.crawl_launch import launch_crawl
+from src.knowledge.crawl_launch import CrawlAlreadyRunning, create_crawl_job, launch_crawl
+from src.knowledge.run_state import CrawlJobStateService
+from src.vectorstore.pinecone_client import VectorStoreError
 from src.common.pagination import Paginated
 from src.exceptions import GENERIC_ERROR_MESSAGE
 
@@ -295,7 +299,6 @@ async def start_crawl_job(
     crawl_request: StartCrawlJobRequest,
     background_tasks: BackgroundTasks,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
-    job_repo: Annotated[CrawlJobRepository, Depends(get_crawl_job_repository)],
     crawler = Depends(get_crawler),
     auto_start: bool = Query(default=True, description="Automatically start crawling"),
 ) -> CrawlJobResponse:
@@ -326,14 +329,10 @@ async def start_crawl_job(
         chunking_strategy=crawl_request.chunking_strategy,
     )
 
-    # Create crawl job
-    job = CrawlJob(
-        kb_id=kb_id,
-        config=config,
-        created_by=principal.user_id,
-    )
-
-    saved_job = job_repo.save(job)
+    try:
+        saved_job = create_crawl_job(kb_id, config, principal.user_id)
+    except CrawlAlreadyRunning as running:
+        raise HTTPException(status_code=409, detail="This knowledge base is already being crawled.") from running
     log.info(f"Created crawl job {saved_job.job_id} for KB {kb_id}")
 
     # Start crawling if auto_start is enabled
@@ -357,6 +356,15 @@ async def list_crawl_jobs(
 
     jobs = job_repo.find_all_by_kb(kb_id, limit=limit)
     return [job.to_response() for job in jobs]
+
+
+@router.get("/{kb_id}/pages", response_model=list[KnowledgePageResponse])
+async def list_pages(kb: Annotated[KnowledgeBase, Depends(can_read_kb)]) -> list[KnowledgePageResponse]:
+    """The knowledge base's pages as they are now: those that need a look first, then removed ones last."""
+    order = {KnowledgePageState.FAILING: 1, KnowledgePageState.LIVE: 2, KnowledgePageState.GONE: 3}
+    pages = KnowledgePageRepository().list_by_kb(kb.kb_id)
+    pages.sort(key=lambda page: (not page.needs_attention, order[page.state], page.url))
+    return [page.to_response() for page in pages]
 
 
 @router.get("/{kb_id}/crawl-jobs/{job_id}", response_model=CrawlJobResponse)
@@ -427,6 +435,8 @@ async def run_crawl_job(
     except Exception:
         raise HTTPException(status_code=503, detail=KNOWLEDGE_SEARCH_UNAVAILABLE)
 
+    if not CrawlJobStateService().hold(job):
+        raise HTTPException(status_code=409, detail="This knowledge base is already being crawled.")
     launch_crawl(job_id, kb_id, kb.account_id, background_tasks, crawler)
 
     return job.to_response()
@@ -651,6 +661,7 @@ async def cancel_crawl_job(
     # Only cancel if job is in progress or pending
     if job.status in [CrawlJobStatus.PENDING, CrawlJobStatus.IN_PROGRESS]:
         if job_repo.cancel_if_active(job_id, kb_id):
+            CrawlJobStateService().release(job)
             log.info(f"Cancelled crawl job {job_id}")
 
 
@@ -926,12 +937,16 @@ async def upload_kb_content(
     except UnicodeDecodeError:
         content = raw_bytes.decode("utf-8", errors="replace")
 
-    ingest_result = await service.ingest_text_content(
-        kb=knowledge_base,
-        filename=filename,
-        content=content,
-        metadata=metadata,
-    )
+    try:
+        ingest_result = await service.ingest_text_content(
+            kb=knowledge_base,
+            filename=filename,
+            content=content,
+            metadata=metadata,
+        )
+    except VectorStoreError as e:
+        log.error(f"Couldn't index {filename} into KB {knowledge_base.kb_id}: {e}")
+        raise HTTPException(status_code=503, detail=KNOWLEDGE_SEARCH_UNAVAILABLE) from e
 
     upload_record = upload_repo.save(
         ContentUpload(
@@ -946,9 +961,8 @@ async def upload_kb_content(
         )
     )
 
-    total_pages = knowledge_base.total_pages + 1
-    total_chunks = knowledge_base.total_chunks + ingest_result.chunk_count
-    total_vectors = knowledge_base.total_vectors + ingest_result.vector_count
+    total_pages, total_chunks = ingest_result.total_pages, ingest_result.total_chunks
+    total_vectors = total_chunks
 
     kb_repo.update_stats(
         knowledge_base.account_id,

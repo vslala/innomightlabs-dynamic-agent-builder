@@ -16,6 +16,14 @@ CrawlJob:
     - Get job by ID: GetItem pk=KnowledgeBase#{kb_id}, sk=CrawlJob#{job_id}
     - Create/Update job: PutItem
 
+KnowledgePage:
+    - List a KB's pages: Query pk=KnowledgeBase#{kb_id}, sk begins_with KnowledgePage#
+    - Save: PutItem, conditional on the version it was read at
+
+CrawlLease:
+    - Claim / renew: PutItem pk=KnowledgeBase#{kb_id}, sk=CrawlLease, if free, lapsed, or already this job's
+    - Release: DeleteItem, if still this job's
+
 CrawlStep:
     - List steps for job: Query pk=CrawlJob#{job_id}, sk begins_with Step#
     - Create step: PutItem
@@ -48,6 +56,8 @@ from src.knowledge.models import (
     KnowledgeBase,
     KnowledgeBaseStatus,
     CrawlJob,
+    CrawlLease,
+    KnowledgePage,
     CrawlStep,
     CrawledPage,
     ContentChunk,
@@ -57,6 +67,9 @@ from src.knowledge.models import (
 from src.common.pagination import decode_cursor
 
 log = logging.getLogger(__name__)
+
+#: DynamoDB's BatchGetItem takes at most this many keys.
+BATCH_GET_LIMIT = 100
 
 
 class KnowledgeBaseRepository:
@@ -278,22 +291,20 @@ class CrawlJobRepository:
             return CrawlJob.from_dynamo_item(item)
         return None
 
-    def find_all_by_kb(self, kb_id: str, limit: int = 5) -> list[CrawlJob]:
-        """Find all crawl jobs for a knowledge base, ordered by creation time (most recent first)."""
-        response = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"KnowledgeBase#{kb_id}")
-            & Key("sk").begins_with("CrawlJob#"),
-            ScanIndexForward=False,  # Most recent first
-            Limit=limit,
-        )
-
-        items = response.get("Items", [])
-        jobs = [CrawlJob.from_dynamo_item(item) for item in items]
-
-        # Sort by created_at descending (most recent first)
-        jobs.sort(key=lambda j: j.created_at, reverse=True)
-
-        log.info(f"Found {len(jobs)} crawl jobs for KB {kb_id}")
+    def find_all_by_kb(self, kb_id: str, limit: Optional[int] = 5) -> list[CrawlJob]:
+        """The knowledge base's newest crawl jobs, newest first; all of them with `limit=None`."""
+        # Job keys are random ids, so the newest can be anywhere in the partition: read it all, then sort.
+        query: dict[str, Any] = {
+            "KeyConditionExpression": Key("pk").eq(f"KnowledgeBase#{kb_id}") & Key("sk").begins_with("CrawlJob#")
+        }
+        jobs: list[CrawlJob] = []
+        while True:
+            response = self.table.query(**query)
+            jobs += [CrawlJob.from_dynamo_item(item) for item in response.get("Items", [])]
+            if "LastEvaluatedKey" not in response:
+                break
+            query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+        jobs.sort(key=lambda job: job.created_at, reverse=True)
         return jobs[:limit]
 
     def cancel_if_active(self, job_id: str, kb_id: str) -> bool:
@@ -355,6 +366,101 @@ class CrawlJobRepository:
         except Exception as e:
             log.error(f"Failed to update timing: {e}", exc_info=True)
             return False
+
+
+#: Marks a knowledge base whose older chunks have been given pages.
+ADOPTED_SK = "KnowledgePagesAdopted"
+
+
+class PageWrittenElsewhere(RuntimeError):
+    """Another writer saved the page since it was read: this write would have undone theirs."""
+
+
+class KnowledgePageRepository:
+    """What each page of a knowledge base has in it now (`KnowledgePage`)."""
+
+    def __init__(self):
+        self.table = get_dynamodb_resource().Table(settings.dynamodb_table)
+
+    def list_by_kb(self, kb_id: str) -> list[KnowledgePage]:
+        query: dict[str, Any] = {
+            "KeyConditionExpression": Key("pk").eq(f"KnowledgeBase#{kb_id}") & Key("sk").begins_with("KnowledgePage#")
+        }
+        pages: list[KnowledgePage] = []
+        while True:
+            response = self.table.query(**query)
+            pages += [KnowledgePage.from_dynamo_item(item) for item in response.get("Items", [])]
+            if "LastEvaluatedKey" not in response:
+                return pages
+            query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
+    def save(self, page: KnowledgePage) -> KnowledgePage:
+        """The page as written, with its next version; `PageWrittenElsewhere` if it changed since it was read."""
+        written = page.model_copy(update={"version": page.version + 1})
+        condition = (
+            {"ConditionExpression": "attribute_not_exists(pk)"} if page.version == 0
+            else {"ConditionExpression": "version = :read", "ExpressionAttributeValues": {":read": page.version}}
+        )
+        try:
+            self.table.put_item(Item=written.to_dynamo_item(), **condition)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                raise PageWrittenElsewhere(f"{page.url} was written by another crawl") from exc
+            raise
+        return written
+
+    def adopted(self, kb_id: str) -> bool:
+        """Whether the knowledge base's chunks from before pages were kept have been given pages (see `adopt`)."""
+        return "Item" in self.table.get_item(Key={"pk": f"KnowledgeBase#{kb_id}", "sk": ADOPTED_SK})
+
+    def mark_adopted(self, kb_id: str) -> None:
+        self.table.put_item(Item={
+            "pk": f"KnowledgeBase#{kb_id}", "sk": ADOPTED_SK, "kb_id": kb_id,
+            "adopted_at": datetime.now(timezone.utc).isoformat(), "entity_type": "KnowledgePagesAdopted",
+        })
+
+    def delete_all_by_kb(self, kb_id: str) -> None:
+        with self.table.batch_writer() as batch:
+            for page in self.list_by_kb(kb_id):
+                batch.delete_item(Key={"pk": page.pk, "sk": page.sk})
+            batch.delete_item(Key={"pk": f"KnowledgeBase#{kb_id}", "sk": ADOPTED_SK})
+
+
+class CrawlLeaseRepository:
+    """The single crawl a knowledge base runs at a time (`CrawlLease`)."""
+
+    def __init__(self):
+        self.table = get_dynamodb_resource().Table(settings.dynamodb_table)
+
+    def claim(self, lease: CrawlLease, *, now: datetime) -> bool:
+        """Take the lease for `lease.job_id`, or renew it: only when no other job holds one that hasn't lapsed."""
+        try:
+            self.table.put_item(
+                Item=lease.to_dynamo_item(),
+                ConditionExpression="attribute_not_exists(pk) OR job_id = :job_id OR expires_at < :now",
+                ExpressionAttributeValues={":job_id": lease.job_id, ":now": now.isoformat()},
+            )
+            return True
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            raise
+
+    def find(self, kb_id: str) -> Optional[CrawlLease]:
+        item = self.table.get_item(Key={"pk": f"KnowledgeBase#{kb_id}", "sk": "CrawlLease"}).get("Item")
+        return CrawlLease.from_dynamo_item(item) if item else None
+
+    def release(self, kb_id: str, job_id: str) -> None:
+        """Let the knowledge base crawl again, unless another job has taken the lease since."""
+        try:
+            self.table.delete_item(
+                Key={"pk": f"KnowledgeBase#{kb_id}", "sk": "CrawlLease"},
+                ConditionExpression="job_id = :job_id",
+                ExpressionAttributeValues={":job_id": job_id},
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                raise
 
 
 class CrawlStepRepository:
@@ -502,30 +608,20 @@ class ContentChunkRepository:
         return None
 
     def find_by_ids(self, chunk_ids: list[str], kb_id: str) -> list[ContentChunk]:
-        """Find multiple content chunks by IDs (for search result retrieval)."""
-        if not chunk_ids:
-            return []
-
-        # Use BatchGetItem for efficient retrieval
-        keys = [
-            {"pk": f"KnowledgeBase#{kb_id}", "sk": f"Chunk#{chunk_id}"}
-            for chunk_id in chunk_ids
-        ]
-
-        response = self.dynamodb.batch_get_item(
-            RequestItems={
-                settings.dynamodb_table: {
-                    "Keys": keys,
-                }
-            }
-        )
-
-        items = response.get("Responses", {}).get(settings.dynamodb_table, [])
-        chunks = [ContentChunk.from_dynamo_item(item) for item in items]
-
-        # Preserve order from chunk_ids
-        chunk_map = {chunk.chunk_id: chunk for chunk in chunks}
-        return [chunk_map[cid] for cid in chunk_ids if cid in chunk_map]
+        """The chunks that exist of these ids, in their order (search, and reading a page's chunks)."""
+        found: dict[str, ContentChunk] = {}
+        for start in range(0, len(chunk_ids), BATCH_GET_LIMIT):
+            request: dict[str, Any] = {settings.dynamodb_table: {"Keys": [
+                {"pk": f"KnowledgeBase#{kb_id}", "sk": f"Chunk#{chunk_id}"}
+                for chunk_id in chunk_ids[start:start + BATCH_GET_LIMIT]
+            ]}}
+            # DynamoDB may hand back part of a batch as unprocessed when it's busy: ask again for those
+            while request:
+                response = self.dynamodb.batch_get_item(RequestItems=request)
+                for item in response.get("Responses", {}).get(settings.dynamodb_table, []):
+                    found[item["chunk_id"]] = ContentChunk.from_dynamo_item(item)
+                request = response.get("UnprocessedKeys") or {}
+        return [found[chunk_id] for chunk_id in chunk_ids if chunk_id in found]
 
     def batch_save(self, chunks: list[ContentChunk]) -> None:
         """Batch save content chunks."""

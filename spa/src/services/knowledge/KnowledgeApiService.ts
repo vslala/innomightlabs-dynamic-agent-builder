@@ -17,6 +17,7 @@ import type {
   StartCrawlJobInput,
   CrawlStep,
   CrawledPage,
+  KnowledgePage,
   SearchResponse,
   ContentUploadResponse,
   ContentUploadItem,
@@ -204,6 +205,13 @@ class KnowledgeApiService {
     return httpClient.get<CrawledPage[]>(
       `/knowledge-bases/${kbId}/crawl-jobs/${jobId}/pages?limit=${limit}`
     );
+  }
+
+  /**
+   * The knowledge base's pages as they are now, those that need a look first
+   */
+  async listPages(kbId: string): Promise<KnowledgePage[]> {
+    return httpClient.get<KnowledgePage[]>(`/knowledge-bases/${kbId}/pages`);
   }
 
   // ===========================================================================

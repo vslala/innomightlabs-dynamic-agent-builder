@@ -6,7 +6,7 @@ from src.automations.models import AutomationTriggerType
 from src.automations.repository import AutomationRepository
 from src.blueprints import service as blueprints_service
 from src.blueprints.kinds.automation import read_chain
-from src.blueprints.models import DeploymentStatus  # noqa: F401
+from src.knowledge.crawl_launch import create_crawl_job
 from src.knowledge.models import CrawlConfig, CrawlJob, CrawlJobStatus, CrawlSourceType, KnowledgeBase
 from src.knowledge.recrawl import recrawl
 from src.knowledge.repository import CrawlJobRepository, KnowledgeBaseRepository
@@ -72,14 +72,14 @@ def test_it_reads_the_site_again_with_the_settings_it_was_read_with(launched):
     assert (job.config.source_url, job.config.max_pages, job.config.max_depth) == ("https://docs.acme.example", 7, 2)
 
 
-@pytest.mark.parametrize("status", [CrawlJobStatus.PENDING, CrawlJobStatus.IN_PROGRESS])
-def test_it_does_not_start_a_second_crawl_while_one_runs(launched, status):
-    kb = a_crawled_kb(status)
+def test_it_does_not_start_a_second_crawl_while_one_runs(launched):
+    kb = a_crawled_kb()
+    running = create_crawl_job(kb.kb_id, CrawlJobRepository().find_all_by_kb(kb.kb_id)[0].config, OWNER.user_id)
 
     result = recrawl(kb.kb_id, OWNER)
 
-    assert not result.started and "already being crawled" in result.message
-    assert launched == [] and len(CrawlJobRepository().find_all_by_kb(kb.kb_id)) == 1
+    assert not result.started and "already being crawled" in result.message and result.job_id == running.job_id
+    assert launched == [] and len(CrawlJobRepository().find_all_by_kb(kb.kb_id)) == 2
 
 
 def test_a_knowledge_base_that_was_never_crawled_has_no_site_to_read_again(launched):

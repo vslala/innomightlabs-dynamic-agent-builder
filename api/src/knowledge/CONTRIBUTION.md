@@ -7,15 +7,18 @@
 ```text
 src/knowledge/
   __init__.py     Re-exports models, repositories, schemas, routers, service
-  models.py       Enums, entities (KnowledgeBase, CrawlJob, CrawlStep, CrawledPage, ContentChunk, AgentKnowledgeBase), request/response models
+  models.py       Enums, entities (KnowledgeBase, CrawlJob, CrawlLease, CrawlStep, CrawledPage, KnowledgePage, ContentChunk,
+                  AgentKnowledgeBase), request/response models
   repository.py   One repository class per entity
   access.py       require_kb / kb_with / visible_kbs / readable_by_agent: who may reach a KB
-  service.py      KnowledgeBaseService: soft delete (Pinecone + chunks + links + shares), file upload ingest
-  router.py       /knowledge-bases/* and agent_kb_router (agent<->KB links), search, crawl jobs
+  service.py      KnowledgeBaseService: soft delete (Pinecone + chunks + pages + links + shares), file upload ingest
+                  (through crawler/page_index.py, so an upload is a page like any other)
+  router.py       /knowledge-bases/* and agent_kb_router (agent<->KB links), search, crawl jobs, pages
   schemas.py      Form schemas (create KB, crawl config, content upload)
-  crawl_launch.py launch_crawl: Lambda or in-process, shared with blueprints
+  crawl_launch.py create_crawl_job (takes the KB's crawl lease, or CrawlAlreadyRunning) and launch_crawl (Lambda or
+                  in-process); shared by the routes, blueprints and recrawl
   recrawl.py      recrawl(): read a KB's site again with its last settings; the `knowledge_base` skill's action
-  run_state.py    CrawlJobStateService: heartbeat and stale-job failing
+  run_state.py    CrawlJobStateService: the crawl lease (hold, release), heartbeat and stale-job failing
 ```
 
 ## Conventions
@@ -23,13 +26,24 @@ src/knowledge/
 - Keys (documented at the top of `models.py` and `repository.py`):
   - KB: `pk=Account#{account_id}`, `sk=KnowledgeBase#{kb_id}`. Always read through `find_in_account`.
   - CrawlJob / ContentChunk / uploads: `pk=KnowledgeBase#{kb_id}`, `sk=CrawlJob#{id}` / `Chunk#{id}` / `Upload#...`.
-  - CrawlStep / CrawledPage: `pk=CrawlJob#{job_id}`, `sk=Step#...` / `Page#{url_hash}`.
+    Job ids are random, so the newest job is found by reading the partition's jobs and sorting (`find_all_by_kb`).
+  - KnowledgePage (a page as it is now: its chunk ids, state, validators): `pk=KnowledgeBase#{kb_id}`,
+    `sk=KnowledgePage#{url_hash}`, saved conditionally on its `version`. `sk=KnowledgePagesAdopted` marks a KB whose
+    older chunks have been given pages. Gone pages expire after `GONE_PAGE_DAYS`.
+  - CrawlLease (the one crawl a KB runs): `pk=KnowledgeBase#{kb_id}`, `sk=CrawlLease`, claimed with a conditional put
+    (free, lapsed, or already this job's). It's its own item, so saving the KB can't erase it.
+  - CrawlStep / CrawledPage (what one run did): `pk=CrawlJob#{job_id}`, `sk=Step#...` / `Page#{url_hash}`.
   - Agent link: `pk=Agent#{agent_id}`, `sk=KnowledgeBase#{kb_id}`, `gsi2_pk=KnowledgeBase#{kb_id}`, `gsi2_sk=Agent#{agent_id}` (the reverse lookup uses index `gsi2`).
 - Access: every route gets its KB from a dependency in `router.py` built with `kb_with(action)`: `can_describe_kb`, `can_read_kb`, `can_update_kb`, `can_crawl_kb`, `can_delete_kb` (actions `knowledge:Describe|Get|Update|Crawl|Delete`, defined in `src/iam/actions.py`; share roles in `src/iam/shares.py`). Creation checks `knowledge:Create`. A KB the caller cannot see is 404, one they can see but not act on is 403. KBs are private to their owner unless shared; admins see metadata only (`KnowledgeBaseAccess`: owner, shared, admin).
 - An agent searches only KBs `readable_by_agent` returns: the link outlives a share, so reads are checked against the agent owner each time.
 - Delete is soft: status `DELETED`, 30-day `ttl` (`SOFT_DELETE_TTL_DAYS`), vectors/chunks/links/shares removed first. `DELETED` KBs count as missing everywhere.
 - Forms: `schemas.py` builds `Form`/`FormInput` (see `src/form_models.py`), served at `GET .../forms/<name>`; keep field names stable.
-- Crawl settings (`crawl_job_*`, `pinecone_*`, `embedding_*`) are in `config/settings.py`. A heartbeat failing means the job was stopped: `CrawlJobStoppedError`.
+- Crawl settings (`crawl_job_*`, `pinecone_*`, `embedding_*`) are in `config/settings.py`. A heartbeat failing, or the
+  lease taken by another job, means the job was stopped: `CrawlJobStoppedError`.
+- Create crawl jobs only with `create_crawl_job`: a second crawl of a KB is refused while one holds its lease (409 from
+  the route, a message from `recrawl`, an error from a blueprint apply). The lease lapses after
+  `crawl_job_stale_timeout_seconds` if its worker died.
+- A KB's stats count what it holds (its pages with chunks, from the ledger), not what the last run read.
 - `access.py` registers `RESOLVERS["knowledge-base"]` at import so shares can resolve a KB. Importing the module is what wires it.
 
 ## Add a KB endpoint
@@ -42,7 +56,7 @@ src/knowledge/
 ## Testing
 
 ```bash
-uv run pytest tests/test_knowledge_access.py tests/test_agent_knowledge_links.py tests/test_crawl_job_liveness.py tests/test_crawl_launch.py -q
+uv run pytest tests/test_knowledge_access.py tests/test_agent_knowledge_links.py tests/test_crawl_job_liveness.py tests/test_crawl_launch.py tests/test_crawl_lease.py tests/test_knowledge_recrawl.py tests/test_knowledge_uploads.py -q
 uv run ruff check src/knowledge && uv run mypy src/knowledge
 ```
 

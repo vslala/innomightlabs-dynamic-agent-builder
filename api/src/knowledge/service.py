@@ -9,14 +9,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from src.knowledge.models import KnowledgeBase, KnowledgeBaseStatus, ContentChunk, ChunkingStrategy
-from src.crawler.chunking import get_chunking_strategy
-from src.crawler.page_chunks import generate_chunk_id
-from src.vectorstore.pinecone_client import VectorRecord, VectorMetadata
+from src.knowledge.models import UPLOAD_SOURCE, ChunkingStrategy, KnowledgeBase, KnowledgeBaseStatus, KnowledgePage
 from src.knowledge.repository import (
     KnowledgeBaseRepository,
     ContentChunkRepository,
     AgentKnowledgeBaseRepository,
+    KnowledgePageRepository,
 )
 
 log = logging.getLogger(__name__)
@@ -38,7 +36,11 @@ class DeleteResult:
 @dataclass
 class UploadIngestResult:
     chunk_count: int
+    #: Chunks that went through the embedding model: uploading the same file again embeds only what changed.
     vector_count: int
+    #: What the knowledge base holds after the upload.
+    total_pages: int
+    total_chunks: int
 
 
 class KnowledgeBaseService:
@@ -74,7 +76,7 @@ class KnowledgeBaseService:
 
         This method:
         1. Marks the KB as deleted with a TTL for auto-expiration (30 days)
-        2. Immediately deletes all content chunks from DynamoDB
+        2. Immediately deletes all content chunks, and the pages that list them, from DynamoDB
         3. Immediately deletes the Pinecone namespace (all vectors)
         4. Unlinks the KB from all agents, and forgets its shares
 
@@ -99,6 +101,7 @@ class KnowledgeBaseService:
 
         try:
             result.chunks_deleted = self.chunk_repo.delete_all_by_kb(kb_id)
+            KnowledgePageRepository().delete_all_by_kb(kb_id)
         except Exception as e:
             log.error(f"Failed to delete chunks for KB {kb_id}: {e}", exc_info=True)
 
@@ -147,96 +150,41 @@ class KnowledgeBaseService:
             metadata: Optional metadata to include in context
 
         Returns:
-            UploadIngestResult with chunk and vector counts
+            UploadIngestResult with chunk and vector counts, and what the knowledge base holds after it
         """
         source_url = f"file://{kb.kb_id}/{filename}"
         metadata_text = (metadata or "").strip()
         title = f"{filename} — {metadata_text}" if metadata_text else filename
+        content_to_chunk = f"Metadata:\n{metadata_text}\n\n{content}" if metadata_text else content
 
-        content_to_chunk = content
-        if metadata_text:
-            content_to_chunk = f"Metadata:\n{metadata_text}\n\n{content}"
+        # The crawler imports this package's models, so it's imported here rather than at the top
+        from src.crawler.chunking import get_chunking_strategy
+        from src.crawler.page_index import PageIndex, held
+        from src.vectorstore import get_embeddings_service, get_pinecone_client
 
-        chunking_strategy = get_chunking_strategy(ChunkingStrategy.HIERARCHICAL.value)
-        chunk_data_list = chunking_strategy.chunk(
+        chunk_data_list = get_chunking_strategy(ChunkingStrategy.HIERARCHICAL.value).chunk(
             content=content_to_chunk,
             source_url=source_url,
             page_title=title,
             sections=None,
         )
-
-        if not chunk_data_list:
-            return UploadIngestResult(chunk_count=0, vector_count=0)
-
-        from src.vectorstore import get_embeddings_service, get_pinecone_client
-
-        embeddings = get_embeddings_service()
-        pinecone = get_pinecone_client(validate=True)
-
-        texts = [chunk.content for chunk in chunk_data_list]
-        embedding_results = await embeddings.embed_texts_async(texts)
-
-        # Build mapping from old random UUID to chunk info for parent_chunk_id resolution
-        old_id_to_info: dict[str, tuple[int, int]] = {}
-        for chunk_data in chunk_data_list:
-            old_id_to_info[chunk_data.chunk_id] = (chunk_data.chunk_index, chunk_data.level)
-
-        chunks: list[ContentChunk] = []
-        vectors: list[VectorRecord] = []
-
-        for chunk_data, emb_result in zip(chunk_data_list, embedding_results):
-            chunk_id = generate_chunk_id(
-                kb_id=kb.kb_id,
-                source_url=source_url,
-                chunk_index=chunk_data.chunk_index,
-                level=chunk_data.level,
-            )
-
-            parent_chunk_id = None
-            if chunk_data.parent_chunk_id and chunk_data.parent_chunk_id in old_id_to_info:
-                parent_index, parent_level = old_id_to_info[chunk_data.parent_chunk_id]
-                parent_chunk_id = generate_chunk_id(
-                    kb_id=kb.kb_id,
-                    source_url=source_url,
-                    chunk_index=parent_index,
-                    level=parent_level,
-                )
-
-            chunk = ContentChunk(
-                chunk_id=chunk_id,
-                kb_id=kb.kb_id,
-                source_url=source_url,
-                page_title=title,
-                chunk_index=chunk_data.chunk_index,
-                content=chunk_data.content,
-                word_count=chunk_data.word_count,
-                parent_chunk_id=parent_chunk_id,
-                level=chunk_data.level,
-            )
-            chunks.append(chunk)
-
-            vectors.append(
-                VectorRecord(
-                    id=chunk_id,
-                    values=emb_result.embedding,
-                    metadata=VectorMetadata(
-                        kb_id=kb.kb_id,
-                        chunk_id=chunk_id,
-                        source_url=source_url,
-                        page_title=title,
-                        chunk_index=chunk_data.chunk_index,
-                        level=chunk_data.level,
-                        word_count=chunk_data.word_count,
-                    ),
-                )
-            )
-
-        self.chunk_repo.batch_save(chunks)
-        pinecone.upsert(vectors, kb.kb_id)
-
+        index = PageIndex(
+            kb.kb_id,
+            vectors=get_pinecone_client(validate=True),
+            embeddings=get_embeddings_service(),
+            chunks=self.chunk_repo,
+        )
+        pages = index.load()
+        embedded = 0
+        if chunk_data_list:
+            # A file uploaded again is the same page: only what changed in it is embedded, and what it lost is deleted
+            page = pages.get(source_url) or KnowledgePage(kb_id=kb.kb_id, url=source_url, source=UPLOAD_SOURCE)
+            written = await index.write(page, title, chunk_data_list)
+            pages[source_url] = written.page
+            embedded = written.embedded
+        total_pages, total_chunks = held(pages.values())
         return UploadIngestResult(
-            chunk_count=len(chunks),
-            vector_count=len(vectors),
+            chunk_count=len(chunk_data_list), vector_count=embedded, total_pages=total_pages, total_chunks=total_chunks
         )
 
     def _delete_pinecone_namespace(self, kb_id: str) -> bool:
