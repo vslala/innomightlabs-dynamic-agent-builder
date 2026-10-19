@@ -11,6 +11,10 @@ import { captureInvitationToken } from './pages/invitations/continuation';
 const basename = import.meta.env.BASE_URL;
 
 const LandingPage = lazyRoute(() => import('./pages/LandingPage'), 'LandingPage');
+const IlaPage = lazyRoute(() => import('./pages/features/IlaPage'), 'IlaPage');
+const AgentsPage = lazyRoute(() => import('./pages/features/AgentsPage'), 'AgentsPage');
+const LeadsPage = lazyRoute(() => import('./pages/features/LeadsPage'), 'LeadsPage');
+const AutomationsPage = lazyRoute(() => import('./pages/features/AutomationsPage'), 'AutomationsPage');
 const Login = lazyRoute(() => import('./pages/Login'), 'Login');
 const AcceptInvitationPage = lazyRoute(() => import('./pages/invitations/AcceptInvitationPage'), 'AcceptInvitationPage');
 const LoginSuccess = lazyRoute(() => import('./pages/LoginSuccess'), 'LoginSuccess');
@@ -104,6 +108,10 @@ function ScrollToHash() {
 /** Keyed by every public path, so a page cannot be listed without a component or routed without being listed. */
 const publicPageElements: Record<PublicPath, ReactElement> = {
   '/': <LandingPage />,
+  '/features/ila': <IlaPage />,
+  '/features/agents': <AgentsPage />,
+  '/features/leads': <LeadsPage />,
+  '/features/automations': <AutomationsPage />,
   '/pricing': <Pricing />,
   '/contact': <Contact />,
   '/downloads': <DownloadsPage />,

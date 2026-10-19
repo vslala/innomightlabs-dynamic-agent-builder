@@ -12,6 +12,8 @@
  * Indexed pages carry a `title` and `section`, which the /sitemap page lists.
  */
 
+import { FEATURES } from './features';
+
 export type SitemapSection = "Product" | "Documentation" | "Legal";
 
 export interface PublicPage {
@@ -25,6 +27,12 @@ export const SITE_ORIGIN = "https://innomightlabs.com";
 
 export const PUBLIC_PAGES = [
   { path: "/", indexed: true, title: "Home", section: "Product" },
+  ...FEATURES.map(feature => ({
+    path: feature.path,
+    indexed: true,
+    title: feature.title,
+    section: 'Product' as const,
+  })),
   { path: "/pricing", indexed: true, title: "Pricing", section: "Product" },
   { path: "/downloads", indexed: true, title: "Downloads", section: "Product" },
   { path: "/downloads/plugins/:pluginId", indexed: false },
