@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import { Link } from "react-router-dom";
-import { Menu } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 import { Button } from "../ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { AccountSwitcher } from "./AccountSwitcher";
@@ -16,10 +16,12 @@ interface HeaderProps {
   navigationId: string;
   navigationOpen: boolean;
   onMenuClick: () => void;
+  /** Opens the jump-to-an-agent switcher (also ⌘K). */
+  onSwitcherClick: () => void;
 }
 
 export const Header = forwardRef<HTMLButtonElement, HeaderProps>(function Header(
-  { title, user, navigationId, navigationOpen, onMenuClick },
+  { title, user, navigationId, navigationOpen, onMenuClick, onSwitcherClick },
   menuButton,
 ) {
   const initials = user?.name
@@ -56,6 +58,17 @@ export const Header = forwardRef<HTMLButtonElement, HeaderProps>(function Header
       <h1 className="dashboard-header__title">{title}</h1>
 
       <div className="dashboard-header__end">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          style={{ width: "2.75rem", height: "2.75rem" }}
+          aria-label="Jump to an agent"
+          aria-keyshortcuts="Control+K Meta+K"
+          onClick={onSwitcherClick}
+        >
+          <Search aria-hidden="true" />
+        </Button>
         {user && (
           <Link to="/dashboard/settings" className="dashboard-header__user">
             <div className="dashboard-header__identity">

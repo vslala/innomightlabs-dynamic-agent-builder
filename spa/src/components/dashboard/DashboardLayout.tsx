@@ -3,6 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { OAuthReturn } from "./OAuthReturn";
+import { AgentQuickSwitcher } from "./AgentQuickSwitcher";
 import { cn } from "../../lib/utils";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { authService, type UserInfo } from "../../services/auth";
@@ -48,6 +49,7 @@ export function DashboardLayout() {
     setDrawerPath(null);
   }
   const drawerOpen = compact && drawerPath === location.pathname;
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
   const sidebar = useRef<HTMLElement>(null);
 
@@ -65,6 +67,17 @@ export function DashboardLayout() {
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [drawerOpen]);
+
+  useEffect(() => {
+    const openOnShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setSwitcherOpen(true);
+      }
+    };
+    document.addEventListener("keydown", openOnShortcut);
+    return () => document.removeEventListener("keydown", openOnShortcut);
+  }, []);
 
   const closeDrawer = () => {
     setDrawerPath(null);
@@ -151,6 +164,7 @@ export function DashboardLayout() {
           navigationId={NAVIGATION_ID}
           navigationOpen={drawerOpen}
           onMenuClick={() => setDrawerPath(location.pathname)}
+          onSwitcherClick={() => setSwitcherOpen(true)}
         />
         <main
           className={cn(
@@ -166,6 +180,7 @@ export function DashboardLayout() {
           </div>
         </main>
       </div>
+      <AgentQuickSwitcher open={switcherOpen} onOpenChange={setSwitcherOpen} />
     </div>
   );
 }

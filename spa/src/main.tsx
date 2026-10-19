@@ -9,6 +9,7 @@ console.log(`Loaded environment variables:
   BASE_URL=${env.BASE_URL}
   MODE=${env.MODE}
   VITE_API_BASE_URL=${env.VITE_API_BASE_URL}
+  VITE_APP_VERSION=${env.VITE_APP_VERSION ?? "dev"}
   VITE_SUBSCRIPTION_BACKEND=${env.VITE_SUBSCRIPTION_BACKEND}`);
 
 applyTheme(getStoredTheme());

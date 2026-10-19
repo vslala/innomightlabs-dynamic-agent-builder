@@ -40,7 +40,7 @@ describe("header menu button", () => {
   it("names the drawer it controls and whether it is open", () => {
     const render = (navigationOpen: boolean) => renderToStaticMarkup(
       <MemoryRouter>
-        <Header title="Agents" navigationId="nav" navigationOpen={navigationOpen} onMenuClick={vi.fn()} />
+        <Header title="Agents" navigationId="nav" navigationOpen={navigationOpen} onMenuClick={vi.fn()} onSwitcherClick={vi.fn()} />
       </MemoryRouter>,
     );
     expect(render(false)).toContain('aria-controls="nav"');

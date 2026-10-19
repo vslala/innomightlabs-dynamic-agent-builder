@@ -76,6 +76,26 @@ class AgentRepository:
             query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
         return [Agent.from_dynamo_item(item) for item in items]
 
+    def count_attached(self, agent_id: str) -> dict[str, int]:
+        """How many knowledge bases, MCP connectors and skills hang off the agent. They all live in its own
+        partition, told apart by sort-key prefix, so each is one COUNT query."""
+        prefixes = {"knowledge_bases": "KnowledgeBase#", "connectors": "MCPConnection#", "skills": "Skill#"}
+        counts: dict[str, int] = {}
+        for name, prefix in prefixes.items():
+            total = 0
+            query: dict[str, Any] = {
+                "KeyConditionExpression": Key("pk").eq(f"Agent#{agent_id}") & Key("sk").begins_with(prefix),
+                "Select": "COUNT",
+            }
+            while True:
+                response = self.table.query(**query)
+                total += response["Count"]
+                if "LastEvaluatedKey" not in response:
+                    break
+                query["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+            counts[name] = total
+        return counts
+
     def list_owned(self, account_id: str, owner_id: str) -> list[Agent]:
         return [agent for agent in self.list_in_account(account_id) if agent.owner_id == owner_id]
 

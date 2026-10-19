@@ -127,6 +127,33 @@ class TestAgentsRouter:
         assert len(data) >= 1
         assert data[0]["agent_name"] == AGENT_CREATE_REQUEST["agent_name"]
 
+    def test_list_agents_reports_the_callers_own_use(self, test_client: TestClient, auth_headers: dict):
+        """last_used_at and use_count come from the caller's conversations with each agent."""
+        agent_id = test_client.post("/agents", json=AGENT_CREATE_REQUEST, headers=auth_headers).json()["agent_id"]
+
+        before = test_client.get("/agents", headers=auth_headers).json()[0]
+        assert (before["use_count"], before["last_used_at"]) == (0, None)
+
+        for _ in range(2):
+            test_client.post("/conversations", json={**CONVERSATION_CREATE_REQUEST, "agent_id": agent_id}, headers=auth_headers)
+
+        after = test_client.get("/agents", headers=auth_headers).json()[0]
+        assert after["use_count"] == 2
+        assert after["last_used_at"] is not None
+
+    def test_attached_counts_what_hangs_off_each_visible_agent(self, test_client: TestClient, auth_headers: dict):
+        from src.knowledge.repository import AgentKnowledgeBaseRepository
+
+        agent_id = test_client.post("/agents", json=AGENT_CREATE_REQUEST, headers=auth_headers).json()["agent_id"]
+        assert test_client.get("/agents/attached", headers=auth_headers).json() == {
+            agent_id: {"knowledge_bases": 0, "connectors": 0, "skills": 0}
+        }
+
+        for kb_id in ("kb-1", "kb-2"):
+            AgentKnowledgeBaseRepository().link(agent_id, kb_id, linked_by=user_id_for(TEST_USER_EMAIL))
+
+        assert test_client.get("/agents/attached", headers=auth_headers).json()[agent_id]["knowledge_bases"] == 2
+
     def test_get_agent_by_id(self, test_client: TestClient, auth_headers: dict):
         """Test getting a single agent by ID."""
         # Create an agent first

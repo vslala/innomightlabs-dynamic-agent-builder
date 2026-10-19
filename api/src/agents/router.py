@@ -18,7 +18,7 @@ from src.agents.image_generation.service import (
     ImageGenerationNotFoundError,
     ImageGenerationNotSupportedError,
 )
-from src.accounts.owner import Owner
+from src.accounts.owner import Owner, member_partition
 from src.agents.access import access_to, owner_of, require_agent, visible_agents
 from src.agents.models import Agent, CreateAgentRequest, AgentResponse
 from src.agents.repository import AgentRepository
@@ -208,9 +208,43 @@ async def list_agents(
 ) -> list[AgentResponse]:
     """
     The account's agents the caller can see: their own, those shared with them, and, for admins,
-    everyone else's as metadata. Each says how the caller reaches it (`access`).
+    everyone else's as metadata. Each says how the caller reaches it (`access`) and how much they have
+    used it (`last_used_at`, `use_count`, from their own conversations).
     """
-    return [agent.to_response(access) for agent, access in visible_agents(principal, repo)]
+    uses: dict[str, list[Conversation]] = {}
+    for conversation in ConversationRepository().find_all_by_user(member_partition(principal.account_id, principal.user_id)):
+        uses.setdefault(conversation.agent_id, []).append(conversation)
+
+    responses = []
+    for agent, access in visible_agents(principal, repo):
+        response = agent.to_response(access)
+        conversations = uses.get(agent.agent_id, [])
+        response.use_count = len(conversations)
+        if conversations:  # most recently active first
+            response.last_used_at = conversations[0].updated_at or conversations[0].created_at
+        responses.append(response)
+    return responses
+
+
+class AgentAttachedCounts(BaseModel):
+    knowledge_bases: int = 0
+    connectors: int = 0
+    skills: int = 0
+
+
+@router.get("/attached", response_model=dict[str, AgentAttachedCounts])
+async def count_attached(
+    repo: Annotated[AgentRepository, Depends(get_agent_repository)],
+    principal: Annotated[Principal, Depends(get_principal)],
+) -> dict[str, AgentAttachedCounts]:
+    """What each visible agent has attached (knowledge bases, connectors, skills), by agent id. Apart from
+    the list because it costs a few queries per agent: the page loads first and filters by it once it arrives."""
+    # Each worker thread builds its own repository: boto3 resources are cached per thread
+    agents = [agent for agent, _ in visible_agents(principal, repo)]
+    counts = await asyncio.gather(
+        *(asyncio.to_thread(lambda agent_id=agent.agent_id: AgentRepository().count_attached(agent_id)) for agent in agents)
+    )
+    return {agent.agent_id: AgentAttachedCounts(**attached) for agent, attached in zip(agents, counts)}
 
 
 @router.get("/update-schema/{agent_id}", response_model=form_models.Form, response_model_exclude_none=True)

@@ -1,37 +1,236 @@
 @reference "tailwindcss";
 
-.agentsGrid {
-  @apply grid-cols-1 md:grid-cols-2 lg:grid-cols-3;
+/* Mobile first: one column, then two or more from 640px, hover affordances and rows from 900px.
+   900px matches the dashboard's sidebar-to-drawer switch. */
+
+.toast {
+  @apply fixed bottom-6 right-6 z-50 max-w-sm;
 }
 
-.agentCard {
-  @apply hover:border-[var(--gradient-start)]/50 transition-all duration-200;
+.long {
+  @apply hidden sm:inline;
+}
+
+.toolbar {
+  @apply flex flex-wrap gap-2;
+}
+
+.search {
+  @apply min-w-0 flex-[1_1_100%] md:flex-[1_1_0%];
+}
+
+.sort {
+  @apply min-w-0 flex-1 md:w-44 md:flex-none;
+}
+
+.density {
+  @apply flex gap-1;
+}
+
+/* Tabs scroll sideways instead of wrapping */
+.tabs {
+  @apply overflow-x-auto;
+  scrollbar-width: none;
+}
+
+.count {
+  @apply ml-2 rounded-full bg-[var(--surface-subtle)] px-2 text-xs;
+}
+
+.strip {
+  @apply flex flex-col gap-2;
+}
+
+.stripTitle {
+  @apply m-0 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)];
+}
+
+.pills {
+  @apply flex gap-2 overflow-x-auto pb-1;
+  scrollbar-width: none;
+}
+
+.pill {
+  @apply flex shrink-0 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-panel)] py-1.5 pl-1.5 pr-3 text-sm text-[var(--text-primary)] transition-colors hover:border-[var(--gradient-start)]/50;
+}
+
+.pillIcon {
+  @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--button-primary-bg)];
+}
+
+.pillIconSvg {
+  @apply h-4 w-4 text-white;
+}
+
+.pillMeta {
+  @apply text-xs text-[var(--text-muted)];
+}
+
+.resultCount {
+  @apply text-xs text-[var(--text-muted)];
+}
+
+.agentsGrid {
+  @apply grid grid-cols-1 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(20rem,1fr))] sm:gap-3.5;
+}
+
+.card {
+  @apply relative flex flex-col gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-panel)] p-3 transition-colors hover:border-[var(--gradient-start)]/50 sm:gap-2.5 sm:p-3.5;
+}
+
+.cardHead {
+  @apply flex items-center gap-2.5;
 }
 
 .agentIcon {
-  @apply h-14 w-14 rounded-xl bg-[var(--button-primary-bg)] flex items-center justify-center;
+  @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--button-primary-bg)];
 }
 
 .agentIconSvg {
-  @apply h-7 w-7 text-white;
+  @apply h-5 w-5 text-white;
+}
+
+.agentName {
+  @apply m-0 min-w-0 flex-1 truncate text-[15px] font-semibold text-[var(--text-primary)];
+}
+
+.cardLink {
+  @apply outline-none hover:text-[var(--gradient-start)];
+}
+
+.cardLink::after {
+  content: "";
+  @apply absolute inset-0 rounded-xl;
+}
+
+.cardLink:focus-visible::after {
+  @apply ring-2 ring-[var(--gradient-start)];
+}
+
+/* Above the stretched link, and at least 44px to hit on a phone */
+.cardAction {
+  @apply relative z-10 h-11 w-11 text-[var(--text-muted)] md:h-8 md:w-8;
+}
+
+.starOn {
+  @apply fill-[var(--accent-orange)] text-[var(--accent-orange)];
 }
 
 .deleteButton {
   @apply text-red-400 hover:text-red-300;
 }
 
-.toast {
-  @apply fixed bottom-6 right-6 z-50 max-w-sm;
+.agentSummary {
+  @apply m-0 line-clamp-2 text-sm leading-relaxed text-[var(--text-secondary)];
 }
 
-.agentName {
-  @apply text-lg font-semibold text-[var(--text-primary)] transition-colors hover:text-[var(--gradient-start)];
-}
-
-.agentPersona {
-  @apply line-clamp-2 text-sm leading-relaxed text-[var(--text-muted)];
+.cardFoot {
+  @apply mt-auto flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-[var(--border-subtle)] pt-2 text-xs text-[var(--text-muted)];
 }
 
 .providerBadge {
-  @apply inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--gradient-start)]/10 text-[var(--gradient-start)];
+  @apply inline-flex items-center rounded-md bg-[var(--gradient-start)]/10 px-2 py-0.5 text-xs font-medium text-[var(--gradient-start)];
+}
+
+.attached {
+  @apply inline-flex items-center gap-1;
+}
+
+.attached svg {
+  @apply h-3.5 w-3.5;
+}
+
+/* Filter chips scroll sideways on a phone instead of wrapping */
+.filters {
+  @apply flex items-center gap-2 overflow-x-auto md:flex-wrap md:overflow-visible;
+  scrollbar-width: none;
+}
+
+.filterLabel {
+  @apply shrink-0 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)];
+}
+
+.filterChip {
+  @apply shrink-0 rounded-full;
+}
+
+.lastUsed {
+  @apply min-w-0 flex-1 truncate;
+}
+
+.cardActions {
+  @apply flex items-center;
+}
+
+/* Compact rows: the name, one line, and the stats; no actions row on a phone */
+.list .agentsGrid {
+  @apply grid-cols-1 gap-0 overflow-hidden rounded-xl border border-[var(--border-subtle)] sm:grid-cols-1;
+}
+
+.list .card {
+  @apply gap-0.5 rounded-none border-0 border-b py-2;
+}
+
+.list .agentSummary {
+  @apply line-clamp-1;
+}
+
+.list .cardFoot {
+  @apply border-0 pt-0;
+}
+
+.list .cardActions {
+  @apply hidden md:flex;
+}
+
+@media (min-width: 900px) {
+  .list .card {
+    @apply flex-row items-center gap-4;
+  }
+
+  .list .cardHead {
+    @apply w-72 shrink-0;
+  }
+
+  .list .agentSummary {
+    @apply flex-1;
+  }
+
+  .list .cardFoot {
+    @apply mt-0 w-80 shrink-0 flex-nowrap;
+  }
+}
+
+.more {
+  @apply w-full self-center sm:w-auto;
+}
+
+/* ---- Quick switcher (⌘K) ---- */
+
+.switcher {
+  @apply flex max-h-[85vh] flex-col gap-2 overflow-hidden p-3;
+}
+
+.switcherList {
+  @apply m-0 flex list-none flex-col gap-0.5 overflow-y-auto p-0;
+}
+
+.switcherHeading {
+  @apply px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)];
+}
+
+.switcherRow {
+  @apply flex min-h-12 items-center gap-2.5 rounded-lg px-2 py-1.5 text-[var(--text-primary)];
+}
+
+.switcherRowActive {
+  @apply bg-[var(--bg-tertiary)];
+}
+
+.switcherText {
+  @apply flex min-w-0 flex-1 flex-col;
+}
+
+.switcherSummary {
+  @apply truncate text-xs text-[var(--text-muted)];
 }

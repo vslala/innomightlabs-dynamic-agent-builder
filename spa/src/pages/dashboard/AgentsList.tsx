@@ -1,10 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Bot, Plus, ShoppingBag, Trash2, Settings } from "lucide-react";
-import { getAgentIcon } from "../../lib/agentIcons";
+import { Bot, LayoutGrid, List, Plus, ShoppingBag } from "lucide-react";
+import { AgentIcon } from "../../components/AgentIcon";
 import {
-  Card,
-  CardContent,
   Button,
   Dialog,
   DialogContent,
@@ -16,18 +14,56 @@ import {
   ErrorState,
   EmptyState,
   AlertBanner,
-  Pill,
+  SearchInput,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from "../../components/ui";
 import {
   agentApiService,
   type AgentAccess,
+  type AgentAttachedCounts,
   type AgentResponse,
 } from "../../services/agents/AgentApiService";
-import { Grid, Inline, Page, PageActions, PageBody, PageDescription, PageHeader, Stack } from "../../components/layout";
+import { conversationApiService } from "../../services/conversations";
+import { Page, PageActions, PageBody, PageDescription, PageHeader, Stack } from "../../components/layout";
+import { useFavoriteAgents } from "../../hooks/useFavoriteAgents";
+import { AgentCard } from "./AgentCard";
+import {
+  AGENT_SORTS,
+  AGENT_TABS,
+  ATTACHMENTS,
+  hasAttachments,
+  matchesQuery,
+  recentAgents,
+  sortAgents,
+  timeAgo,
+  type AgentSort,
+} from "./agentDiscovery";
 import styles from "./AgentsList.module.css";
 
-// Agents you don't own say how you reach them
-const ACCESS_BADGES: Partial<Record<AgentAccess, string>> = { shared: "Shared with you", admin: "Admin view" };
+const PAGE_SIZE = 12;
+const STRIP_SIZE = 6;
+
+function AgentPill({ agent }: { agent: AgentResponse }) {
+  return (
+    <Link to={`/dashboard/agents/${agent.agent_id}`} className={styles.pill}>
+      <span className={styles.pillIcon}>
+        <AgentIcon name={agent.agent_name} className={styles.pillIconSvg} />
+      </span>
+      <span>
+        {agent.agent_name}
+        <br />
+        <span className={styles.pillMeta}>{agent.last_used_at ? timeAgo(agent.last_used_at) : "Not used yet"}</span>
+      </span>
+    </Link>
+  );
+}
 
 export function AgentsList() {
   const navigate = useNavigate();
@@ -39,6 +75,15 @@ export function AgentsList() {
     null
   );
   const [isDeleting, setIsDeleting] = useState(false);
+  const [startingChatWith, setStartingChatWith] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<AgentSort>("recent");
+  const [density, setDensity] = useState<"grid" | "list">("grid");
+  const [chosenTab, setChosenTab] = useState<AgentAccess | null>(null);
+  const [attached, setAttached] = useState<Record<string, AgentAttachedCounts> | null>(null);
+  const [required, setRequired] = useState<(keyof AgentAttachedCounts)[]>([]);
+  const [shown, setShown] = useState(PAGE_SIZE);
+  const { favorites, toggleFavorite } = useFavoriteAgents();
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
 
   useEffect(() => {
@@ -64,6 +109,26 @@ export function AgentsList() {
     loadAgents();
   }, []);
 
+  // Slower than the list, so the page shows first and the filters switch on when this lands
+  useEffect(() => {
+    agentApiService.getAttachedCounts().then(setAttached, (err) => console.error("Error loading attachments:", err));
+  }, []);
+
+  const startChat = async (agent: AgentResponse) => {
+    setStartingChatWith(agent.agent_id);
+    try {
+      const conversation = await conversationApiService.createConversation({
+        title: `Chat with ${agent.agent_name}`,
+        agent_id: agent.agent_id,
+      });
+      navigate(`/dashboard/conversations/${conversation.conversation_id}`);
+    } catch (err) {
+      console.error("Error starting conversation:", err);
+      setToast({ message: `Couldn't start a chat with "${agent.agent_name}". Please try again.`, variant: "error" });
+      setStartingChatWith(null);
+    }
+  };
+
   const handleDelete = async () => {
     if (!selectedAgent) return;
     const agentName = selectedAgent.agent_name;
@@ -82,6 +147,31 @@ export function AgentsList() {
     }
   };
 
+  const counts = useMemo(() => {
+    const byAccess: Record<AgentAccess, number> = { owner: 0, shared: 0, admin: 0 };
+    agents.forEach((agent) => byAccess[agent.access]++);
+    return byAccess;
+  }, [agents]);
+  const tabs = AGENT_TABS.filter((tab) => counts[tab.access] > 0);
+  const tab = tabs.find((t) => t.access === chosenTab)?.access ?? tabs[0]?.access;
+
+  // A search looks through every agent you can see, so nothing hides behind a tab
+  const searching = query.trim() !== "";
+  const results = useMemo(
+    () =>
+      sortAgents(
+        agents.filter(
+          (agent) =>
+            (searching ? matchesQuery(agent, query) : agent.access === tab) &&
+            hasAttachments(attached?.[agent.agent_id], required),
+        ),
+        sort,
+      ),
+    [agents, attached, query, required, searching, sort, tab],
+  );
+  const favoriteAgents = agents.filter((agent) => favorites.has(agent.agent_id));
+  const recent = recentAgents(agents, STRIP_SIZE);
+
   if (loading) {
     return <LoadingState />;
   }
@@ -95,13 +185,13 @@ export function AgentsList() {
       <PageHeader>
         <PageDescription>Create and manage your AI agents</PageDescription>
         <PageActions>
-          <Button variant="outline" onClick={() => navigate("/dashboard/agents/marketplace")} size="lg">
+          <Button variant="outline" onClick={() => navigate("/dashboard/agents/marketplace")} size="lg" aria-label="Marketplace">
             <ShoppingBag className="h-5 w-5" />
-            Marketplace
+            <span className={styles.long}>Marketplace</span>
           </Button>
-          <Button onClick={() => navigate("/dashboard/agents/new")} size="lg">
+          <Button onClick={() => navigate("/dashboard/agents/new")} size="lg" aria-label="Create agent">
             <Plus className="h-5 w-5" />
-            Create Agent
+            <span className={styles.long}>Create Agent</span>
           </Button>
         </PageActions>
       </PageHeader>
@@ -116,65 +206,153 @@ export function AgentsList() {
             onAction={() => navigate("/dashboard/agents/new")}
           />
         ) : (
-          <Grid className={styles.agentsGrid} gap="lg">
-            {agents.map((agent) => {
-              const AgentIcon = getAgentIcon(agent.agent_name);
-              return (
-              <Card
-                key={agent.agent_id}
-                className={styles.agentCard}
+          <Stack gap="md" className={density === "list" ? styles.list : undefined}>
+            <div className={styles.toolbar}>
+              <SearchInput
+                className={styles.search}
+                aria-label="Search agents"
+                placeholder="Search by name, what it does or provider…"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setShown(PAGE_SIZE);
+                }}
+              />
+              <Select value={sort} onValueChange={(value) => setSort(value as AgentSort)}>
+                <SelectTrigger className={styles.sort} aria-label="Sort agents">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {AGENT_SORTS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className={styles.density}>
+                <Button
+                  variant={density === "grid" ? "secondary" : "ghost"}
+                  size="icon"
+                  aria-label="Card view"
+                  aria-pressed={density === "grid"}
+                  onClick={() => setDensity("grid")}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={density === "list" ? "secondary" : "ghost"}
+                  size="icon"
+                  aria-label="Compact list view"
+                  aria-pressed={density === "list"}
+                  onClick={() => setDensity("list")}
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div className={styles.filters} role="group" aria-label="Filter by what is attached">
+              <span className={styles.filterLabel}>Has</span>
+              {ATTACHMENTS.map(({ key, label, Icon }) => {
+                const on = required.includes(key);
+                return (
+                  <Button
+                    key={key}
+                    size="sm"
+                    variant={on ? "secondary" : "outline"}
+                    className={styles.filterChip}
+                    aria-pressed={on}
+                    disabled={attached === null}
+                    onClick={() => {
+                      setRequired(on ? required.filter((k) => k !== key) : [...required, key]);
+                      setShown(PAGE_SIZE);
+                    }}
+                  >
+                    <Icon aria-hidden="true" />
+                    {label}
+                  </Button>
+                );
+              })}
+              {required.length > 0 && (
+                <Button size="sm" variant="ghost" className={styles.filterChip} onClick={() => setRequired([])}>
+                  Clear
+                </Button>
+              )}
+            </div>
+
+            {tabs.length > 1 && !searching && (
+              <Tabs
+                value={tab}
+                onValueChange={(value) => {
+                  setChosenTab(value as AgentAccess);
+                  setShown(PAGE_SIZE);
+                }}
               >
-                <CardContent>
-                  <Stack gap="md">
-                    <Inline justify="space-between" align="flex-start" wrap={false}>
-                  <div className={styles.agentIcon}>
-                    <AgentIcon className={styles.agentIconSvg} />
-                  </div>
-                  <Inline gap="xs">
-                    <Link to={`/dashboard/agents/${agent.agent_id}`}>
-                      <Button variant="ghost" size="icon">
-                        <Settings className="h-4 w-4" />
-                      </Button>
-                    </Link>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={styles.deleteButton}
-                      onClick={() => {
-                        setSelectedAgent(agent);
-                        setIsDeleteDialogOpen(true);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </Inline>
-                    </Inline>
+                <TabsList className={styles.tabs}>
+                  {tabs.map((t) => (
+                    <TabsTrigger key={t.access} value={t.access}>
+                      {t.label}
+                      <span className={styles.count}>{counts[t.access]}</span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            )}
 
-                    <Stack gap="xs">
-                      <Link to={`/dashboard/agents/${agent.agent_id}`}>
-                        <h3 className={styles.agentName}>
-                          {agent.agent_name}
-                        </h3>
-                      </Link>
-                      {ACCESS_BADGES[agent.access] && (
-                        <Pill size="sm" variant="secondary">{ACCESS_BADGES[agent.access]}</Pill>
-                      )}
-                      <p className={styles.agentPersona}>
-                        {agent.agent_persona}
-                      </p>
-                    </Stack>
+            {!searching && required.length === 0 && favoriteAgents.length > 0 && (
+              <section className={styles.strip} aria-label="Favorites">
+                <h2 className={styles.stripTitle}>Favorites</h2>
+                <div className={styles.pills}>
+                  {favoriteAgents.map((agent) => (
+                    <AgentPill key={agent.agent_id} agent={agent} />
+                  ))}
+                </div>
+              </section>
+            )}
+            {!searching && required.length === 0 && recent.length > 0 && (
+              <section className={styles.strip} aria-label="Recently used">
+                <h2 className={styles.stripTitle}>Recently used</h2>
+                <div className={styles.pills}>
+                  {recent.map((agent) => (
+                    <AgentPill key={agent.agent_id} agent={agent} />
+                  ))}
+                </div>
+              </section>
+            )}
 
-                    <Inline gap="xs">
-                  <span className={styles.providerBadge}>
-                    {agent.agent_provider}
-                  </span>
-                    </Inline>
-                  </Stack>
-                </CardContent>
-              </Card>
-              );
-            })}
-          </Grid>
+            <p className={styles.resultCount} aria-live="polite">
+              {searching
+                ? `${results.length} result${results.length === 1 ? "" : "s"} across all agents you can see`
+                : `${results.length} agent${results.length === 1 ? "" : "s"}`}
+            </p>
+            {results.length === 0 ? (
+              <EmptyState icon={Bot} title="No agents match" description="Try fewer words, or browse the Marketplace." />
+            ) : (
+              <div className={styles.agentsGrid}>
+                {results.slice(0, shown).map((agent) => (
+                  <AgentCard
+                    key={agent.agent_id}
+                    agent={agent}
+                    attached={attached?.[agent.agent_id]}
+                    favorite={favorites.has(agent.agent_id)}
+                    starting={startingChatWith === agent.agent_id}
+                    onChat={startChat}
+                    onToggleFavorite={toggleFavorite}
+                    onDelete={(target) => {
+                      setSelectedAgent(target);
+                      setIsDeleteDialogOpen(true);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+            {results.length > shown && (
+              <Button variant="outline" className={styles.more} onClick={() => setShown(shown + PAGE_SIZE)}>
+                Show more ({results.length - shown} left)
+              </Button>
+            )}
+          </Stack>
         )}
       </PageBody>
 

@@ -26,8 +26,19 @@ export interface AgentResponse {
   created_by: string;
   /** How you reach it: yours, shared with you, or (admins) everyone else's as metadata only. */
   access: AgentAccess;
+  /** When you last had a conversation with it, from your own conversations; null if never. Set by the list only. */
+  last_used_at?: string | null;
+  /** How many conversations you have had with it. Set by the list only. */
+  use_count?: number;
   created_at: string;
   updated_at: string | null;
+}
+
+/** What an agent has attached; see `AgentApiService.getAttachedCounts`. */
+export interface AgentAttachedCounts {
+  knowledge_bases: number;
+  connectors: number;
+  skills: number;
 }
 
 export interface Agent2AgentSharingResponse {
@@ -108,6 +119,13 @@ class AgentApiService {
    */
   async listAgents(): Promise<AgentResponse[]> {
     return httpClient.get<AgentResponse[]>("/agents");
+  }
+
+  /**
+   * What each visible agent has attached, by agent id. Separate from the list because it is slower.
+   */
+  async getAttachedCounts(): Promise<Record<string, AgentAttachedCounts>> {
+    return httpClient.get<Record<string, AgentAttachedCounts>>("/agents/attached");
   }
 
   /**

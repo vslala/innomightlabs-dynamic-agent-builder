@@ -209,7 +209,7 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health_check():
-        return {"status": "healthy"}
+        return {"status": "healthy", "version": settings.app_version}
 
     @app.get("/")
     def root():

@@ -197,6 +197,15 @@ url_for() {
   printf '%s%s' "$api_base_url" "$path"
 }
 
+# The API's version: api-v<version> tags count its deploys. VERSION_BUMP=minor|major starts a new minor or
+# major (1.1.0, 2.0.0); the default is a patch (1.0.1). The tag is created once railway up has uploaded the build.
+APP_VERSION="$(cd "$PROJECT_ROOT" && scripts/next_version.sh api "${VERSION_BUMP:-patch}")"
+echo ""
+echo "Deploying API version $APP_VERSION"
+if [[ -n "$(git -C "$PROJECT_ROOT" status --porcelain)" ]]; then
+  echo "Warning: uncommitted changes. The api-v$APP_VERSION tag will point at HEAD, which lacks them." >&2
+fi
+
 echo ""
 echo "Syncing Railway variables for service '$RAILWAY_SERVICE' in environment '$RAILWAY_ENVIRONMENT'..."
 
@@ -204,6 +213,7 @@ RAILWAY_VAR_ARGS=()
 
 set_railway_var "RAILWAY_DOCKERFILE_PATH" "Dockerfile.railway"
 set_railway_var "RAILWAY_HEALTHCHECK_TIMEOUT_SEC" "999"
+set_railway_var "APP_VERSION" "$APP_VERSION"
 set_railway_var "ENVIRONMENT" "$environment_name"
 set_railway_var "DYNAMODB_TABLE" "$(get_var_default 'DYNAMODB_TABLE' "${project_name}-main")"
 set_railway_var "AWS_REGION_NAME" "$aws_region"
@@ -426,7 +436,10 @@ railway up "$API_DIR" \
   --project "$RAILWAY_PROJECT_ID" \
   --service "$RAILWAY_SERVICE" \
   --environment "$RAILWAY_ENVIRONMENT" \
-  --message "prod api deploy from scripts/deploy_prod_railway.sh"
+  --message "prod api $APP_VERSION deploy from scripts/deploy_prod_railway.sh"
+
+git -C "$PROJECT_ROOT" tag "api-v$APP_VERSION"
+git -C "$PROJECT_ROOT" push origin "api-v$APP_VERSION"
 
 echo ""
-echo "Railway deployment command completed."
+echo "Railway deployment command completed (api $APP_VERSION)."
