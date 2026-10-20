@@ -1,0 +1,26 @@
+.fields {
+  padding-block: var(--space-4);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.loading {
+  height: 6rem;
+}
+
+/* One column on a phone, two once there's room */
+.numbers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (min-width: 480px) {
+  .numbers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

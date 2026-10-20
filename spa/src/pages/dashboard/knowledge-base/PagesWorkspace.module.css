@@ -1,0 +1,265 @@
+/* Mobile first. One pane at a time (the list, or the page being read, with a way back); from 768px the list and
+   the reader sit side by side and scroll on their own; from 1360px (the sidebar takes 256px of it) the sections get a pane of their own. */
+
+.loading {
+  height: 8rem;
+}
+
+.work {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-panel);
+}
+
+.tree {
+  display: none;
+}
+
+.reading .list {
+  display: none;
+}
+
+.idle .readerPane {
+  display: none;
+}
+
+.list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.readerPane {
+  min-width: 0;
+}
+
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sectionSelect {
+  min-width: 0;
+}
+
+.chips {
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.chips > * {
+  flex: none;
+}
+
+.rows {
+  min-height: 0;
+  flex: 1;
+}
+
+.row {
+  display: grid;
+  width: 100%;
+  min-height: 3.5rem;
+  grid-template-columns: 0.625rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--surface-subtle);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--gradient-start);
+  outline-offset: -2px;
+}
+
+.row[aria-current="true"] {
+  background: var(--surface-selected);
+  box-shadow: inset 3px 0 var(--gradient-start);
+}
+
+.rowTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rowMeta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.rowAddress {
+  display: flex;
+  min-width: 0;
+  grid-column: 2 / -1;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.rowIcon {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex: none;
+}
+
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 50%;
+}
+
+.dotLive {
+  background: var(--success);
+}
+
+.dotFailing {
+  background: var(--warning);
+}
+
+.dotDuplicate {
+  background: var(--gradient-start);
+}
+
+.dotGone {
+  background: var(--text-muted);
+}
+
+.foot {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.keys {
+  display: none;
+}
+
+kbd {
+  padding: 0 5px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  font: 0.6875rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.label {
+  margin: var(--space-3) var(--space-3) var(--space-1);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.node {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.node[aria-pressed="true"] {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+.nodeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeCount {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+@media (min-width: 768px) {
+  .work {
+    height: max(32rem, calc(100dvh - 15rem));
+    grid-template-columns: 21rem minmax(0, 1fr);
+  }
+
+  .reading .list,
+  .idle .readerPane {
+    display: flex;
+  }
+
+  .list {
+    min-height: 0;
+    border-right: 1px solid var(--border-subtle);
+  }
+
+  .rows {
+    overflow-y: auto;
+  }
+
+  .readerPane {
+    min-height: 0;
+  }
+
+  .idle .readerPane {
+    display: block;
+  }
+}
+
+@media (min-width: 1360px) {
+  .work {
+    grid-template-columns: 14rem 23rem minmax(0, 1fr);
+  }
+
+  .tree {
+    display: block;
+    overflow-y: auto;
+    padding: var(--space-2);
+    border-right: 1px solid var(--border-subtle);
+  }
+
+  .sectionSelect {
+    display: none;
+  }
+
+  .keys {
+    display: inline;
+  }
+
+  .focus {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .focus .tree,
+  .focus .list {
+    display: none;
+  }
+}

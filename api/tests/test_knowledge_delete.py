@@ -110,6 +110,56 @@ def test_a_namespace_that_never_existed_counts_as_deleted(monkeypatch):
     assert client.delete_namespace("kb-1") is True
 
 
+@pytest.mark.parametrize("namespaces", [{}, {"kb_kb-1": {"vector_count": 0}}])
+def test_namespace_delete_with_unparseable_reply_succeeds_when_verified_empty(namespaces):
+    class Index:
+        def delete(self, *, delete_all, namespace):
+            assert delete_all is True
+            assert namespace == "kb_kb-1"
+            raise AttributeError("'str' object has no attribute '_response_info'")
+
+        def describe_index_stats(self):
+            return {"namespaces": namespaces}
+
+    assert a_client(Index()).delete_namespace("kb-1") is True
+
+
+@pytest.mark.parametrize("stats", [
+    {"namespaces": {"kb_kb-1": {"vector_count": 1}}},
+    {},
+    {"namespaces": {"kb_kb-1": {}}},
+])
+def test_namespace_delete_doesnt_succeed_without_evidence_it_is_empty(stats):
+    class Index:
+        def delete(self, **_):
+            raise AttributeError("'str' object has no attribute '_response_info'")
+
+        def describe_index_stats(self):
+            return stats
+
+    assert a_client(Index()).delete_namespace("kb-1") is False
+
+
+def test_namespace_delete_fails_safely_when_verification_is_unavailable():
+    class Index:
+        def delete(self, **_):
+            raise AttributeError("'str' object has no attribute '_response_info'")
+
+        def describe_index_stats(self):
+            raise ConnectionError("Pinecone unavailable")
+
+    assert a_client(Index()).delete_namespace("kb-1") is False
+
+
+def test_successful_namespace_delete_doesnt_need_verification():
+    class Index:
+        def delete(self, *, delete_all, namespace):
+            assert delete_all is True
+            assert namespace == "kb_kb-1"
+
+    assert a_client(Index()).delete_namespace("kb-1") is True
+
+
 class IndexThatErrorsAfterDeleting:
     """A server whose reply the SDK can't parse: the delete happens, then the call raises."""
 

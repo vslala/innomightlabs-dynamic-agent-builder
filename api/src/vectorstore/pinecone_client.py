@@ -292,7 +292,18 @@ class PineconeClient:
         except NotFoundException:
             return True  # a knowledge base that never held a vector has no namespace
         except Exception as e:
-            log.error(f"Failed to delete namespace: {e}", exc_info=True)
+            # The server may have applied the delete before the SDK failed to parse its reply.
+            log.warning(f"Deleting namespace {namespace} raised, checking what's left: {e}")
+            try:
+                namespaces = self._index.describe_index_stats()["namespaces"]
+                empty = namespace not in namespaces or namespaces[namespace]["vector_count"] == 0
+            except Exception:
+                log.error(f"Couldn't verify deletion of namespace {namespace}", exc_info=True)
+                return False
+            if empty:
+                log.info(f"Verified namespace {namespace} is empty after delete raised")
+                return True
+            log.error(f"Namespace {namespace} still contains vectors after delete raised")
             return False
 
     def get_stats(self, kb_id: Optional[str] = None) -> dict[str, Any]:

@@ -1,6 +1,6 @@
 import { httpClient } from "../http/client";
 
-export type ArtifactType = "html_report" | "image" | "file";
+export type ArtifactType = "html_report" | "image" | "file" | "csv" | "markdown" | "json" | "text" | "code" | "canvas";
 
 export interface ArtifactSource {
   skill_id?: string | null;

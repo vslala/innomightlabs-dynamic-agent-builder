@@ -1,0 +1,229 @@
+.runs {
+  display: flex;
+  max-width: 62rem;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin: 0 auto;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sectionHead h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  animation: spin 1s linear infinite;
+  color: var(--text-muted);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading {
+  height: 6rem;
+}
+
+.timeline {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* The rail: a dot beside each run and a line through them, kept off the narrowest screens */
+.run {
+  position: relative;
+  min-width: 0;
+}
+
+.dot {
+  display: none;
+}
+
+.header {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+.headerMain {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 14rem;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.titleWrap {
+  min-width: 0;
+}
+
+.url {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.meta {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.headerSide {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.percent {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.cancel {
+  color: var(--danger);
+}
+
+.retry {
+  color: var(--success);
+}
+
+.chips {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  padding: 1px 9px;
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.toneChanged {
+  background: var(--accent-blue-bg);
+  color: var(--gradient-start);
+}
+
+.toneRemoved {
+  background: var(--accent-orange-bg);
+  color: var(--accent-orange);
+}
+
+.toneFailed {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.progressHead {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-1);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.progressHead b {
+  color: var(--text-primary);
+}
+
+.good {
+  color: var(--success);
+}
+
+.bad {
+  color: var(--danger);
+}
+
+.hint {
+  margin: 0 0 var(--space-2);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.uploads {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.uploadIcon {
+  width: 1rem;
+  height: 1rem;
+  color: var(--text-muted);
+}
+
+@media (min-width: 768px) {
+  .run {
+    padding-left: var(--space-6);
+  }
+
+  .run::before {
+    position: absolute;
+    top: 1.25rem;
+    bottom: calc(var(--space-3) * -1 - 1.25rem);
+    left: 5px;
+    width: 2px;
+    background: var(--border-subtle);
+    content: "";
+  }
+
+  .run:last-child::before {
+    display: none;
+  }
+
+  .dot {
+    position: absolute;
+    top: 1rem;
+    left: 0;
+    display: block;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
+    background: var(--success);
+  }
+
+  .dotFailed {
+    background: var(--danger);
+  }
+}

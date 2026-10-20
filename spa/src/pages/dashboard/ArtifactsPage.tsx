@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { artifactApiService, type ArtifactResponse } from "../../services/artifacts";
 import { ConfirmationDialog } from "../../components/ui/confirmation-dialog";
 import { ArtifactsPagePanel } from "./ArtifactsPagePanel";
+import { EMPTY_ARTIFACT_SOURCE_NAMES, resolveArtifactSourceNames, type ArtifactSourceNames } from "./artifactSources";
 import {
   applyArtifactDeletion, artifactDeletionNotification, artifactRequestError,
   confirmArtifactDeletion, intersectArtifactSelection,
@@ -10,6 +11,7 @@ import {
 
 export function ArtifactsPage() {
   const [listing, setListing] = useState<{ artifacts: ArtifactResponse[]; selected: string[] }>({ artifacts: [], selected: [] });
+  const [resolvedSources, setResolvedSources] = useState<{ artifacts: ArtifactResponse[]; names: ArtifactSourceNames } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -49,6 +51,15 @@ export function ArtifactsPage() {
     };
   }, [loadArtifacts]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const artifacts = listing.artifacts;
+    void resolveArtifactSourceNames(artifacts, controller.signal).then((names) => {
+      if (!controller.signal.aborted) setResolvedSources({ artifacts, names });
+    });
+    return () => controller.abort();
+  }, [listing.artifacts]);
+
   const openConfirmation = (snapshot: ArtifactDeletionConfirmation) => {
     if (loading || inFlight.current || pending.current) return;
     pending.current = { ...snapshot, ids: [...new Set(snapshot.ids)] };
@@ -81,6 +92,7 @@ export function ArtifactsPage() {
     <>
       <ArtifactsPagePanel
         artifacts={listing.artifacts} selected={listing.selected} loading={loading} error={error}
+        sourceNames={resolvedSources?.artifacts === listing.artifacts ? resolvedSources.names : EMPTY_ARTIFACT_SOURCE_NAMES}
         locked={deleting || confirmation !== null} notification={notification}
         onReload={() => { void loadArtifacts(); }} onDismiss={() => setNotification(null)}
         onSelectionChange={(ids) => {
