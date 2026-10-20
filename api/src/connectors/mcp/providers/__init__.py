@@ -4,10 +4,14 @@ from src.connectors.mcp.providers import (
     atlassian,
     canva,
     context7,
+    deepwiki,
+    exa,
     github,
     google_ads,
     hubspot,
+    hugging_face,
     linear,
+    microsoft_learn,
     notion,
     sentry,
     slack,
@@ -33,6 +37,10 @@ PROVIDERS: dict[str, MCPProvider] = {
         slack.PROVIDER,
         stripe.PROVIDER,
         hubspot.PROVIDER,
+        deepwiki.PROVIDER,
+        microsoft_learn.PROVIDER,
+        exa.PROVIDER,
+        hugging_face.PROVIDER,
     )
 }
 

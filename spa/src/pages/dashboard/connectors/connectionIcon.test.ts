@@ -16,6 +16,10 @@ describe("MCP connection icons", () => {
     ["https://mcp.sentry.dev/mcp", "sentry"],
     ["https://mcp.supabase.com/mcp?project_ref=test", "supabase"],
     ["https://MCP.NOTION.COM:443/mcp", "notion"],
+    ["https://mcp.deepwiki.com/mcp", "deepwiki"],
+    ["https://learn.microsoft.com/api/mcp", "microsoft_learn"],
+    ["https://mcp.exa.ai/mcp", "exa"],
+    ["https://huggingface.co/mcp", "hugging_face"],
   ])("recognizes %s as %s", (server_url, icon) => {
     expect(connectionIcon({ server_url })).toBe(icon);
   });

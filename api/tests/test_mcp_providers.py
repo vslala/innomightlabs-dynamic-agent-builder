@@ -168,6 +168,84 @@ def test_preset_oauth_client_secrets_are_password_inputs(key: str) -> None:
             assert field.input_type == FormInputType.PASSWORD, field.name
 
 
+@pytest.mark.parametrize(
+    ("key", "url", "auth_type"),
+    [
+        ("deepwiki", "https://mcp.deepwiki.com/mcp", MCPAuthType.NONE),
+        ("microsoft_learn", "https://learn.microsoft.com/api/mcp", MCPAuthType.NONE),
+        ("exa", "https://mcp.exa.ai/mcp", MCPAuthType.API_KEY),
+        ("hugging_face", "https://huggingface.co/mcp", MCPAuthType.API_KEY),
+    ],
+)
+@pytest.mark.asyncio
+async def test_hosted_providers_install_without_credentials(key: str, url: str, auth_type: MCPAuthType) -> None:
+    service, repository, _client = _service()
+
+    installed = await service.install_provider(
+        account_for(OWNER), key, MCPProviderInstallRequest(return_to=RETURN_TO), user_email=OWNER
+    )
+
+    assert installed.authorize_url is None
+    assert installed.connection.provider_key == key
+    assert installed.connection.setup_state == "ready"
+    assert installed.connection.auth_type == auth_type
+    assert installed.connection.transport == MCPTransport.STREAMABLE_HTTP
+    assert installed.connection.inputs == {}
+    stored = repository.find_connection(account_for(OWNER), installed.connection.mcp_id)
+    assert stored is not None
+    resolved = service.providers.resolve(stored)
+    assert resolved.target == HttpTarget(url, {})
+    assert resolved.oauth is None
+    if auth_type == MCPAuthType.NONE:
+        assert get_provider(key).inputs == ()
+
+
+@pytest.mark.parametrize(
+    ("key", "input_name", "headers"),
+    [
+        ("exa", "api_key", {"x-api-key": "test-secret"}),
+        ("hugging_face", "token", {"Authorization": "Bearer test-secret"}),
+    ],
+)
+@pytest.mark.asyncio
+async def test_hosted_provider_optional_secrets_are_encrypted_and_resolved(
+    key: str, input_name: str, headers: dict[str, str]
+) -> None:
+    service, repository, _client = _service()
+    provider = get_provider(key)
+    field, = provider.inputs
+    assert field.name == input_name
+    assert field.is_optional
+    assert field.input_type == FormInputType.PASSWORD
+    assert provider.validated_inputs({input_name: "   "}) == {}
+    assert provider.target(ProviderInstall(inputs={input_name: ""})).headers == {}
+
+    installed = await service.install_provider(
+        account_for(OWNER), key,
+        MCPProviderInstallRequest(inputs={input_name: "  test-secret  "}, return_to=RETURN_TO), user_email=OWNER,
+    )
+    mcp_id = installed.connection.mcp_id
+    stored = repository.find_connection(account_for(OWNER), mcp_id)
+    assert stored is not None
+    assert "test-secret" not in stored.encrypted_auth_config
+    assert ProviderInstallSecrets.of(stored).inputs == {input_name: "test-secret"}
+    assert service.providers.resolve(stored).target.headers == headers
+    assert installed.authorize_url is None
+    assert installed.connection.setup_state == "ready"
+    assert installed.connection.inputs == {}
+    assert "test-secret" not in installed.model_dump_json()
+    form = service.connection_settings_form(account_for(OWNER), mcp_id)
+    assert {field.name: field.value for field in form.form_inputs} == {input_name: None}
+    assert "test-secret" not in form.model_dump_json()
+
+    await service.update_connection(
+        account_for(OWNER), mcp_id, MCPConnectionUpdateRequest(inputs={input_name: ""})
+    )
+    updated = repository.find_connection(account_for(OWNER), mcp_id)
+    assert updated is not None
+    assert service.providers.resolve(updated).target.headers == headers
+
+
 def test_unknown_provider_is_not_found() -> None:
     with pytest.raises(ValueError, match="not found"):
         get_provider("nope")

@@ -18,6 +18,10 @@ Refreshed from the providers' sites on 2026-10-20:
 | `cloudflare.svg` | https://cdn.jsdelivr.net/npm/simple-icons@v16/icons/cloudflare.svg (Simple Icons; vendor site downloads were blocked) |
 | `context7.png` | https://context7.com/favicon.ico (PNG image) |
 | `canva.png` | https://static.canva.com/domain-assets/canva/static/images/apple-touch-180x180-1.png |
+| `deepwiki.png` | https://www.google.com/s2/favicons?domain=deepwiki.com&sz=128 (cached site favicon; direct vendor downloads returned HTTP 429) |
+| `microsoft_learn.png` | https://learn.microsoft.com/favicon.ico (converted to PNG) |
+| `exa.svg` | https://exa.ai/images/logo/exa-logo-blue.svg (symbol extracted from wordmark, geometry unchanged) |
+| `hugging_face.svg` | https://huggingface.co/front/assets/huggingface_logo-noborder.svg |
 | `stripe.png` | stripe.com apple-touch-icon |
 | `hubspot.png` | hubspot.com favicon |
 | `slack.png` | Slack marketing icon (a.slack-edge.com) |
@@ -30,7 +34,7 @@ account key `megaphone` resolves to `google_ads`. Keep one asset per key to avoi
 
 Brand tiles have a white background for contrast in either theme and use `object-fit: contain` so
 marks are not cropped. `GLYPH_MARKS` adds padding for transparent GitHub, Atlassian, Gmail, Drive and
-Google Ads and Cloudflare glyphs. Sentry already has whitespace in its SVG; the other app icons include their own
+Google Ads, Cloudflare, Exa, Microsoft Learn and Hugging Face glyphs. Sentry already has whitespace in its SVG; the other app icons include their own
 background or spacing. `connectionIcon.ts` recognizes known MCP hostnames for hand-added connections,
 so Installed, Your own server and the details dialog reuse the same marks. Recognition only affects
 presentation, not provider membership, authorization or installation state. Unrecognized custom servers

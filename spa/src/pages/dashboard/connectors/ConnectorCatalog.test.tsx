@@ -60,6 +60,10 @@ describe("connector catalog", () => {
       ["Atlassian", "https://mcp.atlassian.com/v1/mcp/authv2", "atlassian"],
       ["Tavily Web Search Engine", "https://mcp.tavily.com/mcp/?tavilyApiKey=test", "tavily"],
       ["Cloudflare", "https://mcp.cloudflare.com/mcp", "cloudflare"],
+      ["DeepWiki", "https://mcp.deepwiki.com/mcp", "deepwiki"],
+      ["Microsoft Learn", "https://learn.microsoft.com/api/mcp", "microsoft_learn"],
+      ["Exa", "https://mcp.exa.ai/mcp", "exa"],
+      ["Hugging Face", "https://huggingface.co/mcp", "hugging_face"],
       ["Private server", "https://custom.example/mcp", "server"],
     ];
     const connections = custom.map(([name, server_url], index) => ({

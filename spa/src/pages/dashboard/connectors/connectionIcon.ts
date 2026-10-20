@@ -11,6 +11,10 @@ const MCP_HOST_ICONS: Record<string, string> = {
   "mcp.context7.com": "context7",
   "mcp.sentry.dev": "sentry",
   "mcp.supabase.com": "supabase",
+  "mcp.deepwiki.com": "deepwiki",
+  "learn.microsoft.com": "microsoft_learn",
+  "mcp.exa.ai": "exa",
+  "huggingface.co": "hugging_face",
 };
 
 /** Recognize hand-added providers without changing their install or authorization behavior. */

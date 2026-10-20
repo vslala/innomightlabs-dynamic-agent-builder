@@ -14,7 +14,7 @@ const BRAND_URLS: Record<string, string> = Object.fromEntries(
 );
 
 // Sentry's SVG already includes padding; app icons have their own background and spacing.
-const GLYPH_MARKS = new Set(["github", "atlassian", "mail", "hard_drive", "google_ads", "cloudflare"]);
+const GLYPH_MARKS = new Set(["github", "atlassian", "mail", "hard_drive", "google_ads", "cloudflare", "exa", "microsoft_learn", "hugging_face"]);
 
 /** The same name always lands on the same hue, so a server added by hand is still told apart from the others. */
 function hueFor(name: string): number {
