@@ -97,6 +97,9 @@ class Settings:
     # quiet mid-stream (connection kept open, nothing arriving) trips it.
     dream_planner_timeout_seconds: int = 150
     crawl_job_stale_timeout_seconds: int = 15 * 60
+    #: A crawled page that comes back with HTML and no text is rendered in the CLI runner's browser.
+    crawler_browser_fallback: bool = False
+    crawler_browser_timeout_seconds: int = 20
     crawl_job_reaper_interval_seconds: int = 5 * 60
     #: A blueprint apply not saved for this long was interrupted; the reaper puts back what it did.
     blueprint_apply_stale_timeout_seconds: int = 15 * 60
@@ -544,6 +547,8 @@ class Settings:
             crawl_job_stale_timeout_seconds=int(
                 os.getenv("CRAWL_JOB_STALE_TIMEOUT_SECONDS", "900")
             ),
+            crawler_browser_fallback=os.getenv("CRAWLER_BROWSER_FALLBACK", "false").lower() == "true",
+            crawler_browser_timeout_seconds=int(os.getenv("CRAWLER_BROWSER_TIMEOUT_SECONDS", "20")),
             crawl_job_reaper_interval_seconds=int(
                 os.getenv("CRAWL_JOB_REAPER_INTERVAL_SECONDS", "300")
             ),

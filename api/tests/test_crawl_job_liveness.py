@@ -153,7 +153,7 @@ async def test_url_discovery_offers_heartbeat_on_each_url(monkeypatch):
     discovered_urls = ["https://example.com", "https://example.com/about"]
 
     class FakeDiscovery:
-        def __init__(self, _config):
+        def __init__(self, _config, _renderer=None):
             pass
 
         async def discover_from_url(self, _source_url):

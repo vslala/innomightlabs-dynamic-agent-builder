@@ -394,6 +394,8 @@ set_railway_var \
 set_railway_var \
   "CRAWL_JOB_REAPER_INTERVAL_SECONDS" \
   "$(get_prod_var_default 'CRAWL_JOB_REAPER_INTERVAL_SECONDS' '300')"
+set_railway_var "CRAWLER_BROWSER_FALLBACK" "$(get_prod_var_default 'CRAWLER_BROWSER_FALLBACK' 'true')"
+set_railway_var "CRAWLER_BROWSER_TIMEOUT_SECONDS" "$(get_prod_var_default 'CRAWLER_BROWSER_TIMEOUT_SECONDS' '20')"
 set_railway_var \
   "BLUEPRINT_APPLY_STALE_TIMEOUT_SECONDS" \
   "$(get_prod_var_default 'BLUEPRINT_APPLY_STALE_TIMEOUT_SECONDS' '900')"

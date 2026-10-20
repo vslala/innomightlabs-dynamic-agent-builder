@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from src.crawler.extractor import ContentExtractor, decode_cloudflare_email
+from tests.crawler.fakes import read_response
 
 URL = "https://example.com/software/bidsignal"
 
@@ -112,7 +113,7 @@ def test_a_page_that_says_its_another_page_on_the_site_is_read_as_that_page():
     response = httpx.Response(200, text=html, headers={"content-type": "text/html"},
                               request=httpx.Request("GET", "https://example.com/contact?topic=product"))
 
-    fetched = ContentExtractor()._read("https://example.com/contact?topic=product", response)
+    fetched = read_response("https://example.com/contact?topic=product", response)
 
     assert fetched.url == "https://example.com/contact"
 
@@ -121,4 +122,4 @@ def test_a_canonical_link_to_another_site_is_ignored():
     html = page("<p>Seats cost ten pounds.</p>", '<link rel="canonical" href="https://elsewhere.example/post">')
     response = httpx.Response(200, text=html, headers={"content-type": "text/html"}, request=httpx.Request("GET", URL))
 
-    assert ContentExtractor()._read(URL, response).url == URL
+    assert read_response(URL, response).url == URL

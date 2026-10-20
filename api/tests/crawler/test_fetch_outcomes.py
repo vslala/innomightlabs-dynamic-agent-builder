@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from src.crawler.extractor import ContentExtractor, FetchOutcome, same_site
+from tests.crawler.fakes import read_response
 
 URL = "https://example.com/pricing"
 PAGE = "<html><head><title>Pricing</title></head><body><main><p>Seats cost ten pounds a month.</p></main></body></html>"
@@ -11,7 +12,7 @@ PAGE = "<html><head><title>Pricing</title></head><body><main><p>Seats cost ten p
 
 def answered(status: int, *, body: str = PAGE, content_type: str = "text/html; charset=utf-8", at: str = URL):
     """The response a fetch of URL ended on: `at` is where redirects led."""
-    return ContentExtractor()._read(
+    return read_response(
         URL, httpx.Response(status, text=body, headers={"content-type": content_type}, request=httpx.Request("GET", at))
     )
 
@@ -60,7 +61,7 @@ async def test_a_page_that_cant_be_reached_is_a_failed_read(monkeypatch):
         raise httpx.ConnectTimeout("too slow", request=request)
 
     monkeypatch.setattr(
-        "src.crawler.extractor.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(time_out))
+        "src.crawler.page_fetch.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(time_out))
     )
 
     fetched = await ContentExtractor().fetch(URL)
@@ -78,7 +79,7 @@ def test_not_modified_says_the_page_is_what_it_was():
 
 
 def test_a_read_keeps_the_sites_validators():
-    fetched = ContentExtractor()._read(URL, httpx.Response(
+    fetched = read_response(URL, httpx.Response(
         200, text=PAGE, request=httpx.Request("GET", URL),
         headers={"content-type": "text/html", "etag": '"v7"', "last-modified": "Sat, 17 Oct 2026 09:00:00 GMT"},
     ))
@@ -94,7 +95,7 @@ async def test_the_validators_of_the_last_read_are_sent_back(monkeypatch):
         return httpx.Response(304)
 
     monkeypatch.setattr(
-        "src.crawler.extractor.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(not_modified))
+        "src.crawler.page_fetch.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(not_modified))
     )
 
     fetched = await ContentExtractor().fetch(URL, etag='"v7"', last_modified="Sat, 17 Oct 2026 09:00:00 GMT")

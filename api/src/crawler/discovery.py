@@ -14,6 +14,8 @@ from typing import AsyncIterator, Optional, Set, cast
 from bs4 import BeautifulSoup
 import logging
 
+from src.crawler.page_fetch import Page, fetch_page
+from src.crawler.renderer import PageRenderer
 from src.crawler.robots import RobotsParser, RobotsTxt
 from src.common import outbound
 
@@ -150,8 +152,10 @@ class SitemapParser:
 class UrlCrawler:
     """Crawl-based URL discovery by following links."""
 
-    def __init__(self, config: DiscoveryConfig):
+    def __init__(self, config: DiscoveryConfig, renderer: Optional[PageRenderer] = None):
         self.config = config
+        #: Reads the links of pages that a plain fetch finds none on, which is what a page painted by JavaScript is.
+        self.renderer = renderer
         self.robots_parser = RobotsParser()
         self._seen_urls: Set[str] = set()
         self._queue: list[DiscoveredUrl] = []
@@ -217,28 +221,22 @@ class UrlCrawler:
     async def _extract_links(self, url: str) -> list[str]:
         """Extract links from a page."""
         try:
-            async with outbound.async_client() as client:
-                response = await client.get(
-                    url,
-                    timeout=self.config.timeout,
-                    follow_redirects=True,
-                    headers={"User-Agent": self.config.user_agent},
-                )
-                response.raise_for_status()
-
-                # Only process HTML content
-                content_type = response.headers.get("content-type", "")
-                if "text/html" not in content_type:
-                    return []
-
-                html = response.text
-
+            got = await fetch_page(
+                url,
+                user_agent=self.config.user_agent,
+                timeout=self.config.timeout,
+                renderer=self.renderer,
+                read=self._links_on,
+                is_empty=lambda links: not links,
+            )
         except httpx.RequestError as e:
             log.debug(f"Failed to fetch {url} for link extraction: {e}")
             return []
+        return got.read or []
 
-        # Parse HTML and extract links
-        soup = BeautifulSoup(html, "lxml")
+    def _links_on(self, page: Page) -> list[str]:
+        url = page.url
+        soup = BeautifulSoup(page.html, "lxml")
         links: list[str] = []
 
         for anchor in soup.find_all("a", href=True):
@@ -297,8 +295,9 @@ class UrlDiscovery:
     Unified URL discovery that supports both sitemap and crawl-based discovery.
     """
 
-    def __init__(self, config: DiscoveryConfig):
+    def __init__(self, config: DiscoveryConfig, renderer: Optional[PageRenderer] = None):
         self.config = config
+        self.renderer = renderer
         self.robots_parser = RobotsParser()
 
     async def discover_from_sitemap(self, sitemap_url: str) -> AsyncIterator[DiscoveredUrl]:
@@ -351,7 +350,7 @@ class UrlDiscovery:
         Yields:
             DiscoveredUrl objects
         """
-        crawler = UrlCrawler(self.config)
+        crawler = UrlCrawler(self.config, self.renderer)
         count = 0
 
         async for url in crawler.discover(start_url):

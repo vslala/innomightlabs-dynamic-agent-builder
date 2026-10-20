@@ -52,6 +52,7 @@ from src.knowledge.repository import (
 from src.knowledge.run_state import CrawlJobStateService, CrawlJobStoppedError
 from src.crawler.discovery import UrlDiscovery, DiscoveryConfig
 from src.crawler.extractor import ContentExtractor, ExtractedContent, Fetched, FetchOutcome
+from src.crawler.renderer import configured_page_renderer
 from src.crawler.chunking import get_chunking_strategy
 from src.crawler.page_chunks import READER_VERSION, text_hash
 from src.crawler.page_index import PageIndex, address_rank, held
@@ -206,7 +207,9 @@ class CrawlerWorker:
     """
 
     def __init__(self) -> None:
-        self.extractor = ContentExtractor()
+        # One browser for both ways the crawler reads a page: its text, and the links on it.
+        self.renderer = configured_page_renderer()
+        self.extractor = ContentExtractor(renderer=self.renderer)
         self.robots = RobotsParser()
         self._embeddings = None
         self._pinecone = None
@@ -416,7 +419,7 @@ class CrawlerWorker:
             same_domain_only=True,
         )
 
-        discovery = UrlDiscovery(discovery_config)
+        discovery = UrlDiscovery(discovery_config, self.renderer)
 
         if config.source_type == CrawlSourceType.SITEMAP:
             url_iter = discovery.discover_from_sitemap(config.source_url)

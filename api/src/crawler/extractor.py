@@ -10,11 +10,12 @@ from markdownify import markdownify as md
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 import httpx
 import logging
 import re
-from src.common import outbound
+from src.crawler.page_fetch import PageFetch, fetch_page, same_site
+from src.crawler.renderer import PageRenderer
 
 log = logging.getLogger(__name__)
 
@@ -89,15 +90,6 @@ class Fetched:
     last_modified: Optional[str] = None
 
 
-def same_site(url: str, other: str) -> bool:
-    """`example.com` and `www.example.com` are one site: sites redirect between them."""
-
-    def host(value: str) -> str:
-        return urlparse(value).netloc.lower().removeprefix("www.")
-
-    return host(url) == host(other)
-
-
 class ContentExtractor:
     """Extracts clean content from HTML pages using HTML-to-Markdown conversion."""
 
@@ -129,49 +121,63 @@ class ContentExtractor:
         self,
         user_agent: str = "InnomightLabsCrawler/1.0 (+https://innomightlabs.com)",
         timeout: float = 30.0,
+        renderer: Optional[PageRenderer] = None,
     ):
         self.user_agent = user_agent
         self.timeout = timeout
+        #: Reads pages that a plain fetch finds empty. Without one, those pages fail as "no text on the page".
+        self.renderer = renderer
 
     async def fetch(self, url: str, *, etag: Optional[str] = None, last_modified: Optional[str] = None) -> Fetched:
         """Fetch a page and extract its content, saying whether it's there, gone, or couldn't be read this time.
 
-        Given the validators of the last read, a page that hasn't changed answers 304 and nothing is downloaded.
+        Given the validators of the last read, a page that hasn't changed answers 304 and nothing is downloaded. A
+        page with no text is read again as a browser shows it, when there is a renderer to ask.
         """
-        headers = {"User-Agent": self.user_agent}
+        headers = {}
         if etag:
             headers["If-None-Match"] = etag
         if last_modified:
             headers["If-Modified-Since"] = last_modified
         try:
-            async with outbound.async_client() as client:
-                response = await client.get(url, timeout=self.timeout, follow_redirects=True, headers=headers)
+            got = await fetch_page(
+                url,
+                user_agent=self.user_agent,
+                timeout=self.timeout,
+                headers=headers,
+                renderer=self.renderer,
+                read=lambda page: self.extract(page.url, page.html),
+                is_empty=lambda content: not content.full_text.strip(),
+            )
         except httpx.HTTPError as e:
             return Fetched(FetchOutcome.FAILED, url, reason=f"couldn't fetch it: {e.__class__.__name__}")
-        return self._read(url, response)
+        return self._outcome(url, got)
 
-    def _read(self, url: str, response: httpx.Response) -> Fetched:
-        final_url = str(response.url)
-        if response.status_code == 304:
+    def _outcome(self, url: str, got: PageFetch[ExtractedContent]) -> Fetched:
+        page = got.page
+        if page.status == 304:
             return Fetched(FetchOutcome.NOT_MODIFIED, url)
-        if response.status_code in (404, 410):
-            return Fetched(FetchOutcome.GONE, url, reason=f"HTTP {response.status_code}")
-        if not response.is_success:
-            return Fetched(FetchOutcome.FAILED, url, reason=f"HTTP {response.status_code}")
-        if not same_site(url, final_url):
-            return Fetched(FetchOutcome.GONE, url, reason=f"moved to {final_url}")
-        content_type = response.headers.get("content-type", "")
-        if "text/html" not in content_type:
-            return Fetched(FetchOutcome.FAILED, final_url, reason=f"not HTML ({content_type or 'no content type'})")
-        content = self.extract(final_url, response.text)
-        if not content.full_text.strip():
-            return Fetched(FetchOutcome.FAILED, final_url, reason="no text on the page")
+        if page.status in (404, 410):
+            return Fetched(FetchOutcome.GONE, url, reason=f"HTTP {page.status}")
+        if not 200 <= page.status < 300:
+            return Fetched(FetchOutcome.FAILED, url, reason=f"HTTP {page.status}")
+        if not same_site(url, page.url):
+            return Fetched(FetchOutcome.GONE, url, reason=f"moved to {page.url}")
+        if "text/html" not in page.content_type:
+            return Fetched(FetchOutcome.FAILED, page.url, reason=f"not HTML ({page.content_type or 'no content type'})")
+        content = got.read
+        if content is None or not content.full_text.strip():
+            reason = "no text on the page" + (f" ({got.render_error})" if got.render_error else "")
+            return Fetched(FetchOutcome.FAILED, page.url, reason=reason)
+        return self._accepted(page.url, content, etag=page.etag, last_modified=page.last_modified)
+
+    @staticmethod
+    def _accepted(
+        final_url: str, content: ExtractedContent, *, etag: Optional[str] = None, last_modified: Optional[str] = None
+    ) -> Fetched:
         # The page's own address, when it says it's another one on this site: `/contact?topic=product` is `/contact`
         address = content.canonical_url if content.canonical_url and same_site(final_url, content.canonical_url) else final_url
-        return Fetched(
-            FetchOutcome.OK, address, content,
-            etag=response.headers.get("etag"), last_modified=response.headers.get("last-modified"),
-        )
+        return Fetched(FetchOutcome.OK, address, content, etag=etag, last_modified=last_modified)
 
     def extract(self, url: str, html: str) -> ExtractedContent:
         """
