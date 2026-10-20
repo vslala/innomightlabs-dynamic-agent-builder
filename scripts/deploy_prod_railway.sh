@@ -69,6 +69,88 @@ railway_ref() {
   printf '${{%s.%s}}' "$service_name" "$variable_name"
 }
 
+# What a service runs: its files (uncommitted edits included) plus the variables set on it. Hashed, so secrets never
+# leave this machine. A service whose fingerprint matches the one recorded after its last good deploy is not redeployed.
+# FORCE_DEPLOY=true redeploys everything, for what the fingerprint can't see (a base image that moved).
+fingerprint() {
+  local dir="$1"
+  shift
+  {
+    (cd "$dir" && git ls-files -z --cached --others --exclude-standard | sort -z | xargs -0 shasum -a 256 2>/dev/null) || true
+    printf '%s\n' "$@"
+  } | shasum -a 256 | cut -d' ' -f1
+}
+
+recorded_fingerprint() {
+  local service_name="$1"
+  railway variable list \
+    --project "$RAILWAY_PROJECT_ID" \
+    --service "$service_name" \
+    --environment "$RAILWAY_ENVIRONMENT" \
+    --json 2>/dev/null |
+    python3 -c 'import json, sys; print(json.load(sys.stdin).get("DEPLOYED_FINGERPRINT", ""))' 2>/dev/null || true
+}
+
+service_changed() {
+  local service_name="$1"
+  local current="$2"
+  [[ "${FORCE_DEPLOY:-false}" == "true" || "$(recorded_fingerprint "$service_name")" != "$current" ]]
+}
+
+latest_deployment() {
+  railway deployment list \
+    --service "$1" \
+    --environment "$RAILWAY_ENVIRONMENT" \
+    --json --limit 1 2>/dev/null |
+    python3 -c 'import json, sys; d = json.load(sys.stdin); print(d[0]["id"], d[0]["status"]) if d else print("", "")' 2>/dev/null || true
+}
+
+# Uploads the service, waits for the new deployment to go live, then records its fingerprint. A build or health check
+# that fails records nothing, so the next run tries again instead of skipping a broken service.
+deploy_service() {
+  local service_name="$1"
+  local dir="$2"
+  local current="$3"
+  local message="$4"
+  local before id status
+  read -r before _ < <(latest_deployment "$service_name") || true
+
+  railway up "$dir" \
+    --detach \
+    --path-as-root \
+    --project "$RAILWAY_PROJECT_ID" \
+    --service "$service_name" \
+    --environment "$RAILWAY_ENVIRONMENT" \
+    --message "$message"
+
+  echo "Waiting for '$service_name' to finish deploying..."
+  local deadline=$((SECONDS + 1200))
+  while ((SECONDS < deadline)); do
+    sleep 10
+    read -r id status < <(latest_deployment "$service_name") || true
+    if [[ -n "$id" && "$id" != "${before:-}" ]]; then
+      case "$status" in
+        SUCCESS)
+          railway variable set \
+            --project "$RAILWAY_PROJECT_ID" \
+            --service "$service_name" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --skip-deploys \
+            "DEPLOYED_FINGERPRINT=$current" >/dev/null
+          echo "'$service_name' is live."
+          return 0
+          ;;
+        FAILED | CRASHED | REMOVED | SKIPPED)
+          echo "Error: deployment of '$service_name' ended as $status. Its fingerprint was not recorded." >&2
+          return 1
+          ;;
+      esac
+    fi
+  done
+  echo "Error: '$service_name' was still deploying after 20 minutes. Its fingerprint was not recorded." >&2
+  return 1
+}
+
 generate_cli_runner_shared_token() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -hex 32
@@ -326,6 +408,19 @@ set_railway_var "CLI_RUNNER_BASE_URL" "$cli_runner_base_url"
 set_railway_var "CLI_RUNNER_SHARED_TOKEN" "$cli_runner_shared_token"
 set_railway_var "CLI_RUNNER_TIMEOUT_SECONDS" "$(get_prod_var_default 'CLI_RUNNER_TIMEOUT_SECONDS' '30')"
 
+# The version changes on every run, so it stays out of the fingerprint and is only written when the API deploys.
+api_fingerprint_vars=()
+for arg in "${RAILWAY_VAR_ARGS[@]}"; do
+  [[ "$arg" == APP_VERSION=* ]] || api_fingerprint_vars+=("$arg")
+done
+api_fingerprint="$(fingerprint "$API_DIR" "${api_fingerprint_vars[@]}")"
+deploy_api="false"
+if service_changed "$RAILWAY_SERVICE" "$api_fingerprint"; then
+  deploy_api="true"
+else
+  RAILWAY_VAR_ARGS=("${api_fingerprint_vars[@]}")
+fi
+
 if [[ ${#RAILWAY_VAR_ARGS[@]} -gt 0 ]]; then
   railway variable set \
     --project "$RAILWAY_PROJECT_ID" \
@@ -360,6 +455,12 @@ if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
   set_runner_railway_var "CLI_RUNNER_SHARED_TOKEN" "$cli_runner_shared_token"
   set_runner_railway_var "CLI_RUNNER_MAX_TIMEOUT_SECONDS" "$cli_runner_max_timeout_seconds"
 
+  cli_runner_fingerprint="$(fingerprint "$CLI_RUNNER_DIR" "${RAILWAY_RUNNER_VAR_ARGS[@]}")"
+  deploy_cli_runner="false"
+  if service_changed "$RAILWAY_CLI_RUNNER_SERVICE" "$cli_runner_fingerprint"; then
+    deploy_cli_runner="true"
+  fi
+
   if [[ ${#RAILWAY_RUNNER_VAR_ARGS[@]} -gt 0 ]]; then
     railway variable set \
       --project "$RAILWAY_PROJECT_ID" \
@@ -372,7 +473,11 @@ if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
   echo "Private sidecar variables synced."
 fi
 
+ollama_vars=("RAILWAY_DOCKERFILE_PATH=Dockerfile.railway" "RAILWAY_HEALTHCHECK_TIMEOUT_SEC=300")
 if [[ "$deploy_ollama" == "true" ]]; then
+  ollama_fingerprint="$(fingerprint "$OLLAMA_DIR" "${ollama_vars[@]}")"
+  ollama_changed="true"
+  service_changed "$RAILWAY_OLLAMA_SERVICE" "$ollama_fingerprint" || ollama_changed="false"
   echo ""
   echo "Syncing Railway variables for private Ollama service '$RAILWAY_OLLAMA_SERVICE'..."
   railway variable set \
@@ -380,17 +485,17 @@ if [[ "$deploy_ollama" == "true" ]]; then
     --service "$RAILWAY_OLLAMA_SERVICE" \
     --environment "$RAILWAY_ENVIRONMENT" \
     --skip-deploys \
-    "RAILWAY_DOCKERFILE_PATH=Dockerfile.railway" \
-    "RAILWAY_HEALTHCHECK_TIMEOUT_SEC=300" >/dev/null
+    "${ollama_vars[@]}" >/dev/null
   echo "Ollama service variables synced."
 fi
 echo ""
 echo "=========================================="
 echo "WARNING: You are about to deploy to Railway PRODUCTION."
 echo "Project ID: $RAILWAY_PROJECT_ID"
-echo "API service: $RAILWAY_SERVICE"
-echo "CLI runner sidecar: ${RAILWAY_CLI_RUNNER_SERVICE:-not set} (deploy: $DEPLOY_CLI_RUNNER)"
-echo "Embedding backend: $embedding_backend (Ollama service: $RAILWAY_OLLAMA_SERVICE, deploy: $deploy_ollama)"
+echo "API service: $RAILWAY_SERVICE (deploy: $deploy_api)"
+echo "CLI runner sidecar: ${RAILWAY_CLI_RUNNER_SERVICE:-not set} (deploy: ${deploy_cli_runner:-false})"
+echo "Embedding backend: $embedding_backend (Ollama service: $RAILWAY_OLLAMA_SERVICE, deploy: ${ollama_changed:-false})"
+echo "Services whose files and variables match their last good deploy are skipped (FORCE_DEPLOY=true overrides)."
 echo "Railway environment: $RAILWAY_ENVIRONMENT"
 echo "API_BASE_URL: ${api_base_url:-not set}"
 echo "CLI_RUNNER_BASE_URL: ${cli_runner_base_url:-not set}"
@@ -404,42 +509,31 @@ if [[ "$REPLY" != "yes" ]]; then
   exit 1
 fi
 
-if [[ "$DEPLOY_CLI_RUNNER" == "true" ]]; then
+if [[ "${deploy_cli_runner:-false}" == "true" ]]; then
   echo ""
   echo "Deploying private infra CLI runner to Railway..."
-  railway up "$CLI_RUNNER_DIR" \
-    --detach \
-    --path-as-root \
-    --project "$RAILWAY_PROJECT_ID" \
-    --service "$RAILWAY_CLI_RUNNER_SERVICE" \
-    --environment "$RAILWAY_ENVIRONMENT" \
-    --message "prod infra cli runner deploy from scripts/deploy_prod_railway.sh"
+  deploy_service "$RAILWAY_CLI_RUNNER_SERVICE" "$CLI_RUNNER_DIR" "$cli_runner_fingerprint" \
+    "prod infra cli runner deploy from scripts/deploy_prod_railway.sh"
 fi
 
-if [[ "$deploy_ollama" == "true" ]]; then
+if [[ "${ollama_changed:-false}" == "true" ]]; then
   echo ""
   echo "Deploying private Ollama embedding service to Railway..."
-  railway up "$OLLAMA_DIR" \
-    --detach \
-    --path-as-root \
-    --project "$RAILWAY_PROJECT_ID" \
-    --service "$RAILWAY_OLLAMA_SERVICE" \
-    --environment "$RAILWAY_ENVIRONMENT" \
-    --message "prod ollama embeddings deploy from scripts/deploy_prod_railway.sh"
+  deploy_service "$RAILWAY_OLLAMA_SERVICE" "$OLLAMA_DIR" "$ollama_fingerprint" \
+    "prod ollama embeddings deploy from scripts/deploy_prod_railway.sh"
 fi
 
-echo ""
-echo "Deploying API to Railway..."
-railway up "$API_DIR" \
-  --detach \
-  --path-as-root \
-  --project "$RAILWAY_PROJECT_ID" \
-  --service "$RAILWAY_SERVICE" \
-  --environment "$RAILWAY_ENVIRONMENT" \
-  --message "prod api $APP_VERSION deploy from scripts/deploy_prod_railway.sh"
+if [[ "$deploy_api" == "true" ]]; then
+  echo ""
+  echo "Deploying API to Railway..."
+  deploy_service "$RAILWAY_SERVICE" "$API_DIR" "$api_fingerprint" \
+    "prod api $APP_VERSION deploy from scripts/deploy_prod_railway.sh"
 
-git -C "$PROJECT_ROOT" tag "api-v$APP_VERSION"
-git -C "$PROJECT_ROOT" push origin "api-v$APP_VERSION"
-
-echo ""
-echo "Railway deployment command completed (api $APP_VERSION)."
+  git -C "$PROJECT_ROOT" tag "api-v$APP_VERSION"
+  git -C "$PROJECT_ROOT" push origin "api-v$APP_VERSION"
+  echo ""
+  echo "Railway deployment completed (api $APP_VERSION)."
+else
+  echo ""
+  echo "Railway deployment completed (api unchanged, still on its last version)."
+fi
