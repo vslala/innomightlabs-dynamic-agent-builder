@@ -6,6 +6,8 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Path, Respo
 from fastapi.responses import JSONResponse
 
 from src.infra_cli_runner.models import (
+    BrowserRenderRequest,
+    BrowserRenderResponse,
     CommandRequest,
     CommandResponse,
     EnsureHostedMCPServerRequest,
@@ -16,6 +18,7 @@ from src.infra_cli_runner.models import (
     PythonExecutionRequest,
     PythonExecutionResponse,
 )
+from src.infra_cli_runner.browser import BrowserRenderer, RenderError, get_browser_renderer
 from src.infra_cli_runner.filesystem import FileSystemService, get_file_system_service
 from src.infra_cli_runner.mcp_servers import (
     PoolFullError,
@@ -103,6 +106,21 @@ def _authorize(runner_service: CliRunnerService, authorization: str | None) -> N
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     except CommandExecutionError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
+@router.post("/v1/browser/render", response_model=BrowserRenderResponse)
+async def render_page(
+    request: BrowserRenderRequest,
+    runner_service: Annotated[CliRunnerService, Depends(get_cli_runner_service)],
+    renderer: Annotated[BrowserRenderer, Depends(get_browser_renderer)],
+    authorization: str | None = Header(default=None),
+) -> BrowserRenderResponse:
+    _authorize(runner_service, authorization)
+    try:
+        page = await renderer.render(request.url, timeout_seconds=request.timeout_seconds, user_agent=request.user_agent)
+    except RenderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return BrowserRenderResponse(final_url=page.final_url, status=page.status, html=page.html)
 
 
 @router.get("/v1/mcp/packages", response_model=list[HostedMCPPackage])

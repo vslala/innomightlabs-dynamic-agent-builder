@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
+from src.infra_cli_runner.browser import get_browser_renderer
 from src.infra_cli_runner.mcp_servers import get_mcp_server_pool
 from src.infra_cli_runner.router import router
 
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         with suppress(asyncio.CancelledError):
             await reaper
         await pool.close()
+        await get_browser_renderer().close()
 
 
 app = FastAPI(title="InnomightLabs Infra CLI Runner", version="0.4.0", lifespan=lifespan)

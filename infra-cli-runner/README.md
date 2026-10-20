@@ -8,9 +8,27 @@ The service intentionally exposes only:
 - `POST /v1/commands`
 - `POST /v1/python/executions`
 - `POST /v1/filesystem/actions`
+- `POST /v1/browser/render`
 - `GET /v1/mcp/packages`, `PUT|GET|DELETE /v1/mcp/servers/{server_id}`, `POST /v1/mcp/servers/{server_id}/mcp`
 
 Requests must use bearer auth with `CLI_RUNNER_SHARED_TOKEN`. The runner never accepts shell command strings.
+
+## Browser rendering
+
+`POST /v1/browser/render` with `{url, timeout_seconds, user_agent}` returns `{final_url, status, html}`: the page's HTML
+after its scripts have run, for sites that paint their content in the browser (React, Angular). The crawler calls it only
+when a plain fetch finds no text. It is a typed operation: no scripts, selectors or cookies go in.
+
+Chromium never opens a socket itself. Every request the page makes is intercepted and sent through `outbound.py`, which
+connects only to public addresses, and the response is handed back to the page. A redirect goes back as a redirect, so
+each hop is checked; images, fonts, media, web sockets and service workers are refused. A URL that points at localhost or
+Railway's private network fails with `502`. `outbound.py` is a copy of the async half of `api/src/common/outbound.py`.
+
+Pages render one at a time (`BROWSER_RENDER_CONCURRENCY`, default `1`) and time out after `timeout_seconds`, capped by
+`BROWSER_RENDER_MAX_TIMEOUT_SECONDS` (default `60`). A page that never goes idle returns what it had painted. Chromium
+runs with `--no-sandbox`, which a container without user namespaces needs; the network guard above is what keeps a page
+away from the private network. Locally, install the browser once with `uv run playwright install chromium`; the render
+tests skip themselves without it.
 
 ## Hosted stdio MCP servers
 

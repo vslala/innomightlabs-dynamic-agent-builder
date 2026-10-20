@@ -43,6 +43,13 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
+# Headless Chromium for /v1/browser/render. A fixed path outside the user's home keeps it readable by the unprivileged
+# runner user, and only the headless shell is installed: the page is read, never shown. This layer comes before the
+# source copy, so it is rebuilt only when the Playwright version in uv.lock changes.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN /app/.venv/bin/playwright install --with-deps --only-shell chromium \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY main.py ./
 COPY src ./src
 COPY mcp_packages ./mcp_packages

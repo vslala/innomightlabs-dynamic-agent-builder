@@ -5,6 +5,7 @@ import os
 import re
 from datetime import datetime
 from typing import Annotated, Any, Literal
+from urllib.parse import urlparse
 
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
@@ -316,3 +317,30 @@ class HostedMCPPackage(BaseModel):
     key: str
     entrypoint: str
     installed: bool
+
+
+DEFAULT_RENDER_TIMEOUT_SECONDS = 20
+
+
+class BrowserRenderRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+    timeout_seconds: int = DEFAULT_RENDER_TIMEOUT_SECONDS
+    user_agent: str | None = Field(default=None, max_length=256)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        if urlparse(value).scheme not in ("http", "https") or not urlparse(value).hostname:
+            raise ValueError("url must be an http or https address")
+        return value
+
+    @field_validator("timeout_seconds")
+    @classmethod
+    def validate_timeout(cls, value: int) -> int:
+        return max(1, min(value, int(os.getenv("BROWSER_RENDER_MAX_TIMEOUT_SECONDS", "60"))))
+
+
+class BrowserRenderResponse(BaseModel):
+    final_url: str
+    status: int
+    html: str
