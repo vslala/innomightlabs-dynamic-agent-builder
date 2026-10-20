@@ -11,6 +11,8 @@ PROVIDER = MCPProvider(
     display_name="Tavily",
     description="Search the web and read pages, with sources, through Tavily.",
     icon="tavily",
+    category="search",
+    tags=("web search", "research", "browse", "internet"),
     docs_url="https://docs.tavily.com/documentation/mcp",
     target=lambda install: HttpTarget(TAVILY_MCP_URL),
     # Tavily registers clients dynamically (RFC 7591) with PKCE, so signing in needs no API key or client of our own.

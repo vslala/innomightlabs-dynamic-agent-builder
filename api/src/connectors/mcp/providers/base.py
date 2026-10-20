@@ -12,6 +12,9 @@ from src.form_models import FormInput, FormInputType
 OAUTH_CLIENT_ID_INPUT = "oauth_client_id"
 OAUTH_CLIENT_SECRET_INPUT = "oauth_client_secret"
 
+# Section headings on the Connectors page, in display order.
+CATEGORIES = ("productivity", "development", "marketing", "payments", "search", "design", "other")
+
 
 @dataclass(frozen=True)
 class ProviderInstall:
@@ -63,6 +66,9 @@ class MCPProvider:
     oauth: FixedOAuth | DiscoveredOAuth | None = None
     # Must match the target's type (checked by tests). Declared because listings need it before inputs exist.
     transport: MCPTransport = MCPTransport.STREAMABLE_HTTP
+    category: str = "other"  # one of CATEGORIES
+    featured: bool = False  # also listed under "Popular"
+    tags: tuple[str, ...] = ()  # search synonyms, e.g. "jira" on Atlassian
 
     def missing_inputs(self, values: dict[str, str]) -> list[str]:
         return [field.label for field in self.inputs if not field.is_optional and not values.get(field.name)]

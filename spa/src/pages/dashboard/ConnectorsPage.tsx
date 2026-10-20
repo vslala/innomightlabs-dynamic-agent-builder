@@ -1,92 +1,35 @@
-import { cn } from "../../lib/utils";
-import styles from "./ConnectorsPage.module.css";
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import {
-  CheckCircle,
-  Edit,
-  Globe,
-  HardDrive,
-  KeyRound,
-  Mail,
-  Megaphone,
-  Plug,
-  Plus,
-  RefreshCw,
-  Server,
-  Settings2,
-  Trash2,
-} from "lucide-react";
+import { CheckCircle, RefreshCw } from "lucide-react";
 
-import {
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  ErrorState,
-  LoadingState,
-  StatusBadge,
-} from "../../components/ui";
+import { Button, ErrorState, LoadingState } from "../../components/ui";
 import { useCanManageSettings } from "../../hooks/useCanManageSettings";
 import { connectorApiService } from "../../services/connectors";
-import type { ConnectorStatus, MCPConnection, MCPProvider, MCPSetupState } from "../../types/connectors";
+import type { ConnectorStatus, MCPConnection, MCPProvider } from "../../types/connectors";
+import { buildCatalog, type CatalogItem } from "./connectors/catalogItems";
+import { ConnectorCatalog } from "./connectors/ConnectorCatalog";
+import styles from "./connectors/ConnectorCatalog.module.css";
+import { ConnectorDetailsDialog } from "./connectors/ConnectorDetailsDialog";
 import { CustomMCPDialog } from "./connectors/CustomMCPDialog";
-import { IconBox, ProviderIcon } from "./connectors/connectorUi";
 import { returnToConnectors } from "./connectors/connectorUrls";
-import { MCPProviderCatalog } from "./connectors/MCPProviderCatalog";
-import { MCPRuntimeStatus } from "./connectors/MCPRuntimeStatus";
+import { connectionIcon } from "./connectors/connectionIcon";
 import { SchemaFormDialog } from "./connectors/SchemaFormDialog";
 
-type ConnectorSection = "google" | "mcp";
-
-interface ConnectorNavItem {
-  id: ConnectorSection;
-  label: string;
-  icon: typeof Globe;
-}
-
-const connectorNavItems: ConnectorNavItem[] = [
-  { id: "google", label: "Google", icon: Globe },
-  { id: "mcp", label: "MCP", icon: Server },
-];
-
-const SETUP_BADGES: Record<MCPSetupState, { status: "active" | "warning" | "info"; label: string }> = {
-  ready: { status: "active", label: "Ready" },
-  needs_sign_in: { status: "info", label: "Sign in" },
-  needs_input: { status: "warning", label: "Needs setup" },
-};
-
-function connectorIcon(icon: string) {
-  if (icon === "mail") return <Mail className="h-5 w-5" />;
-  if (icon === "hard_drive") return <HardDrive className="h-5 w-5" />;
-  if (icon === "megaphone") return <Megaphone className="h-5 w-5" />;
-  return <Plug className="h-5 w-5" />;
-}
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
+/** What the details dialog is open on: a catalog item, or one hand-added server. */
+type DetailsTarget = { kind: "item"; key: string } | { kind: "custom"; mcpId: string };
 
 export function ConnectorsPage() {
-  const [activeSection, setActiveSection] = useState<ConnectorSection>(() =>
-    new URLSearchParams(window.location.search).has("mcp_oauth") ? "mcp" : "google"
-  );
   const [connectors, setConnectors] = useState<ConnectorStatus[]>([]);
   const [mcpConnections, setMCPConnections] = useState<MCPConnection[]>([]);
   const [providers, setProviders] = useState<MCPProvider[]>([]);
   const [loading, setLoading] = useState(true);
-  const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [startingMCPOAuthId, setStartingMCPOAuthId] = useState<string | null>(null);
   const [deletingMCPId, setDeletingMCPId] = useState<string | null>(null);
+  const [details, setDetails] = useState<DetailsTarget | null>(null);
   // null: closed; { editing: null }: creating; { editing }: editing that connection.
   const [customDialog, setCustomDialog] = useState<{ editing: MCPConnection | null } | null>(null);
   const [settingsFor, setSettingsFor] = useState<MCPConnection | null>(null);
+  const [installing, setInstalling] = useState<MCPProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mcpError, setMCPError] = useState<string | null>(null);
   const [mcpNotice, setMCPNotice] = useState<string | null>(null);
@@ -143,13 +86,13 @@ export function ConnectorsPage() {
     }
   };
 
-  const connectedGoogleCount = useMemo(
-    () => connectors.filter((connector) => connector.connected).length,
-    [connectors]
+  const items = useMemo(
+    () => buildCatalog(providers, connectors, mcpConnections),
+    [providers, connectors, mcpConnections]
   );
 
-  const startConnection = async (connector: ConnectorStatus) => {
-    setConnectingId(connector.connector_id);
+  const startGoogleConnection = async (connector: ConnectorStatus) => {
+    setBusyKey(`google:${connector.connector_id}`);
     setError(null);
     try {
       const response = await connectorApiService.startConnector(connector.connect_path, { return_to: returnToConnectors() });
@@ -157,13 +100,43 @@ export function ConnectorsPage() {
     } catch (err) {
       console.error("Error starting connector OAuth:", err);
       setError(`Failed to start ${connector.display_name} connection.`);
-      setConnectingId(null);
+      setBusyKey(null);
     }
   };
 
-  const reloadMCP = async () => {
+  const installProvider = async (provider: MCPProvider, inputs: Record<string, string>) => {
+    const response = await connectorApiService.installMCPProvider(provider.key, {
+      inputs,
+      return_to: returnToConnectors(),
+    });
+    if (response.authorize_url) {
+      window.location.assign(response.authorize_url);
+      return;
+    }
+    setInstalling(null);
     await loadConnectors();
-    setActiveSection("mcp");
+  };
+
+  const startProviderInstall = async (provider: MCPProvider) => {
+    setDetails(null);
+    if (provider.has_inputs) {
+      setInstalling(provider);
+      return;
+    }
+    // Nothing to ask the user (e.g. dynamic client registration): straight to sign-in.
+    setBusyKey(`mcp:${provider.key}`);
+    setMCPError(null);
+    try {
+      await installProvider(provider, {});
+    } catch (err) {
+      setMCPError(err instanceof Error ? err.message : `Failed to install ${provider.display_name}.`);
+      setBusyKey(null);
+    }
+  };
+
+  const install = (item: CatalogItem) => {
+    if (item.google) void startGoogleConnection(item.google);
+    else if (item.provider) void startProviderInstall(item.provider);
   };
 
   const startMCPOAuth = async (connection: MCPConnection) => {
@@ -180,7 +153,7 @@ export function ConnectorsPage() {
   };
 
   const deleteMCPConnection = async (connection: MCPConnection) => {
-    const confirmed = window.confirm(`Delete MCP connector "${connection.name}"?`);
+    const confirmed = window.confirm(`Remove "${connection.name}"?`);
     if (!confirmed) return;
 
     setDeletingMCPId(connection.mcp_id);
@@ -188,13 +161,18 @@ export function ConnectorsPage() {
     try {
       await connectorApiService.deleteMCPConnection(connection.mcp_id);
       setMCPConnections((current) => current.filter((item) => item.mcp_id !== connection.mcp_id));
-      setProviders(await connectorApiService.listMCPProviders());
     } catch (err) {
       console.error("Error deleting MCP connector:", err);
       setMCPError(err instanceof Error ? err.message : "Failed to delete MCP connector.");
     } finally {
       setDeletingMCPId(null);
     }
+  };
+
+  const editConnection = (connection: MCPConnection) => {
+    setDetails(null);
+    if (connection.provider_key) setSettingsFor(connection);
+    else setCustomDialog({ editing: connection });
   };
 
   const providerFor = (connection: MCPConnection) =>
@@ -205,164 +183,109 @@ export function ConnectorsPage() {
     return <ErrorState message={error} onRetry={loadConnectors} />;
   }
 
+  // Derived from current state, so the dialog follows installs, sign-ins and removals.
+  const detailsItem = details?.kind === "item" ? items.find((item) => item.key === details.key) : undefined;
+  const detailsCustom = details?.kind === "custom" ? mcpConnections.find((item) => item.mcp_id === details.mcpId) : undefined;
+  const detailsProps = {
+    providerFor,
+    canManage,
+    signingInId: startingMCPOAuthId,
+    deletingId: deletingMCPId,
+    runtimeVersion,
+    onSignIn: (connection: MCPConnection) => void startMCPOAuth(connection),
+    onEdit: editConnection,
+    onDelete: (connection: MCPConnection) => void deleteMCPConnection(connection),
+    onClose: () => setDetails(null),
+  };
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+    <div className={styles.page}>
+      <div className={styles.header}>
         <div>
-          <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginBottom: "0.25rem" }}>
-            Account Connections
-          </p>
-          <h1 style={{ color: "var(--text-primary)", fontSize: "2rem", fontWeight: 700 }}>Connectors</h1>
+          <p className={styles.eyebrow}>Account connections</p>
+          <h1 className={styles.title}>Connectors</h1>
+          <p className={styles.subtitle}>Connect the tools your agents work with.</p>
         </div>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-          <Button variant="outline" onClick={() => void loadConnectors()}>
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-          {canManage && (
-            <Button onClick={() => setCustomDialog({ editing: null })}>
-              <Plus className="h-4 w-4" />
-              Custom MCP
-            </Button>
-          )}
-        </div>
+        <Button variant="outline" onClick={() => void loadConnectors()}>
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
       </div>
 
       {!canManage && (
-        <p style={{ color: "var(--text-muted)", fontSize: "0.875rem" }}>
+        <p className={styles.note}>
           These connections are your account's. Its admins add and change them; you can enable them on your agents.
         </p>
       )}
 
-      {error && <div style={{ color: "var(--error)", fontSize: "0.875rem" }}>{error}</div>}
-      {mcpError && <div style={{ color: "var(--error)", fontSize: "0.875rem" }}>{mcpError}</div>}
-      {mcpNotice && <div style={{ color: "var(--success, var(--text-primary))", fontSize: "0.875rem" }}>{mcpNotice}</div>}
+      {error && <div className={styles.error}>{error}</div>}
+      {mcpError && <div className={styles.error}>{mcpError}</div>}
+      {mcpNotice && <div className={styles.notice}>{mcpNotice}</div>}
 
-      <div className={styles.workspace}>
-        <ConnectorSideNav activeSection={activeSection} onChange={setActiveSection} />
+      <ConnectorCatalog
+        items={items}
+        connections={mcpConnections}
+        canManage={canManage}
+        busyKey={busyKey}
+        onInstall={install}
+        onManage={(item) => setDetails({ kind: "item", key: item.key })}
+        onManageCustom={(connection) => setDetails({ kind: "custom", mcpId: connection.mcp_id })}
+        onAddCustom={() => setCustomDialog({ editing: null })}
+      />
 
-        <main style={{ minWidth: 0 }}>
-          {activeSection === "google" ? (
-            <>
-              <SectionHeader
-                icon={<Globe className="h-5 w-5" />}
-                title="Google connectors"
-                description={`${connectedGoogleCount}/${connectors.length} accounts connected for Google-backed skills.`}
-              />
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(18rem, 1fr))", gap: "1rem" }}>
-                {connectors.map((connector) => (
-                  <Card key={connector.connector_id}>
-                    <CardHeader>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                          <IconBox>{connectorIcon(connector.icon)}</IconBox>
-                          <div>
-                            <CardTitle>{connector.display_name}</CardTitle>
-                            <CardDescription>{connector.provider_name}</CardDescription>
-                          </div>
-                        </div>
-                        <StatusBadge
-                          status={connector.connected ? "active" : "inactive"}
-                          label={connector.connected ? "Connected" : "Not connected"}
-                        />
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                        <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", lineHeight: 1.6 }}>
-                          {connector.connected
-                            ? "This account can be used by enabled skills in agents and automations."
-                            : "Connect this account to make dependent skills available in agents and automations."}
-                        </p>
-                        {canManage && (
-                          <Button
-                            onClick={() => void startConnection(connector)}
-                            disabled={connectingId === connector.connector_id}
-                            variant={connector.connected ? "outline" : "default"}
-                          >
-                            {connector.connected ? <RefreshCw className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
-                            {connectingId === connector.connector_id
-                              ? "Opening..."
-                              : connector.connected
-                                ? "Reconnect"
-                                : "Connect"}
-                          </Button>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div style={{ display: "grid", gap: "2rem" }}>
-              {canManage && (
-                <section>
-                  <SectionHeader
-                    icon={<Plug className="h-5 w-5" />}
-                    title="MCP providers"
-                    description="Ready-made connectors configured by InnoMight Labs. Install one and supply only your account's credentials."
-                  />
-                  <MCPProviderCatalog providers={providers} onInstalled={reloadMCP} onError={setMCPError} />
-                </section>
-              )}
-
-              <section>
-                <SectionHeader
-                  icon={<Server className="h-5 w-5" />}
-                  title="The account's MCP connectors"
-                  description="Installed providers and custom servers. Enable them per agent from the agent settings."
-                />
-                {mcpConnections.length === 0 ? (
-                  <Card>
-                    <CardContent style={{ padding: "3rem", textAlign: "center" }}>
-                      <div style={{ display: "grid", placeItems: "center", gap: "1rem" }}>
-                        <IconBox size="3rem">
-                          <Server className="h-6 w-6" />
-                        </IconBox>
-                        <div>
-                          <h2 style={{ color: "var(--text-primary)", fontSize: "1.125rem", fontWeight: 600 }}>
-                            No MCP connectors yet
-                          </h2>
-                          <p style={{ color: "var(--text-muted)", marginTop: "0.375rem" }}>
-                            {canManage
-                              ? "Install a provider above, or add a custom remote or hosted MCP server."
-                              : "Your account's admins haven't added any yet."}
-                          </p>
-                        </div>
-                        {canManage && (
-                          <Button onClick={() => setCustomDialog({ editing: null })}>
-                            <Plus className="h-4 w-4" />
-                            Add custom MCP server
-                          </Button>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))", gap: "1rem" }}>
-                    {mcpConnections.map((connection) => (
-                      <MCPConnectionCard
-                        key={`${connection.mcp_id}-${runtimeVersion}`}
-                        connection={connection}
-                        provider={providerFor(connection)}
-                        canManage={canManage}
-                        signingIn={startingMCPOAuthId === connection.mcp_id}
-                        deleting={deletingMCPId === connection.mcp_id}
-                        onSignIn={() => void startMCPOAuth(connection)}
-                        onEdit={() =>
-                          connection.provider_key ? setSettingsFor(connection) : setCustomDialog({ editing: connection })
-                        }
-                        onDelete={() => void deleteMCPConnection(connection)}
-                      />
-                    ))}
-                  </div>
+      {detailsItem?.installed && (
+        <ConnectorDetailsDialog
+          {...detailsProps}
+          title={detailsItem.name}
+          description={detailsItem.description}
+          icon={detailsItem.icon}
+          connections={detailsItem.connections}
+          footer={
+            canManage && (
+              <div className={styles.actions}>
+                {detailsItem.google && (
+                  <Button variant="outline" onClick={() => install(detailsItem)} disabled={busyKey === detailsItem.key}>
+                    <RefreshCw className="h-4 w-4" />
+                    {busyKey === detailsItem.key ? "Opening..." : "Reconnect"}
+                  </Button>
                 )}
-              </section>
-            </div>
-          )}
-        </main>
-      </div>
+                {detailsItem.provider && (
+                  <Button variant="outline" onClick={() => install(detailsItem)}>
+                    <CheckCircle className="h-4 w-4" />
+                    Add another
+                  </Button>
+                )}
+              </div>
+            )
+          }
+        />
+      )}
+
+      {detailsCustom && (
+        <ConnectorDetailsDialog
+          {...detailsProps}
+          title={detailsCustom.name}
+          description="A server you added. Enable it per agent from the agent settings."
+          icon={connectionIcon(detailsCustom)}
+          connections={[detailsCustom]}
+        />
+      )}
+
+      {installing && (
+        <SchemaFormDialog
+          key={installing.key}
+          title={`Install ${installing.display_name}`}
+          description={
+            installing.has_sign_in
+              ? "Enter these details, then sign in to finish connecting."
+              : "Enter these details to connect."
+          }
+          submitLabel={installing.has_sign_in ? "Continue to sign in" : "Install"}
+          loadSchema={() => connectorApiService.getMCPProviderInstallForm(installing.key)}
+          onSubmit={(inputs) => installProvider(installing, inputs)}
+          onClose={() => setInstalling(null)}
+        />
+      )}
 
       {customDialog && (
         <CustomMCPDialog
@@ -371,7 +294,7 @@ export function ConnectorsPage() {
           onClose={() => setCustomDialog(null)}
           onSaved={async () => {
             setCustomDialog(null);
-            await reloadMCP();
+            await loadConnectors();
           }}
         />
       )}
@@ -386,167 +309,11 @@ export function ConnectorsPage() {
           onSubmit={async (inputs) => {
             await connectorApiService.updateMCPConnection(settingsFor.mcp_id, { inputs });
             setSettingsFor(null);
-            await reloadMCP();
+            await loadConnectors();
           }}
           onClose={() => setSettingsFor(null)}
         />
       )}
-    </div>
-  );
-}
-
-function MCPConnectionCard({
-  connection,
-  provider,
-  canManage,
-  signingIn,
-  deleting,
-  onSignIn,
-  onEdit,
-  onDelete,
-}: {
-  connection: MCPConnection;
-  provider: MCPProvider | null;
-  canManage: boolean;
-  signingIn: boolean;
-  deleting: boolean;
-  onSignIn: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const isStdio = connection.transport === "stdio";
-  const setup = connection.provider_key ? SETUP_BADGES[connection.setup_state] : null;
-  const description = provider
-    ? provider.display_name
-    : isStdio && connection.stdio
-      ? [connection.stdio.package, ...connection.stdio.args].join(" ")
-      : connection.server_url;
-  const authLabel = { none: "None", api_key: isStdio ? "Environment" : "API key", oauth: "OAuth" }[connection.auth_type];
-
-  return (
-    <Card>
-      <CardHeader>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", minWidth: 0 }}>
-            <IconBox>{provider ? <ProviderIcon icon={provider.icon} /> : <Server className="h-5 w-5" />}</IconBox>
-            <div style={{ minWidth: 0 }}>
-              <CardTitle>{connection.name}</CardTitle>
-              <CardDescription style={{ overflowWrap: "anywhere" }}>{description}</CardDescription>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {setup && <StatusBadge status={setup.status} label={setup.label} />}
-            <StatusBadge status={connection.enabled ? "active" : "inactive"} label={connection.enabled ? "Enabled" : "Disabled"} />
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          <div style={{ display: "grid", gap: "0.5rem", color: "var(--text-muted)", fontSize: "0.875rem" }}>
-            <span>ID: {connection.mcp_id}</span>
-            <span>Transport: {isStdio ? "Hosted (stdio)" : "Streamable HTTP"}</span>
-            <span>
-              Auth: {authLabel}
-              {connection.auth_type === "oauth" ? (connection.oauth_connected ? " connected" : " not connected") : ""}
-            </span>
-            <span>Created: {formatDate(connection.created_at)}</span>
-          </div>
-          {isStdio && (
-            <MCPRuntimeStatus
-              mcpId={connection.mcp_id}
-              canStart={canManage && connection.enabled && connection.setup_state === "ready" && (connection.auth_type !== "oauth" || connection.oauth_connected)}
-            />
-          )}
-          {canManage && <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-            {connection.auth_type === "oauth" && (
-              <Button variant={connection.oauth_connected ? "outline" : "default"} onClick={onSignIn} disabled={signingIn}>
-                <KeyRound className="h-4 w-4" />
-                {signingIn ? "Opening..." : connection.oauth_connected ? "Sign in again" : "Sign in"}
-              </Button>
-            )}
-            <Button variant="outline" onClick={onEdit}>
-              {connection.provider_key ? <Settings2 className="h-4 w-4" /> : <Edit className="h-4 w-4" />}
-              {connection.provider_key ? "Settings" : "Edit"}
-            </Button>
-            <Button variant="outline" onClick={onDelete} disabled={deleting}>
-              <Trash2 className="h-4 w-4" />
-              {deleting ? "Deleting..." : connection.provider_key ? "Uninstall" : "Delete"}
-            </Button>
-          </div>}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ConnectorSideNav({
-  activeSection,
-  onChange,
-}: {
-  activeSection: ConnectorSection;
-  onChange: (section: ConnectorSection) => void;
-}) {
-  return (
-    <aside className={styles.sideNav}>
-      <nav className={styles.sideNavList} aria-label="Connector types">
-        {connectorNavItems.map((item) => {
-          const isActive = activeSection === item.id;
-          return (
-            <Button
-              key={item.id}
-              type="button"
-              variant="ghost"
-              onClick={() => onChange(item.id)}
-              aria-current={isActive ? "page" : undefined}
-              className={cn(
-                styles.sideNavItem,
-                isActive
-                  ? "text-[var(--nav-active-text)]"
-                  : "text-[var(--text-muted)] hover:bg-[var(--nav-hover-bg)] hover:text-[var(--text-primary)]"
-              )}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "flex-start",
-                gap: "0.75rem",
-                borderRadius: "0.75rem",
-                height: "auto",
-                padding: "0.75rem",
-                fontSize: "0.875rem",
-                fontWeight: 500,
-                textAlign: "left",
-                transition: "all 0.2s",
-                background: isActive
-                  ? "var(--nav-active-bg)"
-                  : undefined,
-              }}
-            >
-              <item.icon className="h-4 w-4 shrink-0" />
-              {item.label}
-            </Button>
-          );
-        })}
-      </nav>
-    </aside>
-  );
-}
-
-function SectionHeader({
-  icon,
-  title,
-  description,
-}: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
-      <IconBox>{icon}</IconBox>
-      <div>
-        <h2 style={{ color: "var(--text-primary)", fontSize: "1.125rem", fontWeight: 700 }}>{title}</h2>
-        <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginTop: "0.25rem" }}>{description}</p>
-      </div>
     </div>
   );
 }

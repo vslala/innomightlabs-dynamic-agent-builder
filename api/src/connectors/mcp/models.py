@@ -373,6 +373,9 @@ class MCPProviderResponse(BaseModel):
     transport: MCPTransport
     has_inputs: bool
     has_sign_in: bool
+    category: str
+    featured: bool
+    tags: list[str]
     installed_count: int = 0
 
 

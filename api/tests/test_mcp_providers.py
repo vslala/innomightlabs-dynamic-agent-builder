@@ -14,7 +14,7 @@ from src.connectors.mcp.models import (
     MCPTransport,
 )
 from src.connectors.mcp.providers import PROVIDERS, get_provider
-from src.connectors.mcp.providers.base import ProviderInstall
+from src.connectors.mcp.providers.base import CATEGORIES, FixedOAuth, ProviderInstall
 from src.connectors.mcp.providers.resolver import ProviderInstallSecrets
 from src.connectors.mcp.resolved import HttpTarget, StdioTarget
 from src.connectors.mcp.service import MCPConnectorService
@@ -94,6 +94,69 @@ def test_preset_target_matches_its_declared_transport(key: str) -> None:
 
     expected = StdioTarget if provider.transport == MCPTransport.STDIO else HttpTarget
     assert isinstance(target, expected)
+
+
+@pytest.mark.parametrize("key", sorted(PROVIDERS))
+def test_preset_catalog_metadata_is_valid(key: str) -> None:
+    provider = get_provider(key)
+
+    assert provider.category in CATEGORIES
+    assert all(tag == tag.lower() for tag in provider.tags)
+
+
+@pytest.mark.parametrize("key", ["notion", "linear", "sentry", "supabase", "stripe"])
+@pytest.mark.asyncio
+async def test_one_click_providers_install_with_dcr(key: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    _fake_discovery(monkeypatch, calls, registered=True)
+    service, _repository, _client = _service()
+
+    installed = await service.install_provider(account_for(OWNER), key, MCPProviderInstallRequest(return_to=RETURN_TO), user_email=OWNER)
+
+    assert get_provider(key).inputs == ()
+    assert calls[0]["register_client"] is True
+    assert installed.authorize_url is not None
+
+
+@pytest.mark.asyncio
+async def test_hubspot_discovers_endpoints_but_uses_the_users_mcp_auth_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+    _fake_discovery(monkeypatch, calls, registered=False)
+    service, _repository, _client = _service()
+
+    installed = await service.install_provider(
+        account_for(OWNER),
+        "hubspot",
+        MCPProviderInstallRequest(inputs=GITHUB_INPUTS, return_to=RETURN_TO),
+        user_email=OWNER,
+    )
+
+    assert calls == [{"server_url": "https://mcp.hubspot.com", "register_client": False}]
+    assert installed.authorize_url is not None
+    assert parse_qs(urlparse(installed.authorize_url).query)["client_id"] == ["gh-client"]
+
+
+def test_slack_asks_only_for_read_scopes_unless_writes_are_allowed() -> None:
+    slack = get_provider("slack")
+    oauth = slack.oauth
+    assert isinstance(oauth, FixedOAuth)
+
+    read_only = oauth.config(ProviderInstall(inputs=GITHUB_INPUTS)).scope.split()
+    writable = oauth.config(ProviderInstall(inputs={**GITHUB_INPUTS, "allow_writes": "yes"})).scope.split()
+
+    assert "search:read.public" in read_only
+    assert "chat:write" not in read_only
+    assert {"chat:write", "reactions:write"} <= set(writable)
+    assert set(read_only) <= set(writable)
+
+
+def test_context7_works_without_a_key_and_sends_one_when_given() -> None:
+    provider = get_provider("context7")
+
+    assert provider.target(ProviderInstall(inputs={})).headers == {}
+    keyed = provider.target(ProviderInstall(inputs={"api_key": "ctx7sk-1"}))
+    assert keyed.headers == {"Authorization": "Bearer ctx7sk-1"}
+    assert provider.missing_inputs({}) == []
 
 
 @pytest.mark.parametrize("key", sorted(PROVIDERS))
@@ -350,6 +413,9 @@ async def test_provider_listing_counts_installs() -> None:
     assert listed["github"].has_sign_in is True
     assert listed["atlassian"].has_inputs is False
     assert listed["atlassian"].installed_count == 0
+    assert listed["atlassian"].category == "productivity"
+    assert listed["notion"].featured is True
+    assert "jira" in listed["atlassian"].tags
 
 
 def test_rows_without_provider_key_stay_custom() -> None:

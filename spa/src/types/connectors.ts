@@ -111,6 +111,9 @@ export interface MCPProvider {
   transport: MCPTransport;
   has_inputs: boolean;
   has_sign_in: boolean;
+  category: string;
+  featured: boolean;
+  tags: string[];
   installed_count: number;
 }
 

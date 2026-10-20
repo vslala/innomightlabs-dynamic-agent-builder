@@ -222,6 +222,9 @@ class MCPConnectorService:
                 transport=provider.transport,
                 has_inputs=bool(provider.inputs),
                 has_sign_in=provider.oauth is not None,
+                category=provider.category,
+                featured=provider.featured,
+                tags=list(provider.tags),
                 installed_count=installed.get(provider.key, 0),
             )
             for provider in PROVIDERS.values()

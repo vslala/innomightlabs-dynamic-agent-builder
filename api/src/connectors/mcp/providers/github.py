@@ -39,6 +39,9 @@ PROVIDER = MCPProvider(
     display_name="GitHub",
     description="Repositories, issues, pull requests, and Actions.",
     icon="github",
+    category="development",
+    featured=True,
+    tags=("git", "repo", "pull request", "issues", "code"),
     docs_url="https://github.com/github/github-mcp-server",
     inputs=(
         *oauth_client_inputs("GitHub → Settings → Developer settings → OAuth Apps"),

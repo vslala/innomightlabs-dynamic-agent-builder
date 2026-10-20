@@ -1,0 +1,258 @@
+/* Connectors: search, an installed strip, then rows grouped by category. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.eyebrow {
+  margin-bottom: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.title {
+  color: var(--text-primary);
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
+
+.note {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.error {
+  color: var(--error);
+  font-size: 0.875rem;
+}
+
+.notice {
+  color: var(--success, var(--text-primary));
+  font-size: 0.875rem;
+}
+
+.catalog {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.sectionTitle {
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* Installed strip */
+
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 0.125rem;
+  border: 1px solid transparent;
+  border-radius: 0.875rem;
+  background: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.chip:hover,
+.chip:focus-visible {
+  border-color: var(--border-subtle);
+  outline: none;
+}
+
+.attentionDot {
+  position: absolute;
+  top: -0.125rem;
+  right: -0.125rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 2px solid var(--surface-page);
+  border-radius: 999px;
+  background: var(--warning, #f59e0b);
+}
+
+/* Rows */
+
+.rows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 2rem;
+}
+
+@media (max-width: 760px) {
+  .rows {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  min-width: 0;
+  padding: 0.625rem 0.25rem;
+  border-radius: 0.75rem;
+}
+
+.rowText {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowName {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.rowDescription {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowAction {
+  flex-shrink: 0;
+}
+
+.empty {
+  padding: 2rem 0;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Icon tiles */
+
+.tile,
+.tileSmall {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
+  color: #fff;
+  font-weight: 700;
+}
+
+.tile {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  font-size: 1rem;
+}
+
+.tileSmall {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.625rem;
+  font-size: 0.875rem;
+}
+
+.brandTile {
+  /* Transparent brand marks stay readable in either theme. */
+  background: #fff;
+}
+
+.glyphTile .brandImage {
+  width: 72%;
+  height: 72%;
+  object-fit: contain;
+}
+
+.tileGlyph {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--text-primary);
+}
+
+.brandImage {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Details dialog */
+
+.detailsList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+}
+
+.cardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.cardName {
+  min-width: 0;
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cardBadges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.facts {
+  display: grid;
+  gap: 0.375rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
