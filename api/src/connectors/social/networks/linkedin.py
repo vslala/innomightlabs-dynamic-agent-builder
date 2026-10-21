@@ -2,7 +2,7 @@
 "Share on LinkedIn" and "Sign In with LinkedIn using OpenID Connect".
 
 A member token lasts 60 days and a non-partner app gets no refresh token: the account shows "needs reconnect" once it
-has run out. Posting is not here yet; this strategy only connects and disconnects accounts.
+has run out, so posting uses the stored token as it is.
 """
 
 from __future__ import annotations
@@ -15,7 +15,15 @@ from urllib.parse import quote, urlencode
 import httpx
 
 from src.config import settings
-from src.connectors.social.networks.base import ConnectedProfile, ConnectError
+from src.connectors.social.networks.base import (
+    ConnectedProfile,
+    ConnectError,
+    NetworkLimits,
+    PreparedPost,
+    PublishedPost,
+    PublishError,
+    PublishErrorKind,
+)
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +34,13 @@ USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
 SCOPES = "openid profile w_member_social"
 #: LinkedIn's member tokens last 60 days; used only when the response doesn't say
 DEFAULT_TOKEN_LIFETIME = timedelta(days=60)
+POSTS_URL = "https://api.linkedin.com/rest/posts"
+#: The Posts API is versioned by month; LinkedIn supports each version for about a year
+API_VERSION = "202609"
+POST_URL = "https://www.linkedin.com/feed/update/"
 TIMEOUT_SECONDS = 15
+#: In a post's text LinkedIn reads these as markup (mentions, hashtags, templates) and cuts the post short at them
+RESERVED = "\\|{}@[]()<>#*_~"
 
 
 class LinkedInNetwork:
@@ -34,6 +48,7 @@ class LinkedInNetwork:
     display_name = "LinkedIn"
     icon = "linkedin"
     app = "linked_in"
+    limits = NetworkLimits(max_text=3000)
 
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
         #: Tests answer LinkedIn's endpoints through this
@@ -111,6 +126,33 @@ class LinkedInNetwork:
         except Exception as error:  # a failed revoke must not stop the account from being disconnected
             log.warning("LinkedIn token revoke failed: %s", type(error).__name__)
 
+    async def publish(self, credentials: dict[str, Any], post: PreparedPost) -> PublishedPost:
+        body = {
+            "author": credentials["person_urn"],
+            "commentary": escape_commentary(post.text),
+            "visibility": "PUBLIC",
+            "distribution": {"feedDistribution": "MAIN_FEED", "targetEntities": [], "thirdPartyDistributionChannels": []},
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
+        }
+        headers = {
+            "Authorization": f"Bearer {credentials['access_token']}",
+            "LinkedIn-Version": API_VERSION,
+            "X-Restli-Protocol-Version": "2.0.0",
+        }
+        try:
+            async with httpx.AsyncClient(transport=self._transport, timeout=TIMEOUT_SECONDS) as client:
+                response = await client.post(POSTS_URL, json=body, headers=headers)
+        except httpx.ConnectError as error:
+            raise PublishError(PublishErrorKind.TRANSIENT, "Could not reach LinkedIn") from error
+        except httpx.HTTPError as error:
+            raise PublishError(PublishErrorKind.UNCERTAIN, "LinkedIn did not answer, so the post may or may not exist") from error
+
+        if response.status_code == 201:
+            post_urn = response.headers.get("x-restli-id", "")
+            return PublishedPost(external_id=post_urn, url=f"{POST_URL}{post_urn}" if post_urn else None)
+        raise _publish_error(response)
+
     def _app(self):
         app = settings.social_app(self.app)
         if app is None:
@@ -124,3 +166,19 @@ def _json(response: httpx.Response) -> dict[str, Any]:
     except ValueError:
         return {}
     return body if isinstance(body, dict) else {}
+
+
+def escape_commentary(text: str) -> str:
+    return "".join(f"\\{char}" if char in RESERVED else char for char in text)
+
+
+def _publish_error(response: httpx.Response) -> PublishError:
+    detail = str(_json(response).get("message") or "")[:200]
+    status = response.status_code
+    if status == 401:
+        return PublishError(PublishErrorKind.AUTH, "LinkedIn no longer accepts this sign-in")
+    if status == 429:
+        return PublishError(PublishErrorKind.RATE_LIMITED, "LinkedIn is limiting how often this account can post")
+    if status >= 500:
+        return PublishError(PublishErrorKind.UNCERTAIN, f"LinkedIn failed while posting ({status}), so the post may exist")
+    return PublishError(PublishErrorKind.REJECTED, f"LinkedIn refused the post ({status}){': ' + detail if detail else ''}")

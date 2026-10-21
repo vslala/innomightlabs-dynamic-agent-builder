@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from typing import Any, Protocol
 
 
@@ -26,6 +27,45 @@ class ConnectedProfile:
     expires_at: datetime | None = None
 
 
+class PublishErrorKind(str, Enum):
+    #: The network refused the token: the person has to connect again.
+    AUTH = "auth"
+    #: The network refused this post (too long, not allowed). Retrying the same post won't help.
+    REJECTED = "rejected"
+    RATE_LIMITED = "rate_limited"
+    #: Failed before anything was created, so trying again is safe.
+    TRANSIENT = "transient"
+    #: The create call may or may not have gone through (timeout, 5xx). Never retried: it could post twice.
+    UNCERTAIN = "uncertain"
+
+
+class PublishError(Exception):
+    """Posting failed. The message is safe to show the person and the agent: it never holds a token."""
+
+    def __init__(self, kind: PublishErrorKind, message: str) -> None:
+        super().__init__(message)
+        self.kind = kind
+
+
+@dataclass(frozen=True)
+class NetworkLimits:
+    """What a network accepts in one post. The agent is told these before it offers to post."""
+
+    max_text: int
+    requires_image: bool = False
+
+
+@dataclass(frozen=True)
+class PreparedPost:
+    text: str
+
+
+@dataclass(frozen=True)
+class PublishedPost:
+    external_id: str
+    url: str | None = None
+
+
 class SocialNetwork(Protocol):
     key: str
     display_name: str
@@ -33,6 +73,7 @@ class SocialNetwork(Protocol):
     icon: str
     #: Names its OAuth app in the environment: `SOCIAL_<APP>_CLIENT_ID` / `_CLIENT_SECRET` (see `settings.social_app`)
     app: str
+    limits: NetworkLimits
 
     def configured(self) -> bool:
         """Its OAuth app is registered: the network is offered only then."""
@@ -48,4 +89,8 @@ class SocialNetwork(Protocol):
 
     async def revoke(self, credentials: dict[str, Any]) -> None:
         """Best effort: end the grant at the network when the account is disconnected."""
+        ...
+
+    async def publish(self, credentials: dict[str, Any], post: PreparedPost) -> PublishedPost:
+        """Create the post. Raises PublishError, classified so the publisher knows whether a retry is safe."""
         ...

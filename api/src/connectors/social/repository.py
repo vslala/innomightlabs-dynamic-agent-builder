@@ -62,6 +62,15 @@ class SocialAccountRepository:
                     raise
         raise RuntimeError("Could not save the social account")
 
+    def mark_needs_reconnect(self, account: SocialAccount, reason: str) -> None:
+        self.table.update_item(
+            Key={"pk": account.pk, "sk": account.sk},
+            UpdateExpression="SET #status = :status, last_error = :reason, updated_at = :now",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={":status": SocialAccountStatus.NEEDS_RECONNECT.value, ":reason": reason,
+                                       ":now": datetime.now(timezone.utc).isoformat()},
+        )
+
     def delete(self, account: SocialAccount) -> None:
         self.table.meta.client.transact_write_items(TransactItems=[
             {"Delete": {"TableName": self.table.name, "Key": {"pk": account.pk, "sk": account.sk}}},

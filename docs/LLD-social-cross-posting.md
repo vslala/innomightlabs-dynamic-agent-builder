@@ -24,6 +24,19 @@
 
 ## Implementation notes
 
+- **2026-10-21: `social_media` skill built (text-only, LinkedIn)** (§6, §7). Actions `accounts`, `check`, `publish`
+  (`api/src/skills/social_media/`), on `connectors/social/{planning,posts,publisher}.py`. Departures from the design:
+  - **`publish` also runs from chat** (for now), so the skill can be tried from an agent before the automation slice. The
+    system prompt makes the agent show the exact text and publish only after a yes. The automation-only guard can be
+    restored with one `if` in `actions.publish`.
+  - **One automation per network**, not one for all: `publish` takes a `network` argument (and `accounts`) to narrow the
+    targets, so each automation names its network.
+  - **Idempotency** is a record per (post, account) claimed by a conditional put (`SocialPostRepository.claim`), keyed by
+    `uuid5(run_id, node_id)` in an automation and a fresh id in chat. A `failed` target is retried; `publishing` or
+    `uncertain` never is. No per-day cap, images, or `social_accounts` connector status yet.
+  - `SocialNetwork` gained `limits` and `publish`; errors are `PublishError(kind)`. LinkedIn posts through
+    `/rest/posts` (version `202609`) and escapes the characters it reads as markup.
+  - **Tests:** `api/tests/test_social_media_skill.py` (15).
 - **2026-10-21: scheduler entry-trigger bug fixed** (§9, change 1). `AutomationRunner.create_scheduled_run`
   now passes its `trigger_id` to `_create_run` (`api/src/automations/runner.py:150`). It used to pass `None`,
   so a run started by a schedule trigger entered at the first manual trigger.

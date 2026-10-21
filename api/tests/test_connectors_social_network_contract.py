@@ -31,6 +31,8 @@ def test_a_network_describes_itself(network):
     assert network_for(network.key) is network
     assert network.display_name and network.app
     assert any(CONNECTOR_ASSETS.glob(f"{network.icon}.*")), f"no brand mark for {network.icon!r} in spa/src/assets/connectors"
+    assert network.limits.max_text > 0
+    assert callable(network.publish)
 
 
 @pytest.mark.parametrize("network", NETWORKS, ids=lambda network: network.key)
