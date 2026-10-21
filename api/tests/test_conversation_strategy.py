@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from src.llm.conversation_strategy import FixedWindowStrategy
-from src.messages.models import Message
+from src.messages.models import Message, MessageImage
 
 
 def test_fixed_window_strategy_excludes_system_messages():
@@ -52,3 +52,19 @@ def test_fixed_window_strategy_timeout_ignores_latest_system_message():
     )
 
     assert context == []
+
+
+def test_a_generated_image_keeps_its_id_in_later_turns():
+    image = MessageImage(image_id="img-1", s3_key="k", filename="generated-image-1.png", mime_type="image/png",
+                         size_bytes=10, width=1024, height=1024, prompt="A lighthouse at dawn")
+    messages = [
+        Message(conversation_id="conv-1", role="assistant", content="Generated image: A lighthouse", images=[image]),
+        Message(conversation_id="conv-1", role="user", content="post it"),
+    ]
+
+    context = FixedWindowStrategy(max_words=200).build_context(messages)
+
+    assert context[0]["content"].startswith("Generated image: A lighthouse")
+    assert '<generated_image id="img-1" filename="generated-image-1.png" size="1024x1024">' in context[0]["content"]
+    assert "Prompt: A lighthouse at dawn" in context[0]["content"]
+    assert context[1] == {"role": "user", "content": "post it"}

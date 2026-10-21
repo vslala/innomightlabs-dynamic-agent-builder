@@ -22,7 +22,7 @@ from src.memory import (
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.vectorstore.search import get_search_service
 from src.vision.analysis import ImageReader
-from src.vision.context import recalled_image_line
+from src.vision.context import recalled_generated_image_line, recalled_image_line
 
 log = logging.getLogger(__name__)
 
@@ -437,6 +437,7 @@ class NativeToolHandler:
             )
             lines.append(f"[{timestamp}] {role_label}: {content_preview}")
             lines.extend(f"    {recalled_image_line(image)}" for image in msg.image_attachments)
+            lines.extend(f"    {recalled_generated_image_line(image)}" for image in msg.images)
 
         if page < total_pages:
             lines.append(f"\n(Use page={page + 1} to see older messages)")

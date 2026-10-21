@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.messages.models import ImageAttachment, Message
+from src.messages.models import ImageAttachment, Message, MessageImage
 from src.vision.models import ImageRef
 
 NOT_DESCRIBED = "Not described yet. Call read_image with this id to see it."
@@ -27,6 +27,17 @@ def attached_image_tag(image: ImageAttachment) -> str:
         f"Description: {description}\n"
         "</attached_image>"
     )
+
+
+def generated_image_tag(image: MessageImage) -> str:
+    """The block the context carries for an image the agent generated, so a later turn can still name it (to post it, say)."""
+    size = f' size="{image.width}x{image.height}"' if image.width and image.height else ""
+    prompt = (image.prompt or "")[:RECALL_PREVIEW_CHARS]
+    return f'<generated_image id="{image.image_id}" filename="{image.filename}"{size}>\nPrompt: {prompt}\n</generated_image>'
+
+
+def recalled_generated_image_line(image: MessageImage) -> str:
+    return f"[generated image {image.image_id} {image.filename}: {(image.prompt or '')[:RECALL_PREVIEW_CHARS]}]"
 
 
 def recalled_image_line(image: ImageAttachment) -> str:

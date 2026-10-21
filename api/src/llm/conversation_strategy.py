@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from src.vision.context import attached_image_tag
+from src.vision.context import attached_image_tag, generated_image_tag
 
 if TYPE_CHECKING:
     from src.messages.models import Message
@@ -116,7 +116,7 @@ class FixedWindowStrategy(ConversationStrategy):
         for msg in reversed(conversation_messages):
             msg_words = len(msg.content.split()) + sum(
                 len(attached_image_tag(image).split()) for image in msg.image_attachments
-            )
+            ) + sum(len(generated_image_tag(image).split()) for image in msg.images)
 
             # Check if adding this message would exceed the limit
             if word_count + msg_words > self.max_words:
@@ -134,7 +134,7 @@ class FixedWindowStrategy(ConversationStrategy):
 
     def _format_with_attachments(self, msg: "Message") -> str:
         """Format message content with attachments for LLM context."""
-        if not msg.attachments and not msg.image_attachments:
+        if not msg.attachments and not msg.image_attachments and not msg.images:
             return msg.content
 
         attachment_sections = [
@@ -143,7 +143,8 @@ class FixedWindowStrategy(ConversationStrategy):
         attachment_sections += [attached_image_tag(image) for image in msg.image_attachments]
 
         attachments_text = "\n\n".join(attachment_sections)
-        return f"{attachments_text}\n\n{msg.content}"
+        generated = "".join(f"\n\n{generated_image_tag(image)}" for image in msg.images)
+        return f"{attachments_text}\n\n{msg.content}{generated}" if attachment_sections else f"{msg.content}{generated}"
 
     def __repr__(self) -> str:
         return f"FixedWindowStrategy(max_words={self.max_words})"
