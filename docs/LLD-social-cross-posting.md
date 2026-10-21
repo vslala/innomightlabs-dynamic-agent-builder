@@ -34,6 +34,37 @@
     the target's `trigger_id` (`api/src/skills/scheduler/actions.py:239`). The executor would skip such a
     schedule as `trigger_missing`. That action is disabled in automations (`automation.enabled: false`), so
     nothing reaches it today. Fix it when the action is enabled.
+- **2026-10-21: social connectors built for LinkedIn (§1-§4, §11 connect half; no posting yet).** Done, with tests
+  (`api/tests/test_connectors_social.py`, `test_connectors_social_network_contract.py`,
+  `spa/.../connectors/social/socialAccounts.test.ts`, `connectorUrls.test.ts`):
+  - **Backend:** `api/src/connectors/social/` (models, repository, connect flow, router, `networks/linkedin.py`).
+    Routes: `GET /connectors/social/networks`, `POST …/networks/{network}/connect`, `GET …/oauth/callback` (public),
+    `GET …/accounts`, `DELETE …/accounts/{id}`. Completion goes through the shared `POST /connectors/oauth/complete`
+    (flow `social`). Connecting the same LinkedIn member again refreshes the account; disconnecting revokes the token
+    at LinkedIn (best effort) and removes the account and its uniqueness guard in one transaction.
+  - **Dashboard:** the Connectors page has **MCPs** and **Social** tabs (`?tab=`). The Social tab lists the offered
+    networks with Connect / Add another, and the connected accounts with status, expiry warning (last 14 days),
+    Reconnect and Disconnect. Members see accounts; only admins get the buttons.
+  - **Settings:** `settings.social_apps` is filled from every `SOCIAL_<APP>_CLIENT_ID` / `_CLIENT_SECRET` pair, and
+    `settings.social_oauth_redirect_uri` defaults to `{API_BASE_URL}/connectors/social/oauth/callback`. The deploy
+    scripts find the pairs by name too, so no script or settings change adds a network.
+  - **Departures from the design:**
+    - The env vars are `SOCIAL_LINKED_IN_CLIENT_ID/SECRET` (what `.envrc` already had), so a strategy names its app
+      with `app = "linked_in"`; the key stays `linkedin`. There is no `SOCIAL_NETWORKS` list and no `extras` yet.
+    - The `SocialNetwork` protocol holds only what connecting needs (`key`, `display_name`, `icon`, `app`,
+      `configured`, `authorize_url`, `complete`, `revoke`). `connect_kind`, `connect_form`, `limits`,
+      `fresh_credentials` and `publish` arrive with the first network or slice that needs them (Bluesky, the
+      publisher).
+    - Not built: the "choose accounts" dialog (`social_pending`), credential networks, the token refresh, the daily
+      cap, the `social_accounts` connector status, and everything in §5-§9.
+  - **Confirmed with a real sign-in (2026-10-21):** LinkedIn returned `refresh_token=False` with `expires_in=5183999` (60
+    days). A self-serve app gets no refresh token, so there is no "mint a fresh token before posting" step for
+    LinkedIn: publishing uses the stored token until it expires, then the account needs a new sign-in. The posting
+    slice therefore checks `token_expires_at` first and fails the target with "Reconnect LinkedIn" instead of
+    trying to refresh. The Social tab already warns in the last 14 days. The connect code still stores a
+    `refresh_token` if a network sends one, for networks that do (X).
+  - **Register with LinkedIn:** `https://api.innomightlabs.com/connectors/social/oauth/callback` and, locally (API on
+    `LOCAL_PORT`), `http://localhost:1455/connectors/social/oauth/callback`.
 - **2026-10-21: install title and description built (§15, first slice).** Done, with tests
   (`api/tests/test_skills_install_title.py`, `spa/src/pages/dashboard/agent-detail/skillInstallIdentity.test.ts`):
   - **Install form:** `GET /skills/{id}/install-schema` now starts with **Title** (required, at most 80
