@@ -147,10 +147,11 @@ class AutomationRunner:
         schedule_id: str,
         trigger_id: str | None = None,
     ) -> AutomationRun:
+        # The run enters at its schedule trigger's start node; without one it falls back to the manual trigger
         return self._create_run(
             graph,
             owner,
-            trigger_id=None,
+            trigger_id=trigger_id,
             trigger_context={"type": AutomationTriggerType.SCHEDULE.value, "trigger_id": trigger_id,
                              "schedule_id": schedule_id},
             input_data=input_data,

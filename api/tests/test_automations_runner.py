@@ -301,3 +301,90 @@ async def test_runner_executes_skill_action_and_renders_arguments(dynamodb_table
     assert run.status == "succeeded"
     assert run.context["nodes"]["search"]["output"]["result"] == {"ok": True}
     assert run.context["nodes"]["search"]["output"]["installed_skill_id"] == "wordpress_search:configured"
+
+
+def build_two_trigger_graph(agent_id: str) -> AutomationGraph:
+    """A manual trigger and a schedule trigger, each entering its own branch."""
+    graph = build_graph(agent_id)
+    scheduled_start = AutomationNode(
+        automation_id="auto-1", node_id="scheduled_start", type=AutomationNodeType.START, name="Scheduled start"
+    )
+    scheduled_draft = AutomationNode(
+        automation_id="auto-1",
+        node_id="scheduled_draft",
+        type=AutomationNodeType.ACTION,
+        name="Scheduled draft",
+        config={"action_type": "invoke_agent", "agent_id": agent_id, "prompt_template": "Scheduled {{ input.name }}"},
+    )
+    schedule_trigger = AutomationTrigger(
+        automation_id="auto-1",
+        trigger_id="trigger-schedule",
+        type=AutomationTriggerType.SCHEDULE,
+        name="Every morning",
+        enabled=True,
+        entry_node_id="scheduled_start",
+        config={"cron_expression": "0 9 * * *", "timezone": "UTC"},
+    )
+    return AutomationGraph(
+        graph.automation,
+        [*graph.nodes, scheduled_start, scheduled_draft],
+        [
+            *graph.edges,
+            AutomationEdge(automation_id="auto-1", source_node_id="scheduled_start", target_node_id="scheduled_draft"),
+            AutomationEdge(automation_id="auto-1", source_node_id="scheduled_draft", target_node_id="final"),
+        ],
+        [*graph.triggers, schedule_trigger],
+    )
+
+
+async def test_scheduled_run_enters_at_its_schedule_trigger(dynamodb_table, monkeypatch):
+    agent = Agent(
+        agent_id="agent-1",
+        agent_name="Helper",
+        agent_architecture="successful",
+        agent_provider="Bedrock",
+        agent_persona="Helpful",
+        **agent_fields(TEST_USER_EMAIL),
+    )
+    AgentRepository().save(agent)
+    monkeypatch.setattr("src.automations.runner.get_agent_architecture", lambda _: SuccessfulArchitecture())
+    runner = AutomationRunner(
+        automation_repo=AutomationRepository(),
+        agent_repo=AgentRepository(),
+        conversation_repo=ConversationRepository(),
+    )
+    graph = build_two_trigger_graph(agent.agent_id)
+
+    run = runner.create_scheduled_run(graph, {"name": "Ada"}, TEST_OWNER, "schedule-1", trigger_id="trigger-schedule")
+    completed = await runner.execute_run_graph(graph, run, TEST_OWNER)
+
+    assert run.trigger_id == "trigger-schedule"
+    assert completed.status == "succeeded"
+    assert completed.context["nodes"]["scheduled_draft"]["output"]["response_text"] == "Echo: Scheduled Ada"
+    assert "draft" not in completed.context["nodes"]
+
+
+async def test_scheduled_run_without_a_trigger_enters_at_the_manual_trigger(dynamodb_table, monkeypatch):
+    agent = Agent(
+        agent_id="agent-1",
+        agent_name="Helper",
+        agent_architecture="successful",
+        agent_provider="Bedrock",
+        agent_persona="Helpful",
+        **agent_fields(TEST_USER_EMAIL),
+    )
+    AgentRepository().save(agent)
+    monkeypatch.setattr("src.automations.runner.get_agent_architecture", lambda _: SuccessfulArchitecture())
+    runner = AutomationRunner(
+        automation_repo=AutomationRepository(),
+        agent_repo=AgentRepository(),
+        conversation_repo=ConversationRepository(),
+    )
+    graph = build_two_trigger_graph(agent.agent_id)
+
+    run = runner.create_scheduled_run(graph, {"name": "Ada"}, TEST_OWNER, "schedule-1")
+    completed = await runner.execute_run_graph(graph, run, TEST_OWNER)
+
+    assert completed.status == "succeeded"
+    assert completed.context["nodes"]["draft"]["output"]["response_text"] == "Echo: Hello Ada"
+    assert "scheduled_draft" not in completed.context["nodes"]
