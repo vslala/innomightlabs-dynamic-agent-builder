@@ -54,6 +54,7 @@ async def get_skill_install_schema(
             skill_id=skill_id,
             submit_path=f"/agents/{{agent_id}}/skills?skill_id={skill_id}",
             owner=owner,
+            with_identity=True,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -89,6 +90,8 @@ async def install_skill_for_agent(
             owner=owner_of(agent),
             raw_config=body.config,
             installed_by=principal.user_id,
+            title=body.title,
+            description=body.description,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -115,6 +118,8 @@ async def update_installed_skill(
             enabled=body.enabled,
             raw_config=body.config,
             available_to=body.available_to,
+            title=body.title,
+            description=body.description,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

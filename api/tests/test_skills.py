@@ -1067,8 +1067,9 @@ def test_send_email_install_schema_declares_configured_recipients(test_client, a
 
     assert response.status_code == 200
     schema = response.json()
-    assert [field["name"] for field in schema["form_inputs"]] == ["to"]
-    to_field = schema["form_inputs"][0]
+    # Every install form starts with the install's title and description
+    assert [field["name"] for field in schema["form_inputs"]] == ["install_title", "install_description", "to"]
+    to_field = schema["form_inputs"][2]
     assert to_field["validation"] == {
         "format": "email",
         "multiple": True,

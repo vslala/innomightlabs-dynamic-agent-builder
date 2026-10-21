@@ -52,12 +52,18 @@ export type SkillActorKind = "owner" | "member" | "api" | "a2a" | "visitor";
 
 export interface SkillInstallRequest {
   config: SkillConfig;
+  /** What the agent reads about this install. Left out, the skill's own name and description. */
+  title?: string;
+  description?: string;
 }
 
 export interface SkillUpdateRequest {
   enabled?: boolean;
   config?: SkillConfig;
   available_to?: SkillActorKind[];
+  title?: string;
+  /** An empty string clears it. */
+  description?: string;
 }
 
 export type SkillInstallSchema = FormSchema;

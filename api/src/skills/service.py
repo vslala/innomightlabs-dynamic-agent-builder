@@ -20,6 +20,10 @@ from src.skills.lifecycle import SkillLifecycleRunner
 from src.settings.agent2agent_policy import Agent2AgentPolicy, Agent2AgentPolicyError
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import (
+    INSTALL_DESCRIPTION_FIELD,
+    INSTALL_DESCRIPTION_MAX,
+    INSTALL_TITLE_FIELD,
+    INSTALL_TITLE_MAX,
     ActorKind,
     AgentSkill,
     InstalledSkillResponse,
@@ -35,6 +39,13 @@ from src.skills.models import (
 from src.skills.oauth_providers import get_skill_oauth_provider
 from src.skills.registry import SkillRegistry, get_skill_registry, is_secret_input
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
+
+
+def _resolved_description(given: str | None, existing: AgentSkill | None, manifest: SkillManifest) -> str:
+    """The description the install keeps: the one given (empty clears it), else its current one, else the skill's."""
+    if given is not None:
+        return given
+    return existing.skill_description if existing else manifest.description
 
 
 class SkillService:
@@ -100,11 +111,44 @@ class SkillService:
             )
         return items
 
-    def get_install_schema(self, skill_id: str, submit_path: str, owner: Owner | None = None) -> form_models.Form:
+    def get_install_schema(
+        self, skill_id: str, submit_path: str, owner: Owner | None = None, *, with_identity: bool = False
+    ) -> form_models.Form:
+        """`with_identity` adds the Title and Description fields the dashboard asks for on every install."""
         form = self.registry.install_form(skill_id, submit_path)
+        if with_identity:
+            form = form.model_copy(update={"form_inputs": [*self._identity_inputs(skill_id), *form.form_inputs]})
         if not owner:
             return form
         return hydrate_form_options(form, FormOptionsContext(owner=owner))
+
+    def _identity_inputs(self, skill_id: str) -> list[form_models.FormInput]:
+        loaded = self.registry.get(skill_id)
+        if not loaded:
+            raise ValueError(f"Unknown skill: {skill_id}")
+        return [
+            form_models.FormInput(
+                input_type=form_models.FormInputType.TEXT,
+                name=INSTALL_TITLE_FIELD,
+                label="Title",
+                value=loaded.manifest.name,
+                validation=form_models.FormInputValidation(min_length=1, max_length=INSTALL_TITLE_MAX),
+                attr={"placeholder": loaded.manifest.name},
+            ),
+            form_models.FormInput(
+                input_type=form_models.FormInputType.TEXT_AREA,
+                name=INSTALL_DESCRIPTION_FIELD,
+                label="Description",
+                value=loaded.manifest.description,
+                validation=form_models.FormInputValidation(max_length=INSTALL_DESCRIPTION_MAX),
+                attr={
+                    "optional": "true",
+                    "rows": "3",
+                    "help_text": "Your agent sees this title and description and uses them to decide when to use "
+                    "this skill. Keep them short and specific.",
+                },
+            ),
+        ]
 
     def check_install(
         self,
@@ -156,9 +200,14 @@ class SkillService:
         enabled: bool = True,
         available_to: list[ActorKind] | None = None,
         installed_by: str | None = None,
+        title: str | None = None,
+        description: str | None = None,
     ) -> AgentSkill:
         """`owner` is the agent's owner; `installed_by` the user_id of whoever installs it (the owner by default).
-        `available_to=None` keeps the audience of an existing install (owner only for a new one)."""
+        `available_to=None` keeps the audience of an existing install (owner only for a new one).
+
+        `title` and `description` are what the agent reads for this install. Left out, an existing install keeps
+        its own and a new one takes the skill's name and description; an empty `description` clears it."""
         loaded, normalized = self.check_install(
             skill_id=skill_id,
             owner=owner,
@@ -177,8 +226,8 @@ class SkillService:
             installed_skill_id=installed_skill_id,
             skill_id=skill_id,
             namespace=loaded.manifest.namespace,
-            skill_name=loaded.manifest.name,
-            skill_description=loaded.manifest.description,
+            skill_name=title or (existing.skill_name if existing else loaded.manifest.name),
+            skill_description=_resolved_description(description, existing, loaded.manifest),
             enabled=enabled,
             installed_by=installed_by or owner.user_id,
             plain_config=plain_config,
@@ -276,8 +325,11 @@ class SkillService:
         enabled: bool | None,
         raw_config: dict[str, Any] | None,
         available_to: list[ActorKind] | None = None,
+        title: str | None = None,
+        description: str | None = None,
     ) -> AgentSkill:
-        """`owner` is the agent's owner, whose agents and account the settings are checked against."""
+        """`owner` is the agent's owner, whose agents and account the settings are checked against. A title or
+        description left out stays as it is."""
         existing = self.repository.find_by_id(agent_id, installed_skill_id)
         if not existing:
             raise ValueError("Skill not installed for this agent")
@@ -325,8 +377,8 @@ class SkillService:
             installed_skill_id=existing.installed_skill_id or existing.skill_id,
             skill_id=existing.skill_id,
             namespace=loaded.manifest.namespace,
-            skill_name=loaded.manifest.name,
-            skill_description=loaded.manifest.description,
+            skill_name=title or existing.skill_name,
+            skill_description=_resolved_description(description, existing, loaded.manifest),
             enabled=final_enabled,
             installed_by=existing.installed_by,
             plain_config=plain_config,
@@ -435,11 +487,8 @@ class SkillRuntimeService:
             "When an async skill job starts, do not finish the response after queued/running status. Use wait, then check_tool_job, and repeat until the job succeeds or fails.",
         ]
         for skill in enabled_skills:
-            lines.append(
-                f"- {skill.installed_skill_id or skill.skill_id}: "
-                f"{skill.skill_name} - {skill.skill_description} "
-                f"(skill_id: {skill.skill_id})"
-            )
+            about = f"{skill.skill_name} - {skill.skill_description}" if skill.skill_description else skill.skill_name
+            lines.append(f"- {skill.installed_skill_id or skill.skill_id}: {about} (skill_id: {skill.skill_id})")
             for item in self._build_usage_context(skill):
                 lines.append(f"  {item['label']}: {item['value']}")
         lines.append("</installed_skills>")

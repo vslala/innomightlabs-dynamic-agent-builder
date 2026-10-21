@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 import src.form_models as form_models
 
@@ -273,17 +273,35 @@ class AgentSkill(BaseModel):
         )
 
 
+#: What the person calls this install and what it is for. The agent reads both in its installed-skills list.
+INSTALL_TITLE_MAX = 80
+INSTALL_DESCRIPTION_MAX = 300
+#: The install form's own fields, kept apart from the skill's settings: the router splits them off before config.
+INSTALL_TITLE_FIELD = "install_title"
+INSTALL_DESCRIPTION_FIELD = "install_description"
+InstallTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=INSTALL_TITLE_MAX)]
+#: A blank description is allowed: it clears the description.
+InstallDescription = Annotated[str, StringConstraints(strip_whitespace=True, max_length=INSTALL_DESCRIPTION_MAX)]
+
+
 class InstallSkillRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
+    #: Left out: the skill's name, and its description.
+    title: Optional[InstallTitle] = None
+    description: Optional[InstallDescription] = None
 
 
 class UpdateInstalledSkillRequest(BaseModel):
     enabled: Optional[bool] = None
     config: Optional[dict[str, Any]] = None
     available_to: Optional[list[ActorKind]] = None
+    title: Optional[InstallTitle] = None
+    description: Optional[InstallDescription] = None
 
     @model_validator(mode="after")
     def validate_not_empty(self) -> "UpdateInstalledSkillRequest":
-        if self.enabled is None and self.config is None and self.available_to is None:
-            raise ValueError("At least one of 'enabled', 'config' or 'available_to' must be provided")
+        if all(value is None for value in (self.enabled, self.config, self.available_to, self.title, self.description)):
+            raise ValueError(
+                "At least one of 'enabled', 'config', 'available_to', 'title' or 'description' must be provided"
+            )
         return self

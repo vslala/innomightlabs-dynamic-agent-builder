@@ -27,6 +27,7 @@ import { skillApiService } from "../../../services/skills";
 import type { FormValue, FormSchema } from "../../../types/form";
 import type { InstalledSkill, SkillActorKind, SkillCatalogItem, SkillConnectorStatus } from "../../../types/skills";
 import { SHAREABLE_AUDIENCES } from "./audiences";
+import { installedSkillValues, splitInstallIdentity } from "./skillInstallIdentity";
 import { SkillSharingBadge } from "./SkillSharingBadge";
 import { useAgentDetailContext } from "./types";
 import "./AgentSkillsPage.css";
@@ -253,7 +254,7 @@ export function AgentSkillsPage() {
     setSelectedSkillSchema(null);
     setIsSkillDialogOpen(true);
     try {
-      if (!canInstallSkill(skill) || !skill.has_form) {
+      if (!canInstallSkill(skill)) {
         setSelectedSkillSchema(null);
         return;
       }
@@ -270,7 +271,11 @@ export function AgentSkillsPage() {
     setInstallingSkill(true);
     setInstallSkillError(null);
     try {
-      await skillApiService.installSkill(agent.agent_id, selectedSkill.skill_id, { config: skillConfigPayload(data) });
+      const { identity, settings } = splitInstallIdentity(data);
+      await skillApiService.installSkill(agent.agent_id, selectedSkill.skill_id, {
+        config: skillConfigPayload(settings),
+        ...identity,
+      });
       setIsSkillDialogOpen(false);
       setSelectedSkill(null);
       setSelectedSkillSchema(null);
@@ -376,7 +381,7 @@ export function AgentSkillsPage() {
     setUpdatingSkillId(installedSkillId);
     try {
       const schema = await skillApiService.getSkillInstallSchema(skill.skill_id);
-      const initialValues: Record<string, FormValue> = { ...skill.config };
+      const initialValues: Record<string, FormValue> = installedSkillValues(skill);
       if (options?.focus === "default_credentials" && options.credentialOrigin) {
         const current = initialValues.default_credentials;
         initialValues.default_credentials = {
@@ -400,8 +405,10 @@ export function AgentSkillsPage() {
     setUpdatingSkillId(installedSkillId);
     setConfigSkillError(null);
     try {
+      const { identity, settings } = splitInstallIdentity(data);
       const updated = await skillApiService.updateInstalledSkill(agent.agent_id, installedSkillId, {
-        config: skillConfigPayload(data),
+        config: skillConfigPayload(settings),
+        ...identity,
       });
       setInstalledSkills((prev) =>
         prev.map((item) => ((item.installed_skill_id ?? item.skill_id) === updated.installed_skill_id ? updated : item))
@@ -766,7 +773,10 @@ export function AgentSkillsPage() {
                       isLoading={installingSkill}
                     />
                   )}
-                  {!selectedSkillSchema && canInstallSkill(selectedSkill) && (
+                  {!selectedSkillSchema && canInstallSkill(selectedSkill) && !installSkillError && (
+                    <LoadingState className="agent-skill-dialog__loading" />
+                  )}
+                  {!selectedSkillSchema && canInstallSkill(selectedSkill) && installSkillError && (
                     <Button onClick={() => void handleInstallSkill({})} disabled={installingSkill}>
                       {installingSkill ? "Installing..." : "Install Skill"}
                     </Button>
