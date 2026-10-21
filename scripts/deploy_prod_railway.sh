@@ -342,7 +342,6 @@ set_railway_var "OPENAI_OAUTH_REDIRECT_URI" "$(get_var_default 'OPENAI_OAUTH_RED
 set_railway_var "OPENAI_OAUTH_RESPONSES_URL" "$(get_var 'OPENAI_OAUTH_RESPONSES_URL')"
 set_railway_var "OPENAI_MODELS" "$(get_var 'OPENAI_MODELS')"
 set_railway_var "OPENAI_IMAGE_GENERATION_BACKEND" "$(get_var_default 'OPENAI_IMAGE_GENERATION_BACKEND' 'codex_oauth')"
-set_railway_var "OPENAI_IMAGE_GENERATION_MODELS" "$(get_var 'OPENAI_IMAGE_GENERATION_MODELS')"
 set_railway_var "SUPERUSER_EMAILS" "$(get_var 'SUPERUSER_EMAILS')"
 
 set_railway_var "PINECONE_API_KEY" "$(get_var 'PINECONE_API_KEY')"

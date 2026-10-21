@@ -15,11 +15,12 @@ class ImageCapability(StrEnum):
 
 
 @dataclass(frozen=True)
-class ImageModelCapability:
-    """Image capability metadata attached to an agent-selected model."""
+class ImageProviderCapability:
+    """What a provider's models can do with images. It is per provider, not per model: the model only drives the
+    request and the provider's image tool draws the picture, so every model the provider offers (and every one it adds
+    later) can generate. A model that can't fails at the call with the provider's own error."""
 
     provider: str
-    model_id: str
     capabilities: frozenset[ImageCapability]
     backend: str = "codex_oauth"
     default_size: str = "auto"
@@ -31,22 +32,19 @@ class ImageModelCapability:
 
 
 class ImageCapabilityRegistry:
-    """Resolve image capabilities for provider/model pairs."""
+    """Resolve image capabilities for an agent's provider and model."""
 
-    def __init__(self, entries: list[ImageModelCapability]):
-        self._by_provider_model = {
-            (entry.provider.lower(), entry.model_id): entry
-            for entry in entries
-        }
+    def __init__(self, entries: list[ImageProviderCapability]):
+        self._by_provider = {entry.provider.lower(): entry for entry in entries}
 
     def for_agent_model(
         self,
         provider: str,
         model_id: str | None,
-    ) -> ImageModelCapability | None:
+    ) -> ImageProviderCapability | None:
         if not model_id:
             return None
-        return self._by_provider_model.get((provider.lower(), model_id))
+        return self._by_provider.get(provider.lower())
 
     def supports(
         self,
@@ -63,16 +61,13 @@ class ImageCapabilityRegistry:
 
 
 def build_image_capability_registry() -> ImageCapabilityRegistry:
-    entries = [
-        ImageModelCapability(
+    return ImageCapabilityRegistry([
+        ImageProviderCapability(
             provider="OpenAI",
-            model_id=model,
             capabilities=frozenset({ImageCapability.GENERATION}),
             backend=settings.openai_image_generation_backend,
         )
-        for model in settings.openai_image_generation_models
-    ]
-    return ImageCapabilityRegistry(entries)
+    ])
 
 
 image_capability_registry = build_image_capability_registry()

@@ -173,12 +173,6 @@ variable "openai_image_generation_backend" {
   default     = "codex_oauth"
 }
 
-variable "openai_image_generation_models" {
-  description = "Comma-separated OpenAI model IDs that enable agent image generation"
-  type        = string
-  default     = "gpt-5.5,gpt-5.4"
-}
-
 variable "github_actions_repository" {
   description = "GitHub repository allowed to assume the artifact publisher role"
   type        = string

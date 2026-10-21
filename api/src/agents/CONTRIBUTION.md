@@ -111,8 +111,8 @@ spots it and the loop polls (`_await_async_job`, up to `ASYNC_TOOL_MAX_IN_TURN_W
 `check_tool_job` tool. Secrets are loaded when the job runs, never stored on it. Jobs are stale after 10 minutes.
 Keep strong references to job tasks (`_running_jobs`): asyncio holds tasks weakly.
 
-**Image generation.** `image_capability_registry` (built from `settings.openai_image_generation_models`) says which
-provider/model pairs can generate; `Agent.to_response` exposes it as `capabilities`. `ImageProviderFactory` picks the
+**Image generation.** `image_capability_registry` says which providers can generate (OpenAI: every model it offers, so a new model
+needs no change); `Agent.to_response` exposes it as `capabilities`. `ImageProviderFactory` picks the
 adapter, `AgentImageGenerationService` persists the turn's messages, `ConversationMediaStorage` stores bytes in the
 private bucket under `agents/{agent_id}/conversations/{conversation_id}/messages/{message_id}/`.
 
