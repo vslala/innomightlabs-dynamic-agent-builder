@@ -7,15 +7,17 @@ system_prompt: |
   Use this skill to prepare and publish posts to the person's connected social accounts (LinkedIn so far).
   - Call `accounts` to see what is connected. An account whose status is needs_reconnect can't be posted to: tell
     the person to reconnect it in Connectors, on the Social tab.
-  - Before offering to post, call `check` with the final text. Fix what it reports (shorten the text), or tell the
+  - To post images, pass their ids in `images`: the id in a <generated_image> or
+    <attached_image> tag (or the `image_id` image_generation just returned). Write `alt_texts` for them.
+  - Before offering to post, call `check` with the final text and the images. Fix what it reports (shorten the text), or tell the
     person which accounts will be skipped and why.
-  - Publishing is public and can't be undone. Show the person the exact final text and the accounts it will go to,
+  - Publishing is public and can't be undone. Show the person the exact final text, the images and the accounts it will go to,
     and call `publish` only after they say yes to that text. Never publish on your own.
   - `publish` returns one result per account. Report each: the link when it was published, the reason when it
     wasn't. A target with status uncertain may exist on the network: tell the person to check before posting again.
 actions:
   - name: accounts
-    description: The connected social accounts, with their status and each network's text limit.
+    description: The connected social accounts, with their status and each network's text and image limits.
     input_schema:
       type: object
       properties: {}
@@ -37,6 +39,14 @@ actions:
         network:
           type: string
           description: Only this network's accounts, for example linkedin. Optional.
+        images:
+          type: array
+          items: {type: string}
+          description: Ids of the images to post, in order, up to the network's max_images. An id comes from a <generated_image> or <attached_image> tag. Optional.
+        alt_texts:
+          type: array
+          items: {type: string}
+          description: A short description of each image for screen readers, in the same order as images. Optional.
     handler: actions:check
   - name: publish
     description: Publish the text to the selected accounts now. Public and permanent, so use it only after the person approved the exact text.
@@ -57,6 +67,14 @@ actions:
         network:
           type: string
           description: Only this network's accounts, for example linkedin. Optional.
+        images:
+          type: array
+          items: {type: string}
+          description: Ids of the images to post, in order, up to the network's max_images. An id comes from a <generated_image> or <attached_image> tag. Optional.
+        alt_texts:
+          type: array
+          items: {type: string}
+          description: A short description of each image for screen readers, in the same order as images. Optional.
         overrides:
           type: object
           description: 'Different text for one network or one social_account_id, for example {"linkedin": "Longer version"}. Optional.'

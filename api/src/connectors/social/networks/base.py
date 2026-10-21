@@ -52,12 +52,27 @@ class NetworkLimits:
     """What a network accepts in one post. The agent is told these before it offers to post."""
 
     max_text: int
+    #: How many images one post takes; 0 is a text-only network
+    max_images: int = 0
     requires_image: bool = False
+    #: The longest side and the file size a post's image may have; `media.prepare` fits each image to them
+    max_image_side: int = 4096
+    max_image_bytes: int = 8 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class PreparedImage:
+    """An image fitted to one network's limits."""
+
+    data: bytes
+    mime_type: str
+    alt_text: str = ""
 
 
 @dataclass(frozen=True)
 class PreparedPost:
     text: str
+    images: tuple[PreparedImage, ...] = ()
 
 
 @dataclass(frozen=True)

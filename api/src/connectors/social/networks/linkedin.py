@@ -19,6 +19,7 @@ from src.connectors.social.networks.base import (
     ConnectedProfile,
     ConnectError,
     NetworkLimits,
+    PreparedImage,
     PreparedPost,
     PublishedPost,
     PublishError,
@@ -35,6 +36,8 @@ SCOPES = "openid profile w_member_social"
 #: LinkedIn's member tokens last 60 days; used only when the response doesn't say
 DEFAULT_TOKEN_LIFETIME = timedelta(days=60)
 POSTS_URL = "https://api.linkedin.com/rest/posts"
+IMAGES_URL = "https://api.linkedin.com/rest/images?action=initializeUpload"
+ALT_TEXT_MAX = 4000
 #: The Posts API is versioned by month; LinkedIn supports each version for about a year
 API_VERSION = "202609"
 POST_URL = "https://www.linkedin.com/feed/update/"
@@ -48,7 +51,7 @@ class LinkedInNetwork:
     display_name = "LinkedIn"
     icon = "linkedin"
     app = "linked_in"
-    limits = NetworkLimits(max_text=3000)
+    limits = NetworkLimits(max_text=3000, max_images=20)
 
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
         #: Tests answer LinkedIn's endpoints through this
@@ -127,7 +130,12 @@ class LinkedInNetwork:
             log.warning("LinkedIn token revoke failed: %s", type(error).__name__)
 
     async def publish(self, credentials: dict[str, Any], post: PreparedPost) -> PublishedPost:
-        body = {
+        headers = {
+            "Authorization": f"Bearer {credentials['access_token']}",
+            "LinkedIn-Version": API_VERSION,
+            "X-Restli-Protocol-Version": "2.0.0",
+        }
+        body: dict[str, Any] = {
             "author": credentials["person_urn"],
             "commentary": escape_commentary(post.text),
             "visibility": "PUBLIC",
@@ -135,13 +143,11 @@ class LinkedInNetwork:
             "lifecycleState": "PUBLISHED",
             "isReshareDisabledByAuthor": False,
         }
-        headers = {
-            "Authorization": f"Bearer {credentials['access_token']}",
-            "LinkedIn-Version": API_VERSION,
-            "X-Restli-Protocol-Version": "2.0.0",
-        }
         try:
             async with httpx.AsyncClient(transport=self._transport, timeout=TIMEOUT_SECONDS) as client:
+                if post.images:
+                    uploaded = [await self._upload(client, headers, credentials["person_urn"], image) for image in post.images]
+                    body["content"] = _content(uploaded)
                 response = await client.post(POSTS_URL, json=body, headers=headers)
         except httpx.ConnectError as error:
             raise PublishError(PublishErrorKind.TRANSIENT, "Could not reach LinkedIn") from error
@@ -152,6 +158,17 @@ class LinkedInNetwork:
             post_urn = response.headers.get("x-restli-id", "")
             return PublishedPost(external_id=post_urn, url=f"{POST_URL}{post_urn}" if post_urn else None)
         raise _publish_error(response)
+
+    async def _upload(self, client: httpx.AsyncClient, headers: dict[str, str], owner: str, image: PreparedImage) -> dict[str, str]:
+        """Two steps, neither of which makes a visible post: ask for an upload address, then send the bytes to it."""
+        init = await client.post(IMAGES_URL, json={"initializeUploadRequest": {"owner": owner}}, headers=headers)
+        value = _json(init).get("value") or {}
+        if init.status_code != 200 or not value.get("uploadUrl") or not value.get("image"):
+            raise _publish_error(init, created=False)
+        sent = await client.put(value["uploadUrl"], content=image.data, headers={"Authorization": headers["Authorization"]})
+        if sent.status_code not in (200, 201):
+            raise _publish_error(sent, created=False)
+        return {"id": value["image"], "altText": image.alt_text[:ALT_TEXT_MAX]}
 
     def _app(self):
         app = settings.social_app(self.app)
@@ -172,13 +189,21 @@ def escape_commentary(text: str) -> str:
     return "".join(f"\\{char}" if char in RESERVED else char for char in text)
 
 
-def _publish_error(response: httpx.Response) -> PublishError:
+def _content(images: list[dict[str, str]]) -> dict[str, Any]:
+    """One image is a media post; LinkedIn wants at least two for a multi-image post."""
+    return {"media": images[0]} if len(images) == 1 else {"multiImage": {"images": images}}
+
+
+def _publish_error(response: httpx.Response, created: bool = True) -> PublishError:
+    """`created` is False before the post call: nothing visible exists yet, so a server error is safe to try again."""
     detail = str(_json(response).get("message") or "")[:200]
     status = response.status_code
     if status == 401:
         return PublishError(PublishErrorKind.AUTH, "LinkedIn no longer accepts this sign-in")
     if status == 429:
         return PublishError(PublishErrorKind.RATE_LIMITED, "LinkedIn is limiting how often this account can post")
+    if status >= 500 and not created:
+        return PublishError(PublishErrorKind.TRANSIENT, f"LinkedIn failed while uploading an image ({status})")
     if status >= 500:
         return PublishError(PublishErrorKind.UNCERTAIN, f"LinkedIn failed while posting ({status}), so the post may exist")
     return PublishError(PublishErrorKind.REJECTED, f"LinkedIn refused the post ({status}){': ' + detail if detail else ''}")

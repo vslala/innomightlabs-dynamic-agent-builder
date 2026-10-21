@@ -9,6 +9,8 @@ from src.connectors.social.publisher import PublishRequest, SocialPublisher
 from src.connectors.social.repository import SocialAccountRepository
 from src.skills.runtime_context import account_of
 
+from .images import load_images, resolve_images
+
 
 async def accounts(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     del arguments, config
@@ -20,7 +22,7 @@ async def check(arguments: dict[str, Any], config: dict[str, Any], context: dict
     del config
     plans = SocialPublisher().plan(
         account_of(context), str(arguments.get("text") or ""), selection=arguments.get("accounts", "all"),
-        network=_network(arguments), overrides=_overrides(arguments),
+        network=_network(arguments), overrides=_overrides(arguments), image_count=len(resolve_images(arguments, context)),
     )
     return {"targets": [
         {"social_account_id": plan.account.social_account_id, "network": plan.account.network, "handle": plan.account.handle,
@@ -34,6 +36,7 @@ async def publish(arguments: dict[str, Any], config: dict[str, Any], context: di
     request = PublishRequest(
         account_id=account_of(context), post_id=_post_id(context), text=str(arguments.get("text") or "").strip(),
         accounts=arguments.get("accounts", "all"), network=_network(arguments), overrides=_overrides(arguments),
+        images=load_images(resolve_images(arguments, context)),
     )
     result = await SocialPublisher().publish(request)
     if result["status"] == "failed" and context.get("orchestrator_type") == "automation":
@@ -71,5 +74,6 @@ def _describe(account: SocialAccount) -> dict[str, Any]:
         "handle": account.handle,
         "status": account.effective_status().value,
         "max_characters": network.limits.max_text,
+        "max_images": network.limits.max_images,
         **({"token_expires_at": account.token_expires_at.isoformat()} if account.token_expires_at else {}),
     }

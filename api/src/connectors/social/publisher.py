@@ -10,6 +10,7 @@ from typing import Any
 
 from src.connectors.social.models import SocialAccount
 from src.connectors.social.networks import network_for
+from src.connectors.social.media import SourceImage, prepare
 from src.connectors.social.networks.base import PreparedPost, PublishError, PublishErrorKind
 from src.connectors.social.planning import TargetPlan, plan_targets, select_accounts
 from src.connectors.social.posts import PostTarget, SocialPostRepository, TargetStatus
@@ -27,6 +28,7 @@ class PublishRequest:
     accounts: Any = "all"
     network: str | None = None
     overrides: dict[str, str] = field(default_factory=dict)
+    images: tuple[SourceImage, ...] = ()
 
 
 class SocialPublisher:
@@ -35,13 +37,13 @@ class SocialPublisher:
         self.posts = posts or SocialPostRepository()
 
     def plan(self, account_id: str, text: str, *, selection: Any = "all", network: str | None = None,
-             overrides: dict[str, str] | None = None, has_image: bool = False) -> list[TargetPlan]:
+             overrides: dict[str, str] | None = None, image_count: int = 0) -> list[TargetPlan]:
         accounts = select_accounts(self.accounts.list(account_id), selection, network)
-        return plan_targets(accounts, text, overrides, has_image)
+        return plan_targets(accounts, text, overrides, image_count)
 
     async def publish(self, request: PublishRequest) -> dict[str, Any]:
         plans = self.plan(request.account_id, request.text, selection=request.accounts, network=request.network,
-                          overrides=request.overrides)
+                          overrides=request.overrides, image_count=len(request.images))
         if not plans:
             raise ValueError("No connected social account matches. Connect one in Connectors, on the Social tab.")
         targets = await asyncio.gather(*(self._publish_target(request, plan) for plan in plans))
@@ -59,8 +61,10 @@ class SocialPublisher:
         claimed = self.posts.claim(target)
         if claimed is None:
             return self._already(self.posts.get(target))
+        network = network_for(account.network)
         try:
-            published = await network_for(account.network).publish(account.credentials(), PreparedPost(text=plan.text))
+            images = tuple(prepare(image, network.limits) for image in request.images)
+            published = await network.publish(account.credentials(), PreparedPost(text=plan.text, images=images))
         except PublishError as error:
             return self._failed(claimed, account, error)
         except Exception:  # a network strategy's own bug must not take the other accounts down, nor leave this one locked

@@ -11,6 +11,8 @@ from src.connectors.social.networks import enabled_networks, network_for
 
 TEXT_TOO_LONG = "text_too_long"
 IMAGE_REQUIRED = "image_required"
+IMAGES_NOT_SUPPORTED = "images_not_supported"
+TOO_MANY_IMAGES = "too_many_images"
 NEEDS_RECONNECT = "needs_reconnect"
 NETWORK_DISABLED = "network_disabled"
 EMPTY_TEXT = "empty_text"
@@ -46,19 +48,19 @@ def select_accounts(accounts: list[SocialAccount], selection: Any = "all", netwo
 
 
 def plan_targets(
-    accounts: list[SocialAccount], text: str, overrides: dict[str, str] | None = None, has_image: bool = False
+    accounts: list[SocialAccount], text: str, overrides: dict[str, str] | None = None, image_count: int = 0
 ) -> list[TargetPlan]:
     """One plan per account. An override is keyed by social_account_id, or by network for all of its accounts."""
     overrides = overrides or {}
     enabled = {network.key for network in enabled_networks()}
-    return [_plan(account, _text_for(account, text, overrides), has_image, enabled) for account in accounts]
+    return [_plan(account, _text_for(account, text, overrides), image_count, enabled) for account in accounts]
 
 
 def _text_for(account: SocialAccount, text: str, overrides: dict[str, str]) -> str:
     return str(overrides.get(account.social_account_id) or overrides.get(account.network) or text).strip()
 
 
-def _plan(account: SocialAccount, text: str, has_image: bool, enabled: set[str]) -> TargetPlan:
+def _plan(account: SocialAccount, text: str, image_count: int, enabled: set[str]) -> TargetPlan:
     def skip(reason: str, detail: str = "") -> TargetPlan:
         return TargetPlan(account, text, reason, detail)
 
@@ -71,6 +73,11 @@ def _plan(account: SocialAccount, text: str, has_image: bool, enabled: set[str])
         return skip(EMPTY_TEXT, "There is no text to post")
     if len(text) > limits.max_text:
         return skip(TEXT_TOO_LONG, f"{len(text)}/{limits.max_text} characters")
-    if limits.requires_image and not has_image:
-        return skip(IMAGE_REQUIRED, f"{network_for(account.network).display_name} needs an image")
+    name = network_for(account.network).display_name
+    if image_count and not limits.max_images:
+        return skip(IMAGES_NOT_SUPPORTED, f"{name} posts text only")
+    if image_count > limits.max_images:
+        return skip(TOO_MANY_IMAGES, f"{image_count}/{limits.max_images} images")
+    if limits.requires_image and not image_count:
+        return skip(IMAGE_REQUIRED, f"{name} needs an image")
     return TargetPlan(account, text)

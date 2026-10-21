@@ -24,6 +24,16 @@
 
 ## Implementation notes
 
+- **2026-10-21: images, one or many, built for LinkedIn** (§5, §6). `publish` and `check` take `images` (ids) and
+  `alt_texts`. An id is found only in the caller's scope: an artifact the member owns, an upload in this conversation,
+  or an image generated in it (`skills/social_media/images.py`). `connectors/social/media.py` fits each image to the
+  network's `NetworkLimits` (upright, flattened onto white, JPEG, side and size within limits), once per network.
+  - LinkedIn uploads each image (`/rest/images?action=initializeUpload`, then a PUT), then posts one image as `media`
+    and two or more as `multiImage` (up to 20). A failed upload is `TRANSIENT`: nothing visible exists yet.
+  - Plans skip an account with `too_many_images`, `images_not_supported` or `image_required`.
+  - **Departures:** no public media route or Terraform lifecycle yet (only Instagram and Threads need a URL); the
+    renditions are not cached or stored; no artifact copy at trigger time (the automation slice adds it).
+  - **Tests:** `api/tests/test_social_media_images.py` (9).
 - **2026-10-21: `social_media` skill built (text-only, LinkedIn)** (§6, §7). Actions `accounts`, `check`, `publish`
   (`api/src/skills/social_media/`), on `connectors/social/{planning,posts,publisher}.py`. Departures from the design:
   - **`publish` also runs from chat** (for now), so the skill can be tried from an agent before the automation slice. The
