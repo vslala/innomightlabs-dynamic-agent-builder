@@ -28,6 +28,7 @@ Refreshed from the providers' sites on 2026-10-20:
 | `mail.png` | https://www.gstatic.com/images/branding/product/2x/gmail_2020q4_96dp.png |
 | `hard_drive.png` | https://www.gstatic.com/images/branding/product/2x/drive_2020q4_96dp.png |
 | `google_ads.png` | https://www.gstatic.com/images/branding/product/2x/ads_96dp.png |
+| `linkedin.svg` | Simple Icons LinkedIn mark (CC0), in LinkedIn blue; used by the Social tab (`api/src/connectors/social/networks/linkedin.py`) |
 
 `ConnectorIcon.tsx` resolves the backend's `icon` key to `<icon>.png|svg`. The legacy Google Ads
 account key `megaphone` resolves to `google_ads`. Keep one asset per key to avoid ambiguous selection.

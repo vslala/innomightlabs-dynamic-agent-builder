@@ -1,0 +1,45 @@
+/* The Social tab: networks to connect, then the accounts already connected. Rows reuse ConnectorCatalog.module.css. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.accounts {
+  display: flex;
+  flex-direction: column;
+}
+
+.avatar {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
+  object-fit: cover;
+}
+
+.avatarFallback {
+  display: grid;
+  place-items: center;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.network {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.accountNote {
+  color: var(--warning, #f59e0b);
+  font-size: 0.8125rem;
+}
+
+.accountActions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.5rem;
+}

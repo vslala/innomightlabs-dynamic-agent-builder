@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle, RefreshCw } from "lucide-react";
 
-import { Button, ErrorState, LoadingState } from "../../components/ui";
+import { Button, ErrorState, LoadingState, Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui";
 import { useCanManageSettings } from "../../hooks/useCanManageSettings";
 import { connectorApiService } from "../../services/connectors";
 import type { ConnectorStatus, MCPConnection, MCPProvider } from "../../types/connectors";
@@ -10,9 +10,10 @@ import { ConnectorCatalog } from "./connectors/ConnectorCatalog";
 import styles from "./connectors/ConnectorCatalog.module.css";
 import { ConnectorDetailsDialog } from "./connectors/ConnectorDetailsDialog";
 import { CustomMCPDialog } from "./connectors/CustomMCPDialog";
-import { returnToConnectors } from "./connectors/connectorUrls";
+import { connectorsTabFromSearch, returnToConnectors, type ConnectorsTab } from "./connectors/connectorUrls";
 import { connectionIcon } from "./connectors/connectionIcon";
 import { SchemaFormDialog } from "./connectors/SchemaFormDialog";
+import { SocialAccountsTab } from "./connectors/social/SocialAccountsTab";
 
 /** What the details dialog is open on: a catalog item, or one hand-added server. */
 type DetailsTarget = { kind: "item"; key: string } | { kind: "custom"; mcpId: string };
@@ -22,6 +23,8 @@ export function ConnectorsPage() {
   const [mcpConnections, setMCPConnections] = useState<MCPConnection[]>([]);
   const [providers, setProviders] = useState<MCPProvider[]>([]);
   const [loading, setLoading] = useState(true);
+  // MCPs (and the Google accounts) or social accounts; `?tab=social` is where social sign-ins return
+  const [tab, setTab] = useState<ConnectorsTab>(() => connectorsTabFromSearch(window.location.search));
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [startingMCPOAuthId, setStartingMCPOAuthId] = useState<string | null>(null);
   const [deletingMCPId, setDeletingMCPId] = useState<string | null>(null);
@@ -84,6 +87,14 @@ export function ConnectorsPage() {
       await connectorApiService.restartMCPRuntime(connection.mcp_id).catch(() => undefined);
       setRuntimeVersion((version) => version + 1);
     }
+  };
+
+  const changeTab = (next: string) => {
+    const value = next === "social" ? "social" : "mcp";
+    setTab(value);
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", value);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   };
 
   const items = useMemo(
@@ -206,10 +217,12 @@ export function ConnectorsPage() {
           <h1 className={styles.title}>Connectors</h1>
           <p className={styles.subtitle}>Connect the tools your agents work with.</p>
         </div>
-        <Button variant="outline" onClick={() => void loadConnectors()}>
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
+        {tab === "mcp" && (
+          <Button variant="outline" onClick={() => void loadConnectors()}>
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        )}
       </div>
 
       {!canManage && (
@@ -218,20 +231,31 @@ export function ConnectorsPage() {
         </p>
       )}
 
-      {error && <div className={styles.error}>{error}</div>}
-      {mcpError && <div className={styles.error}>{mcpError}</div>}
-      {mcpNotice && <div className={styles.notice}>{mcpNotice}</div>}
+      <Tabs value={tab} onValueChange={changeTab}>
+        <TabsList>
+          <TabsTrigger value="mcp">MCPs</TabsTrigger>
+          <TabsTrigger value="social">Social</TabsTrigger>
+        </TabsList>
+        <TabsContent value="mcp">
+          {error && <div className={styles.error}>{error}</div>}
+          {mcpError && <div className={styles.error}>{mcpError}</div>}
+          {mcpNotice && <div className={styles.notice}>{mcpNotice}</div>}
 
-      <ConnectorCatalog
-        items={items}
-        connections={mcpConnections}
-        canManage={canManage}
-        busyKey={busyKey}
-        onInstall={install}
-        onManage={(item) => setDetails({ kind: "item", key: item.key })}
-        onManageCustom={(connection) => setDetails({ kind: "custom", mcpId: connection.mcp_id })}
-        onAddCustom={() => setCustomDialog({ editing: null })}
-      />
+          <ConnectorCatalog
+            items={items}
+            connections={mcpConnections}
+            canManage={canManage}
+            busyKey={busyKey}
+            onInstall={install}
+            onManage={(item) => setDetails({ kind: "item", key: item.key })}
+            onManageCustom={(connection) => setDetails({ kind: "custom", mcpId: connection.mcp_id })}
+            onAddCustom={() => setCustomDialog({ editing: null })}
+          />
+        </TabsContent>
+        <TabsContent value="social">
+          <SocialAccountsTab canManage={canManage} />
+        </TabsContent>
+      </Tabs>
 
       {detailsItem?.installed && (
         <ConnectorDetailsDialog

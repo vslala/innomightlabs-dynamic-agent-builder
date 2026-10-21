@@ -15,6 +15,8 @@ import type {
   MCPSharingView,
   MCPStdioPackage,
   MCPToolCatalog,
+  SocialAccount,
+  SocialNetwork,
   UpdateAgentMCPConnectionRequest,
   UpdateMCPConnectionRequest,
   UpdateMCPSharingRequest,
@@ -52,6 +54,22 @@ class ConnectorApiService {
 
   async discoverMCPOAuth(payload: MCPOAuthDiscoveryRequest): Promise<MCPOAuthDiscoveryResponse> {
     return httpClient.post<MCPOAuthDiscoveryResponse>("/connectors/mcp/oauth/discover", payload);
+  }
+
+  async listSocialNetworks(): Promise<SocialNetwork[]> {
+    return httpClient.get<SocialNetwork[]>("/connectors/social/networks");
+  }
+
+  async listSocialAccounts(): Promise<SocialAccount[]> {
+    return httpClient.get<SocialAccount[]>("/connectors/social/accounts");
+  }
+
+  async startSocialConnection(network: string, payload: ConnectorStartRequest): Promise<ConnectorStartResponse> {
+    return httpClient.post<ConnectorStartResponse>(`/connectors/social/networks/${encodeURIComponent(network)}/connect`, payload);
+  }
+
+  async disconnectSocialAccount(socialAccountId: string): Promise<void> {
+    await httpClient.delete<void>(`/connectors/social/accounts/${encodeURIComponent(socialAccountId)}`);
   }
 
   async listMCPProviders(): Promise<MCPProvider[]> {

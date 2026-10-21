@@ -238,3 +238,26 @@ export interface UpdateMCPConnectionRequest {
 export interface UpdateAgentMCPConnectionRequest {
   enabled: boolean;
 }
+
+/** A social network an account can be connected on (`GET /connectors/social/networks`). */
+export interface SocialNetwork {
+  key: string;
+  display_name: string;
+  /** A brand mark key in `src/assets/connectors`. */
+  icon: string;
+}
+
+export type SocialAccountStatus = "active" | "needs_reconnect";
+
+/** One connected social account. Credentials never reach the browser. */
+export interface SocialAccount {
+  social_account_id: string;
+  network: string;
+  handle: string;
+  display_name: string;
+  avatar_url: string | null;
+  status: SocialAccountStatus;
+  token_expires_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}

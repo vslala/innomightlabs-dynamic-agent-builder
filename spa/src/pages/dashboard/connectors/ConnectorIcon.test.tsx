@@ -14,6 +14,11 @@ const providerIcons = readdirSync(providersDirectory)
   .map((match) => match[1]);
 const accountIcons = [...readFileSync(accountDefinitions, "utf8").matchAll(/icon="([^"]+)"/g)]
   .map((match) => match[1]);
+const socialDirectory = new URL("../../../../../api/src/connectors/social/networks/", import.meta.url);
+const socialIcons = readdirSync(socialDirectory)
+  .filter((file) => file.endsWith(".py"))
+  .flatMap((file) => [...readFileSync(new URL(file, socialDirectory), "utf8").matchAll(/^\s+icon = "([^"]+)"/gm)])
+  .map((match) => match[1]);
 
 function render(icon: string, name = "Provider", size?: "md" | "sm") {
   return renderToStaticMarkup(<ConnectorIcon icon={icon} name={name} size={size} />);
@@ -23,9 +28,10 @@ describe("connector brand icons", () => {
   it("finds the configured MCP providers and Google accounts", () => {
     expect(providerIcons.length).toBeGreaterThan(0);
     expect(accountIcons.length).toBeGreaterThan(0);
+    expect(socialIcons.length).toBeGreaterThan(0);
   });
 
-  it.each([...new Set([...providerIcons, ...accountIcons])])("renders a local brand asset for %s", (icon) => {
+  it.each([...new Set([...providerIcons, ...accountIcons, ...socialIcons])])("renders a local brand asset for %s", (icon) => {
     const html = render(icon);
     const src = html.match(/<img[^>]+src="([^"]+)"/)?.[1];
     expect(src).toBeDefined();
