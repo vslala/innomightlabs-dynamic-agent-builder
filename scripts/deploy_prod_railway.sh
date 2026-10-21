@@ -324,6 +324,15 @@ set_railway_var "GOOGLE_DRIVE_OAUTH_SCOPES" "$(get_var_default 'GOOGLE_DRIVE_OAU
 set_railway_var "GOOGLE_MAIL_REDIRECT_URI" "$(get_var_default 'GOOGLE_MAIL_REDIRECT_URI' "$(url_for '/auth/google-mail/callback')")"
 set_railway_var "GOOGLE_MAIL_OAUTH_SCOPES" "$(get_var_default 'GOOGLE_MAIL_OAUTH_SCOPES' 'https://www.googleapis.com/auth/gmail.modify')"
 
+# Social connectors: one OAuth app per network, as SOCIAL_<APP>_CLIENT_ID / SOCIAL_<APP>_CLIENT_SECRET (and the
+# PROD_ forms of them). Plugging in a network is setting its pair; nothing here names one.
+set_railway_var "SOCIAL_OAUTH_REDIRECT_URI" "$(get_var_default 'SOCIAL_OAUTH_REDIRECT_URI' "$(url_for '/connectors/social/oauth/callback')")"
+while IFS= read -r social_app; do
+  [[ -n "$social_app" ]] || continue
+  set_railway_var "${social_app}_CLIENT_ID" "$(get_var "${social_app}_CLIENT_ID")"
+  set_railway_var "${social_app}_CLIENT_SECRET" "$(get_var "${social_app}_CLIENT_SECRET")"
+done < <(compgen -A variable | sed -nE 's/^(PROD_)?(SOCIAL_[A-Z0-9_]+)_CLIENT_ID$/\2/p' | sort -u)
+
 set_railway_var "OPENAI_OAUTH_CLIENT_ID" "$(get_var 'OPENAI_OAUTH_CLIENT_ID')"
 set_railway_var "OPENAI_OAUTH_SCOPES" "$(get_var 'OPENAI_OAUTH_SCOPES')"
 set_railway_var "OPENAI_OAUTH_ID_TOKEN_ADD_ORGANIZATIONS" "$(get_var 'OPENAI_OAUTH_ID_TOKEN_ADD_ORGANIZATIONS')"

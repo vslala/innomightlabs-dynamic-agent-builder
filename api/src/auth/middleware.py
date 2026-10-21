@@ -29,6 +29,7 @@ PUBLIC_PATHS = {
     "/auth/google-ads/callback",
     "/skills/agent2agent_client/oauth/callback",
     "/connectors/mcp/oauth/callback",
+    "/connectors/social/oauth/callback",
     "/auth/cognito",
     "/auth/token",
     "/auth/session",

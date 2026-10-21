@@ -100,6 +100,13 @@ export DOWNLOADS_MANIFEST_KEY="$(get_var_default 'DOWNLOADS_MANIFEST_KEY' 'artif
 export DOWNLOADS_PRESIGN_TTL_SECONDS="$(get_var_default 'DOWNLOADS_PRESIGN_TTL_SECONDS' '900')"
 export GOOGLE_CLIENT_ID="$(get_var 'GOOGLE_CLIENT_ID')"
 export GOOGLE_CLIENT_SECRET="$(get_var 'GOOGLE_CLIENT_SECRET')"
+# Social connectors: one OAuth app per network, as SOCIAL_<APP>_CLIENT_ID / SOCIAL_<APP>_CLIENT_SECRET
+export SOCIAL_OAUTH_REDIRECT_URI="$(get_var_default 'SOCIAL_OAUTH_REDIRECT_URI' "${api_base_url}/connectors/social/oauth/callback")"
+while IFS= read -r social_app; do
+  [[ -n "$social_app" ]] || continue
+  export "${social_app}_CLIENT_ID=$(get_var "${social_app}_CLIENT_ID")"
+  export "${social_app}_CLIENT_SECRET=$(get_var "${social_app}_CLIENT_SECRET")"
+done < <(compgen -A variable | sed -nE 's/^(LOCAL_)?(SOCIAL_[A-Z0-9_]+)_CLIENT_ID$/\2/p' | sort -u)
 export JWT_SECRET="$(get_var 'JWT_SECRET')"
 export COGNITO_DOMAIN_PREFIX="$(get_var 'COGNITO_DOMAIN_PREFIX')"
 export COGNITO_DOMAIN="$(get_var_default 'COGNITO_DOMAIN' "$(get_var 'COGNITO_DOMAIN_URL')")"

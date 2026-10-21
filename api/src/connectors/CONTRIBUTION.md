@@ -1,6 +1,6 @@
 # Connectors Contribution Guide
 
-`connectors/` owns what an account has connected to the outside world. The top level is the small set of Google OAuth connectors that skills depend on (Drive, Gmail, Ads). `mcp/` is the larger half: MCP (Model Context Protocol) servers an account installs, links to agents, shares, and calls on an agent's behalf. Connections belong to the account; admins manage them, any member may list them.
+`connectors/` owns what an account has connected to the outside world. The top level is the small set of Google OAuth connectors that skills depend on (Drive, Gmail, Ads). `social/` holds the social accounts agents post to (see its own `CONTRIBUTION.md`). `mcp/` is the larger half: MCP (Model Context Protocol) servers an account installs, links to agents, shares, and calls on an agent's behalf. Connections belong to the account; admins manage them, any member may list them.
 
 ## Layout
 
@@ -10,6 +10,7 @@ src/connectors/
   service.py           CONNECTORS registry + ConnectorService (connected = a ProviderSettings record exists)
   router.py            /connectors (list) and /connectors/{id}/start (Google OAuth start)
   oauth_completion.py  POST /connectors/oauth/complete: the signed-in half of every connect flow
+  social/              Social accounts (LinkedIn first): networks as plug-ins, connect flow, /connectors/social/* (see social/CONTRIBUTION.md)
   mcp/
     models.py          Request/response models, MCPConnection, AgentMCPConnection, MCPToolCatalog, sharing
     repository.py      DynamoDB access for the three MCP item types

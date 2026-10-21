@@ -6,9 +6,11 @@ The application will fail fast on startup if required config is missing.
 """
 
 import os
+import re
 import json
 import logging
 from pathlib import Path
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -44,6 +46,30 @@ class ConfigValidationError(Exception):
     def to_public_message(self) -> str:
         """Return a human-readable error message safe to show to API clients."""
         return str(self)
+
+
+
+@dataclass(frozen=True)
+class SocialAppCredentials:
+    """The OAuth app InnomightLabs registered with a social network."""
+
+    client_id: str
+    client_secret: str
+
+
+def social_apps_from_env(env: Mapping[str, str]) -> dict[str, SocialAppCredentials]:
+    """Every `SOCIAL_<APP>_CLIENT_ID` / `SOCIAL_<APP>_CLIENT_SECRET` pair, by lower-cased app name (`linked_in`).
+
+    A network is plugged in by setting its pair; nothing here names a network. A pair without an id is ignored."""
+    apps: dict[str, SocialAppCredentials] = {}
+    for name, client_id in env.items():
+        match = re.fullmatch(r"SOCIAL_([A-Z0-9_]+)_CLIENT_ID", name)
+        if match and client_id.strip():
+            apps[match.group(1).lower()] = SocialAppCredentials(
+                client_id=client_id.strip(),
+                client_secret=env.get(f"SOCIAL_{match.group(1)}_CLIENT_SECRET", "").strip(),
+            )
+    return apps
 
 
 @dataclass
@@ -159,6 +185,10 @@ class Settings:
     #: Turns a book page Ila opens stays in her prompt, the turn it's opened in included.
     ila_page_retention_turns: int = 3
     mcp_oauth_redirect_uri: str = ""
+    #: Social connectors (docs/LLD-social-cross-posting.md): one callback for every network, and the OAuth apps by
+    #: network. Adding a network adds env vars, not fields.
+    social_oauth_redirect_uri: str = ""
+    social_apps: dict[str, SocialAppCredentials] = field(default_factory=dict)
     cli_runner_base_url: str = ""
     cli_runner_shared_token: str = ""
     cli_runner_timeout_seconds: int = 30
@@ -383,6 +413,10 @@ class Settings:
             and self.google_ads_oauth_scopes
         )
 
+    def social_app(self, app: str) -> Optional[SocialAppCredentials]:
+        """The OAuth app registered with a social network, or None when its env vars are unset."""
+        return self.social_apps.get(app)
+
     def is_openai_oauth_configured(self) -> bool:
         """Check if OpenAI OAuth is configured."""
         return bool(self.openai_oauth_client_id)
@@ -564,6 +598,11 @@ class Settings:
                 "MCP_OAUTH_REDIRECT_URI",
                 f"{api_base_url}/connectors/mcp/oauth/callback",
             ),
+            social_oauth_redirect_uri=os.getenv(
+                "SOCIAL_OAUTH_REDIRECT_URI",
+                f"{api_base_url}/connectors/social/oauth/callback",
+            ),
+            social_apps=social_apps_from_env(os.environ),
             cli_runner_base_url=os.getenv("CLI_RUNNER_BASE_URL", ""),
             cli_runner_shared_token=os.getenv("CLI_RUNNER_SHARED_TOKEN", ""),
             cli_runner_timeout_seconds=int(os.getenv("CLI_RUNNER_TIMEOUT_SECONDS", "30")),

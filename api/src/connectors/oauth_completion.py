@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from src.auth.oauth_handoff import read_handoff
 from src.auth.router import _google_skill_oauth_flows, complete_google_skill_oauth
 from src.connectors.mcp.router import complete_mcp_oauth
+from src.connectors.social.connect import complete_social_oauth
 from src.skills.agent2agent_client.router import complete_a2a_remote_oauth
 
 Completer = Callable[..., Awaitable[dict[str, str]]]
@@ -32,6 +33,7 @@ def _completers() -> dict[str, Completer]:
     return {
         **{name: partial(complete_google_skill_oauth, flow) for name, flow in _google_skill_oauth_flows().items()},
         "mcp": complete_mcp_oauth,
+        "social": complete_social_oauth,
         "a2a": complete_a2a_remote_oauth,
     }
 
