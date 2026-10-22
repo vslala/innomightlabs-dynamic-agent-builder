@@ -1,10 +1,12 @@
 id: upload_file
 namespace: core.artifacts
 name: Upload File
-description: Save agent-generated text content as a durable user artifact.
+description: Save agent-generated content, or a video made in the workspace, as a durable user artifact.
 system_prompt: |
   Use this skill when you have generated file content that should be saved for the user.
-  Provide exactly one of text_content or base64_content.
+  Provide exactly one of text_content, base64_content or workspace_path.
+  Use workspace_path (a path in this conversation's workspace, such as one browser_studio wrote) for a video, with
+  artifact_type video and a filename ending .mp4, .webm or .mov. Videos can be up to 100 MB; other files 10 MB.
   Use html_report only for complete, safe HTML documents.
   Use csv, markdown, json, text, or code for text-based artifacts.
   Keep files under the maximum supported size.
@@ -12,14 +14,14 @@ system_prompt: |
 actions:
   - name: upload_file
     aliases: [save_artifact, upload_artifact, save_file]
-    description: Save text or base64 content as an artifact and return download/view links.
+    description: Save text, base64 content or a workspace file as an artifact and return download/view links.
     input_schema:
       type: object
       required: [artifact_type, title, filename]
       properties:
         artifact_type:
           type: string
-          enum: [html_report, csv, markdown, json, text, code, file]
+          enum: [html_report, csv, markdown, json, text, code, file, video]
           description: Artifact category for listing, validation, and display.
         title:
           type: string
@@ -36,6 +38,9 @@ actions:
         base64_content:
           type: string
           description: Base64-encoded content. Decoded content must be UTF-8 text in v1.
+        workspace_path:
+          type: string
+          description: Path of a file in this conversation's workspace to upload instead of sending its content. Required for video.
         metadata:
           type: object
           description: Optional metadata to store in the artifact source.
@@ -62,6 +67,8 @@ actions:
               value: code
             - label: File
               value: file
+            - label: Video (from workspace)
+              value: video
         - input_type: text
           name: title
           label: Title
@@ -91,5 +98,11 @@ actions:
           attr:
             optional: "true"
             rows: "8"
+            smart_values: "true"
+        - input_type: text
+          name: workspace_path
+          label: Workspace path
+          attr:
+            optional: "true"
             smart_values: "true"
     handler: actions:upload_file

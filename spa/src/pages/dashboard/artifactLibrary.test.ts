@@ -91,6 +91,7 @@ describe("artifactFileBadge", () => {
     ["photo.JpEg", "JPG"], ["logo.svg", "SVG"], ["chart.webp", "WEBP"], ["animation.gif", "GIF"],
     ["data.csv", "CSV"], ["report.PDF", "PDF"], ["readme.md", "MD"], ["readme.markdown", "MD"],
     ["data.json", "JSON"], ["notes.txt", "TXT"], ["archive.tar.gz", "GZ"],
+    ["tour.mp4", "MP4"], ["clip.WEBM", "WEBM"], ["demo.mov", "MOV"],
   ])("uses the actual extension of %s rather than the artifact kind or conflicting MIME", (filename, expected) => {
     expect(artifactFileBadge(artifact({ filename, mime_type: "application/octet-stream" }))).toBe(expected);
     if (filename !== "archive.tar.gz") expect(artifactFileBadge(artifact({ filename, mime_type: "text/plain" }))).toBe(expected);
@@ -100,6 +101,7 @@ describe("artifactFileBadge", () => {
     ["TEXT/HTML; charset=UTF-8", "HTML"], ["image/png", "PNG"], [" IMAGE/JPEG ", "JPG"],
     ["image/svg+xml", "SVG"], ["image/webp", "WEBP"], ["image/tiff", "TIFF"], ["text/csv", "CSV"],
     ["application/pdf", "PDF"], ["text/markdown", "MD"], ["application/json", "JSON"], ["text/plain", "TXT"],
+    ["video/mp4", "MP4"], ["video/webm", "WEBM"], ["video/quicktime", "MOV"],
   ])("uses MIME %s for missing, unknown, or invalid extensions", (mime_type, expected) => {
     for (const filename of ["download", "", "download.xyz", "download.toolong", "download.bad-ext", ".env", "download."]) {
       expect(artifactFileBadge(artifact({ filename, mime_type }))).toBe(expected);
@@ -117,7 +119,7 @@ describe("artifactFileBadge", () => {
   });
 
   it.each([
-    ["html_report", "HTML"], ["image", "IMG"], ["file", "FILE"], ["csv", "CSV"], ["markdown", "MD"],
+    ["html_report", "HTML"], ["image", "IMG"], ["video", "VIDEO"], ["file", "FILE"], ["csv", "CSV"], ["markdown", "MD"],
     ["json", "JSON"], ["text", "TXT"], ["code", "CODE"], ["canvas", "CANVAS"],
   ] as const)("falls back to kind %s without inventing a file format", (artifact_type, expected) => {
     expect(artifactFileBadge(artifact({ filename: "", mime_type: "", artifact_type }))).toBe(expected);

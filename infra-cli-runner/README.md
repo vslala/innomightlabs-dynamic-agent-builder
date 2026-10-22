@@ -221,7 +221,9 @@ The API remains responsible for user identity, skill installation, command polic
 
 `POST /v1/filesystem/actions` accepts typed action names and structured arguments. It never accepts host paths or shell commands. The sidecar canonicalizes every workspace-relative path, blocks traversal and symlink escapes, bounds reads/search/diffs, detects binary files, applies text writes atomically, enforces per-write and workspace quotas, and returns a compact structured result.
 
-Workspaces default to `/tmp/infra-cli-runner/workspaces`. The root and limits can be configured with `FILE_SYSTEM_WORKSPACE_ROOT`, `FILE_SYSTEM_MAX_READ_BYTES`, `FILE_SYSTEM_MAX_WRITE_BYTES`, and `FILE_SYSTEM_WORKSPACE_QUOTA_BYTES`. The runner executes validated filesystem requests as received; authorization and approval policy belong to the API skill platform.
+`GET /v1/filesystem/files?workspace_id=…&path=…` streams one existing workspace file of any type (same bearer token and path rules; a symlink or a path outside the workspace is refused). The API uses it to turn a finished video into an artifact.
+
+Workspaces default to `/tmp/infra-cli-runner/workspaces`. The root and limits can be configured with `FILE_SYSTEM_WORKSPACE_ROOT`, `FILE_SYSTEM_MAX_READ_BYTES`, `FILE_SYSTEM_MAX_WRITE_BYTES`, and `FILE_SYSTEM_WORKSPACE_QUOTA_BYTES`. A workspace that no request has touched for `FILE_SYSTEM_WORKSPACE_TTL_SECONDS` (default 3600; 0 keeps them) is deleted whole by a sweeper that runs every five minutes, so finished videos and recordings don't pile up. Each request to a workspace refreshes a marker under `<root>/.last-used/`, kept outside the workspace so it never shows in a listing or counts against the quota. The runner executes validated filesystem requests as received; authorization and approval policy belong to the API skill platform.
 
 Run locally:
 

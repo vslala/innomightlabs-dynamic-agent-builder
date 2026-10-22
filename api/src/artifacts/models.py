@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from src.accounts.owner import member_partition
 
 
-ArtifactType = Literal["html_report", "image", "file", "csv", "markdown", "json", "text", "code", "canvas"]
+ArtifactType = Literal["html_report", "image", "video", "file", "csv", "markdown", "json", "text", "code", "canvas"]
 
 
 class ArtifactSource(BaseModel):

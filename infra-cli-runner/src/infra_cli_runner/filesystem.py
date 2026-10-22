@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import difflib
 import fnmatch
 import json
+import logging
 import os
 import re
 import shutil
 import stat as stat_module
 import tempfile
+import time
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +30,12 @@ DEFAULT_MAX_READ_LINES = 500
 HARD_MAX_READ_LINES = 2_000
 DEFAULT_MAX_WRITE_BYTES = 2 * 1024 * 1024
 DEFAULT_WORKSPACE_QUOTA_BYTES = 100 * 1024 * 1024
+#: A workspace nobody has used for this long is deleted, files and all (0 keeps workspaces until the container restarts).
+DEFAULT_WORKSPACE_TTL_SECONDS = 3600
+SWEEP_INTERVAL_SECONDS = 300
+#: One empty file per workspace, beside the workspaces, whose modified time is when the workspace was last used. Kept
+#: outside the workspace so it never shows in a listing or counts against the quota.
+LAST_USED_DIR = ".last-used"
 DEFAULT_MAX_RESULTS = 100
 HARD_MAX_RESULTS = 1_000
 MAX_BATCH_OPERATIONS = 50
@@ -51,6 +60,9 @@ ACTION_ARGUMENTS = {
 }
 
 
+log = logging.getLogger(__name__)
+
+
 class FileSystemOperationError(Exception):
     def __init__(self, code: str, message: str, payload: dict[str, Any] | None = None) -> None:
         super().__init__(message)
@@ -67,8 +79,10 @@ class FileSystemService:
         max_read_bytes: int = DEFAULT_MAX_READ_BYTES,
         max_write_bytes: int = DEFAULT_MAX_WRITE_BYTES,
         workspace_quota_bytes: int = DEFAULT_WORKSPACE_QUOTA_BYTES,
+        workspace_ttl_seconds: int = DEFAULT_WORKSPACE_TTL_SECONDS,
     ) -> None:
         self._workspace_root = workspace_root
+        self.workspace_ttl_seconds = max(0, workspace_ttl_seconds)
         self._max_read_bytes = min(max(1024, max_read_bytes), HARD_MAX_READ_BYTES)
         self._max_write_bytes = max(1024, max_write_bytes)
         self._workspace_quota_bytes = max(self._max_write_bytes, workspace_quota_bytes)
@@ -102,7 +116,49 @@ class FileSystemService:
         workspace = (root / workspace_id).resolve()
         self._require_under(workspace, root)
         workspace.mkdir(mode=0o700, exist_ok=True)
+        self._mark_used(root, workspace.name)
         return workspace
+
+    def sweep(self, now: float | None = None) -> list[str]:
+        """Deletes the workspaces nobody has used for `workspace_ttl_seconds` and returns their ids. Every request to a
+        workspace goes through `workspace()`, which marks it used, so a workspace is only old if it was left alone."""
+        if not self.workspace_ttl_seconds:
+            return []
+        root = self._workspace_root.resolve()
+        if not root.is_dir():
+            return []
+        now = time.time() if now is None else now
+        removed: list[str] = []
+        for workspace in root.iterdir():
+            if workspace.name == LAST_USED_DIR or workspace.is_symlink() or not workspace.is_dir():
+                continue
+            marker = root / LAST_USED_DIR / workspace.name
+            try:
+                # A workspace from before markers existed counts from its own last change
+                last_used = (marker if marker.exists() else workspace).stat().st_mtime
+                if now - last_used < self.workspace_ttl_seconds:
+                    continue
+                shutil.rmtree(workspace)
+                marker.unlink(missing_ok=True)
+                removed.append(workspace.name)
+            except OSError:
+                log.exception("Couldn't delete the idle workspace %s", workspace.name)
+        return removed
+
+    async def run_sweeper(self) -> None:
+        while self.workspace_ttl_seconds:
+            await asyncio.sleep(SWEEP_INTERVAL_SECONDS)
+            try:
+                removed = await asyncio.to_thread(self.sweep)
+                if removed:
+                    log.info("Deleted %d idle workspaces", len(removed))
+            except Exception:
+                log.exception("The workspace sweeper failed")
+
+    def _mark_used(self, root: Path, workspace_id: str) -> None:
+        markers = root / LAST_USED_DIR
+        markers.mkdir(mode=0o700, exist_ok=True)
+        (markers / workspace_id).touch()
 
     def _dispatch(
         self,
@@ -429,6 +485,13 @@ class FileSystemService:
         path = self._path(workspace, raw)
         if path.suffix.lower() not in suffixes:
             raise FileSystemOperationError("invalid_path", f"{raw} must be one of {', '.join(sorted(suffixes))}")
+        if path.is_symlink() or not path.is_file():
+            raise FileSystemOperationError("not_found", f"{raw} doesn't exist in the workspace")
+        return path
+
+    def resolve_file(self, workspace_id: str, raw: str) -> Path:
+        """An existing regular file of any type, for the API to take out of the workspace (a finished video)."""
+        path = self._path(self.workspace(workspace_id), raw)
         if path.is_symlink() or not path.is_file():
             raise FileSystemOperationError("not_found", f"{raw} doesn't exist in the workspace")
         return path
@@ -771,4 +834,5 @@ def get_file_system_service() -> FileSystemService:
         workspace_quota_bytes=int(
             os.getenv("FILE_SYSTEM_WORKSPACE_QUOTA_BYTES", str(DEFAULT_WORKSPACE_QUOTA_BYTES))
         ),
+        workspace_ttl_seconds=int(os.getenv("FILE_SYSTEM_WORKSPACE_TTL_SECONDS", str(DEFAULT_WORKSPACE_TTL_SECONDS))),
     )

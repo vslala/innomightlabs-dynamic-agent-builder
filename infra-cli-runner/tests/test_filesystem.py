@@ -167,6 +167,74 @@ class FileSystemTests(unittest.IsolatedAsyncioTestCase):
         response_schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
         self.assertEqual(response_schema["$ref"], "#/components/schemas/FileSystemActionResponse")
 
+    def test_a_workspace_file_of_any_type_downloads_with_the_token(self) -> None:
+        from unittest.mock import patch
+
+        from fastapi.testclient import TestClient
+
+        from src.infra_cli_runner.filesystem import get_file_system_service
+
+        video = self.service.workspace(WORKSPACE_ID) / "videos" / "tour.mp4"
+        video.parent.mkdir()
+        video.write_bytes(b"\x00\x00\x00\x18ftypmp42" + bytes(range(256)))
+        app.dependency_overrides[get_file_system_service] = lambda: self.service
+        self.addCleanup(app.dependency_overrides.clear)
+        client = TestClient(app)
+        query = {"workspace_id": WORKSPACE_ID, "path": "videos/tour.mp4"}
+        with patch.dict(os.environ, {"CLI_RUNNER_SHARED_TOKEN": "secret"}):
+            auth = {"Authorization": "Bearer secret"}
+            ok = client.get("/v1/filesystem/files", params=query, headers=auth)
+            self.assertEqual(ok.content, video.read_bytes())
+            self.assertEqual(client.get("/v1/filesystem/files", params=query).status_code, 401)
+            for bad, expected in (
+                ("videos/missing.mp4", 404), ("videos", 404), ("../x", 400), ("%2e%2e/x", 400), (".runs/x", 400),
+            ):
+                response = client.get("/v1/filesystem/files", params={**query, "path": bad}, headers=auth)
+                self.assertEqual(response.status_code, expected, bad)
+            link = self.service.workspace(WORKSPACE_ID) / "link.mp4"
+            link.symlink_to("/etc/passwd")
+            self.assertEqual(client.get("/v1/filesystem/files", params={**query, "path": "link.mp4"}, headers=auth).status_code, 400)
+
+    def test_the_sweeper_deletes_only_workspaces_nobody_used_for_the_ttl(self) -> None:
+        import time
+
+        service = FileSystemService(workspace_root=self.workspace_root, workspace_ttl_seconds=3600)
+        idle, busy, legacy = "a" * 48, "b" * 48, "c" * 48
+        for workspace_id in (idle, busy, legacy):
+            (service.workspace(workspace_id) / "videos").mkdir()
+            (service.workspace(workspace_id) / "videos" / "tour.mp4").write_bytes(b"x")
+        now = time.time()
+        markers = self.workspace_root / ".last-used"
+        os.utime(markers / idle, (now - 7200, now - 7200))
+        os.utime(markers / busy, (now - 600, now - 600))
+        os.utime(self.workspace_root / legacy, (now - 7200, now - 7200))
+        (markers / legacy).unlink()  # from before markers: judged by the workspace's own last change
+
+        self.assertEqual(sorted(service.sweep(now)), [idle, legacy])
+        self.assertFalse((self.workspace_root / idle).exists())
+        self.assertFalse((markers / idle).exists())
+        self.assertTrue((self.workspace_root / busy / "videos" / "tour.mp4").exists())
+        self.assertEqual(service.sweep(now), [])
+
+    def test_using_a_workspace_keeps_it_and_a_zero_ttl_keeps_everything(self) -> None:
+        import time
+
+        service = FileSystemService(workspace_root=self.workspace_root, workspace_ttl_seconds=3600)
+        workspace_id = "a" * 48
+        service.workspace(workspace_id)
+        marker = self.workspace_root / ".last-used" / workspace_id
+        os.utime(marker, (time.time() - 7200,) * 2)
+        service.execute(self.request("list_dir", {"path": "."}))  # any request refreshes the marker
+        self.assertEqual(service.sweep(), [])
+        os.utime(marker, (time.time() - 7200,) * 2)
+        self.assertEqual(FileSystemService(workspace_root=self.workspace_root, workspace_ttl_seconds=0).sweep(), [])
+        self.assertTrue((self.workspace_root / workspace_id).exists())
+
+    def test_the_marker_is_not_part_of_the_workspace(self) -> None:
+        listing = self.call("list_dir", {"path": ".", "recursive": True})
+        self.assertEqual(listing.payload.get("entries", []), [])
+        self.assertEqual(self.call("stat", {"path": ".last-used"}).status, "error")
+
     def call(self, action: str, arguments: dict[str, object]):
         return self.service.execute(self.request(action, arguments))
 

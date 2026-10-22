@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Path, Response, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Path, Query, Response, status
+from fastapi.responses import FileResponse, JSONResponse
 
 from src.infra_cli_runner.models import (
     BrowserRenderRequest,
@@ -110,6 +110,23 @@ async def run_filesystem_action(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     except CommandExecutionError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
+@router.get("/v1/filesystem/files")
+async def download_workspace_file(
+    workspace_id: Annotated[str, Query(pattern=r"^[a-f0-9]{48}$")],
+    path: Annotated[str, Query(min_length=1, max_length=1024)],
+    service: Annotated[FileSystemService, Depends(get_file_system_service)],
+    runner_service: Annotated[CliRunnerService, Depends(get_cli_runner_service)],
+    authorization: str | None = Header(default=None),
+) -> FileResponse:
+    """Streams one workspace file to the API, which turns it into an artifact."""
+    _authorize(runner_service, authorization)
+    try:
+        return FileResponse(service.resolve_file(workspace_id, path), media_type="application/octet-stream")
+    except FileSystemOperationError as exc:
+        code = status.HTTP_404_NOT_FOUND if exc.code == "not_found" else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=code, detail=f"{exc.code}: {exc.message}") from exc
 
 
 ServerId = Annotated[str, Path(pattern=r"^[0-9a-f-]{36}$")]
