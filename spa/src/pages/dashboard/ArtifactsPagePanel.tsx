@@ -47,7 +47,7 @@ interface ArtifactsPageContentProps extends ArtifactsPagePanelProps {
 }
 
 const formatOptions = [
-  ["all", "All formats"], ["html_report", "HTML reports"], ["image", "Images"], ["file", "Files"],
+  ["all", "All formats"], ["html_report", "HTML reports"], ["image", "Images"], ["video", "Videos"], ["file", "Files"],
   ["csv", "CSV"], ["markdown", "Markdown"], ["json", "JSON"], ["text", "Text"], ["code", "Code"], ["canvas", "Canvases"],
 ] as const;
 const sourceOptions = [["all", "All sources"], ["conversation", "Conversations"], ["automation", "Automations"], ["unknown", "Unknown source"]] as const;

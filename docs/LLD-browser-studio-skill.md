@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress (runner endpoints and the API skill built and exercised; upload and `video` artifact not) |
+| Status | 🚧 In progress (runner endpoints, the API skill and the video upload built; Railway deploy and Ila's recipe not) |
 | Owner | InnomightLabs API + infra-cli-runner |
 | Last reviewed | 2026-10-21 |
 | Depends on | [infra-cli-runner](../infra-cli-runner/README.md) (browser render, filesystem workspaces), [File System skill](../api/src/skills/file_system/manifest.yml), [Upload File Artifact Skill](../api/docs/LLD-upload-file-artifact-skill.md), [Async Tool Runtime](../api/docs/LLD-async-tool-runtime.md) |
@@ -78,8 +78,25 @@
     frames at 4 a second; compose 315 s), never over `BROWSER_STUDIO_TIMEOUT_SECONDS` (default 330, in `settings.py` and
     the Railway deploy script). A timeout tells the agent the studio does one job at a time and may be busy.
   - Owner-only and not an automation action, like File System.
-- **Still not built:** `upload_file` taking a workspace file, and the `video` artifact type, so the finished video can't yet
-  be handed to the user from chat; Ila's recipe for an advert video; the `social_media` publish step that could post it.
+- **`upload_file` and the `video` artifact (built, departures from the design below):**
+  - Two strategy lists, as designed, but smaller: `sources.py` (`WorkspaceFileSource` when `workspace_path` is set,
+    else `InlineContentSource`; one `source_for`) and the existing `validators.py` (now taking an `UploadContent`, with a
+    `VideoArtifactValidator`). `mime.py` stays; there is no `content_types.py`. `UploadContent` (`content.py`) is the
+    spooled file plus its size.
+  - Only `video` is added, as asked: the `image` type and non-UTF-8 inline base64 are left for later. A video must come
+    from `workspace_path` (inline is refused with that message).
+  - A video is `.mp4`, `.webm` or `.mov`, checked against its first bytes (`ftyp` or the EBML marker), up to 100 MB (other
+    types still 10 MB; `max_bytes_for`). Its MIME type comes from the extension and ignores the agent's `mime_type`, since
+    a video is served inline.
+  - The handler is `async`; the S3 upload and DynamoDB calls run in `asyncio.to_thread`. The runner side is `GET
+    /v1/filesystem/files?workspace_id&path` (`FileSystemService.resolve_file`: any regular file, no symlinks, same path
+    rules), and the API derives the workspace id from the run, never from arguments. The download is capped while
+    streaming, first by `Content-Length`.
+  - `ArtifactService.create_artifact` and `ArtifactStorage.put_artifact` accept a file (`upload_fileobj`); `video` is a
+    viewable type (the artifact page redirects to the inline link, which plays in the browser) but not a content-proxy
+    type. The SPA has the type, label, badge and a "Videos" filter.
+- **Still not built:** Ila's recipe for an advert video; the `social_media` publish step that could post it; a check of
+  the upload against real S3 and the Railway runner.
 
 ## Context and problem
 

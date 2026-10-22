@@ -28,7 +28,13 @@ CODE_MIME_TYPES = {
 }
 
 
+VIDEO_MIME_TYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime"}
+
+
 def infer_mime_type(artifact_type: ArtifactType, filename: str, override: str | None) -> str:
+    if artifact_type == "video":
+        # Never the agent's choice: a video is served inline, so it can't be labelled as something a browser would run.
+        return VIDEO_MIME_TYPES.get(PurePath(filename).suffix.lower(), "application/octet-stream")
     if override:
         return override.strip()
     if artifact_type == "html_report":

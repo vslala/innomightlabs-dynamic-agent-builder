@@ -16,7 +16,7 @@ export const INITIAL_ARTIFACT_LIBRARY_STATE: ArtifactLibraryState = {
   query: "", format: "all", source: "all", period: "all", sort: "newest", group: "agent", activeId: null, collapsedGroups: [],
 };
 export const ARTIFACT_FORMAT_LABELS: Record<ArtifactType, string> = {
-  html_report: "HTML report", image: "Image", file: "File", csv: "CSV", markdown: "Markdown",
+  html_report: "HTML report", image: "Image", video: "Video", file: "File", csv: "CSV", markdown: "Markdown",
   json: "JSON", text: "Text", code: "Code", canvas: "Canvas",
 };
 
@@ -26,19 +26,19 @@ export function artifactFormatLabel(type: string): string {
 
 const FILE_EXTENSION_BADGES = new Map(Object.entries({
   html: "HTML", htm: "HTML", png: "PNG", jpg: "JPG", jpeg: "JPG", svg: "SVG", gif: "GIF", webp: "WEBP",
-  avif: "AVIF", bmp: "BMP", ico: "ICO", tif: "TIFF", tiff: "TIFF", csv: "CSV", pdf: "PDF",
+  avif: "AVIF", mp4: "MP4", webm: "WEBM", mov: "MOV", bmp: "BMP", ico: "ICO", tif: "TIFF", tiff: "TIFF", csv: "CSV", pdf: "PDF",
   md: "MD", markdown: "MD", json: "JSON", txt: "TXT", xml: "XML", zip: "ZIP",
 }));
 const MIME_TYPE_BADGES = new Map(Object.entries({
   "text/html": "HTML", "application/xhtml+xml": "HTML", "image/png": "PNG", "image/jpeg": "JPG",
-  "image/svg+xml": "SVG", "image/gif": "GIF", "image/webp": "WEBP", "image/avif": "AVIF",
+  "image/svg+xml": "SVG", "image/gif": "GIF", "image/webp": "WEBP", "image/avif": "AVIF", "video/mp4": "MP4", "video/webm": "WEBM", "video/quicktime": "MOV",
   "image/bmp": "BMP", "image/x-icon": "ICO", "image/vnd.microsoft.icon": "ICO", "image/tiff": "TIFF",
   "text/csv": "CSV", "application/pdf": "PDF", "text/markdown": "MD", "text/x-markdown": "MD",
   "application/json": "JSON", "text/json": "JSON", "text/plain": "TXT", "application/xml": "XML",
   "text/xml": "XML", "application/zip": "ZIP",
 }));
 const ARTIFACT_KIND_BADGES = new Map(Object.entries({
-  html_report: "HTML", image: "IMG", file: "FILE", csv: "CSV", markdown: "MD",
+  html_report: "HTML", image: "IMG", video: "VIDEO", file: "FILE", csv: "CSV", markdown: "MD",
   json: "JSON", text: "TXT", code: "CODE", canvas: "CANVAS",
 } satisfies Record<ArtifactType, string>));
 
@@ -52,6 +52,7 @@ export function artifactFileBadge(artifact: ArtifactResponse): string {
   if (mimeBadge) return mimeBadge;
   if (/^[a-z0-9]{1,5}$/.test(extension)) return extension.toUpperCase();
   if (mime.startsWith("image/")) return "IMG";
+  if (mime.startsWith("video/")) return "VIDEO";
   return ARTIFACT_KIND_BADGES.get(artifact.artifact_type) ?? "FILE";
 }
 

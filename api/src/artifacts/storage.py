@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Any, cast
+from typing import IO, Any, cast
 
 import boto3
 
@@ -28,7 +28,11 @@ class ArtifactStorage:
         safe_filename = sanitize_filename(filename)
         return f"{member_prefix(account_id, user_id)}/artifacts/{date_prefix}/{artifact_id}/{safe_filename}"
 
-    def put_artifact(self, *, key: str, body: bytes, content_type: str) -> None:
+    def put_artifact(self, *, key: str, body: bytes | IO[bytes], content_type: str) -> None:
+        if not isinstance(body, bytes):
+            # A file (a video) is streamed in parts, so it never has to fit in memory at once
+            self.client.upload_fileobj(body, self.bucket, key, ExtraArgs={"ContentType": content_type})
+            return
         self.client.put_object(
             Bucket=self.bucket,
             Key=key,

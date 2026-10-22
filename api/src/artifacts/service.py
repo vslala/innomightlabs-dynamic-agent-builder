@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import IO, Any
 
 from src.artifacts.models import (
     Artifact,
@@ -16,7 +16,7 @@ from src.config import settings
 from src.conversations.repository import ConversationRepository
 from src.skills.runtime_context import account_of, run_owner
 
-VIEWABLE_ARTIFACT_TYPES = {"html_report", "csv", "markdown", "json", "text", "code", "canvas"}
+VIEWABLE_ARTIFACT_TYPES = {"html_report", "video", "csv", "markdown", "json", "text", "code", "canvas"}
 CONTENT_PROXY_ARTIFACT_TYPES = {"canvas", "html_report", "text", "markdown", "code", "json"}
 
 
@@ -51,10 +51,11 @@ class ArtifactService:
         title: str,
         filename: str,
         mime_type: str,
-        body: bytes,
+        body: bytes | IO[bytes],
         source: ArtifactSource | None = None,
     ) -> ArtifactResponse:
         safe_filename = sanitize_filename(filename)
+        size_bytes = len(body) if isinstance(body, bytes) else _file_size(body)
         artifact = Artifact(
             account_id=account_id,
             user_id=user_id,
@@ -63,7 +64,7 @@ class ArtifactService:
             filename=safe_filename,
             mime_type=mime_type,
             s3_key="",
-            size_bytes=len(body),
+            size_bytes=size_bytes,
             source=source or ArtifactSource(),
         )
         artifact.s3_key = self.storage.build_key(
@@ -158,6 +159,13 @@ class ArtifactService:
         if settings.frontend_url:
             return f"{settings.frontend_url.rstrip('/')}{path}"
         return path
+
+
+def _file_size(file: IO[bytes]) -> int:
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(0)
+    return size
 
 
 def is_browser_viewable_artifact(artifact: Artifact) -> bool:
