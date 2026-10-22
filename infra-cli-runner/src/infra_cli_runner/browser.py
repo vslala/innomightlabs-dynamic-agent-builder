@@ -10,20 +10,20 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Awaitable, Callable
-from contextlib import suppress
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass, replace
 from functools import lru_cache
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from playwright.async_api import Browser, Error as PlaywrightError, Playwright, Route, TimeoutError as PlaywrightTimeout
+from playwright.async_api import Browser, BrowserContext, Error as PlaywrightError, Page, Playwright, Route, TimeoutError as PlaywrightTimeout
 from playwright.async_api import WebSocketRoute, async_playwright
 
 from src.infra_cli_runner import outbound
 
 MAX_RESOURCE_BYTES = 10 * 1024 * 1024
-BLOCKED_RESOURCE_TYPES = {"image", "media", "font"}
 #: What a page's own requests may carry. Cookies and credentials are never forwarded.
 FORWARDED_REQUEST_HEADERS = {"accept", "accept-language", "content-type", "origin", "referer", "user-agent"}
 #: Headers that describe how the body was sent; the body is handed to the page decoded.
@@ -33,6 +33,24 @@ DROPPED_RESPONSE_HEADERS = {
 #: Chromium inside a container has no user namespaces to build its sandbox from. Pages can't reach the network except
 #: through `outbound`, and the container holds no secrets beyond the runner's own token.
 LAUNCH_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+
+
+@dataclass(frozen=True)
+class ResourcePolicy:
+    """Which kinds of page request are never fetched. The network guard itself is the same under every policy."""
+
+    blocked_types: frozenset[str]
+    #: Answers requests to `SCENE_ORIGIN` from the workspace (a path in, a resource or None out). A page that isn't a
+    #: scene has no such origin, and a request to it goes out like any other and fails: `.invalid` never resolves.
+    scene_files: Callable[[str], FetchedResource | None] | None = None
+
+
+#: Where a scene's own files appear to live. `.invalid` is reserved and can never resolve to a real host.
+SCENE_ORIGIN = "https://scene.studio.invalid"
+#: The crawler wants text, so images, fonts and media are never fetched.
+RENDER_POLICY = ResourcePolicy(frozenset({"image", "media", "font"}))
+#: A page looked at or recorded for a person needs to look the way it does for them.
+STUDIO_POLICY = ResourcePolicy(frozenset())
 
 
 class RenderError(Exception):
@@ -83,6 +101,8 @@ class BrowserRenderer:
         self._public_fetcher = None if fetch else PublicFetcher()
         self._fetch: Fetch = fetch or self._public_fetcher  # type: ignore[assignment]
         self._slots = asyncio.Semaphore(concurrency or int(os.getenv("BROWSER_RENDER_CONCURRENCY", "1")))
+        # Studio work (inspecting, recording) takes minutes, so it must not hold up the crawler's single slot.
+        self._studio_slots = asyncio.Semaphore(int(os.getenv("BROWSER_STUDIO_CONCURRENCY", "1")))
         self._launch_lock = asyncio.Lock()
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
@@ -100,8 +120,7 @@ class BrowserRenderer:
         browser = await self._launched()
         context = await browser.new_context(user_agent=user_agent, service_workers="block")
         try:
-            await context.route("**/*", self._serve)
-            await context.route_web_socket("**/*", _refuse_web_socket)
+            await self._guard(context, RENDER_POLICY)
             page = await context.new_page()
             try:
                 response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_seconds * 1000)
@@ -114,9 +133,51 @@ class BrowserRenderer:
         finally:
             await context.close()
 
-    async def _serve(self, route: Route) -> None:
+    @asynccontextmanager
+    async def studio_page(
+        self,
+        *,
+        width: int,
+        height: int,
+        timeout_seconds: float,
+        record_video_dir: Path | None = None,
+        scene_files: Callable[[str], FetchedResource | None] | None = None,
+    ) -> AsyncIterator[Page]:
+        """A fresh page at the given size in its own context, behind the same network guard as `render`.
+
+        With `record_video_dir` the page is recorded at its own size; the video is complete once this context manager
+        exits (the browser flushes it when the context closes), and `page.video.path()` says where it is."""
+        async with self._studio_slots:
+            browser = await self._launched()
+            recording = {"record_video_dir": str(record_video_dir), "record_video_size": {"width": width, "height": height}} if record_video_dir else {}
+            context = await browser.new_context(
+                viewport={"width": width, "height": height}, service_workers="block", **recording
+            )
+            try:
+                await self._guard(context, replace(STUDIO_POLICY, scene_files=scene_files))
+                page = await context.new_page()
+                page.set_default_timeout(timeout_seconds * 1000)
+                yield page
+            finally:
+                await context.close()
+
+    async def _guard(self, context: BrowserContext, policy: ResourcePolicy) -> None:
+        async def serve(route: Route) -> None:
+            await self._serve(route, policy)
+
+        await context.route("**/*", serve)
+        await context.route_web_socket("**/*", _refuse_web_socket)
+
+    async def _serve(self, route: Route, policy: ResourcePolicy) -> None:
         request = route.request
-        if request.resource_type in BLOCKED_RESOURCE_TYPES or urlparse(request.url).scheme not in ("http", "https"):
+        if policy.scene_files is not None and request.url.startswith(SCENE_ORIGIN + "/"):
+            resource = policy.scene_files(urlparse(request.url).path.lstrip("/"))
+            if resource is None:
+                await route.fulfill(status=404, body=b"")
+            else:
+                await route.fulfill(status=resource.status, headers=resource.headers, body=resource.body)
+            return
+        if request.resource_type in policy.blocked_types or urlparse(request.url).scheme not in ("http", "https"):
             await route.abort()
             return
         headers = {name: value for name, value in request.headers.items() if name.lower() in FORWARDED_REQUEST_HEADERS}
