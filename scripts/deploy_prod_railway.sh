@@ -418,6 +418,7 @@ set_railway_var "ACCOUNT_DELETION_LAMBDA_NAME" "$(get_var 'ACCOUNT_DELETION_LAMB
 set_railway_var "CLI_RUNNER_BASE_URL" "$cli_runner_base_url"
 set_railway_var "CLI_RUNNER_SHARED_TOKEN" "$cli_runner_shared_token"
 set_railway_var "CLI_RUNNER_TIMEOUT_SECONDS" "$(get_prod_var_default 'CLI_RUNNER_TIMEOUT_SECONDS' '30')"
+set_railway_var "BROWSER_STUDIO_TIMEOUT_SECONDS" "$(get_prod_var_default 'BROWSER_STUDIO_TIMEOUT_SECONDS' '330')"
 
 # The version changes on every run, so it stays out of the fingerprint and is only written when the API deploys.
 api_fingerprint_vars=()

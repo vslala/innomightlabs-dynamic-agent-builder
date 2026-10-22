@@ -1,0 +1,203 @@
+id: browser_studio
+namespace: media.browser_studio
+owner_only: true
+name: Browser Studio
+description: Look at public websites, record walkthroughs of them, render title cards and captions, and edit it all into a video in the conversation workspace.
+system_prompt: |
+  Make a video of a public website: inspect, rehearse, record, add scenes, compose, check, then save it with upload_file.
+  Files live in the conversation workspace shared with File System and Python Code Execution; paths are workspace-relative.
+  Call record_walkthrough, render_scene and compose_video with async: true.
+  1. inspect_page the site. Copy `target` objects into steps exactly as returned; never invent selectors. A target with
+     `nth` is one of several matches. Content that loads on scroll isn't targetable until a scroll step has run.
+  2. record_walkthrough with rehearse: true first (seconds, no video). It acts on the live page. A failed step returns
+     the page and the closest candidates; fix the step from them.
+  3. Record again with rehearse: false and an output_path (.webm). Results give `ready` (start clips here), your `mark`
+     times, each step's end time, and `box` (x, y, width, height as fractions of the screen) for steps that targeted
+     something: use its centre as a zoom focus.
+  4. render_scene: template title, outro or lower_third (lower_third is transparent, .webm, for overlays), or your own
+     .html. Keep headings short.
+  5. compose_video: clips in order (trim with start/end, zoom keyframes, transition_in), overlays attached to a clip with
+     `clip` and `at`, optional audio. Output defaults to 1280x720 at 30 fps. Aim for 15 to 30 seconds.
+  6. probe_media with sheet_path gives one image of six frames to check the result.
+  Public pages only; no logins. Recordings are capped at 180 seconds and compositions at 300.
+automation:
+  enabled: false
+actions:
+  - name: inspect_page
+    description: Look at a public page before acting on it. Returns its actionable elements and section headings, each with a verified target to copy into steps, plus a screenshot saved in the workspace.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url: {type: string, description: "Public http or https page."}
+        steps: {type: array, items: {type: object}, description: "Steps to run first to reach a state, such as opening a menu. Same shape as record_walkthrough steps."}
+        roles: {type: array, items: {type: string}, description: "Only elements with these roles, e.g. [link, button]."}
+        query: {type: string, description: "Only elements whose name contains this."}
+        max_elements: {type: integer, description: "Default 80."}
+        max_heading_level: {type: integer, description: "Sections down to h1-h3. Default 2."}
+        include_outline: {type: boolean, description: "Add the accessibility outline. Large; usually not needed."}
+        scroll_through: {type: boolean, description: "Scroll the page first so content that loads on scroll is present. Default true."}
+        annotate: {type: boolean, description: "Draw element ids on the screenshot."}
+        screenshot_path: {type: string, description: ".png in the workspace. Default inspect/<id>.png."}
+        viewport: &viewport
+          type: object
+          description: Default 1280x720.
+          properties:
+            width: {type: integer}
+            height: {type: integer}
+        timeout_seconds: {type: integer, description: "Default 25."}
+    handler: actions:inspect_page
+  - name: record_walkthrough
+    description: Perform steps on a public page in order and record the screen as a video (.webm). With rehearse true it only checks the steps, with no video. Returns markers, step times and boxes, and on a failed step the page and likely candidates.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url: {type: string, description: "Public http or https page to open first."}
+        steps:
+          type: array
+          description: Steps run in order; the first failure stops the run.
+          items:
+            type: object
+            required: [action]
+            properties:
+              action: {type: string, enum: [goto, click, hover, type, press, scroll, wait, wait_for, mark, screenshot]}
+              url: {type: string, description: goto only.}
+              target: &target
+                type: object
+                description: From inspect_page. Exactly one of role, text or selector.
+                properties:
+                  role: {type: string, description: ARIA role such as button, link, heading, textbox. Use with name.}
+                  name: {type: string, description: Exact accessible name, with role.}
+                  text: {type: string, description: Exact visible text.}
+                  selector: {type: string, description: CSS selector.}
+                  nth: {type: integer, description: Which match, from 0, when several match.}
+              move_ms: {type: integer, description: click, hover. Cursor travel time.}
+              text: {type: string, description: type only. Text to type.}
+              delay_ms: {type: integer, description: type only. Pause between keys.}
+              key: {type: string, description: "press only. Enter, Escape, Tab, ArrowDown, Control+Enter..."}
+              to: {<<: *target, description: "scroll only. Target to bring into view; or use by_pixels."}
+              by_pixels: {type: integer, description: scroll only. Down is positive.}
+              duration_ms: {type: integer, description: scroll only. Eased scroll time.}
+              ms: {type: integer, description: wait only. Pause time.}
+              state: {type: string, enum: [visible, hidden], description: wait_for only.}
+              timeout_ms: {type: integer, description: wait_for only.}
+              label: {type: string, description: "mark only. Lowercase letters, digits, - and _; not ready."}
+              path: {type: string, description: screenshot only. .png or .jpg in the workspace.}
+              full_page: {type: boolean, description: screenshot only.}
+        output_path: {type: string, description: "Required unless rehearsing. Workspace path ending .webm."}
+        rehearse: {type: boolean, description: "Check the steps with no video, no pacing and waits capped at 500 ms. It still clicks and types for real."}
+        show_cursor: {type: boolean, description: "Draw a visible cursor. Default true."}
+        viewport: *viewport
+        max_duration_seconds: {type: integer, description: "Default 120, at most 180."}
+        step_timeout_seconds: {type: integer, description: "How long one step waits for its target. Default 10."}
+    handler: actions:record_walkthrough
+  - name: render_scene
+    description: Render an animated title card, outro or caption overlay to a video file, from a built-in template or your own HTML page.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [output_path, duration_seconds]
+      properties:
+        template: {type: string, enum: [title, outro, lower_third], description: "Built-in scene. Give this with params, or scene_path."}
+        params:
+          type: object
+          properties:
+            heading: {type: string, description: "Required. Short."}
+            subheading: {type: string}
+            eyebrow: {type: string, description: "Small label above the heading (title)."}
+            footer: {type: string, description: "Call to action such as a web address (outro)."}
+            accent: {type: string, description: "Hex colour such as #6366f1."}
+            theme: {type: string, enum: [dark, light]}
+        scene_path: {type: string, description: "Your own .html in the workspace; its relative assets load from the workspace. Animate with CSS or the Web Animations API."}
+        output_path: {type: string, description: ".mp4, or .webm (required for lower_third and transparent scenes)."}
+        duration_seconds: {type: number, description: "0.3 to 30."}
+        fps: {type: integer, enum: [24, 25, 30, 60]}
+        viewport: *viewport
+        transparent: {type: boolean, description: "Keep the page transparent, for overlays (.webm). Templates decide this themselves."}
+    handler: actions:render_scene
+  - name: compose_video
+    description: Join clips, scenes and images into one video with trims, zooms, transitions, caption overlays and an optional audio bed.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [output, clips]
+      properties:
+        output:
+          type: object
+          required: [path]
+          properties:
+            path: {type: string, description: ".mp4 or .webm in the workspace."}
+            width: {type: integer, description: "Default 1280, at most 1920, even."}
+            height: {type: integer, description: "Default 720, at most 1080, even."}
+            fps: {type: integer, enum: [24, 25, 30, 60]}
+        clips:
+          type: array
+          description: Played in order.
+          items:
+            type: object
+            required: [source]
+            properties:
+              source: {type: string, description: "Video or image in the workspace."}
+              start: {type: number, description: "Seconds into the source."}
+              end: {type: number, description: "Seconds into the source. Omit for the end."}
+              speed: {type: number, description: "0.25 to 4."}
+              hold_seconds: {type: number, description: "Images only. Default 3."}
+              fit: {type: string, enum: [cover, contain]}
+              background: {type: string, description: "Hex fill for contain, e.g. #000000."}
+              zoom:
+                type: array
+                description: Eased camera moves.
+                items:
+                  type: object
+                  required: [at]
+                  properties:
+                    at: {type: number, description: "Seconds into the clip as cut, before speed."}
+                    duration: {type: number, description: "Default 0.8."}
+                    x: {type: number, description: "Focus, 0 to 1 across."}
+                    y: {type: number, description: "Focus, 0 to 1 down."}
+                    scale: {type: number, description: "1 to 4. 1 zooms back out."}
+                    ease: {type: string, enum: [linear, ease_in_out]}
+              transition_in:
+                type: object
+                description: How this clip comes in from the previous one. Omit for a hard cut.
+                properties:
+                  kind: {type: string, enum: [fade, fadeblack, dissolve, wipeleft, wiperight, slideleft, slideright, smoothleft, circleopen]}
+                  duration: {type: number, description: "Default 0.5, at most 3."}
+        overlays:
+          type: array
+          description: Transparent scenes or images laid over the video.
+          items:
+            type: object
+            required: [source]
+            properties:
+              source: {type: string, description: "A transparent .webm scene or an image."}
+              clip: {type: integer, description: "Index of the clip it belongs to (from 0). Then at counts from that clip's start."}
+              at: {type: number, description: "Seconds. With no clip, from the start of the video."}
+              duration: {type: number, description: "Omit for the overlay's own length."}
+              x: {type: number, description: "Left edge, 0 to 1."}
+              y: {type: number, description: "Top edge, 0 to 1."}
+              width: {type: number, description: "Width as a fraction of the frame. Default 1."}
+        audio:
+          type: object
+          required: [source]
+          properties:
+            source: {type: string, description: "Audio file in the workspace."}
+            volume: {type: number, description: "Default 0.8."}
+            fade_in: {type: number}
+            fade_out: {type: number, description: "Default 1.5."}
+    handler: actions:compose_video
+  - name: probe_media
+    description: Read a media file's length, size and frame rate, and optionally save one frame or a contact sheet of six frames in a single image to check it.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path: {type: string, description: "Video, audio or image in the workspace."}
+        frame_at_seconds: {type: number, description: "Save one frame at this time; needs frame_path."}
+        frame_path: {type: string, description: ".png or .jpg in the workspace."}
+        sheet_path: {type: string, description: ".jpg or .png for a 3x2 contact sheet of the whole video."}
+    handler: actions:probe_media

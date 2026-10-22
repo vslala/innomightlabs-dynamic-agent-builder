@@ -194,6 +194,9 @@ class Settings:
     cli_runner_base_url: str = ""
     cli_runner_shared_token: str = ""
     cli_runner_timeout_seconds: int = 30
+    #: The longest the Browser Studio skill waits on one runner call (a recording or a composition); each call waits only
+    #: as long as its own work can take.
+    browser_studio_timeout_seconds: int = 330
 
     # DynamoDB endpoint (optional, for local development)
     dynamodb_endpoint: Optional[str] = None
@@ -608,6 +611,7 @@ class Settings:
             cli_runner_base_url=os.getenv("CLI_RUNNER_BASE_URL", ""),
             cli_runner_shared_token=os.getenv("CLI_RUNNER_SHARED_TOKEN", ""),
             cli_runner_timeout_seconds=int(os.getenv("CLI_RUNNER_TIMEOUT_SECONDS", "30")),
+            browser_studio_timeout_seconds=int(os.getenv("BROWSER_STUDIO_TIMEOUT_SECONDS", "330")),
             google_client_id=google_client_id,
             google_client_secret=google_client_secret,
             google_redirect_uri=f"{api_base_url}/auth/callback",
