@@ -243,6 +243,8 @@ export interface UpdateAgentMCPConnectionRequest {
 export interface SocialNetwork {
   key: string;
   display_name: string;
+  /** What connecting it lets the agent post as, for example "Post as a company page you administer." */
+  description: string;
   /** A brand mark key in `src/assets/connectors`. */
   icon: string;
 }

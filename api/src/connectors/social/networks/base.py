@@ -84,8 +84,12 @@ class PublishedPost:
 class SocialNetwork(Protocol):
     key: str
     display_name: str
+    #: One line for the dashboard: what connecting this network lets the agent post as ("your profile", "a page")
+    description: str
     #: A brand mark key the dashboard knows (`spa/src/assets/connectors/<icon>.svg`)
     icon: str
+    #: One sign-in connects several accounts on one token (a member's pages): disconnecting one must not end the grant
+    shares_grant: bool
     #: Names its OAuth app in the environment: `SOCIAL_<APP>_CLIENT_ID` / `_CLIENT_SECRET` (see `settings.social_app`)
     app: str
     limits: NetworkLimits

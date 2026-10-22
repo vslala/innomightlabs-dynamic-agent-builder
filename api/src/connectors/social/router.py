@@ -38,7 +38,8 @@ Manager = Annotated[Principal, Depends(settings_manager)]
 async def list_networks(_: Member) -> list[SocialNetworkResponse]:
     """The networks an account can be connected on. The dashboard renders only this, so a new network appears here."""
     return [
-        SocialNetworkResponse(key=network.key, display_name=network.display_name, icon=network.icon)
+        SocialNetworkResponse(key=network.key, display_name=network.display_name, description=network.description,
+                              icon=network.icon)
         for network in enabled_networks()
     ]
 
@@ -90,8 +91,13 @@ async def disconnect_account(social_account_id: str, principal: Manager) -> None
     account = repository.get(principal.account_id, social_account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="Social account not found")
+    network = network_for(account.network)
+    # Accounts that share one grant (every page of a member) keep it until the last of them goes
+    others = [other for other in repository.list(principal.account_id)
+              if other.network == account.network and other.social_account_id != account.social_account_id]
     try:
-        await network_for(account.network).revoke(account.credentials())
+        if not (network.shares_grant and others):
+            await network.revoke(account.credentials())
     except Exception as error:  # ending the grant is best effort; the account is disconnected either way
         log.warning("Could not revoke %s access: %s", account.network, type(error).__name__)
     repository.delete(account)

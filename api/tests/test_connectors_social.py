@@ -125,7 +125,8 @@ def test_oauth_apps_are_read_from_pairs_of_env_vars_named_after_the_network():
 
 def test_a_network_is_offered_only_once_its_oauth_app_is_registered(test_client, linkedin, monkeypatch):
     offered = test_client.get("/connectors/social/networks", headers=owner_headers()).json()
-    assert offered == [{"key": "linkedin", "display_name": "LinkedIn", "icon": "linkedin"}]
+    assert offered == [{"key": "linkedin", "display_name": "LinkedIn", "icon": "linkedin",
+                        "description": "Post as yourself, to your personal profile."}]
 
     monkeypatch.setattr(settings, "social_apps", {})
 

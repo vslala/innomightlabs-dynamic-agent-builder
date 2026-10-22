@@ -39,7 +39,7 @@ src/connectors/social/
 ## Add a network
 
 1. Write `networks/<key>.py` implementing `SocialNetwork` (copy `linkedin.py`): `key`, `display_name`, `icon`, `app`,
-   `limits` (`NetworkLimits`), `configured`, `authorize_url`, `complete`, `publish`, `revoke`. `publish` raises `PublishError` with a kind: use `TRANSIENT` only when nothing can have been created, and `UNCERTAIN` for any final create call that timed out or returned 5xx (it is never retried). Take an optional `transport` so tests can answer its endpoints.
+   `description` (one line the dashboard shows under the name: what the agent will post as), `shares_grant` (true when one sign-in connects several accounts on one token, so disconnecting one keeps the grant for the others), `limits` (`NetworkLimits`), `configured`, `authorize_url`, `complete`, `publish`, `revoke`. `publish` raises `PublishError` with a kind: use `TRANSIENT` only when nothing can have been created, and `UNCERTAIN` for any final create call that timed out or returned 5xx (it is never retried). Take an optional `transport` so tests can answer its endpoints.
 2. Add it to `NETWORKS` in `networks/__init__.py`.
 3. Add a brand mark `spa/src/assets/connectors/<icon>.svg|png` (and a row in that folder's README).
 4. Set `SOCIAL_<APP>_CLIENT_ID` and `SOCIAL_<APP>_CLIENT_SECRET`, where `<APP>` is the strategy's `app` upper-cased

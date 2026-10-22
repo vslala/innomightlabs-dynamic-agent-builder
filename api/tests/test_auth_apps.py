@@ -1,5 +1,6 @@
 """Login for other apps that share this identity provider (AUTH_APP_URLS)."""
 from urllib.parse import parse_qs, urlparse
+from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -111,6 +112,40 @@ def test_default_app_login_lands_with_a_one_time_code_and_welcomes_the_user(
     me = test_client.get("/auth/me", headers={"Authorization": f"Bearer {session.json()['token']}"})
     assert me.json()["email"] == "new.user@example.com"
     assert test_client.post("/auth/session", json={"code": code}).status_code == 401
+
+
+@pytest.mark.parametrize("app", [DEFAULT_APP, "bidsignal"])
+def test_signup_sends_only_the_html_welcome_for_the_default_app(
+    test_client: TestClient, fake_provider, monkeypatch, app: str,
+):
+    mailjet = Mock()
+    mailjet.send.create.return_value.status_code = 200
+    monkeypatch.setattr("src.email.service.Client", Mock(return_value=mailjet))
+
+    response = _callback(test_client, app, "code=abc")
+    assert response.status_code == 307
+    assert "code=" in response.headers["location"]
+
+    if app == DEFAULT_APP:
+        mailjet.send.create.assert_called_once()
+        message = mailjet.send.create.call_args.kwargs["data"]["Messages"][0]
+        assert message["To"] == [{"Email": "new.user@example.com"}]
+        assert message["Subject"] == "Welcome to InnomightLabs! 🎉"
+        html = message["HTMLPart"]
+        assert "Hi New User," in html
+        assert "What you can do:" in html
+        assert 'href="https://app.example.com/dashboard"' in html
+        assert "Go to Dashboard" in html
+        assert "{{" not in html
+        assert "reply to this email" not in html
+    else:
+        mailjet.send.create.assert_not_called()
+
+    # An existing user's next login must not send another welcome email.
+    mailjet.send.create.reset_mock()
+    response = _callback(test_client, app, "code=abc")
+    assert "code=" in response.headers["location"]
+    mailjet.send.create.assert_not_called()
 
 
 def test_a_callback_without_the_browsers_nonce_is_refused(

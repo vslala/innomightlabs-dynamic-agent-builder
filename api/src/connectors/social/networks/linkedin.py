@@ -49,8 +49,11 @@ RESERVED = "\\|{}@[]()<>#*_~"
 class LinkedInNetwork:
     key = "linkedin"
     display_name = "LinkedIn"
+    description = "Post as yourself, to your personal profile."
     icon = "linkedin"
+    shares_grant = False
     app = "linked_in"
+    scopes = SCOPES
     limits = NetworkLimits(max_text=3000, max_images=20)
 
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
@@ -66,37 +69,19 @@ class LinkedInNetwork:
             "client_id": self._app().client_id,
             "redirect_uri": settings.social_oauth_redirect_uri,
             "state": state,
-            "scope": SCOPES,
+            "scope": self.scopes,
         }
         return f"{AUTHORIZE_URL}?{urlencode(params, quote_via=quote)}"
 
     async def complete(self, code: str, code_verifier: str) -> list[ConnectedProfile]:
-        app = self._app()
         async with httpx.AsyncClient(transport=self._transport, timeout=TIMEOUT_SECONDS) as client:
-            token = await client.post(TOKEN_URL, data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "client_id": app.client_id,
-                "client_secret": app.client_secret,
-                "redirect_uri": settings.social_oauth_redirect_uri,
-            })
-            tokens = _json(token)
-            if token.status_code != 200 or not tokens.get("access_token"):
-                raise ConnectError(f"LinkedIn did not accept the sign-in ({tokens.get('error') or token.status_code})")
-
+            tokens = await self._exchange(client, code)
             profile = await client.get(USERINFO_URL, headers={"Authorization": f"Bearer {tokens['access_token']}"})
             info = _json(profile)
             if profile.status_code != 200 or not info.get("sub"):
                 raise ConnectError(f"LinkedIn did not return the member's profile ({profile.status_code})")
 
-        # Whether LinkedIn sends a refresh token decides if we can refresh before posting or the member must sign in
-        # again every ~60 days. Log the fact, never the tokens.
-        log.info(
-            "LinkedIn sign-in granted: refresh_token=%s expires_in=%s refresh_token_expires_in=%s",
-            bool(tokens.get("refresh_token")), tokens.get("expires_in"), tokens.get("refresh_token_expires_in"),
-        )
-        lifetime = timedelta(seconds=int(tokens["expires_in"])) if tokens.get("expires_in") else DEFAULT_TOKEN_LIFETIME
-        expires_at = datetime.now(timezone.utc) + lifetime
+        expires_at = _expiry(tokens)
         name = str(info.get("name") or " ".join(filter(None, [info.get("given_name"), info.get("family_name")])) or "LinkedIn member")
         credentials: dict[str, Any] = {
             "access_token": tokens["access_token"],
@@ -111,9 +96,28 @@ class LinkedInNetwork:
             display_name=name,
             avatar_url=info.get("picture"),
             credentials=credentials,
-            scopes=str(tokens.get("scope") or SCOPES),
+            scopes=str(tokens.get("scope") or self.scopes),
             expires_at=expires_at,
         )]
+
+    async def _exchange(self, client: httpx.AsyncClient, code: str) -> dict[str, Any]:
+        """Trade the sign-in's code for tokens, and say (never the tokens) what LinkedIn granted."""
+        app = self._app()
+        token = await client.post(TOKEN_URL, data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": app.client_id,
+            "client_secret": app.client_secret,
+            "redirect_uri": settings.social_oauth_redirect_uri,
+        })
+        tokens = _json(token)
+        if token.status_code != 200 or not tokens.get("access_token"):
+            raise ConnectError(f"LinkedIn did not accept the sign-in ({tokens.get('error') or token.status_code})")
+        log.info(
+            "LinkedIn sign-in granted: refresh_token=%s expires_in=%s refresh_token_expires_in=%s",
+            bool(tokens.get("refresh_token")), tokens.get("expires_in"), tokens.get("refresh_token_expires_in"),
+        )
+        return tokens
 
     async def revoke(self, credentials: dict[str, Any]) -> None:
         app = self._app()
@@ -130,13 +134,15 @@ class LinkedInNetwork:
             log.warning("LinkedIn token revoke failed: %s", type(error).__name__)
 
     async def publish(self, credentials: dict[str, Any], post: PreparedPost) -> PublishedPost:
+        #: Who the post is by: the member, or a page they administer (which stores `author_urn`)
+        author = str(credentials.get("author_urn") or credentials["person_urn"])
         headers = {
             "Authorization": f"Bearer {credentials['access_token']}",
             "LinkedIn-Version": API_VERSION,
             "X-Restli-Protocol-Version": "2.0.0",
         }
         body: dict[str, Any] = {
-            "author": credentials["person_urn"],
+            "author": author,
             "commentary": escape_commentary(post.text),
             "visibility": "PUBLIC",
             "distribution": {"feedDistribution": "MAIN_FEED", "targetEntities": [], "thirdPartyDistributionChannels": []},
@@ -146,7 +152,7 @@ class LinkedInNetwork:
         try:
             async with httpx.AsyncClient(transport=self._transport, timeout=TIMEOUT_SECONDS) as client:
                 if post.images:
-                    uploaded = [await self._upload(client, headers, credentials["person_urn"], image) for image in post.images]
+                    uploaded = [await self._upload(client, headers, author, image) for image in post.images]
                     body["content"] = _content(uploaded)
                 response = await client.post(POSTS_URL, json=body, headers=headers)
         except httpx.ConnectError as error:
@@ -183,6 +189,11 @@ def _json(response: httpx.Response) -> dict[str, Any]:
     except ValueError:
         return {}
     return body if isinstance(body, dict) else {}
+
+
+def _expiry(tokens: dict[str, Any]) -> datetime:
+    lifetime = timedelta(seconds=int(tokens["expires_in"])) if tokens.get("expires_in") else DEFAULT_TOKEN_LIFETIME
+    return datetime.now(timezone.utc) + lifetime
 
 
 def escape_commentary(text: str) -> str:

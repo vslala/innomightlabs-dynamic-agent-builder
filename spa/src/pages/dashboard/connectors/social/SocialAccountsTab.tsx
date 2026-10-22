@@ -135,9 +135,8 @@ export function SocialAccountsTab({ canManage }: { canManage: boolean }) {
                   <ConnectorIcon icon={network.icon} name={network.display_name} />
                   <div className={catalog.rowText}>
                     <div className={catalog.rowName}>{network.display_name}</div>
-                    <div className={catalog.rowDescription}>
-                      {count === 0 ? "Not connected" : `${count} connected`}
-                    </div>
+                    <div className={catalog.rowDescription}>{network.description}</div>
+                    <div className={styles.network}>{count === 0 ? "Not connected" : `${count} connected`}</div>
                   </div>
                   {canManage && (
                     <Button

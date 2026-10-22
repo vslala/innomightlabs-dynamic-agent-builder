@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from src.connectors.social.networks.base import SocialNetwork
 from src.connectors.social.networks.linkedin import LinkedInNetwork
+from src.connectors.social.networks.linkedin_pages import LinkedInPagesNetwork
 
 #: Adding a network: write networks/<key>.py and add it here. Nothing else changes.
-NETWORKS: tuple[SocialNetwork, ...] = (LinkedInNetwork(),)
+NETWORKS: tuple[SocialNetwork, ...] = (LinkedInNetwork(), LinkedInPagesNetwork())
 
 
 def network_for(key: str) -> SocialNetwork:

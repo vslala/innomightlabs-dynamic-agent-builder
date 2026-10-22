@@ -146,6 +146,7 @@ class SocialNetworkResponse(BaseModel):
 
     key: str
     display_name: str
+    description: str
     #: A brand mark key the dashboard knows (`spa/src/assets/connectors/<icon>.svg`)
     icon: str
 
