@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 🚧 In progress (runner endpoints built and exercised; API skill, upload and `video` artifact not) |
+| Status | 🚧 In progress (runner endpoints and the API skill built and exercised; upload and `video` artifact not) |
 | Owner | InnomightLabs API + infra-cli-runner |
 | Last reviewed | 2026-10-21 |
 | Depends on | [infra-cli-runner](../infra-cli-runner/README.md) (browser render, filesystem workspaces), [File System skill](../api/src/skills/file_system/manifest.yml), [Upload File Artifact Skill](../api/docs/LLD-upload-file-artifact-skill.md), [Async Tool Runtime](../api/docs/LLD-async-tool-runtime.md) |
@@ -59,8 +59,27 @@
   - Recordings were truncated about 3 times in 10 (the browser stops filming a page that doesn't repaint); a one-pixel
     keepalive fixed it (20 of 20). The file is trimmed to the last step by a checked stream copy.
   - Inspection responses were halved (6.7 KB to 3.1 KB): no outline unless asked, sections to h2, no repeated names, no boxes.
-  - `ffmpeg` is added to the runner image. Still not built: the `browser_studio` skill in `api/`, `upload_file` for video, the
-    `video` artifact type.
+  - `ffmpeg` is added to the runner image.
+- **The `browser_studio` skill is built (`api/src/skills/browser_studio/`).** Departures from the sketch above:
+  - Five actions: `inspect_page`, `record_walkthrough`, `render_scene` (not `record_scene`), `compose_video`,
+    `probe_media`. There is no standalone `screenshot`: inspection and the `screenshot` step cover it.
+  - **No `models.py`.** The runner validates every request strictly and names the field that is wrong, so the skill
+    doesn't repeat its models. `client.py` turns a 422 into `steps.3.target: <reason>` lines (at most five) and passes the
+    runner's own messages for a failed page, a missing file or a bad timeline. An agent was shown these against the live
+    runner; a dead site and a private address read the same.
+  - **The manifest is written by hand, so a contract test guards it** (`infra-cli-runner/tests/test_browser_studio_contract.py`):
+    every property, required field and enum it offers must exist on the runner's models. Checked by introducing drift.
+  - **Schemas are the per-turn cost**, since recently used actions' schemas are re-rendered into each turn. They are kept
+    to about 9.8 KB (steps appear once, not in both `inspect_page` and `record_walkthrough`; only the top level carries
+    `additionalProperties: false`), and a test fails above 10 KB.
+  - `request_id` and `workspace_id` are filled in last by the client, so an agent can't pick another workspace (tested, and
+    seen against the live runner).
+  - Each call waits as long as its job can take, plus 45 s (`record_walkthrough`: `max_duration_seconds`; `render_scene`:
+    frames at 4 a second; compose 315 s), never over `BROWSER_STUDIO_TIMEOUT_SECONDS` (default 330, in `settings.py` and
+    the Railway deploy script). A timeout tells the agent the studio does one job at a time and may be busy.
+  - Owner-only and not an automation action, like File System.
+- **Still not built:** `upload_file` taking a workspace file, and the `video` artifact type, so the finished video can't yet
+  be handed to the user from chat; Ila's recipe for an advert video; the `social_media` publish step that could post it.
 
 ## Context and problem
 

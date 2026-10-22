@@ -162,6 +162,7 @@ export SKILLS_BUCKET_NAME="$(get_var_default 'SKILLS_BUCKET_NAME' './docs')"
 export CLI_RUNNER_BASE_URL="$(get_var_default 'CLI_RUNNER_BASE_URL' "http://localhost:${LOCAL_CLI_RUNNER_PORT:-8002}")"
 export CLI_RUNNER_SHARED_TOKEN="$(get_var_default 'CLI_RUNNER_SHARED_TOKEN' 'local-cli-runner-token')"
 export CLI_RUNNER_TIMEOUT_SECONDS="$(get_var_default 'CLI_RUNNER_TIMEOUT_SECONDS' '30')"
+export BROWSER_STUDIO_TIMEOUT_SECONDS="$(get_var_default 'BROWSER_STUDIO_TIMEOUT_SECONDS' '330')"
 export CLI_RUNNER_MAX_TIMEOUT_SECONDS="$(get_var_default 'CLI_RUNNER_MAX_TIMEOUT_SECONDS' '120')"
 export CRAWLER_BROWSER_FALLBACK="$(get_var_default 'CRAWLER_BROWSER_FALLBACK' 'true')"
 
