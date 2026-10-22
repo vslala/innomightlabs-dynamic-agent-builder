@@ -2,6 +2,30 @@
 
 Date: 2026-05-24
 
+## Implementation notes — 2026-10-22
+
+**Rollout pending:** local implementation passed the full API suite (2820 passed, 1 skipped).
+The production API upload was rejected with “Deploys have been paused due to an upstream issue”
+during Railway's platform incident. No new deployment was created and production Serverless
+remains disabled. Resume with API retries first, then Ollama, and verify sleep/wake before marking
+the rollout complete.
+
+The private `ollama-embeddings` service supplies `qwen3-embedding:0.6b` vectors for both crawler
+content and semantic-search queries. Its `ollama-embeddings/railway.toml` now enables Railway
+Serverless (`deploy.sleepApplication = true`): after roughly 5–10 minutes without network activity,
+the container sleeps and the next private-network request wakes it. The model is baked into the
+image, with no persistent volume or model download on wake. `OLLAMA_KEEP_ALIVE=-1` retains the
+model only while the container runs; it does not disable Railway's network-based idle detection.
+
+`OllamaEmbeddings.embed_texts_async` retries only connection errors and HTTP 502/503/504, with
+four attempts and 1/2/4 second async backoffs. Permanent HTTP errors, timeouts, invalid vectors,
+and cancellation propagate without retries. Both callers share this protection. A deployment is
+required for a changed sleep setting to affect the container. Roll out API retries first, then deploy
+Ollama with Serverless; validate healthy deployment, idle sleep, and an embedding request that
+wakes it. Roll back by disabling Serverless and redeploying. Avoid periodic Ollama probes that
+would prevent sleep. See `ollama-embeddings/README.md` for the operational behavior and
+`api/tests/test_embedding_retries.py` for retry regression coverage.
+
 ## Goal
 
 Move the public FastAPI HTTP API from AWS Lambda + API Gateway to Railway, while keeping the existing AWS architecture for DynamoDB, Cognito, S3 buckets, Bedrock, SES/Mailjet-related configuration, CloudFront widget hosting, DynamoDB stream processing, and any remaining Lambda background handlers.

@@ -228,8 +228,18 @@ class OllamaEmbeddings:
             timeout=self.timeout_seconds,
             transport=self.transport,
         ) as client:
-            response = await client.post("/api/embed", json=request_body)
-            response.raise_for_status()
+            # A sleeping Ollama service can refuse connections or return gateway errors.
+            for attempt in range(4):
+                try:
+                    response = await client.post("/api/embed", json=request_body)
+                    response.raise_for_status()
+                    break
+                except (httpx.ConnectError, httpx.HTTPStatusError) as exc:
+                    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code not in (502, 503, 504):
+                        raise
+                    if attempt == 3:
+                        raise
+                    await asyncio.sleep(2 ** attempt)
 
         response_body = response.json()
         embeddings = response_body.get("embeddings")
