@@ -22,8 +22,10 @@ FROM python:3.13-slim
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# ffmpeg (with ffprobe) joins recorded clips and renders scenes into videos. It is the distribution's full build: the
+# one Playwright installs for recording only encodes VP8.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl unzip groff less \
+  && apt-get install -y --no-install-recommends ca-certificates curl unzip groff less ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \

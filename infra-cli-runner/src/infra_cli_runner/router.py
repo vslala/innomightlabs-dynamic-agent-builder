@@ -19,7 +19,23 @@ from src.infra_cli_runner.models import (
     PythonExecutionResponse,
 )
 from src.infra_cli_runner.browser import BrowserRenderer, RenderError, get_browser_renderer
-from src.infra_cli_runner.filesystem import FileSystemService, get_file_system_service
+from src.infra_cli_runner.filesystem import FileSystemOperationError, FileSystemService, get_file_system_service
+from src.infra_cli_runner.media import ffmpeg as media_ffmpeg
+from src.infra_cli_runner.media.compose import CompositionError
+from src.infra_cli_runner.media.models import CompositionRequest, CompositionResponse, ProbeRequest, ProbeResponse
+from src.infra_cli_runner.media.service import compose as compose_media
+from src.infra_cli_runner.media.service import probe_media
+from src.infra_cli_runner.studio.inspect import inspect_page
+from src.infra_cli_runner.studio.models import (
+    InspectRequest,
+    InspectResponse,
+    SceneRequest,
+    SceneResponse,
+    WalkthroughRequest,
+    WalkthroughResponse,
+)
+from src.infra_cli_runner.studio.scenes import render_scene
+from src.infra_cli_runner.studio.walkthrough import walkthrough
 from src.infra_cli_runner.mcp_servers import (
     PoolFullError,
     ServerNotRunningError,
@@ -121,6 +137,93 @@ async def render_page(
     except RenderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return BrowserRenderResponse(final_url=page.final_url, status=page.status, html=page.html)
+
+
+@router.post("/v1/browser/inspections", response_model=InspectResponse, response_model_exclude_none=True)
+async def inspect_browser_page(
+    request: InspectRequest,
+    runner_service: Annotated[CliRunnerService, Depends(get_cli_runner_service)],
+    renderer: Annotated[BrowserRenderer, Depends(get_browser_renderer)],
+    files: Annotated[FileSystemService, Depends(get_file_system_service)],
+    authorization: str | None = Header(default=None),
+) -> InspectResponse:
+    _authorize(runner_service, authorization)
+    try:
+        return await inspect_page(renderer, files, request)
+    except RenderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except FileSystemOperationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{exc.code}: {exc.message}") from exc
+
+
+@router.post("/v1/browser/walkthroughs", response_model=WalkthroughResponse, response_model_exclude_none=True)
+async def run_browser_walkthrough(
+    request: WalkthroughRequest,
+    runner_service: Annotated[CliRunnerService, Depends(get_cli_runner_service)],
+    renderer: Annotated[BrowserRenderer, Depends(get_browser_renderer)],
+    files: Annotated[FileSystemService, Depends(get_file_system_service)],
+    authorization: str | None = Header(default=None),
+) -> WalkthroughResponse:
+    _authorize(runner_service, authorization)
+    try:
+        return await walkthrough(renderer, files, request)
+    except RenderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except FileSystemOperationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{exc.code}: {exc.message}") from exc
+
+
+@router.post("/v1/browser/scenes", response_model=SceneResponse, response_model_exclude_none=True)
+async def render_browser_scene(
+    request: SceneRequest,
+    runner_service: Annotated[CliRunnerService, Depends(get_cli_runner_service)],
+    renderer: Annotated[BrowserRenderer, Depends(get_browser_renderer)],
+    files: Annotated[FileSystemService, Depends(get_file_system_service)],
+    authorization: str | None = Header(default=None),
+) -> SceneResponse:
+    _authorize(runner_service, authorization)
+    try:
+        return await render_scene(renderer, files, request)
+    except RenderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except media_ffmpeg.MediaError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except FileSystemOperationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{exc.code}: {exc.message}") from exc
+
+
+@router.post("/v1/media/compositions", response_model=CompositionResponse, response_model_exclude_none=True)
+async def compose_video(
+    request: CompositionRequest,
+    runner_service: Annotated[CliRunnerService, Depends(get_cli_runner_service)],
+    files: Annotated[FileSystemService, Depends(get_file_system_service)],
+    authorization: str | None = Header(default=None),
+) -> CompositionResponse:
+    _authorize(runner_service, authorization)
+    try:
+        return await compose_media(files, request)
+    except CompositionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"invalid_composition: {exc}") from exc
+    except FileSystemOperationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{exc.code}: {exc.message}") from exc
+    except media_ffmpeg.MediaError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.post("/v1/media/probes", response_model=ProbeResponse, response_model_exclude_none=True)
+async def probe_media_file(
+    request: ProbeRequest,
+    runner_service: Annotated[CliRunnerService, Depends(get_cli_runner_service)],
+    files: Annotated[FileSystemService, Depends(get_file_system_service)],
+    authorization: str | None = Header(default=None),
+) -> ProbeResponse:
+    _authorize(runner_service, authorization)
+    try:
+        return await probe_media(files, request)
+    except FileSystemOperationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{exc.code}: {exc.message}") from exc
+    except media_ffmpeg.MediaError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 @router.get("/v1/mcp/packages", response_model=list[HostedMCPPackage])

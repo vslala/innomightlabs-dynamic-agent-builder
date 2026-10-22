@@ -32,7 +32,8 @@ HARD_MAX_RESULTS = 1_000
 MAX_BATCH_OPERATIONS = 50
 MAX_DIFF_BYTES = 128 * 1024
 MAX_PATCH_BYTES = 512 * 1024
-RESERVED_NAMES = {".runs"}
+RESERVED_NAMES_DIR = ".runs"
+RESERVED_NAMES = {RESERVED_NAMES_DIR}
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 ACTION_ARGUMENTS = {
     "list_dir": {"path", "recursive", "max_depth", "limit"},
@@ -403,6 +404,56 @@ class FileSystemService:
                 if not continue_on_error:
                     break
         return FileSystemActionResponse(status=overall, payload={"results": results, "completed": len(results), "total": len(operations)})
+
+    def output_path(self, workspace: Path, raw: str, *, suffixes: frozenset[str]) -> Path:
+        """Where a file the runner itself produces (a screenshot, a recording) may go, by the same path rules as
+        `write_file`. Checked before the work starts, so a bad path doesn't cost a recording."""
+        path = self._path(workspace, raw)
+        if path.suffix.lower() not in suffixes:
+            raise FileSystemOperationError("invalid_path", f"Path must end with {' or '.join(sorted(suffixes))}")
+        if path.is_dir():
+            raise FileSystemOperationError("invalid_path", "Path is a directory")
+        return path
+
+    def write_output(self, workspace: Path, raw: str, data: bytes, *, suffixes: frozenset[str]) -> str:
+        """Saves produced bytes and returns the workspace-relative path. The per-write size cap is for what a model
+        sends, so only the workspace quota applies."""
+        path = self.output_path(workspace, raw, suffixes=suffixes)
+        self._check_quota(workspace, path, len(data))
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self._atomic_write(path, data)
+        return self._relative(path, workspace)
+
+    def resolve_existing(self, workspace: Path, raw: str, *, suffixes: frozenset[str]) -> Path:
+        """An existing regular file in the workspace that the runner itself will read (media to edit)."""
+        path = self._path(workspace, raw)
+        if path.suffix.lower() not in suffixes:
+            raise FileSystemOperationError("invalid_path", f"{raw} must be one of {', '.join(sorted(suffixes))}")
+        if path.is_symlink() or not path.is_file():
+            raise FileSystemOperationError("not_found", f"{raw} doesn't exist in the workspace")
+        return path
+
+    def staging_dir(self, workspace: Path) -> Path:
+        """A private directory for output that is still being written (a video the browser flushes on close). It sits in
+        the workspace's reserved `.runs`, so it is hidden from listings and not counted against the quota."""
+        root = workspace / RESERVED_NAMES_DIR
+        root.mkdir(mode=0o700, exist_ok=True)
+        return Path(tempfile.mkdtemp(prefix="out-", dir=root))
+
+    def commit_output(self, workspace: Path, staged: Path, raw: str, *, suffixes: frozenset[str]) -> str:
+        """Moves a finished staged file to its workspace path, if the quota allows, and returns that path."""
+        path = self.output_path(workspace, raw, suffixes=suffixes)
+        self._check_quota(workspace, path, staged.stat().st_size)
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.replace(staged, path)
+        return self._relative(path, workspace)
+
+    def release_staging(self, workspace: Path, staged: Path) -> None:
+        shutil.rmtree(staged, ignore_errors=True)
+        try:
+            (workspace / RESERVED_NAMES_DIR).rmdir()  # only succeeds when no other run is using it
+        except OSError:
+            pass
 
     def _path(self, workspace: Path, raw: Any, *, allow_root: bool = False) -> Path:
         if not isinstance(raw, str):
