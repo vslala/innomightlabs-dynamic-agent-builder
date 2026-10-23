@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from src.crawler.discovery import DiscoveryConfig, UrlCrawler
-from src.crawler.renderer import BrowserRenderError, RenderedPage
+from src.web_pages.renderer import BrowserRenderError, RenderedPage
 
 HOME = """<html><body>
 <a href="/about">About</a> <a href="/about/">About again</a> <a href="/">Home</a> <a href="https://example.com">Home too</a>
@@ -19,7 +19,7 @@ def crawler(monkeypatch):
         return httpx.Response(200, text=HOME, headers={"content-type": "text/html"})
 
     monkeypatch.setattr(
-        "src.crawler.page_fetch.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(serve))
+        "src.web_pages.fetch.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(serve))
     )
     return UrlCrawler(DiscoveryConfig(respect_robots_txt=False))
 
@@ -67,7 +67,7 @@ class FakeRenderer:
 
 def site_serving(monkeypatch, html: str) -> None:
     monkeypatch.setattr(
-        "src.crawler.page_fetch.outbound.async_client",
+        "src.web_pages.fetch.outbound.async_client",
         lambda **_: httpx.AsyncClient(
             transport=httpx.MockTransport(lambda request: httpx.Response(200, text=html, headers={"content-type": "text/html"}))
         ),

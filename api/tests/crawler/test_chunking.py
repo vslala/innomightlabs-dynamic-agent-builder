@@ -10,7 +10,7 @@ from src.crawler.chunking import (
     HierarchicalChunking,
     get_chunking_strategy,
 )
-from src.crawler.extractor import ExtractedSection
+from src.web_pages.content import ExtractedSection
 
 
 class TestContentChunkData:

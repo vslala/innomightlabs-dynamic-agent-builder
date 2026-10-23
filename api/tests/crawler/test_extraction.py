@@ -6,7 +6,7 @@ The snippets are trimmed from the real pages (each class name is the site's buil
 import httpx
 import pytest
 
-from src.crawler.extractor import ContentExtractor, decode_cloudflare_email
+from src.web_pages.content import decode_cloudflare_email, extract_content
 from tests.crawler.fakes import read_response
 
 URL = "https://example.com/software/bidsignal"
@@ -17,7 +17,7 @@ def page(body: str, head: str = "") -> str:
 
 
 def text(body: str, head: str = "") -> str:
-    return ContentExtractor().extract(URL, page(body, head)).full_text
+    return extract_content(URL, page(body, head)).full_text
 
 
 def test_a_section_heading_inside_a_header_is_kept():
@@ -92,7 +92,7 @@ def test_a_plain_bulleted_list_stays_a_list():
 
 
 def test_each_heading_of_a_card_list_is_a_section():
-    sections = ContentExtractor().extract(URL, page(
+    sections = extract_content(URL, page(
         "<h2>Why teams choose us</h2><ul><li><h3>Fit</h3><p>Ranked.</p></li><li><h3>Speed</h3><p>Quick.</p></li></ul>"
     )).sections
 
@@ -105,7 +105,7 @@ def test_each_heading_of_a_card_list_is_a_section():
     ("", ""),
 ])
 def test_the_pages_own_address_is_read_from_its_canonical_link(canonical, expected):
-    assert ContentExtractor().extract(URL, page("<p>Hi</p>", canonical)).canonical_url == expected
+    assert extract_content(URL, page("<p>Hi</p>", canonical)).canonical_url == expected
 
 
 def test_a_page_that_says_its_another_page_on_the_site_is_read_as_that_page():

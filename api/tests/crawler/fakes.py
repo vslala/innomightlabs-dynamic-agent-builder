@@ -13,8 +13,9 @@ from typing import AsyncIterator
 from src.crawler.discovery import DiscoveredUrl
 import httpx
 
-from src.crawler.extractor import ContentExtractor, ExtractedContent, Fetched, FetchOutcome
-from src.crawler.page_fetch import PageFetch, page_from_response, readable
+from src.crawler.extractor import ContentExtractor, Fetched, FetchOutcome
+from src.web_pages.content import ExtractedContent, extract_content
+from src.web_pages.fetch import PageFetch, page_from_response, readable
 from src.crawler.robots import RobotsTxt
 from src.crawler.worker import CrawlContext, CrawlerWorker, PageRead
 from src.knowledge.crawl_launch import create_crawl_job
@@ -29,9 +30,9 @@ SITE = "https://example.com"
 
 def read_response(url: str, response: httpx.Response) -> Fetched:
     """What the extractor makes of the response a fetch of `url` ended on, without going to the network."""
-    extractor, page = ContentExtractor(), page_from_response(response)
-    content = extractor.extract(page.url, page.html) if readable(url, page) else None
-    return extractor._outcome(url, PageFetch(page, content))
+    page = page_from_response(response)
+    content = extract_content(page.url, page.html) if readable(url, page) else None
+    return ContentExtractor()._outcome(url, PageFetch(page, content))
 
 
 def paragraphs(count: int, *, edit: int | None = None, topic: str = "plans, seats and billing") -> str:

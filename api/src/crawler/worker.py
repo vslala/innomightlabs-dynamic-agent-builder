@@ -51,8 +51,9 @@ from src.knowledge.repository import (
 )
 from src.knowledge.run_state import CrawlJobStateService, CrawlJobStoppedError
 from src.crawler.discovery import UrlDiscovery, DiscoveryConfig
-from src.crawler.extractor import ContentExtractor, ExtractedContent, Fetched, FetchOutcome
-from src.crawler.renderer import configured_page_renderer
+from src.crawler.extractor import ContentExtractor, Fetched, FetchOutcome
+from src.web_pages.content import ExtractedContent
+from src.web_pages.renderer import configured_page_renderer
 from src.crawler.chunking import get_chunking_strategy
 from src.crawler.page_chunks import READER_VERSION, text_hash
 from src.crawler.page_index import PageIndex, address_rank, held

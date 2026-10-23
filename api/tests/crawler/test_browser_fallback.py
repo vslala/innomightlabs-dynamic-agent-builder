@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from src.crawler.extractor import ContentExtractor, FetchOutcome
-from src.crawler.renderer import BrowserRenderError, PageRenderer, RenderedPage, configured_page_renderer
+from src.web_pages.renderer import BrowserRenderError, PageRenderer, RenderedPage, configured_page_renderer
 
 URL = "https://example.com/pricing"
 SHELL = '<html><head><title>App</title></head><body><div id="root"></div></body></html>'
@@ -27,7 +27,7 @@ def site_answering(monkeypatch, body: str, headers: dict[str, str] | None = None
         return httpx.Response(200, text=body, headers={"content-type": "text/html", **(headers or {})})
 
     monkeypatch.setattr(
-        "src.crawler.page_fetch.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        "src.web_pages.fetch.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(respond))
     )
 
 

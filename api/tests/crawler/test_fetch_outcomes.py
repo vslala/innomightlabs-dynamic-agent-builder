@@ -3,7 +3,8 @@
 import httpx
 import pytest
 
-from src.crawler.extractor import ContentExtractor, FetchOutcome, same_site
+from src.crawler.extractor import ContentExtractor, FetchOutcome
+from src.web_pages.fetch import same_site
 from tests.crawler.fakes import read_response
 
 URL = "https://example.com/pricing"
@@ -61,7 +62,7 @@ async def test_a_page_that_cant_be_reached_is_a_failed_read(monkeypatch):
         raise httpx.ConnectTimeout("too slow", request=request)
 
     monkeypatch.setattr(
-        "src.crawler.page_fetch.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(time_out))
+        "src.web_pages.fetch.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(time_out))
     )
 
     fetched = await ContentExtractor().fetch(URL)
@@ -95,7 +96,7 @@ async def test_the_validators_of_the_last_read_are_sent_back(monkeypatch):
         return httpx.Response(304)
 
     monkeypatch.setattr(
-        "src.crawler.page_fetch.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(not_modified))
+        "src.web_pages.fetch.outbound.async_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(not_modified))
     )
 
     fetched = await ContentExtractor().fetch(URL, etag='"v7"', last_modified="Sat, 17 Oct 2026 09:00:00 GMT")

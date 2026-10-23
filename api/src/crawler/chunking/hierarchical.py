@@ -31,7 +31,7 @@ from uuid import uuid4
 from collections import Counter
 
 from src.crawler.chunking.base import ChunkingStrategy, ContentChunkData, ChunkingConfig
-from src.crawler.extractor import ExtractedSection
+from src.web_pages.content import ExtractedSection
 
 
 class EnhancedHierarchicalChunking(ChunkingStrategy):

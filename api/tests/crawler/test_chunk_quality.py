@@ -2,7 +2,7 @@
 
 
 from src.crawler.chunking import get_chunking_strategy
-from src.crawler.extractor import ExtractedSection
+from src.web_pages.content import ExtractedSection
 
 URL = "https://example.com/about"
 BODY = "We design, build and run software for clients and for ourselves, shipping small improvements often. "
