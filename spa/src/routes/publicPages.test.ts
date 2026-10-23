@@ -32,6 +32,17 @@ describe("public pages", () => {
     }
   });
 
+  it("publishes the WordPress AI Search reviewer URL as an indexed static page", () => {
+    const path = "/downloads/plugins/wordpress-ai-search";
+    expect(indexablePages()).toContainEqual({
+      path, indexed: true, title: "Innomight AI Search for WordPress", section: "Product",
+    });
+    expect(buildSitemap(indexablePaths())).toContain(
+      `<loc>https://innomightlabs.com${path}</loc>`,
+    );
+    expect(indexablePaths()).not.toContain("/downloads/plugins/:pluginId");
+  });
+
   it("has no duplicate paths", () => {
     const paths = PUBLIC_PAGES.map((page) => page.path);
     expect(new Set(paths).size).toBe(paths.length);

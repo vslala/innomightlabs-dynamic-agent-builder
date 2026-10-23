@@ -1,0 +1,52 @@
+/* Innomight AI Search. Colours follow the surrounding theme (currentColor + theme.json presets). */
+.innomight-search{
+	--is-accent:var(--innomight-accent,var(--wp--preset--color--primary,var(--wp--preset--color--vivid-cyan-blue,#2563eb)));
+	--is-line:color-mix(in srgb,currentColor 18%,transparent);
+	--is-soft:color-mix(in srgb,currentColor 5%,transparent);
+	--is-tint:color-mix(in srgb,var(--is-accent) 12%,transparent);
+	--is-code:color-mix(in srgb,currentColor 9%,transparent);
+	box-sizing:border-box;margin:1.5em 0;padding:16px;border:1px solid var(--is-line);border-radius:16px;font-size:16px;line-height:1.55;color:inherit;
+	background-image:linear-gradient(180deg,var(--is-tint),transparent 96px);
+}
+@supports not (color:color-mix(in srgb,red,blue)){
+	.innomight-search{--is-line:rgba(127,127,127,.35);--is-soft:rgba(127,127,127,.08);--is-tint:rgba(37,99,235,.1);--is-code:rgba(127,127,127,.16)}
+}
+.innomight-search *,.innomight-search *::before,.innomight-search *::after{box-sizing:border-box}
+.innomight-search__hd{display:flex;align-items:center;gap:10px;margin:0 0 6px}
+.innomight-search__title{margin:0;padding:0;font-size:1.1em;font-weight:600;line-height:1.3;color:inherit}
+.innomight-search__badge{display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:9px;background:var(--is-accent);color:#fff}
+.innomight-search__badge svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+.innomight-search__intro{margin:0 0 12px;font-size:.9em;opacity:.75}
+.innomight-search__thread{display:grid;gap:12px;margin:4px 0 14px;max-height:min(70vh,640px);overflow-y:auto}
+.innomight-search__thread[hidden],.innomight-search__sug[hidden]{display:none}
+.innomight-search__msg{display:flex;min-width:0}
+.innomight-search__msg.is-user{justify-content:flex-end}
+.innomight-search__body{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.innomight-search__msg.is-user .innomight-search__body{max-width:88%;padding:9px 14px;border-radius:16px 16px 4px 16px;background:var(--is-accent);color:#fff;white-space:pre-wrap}
+.innomight-search__msg.is-bot .innomight-search__body{padding:12px 14px 4px;border:1px solid var(--is-line);border-radius:16px 16px 16px 4px;background:var(--is-soft)}
+.innomight-search__body p{margin:0 0 .75em}
+.innomight-search__body ul,.innomight-search__body ol{margin:0 0 .75em;padding-left:1.3em}
+.innomight-search__body li{margin:.2em 0}
+.innomight-search__body h4{margin:.9em 0 .4em;font-size:1em;font-weight:600;color:inherit}
+.innomight-search__body a{color:var(--is-accent);text-underline-offset:2px}
+.innomight-search__body code{padding:.1em .35em;border-radius:5px;background:var(--is-code);font-size:.88em}
+.innomight-search__body pre{margin:0 0 .75em;padding:10px 12px;border-radius:10px;background:var(--is-code);overflow-x:auto;font-size:.85em;line-height:1.55}
+.innomight-search__body pre code{padding:0;background:none;font-size:inherit}
+.innomight-search__status{margin-right:6px;font-size:.88em;opacity:.7}
+.innomight-search__error{margin:0 0 .75em;color:#b32d2e}
+.innomight-search__cursor{display:inline-block;width:6px;height:1em;background:var(--is-accent);vertical-align:-2px;animation:innomight-search-blink 1s steps(1) infinite}
+@keyframes innomight-search-blink{50%{opacity:0}}
+.innomight-search__sug{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.innomight-search__sug button{padding:6px 12px;border:1px solid var(--is-line);border-radius:99px;background:transparent;color:inherit;font:inherit;font-size:.85em;cursor:pointer}
+.innomight-search__sug button:hover,.innomight-search__sug button:focus-visible{border-color:var(--is-accent)}
+.innomight-search__form{display:flex;gap:8px;padding:6px 6px 6px 14px;border:1px solid var(--is-line);border-radius:14px;background:transparent}
+.innomight-search__form:focus-within{border-color:var(--is-accent);box-shadow:0 0 0 3px var(--is-tint)}
+.innomight-search .innomight-search__form input{flex:1;min-width:0;width:auto;height:auto;margin:0;padding:6px 0;border:0!important;border-radius:0;background:none!important;box-shadow:none!important;color:inherit;font:inherit;outline:0!important}
+.innomight-search__form button{display:grid;place-items:center;flex:none;width:42px;height:38px;margin:0;padding:0;border:0;border-radius:10px;background:var(--is-accent);color:#fff;cursor:pointer}
+.innomight-search__form button:disabled{opacity:.55;cursor:default}
+.innomight-search__form button svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.innomight-search__fine{margin:10px 2px 0;font-size:.78em;opacity:.65}
+.innomight-search__notice{margin:1em 0;padding:10px 14px;border:1px dashed var(--is-line,#999);border-radius:10px}
+@media (min-width:760px){.innomight-search{padding:20px 22px}}
+@media (prefers-reduced-motion:reduce){.innomight-search__cursor{animation:none}}
+@media print{.innomight-search{display:none}}

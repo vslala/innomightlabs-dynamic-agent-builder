@@ -146,7 +146,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [vscode, wordpress]
+        plugin: [vscode, wordpress, wordpress-ai-search]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -166,6 +166,14 @@ jobs:
       - name: Package WordPress plugin
         if: matrix.plugin == 'wordpress'
         run: scripts/downloads/package_wordpress_plugin.sh
+
+      - name: Test plugin downloads pipeline
+        if: matrix.plugin == 'wordpress-ai-search'
+        run: python3 -m unittest discover -s scripts/downloads -v
+
+      - name: Package WordPress AI Search plugin
+        if: matrix.plugin == 'wordpress-ai-search'
+        run: scripts/downloads/package_wordpress_ai_search_plugin.sh
 
       - name: Stage plugin artifact
         run: |

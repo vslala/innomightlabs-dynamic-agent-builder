@@ -9,13 +9,19 @@ from pathlib import Path
 from typing import Any
 
 
-PLUGIN_IDS = ("vscode", "wordpress")
+PLUGIN_IDS = ("vscode", "wordpress", "wordpress-ai-search")
 PLUGIN_METADATA = {
     "vscode": {
         "kind": "Editor plugin",
         "platform": "VS Code",
         "tagline": "Bring your Innomight coding assistant into VS Code.",
         "description": "Ask better questions about selected code, rewrite tricky sections in place, generate snippets from slash prompts, and keep your Innomight agent conversation beside the editor while you build.",
+    },
+    "wordpress-ai-search": {
+        "kind": "Website plugin",
+        "platform": "WordPress",
+        "tagline": "Add an AI follow-up chat to your WordPress search results.",
+        "description": "Visitors search your site as usual, then ask follow-up questions in a chat answered live by your Innomight agent. Works with block and classic themes; your agent's secret key stays on your server.",
     },
     "wordpress": {
         "kind": "Website plugin",
@@ -45,7 +51,7 @@ def bump_patch(value: str) -> str:
 
 
 def choose_version(plugin_id: str, build: dict[str, Any], previous: dict[str, Any] | None) -> str:
-    env_name = f"{plugin_id.upper()}_PLUGIN_VERSION"
+    env_name = f"{plugin_id.upper().replace('-', '_')}_PLUGIN_VERSION"
     if os.getenv(env_name):
         return str(os.environ[env_name]).strip()
 

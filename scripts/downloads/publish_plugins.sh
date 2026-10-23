@@ -12,9 +12,9 @@ if [ -n "${AWS_PROFILE:-}" ]; then
   echo "Using AWS profile: ${AWS_PROFILE}"
 fi
 
-for plugin_id in vscode wordpress; do
+for plugin_id in vscode wordpress wordpress-ai-search; do
   if [ ! -f "${BUILD_ROOT}/${plugin_id}/plugin-build.json" ]; then
-    echo "Missing build output for ${plugin_id}. Run package_${plugin_id}_plugin.sh first." >&2
+    echo "Missing build output for ${plugin_id}. Run the matching scripts/downloads/package_*_plugin.sh first." >&2
     exit 1
   fi
 done

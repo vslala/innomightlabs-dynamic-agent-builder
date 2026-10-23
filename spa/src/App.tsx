@@ -115,6 +115,7 @@ const publicPageElements: Record<PublicPath, ReactElement> = {
   '/pricing': <Pricing />,
   '/contact': <Contact />,
   '/downloads': <DownloadsPage />,
+  '/downloads/plugins/wordpress-ai-search': <PluginDetailsPage />,
   '/downloads/plugins/:pluginId': <PluginDetailsPage />,
   '/docs/quick-start': <QuickStart />,
   '/docs/automations': <Automations />,

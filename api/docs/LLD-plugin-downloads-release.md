@@ -1,5 +1,40 @@
 # Plugin Downloads Release Pipeline
 
+| Field | Value |
+| --- | --- |
+| Status | 🚧 In progress — AI Search assets published; fixed reviewer-page SPA deployment pending |
+| Owner | Innomight Labs |
+| Last reviewed | 2026-10-23 |
+| Depends on | GitHub Pages release workflow, private artifacts bucket, public downloads API |
+
+## Implementation notes: WordPress AI Search (2026-10-23)
+
+The release catalogue now includes **Innomight AI Search** (`wordpress-ai-search`) in addition to VS Code and the WordPress AI Connector. These are distinct plugins: AI Search adds a streaming follow-up conversation to search results using an agent secret key; it is not the connector's Public Ask feature.
+
+- Source: `plugins/wordpress/innomight-ai-search/`; packaging script: `scripts/downloads/package_wordpress_ai_search_plugin.sh`.
+- Output: `dist/downloads/wordpress-ai-search/innomight-ai-search.zip`, `README.md`, `icon.svg` and `plugin-build.json`. Version comes from the PHP header (currently `1.0.0`); hashes exclude development/test files but include the separately published icon.
+- GitHub Actions packages `vscode`, `wordpress` and `wordpress-ai-search` in parallel. The publisher validates all three outputs, uploads each versioned archive/README/icon, then publishes the shared manifest last. `WORDPRESS_AI_SEARCH_PLUGIN_VERSION` overrides this plugin's manifest version when needed.
+- New S3 prefix: `artifacts/plugins/wordpress-ai-search/`, containing `innomight-ai-search-<version>.zip`, `README.md` and `icon.svg`.
+- The existing generic downloads API reads the new manifest entry without backend changes. The SPA catalogue automatically displays the new card using its existing design and presigned download link; the existing details page renders its README.
+- `/downloads/plugins/wordpress-ai-search` is an explicit indexed public route in `spa/src/routes/publicPages.ts` and `spa/src/App.tsx`. The public-pages build emits `downloads/plugins/wordpress-ai-search.html` and adds its URL to `sitemap.xml`, so GitHub Pages can answer a direct reviewer visit with HTTP 200 rather than the 404 fallback. The details page matches the URL independently of route parameters so fixed and parameterized routes both select the correct plugin, including with a basename.
+- The plugin header's `Plugin URI` is `https://innomightlabs.com/downloads/plugins/wordpress-ai-search`, distinct from `Author URI`. **Publish the assets and SPA page, then verify the live page and download before submitting this URL to WordPress.org reviewers.** Adding the header locally does not make the page live.
+
+Validation:
+
+```bash
+python3 -m unittest discover -s scripts/downloads -v
+bash scripts/downloads/package_wordpress_ai_search_plugin.sh
+# From spa/:
+yarn test src/routes/publicPages.test.ts src/pages/PluginDetailsPage.test.tsx
+yarn build
+# From plugins/wordpress/innomight-ai-search/:
+php tests/run.php
+```
+
+Local results: six offline pipeline tests, twelve focused SPA tests and twenty-three plugin tests passed; scoped ESLint and the production SPA build passed. The generated reviewer HTML and sitemap entry were verified. Full SPA tests had one unrelated dashboard number-format assertion failure (`1.2K` vs `1.2k`); full lint reported existing findings outside the touched files. AI Search 1.0.0 was subsequently published to the production artifacts bucket with its README, icon and catalogue entry. The public catalogue and download returned HTTP 200; the downloaded ZIP passed integrity and SHA-256 checks. Existing VS Code and WordPress Connector catalogue entries were preserved unchanged, and the manifest was conditionally updated using its original ETag. The fixed reviewer-page SPA route still requires deployment (the live URL returned HTTP 404); the downloads-grid card and ZIP are live. Pipeline regression tests use a fake AWS command, separate from that verified production publication.
+
+The original rollout proposal below is retained as historical context. Its two-plugin counts and flat manifest/API examples predate the implementation; `scripts/downloads/generate_plugins_manifest.py` and `api/src/downloads/models.py` define the current nested `artifact` manifest and direct detail response contracts.
+
 ## Goal
 
 Offer Innomight plugin downloads from the SPA:
@@ -7,6 +42,7 @@ Offer Innomight plugin downloads from the SPA:
 - `/downloads`
 - `/downloads/plugins/vscode`
 - `/downloads/plugins/wordpress`
+- `/downloads/plugins/wordpress-ai-search`
 
 Artifacts are stored in a private S3 bucket named:
 

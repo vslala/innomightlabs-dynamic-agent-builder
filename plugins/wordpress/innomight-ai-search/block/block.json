@@ -1,0 +1,13 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "innomight/ai-search",
+	"title": "Innomight AI Search",
+	"category": "widgets",
+	"icon": "format-chat",
+	"description": "A follow-up chat answered by your Innomight Labs agent. Shown on search results automatically; add it here to place it yourself.",
+	"keywords": [ "ai", "chat", "search", "innomight", "assistant" ],
+	"textdomain": "innomight-ai-search",
+	"supports": { "html": false, "multiple": false },
+	"editorScript": "file:./editor.js"
+}

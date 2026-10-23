@@ -35,6 +35,7 @@ export const PUBLIC_PAGES = [
   })),
   { path: "/pricing", indexed: true, title: "Pricing", section: "Product" },
   { path: "/downloads", indexed: true, title: "Downloads", section: "Product" },
+  { path: "/downloads/plugins/wordpress-ai-search", indexed: true, title: "Innomight AI Search for WordPress", section: "Product" },
   { path: "/downloads/plugins/:pluginId", indexed: false },
   { path: "/whats-new", indexed: true, title: "What's New", section: "Product" },
   { path: "/contact", indexed: true, title: "Contact", section: "Product" },

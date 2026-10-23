@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, PackageOpen } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useMatch } from "react-router-dom";
 import { Footer } from "../components/Footer";
 import { Navbar } from "../components/Navbar";
 import { MarkdownRenderer } from "../components/ui/markdown-renderer";
@@ -21,7 +21,8 @@ function PluginIcon({ plugin }: { plugin: PluginDownloadDetail }) {
 }
 
 export function PluginDetailsPage() {
-  const { pluginId } = useParams<{ pluginId: string }>();
+  // Fixed public routes do not populate useParams; match the URL for both forms.
+  const pluginId = useMatch("/downloads/plugins/:pluginId")?.params.pluginId;
   const [plugin, setPlugin] = useState<PluginDownloadDetail | null>(null);
   const [status, setStatus] = useState<"loading" | "success" | "error" | "missing">("loading");
 
