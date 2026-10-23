@@ -32,11 +32,10 @@ from src.crawler.discovery import (
 
 from src.crawler.extractor import (
     ContentExtractor,
-    ExtractedContent,
-    ExtractedSection,
     Fetched,
     FetchOutcome,
 )
+from src.web_pages.content import ExtractedContent, ExtractedSection
 
 from src.crawler.chunking import (
     ChunkingStrategy,

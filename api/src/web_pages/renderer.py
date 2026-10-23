@@ -1,8 +1,8 @@
 """Renders a page in a real browser, for sites that paint their content with JavaScript.
 
-A plain fetch of a React or Angular app returns an empty shell, so the crawler asks the infra CLI runner (a private
-sidecar that holds headless Chromium) for the page as it looks after its scripts ran. It is a fallback: the crawler
-only calls it for a page that came back with HTML and no text.
+A plain fetch of a React or Angular app returns an empty shell, so `fetch_page` asks the infra CLI runner (a private
+sidecar that holds headless Chromium) for the page as it looks after its scripts ran. It is a fallback: it is only
+asked for a page that came back with HTML and nothing in it, and only by a caller that passes a renderer.
 """
 
 from dataclasses import dataclass

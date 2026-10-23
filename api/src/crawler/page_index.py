@@ -21,7 +21,7 @@ from typing import Iterable
 from urllib.parse import urlparse
 
 from src.crawler.chunking import ContentChunkData
-from src.crawler.extractor import same_site
+from src.web_pages.fetch import same_site
 from src.crawler.page_chunks import prepare_page, vectors_for
 from src.knowledge.models import UPLOAD_SOURCE, KnowledgePage, KnowledgePageState
 from src.knowledge.repository import ContentChunkRepository, CrawlJobRepository, KnowledgePageRepository

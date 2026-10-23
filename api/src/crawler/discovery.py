@@ -14,8 +14,8 @@ from typing import AsyncIterator, Optional, Set, cast
 from bs4 import BeautifulSoup
 import logging
 
-from src.crawler.page_fetch import Page, fetch_page
-from src.crawler.renderer import PageRenderer
+from src.web_pages.fetch import Page, fetch_page
+from src.web_pages.renderer import PageRenderer
 from src.crawler.robots import RobotsParser, RobotsTxt
 from src.common import outbound
 

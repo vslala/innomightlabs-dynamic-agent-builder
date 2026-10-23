@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import base64
+import html
 from typing import Any
 
 import httpx
+
 from src.common import outbound
+from src.skills.wordpress_search.models import ReadPostRequest
+from src.web_pages.content import fragment_to_markdown
 
 
-def _normalize_site_url(raw: str) -> str:
-    value = raw.strip().rstrip("/")
-    if not value.startswith("http://") and not value.startswith("https://"):
-        value = f"https://{value}"
-    return value
+def _site_url(config: dict[str, Any]) -> str:
+    site_url = str(config.get("site_url", "")).strip().rstrip("/")
+    if not site_url:
+        raise ValueError("Skill configuration is incomplete: 'site_url' is required")
+    if not site_url.startswith("http://") and not site_url.startswith("https://"):
+        site_url = f"https://{site_url}"
+    return site_url
 
 
 def _build_headers(config: dict[str, Any]) -> dict[str, str]:
@@ -29,6 +35,30 @@ def _build_headers(config: dict[str, Any]) -> dict[str, str]:
     if bypass_token:
         headers["X-Innomightlabs-Skill"] = bypass_token
     return headers
+
+
+async def read_post(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    post_id = ReadPostRequest.model_validate(arguments).id
+    endpoint = f"{_site_url(config)}/wp-json/wp/v2/posts/{post_id}"
+    async with outbound.async_client(timeout=20.0, follow_redirects=False) as client:
+        response = await client.get(endpoint, params={"_fields": "id,link,title,date,content"}, headers=_build_headers(config))
+
+    if response.status_code >= 400:
+        text = response.text[:400]
+        raise RuntimeError(f"WordPress API error ({response.status_code}): {text}")
+
+    post = response.json()
+    markdown = fragment_to_markdown(post["content"]["rendered"])
+    if not markdown:
+        raise RuntimeError(f"WordPress post {post_id} has no readable content")
+    return {
+        "id": post["id"],
+        "url": post["link"],
+        "title": html.unescape(post["title"]["rendered"]),
+        "date": post["date"],
+        "markdown": markdown,
+        "word_count": len(markdown.split()),
+    }
 
 
 def _safe_int(value: Any) -> int | None:
@@ -173,11 +203,7 @@ async def search(arguments: dict[str, Any], config: dict[str, Any], context: dic
     except Exception:
         page = 1
 
-    site_url = str(config.get("site_url", "")).strip()
-    if not site_url:
-        raise ValueError("Skill configuration is incomplete: 'site_url' is required")
-
-    base_url = _normalize_site_url(site_url)
+    base_url = _site_url(config)
     endpoint = f"{base_url}/wp-json/wp/v2/posts"
     params: dict[str, str | int] = {
         "search": query,

@@ -1,4 +1,6 @@
-"""The one way the crawler fetches a page, whether it is reading the page's text or looking for the links on it.
+"""The one way we fetch a web page, whether a caller reads the page's text or looks for the links on it.
+
+The crawler reads pages and finds links with it.
 
 A plain fetch of a React or Angular app returns an empty shell. What counts as empty depends on who is asking: no text
 for the extractor, no links for URL discovery. Each caller says what it reads from a page and when that is empty, and a
@@ -13,7 +15,7 @@ from urllib.parse import urlparse
 import httpx
 
 from src.common import outbound
-from src.crawler.renderer import BrowserRenderError, PageRenderer
+from src.web_pages.renderer import BrowserRenderError, PageRenderer
 
 log = logging.getLogger(__name__)
 

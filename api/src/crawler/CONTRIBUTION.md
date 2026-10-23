@@ -14,8 +14,7 @@ src/crawler/
   worker.py         CrawlerWorker: discovery, the per-page read (PageRead), checkpoints, steps and progress
   page_index.py     PageIndex: the only code that writes, removes or marks a page, in the order that's safe to stop
   page_chunks.py    chunk_id (content-addressed), prepare_page (which chunks are new), text_hash, vectors_for
-  extractor.py      fetch() -> Fetched with a FetchOutcome (OK, NOT_MODIFIED, GONE, FAILED); HTML -> ExtractedContent
-                    (decoding emails, flattening cards and fact lists, keeping words apart)
+  extractor.py      fetch() -> Fetched with a FetchOutcome (OK, NOT_MODIFIED, GONE, FAILED)
   discovery.py      Sitemap parsing and link crawling (UrlDiscovery)
   robots.py         robots.txt parsing and rules
   events.py         CrawlEvent and one builder function per event type
@@ -71,7 +70,9 @@ src/crawler/
 - **Chunks say something once.** The chunker makes no level-2 chunk that repeats its section (`_chunk_section`), and a
   section too short to say anything (under `section_min_words`: an eyebrow, a heading with no body) is joined to the
   next (`_merge_tiny_sections`). Each chunk carries its `section_heading`.
-- **The extractor keeps the page's words.** It removes the site's header, footer and navigation, not a `<header>`
+- **The extractor keeps the page's words.** Fetching a page (`fetch_page`), the browser fallback and HTML -> Markdown
+  (`extract_content`) live in `src/web_pages/`, shared with skills that turn HTML into Markdown; see its `CONTRIBUTION.md`. A
+  change there is a change to the reader: bump `READER_VERSION`. Extraction removes the site's header, footer and navigation, not a `<header>`
   inside `<main>` or an `<article>` (that's a section's heading). It decodes Cloudflare-hidden emails, writes fact
   lists as `label: value`, turns list cards (`<li>` with a heading) into headings, and puts a space between inline
   elements whose tags are dropped. Tests use trimmed markup of real pages (`test_extraction.py`).
