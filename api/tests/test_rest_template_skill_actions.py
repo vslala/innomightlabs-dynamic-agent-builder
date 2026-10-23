@@ -321,7 +321,7 @@ def test_rest_template_drops_secret_headers_on_cross_origin_redirects(monkeypatc
 
     monkeypatch.setattr(
         "src.skills.rest_template.actions.outbound.async_client",
-        lambda **kwargs: httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True, **kwargs),
+        lambda destination_check=None, **kwargs: httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True, **kwargs),
     )
 
     asyncio.run(

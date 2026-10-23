@@ -11,6 +11,7 @@ from src.agents.repository import AgentRepository
 from src.skills.agent_invocation.actions import _target_agent_id
 from src.skills.agent_invocation.models import InvokeAgentRequest
 from src.skills.models import ActorKind
+from src.skills.registry import get_skill_registry
 from src.skills.service import SkillRuntimeService
 from tests.mock_data import user_id_for, account_for, TEST_USER_EMAIL, agent_fields
 
@@ -90,7 +91,7 @@ def test_the_owner_can_offer_a_skill_to_visitors(test_client, auth_headers):
 
 def test_an_owner_only_skill_cannot_be_offered_to_anyone_else(test_client, auth_headers):
     agent = _agent()
-    skill_id = _install(test_client, auth_headers, agent.agent_id, "rest_template")
+    skill_id = _install(test_client, auth_headers, agent.agent_id, "python_code_execution")
 
     response = test_client.patch(
         f"/agents/{agent.agent_id}/skills/{skill_id}", headers=auth_headers, json={"available_to": ["visitor"]}
@@ -101,13 +102,85 @@ def test_an_owner_only_skill_cannot_be_offered_to_anyone_else(test_client, auth_
     assert listed[0]["owner_only"] is True
 
 
+def test_rest_template_is_shareable_in_the_manifest_and_catalog(test_client, auth_headers):
+    manifest = get_skill_registry().get("rest_template").manifest
+    assert manifest.owner_only is False
+    assert manifest.requires_oauth is False
+    assert manifest.connectors == []
+    assert manifest.runs_only_for_owner is False
+
+    response = test_client.get("/skills", headers=auth_headers)
+    assert response.status_code == 200
+    item = next(item for item in response.json() if item["skill_id"] == "rest_template")
+    assert item["owner_only"] is False
+
+
+@pytest.mark.parametrize("actor_kind", [ActorKind.VISITOR, ActorKind.GUEST])
+@pytest.mark.parametrize("action", ["get", "post"])
+def test_rest_template_runs_only_for_the_audience_the_owner_shares_with(
+    test_client, auth_headers, monkeypatch, actor_kind, action
+):
+    agent = _agent()
+    installed_id = _install(test_client, auth_headers, agent.agent_id, "rest_template")
+    runtime = _runtime(monkeypatch)
+    path = f"/agents/{agent.agent_id}/skills/{installed_id}"
+
+    response = test_client.patch(path, headers=auth_headers, json={"available_to": [actor_kind.value]})
+    assert response.status_code == 200, response.text
+    assert response.json()["available_to"] == ["owner", actor_kind.value]
+    assert response.json()["owner_only"] is False
+    assert [s.skill_id for s in runtime.list_usable(agent.agent_id, actor_kind)] == ["rest_template"]
+    assert _execute(runtime, agent.agent_id, installed_id, action, actor_kind) == "ran"
+    assert _execute(runtime, agent.agent_id, installed_id, action, ActorKind.OWNER) == "ran"
+
+    for other_kind in (ActorKind.VISITOR, ActorKind.GUEST, ActorKind.API, ActorKind.A2A):
+        if other_kind == actor_kind:
+            continue
+        assert runtime.list_usable(agent.agent_id, other_kind) == []
+        with pytest.raises(ValueError, match="is not installed/enabled"):
+            _execute(runtime, agent.agent_id, installed_id, action, other_kind)
+
+    response = test_client.patch(path, headers=auth_headers, json={"available_to": ["owner"]})
+    assert response.status_code == 200, response.text
+    assert runtime.list_usable(agent.agent_id, actor_kind) == []
+    with pytest.raises(ValueError, match="is not installed/enabled"):
+        _execute(runtime, agent.agent_id, installed_id, action, actor_kind)
+    assert _execute(runtime, agent.agent_id, installed_id, action, ActorKind.OWNER) == "ran"
+
+
+@pytest.mark.parametrize("legacy_without_audience", [False, True])
+def test_rest_template_existing_installs_remain_owner_only(
+    test_client, auth_headers, monkeypatch, legacy_without_audience
+):
+    agent = _agent()
+    installed_id = _install(test_client, auth_headers, agent.agent_id, "rest_template")
+    runtime = _runtime(monkeypatch)
+    if legacy_without_audience:
+        runtime.repository.table.update_item(
+            Key={"pk": f"Agent#{agent.agent_id}", "sk": f"Skill#{installed_id}"},
+            UpdateExpression="REMOVE available_to",
+        )
+
+    response = test_client.patch(
+        f"/agents/{agent.agent_id}/skills/{installed_id}", headers=auth_headers, json={"config": {}}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["available_to"] == ["owner"]
+    assert _execute(runtime, agent.agent_id, installed_id, "get", ActorKind.OWNER) == "ran"
+    for kind in (ActorKind.VISITOR, ActorKind.GUEST, ActorKind.API, ActorKind.A2A):
+        assert runtime.list_usable(agent.agent_id, kind) == []
+        with pytest.raises(ValueError, match="is not installed/enabled"):
+            _execute(runtime, agent.agent_id, installed_id, "get", kind)
+
+
 def test_a_visitor_calling_a_skill_they_were_not_offered_is_refused(test_client, auth_headers, monkeypatch):
     agent = _agent()
     _install(test_client, auth_headers, agent.agent_id, "rest_template")
     runtime = _runtime(monkeypatch)
 
     assert _execute(runtime, agent.agent_id, "rest_template", "get", ActorKind.OWNER) == "ran"
-    for kind in (ActorKind.VISITOR, ActorKind.API, ActorKind.A2A):
+    for kind in (ActorKind.VISITOR, ActorKind.GUEST, ActorKind.API, ActorKind.A2A):
+        assert runtime.list_usable(agent.agent_id, kind) == []
         with pytest.raises(ValueError, match="is not installed/enabled"):
             _execute(runtime, agent.agent_id, "rest_template", "get", kind)
 

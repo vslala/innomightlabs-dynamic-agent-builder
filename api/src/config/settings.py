@@ -89,6 +89,8 @@ class Settings:
     # Static widget assets (widget.js, embed.js, embed/app.*). Point at a local
     # server (e.g. `yarn preview:embed` -> http://localhost:4174) to develop the embed.
     widget_cdn_url: str = "https://cdn.innomightlabs.com"
+    # Additional platform origin IPs/CIDRs not discoverable through public DNS.
+    rest_template_blocked_ip_ranges: str = ""
 
     # Background job dispatch
     async_job_backend: str = "local"
@@ -525,6 +527,7 @@ class Settings:
             frontend_url=os.getenv("FRONTEND_URL", "http://localhost:5173" if environment == "dev" else ""),
             api_base_url=api_base_url,
             widget_cdn_url=os.getenv("WIDGET_CDN_URL", "https://cdn.innomightlabs.com").rstrip("/"),
+            rest_template_blocked_ip_ranges=os.getenv("REST_TEMPLATE_BLOCKED_IP_RANGES", ""),
             jwt_secret=os.getenv("JWT_SECRET", "dev-secret-change-in-production" if environment == "dev" else ""),
             async_job_backend=os.getenv(
                 "ASYNC_JOB_BACKEND",

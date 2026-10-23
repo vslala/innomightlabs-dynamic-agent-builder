@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
-from typing import Any, Iterable
+from typing import Any, Awaitable, Callable, Iterable
 
 import httpcore
 import httpx
@@ -29,8 +29,11 @@ class BlockedDestination(httpcore.ConnectError):
     """httpx reports this as an `httpx.ConnectError`, so callers handle it like any refused connection."""
 
 
-def async_client(**kwargs: Any) -> httpx.AsyncClient:
-    return httpx.AsyncClient(**_client_options(kwargs), transport=_AsyncPublicTransport())
+AsyncDestinationCheck = Callable[[str, list[str]], Awaitable[None]]
+
+
+def async_client(*, destination_check: AsyncDestinationCheck | None = None, **kwargs: Any) -> httpx.AsyncClient:
+    return httpx.AsyncClient(**_client_options(kwargs), transport=_AsyncPublicTransport(destination_check))
 
 
 def sync_client(**kwargs: Any) -> httpx.Client:
@@ -68,8 +71,9 @@ def _is_public(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 
 
 class _AsyncPublicBackend(httpcore.AsyncNetworkBackend):
-    def __init__(self, inner: httpcore.AsyncNetworkBackend):
+    def __init__(self, inner: httpcore.AsyncNetworkBackend, destination_check: AsyncDestinationCheck | None = None):
         self._inner = inner
+        self._destination_check = destination_check
 
     async def connect_tcp(
         self,
@@ -84,8 +88,10 @@ class _AsyncPublicBackend(httpcore.AsyncNetworkBackend):
             infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
         except socket.gaierror as exc:
             raise httpcore.ConnectError(f"Could not resolve {host}") from exc
-        address = public_addresses(host, infos)[0]
-        return await self._inner.connect_tcp(address, port, timeout, local_address, socket_options)
+        addresses = public_addresses(host, infos)
+        if self._destination_check is not None:
+            await self._destination_check(host, addresses)
+        return await self._inner.connect_tcp(addresses[0], port, timeout, local_address, socket_options)
 
     async def connect_unix_socket(self, path: str, timeout: float | None = None, socket_options: Any = None) -> Any:
         raise BlockedDestination("Unix sockets are not allowed")
@@ -125,9 +131,9 @@ class _PublicBackend(httpcore.NetworkBackend):
 # httpcore pool. TLS still verifies against the URL's host name: httpcore passes
 # that as the SNI/server name, whatever address the socket is connected to.
 class _AsyncPublicTransport(httpx.AsyncHTTPTransport):
-    def __init__(self) -> None:
+    def __init__(self, destination_check: AsyncDestinationCheck | None = None) -> None:
         super().__init__(trust_env=False)
-        self._pool._network_backend = _AsyncPublicBackend(self._pool._network_backend)
+        self._pool._network_backend = _AsyncPublicBackend(self._pool._network_backend, destination_check)
 
 
 class _PublicTransport(httpx.HTTPTransport):
