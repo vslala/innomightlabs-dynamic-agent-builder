@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+from collections import deque
 from io import BytesIO
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -9,8 +12,15 @@ from src.auth.google_drive_oauth import ensure_valid_google_drive_credentials
 from src.settings.repository import ProviderSettingsRepository
 from src.skills.runtime_context import account_of
 
-from collections import deque
+from .models import (
+    FOLDER_MIME_TYPE,
+    GOOGLE_DOC_MIME_TYPE,
+    CreateRequest,
+    UpdateRequest,
+    supports_text_content,
+)
 
+GOOGLE_DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files"
 GOOGLE_DRIVE_FILES_API = "https://www.googleapis.com/drive/v3/files"
 GOOGLE_DRIVE_EXPORT_API = "https://www.googleapis.com/drive/v3/files/{file_id}/export"
 GOOGLE_DRIVE_DOWNLOAD_API = "https://www.googleapis.com/drive/v3/files/{file_id}"
@@ -28,9 +38,7 @@ TEXT_LIKE_EXACT_MIME_TYPES = {
     "application/x-sh",
     "application/sql",
 }
-GOOGLE_DOC_MIME_TYPE = "application/vnd.google-apps.document"
 PDF_MIME_TYPE = "application/pdf"
-FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 SHORTCUT_MIME_TYPE = "application/vnd.google-apps.shortcut"
 ALLOWED_ORDER_BY = {
     "modifiedTime desc",
@@ -534,6 +542,84 @@ async def read(arguments: dict[str, Any], config: dict[str, Any], context: dict[
         truncated_text or "(empty file)",
     ]
     return "\n".join(lines)
+
+
+def _multipart_text_upload(metadata: dict[str, Any], content: str, mime_type: str) -> tuple[bytes, str]:
+    # Drive requires multipart/related, not the multipart/form-data produced by httpx files=.
+    boundary = uuid4().hex
+    body = (
+        f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
+        f"{json.dumps(metadata)}\r\n"
+        f"--{boundary}\r\nContent-Type: {mime_type}; charset=UTF-8\r\n\r\n"
+    ).encode("utf-8") + content.encode("utf-8") + f"\r\n--{boundary}--\r\n".encode("ascii")
+    return body, f"multipart/related; boundary={boundary}"
+
+
+async def create(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> str:
+    del config
+    request = CreateRequest.model_validate(arguments)
+    access_token = await _get_access_token(context)
+    metadata: dict[str, Any] = {"name": request.name, "mimeType": request.mime_type}
+    if request.description is not None:
+        metadata["description"] = request.description
+    if request.parent_folder_id is not None:
+        metadata["parents"] = [request.parent_folder_id]
+    params = {"fields": FILE_FIELDS, **COMMON_FILE_PARAMS}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        if request.mime_type == FOLDER_MIME_TYPE or (
+            request.mime_type == GOOGLE_DOC_MIME_TYPE and request.content is None
+        ):
+            response = await client.post(
+                GOOGLE_DRIVE_FILES_API, params=params, headers=_headers(access_token), json=metadata,
+            )
+        else:
+            # Import plain text when creating a native Doc; this is not Docs body editing.
+            media_type = "text/plain" if request.mime_type == GOOGLE_DOC_MIME_TYPE else request.mime_type
+            body, content_type = _multipart_text_upload(metadata, request.content or "", media_type)
+            response = await client.post(
+                GOOGLE_DRIVE_UPLOAD_API,
+                params={**params, "uploadType": "multipart"},
+                headers={**_headers(access_token), "Content-Type": content_type},
+                content=body,
+            )
+    if not response.is_success:
+        raise RuntimeError(f"Google Drive create failed ({response.status_code}): {response.text[:400]}")
+    return "Created Google Drive entry:\n" + _format_file_summary(response.json())
+
+
+async def update(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> str:
+    del config
+    request = UpdateRequest.model_validate(arguments)
+    access_token = await _get_access_token(context)
+    metadata = request.model_dump(include={"name", "description"}, exclude_none=True)
+    params = {"fields": FILE_FIELDS, **COMMON_FILE_PARAMS}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        if request.content is not None:
+            existing = await _fetch_file_metadata(client, request.file_id, access_token)
+            mime_type = str(existing.get("mimeType", ""))
+            if not supports_text_content(mime_type):
+                raise ValueError(
+                    "Content replacement supports stored text-like files only; "
+                    f"Google Docs/native files, folders, shortcuts, and binaries are unsupported ({mime_type or 'unknown'}). "
+                    "Metadata-only name/description updates are allowed."
+                )
+            body, content_type = _multipart_text_upload(metadata, request.content, mime_type)
+            response = await client.patch(
+                f"{GOOGLE_DRIVE_UPLOAD_API}/{request.file_id}",
+                params={**params, "uploadType": "multipart"},
+                headers={**_headers(access_token), "Content-Type": content_type},
+                content=body,
+            )
+        else:
+            response = await client.patch(
+                f"{GOOGLE_DRIVE_FILES_API}/{request.file_id}",
+                params=params, headers=_headers(access_token), json=metadata,
+            )
+    if not response.is_success:
+        raise RuntimeError(f"Google Drive update failed ({response.status_code}): {response.text[:400]}")
+    return "Updated Google Drive entry:\n" + _format_file_summary(response.json())
 
 
 async def delete(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> str:

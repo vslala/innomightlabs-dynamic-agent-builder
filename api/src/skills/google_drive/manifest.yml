@@ -1,7 +1,7 @@
 id: google_drive
 namespace: integrations.google
 name: Google Drive
-description: Search, read, and trash files from the connected Google Drive account.
+description: Search, read, create, update, and trash files in the connected Google Drive account.
 system_prompt: |
   Use this skill to inspect or manage files in Google Drive.
   Always load the skill first, then call the most specific action.
@@ -29,11 +29,27 @@ system_prompt: |
   - Read a file after locating its id:
     action=read
     arguments={"file_id":"<file_id>"}
+  - Create a text file in a folder:
+    action=create
+    arguments={"name":"notes.txt","content":"Meeting notes","parent_folder_id":"<folder_id>"}
+  - Create a Google Doc by importing plain text:
+    action=create
+    arguments={"name":"Meeting notes","mime_type":"application/vnd.google-apps.document","content":"Meeting notes"}
+  - Replace a text file's entire content:
+    action=update
+    arguments={"file_id":"<file_id>","content":"Replacement text"}
+  - Rename a file (including a Google Doc or folder):
+    action=update
+    arguments={"file_id":"<file_id>","name":"New name","description":"Updated description"}
   - Move a file to trash:
     action=delete
     arguments={"file_id":"<file_id>"}
 
   Notes:
+  - `create` supports UTF-8 text-like files (default text/plain), Google Docs through plain-text import, and folders (application/vnd.google-apps.folder, no content).
+  - `update` (alias `modify`) replaces the WHOLE content of stored text-like files only. Empty content clears a text file; empty description clears its description.
+  - Never use Drive media update to edit Google Docs, Sheets, Slides, or other native/binary content. Native files support metadata-only updates here; use a dedicated editor for their bodies.
+  - Parent folder selection is supported on creation only. File moves, MIME type changes, binary uploads, and partial/append edits are not supported.
   - Use `entry_type="folders"` when the user is looking for folders only.
   - Use `parent_folder_id` plus `mode="children"` to emulate folder listing like `ls`.
   - Use `recursive=true` when the folder may contain nested subfolders rather than direct files.
@@ -97,6 +113,59 @@ actions:
           description: Google Drive file id to read.
       required: [file_id]
     handler: actions:read
+  - name: create
+    description: Create a UTF-8 text file, a Google Doc by plain-text import, or a folder. Returns the created entry id and metadata.
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: File or folder name (nonblank).
+        mime_type:
+          type: string
+          default: text/plain
+          description: text/* or application/json, application/xml, application/javascript, application/x-javascript, application/rtf, application/x-sh, application/sql; native Google Docs and folders also supported. Other types rejected.
+        content:
+          type: string
+          description: UTF-8 text, preserved exactly. Omit for an empty file or Doc. Not allowed for folders, even if empty.
+        description:
+          type: string
+          description: Optional Drive description.
+        parent_folder_id:
+          type: string
+          minLength: 1
+          description: Optional destination folder id; omit to use the Drive default location.
+      required: [name]
+    handler: actions:create
+  - name: update
+    aliases: [modify]
+    description: Update name/description of an entry or replace the entire content of a stored text-like file. Rejects native Google Docs and binary content replacement.
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        file_id:
+          type: string
+          minLength: 1
+          description: Drive entry id to update.
+        name:
+          type: string
+          minLength: 1
+          description: New nonblank name; omitted fields remain unchanged.
+        description:
+          type: string
+          description: New description; empty string clears it.
+        content:
+          type: string
+          description: Full replacement UTF-8 text, not an append or partial edit. Empty string clears the text file. Stored MIME type is checked; native files, folders, shortcuts, PDFs, and binaries are rejected.
+      required: [file_id]
+      anyOf:
+        - required: [name]
+        - required: [description]
+        - required: [content]
+    handler: actions:update
   - name: delete
     description: Move a Google Drive file to trash.
     input_schema:

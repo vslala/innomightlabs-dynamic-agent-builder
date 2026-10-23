@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
+from email import policy
+from email.parser import HeaderParser
 from typing import Annotated, Any, Optional
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StringConstraints, field_validator, model_validator
 
 
 class GoogleMailCredentials(BaseModel):
@@ -46,6 +49,80 @@ class GoogleMailBatchMessageRequest(BaseModel):
             raise ValueError("message_ids must contain at least one Gmail message id")
         self.chunk_size = max(1, min(1000, int(self.chunk_size or 1000)))
         return self
+
+
+class GoogleMailComposeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    to: list[str] = Field(default_factory=list, max_length=100)
+    cc: list[str] = Field(default_factory=list, max_length=100)
+    bcc: list[str] = Field(default_factory=list, max_length=100)
+    subject: str = Field(max_length=998)
+    body: str = Field(max_length=1_000_000)
+    html_body: str | None = Field(default=None, max_length=1_000_000)
+
+    @field_validator("subject")
+    @classmethod
+    def validate_subject(cls, value: str) -> str:
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("subject must not contain control characters")
+        return value
+
+    @field_validator("to", "cc", "bcc")
+    @classmethod
+    def validate_recipients(cls, values: list[str]) -> list[str]:
+        for value in values:
+            if not value.strip() or len(value) > 998 or any(
+                ord(char) < 32 or ord(char) == 127 for char in value
+            ):
+                raise ValueError("invalid recipient")
+            header = HeaderParser(policy=policy.default).parsestr(f"To: {value}\n\n")["To"]
+            if header.defects or len(header.addresses) != 1 or any(
+                group.display_name is not None for group in header.groups
+            ):
+                raise ValueError("each recipient must be a single mailbox")
+            address = header.addresses[0]
+            # Unicode display names are supported, but SMTPUTF8 mailboxes are not.
+            if not address.username or not address.addr_spec.isascii() or not re.fullmatch(
+                r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+                r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+",
+                address.domain,
+            ):
+                raise ValueError("recipient must have a valid ASCII mailbox and domain")
+        return values
+
+    @model_validator(mode="after")
+    def require_recipient(self) -> "GoogleMailComposeRequest":
+        if not (self.to or self.cc or self.bcc):
+            raise ValueError("at least one recipient is required")
+        return self
+
+
+class GoogleMailUpdateDraftRequest(GoogleMailComposeRequest):
+    draft_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,200}$")]
+
+
+class GoogleMailSendRequest(GoogleMailComposeRequest):
+    confirmed: StrictBool
+
+    @field_validator("confirmed")
+    @classmethod
+    def require_confirmation(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError("sending requires confirmed: true after user approval")
+        return value
+
+
+class GoogleMailSendDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    draft_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,200}$")]
+    confirmed: StrictBool
+
+    @field_validator("confirmed")
+    @classmethod
+    def require_confirmation(cls, value: bool) -> bool:
+        return GoogleMailSendRequest.require_confirmation(value)
 
 
 class GoogleMailSearchRequest(BaseModel):
