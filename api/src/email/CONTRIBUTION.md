@@ -21,6 +21,9 @@ assets/templates/emails/   _layout.html, message.html (Jinja) and the per-email 
   failure calls `_handle_email_failure`, which writes a `PendingEmail` for retry. Callers (webhooks, signup) never
   see an exception. `send_guest_transcript_email_safe` is the exception: one attempt only, because the guest closer
   in `src/widget` owns bounded retries; do not enqueue guest data as `PendingEmail`. `send_account_invitation_email_safe` is also single-attempt: raw invite links must never be persisted in `PendingEmail`; the invitation lifecycle records failure and rotates a new token on resend.
+- Welcome emails are owned by the OAuth callback for new users of the default app and sent through
+  `send_welcome_email_safe` using `welcome.html`. The usage-stream Lambda must not send welcome emails:
+  identity inserts do not carry app context, and sending there duplicates the signup email.
 - Two template systems coexist. Lifecycle emails use `EmailService.send_email(..., EmailTemplate, variables)` with
   `{{name}}` placeholders replaced by plain string substitution (no escaping). Text-first emails use `MessageEmail`
   (`.html()` and `.text()`), rendered by Jinja with `autoescape` and `StrictUndefined`, extending `_layout.html`;

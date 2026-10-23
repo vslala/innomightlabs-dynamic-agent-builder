@@ -114,18 +114,6 @@ def _get_invoice_url(subscription_id: str, invoice_id: Optional[str]) -> Optiona
     return None
 
 
-def _send_welcome_email(user_email: str, name: Optional[str]) -> None:
-    subject = "Welcome to Innomightlabs"
-    greeting = name or user_email.split("@")[0]
-    body = (
-        f"Hi {greeting},\n\n"
-        "Welcome to Innomightlabs. Your account is ready, and you can start building agents right away.\n\n"
-        "If you need help, just reply to this email.\n\n"
-        "Thanks,\n"
-        "The Innomightlabs Team"
-    )
-    send_email(user_email, subject, body)
-
 
 def _send_invoice_email(user_email: str, invoice_url: str) -> None:
     subject = "Your Innomightlabs payment receipt"
@@ -139,9 +127,6 @@ def _send_invoice_email(user_email: str, invoice_url: str) -> None:
     )
     send_email(user_email, subject, body)
 
-
-def _is_user_record(image: dict[str, Any]) -> bool:
-    return image.get("sk") == "Identity#Metadata"
 
 
 def _is_subscription_record(image: dict[str, Any]) -> bool:
@@ -165,11 +150,7 @@ def handler(event, context):  # noqa: ARG001
         if not image:
             continue
 
-        if new_image and event_name == "INSERT" and _is_user_record(new_image):
-            user_email = new_image.get("email")
-            if user_email and _dedupe_email_event(table, user_email, event_id, "welcome"):
-                _send_welcome_email(user_email, new_image.get("name"))
-
+        # Signup owns app-specific welcome emails; identity inserts must not send a second one.
         if new_image and _is_subscription_record(new_image):
             user_email = new_image.get("user_email")
             subscription_id = new_image.get("subscription_id")
