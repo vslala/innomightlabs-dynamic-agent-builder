@@ -1,11 +1,12 @@
 id: rest_template
 namespace: core.http
-owner_only: true
 name: REST Template
 description: Send flexible GET and POST HTTP requests to external APIs.
 system_prompt: |
   Use this skill when the user asks to call an HTTP API endpoint.
   Use get for read-only requests and post for requests that create, submit, or trigger work.
+  Only public external destinations are allowed. InnomightLabs domains and protected platform IPs are blocked,
+  including redirects and aliases. Do not override the Host header or try to bypass a destination refusal.
   Put every header in headers as key/value pairs.
   Prefer json_body for JSON payloads. Use text_body only when the endpoint expects raw text.
   Do not invent Authorization headers or API keys. Secrets are set by the agent's owner in this skill's settings and
@@ -28,7 +29,7 @@ form:
 actions:
   - name: get
     aliases: [http_get, send_get]
-    description: Send a GET request to any URL with optional headers and query parameters.
+    description: Send a GET request to a permitted public external URL with optional headers and query parameters.
     input_schema:
       type: object
       required: [url]
@@ -91,7 +92,7 @@ actions:
     handler: actions:get
   - name: post
     aliases: [http_post, send_post]
-    description: Send a POST request to any URL with optional headers, query parameters, and body.
+    description: Send a POST request to a permitted public external URL with optional headers, query parameters, and body.
     input_schema:
       type: object
       required: [url]

@@ -310,6 +310,7 @@ set_railway_var "INVITATION_PREVIEW_RATE_WINDOW_SECONDS" "$(get_var_default 'INV
 set_railway_var "AUTH_APP_URLS" "$(get_var 'AUTH_APP_URLS')"
 set_railway_var "AUTH_APP_SECRETS" "$(get_var 'AUTH_APP_SECRETS')"
 set_railway_var "API_BASE_URL" "$api_base_url"
+set_railway_var "REST_TEMPLATE_BLOCKED_IP_RANGES" "$(get_var_default 'REST_TEMPLATE_BLOCKED_IP_RANGES' '')"
 set_railway_var "JWT_SECRET" "$(get_var 'JWT_SECRET')"
 set_railway_var "LOG_LEVEL" "$(get_var_default 'LOG_LEVEL' 'INFO')"
 

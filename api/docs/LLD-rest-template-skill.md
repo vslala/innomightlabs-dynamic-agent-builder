@@ -1,8 +1,39 @@
 # Low Level Design: REST Template Skill
 
-Date: 2026-06-17  
-Status: Draft  
-Owner: InnomightLabs API
+| Field | Value |
+| --- | --- |
+| Status | ✅ Implemented (local validation complete; deployment pending) |
+| Owner | InnomightLabs API |
+| Last reviewed | 2026-10-23 |
+| Depends on | Skill audience policy; protected outbound HTTP transport |
+
+Original design date: 2026-06-17.
+
+## Implementation notes
+
+These notes supersede the original unrestricted-URL proposal and HTTP client sketch below.
+
+### Owner-controlled sharing
+
+- The REST Template manifest no longer declares `owner_only: true`. `SkillManifest.owner_only` defaults to false, and `runs_only_for_owner` does not override this: REST Template declares neither `requires_oauth` nor connector dependencies.
+- Sharing remains an explicit owner opt-in through each install's `available_to`. New installs default to `[owner]`; existing owner-only installs remain owner-only, including legacy records without `available_to`. Updating configuration does not implicitly share an install. No audience migration is required.
+- Owners may independently allow `visitor` and/or `guest` (or other supported audiences). Sharing with one does not grant access to the other. Removing an audience revokes access; the owner retains access.
+- `api/tests/test_skill_actor_policy.py` covers the manifest/catalog flags, owner opt-in for visitors and guests, GET/POST runtime dispatch, rejection of unshared audiences, revocation, and current/legacy owner-only installs. Audience tests replace registry dispatch with a stub so they exercise authorization without external HTTP; they do not validate transport security.
+
+### Protected outbound requests
+
+- Protection is always enforced for REST GET and POST, including owner calls and automation calls; sharing never bypasses it.
+- Block `innomightlabs.com` and all its subdomains, the hosts of configured platform URLs, and the IP addresses resolved for those protected hosts. DNS inventory includes the apex, `www`, `api`, `cdn`, and hosts from `API_BASE_URL`, `FRONTEND_URL`, and `WIDGET_CDN_URL`. `REST_TEMPLATE_BLOCKED_IP_RANGES` is a comma-separated IP/CIDR denylist (default empty) for additional infrastructure/origin addresses not exposed by those answers; IPv4-mapped IPv6 entries are normalized. It is loaded through `api/src/config/settings.py` and passed through `scripts/deploy_prod_railway.sh`.
+- Apply destination checks at the socket connection boundary and pin connections to validated DNS answers, preventing a later DNS lookup from rebinding the destination. Check every redirect hop under the same policy. Disable proxies, including environment-derived proxies, so they cannot bypass destination validation.
+- Fail closed when a protected host cannot be resolved: do not silently continue with an incomplete protected-address set.
+- Denying resolved platform IPs can also deny unrelated sites sharing the same CDN IP. This collateral blocking is an explicit limitation. DNS cannot automatically discover every undisclosed origin IP; known additional origins require the explicit IP/CIDR denylist.
+- The unrestricted URL language and bare `httpx.AsyncClient` example below are historical design context, not authorization to bypass this transport policy. `api/src/skills/rest_template/security.py` supplies the request and socket checks; `api/src/common/outbound.py` accepts an optional async destination check without changing other clients' policy. Custom Host overrides are refused. Protected DNS lookups run under a shared five-second deadline. `api/tests/test_rest_template_security.py` covers hostname variants, IP/alias and mixed DNS answers, IPv6, explicit CIDRs, configured platform URLs, DNS failure, real-transport redirects, and permitted external requests.
+
+### Rollout and validation
+
+- Deploy the API, then explicitly enable Visitors and/or Guests for the installed skill in the agent's skill settings. No SPA change or automatic audience migration is needed.
+- Before deployment, populate `REST_TEMPLATE_BLOCKED_IP_RANGES` with known origin addresses absent from the DNS inventory. DNS cannot enumerate arbitrary subdomains or hidden origins. Shared-CDN address blocking is deliberately conservative.
+- Full API suite passed locally: 2,873 passed, 1 skipped. Additional mapped-IP denylist regressions were subsequently added and validated with the focused security suite. Ruff and targeted mypy passed. No production deployment or live widget verification was performed.
 
 ## Summary
 Add a first-party `rest_template` skill that lets agents and automations call arbitrary HTTP endpoints with two initial actions:
@@ -450,7 +481,7 @@ Redact sensitive request headers from any returned metadata:
 Do not include request body in error messages by default.
 
 ## Security and Safety
-The product requirement is to allow any URL. Do not block private, internal, link-local, localhost, or metadata-service URLs.
+The original proposal allowed any URL, including private, internal, link-local, localhost, and metadata-service URLs. That unrestricted proposal is superseded by the protected outbound request contract in **Implementation notes**; all REST requests must use the protected transport, including owner requests.
 
 Required v1 baseline:
 - Allow only `http` and `https`.
