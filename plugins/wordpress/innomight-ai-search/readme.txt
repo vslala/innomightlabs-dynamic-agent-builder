@@ -42,6 +42,28 @@ This plugin connects to the Innomight Labs service to answer visitors' questions
 
 Because questions are processed by a third party, mention this in your site's privacy policy. The agent you connect is available to every visitor: anything it can remember or do is reachable through the chat, so use an agent intended for public questions.
 
+== See it in action ==
+
+[Watch the captioned walkthrough](https://innomightlabs.com/downloads/plugins/wordpress-ai-search) or [open the video](https://innomightlabs.com/plugins/wordpress-ai-search/demo.mp4).
+
+Recorded with Playwright on a real WordPress site: search for memory, ask the agent to find LLM posts, narrow the results with a follow-up question, then open the linked article. The answers are live, not mocked. This silent, 54-second recording includes English action captions in the plugin page's video player.
+
+![Normal WordPress search results with the AI follow-up chat above them](https://innomightlabs.com/plugins/wordpress-ai-search/screenshot-4.png)
+
+![The agent finds relevant LLM posts and returns links](https://innomightlabs.com/plugins/wordpress-ai-search/screenshot-5.png)
+
+![A follow-up question identifies the context-memory article and its publication date](https://innomightlabs.com/plugins/wordpress-ai-search/screenshot-6.png)
+
+A second recording, on the BeMyAficionado blog, searches for Microservices and asks in which order to read all the matching posts. It then asks for a summary of one article and for newer posts on the wider topic. The answers are live, not mocked. The recording is silent, about two and a half minutes long and has English action captions. [Watch it on the plugin page](https://innomightlabs.com/downloads/plugins/wordpress-ai-search) or [open the video](https://innomightlabs.com/plugins/wordpress-ai-search/demo-microservices.mp4).
+
+![Searching Microservices lists every matching article, with the AI chat above](https://innomightlabs.com/plugins/wordpress-ai-search/screenshot-7.png)
+
+![The agent suggests an order to read all the matching posts](https://innomightlabs.com/plugins/wordpress-ai-search/screenshot-8.png)
+
+![The agent summarises one article from its full text](https://innomightlabs.com/plugins/wordpress-ai-search/screenshot-9.png)
+
+The connected agent determines what the chat can answer. The first demo agent can search post titles and metadata. The second also has a tool that reads a post's full content (the Innomight WordPress Search skill's read_post action), which is what lets it summarise an article; without such a tool or a knowledge base, summaries aren't available.
+
 == Installation ==
 
 1. Upload the plugin or install it from the Plugins screen, then activate it.
@@ -90,6 +112,12 @@ Yes. Deleting the plugin removes its settings and counters.
 1. The follow-up chat on search results in a block theme (Twenty Twenty-Five). The normal results stay below.
 2. The same chat styled by a custom theme: colours and fonts follow the site.
 3. Settings: agent, secret key, instructions, placement and wording.
+4. Live preview: normal search results and the AI follow-up chat on Varun Shrivastava's blog.
+5. Live preview: the agent finds LLM posts and returns links.
+6. Live preview: a contextual follow-up selects an article and its publication date.
+7. Live site: searching "Microservices" lists every matching article, with the follow-up chat above.
+8. Live site: the agent suggests the order in which to read all the matching posts.
+9. Live site: the agent summarises one article from its full text.
 
 == Changelog ==
 

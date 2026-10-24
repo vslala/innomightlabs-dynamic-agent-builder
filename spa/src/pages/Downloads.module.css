@@ -224,6 +224,48 @@
   padding: 30px;
 }
 
+.demoSection {
+  margin-bottom: 32px;
+}
+
+.demoHeading {
+  color: var(--text-primary);
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.demoDescription {
+  color: var(--text-secondary);
+  line-height: 1.65;
+  margin-bottom: 16px;
+}
+
+.demoFigure {
+  margin: 0 0 24px;
+}
+
+.demoTitle {
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.demoVideo {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
+.demoVideo:focus-visible {
+  outline: 2px solid var(--link-color);
+  outline-offset: 4px;
+}
+
 .markdown {
   color: var(--text-secondary);
 }

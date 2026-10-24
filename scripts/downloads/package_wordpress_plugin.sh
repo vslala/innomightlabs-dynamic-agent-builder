@@ -23,6 +23,8 @@ hash_sources() {
       ! -path './node_modules/*' \
       ! -path './vendor/*' \
       ! -path './docs/*' \
+      ! -path './tests/*' \
+      ! -name '.DS_Store' \
       | sort \
       | while read -r file; do
           hash_file "$file"
@@ -32,7 +34,7 @@ hash_sources() {
 }
 
 extract_version() {
-  awk -F': ' '/^[[:space:]]*Version:/ {print $2; exit}' "$PLUGIN_DIR/innomightlabs-ai-connector.php" | tr -d '[:space:]'
+  awk -F': ' '/^[[:space:]]*\*?[[:space:]]*Version:/ {print $2; exit}' "$PLUGIN_DIR/innomightlabs-ai-connector.php" | tr -d '[:space:]'
 }
 
 convert_readme() {
@@ -82,7 +84,9 @@ rsync -a "$PLUGIN_DIR/" "$STAGING_DIR/innomightlabs-ai-connector/" \
   --exclude '.git' \
   --exclude 'node_modules' \
   --exclude 'vendor' \
-  --exclude 'docs'
+  --exclude 'docs' \
+  --exclude 'tests' \
+  --exclude '.DS_Store'
 
 (
   cd "$STAGING_DIR"

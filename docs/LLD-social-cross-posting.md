@@ -24,6 +24,15 @@
 
 ## Implementation notes
 
+- **2026-10-21: LinkedIn Pages built, as its own network** (§1, §2). `linkedin_page` (`networks/linkedin_pages.py`)
+  extends `LinkedInNetwork`: its own OAuth app (`SOCIAL_LINKED_IN_PAGES_CLIENT_ID/_SECRET`, the Community Management API
+  needs its own), scopes `r_organization_admin w_organization_social`. One sign-in lists the pages the member can post as
+  (`organizationAcls`, roles ADMINISTRATOR and CONTENT_ADMIN) and connects each as an account storing `author_urn`; posting
+  and image uploads use it as the author and owner. The skill, publisher, planner and automations are unchanged.
+  - **Generalised:** `SocialNetwork` gained `description` (shown on the Social tab so each connection reads as what the agent
+    posts as) and `shares_grant` (disconnecting one page keeps the token for the others, and the last one revokes it).
+  - **Not built:** page logos (the avatar falls back to the initial); unverified against the real API until the app is approved.
+  - **Tests:** `api/tests/test_connectors_social_linkedin_pages.py` (7).
 - **2026-10-21: images, one or many, built for LinkedIn** (§5, §6). `publish` and `check` take `images` (ids) and
   `alt_texts`. An id is found only in the caller's scope: an artifact the member owns, an upload in this conversation,
   or an image generated in it (`skills/social_media/images.py`). `connectors/social/media.py` fits each image to the

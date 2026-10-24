@@ -8,6 +8,22 @@ import { downloadsApiService } from "../services/downloads";
 import type { PluginDownloadDetail } from "../types/downloads";
 import styles from "./Downloads.module.css";
 
+// Files are in plugins/wordpress/innomight-ai-search/.wordpress-org and are published by the public-pages Vite plugin.
+const WORDPRESS_SEARCH_DEMOS = [
+  {
+    file: "demo",
+    poster: "screenshot-4.png",
+    title: "Find posts and ask a follow-up",
+    description: "Search the site, ask the agent for posts on a topic, then narrow the answer with a follow-up question.",
+  },
+  {
+    file: "demo-microservices",
+    poster: "screenshot-7.png",
+    title: "Get a reading order and an article summary",
+    description: "Search a topic, ask in which order to read every match, have one article summarised from its full text, and find newer related posts.",
+  },
+] as const;
+
 function PluginIcon({ plugin }: { plugin: PluginDownloadDetail }) {
   return (
     <div className={styles.iconWrap}>
@@ -101,6 +117,43 @@ export function PluginDetailsPage() {
               </aside>
 
               <article className={styles.readmePanel}>
+                {plugin.id === "wordpress-ai-search" && (
+                  <section className={styles.demoSection} aria-labelledby="wordpress-search-demo-title">
+                    <h2 id="wordpress-search-demo-title" className={styles.demoHeading}>
+                      See WordPress AI Search in action
+                    </h2>
+                    <p className={styles.demoDescription}>
+                      Two real recordings of a visitor using the chat on a live blog. English captions are available in each player.
+                    </p>
+                    {WORDPRESS_SEARCH_DEMOS.map((demo) => (
+                      <figure key={demo.file} className={styles.demoFigure}>
+                        <figcaption>
+                          <h3 id={`${demo.file}-title`} className={styles.demoTitle}>{demo.title}</h3>
+                          <p id={`${demo.file}-description`} className={styles.demoDescription}>{demo.description}</p>
+                        </figcaption>
+                        <video
+                          className={styles.demoVideo}
+                          controls
+                          playsInline
+                          preload="none"
+                          poster={`${import.meta.env.BASE_URL}plugins/wordpress-ai-search/${demo.poster}`}
+                          aria-labelledby={`${demo.file}-title`}
+                          aria-describedby={`${demo.file}-description`}
+                        >
+                          <source src={`${import.meta.env.BASE_URL}plugins/wordpress-ai-search/${demo.file}.mp4`} type="video/mp4" />
+                          <track
+                            kind="captions"
+                            src={`${import.meta.env.BASE_URL}plugins/wordpress-ai-search/${demo.file}.vtt`}
+                            srcLang="en"
+                            label="English"
+                            default
+                          />
+                          Your browser does not support embedded video. <a href={`${import.meta.env.BASE_URL}plugins/wordpress-ai-search/${demo.file}.mp4`}>Download the demo video</a>.
+                        </video>
+                      </figure>
+                    ))}
+                  </section>
+                )}
                 <MarkdownRenderer content={plugin.readme_markdown} className={styles.markdown} />
               </article>
             </section>

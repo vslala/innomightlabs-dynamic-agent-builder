@@ -19,13 +19,25 @@ The release catalogue now includes **Innomight AI Search** (`wordpress-ai-search
 - `/downloads/plugins/wordpress-ai-search` is an explicit indexed public route in `spa/src/routes/publicPages.ts` and `spa/src/App.tsx`. The public-pages build emits `downloads/plugins/wordpress-ai-search.html` and adds its URL to `sitemap.xml`, so GitHub Pages can answer a direct reviewer visit with HTTP 200 rather than the 404 fallback. The details page matches the URL independently of route parameters so fixed and parameterized routes both select the correct plugin, including with a basename.
 - The plugin header's `Plugin URI` is `https://innomightlabs.com/downloads/plugins/wordpress-ai-search`, distinct from `Author URI`. **Publish the assets and SPA page, then verify the live page and download before submitting this URL to WordPress.org reviewers.** Adding the header locally does not make the page live.
 
+### Recorded walkthrough and screenshots
+
+Playwright Chromium captured a real anonymous session on `https://preview.varunshrivastava.in/`: search for memory, ask for LLM posts, narrow the results with a contextual follow-up, and open the linked article. Both recorded chat requests returned HTTP 200 event streams; no responses were mocked. The silent, uncut H.264 MP4 is 54.2 seconds at 1440×1080 (about 1.1 MB). Seven English action-caption cues are generated from the capture timing.
+
+Canonical media are `.wordpress-org/screenshot-4.png` through `screenshot-9.png`, `demo.mp4`, `demo.vtt`, `demo-microservices.mp4` and `demo-microservices.vtt` under the AI Search plugin (the plugin page shows both videos). Original screenshots 1–3 are preserved. `spa/scripts/vite-plugin-public-pages.ts` copies only these ten allowed files into `/plugins/wordpress-ai-search/` at build time and serves them during development. Missing media fail the build. The plugin details page uses a native video player with controls, a poster, English captions, no autoplay and `preload="none"`. The README includes the three real screenshots and video links. Large promotional media stay excluded from the installable ZIP; no backend schema change is required.
+
+Reproduction and verification scripts are in `scripts/demos/`. Playwright tooling and raw recordings stay in ignored `dist/`. A preliminary summary request correctly declined because the configured WordPress Search tool exposes titles/metadata rather than full article text; the final demo showcases supported discovery and follow-up, not unsupported summarization.
+
+The media changes are prepared locally, **not published**. Deploy the SPA/player/media before publishing the updated downloadable README so its absolute image/video links resolve. This is separate from the already-live initial plugin ZIP/catalogue publication described below.
+
+Media validation: 25 focused SPA tests, six pipeline tests and 23 plugin tests passed; focused lint and the production SPA build passed. Playwright verified actual local MP4 playback, duration/resolution, all seven caption cues, all three rendered images and no horizontal overflow at 390px. That presentation smoke test uses published plugin metadata plus the new local README as an API fixture; the recorded WordPress chat itself is live and unmocked. Full SPA tests still have the unrelated dashboard number-format assertion failure.
+
 Validation:
 
 ```bash
 python3 -m unittest discover -s scripts/downloads -v
 bash scripts/downloads/package_wordpress_ai_search_plugin.sh
 # From spa/:
-yarn test src/routes/publicPages.test.ts src/pages/PluginDetailsPage.test.tsx
+yarn test src/routes/publicPages.test.ts src/pages/PluginDetailsPage.test.tsx scripts/vite-plugin-public-pages.test.ts
 yarn build
 # From plugins/wordpress/innomight-ai-search/:
 php tests/run.php

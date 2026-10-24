@@ -1,0 +1,28 @@
+WEBVTT
+
+00:00:01.864 --> 00:00:09.034
+Start on the BeMyAficionado blog
+
+00:00:09.034 --> 00:00:15.207
+Search Microservices: every matching article is listed, with the follow-up chat above
+
+00:00:15.207 --> 00:01:12.304
+Ask which order to read the whole Microservices series in
+
+00:01:12.304 --> 00:01:24.767
+Read the suggested reading order
+
+00:01:24.767 --> 00:01:41.901
+Ask for a summary of one article
+
+00:01:41.901 --> 00:01:54.399
+Read the summary of the full article
+
+00:01:54.399 --> 00:02:12.266
+Ask a follow-up: is there anything newer on the wider topic?
+
+00:02:12.266 --> 00:02:21.063
+Read the newer posts it found
+
+00:02:21.063 --> 00:02:25.565
+Open the linked article to read the source
