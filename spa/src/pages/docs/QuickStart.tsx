@@ -9,6 +9,12 @@ const navItems = [
   { id: 'test-dashboard', label: 'Test in Dashboard', href: '#test-dashboard' },
   { id: 'embed-widget', label: 'Embed Widget', href: '#embed-widget' },
   { id: 'embedded-widget', label: 'Embedded Widget (iframe)', href: '#embedded-widget' },
+  { id: 'widget-floating', label: 'Floating chat', href: '#widget-floating', nested: true },
+  { id: 'widget-options', label: 'Configuration options', href: '#widget-options', nested: true },
+  { id: 'widget-inline', label: 'Inline chat', href: '#widget-inline', nested: true },
+  { id: 'widget-guests', label: 'Guest visitors', href: '#widget-guests', nested: true },
+  { id: 'widget-sections', label: 'Section chats', href: '#widget-sections', nested: true },
+  { id: 'widget-controls', label: 'JavaScript controls', href: '#widget-controls', nested: true },
 ];
 
 export function QuickStart() {
@@ -500,27 +506,39 @@ InnomightChat.destroy();`}
           visitor's sign-in, and it only loads the chat once a visitor is about to use it.
         </p>
 
-        <div className={styles.codeExample}>
-          <div className={styles.codeHeader}>Embedded Widget Code</div>
+        <p>
+          Use <code>embed.js</code> for floating, inline or section chats. The legacy{' '}
+          <code>widget.js</code> / <code>InnomightChat</code> widget does not support inline mode.
+          Do not load both loaders on the same page.
+        </p>
+
+        <div id="widget-floating" className={styles.codeExample}>
+          <div className={styles.codeHeader}>Minimal Floating Example (default mode)</div>
           <pre>
 {`<script
   src="https://cdn.innomightlabs.com/embed.js"
   data-api-key="your-api-key-here"
-  data-theme="auto"
-  data-greeting="Hi! How can I help you today?"
   async></script>`}
           </pre>
         </div>
 
-        <h3>Options</h3>
+        <h3 id="widget-options">Options</h3>
         <div className={styles.optionsTable}>
+          <div className={styles.optionRow}>
+            <code>data-api-key</code>
+            <span>Required: your agent's widget API key</span>
+          </div>
+          <div className={styles.optionRow}>
+            <code>data-api-url</code>
+            <span>API base URL (default <code>https://api.innomightlabs.com</code>)</span>
+          </div>
           <div className={styles.optionRow}>
             <code>data-mode</code>
             <span><code>floating</code> (a chat button in the corner, the default), <code>inline</code> (fills a container on your page), or <code>none</code> (no chat of its own; only the page sections below)</span>
           </div>
           <div className={styles.optionRow}>
             <code>data-target</code>
-            <span>For <code>inline</code>: a CSS selector for the container, e.g. <code>#chat</code>. Give the container a height.</span>
+            <span>Required for <code>inline</code>: a CSS selector for an existing container, e.g. <code>#chat</code>. Give the container an explicit height.</span>
           </div>
           <div className={styles.optionRow}>
             <code>data-position</code>
@@ -560,10 +578,10 @@ InnomightChat.destroy();`}
           </div>
         </div>
 
-        <div className={styles.codeExample}>
-          <div className={styles.codeHeader}>Inline Example</div>
+        <div id="widget-inline" className={styles.codeExample}>
+          <div className={styles.codeHeader}>Minimal Inline Example</div>
           <pre>
-{`<div id="chat" style="height: 600px"></div>
+{`<div id="chat" style="width: 100%; height: 600px"></div>
 <script
   src="https://cdn.innomightlabs.com/embed.js"
   data-api-key="your-api-key-here"
@@ -573,7 +591,12 @@ InnomightChat.destroy();`}
           </pre>
         </div>
 
-        <h3>Optional Guest Visitors</h3>
+        <p>
+          The inline iframe fills the container's width and height and has a minimum height of 420px.
+          The example gives it 100% width and a 600px-tall container.
+        </p>
+
+        <h3 id="widget-guests">Optional Guest Visitors</h3>
         <p>
           In your agent's <strong>Widget API Keys</strong>, enable <strong>Allow guest visitors</strong>
           when creating a key or toggle it on an existing key. It is off by default. This works only
@@ -596,13 +619,15 @@ InnomightChat.destroy();`}
           start to retain chat history; guest history cannot be transferred to Google.
         </p>
 
-        <h3>A Chat in Each Section</h3>
+        <h3 id="widget-sections">A Chat in Each Section</h3>
         <p>
           Mark any element with <code>data-innomight-chat</code> and the same script fills it with its
-          own chat. Each one uses your key and colours. You can give it its own{' '}
-          <code>data-prompt</code>, <code>data-prompt-label</code>, <code>data-greeting</code>,{' '}
-          <code>data-placeholder</code>, <code>data-theme</code> and{' '}
-          <code>data-primary-color</code>.
+          own chat. Each one uses the script's API key and API URL and inherits its appearance.
+          Supported section overrides are <code>data-prompt</code>, <code>data-prompt-label</code>,{' '}
+          <code>data-auto-prompt</code>, <code>data-greeting</code>, <code>data-placeholder</code>,{' '}
+          <code>data-theme</code> and <code>data-primary-color</code>. The script's prompt and prompt
+          label are not inherited; set them on each section. Sections inherit{' '}
+          <code>data-auto-prompt</code> unless overridden.
         </p>
         <p>
           A section's prompt is sent once, when the visitor first scrolls the chat into view, so
@@ -620,18 +645,31 @@ InnomightChat.destroy();`}
     data-innomight-chat
     data-prompt-label="Which plan fits me?"
     data-prompt="I'm on the subscriptions page. Plans: Solo (£10.50/month), Duo (£19.50/month) and Office (£38 every two weeks). Summarise them and help me choose."
-    style="height: 560px"></div>
+    style="width: 100%; height: 600px"></div>
 </section>
 
-<!-- Once per page. data-mode="none" skips the corner button if you only want section chats. -->
+<!-- Once per page. Section chats only, with no corner button. -->
 <script
   src="https://cdn.innomightlabs.com/embed.js"
   data-api-key="your-api-key-here"
+  data-mode="none"
   async></script>`}
           </pre>
         </div>
 
-        <h3>Control It From Your Page</h3>
+        <h3 id="widget-controls">Control It From Your Page</h3>
+        <p>
+          <code>window.InnomightEmbed</code> controls only the script's main instance, not section chats.
+          <code> open()</code>, <code>close()</code> and <code>toggle()</code> work only in floating mode;
+          they do nothing in inline mode. With <code>data-mode="none"</code>, all API methods are no-ops.
+          There is no <code>destroy()</code> method.
+        </p>
+        <p>
+          Because the loader uses <code>async</code>, run the code below only after the{' '}
+          <code>embed.js</code> script loads, for example inside that script element's{' '}
+          <code>onload</code> handler. A separate script immediately after an async loader may run
+          before <code>InnomightEmbed</code> exists.
+        </p>
         <div className={styles.codeExample}>
           <div className={styles.codeHeader}>Embedded Widget API</div>
           <pre>
@@ -639,10 +677,18 @@ InnomightChat.destroy();`}
 InnomightEmbed.close();
 InnomightEmbed.toggle();
 
-// Run code when the chat is ready, opened or closed
-InnomightEmbed.on('ready', () => console.log('Chat ready'));`}
+// Events: 'ready', 'open', 'close'. on() returns an unsubscribe function.
+const unsubscribe = InnomightEmbed.on('ready', () => {
+  console.log('Chat iframe initialized');
+});
+// Call unsubscribe() when you no longer need the listener.`}
           </pre>
         </div>
+
+        <p>
+          <code>ready</code> means the chat iframe has initialized, not that the visitor is authenticated.
+          A <code>ready</code> listener registered after initialization runs immediately.
+        </p>
 
         <div className={styles.tipBox}>
           <strong>Allowed origins:</strong> if your widget key lists allowed origins, only those sites
