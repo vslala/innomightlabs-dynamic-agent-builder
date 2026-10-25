@@ -56,7 +56,8 @@ import styles from "./Conversation.module.css";
 interface ConversationNavigationState {
   initialImagePrompt?: string;
   initialMessage?: string;
-  deepResearch?: boolean;
+  /** Files picked on the start page: uploaded here, with the message left in the composer to send. */
+  initialFiles?: File[];
   debug?: boolean;
 }
 
@@ -100,7 +101,6 @@ export function ConversationDetail() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
   const [expandedCanvas, setExpandedCanvas] = useState<MessageCanvasArtifact | null>(null);
-  const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [debugEnabled, setDebugEnabled] = useState(
     () => Boolean((location.state as ConversationNavigationState | null)?.debug)
   );
@@ -279,12 +279,12 @@ export function ConversationDetail() {
     });
     if (initialImagePrompt) {
       void handleGenerateImage(initialImagePrompt);
+    } else if (initialMessage && state?.initialFiles?.length) {
+      // The uploads have to finish before the message can go, so the user sends it
+      setInputValue(initialMessage);
+      handleFiles(state.initialFiles);
     } else if (initialMessage) {
-      void handleSendMessage(
-        initialMessage,
-        undefined,
-        featureFlags.enableDeepResearch && Boolean(state?.deepResearch)
-      );
+      void handleSendMessage(initialMessage);
     }
   }, [conversation, initialMessagesLoaded, isGeneratingImage, isSending, location.state, navigate]);
 
@@ -752,7 +752,6 @@ export function ConversationDetail() {
   const handleSendMessage = async (
     messageOverride?: string,
     optimisticUserContent?: string,
-    deepResearchOverride?: boolean,
   ) => {
     const messageToSend = messageOverride || inputValue.trim();
     const hasContent = Boolean(messageOverride) || composerHasContent;
@@ -818,7 +817,6 @@ export function ConversationDetail() {
         attachments: attachmentsToSend,
         imageIds: imagesToSend.flatMap((image) => (image.imageId ? [image.imageId] : [])),
         references: referencesToSend,
-        deepResearch: featureFlags.enableDeepResearch && (deepResearchOverride ?? deepResearchEnabled),
       },
       {
         onEvent: (event) => applyTurnEvent(event, ctx),
@@ -1555,15 +1553,6 @@ export function ConversationDetail() {
                       disabled: isGeneratingImage,
                       onClick: () => setIsImageDialogOpen(true),
                       title: "Generate image",
-                    }
-                  : undefined
-              }
-              deepResearchAction={
-                featureFlags.enableDeepResearch
-                  ? {
-                      enabled: deepResearchEnabled,
-                      disabled: isGeneratingImage,
-                      onChange: setDeepResearchEnabled,
                     }
                   : undefined
               }

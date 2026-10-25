@@ -48,3 +48,7 @@
 .docked {
   @apply gap-3;
 }
+
+.attachments {
+  @apply flex w-full flex-wrap gap-2;
+}

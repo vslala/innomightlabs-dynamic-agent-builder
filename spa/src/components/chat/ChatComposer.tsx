@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { DragEvent, KeyboardEvent, ReactNode, ClipboardEvent } from "react";
-import { Bug, FileUp, Image as ImageIcon, Loader2, Paperclip, SearchCheck, Send, Square } from "lucide-react";
+import { Bug, FileUp, Image as ImageIcon, Loader2, Paperclip, Send, Square } from "lucide-react";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { Toggle } from "../ui/toggle";
@@ -13,13 +13,6 @@ interface ComposerImageAction {
   visible?: boolean;
   title?: string;
   onClick: () => void;
-}
-
-interface ComposerDeepResearchAction {
-  enabled: boolean;
-  disabled?: boolean;
-  visible?: boolean;
-  onChange: (enabled: boolean) => void;
 }
 
 interface ComposerDebugAction {
@@ -51,7 +44,6 @@ interface ChatComposerProps {
   /** Files dropped on the composer. Setting it turns the composer into a drop target. */
   onDropFiles?: (data: DataTransfer) => void;
   imageAction?: ComposerImageAction;
-  deepResearchAction?: ComposerDeepResearchAction;
   debugAction?: ComposerDebugAction;
   /** While submitting, replaces the send button with a stop affordance for the running turn. */
   stopAction?: ComposerStopAction;
@@ -73,7 +65,6 @@ export function ChatComposer({
   onAttachDocuments,
   onDropFiles,
   imageAction,
-  deepResearchAction,
   debugAction,
   stopAction,
   statusIndicator,
@@ -81,7 +72,6 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [dragging, setDragging] = useState(false);
   const showImageAction = imageAction?.visible ?? Boolean(imageAction);
-  const showDeepResearch = deepResearchAction?.visible ?? Boolean(deepResearchAction);
   const showDebug = debugAction?.visible ?? Boolean(debugAction);
 
   useLayoutEffect(() => {
@@ -178,19 +168,6 @@ export function ChatComposer({
               >
                 <ImageIcon className={styles.buttonIcon} />
               </Button>
-            )}
-
-            {showDeepResearch && deepResearchAction && (
-              <Toggle
-                pressed={deepResearchAction.enabled}
-                onPressedChange={deepResearchAction.onChange}
-                disabled={disabled || isSubmitting || deepResearchAction.disabled}
-                aria-label="Deep research"
-                className={styles.researchToggle}
-              >
-                <SearchCheck className={styles.buttonIcon} />
-                <span>Deep research</span>
-              </Toggle>
             )}
 
             {showDebug && debugAction && (

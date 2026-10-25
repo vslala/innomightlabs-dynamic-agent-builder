@@ -224,7 +224,6 @@ export interface SendMessageRequest {
   attachments?: Attachment[];
   image_ids?: string[];
   references?: Pick<MessageReference, "kind" | "id">[];
-  deep_research?: boolean;
 }
 
 /** A message on its way to the agent, in the composer's terms. */
@@ -235,8 +234,6 @@ export interface OutgoingMessage {
   imageIds?: string[];
   /** Documents already uploaded to the conversation (`uploadDocument`), and anything else the message points at. */
   references?: MessageReference[];
-  /** Enable the gated research workspace tools. */
-  deepResearch?: boolean;
 }
 
 export interface GenerateImageRequest {

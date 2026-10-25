@@ -337,12 +337,11 @@ function sleep(ms: number): Promise<void> {
 export const chatService = new ChatService();
 
 /** The request body: only the parts the message has, so a server that predates one sees the request it knows. */
-export function sendMessageBody({ content, attachments, imageIds, references, deepResearch }: OutgoingMessage): SendMessageRequest {
+export function sendMessageBody({ content, attachments, imageIds, references }: OutgoingMessage): SendMessageRequest {
   return {
     content,
     ...(attachments?.length ? { attachments } : {}),
     ...(imageIds?.length ? { image_ids: imageIds } : {}),
     ...(references?.length ? { references: references.map(({ kind, id }) => ({ kind, id })) } : {}),
-    ...(deepResearch ? { deep_research: true } : {}),
   };
 }

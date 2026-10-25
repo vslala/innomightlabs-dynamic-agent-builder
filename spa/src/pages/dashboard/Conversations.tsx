@@ -6,7 +6,6 @@ import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
 import { agentDisplayName } from "../../services/builder/ila";
 import { defaultAgentService } from "../../services/settings/DefaultAgentService";
-import { featureFlags } from "../../config/featureFlags";
 import type { ConversationResponse } from "../../types/conversation";
 import { userVisibleConversations } from "../../utils/conversations";
 import { ConversationCloud } from "./conversations/cloud/ConversationCloud";
@@ -25,8 +24,8 @@ export function Conversations() {
   const [agents, setAgents] = useState<AgentResponse[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const [mode, setMode] = useState<ConversationStartMode>("chat");
-  const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [view, setView] = useState<ConversationView>(loadView);
   const [search, setSearch] = useState("");
@@ -89,13 +88,14 @@ export function Conversations() {
         agent_id: selectedAgentId,
       });
       setPrompt("");
+      setFiles([]);
       navigate(`/dashboard/conversations/${conversation.conversation_id}`, {
         state:
           mode === "image"
             ? { initialImagePrompt: message }
             : {
                 initialMessage: message,
-                deepResearch: featureFlags.enableDeepResearch && deepResearchEnabled,
+                initialFiles: files,
                 debug: debugEnabled,
               },
       });
@@ -124,8 +124,8 @@ export function Conversations() {
 
   const handleNewConversation = () => {
     setPrompt("");
+    setFiles([]);
     setMode("chat");
-    setDeepResearchEnabled(false);
     setDebugEnabled(false);
   };
 
@@ -140,10 +140,9 @@ export function Conversations() {
       agents={agents}
       selectedAgentId={selectedAgentId}
       prompt={prompt}
+      files={files}
       mode={mode}
-      deepResearchEnabled={deepResearchEnabled}
       debugEnabled={debugEnabled}
-      showDeepResearch={featureFlags.enableDeepResearch}
       creating={creating}
       error={error}
       docked={view === "cloud"}
@@ -155,14 +154,14 @@ export function Conversations() {
         }
       }}
       onPromptChange={setPrompt}
+      onFilesAdded={(added) => setFiles((current) => [...current, ...added])}
+      onFileRemoved={(file) => setFiles((current) => current.filter((each) => each !== file))}
       onModeChange={(nextMode) => {
         setMode(nextMode);
         if (nextMode === "image") {
-          setDeepResearchEnabled(false);
           setDebugEnabled(false);
         }
       }}
-      onDeepResearchChange={setDeepResearchEnabled}
       onDebugChange={setDebugEnabled}
       onSubmit={handleStartConversation}
       onCreateAgent={() => navigate("/dashboard/agents/new")}

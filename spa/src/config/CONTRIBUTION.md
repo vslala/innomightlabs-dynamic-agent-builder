@@ -4,10 +4,9 @@
 
 The current source configuration is `featureFlags.ts`. It exports one `as const` object evaluated from Vite build-time environment values:
 
-- `enableDeepResearch`: enabled only outside production and only when `VITE_ENABLE_DEEP_RESEARCH` is exactly the string `"true"`.
 - `showToolActivity`: enabled unless `VITE_SHOW_TOOL_ACTIVITY` is exactly `"false"`; unset retains the existing behavior.
 
-`enabled` and `notDisabled` deliberately encode different default policies. This is not a runtime configuration server, permission system, or secret store.
+`notDisabled` keeps a flag on unless it is exactly `"false"`. This is not a runtime configuration server, permission system, or secret store.
 
 ## Extension conventions
 

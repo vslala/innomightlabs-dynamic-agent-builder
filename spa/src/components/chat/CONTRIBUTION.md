@@ -5,7 +5,7 @@
 These are dashboard/builder chat surfaces. They do not own the entire SSE lifecycle, persistence, or turn cancellation; consuming pages and services supply the transcript, stream state, and callbacks. The embeddable widget lives in `spa/embed/`.
 
 - `ChatStreamRenderer.tsx`: message/stream/activity presentation using `buildChatStreamRenderPlan` from `packages/chat-stream-renderer/src`.
-- `ChatComposer.tsx` and module CSS: controlled textarea, attachment/image/research/debug actions, send/stop UI.
+- `ChatComposer.tsx` and module CSS: controlled textarea, attachment/document/image/debug actions, send/stop UI.
 - `AttachmentChip`, `TokenUsageIndicator`: attachment and usage display.
 - `DocumentChip`: a conversation document (PDF, Word…) with its reading status and a remove button. The composer's `onAttachDocuments` opens the picker; the page owns the documents through `useConversationDocuments`.
 - `ToolActivityCard`, `ToolActivitySummary`, `toolActivityFormat`: detailed versus compact tool display.
