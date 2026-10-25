@@ -15,6 +15,280 @@ export interface ChangeLogEntry {
 
 export const changeLogEntries: ChangeLogEntry[] = [
   {
+    date: "2026-10-25",
+    title: "Documents in chats and knowledge bases",
+    summary:
+      "Attach PDFs, Word files, slides, spreadsheets and scans to a chat or a knowledge base. They are read in the background, and agents read just the part they need instead of the whole file.",
+    items: [
+      {
+        title: "Attach documents in chat",
+        description:
+          "Add a PDF, Word file, slides, a spreadsheet or a scan next to your message. It is read in the background and shows on your message as a chip. The agent knows the file arrived, in this chat and when you open the conversation again, so you don't have to point it there.",
+        category: "new",
+      },
+      {
+        title: "Upload files to a knowledge base",
+        description:
+          "Upload the same kinds of files to a knowledge base. Each shows its progress, can be retried if reading failed, and is removed together with what it added to search when you delete it.",
+        category: "new",
+      },
+      {
+        title: "Agents read large files in parts",
+        description:
+          "Agents see a file's sections, tables and pages first, then read only what the question needs. For a spreadsheet they can filter, group and total thousands of rows without reading them, so questions like \"how many runs did Madawa score\" are answered from every row.",
+        category: "new",
+      },
+      {
+        title: "Scans and layouts",
+        description:
+          "Scanned pages are read with OCR, payslips and statements keep their tables, and an agent can look at a page as an image to check amounts, stamps or signatures.",
+        category: "new",
+      },
+      {
+        title: "Knowledge base reading view shows Markdown",
+        description:
+          "A page's reading view now shows headings, lists and tables as they are meant to look, instead of raw text.",
+        category: "fixed",
+      },
+    ],
+  },
+  {
+    date: "2026-10-24",
+    title: "WordPress search, Drive and Gmail writes",
+    summary:
+      "The WordPress AI Search plugin is available, and agents can now write to Google Drive and Gmail, not only read.",
+    items: [
+      {
+        title: "WordPress AI Search plugin",
+        description:
+          "Add an InnomightLabs search box to a WordPress site. Agents can read a post's full content with the WordPress Search skill when a snippet isn't enough.",
+        category: "new",
+      },
+      {
+        title: "Write to Google Drive",
+        description:
+          "Agents can create and update files in your Google Drive once you have authorized the connector.",
+        category: "new",
+      },
+      {
+        title: "Draft and send Gmail",
+        description:
+          "Agents can write email drafts and send messages from your Gmail account, in chats and in automations.",
+        category: "new",
+      },
+      {
+        title: "Share REST templates safely",
+        description:
+          "REST Template skills can be shared with others, with safeguards on where they are allowed to send requests.",
+        category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-10-22",
+    title: "Agents that make site videos",
+    summary:
+      "A new Browser Studio skill lets agents look at websites, record walkthroughs and turn them into finished videos.",
+    items: [
+      {
+        title: "Inspect and record sites",
+        description:
+          "Agents can open a public site, take screenshots, rehearse a walkthrough step by step and record it.",
+        category: "new",
+      },
+      {
+        title: "Compose a video",
+        description:
+          "Clips, zooms, transitions, text overlays and a music bed are joined into one MP4 you can play right in the conversation.",
+        category: "new",
+      },
+      {
+        title: "Videos as artifacts",
+        description:
+          "A video from the conversation workspace can be saved as an artifact, and idle workspaces are cleaned up on their own.",
+        category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-10-21",
+    title: "Social accounts, more connectors and named skills",
+    summary:
+      "Connect LinkedIn and publish to it from an agent. The Connectors page has more ready-made providers, and every skill you install can have its own name.",
+    items: [
+      {
+        title: "Social tab and LinkedIn",
+        description:
+          "Connect LinkedIn from the new Social tab on the Connectors page. Agents with the Social Media skill can check your account and publish text posts, with one or several images.",
+        category: "new",
+      },
+      {
+        title: "Searchable connector catalog",
+        description:
+          "The Connectors page has search and brand icons, and five more ready-made providers, including Exa, DeepWiki, Hugging Face, Microsoft Learn and Context7.",
+        category: "new",
+      },
+      {
+        title: "Name each skill you install",
+        description:
+          "When you install a skill you can give it a title and a description, which is what the agent reads. Install the same skill twice for different jobs and tell the copies apart.",
+        category: "new",
+      },
+      {
+        title: "Scheduled automation runs",
+        description:
+          "A scheduled automation run now starts at its own schedule trigger.",
+        category: "fixed",
+      },
+    ],
+  },
+  {
+    date: "2026-10-18",
+    title: "Fresher knowledge bases and diagrams in chat",
+    summary:
+      "Knowledge bases keep up with their sites without re-reading everything, and Mermaid diagrams appear as pictures in chats.",
+    items: [
+      {
+        title: "Re-crawls update only what changed",
+        description:
+          "Reading a site again only re-embeds the pages that changed, and pages the site no longer serves are removed from search, so answers don't quote stale content.",
+        category: "improved",
+      },
+      {
+        title: "Recrawl on a schedule",
+        description:
+          "The Knowledge Base skill reads a knowledge base's site again, so an automation can keep it up to date on a schedule.",
+        category: "new",
+      },
+      {
+        title: "Page by page view of a knowledge base",
+        description:
+          "Open a page of a knowledge base to see its chunks as search sees them, a map of how they are sized, and a reading view.",
+        category: "new",
+      },
+      {
+        title: "Pages that load with JavaScript",
+        description:
+          "Sites that build their pages in the browser are now rendered before they are read, instead of coming back empty.",
+        category: "improved",
+      },
+      {
+        title: "Mermaid diagrams in chat",
+        description:
+          "Diagrams an agent writes in Mermaid show as pictures in the dashboard chat and the embedded widget.",
+        category: "new",
+      },
+      {
+        title: "Deleting a knowledge base is all or nothing",
+        description:
+          "Its vectors are removed first. If that fails, nothing else is deleted, so you can try again without leaving anything half removed.",
+        category: "fixed",
+      },
+    ],
+  },
+  {
+    date: "2026-10-15",
+    title: "Leads",
+    summary:
+      "Agents can collect leads for you: you define a form, the agent fills it in over the conversation, and every captured lead can start an automation.",
+    items: [
+      {
+        title: "Lead forms and captures",
+        description:
+          "Define what you want to know about a visitor. The agent asks naturally, remembers what it learned across visits, and saves the lead once the form is complete. The same lead is never saved twice.",
+        category: "new",
+      },
+      {
+        title: "Leads dashboard",
+        description:
+          "Browse leads by agent, form, status and date, edit forms, set statuses and see your usage.",
+        category: "new",
+      },
+      {
+        title: "Start automations from a lead",
+        description:
+          "A new Lead captured trigger starts an automation, so leads can go to email, a CRM or any other action.",
+        category: "new",
+      },
+      {
+        title: "File uploads in lead forms",
+        description:
+          "Visitors can upload files into a lead form from the widget and from chat, and the files are kept with the lead.",
+        category: "new",
+      },
+      {
+        title: "Ila builds it for you",
+        description:
+          "Ila can set up the lead form, the agent that collects it and the automation that follows, and can list your lead forms and automations.",
+        category: "improved",
+      },
+    ],
+  },
+  {
+    date: "2026-10-13",
+    title: "Images in chat, and a conversation cloud",
+    summary:
+      "Paste or drop images into a chat and agents can read them. Conversations show as a cloud you can search.",
+    items: [
+      {
+        title: "Send images to an agent",
+        description:
+          "Paste, pick or drop images into the dashboard chat, the embedded widget or the API. The agent reads them with a vision model, only when the conversation has an image, and remembers what it saw.",
+        category: "new",
+      },
+      {
+        title: "Pick the vision model",
+        description:
+          "Choose which model reads images in Settings. It is separate from the model your agent talks with.",
+        category: "new",
+      },
+      {
+        title: "Conversation cloud",
+        description:
+          "Your conversations appear as a cloud with search, and a toggle to go back to the classic list. Your choice is remembered.",
+        category: "new",
+      },
+    ],
+  },
+  {
+    date: "2026-10-11",
+    title: "Shared accounts and members",
+    summary:
+      "Bring other people into your account, and decide who can see and use what.",
+    items: [
+      {
+        title: "Invite members",
+        description:
+          "Admins invite people by email. Each member signs in with their own identity and works in the shared account.",
+        category: "new",
+      },
+      {
+        title: "Members portal",
+        description:
+          "Manage members and invitations in one place. Admins can see what other members have as metadata, never their content.",
+        category: "new",
+      },
+      {
+        title: "Private by default, shared on purpose",
+        description:
+          "What you create stays yours until you share it, with a person or a group, one resource at a time.",
+        category: "new",
+      },
+      {
+        title: "Delete artifacts",
+        description:
+          "Artifacts you no longer need can be deleted, and OpenAI sign-ins refresh themselves instead of expiring.",
+        category: "improved",
+      },
+      {
+        title: "A responsive dashboard",
+        description:
+          "The dashboard and the public site adapt to smaller screens, and your email no longer crowds the navigation bar.",
+        category: "improved",
+      },
+    ],
+  },
+  {
     date: "2026-10-10",
     title: "Build with Ila, and kits",
     summary:
