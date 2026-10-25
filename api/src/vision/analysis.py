@@ -112,11 +112,40 @@ class ImageReader:
             )
         return vision_settings
 
+    async def look_at(
+        self, *, account_id: str, agent_id: str, owner_email: str, image: bytes, mime_type: str, prompt: str | None
+    ) -> VisionReading:
+        """Read an image that isn't a chat attachment (a document's page) with the account's vision model."""
+        vision_settings = self._settings_for(account_id)
+        reading = await asyncio.wait_for(
+            self._ask(account_id, vision_settings, image, mime_type, prompt), timeout=settings.vision_call_timeout_seconds
+        )
+        if reading.prompt_tokens or reading.completion_tokens:
+            try:
+                self.token_usage.record_usage(
+                    owner_email=owner_email,
+                    agent_id=agent_id,
+                    llm_model=f"vision:{vision_settings.model_name}",
+                    prompt_tokens=reading.prompt_tokens,
+                    completion_tokens=reading.completion_tokens,
+                )
+            except Exception:
+                log.warning("Could not record vision usage for agent %s", agent_id, exc_info=True)
+        return reading
+
     async def _look(
         self, context: NativeToolContext, vision_settings: VisionSettings, ref: ImageRef, prompt: str | None
     ) -> VisionReading:
+        stored = await asyncio.to_thread(
+            self.uploads.open_bytes, conversation_id=context.conversation_id, image_id=ref.attachment.image_id
+        )
+        return await self._ask(context.account_id, vision_settings, stored.body, ref.attachment.mime_type, prompt)
+
+    async def _ask(
+        self, account_id: str, vision_settings: VisionSettings, image: bytes, mime_type: str, prompt: str | None
+    ) -> VisionReading:
         provider_name = str(vision_settings.provider_name)
-        provider_settings = self.provider_settings_repository.find_by_provider(context.account_id, provider_name)
+        provider_settings = self.provider_settings_repository.find_by_provider(account_id, provider_name)
         if provider_settings is None:
             raise ImageInputError(ImageInputUnavailable.NOT_CONFIGURED, f"{provider_name} is not connected.", 403)
         credentials = await load_provider_credentials(
@@ -124,15 +153,10 @@ class ImageReader:
             provider_settings=provider_settings,
             provider_settings_repo=self.provider_settings_repository,
         )
-        stored = await asyncio.to_thread(
-            self.uploads.open_bytes, conversation_id=context.conversation_id, image_id=ref.attachment.image_id
-        )
         task = f"Task from the assistant:\n{prompt}" if prompt else DEFAULT_TASK
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": VISION_SYSTEM_PROMPT},
-            {"role": "user", "content": [
-                ImageBlock(media_type=ref.attachment.mime_type, data=stored.body), TextBlock(text=task)
-            ]},
+            {"role": "user", "content": [ImageBlock(media_type=mime_type, data=image), TextBlock(text=task)]},
         ]
 
         text: list[str] = []

@@ -25,7 +25,8 @@ def chunk_id(kb_id: str, url: str, title: str, level: int, content: str, occurre
 
 #: Bump it when the extractor or a chunker changes what a page becomes. Pages read by an older version are fetched in
 #: full, without validators, so a site that answers 304 can't keep them as the old reader made them.
-READER_VERSION = 2
+#: 3: large tables are split into row groups under their header, and the overview chunk is capped for tables.
+READER_VERSION = 3
 
 
 def text_hash(title: str, text: str, chunking: str) -> str:

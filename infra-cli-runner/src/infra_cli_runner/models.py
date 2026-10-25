@@ -344,3 +344,24 @@ class BrowserRenderResponse(BaseModel):
     final_url: str
     status: int
     html: str
+
+
+class DocumentTable(BaseModel):
+    page: int
+    #: The header row first (when Docling found one), then the data rows; every cell is text.
+    rows: list[list[str]]
+
+
+class DocumentPage(BaseModel):
+    page: int
+    markdown: str
+    #: The page rendered as a PNG, for PDFs; other formats have no render.
+    png_base64: str | None
+
+
+class DocumentParseResponse(BaseModel):
+    markdown: str
+    page_count: int
+    tables: list[DocumentTable]
+    structured: dict[str, Any]
+    pages: list[DocumentPage]

@@ -6,13 +6,18 @@ from typing import Annotated, Optional
 
 import asyncio
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
 from src.agents.image_generation.storage import ConversationMediaStorage
 from src.agents.access import require_agent
 from src.agents.repository import AgentRepository
 from src.common.pagination import Paginated
+from src.conversations.documents import document_owner
+from src.documents.models import DocumentReadError, DocumentResponse, DocumentStatus
+from src.documents.service import get_document_service
+from src.documents.uploads import read_upload, take_upload_slot
+from src.documents.worker import launch as launch_document
 from src.conversations.models import (
     Conversation,
     ConversationResponse,
@@ -49,6 +54,14 @@ def own_partition(principal: Annotated[Principal, Depends(get_principal)]) -> st
 
 
 Partition = Annotated[str, Depends(own_partition)]
+
+
+def owned_conversation(conversation_id: str, partition: str) -> Conversation:
+    """The caller's conversation, or 404: a conversation in someone else's partition isn't found."""
+    conversation = conversation_repository.find_by_id(conversation_id, partition)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conversation
 
 
 def validate_agent(agent_id: str, principal: Principal) -> None:
@@ -156,9 +169,7 @@ async def get_conversation(conversation_id: str, partition: Partition):
     Get a specific conversation by ID.
     """
 
-    conversation = conversation_repository.find_by_id(conversation_id, partition)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    conversation = owned_conversation(conversation_id, partition)
 
     return conversation.to_response()
 
@@ -180,10 +191,7 @@ async def get_messages(
     (oldest at top, newest at bottom).
     """
 
-    # Verify conversation exists and belongs to user
-    conversation = conversation_repository.find_by_id(conversation_id, partition)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    owned_conversation(conversation_id, partition)
 
     visible_messages, next_cursor, has_more = find_visible_messages_newest_first(
         conversation_id=conversation_id,
@@ -212,9 +220,7 @@ async def get_tool_audit(
     agent actually called and what came back.
     """
 
-    conversation = conversation_repository.find_by_id(conversation_id, partition)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    owned_conversation(conversation_id, partition)
 
     audit_rows, next_cursor, has_more = message_repository.find_audit_by_conversation(
         conversation_id=conversation_id,
@@ -238,9 +244,7 @@ async def get_message_image(
 ):
     """Return generated image bytes for an authenticated conversation owner."""
 
-    conversation = conversation_repository.find_by_id(conversation_id, partition)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    owned_conversation(conversation_id, partition)
 
     messages = message_repository.find_by_conversation(conversation_id)
     message = next((m for m in messages if m.message_id == message_id), None)
@@ -274,9 +278,7 @@ async def upload_image(
     file: UploadFile = File(...),
 ) -> ImageUploadResponse:
     """Upload an image to attach to the next message; send its `image_id` with that message."""
-    conversation = conversation_repository.find_by_id(conversation_id, partition)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    conversation = owned_conversation(conversation_id, partition)
     agent = require_agent(principal, conversation.agent_id, "agents:Chat", agent_repository)
 
     upload = await asyncio.to_thread(
@@ -300,9 +302,7 @@ async def upload_lead_file(
     file: UploadFile = File(...),
 ) -> LeadFileResponse:
     """For members trying a lead form in the dashboard; the capture it goes into is a test capture."""
-    conversation = conversation_repository.find_by_id(conversation_id, partition)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    conversation = owned_conversation(conversation_id, partition)
     agent = require_agent(principal, conversation.agent_id, "agents:Chat", agent_repository)
     lead_form = LeadsService().find_active_form(agent.account_id, form)
 
@@ -319,11 +319,61 @@ async def upload_lead_file(
     return LeadFileResponse.of(lead_file)
 
 
+@router.post("/{conversation_id}/documents", response_model=DocumentResponse, status_code=202)
+async def upload_document(
+    conversation_id: str,
+    principal: Annotated[Principal, Depends(get_principal)],
+    partition: Partition,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+) -> DocumentResponse:
+    """Upload a document to send with the next message (PDF, Office files, scans, text): send its `document_id` as a
+    reference (`kind: document`). It is read in the background; one never sent is removed after a day."""
+    conversation = owned_conversation(conversation_id, partition)
+    require_agent(principal, conversation.agent_id, "agents:Chat", agent_repository)
+
+    take_upload_slot(conversation.account_id)
+    data = await read_upload(file)
+    try:
+        document = get_document_service().submit(
+            document_owner(conversation),
+            file.filename or "",
+            data,
+            created_by=principal.user_id,
+            content_type=file.content_type or "",
+            sent_with_a_message=True,
+        )
+    except DocumentReadError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if document.status == DocumentStatus.PENDING:
+        launch_document(document, background_tasks)
+    return DocumentResponse.of(document)
+
+
+@router.get("/{conversation_id}/documents", response_model=list[DocumentResponse])
+async def list_documents(
+    conversation_id: str, partition: Partition, unsent: Annotated[bool, Query(description="Only uploads not yet sent")] = False
+) -> list[DocumentResponse]:
+    conversation = owned_conversation(conversation_id, partition)
+    documents = get_document_service()
+    owner = document_owner(conversation)
+    return [DocumentResponse.of(document) for document in (documents.unsent(owner) if unsent else documents.documents(owner))]
+
+
+@router.delete("/{conversation_id}/documents/{document_id}", status_code=204)
+async def delete_document(conversation_id: str, document_id: str, partition: Partition) -> None:
+    conversation = owned_conversation(conversation_id, partition)
+    documents = get_document_service()
+    document = documents.get(document_owner(conversation), document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    documents.delete(document)
+
+
 @router.get("/{conversation_id}/images/{image_id}")
 async def get_uploaded_image(conversation_id: str, image_id: str, partition: Partition) -> Response:
     """An image the user attached to a message, for the conversation's owner."""
-    if not conversation_repository.find_by_id(conversation_id, partition):
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    owned_conversation(conversation_id, partition)
     stored = await asyncio.to_thread(
         ImageUploadService().open_bytes, conversation_id=conversation_id, image_id=image_id
     )
@@ -344,10 +394,7 @@ async def update_conversation(
     - **context**: New conversation context (optional)
     """
 
-    # Find existing conversation
-    conversation = conversation_repository.find_by_id(conversation_id, partition)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    conversation = owned_conversation(conversation_id, partition)
 
     # Validate new agent if provided
     if body.agent_id is not None:
@@ -376,13 +423,17 @@ async def delete_conversation(conversation_id: str, partition: Partition):
     This will permanently delete the conversation and all its messages.
     """
 
-    # Check if conversation exists
-    conversation = conversation_repository.find_by_id(conversation_id, partition)
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    conversation = owned_conversation(conversation_id, partition)
+
+    # Its documents first (the files, then their records): a document must not outlive its conversation, and a
+    # failure here leaves the conversation in place to delete again
+    try:
+        get_document_service().delete_all(document_owner(conversation))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail="The conversation's files couldn't be deleted. Try again.") from e
 
     # Delete all messages in this conversation first
-    deleted_messages = message_repository.delete_by_conversation(conversation_id)
+    message_repository.delete_by_conversation(conversation_id)
 
     try:
         ConversationMediaStorage().delete_conversation_prefix(

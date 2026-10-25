@@ -13,6 +13,7 @@ The service intentionally exposes only:
 - `POST /v1/browser/walkthroughs`
 - `POST /v1/browser/scenes`
 - `POST /v1/media/compositions`, `POST /v1/media/probes`
+- `POST /v1/documents/parse`
 - `GET /v1/mcp/packages`, `PUT|GET|DELETE /v1/mcp/servers/{server_id}`, `POST /v1/mcp/servers/{server_id}/mcp`
 
 Requests must use bearer auth with `CLI_RUNNER_SHARED_TOKEN`. The runner never accepts shell command strings.
@@ -160,6 +161,50 @@ cheapest way to check a finished video.
 ffmpeg and ffprobe come from the image's package (`apt-get install ffmpeg`): Playwright's own ffmpeg only encodes VP8.
 Locally, install them (`brew install ffmpeg`); the tests that need them skip themselves without.
 
+## Document parsing
+
+`POST /v1/documents/parse` reads one uploaded document with [Docling](https://github.com/docling-project/docling): a
+multipart form with a single `file` field (the filename's extension picks the format). Supported: `.pdf`, `.docx`,
+`.pptx`, `.xlsx`, `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.bmp`. The response:
+
+```json
+{
+  "markdown": "## Payslip\n\n| Item | Amount |\n...",
+  "page_count": 1,
+  "tables": [{"page": 1, "rows": [["Item", "Amount"], ["Net pay", "5,608.87"]]}],
+  "structured": {"schema_name": "DoclingDocument", "...": "..."},
+  "pages": [{"page": 1, "markdown": "## Payslip\n...", "png_base64": "iVBORw0KGgo..."}]
+}
+```
+
+- `markdown` is the whole document, with pictures as placeholders (never file links); each of `pages` carries its own
+  page's Markdown and, for PDFs, the page rendered at 2x as a PNG (`null` for other formats).
+- `tables` holds every table as text cells: the header row first when Docling found one, then the data rows.
+- `structured` is Docling's own lossless document (`export_to_dict()`), without the page renders `pages` already has.
+- Office files have no pages in Docling, so they read as one.
+
+Errors: `400` for an unsupported extension, `413` for a file over `DOCUMENT_PARSE_MAX_BYTES` (default `26214400`, 25 MiB)
+or with more than `DOCUMENT_PARSE_MAX_PAGES` pages (default `100`; a PDF's pages are counted with pypdfium2 before any
+model runs), `422` when Docling can't read the file (`detail` says why, briefly), and `503` if Docling isn't installed.
+
+Docling runs OCR (RapidOCR) and table structure (TableFormer). Its layout model is `heron_101`, not the default: on a
+trial with 51 real payslips and invoices, the default model took pages with a decorated background (ADP payslips) for a
+single picture and dropped all their text, which `heron_101` reads. The converter loads its models once, on the first
+request (about 18 seconds), and is kept. Converting is CPU-bound, so it runs in a thread, one document at a time
+(`DOCUMENT_PARSE_CONCURRENCY`, default `1`); a scanned page takes a few seconds.
+
+The image downloads the models at build into `DOCLING_ARTIFACTS_PATH` (`/opt/docling-models`, about 670 MB), and Docling
+then reads only from there, so a request never downloads anything. torch comes from PyTorch's CPU-only index on Linux
+(`[tool.uv.sources]` in `pyproject.toml`), which keeps the CUDA libraries out of the image. Locally, without
+`DOCLING_ARTIFACTS_PATH`, Docling downloads the models into the Hugging Face cache on first use. The real-model test is
+slow and runs only when asked:
+
+```bash
+uv run docling-tools models download-hf-repo docling-project/docling-layout-heron-101 -o ~/docling-models
+uv run docling-tools models download tableformer rapidocr --rapidocr-backend-lang torch:ch -o ~/docling-models
+DOCLING_ARTIFACTS_PATH=~/docling-models DOCLING_SMOKE=1 uv run python -m unittest tests.test_document_parse -v
+```
+
 ## Hosted stdio MCP servers
 
 The runner hosts stdio MCP servers as long-lived processes and exposes each one through a stateless Streamable HTTP
@@ -186,9 +231,10 @@ upgrading a package is a code review plus a redeploy. Nothing is installed at ru
 The process pool lives in memory, so **run this service as one replica with one worker** (the `CMD` sets no
 `--workers`). All hosted servers share the `runner` uid, which is why only reviewed, baked packages may run.
 
-On Apple Silicon machines whose CPU reports SME (M4-class), the arm64 `cryptography` wheel used by some Python MCP
-packages crashes with an illegal instruction inside Docker. Build or run the image with `--platform linux/amd64`
-locally if a hosted server exits with code `-4`; Railway builds for amd64.
+On Apple Silicon machines whose CPU reports SME (M4-class), arm64 native code crashes with an illegal instruction inside
+Docker: the `cryptography` wheel used by some Python MCP packages (a hosted server exits with code `-4`), and torch, which
+Docling needs, so the image build fails at the model download with exit code 132. Build and run the image with
+`--platform linux/amd64` locally; `docker-compose.local.yml` pins it. Railway builds for amd64.
 
 ## Python executions
 

@@ -51,6 +51,8 @@ from src.knowledge.schemas import (
 )
 
 from src.knowledge.router import router, agent_kb_router
+# Registers the knowledge base's follow-up with documents (index once read, take the page out before a delete)
+import src.knowledge.documents  # noqa: F401,E402
 
 from src.knowledge.service import (
     KnowledgeBaseService,

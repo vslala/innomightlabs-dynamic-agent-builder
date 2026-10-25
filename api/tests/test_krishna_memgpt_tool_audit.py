@@ -1,10 +1,9 @@
 import json
 
 from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete
-from src.agents.architectures.krishna_memgpt import (
-    KrishnaMemGPTArchitecture,
-    _tool_categories_for,
-)
+from src.agents.architectures.krishna_memgpt import KrishnaMemGPTArchitecture
+from src.agents.architectures.krishna_memgpt_families import TOOL_FAMILIES
+from src.agents.tool_runtime.families import active_families
 from src.agents.tool_display import derive_display_tool
 from src.agents.models import Agent
 from src.agents.runtime_state import AgentTurnState
@@ -49,9 +48,12 @@ class FakeSkillRuntime:
 EMPTY_MEMORY = CoreMemorySnapshot(block_defs=[], blocks={})
 
 
+JIRA = type("Connection", (), {"mcp_id": "mcp-1", "name": "Jira"})()
+
+
 class FakeMCPConnectorService:
     def list_agent_connections(self, **kwargs):
-        return ["mcp-connection"]
+        return [JIRA]
 
 
 def _tool_call(tool_call_id: str, tool_name: str, tool_args: dict):
@@ -327,11 +329,11 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
 
     prompt_calls = []
 
-    def fake_build_system_prompt(*args, **kwargs):
+    def fake_build_system_prompt(**kwargs):
         prompt_calls.append(kwargs)
         return "system prompt"
 
-    architecture._build_system_prompt = fake_build_system_prompt
+    monkeypatch.setattr("src.agents.architectures.krishna_memgpt.build_krishna_memgpt_system_prompt", fake_build_system_prompt)
 
     agent = Agent(
         agent_name="Audit Agent",
@@ -362,8 +364,8 @@ async def test_prompt_refresh_preserves_enabled_mcp_connections(monkeypatch):
 
     assert not [event for event in events if event.event_type == SSEEventType.ERROR]
     assert len(prompt_calls) == 2
-    assert prompt_calls[0]["enabled_mcp_connections"] == ["mcp-connection"]
-    assert prompt_calls[1]["enabled_mcp_connections"] == ["mcp-connection"]
+    for call in prompt_calls:
+        assert any("<mcp_connectors>" in section and "Jira" in section for section in call["tool_sections"])
 
 
 async def test_every_prompt_of_the_turn_gets_the_instructions_with_macros_expanded(monkeypatch, dynamodb_table):
@@ -390,11 +392,11 @@ async def test_every_prompt_of_the_turn_gets_the_instructions_with_macros_expand
 
     instructions_seen = []
 
-    def fake_build_system_prompt(instructions, **kwargs):
-        instructions_seen.append(instructions)
+    def fake_build_system_prompt(**kwargs):
+        instructions_seen.append(kwargs["agent_persona"])
         return "system prompt"
 
-    architecture._build_system_prompt = fake_build_system_prompt
+    monkeypatch.setattr("src.agents.architectures.krishna_memgpt.build_krishna_memgpt_system_prompt", fake_build_system_prompt)
 
     agent = Agent(
         agent_name="Audit Agent",
@@ -581,7 +583,7 @@ def test_krishna_memgpt_builds_tool_definitions_from_command_registry():
     tool_names = {
         definition["name"]
         for definition in architecture.tool_registry.definitions_for_categories(
-            _tool_categories_for(state)
+            {family.category for family in active_families(TOOL_FAMILIES, state)}
         )
     }
 

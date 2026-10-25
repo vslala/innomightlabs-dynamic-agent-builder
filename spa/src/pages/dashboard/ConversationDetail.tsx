@@ -4,6 +4,7 @@ import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Loader2, Maximize2, Mi
 import { ChatFormRenderer, type FormAnswer } from "../../components/chat/ChatFormRenderer";
 import { AttachmentChip } from "../../components/chat/AttachmentChip";
 import { ImageAttachmentChip } from "../../components/chat/ImageAttachmentChip";
+import { DocumentChip } from "../../components/chat/DocumentChip";
 import { CanvasSidePanel } from "../../components/chat/CanvasSidePanel";
 import { ChatComposer } from "../../components/chat/ChatComposer";
 import { TokenUsageIndicator, type LiveTokenUsageUpdate } from "../../components/chat/TokenUsageIndicator";
@@ -11,6 +12,8 @@ import { ChatStreamRenderer } from "../../components/chat/ChatStreamRenderer";
 import { featureFlags } from "../../config/featureFlags";
 import { useFileAttachments } from "../../hooks/useFileAttachments";
 import { useConversationImages } from "../../hooks/useConversationImages";
+import { useConversationDocuments } from "../../hooks/useConversationDocuments";
+import { CHAT_DOCUMENT_EXTENSIONS, documentStatusLabel, isInFlight, readsOnlyAsDocument } from "../../lib/documents";
 import { ALLOWED_EXTENSIONS } from "../../types/message";
 import {
   Card,
@@ -117,6 +120,7 @@ export function ConversationDetail() {
   const pendingCanvasArtifactsRef = useRef<MessageCanvasArtifact[]>([]);
   const initialMessageSentRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const {
     attachments,
@@ -294,6 +298,7 @@ export function ConversationDetail() {
     : null;
   const supportsImageGeneration = currentAgent?.capabilities?.includes("image_generation") ?? false;
   const images = useConversationImages(conversationId, conversation?.agent_id);
+  const documents = useConversationDocuments(conversationId);
 
   const formatDate = (dateString: string): string => {
     return new Date(dateString).toLocaleDateString(undefined, {
@@ -738,6 +743,11 @@ export function ConversationDetail() {
     }
   };
 
+  // What the composer holds, and whether an upload is still on its way: the send button and the handler both ask
+  const composerHasContent =
+    Boolean(inputValue.trim()) || attachments.length > 0 || images.readyImageIds.length > 0 || documents.documents.length > 0;
+  const uploadsInProgress = images.isUploading || images.hasFailed || documents.uploading.length > 0;
+
   // Handle sending a message
   const handleSendMessage = async (
     messageOverride?: string,
@@ -745,14 +755,13 @@ export function ConversationDetail() {
     deepResearchOverride?: boolean,
   ) => {
     const messageToSend = messageOverride || inputValue.trim();
-    // Allow sending if there's a message OR attachments OR images, once every image has uploaded
-    const hasContent = Boolean(messageToSend) || attachments.length > 0 || images.readyImageIds.length > 0;
-    const imagesNotReady = !messageOverride && (images.isUploading || images.hasFailed);
-    if (!hasContent || !conversation || isSending || imagesNotReady) return;
+    const hasContent = Boolean(messageOverride) || composerHasContent;
+    if (!hasContent || !conversation || isSending || (!messageOverride && uploadsInProgress)) return;
 
     // Capture attachments before clearing
     const attachmentsToSend = attachments.length > 0 ? [...attachments] : undefined;
     const imagesToSend = messageOverride ? [] : images.images.filter((image) => image.imageId);
+    const referencesToSend = messageOverride ? [] : documents.takeForSending();
 
     if (!messageOverride) {
       setInputValue("");
@@ -768,7 +777,9 @@ export function ConversationDetail() {
       message_id: `temp-${Date.now()}`,
       conversation_id: conversation.conversation_id,
       role: "user",
-      content: optimisticUserContent ?? (messageToSend || (imagesToSend.length > 0 ? "" : "(attachments only)")),
+      content:
+        optimisticUserContent ??
+        (messageToSend || (imagesToSend.length > 0 || referencesToSend.length > 0 ? "" : "(attachments only)")),
       attachments: attachmentsToSend?.map((a) => ({ filename: a.filename, size: a.size })),
       // Shown from the local files until the saved message arrives; the server reports the real dimensions.
       image_attachments: imagesToSend.map((image) => ({
@@ -780,6 +791,7 @@ export function ConversationDetail() {
         height: 0,
         url: image.previewUrl,
       })),
+      references: referencesToSend,
       created_at: new Date().toISOString(),
     };
     if (!isRetryMessage) {
@@ -801,10 +813,13 @@ export function ConversationDetail() {
     await chatService.sendMessage(
       conversation.agent_id,
       conversation.conversation_id,
-      messageToSend || "",
-      attachmentsToSend,
-      imagesToSend.flatMap((image) => (image.imageId ? [image.imageId] : [])),
-      featureFlags.enableDeepResearch && (deepResearchOverride ?? deepResearchEnabled),
+      {
+        content: messageToSend || "",
+        attachments: attachmentsToSend,
+        imageIds: imagesToSend.flatMap((image) => (image.imageId ? [image.imageId] : [])),
+        references: referencesToSend,
+        deepResearch: featureFlags.enableDeepResearch && (deepResearchOverride ?? deepResearchEnabled),
+      },
       {
         onEvent: (event) => applyTurnEvent(event, ctx),
         signal: controller.signal,
@@ -1013,10 +1028,15 @@ export function ConversationDetail() {
     }
   };
 
-  /** Files picked or dropped: images go to the image attachments, the rest to the text-file attachments. */
+  /**
+   * Files picked or dropped: images go to the image attachments, PDFs, Word and slides to the conversation's
+   * documents, the rest to the text-file attachments.
+   */
   const handleFiles = (files: File[]) => {
     const rest = images.takeImages(files);
-    if (rest.length > 0) void addFiles(rest);
+    documents.addDocuments(rest.filter((file) => readsOnlyAsDocument(file.name)));
+    const text = rest.filter((file) => !readsOnlyAsDocument(file.name));
+    if (text.length > 0) void addFiles(text);
   };
 
   if (loading) {
@@ -1468,10 +1488,29 @@ export function ConversationDetail() {
             </div>
           )}
 
+          {/* Documents to send with the message: read in the background, then the agent reads them with its document tools */}
+          {(documents.documents.length > 0 || documents.uploading.length > 0) && (
+            <div className={styles.attachments}>
+              {documents.documents.map((attached) => (
+                <DocumentChip
+                  key={attached.document_id}
+                  filename={attached.filename}
+                  label={documentStatusLabel(attached.status, attached.error)}
+                  state={attached.status === "failed" ? "failed" : isInFlight(attached.status) ? "busy" : "ready"}
+                  error={attached.error}
+                  onRemove={() => void documents.removeDocument(attached)}
+                />
+              ))}
+              {documents.uploading.map((upload) => (
+                <DocumentChip key={upload.localId} filename={upload.filename} label="Uploading" state="busy" />
+              ))}
+            </div>
+          )}
+
           {/* Attachment error */}
-          {(attachmentError || images.error) && (
+          {(attachmentError || images.error || documents.error) && (
             <div className={styles.attachmentError}>
-              {attachmentError || images.error}
+              {attachmentError || images.error || documents.error}
             </div>
           )}
 
@@ -1487,6 +1526,15 @@ export function ConversationDetail() {
                 e.target.value = "";
               }}
             />
+            <FileInput
+              ref={documentInputRef}
+              multiple
+              accept={CHAT_DOCUMENT_EXTENSIONS.join(",")}
+              onChange={(e) => {
+                if (e.target.files) documents.addDocuments(Array.from(e.target.files));
+                e.target.value = "";
+              }}
+            />
 
             <ChatComposer
               value={inputValue}
@@ -1498,13 +1546,9 @@ export function ConversationDetail() {
               statusIndicator={
                 <TokenUsageIndicator agentId={conversation.agent_id} liveUsage={liveTokenUsage} />
               }
-              submitDisabled={
-                (!inputValue.trim() && attachments.length === 0 && images.readyImageIds.length === 0)
-                || isSending
-                || images.isUploading
-                || images.hasFailed
-              }
+              submitDisabled={!composerHasContent || isSending || uploadsInProgress}
               onAttachFiles={() => fileInputRef.current?.click()}
+              onAttachDocuments={() => documentInputRef.current?.click()}
               imageAction={
                 supportsImageGeneration
                   ? {

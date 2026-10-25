@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import hashlib
 import importlib
 import inspect
@@ -28,6 +29,7 @@ class SkillRegistry:
 
     def reload(self) -> None:
         loaded: dict[str, LoadedSkill] = {}
+        core: dict[str, LoadedSkill] = {}
         for folder in self.root_dir.iterdir():
             if not folder.is_dir() or folder.name.startswith("__"):
                 continue
@@ -41,28 +43,38 @@ class SkillRegistry:
                     raise ValueError("manifest root must be an object")
 
                 manifest = SkillManifest.model_validate(data)
-                if manifest.id in loaded:
+                if manifest.id in loaded or manifest.id in core:
                     raise ValueError(f"duplicate skill id '{manifest.id}'")
 
-                loaded[manifest.id] = LoadedSkill(manifest=manifest, folder_name=folder.name)
+                (core if manifest.core else loaded)[manifest.id] = LoadedSkill(manifest=manifest, folder_name=folder.name)
             except Exception as e:
                 log.warning("Skipping invalid skill manifest %s: %s", manifest_path, e)
 
         self._loaded = loaded
+        self._core = core
         #: Changes whenever a manifest does; caches built from the manifests key on it.
         self.version = hashlib.sha256(
             json.dumps(
-                [loaded[skill_id].manifest.model_dump(mode="json") for skill_id in sorted(loaded)],
+                [every.manifest.model_dump(mode="json") for every in sorted([*loaded.values(), *core.values()], key=lambda s: s.manifest.id)],
                 sort_keys=True,
             ).encode("utf-8")
         ).hexdigest()[:16]
-        log.info("Loaded %d skills from %s", len(self._loaded), self.root_dir)
+        log.info("Loaded %d skills and %d core skills from %s", len(loaded), len(core), self.root_dir)
 
     def list(self) -> list[LoadedSkill]:
+        """The installable skills: what the catalog offers, agents install and automations enable."""
         return sorted(self._loaded.values(), key=lambda s: s.manifest.name.lower())
 
     def get(self, skill_id: str) -> Optional[LoadedSkill]:
+        """An installable skill. A core skill isn't one: its actions are core tools (`core()`)."""
         return self._loaded.get(skill_id)
+
+    def core_skills(self) -> builtins.list[LoadedSkill]:
+        return sorted(self._core.values(), key=lambda s: s.manifest.id)
+
+    def core(self, skill_id: str) -> Optional[LoadedSkill]:
+        """A core skill: a manifest whose actions every agent gets as tools of a family, never installed."""
+        return self._core.get(skill_id)
 
     def install_form(self, skill_id: str, submit_path: str) -> form_models.Form:
         loaded = self.get(skill_id)
@@ -107,7 +119,7 @@ class SkillRegistry:
         config: dict[str, Any],
         context: dict[str, Any],
     ) -> Any:
-        loaded = self.get(skill_id)
+        loaded = self.get(skill_id) or self.core(skill_id)
         if not loaded:
             raise ValueError(f"Unknown skill: {skill_id}")
 

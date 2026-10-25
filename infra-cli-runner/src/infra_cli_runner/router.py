@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Path, Query, Response, status
+from fastapi import APIRouter, Body, Depends, File, Header, HTTPException, Path, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse
 
 from src.infra_cli_runner.models import (
@@ -10,6 +10,7 @@ from src.infra_cli_runner.models import (
     BrowserRenderResponse,
     CommandRequest,
     CommandResponse,
+    DocumentParseResponse,
     EnsureHostedMCPServerRequest,
     HostedMCPPackage,
     HostedMCPServerStatus,
@@ -19,6 +20,14 @@ from src.infra_cli_runner.models import (
     PythonExecutionResponse,
 )
 from src.infra_cli_runner.browser import BrowserRenderer, RenderError, get_browser_renderer
+from src.infra_cli_runner.documents import (
+    ConversionFailed,
+    DoclingUnavailable,
+    DocumentParser,
+    DocumentTooLarge,
+    UnsupportedDocument,
+    get_document_parser,
+)
 from src.infra_cli_runner.filesystem import FileSystemOperationError, FileSystemService, get_file_system_service
 from src.infra_cli_runner.media import ffmpeg as media_ffmpeg
 from src.infra_cli_runner.media.compose import CompositionError
@@ -241,6 +250,28 @@ async def probe_media_file(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{exc.code}: {exc.message}") from exc
     except media_ffmpeg.MediaError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+@router.post("/v1/documents/parse", response_model=DocumentParseResponse)
+async def parse_document(
+    runner_service: Annotated[CliRunnerService, Depends(get_cli_runner_service)],
+    parser: Annotated[DocumentParser, Depends(get_document_parser)],
+    file: Annotated[UploadFile, File()],
+    authorization: str | None = Header(default=None),
+) -> DocumentParseResponse:
+    _authorize(runner_service, authorization)
+    # One byte past the limit is enough to know it is over; the rest is never read into memory.
+    content = await file.read(parser.max_bytes + 1)
+    try:
+        return await parser.parse(file.filename or "", content)
+    except UnsupportedDocument as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except DocumentTooLarge as exc:
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
+    except ConversionFailed as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    except DoclingUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
 
 @router.get("/v1/mcp/packages", response_model=list[HostedMCPPackage])

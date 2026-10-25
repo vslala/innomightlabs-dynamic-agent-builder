@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { chatService } from "./ChatService";
+import { chatService, sendMessageBody } from "./ChatService";
 
 const noHandlers = { onEvent: vi.fn() };
 
@@ -17,7 +17,7 @@ describe("sending a message with images", () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
     vi.stubGlobal("fetch", fetcher);
 
-    await chatService.sendMessage("agent-1", "conv-1", "what is this?", undefined, ["img-1", "img-2"], false, noHandlers);
+    await chatService.sendMessage("agent-1", "conv-1", { content: "what is this?", imageIds: ["img-1", "img-2"] }, noHandlers);
 
     expect(lastRequestBody(fetcher)).toEqual({ content: "what is this?", image_ids: ["img-1", "img-2"] });
   });
@@ -26,7 +26,7 @@ describe("sending a message with images", () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
     vi.stubGlobal("fetch", fetcher);
 
-    await chatService.sendMessage("agent-1", "conv-1", "hello", undefined, [], false, noHandlers);
+    await chatService.sendMessage("agent-1", "conv-1", { content: "hello", imageIds: [] }, noHandlers);
 
     expect(lastRequestBody(fetcher)).toEqual({ content: "hello" });
   });
@@ -36,7 +36,7 @@ describe("sending a message with images", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail }), { status: 422 })));
     const onError = vi.fn();
 
-    await chatService.sendMessage("agent-1", "conv-1", "hi", undefined, ["gone"], false, { ...noHandlers, onError });
+    await chatService.sendMessage("agent-1", "conv-1", { content: "hi", imageIds: ["gone"] }, { ...noHandlers, onError });
 
     expect(onError).toHaveBeenCalledWith(new Error(detail.message));
   });
@@ -45,8 +45,23 @@ describe("sending a message with images", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "Agent not found" }), { status: 404 })));
     const onError = vi.fn();
 
-    await chatService.sendMessage("agent-1", "conv-1", "hi", undefined, [], false, { ...noHandlers, onError });
+    await chatService.sendMessage("agent-1", "conv-1", { content: "hi" }, { ...noHandlers, onError });
 
     expect(onError).toHaveBeenCalledWith(new Error("Agent not found"));
+  });
+});
+
+describe("sending a message with documents", () => {
+  it("sends each document as a reference by kind and id, without the label", () => {
+    const body = sendMessageBody({
+      content: "what is my net pay?",
+      references: [{ kind: "document", id: "doc-1", label: "payslip.pdf" }],
+    });
+
+    expect(body).toEqual({ content: "what is my net pay?", references: [{ kind: "document", id: "doc-1" }] });
+  });
+
+  it("leaves references out when there are none", () => {
+    expect(sendMessageBody({ content: "hi", references: [] })).toEqual({ content: "hi" });
   });
 });

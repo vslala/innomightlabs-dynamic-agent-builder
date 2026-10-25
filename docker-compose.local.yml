@@ -12,6 +12,9 @@ services:
       - local-dev
 
   infra-cli-runner:
+    # Railway builds amd64. Native arm64 crashes with "Illegal instruction" on M4-class Macs (torch for Docling, the
+    # cryptography wheel some MCP packages use): see infra-cli-runner/README.md
+    platform: linux/amd64
     build:
       context: ./infra-cli-runner
       dockerfile: Dockerfile.railway

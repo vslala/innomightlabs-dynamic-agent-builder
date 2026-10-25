@@ -377,6 +377,7 @@ set_railway_var "DOWNLOADS_MANIFEST_KEY" "$(get_var_default 'DOWNLOADS_MANIFEST_
 set_railway_var "DOWNLOADS_PRESIGN_TTL_SECONDS" "$(get_var_default 'DOWNLOADS_PRESIGN_TTL_SECONDS' '900')"
 set_railway_var "CONVERSATION_MEDIA_BUCKET" "$(get_var_default 'CONVERSATION_MEDIA_BUCKET' 'innomightlabs-conversations-meta')"
 set_railway_var "CONVERSATION_MEDIA_PRESIGN_TTL_SECONDS" "$(get_var_default 'CONVERSATION_MEDIA_PRESIGN_TTL_SECONDS' '900')"
+set_railway_var "DOCUMENTS_BUCKET" "$(get_var_default 'DOCUMENTS_BUCKET' 'innomightlabs-documents')"
 
 set_railway_var "VISION_MAX_IMAGE_BYTES" "$(get_var_default 'VISION_MAX_IMAGE_BYTES' '5242880')"
 set_railway_var "VISION_MAX_IMAGES_PER_MESSAGE" "$(get_var_default 'VISION_MAX_IMAGES_PER_MESSAGE' '4')"

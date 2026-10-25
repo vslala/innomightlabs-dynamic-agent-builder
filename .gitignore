@@ -36,6 +36,12 @@ dynamodb-data/
 tmp/
 docs/mockups
 
+# Private product analytics reports (contain names and emails)
+product-reports/
+product_report.html
+product_report.py
+PRODUCT_REPORT_README.md
+
 # Artifacts
 *.zip
 .codex

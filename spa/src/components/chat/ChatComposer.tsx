@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { DragEvent, KeyboardEvent, ReactNode, ClipboardEvent } from "react";
-import { Bug, Image as ImageIcon, Loader2, Paperclip, SearchCheck, Send, Square } from "lucide-react";
+import { Bug, FileUp, Image as ImageIcon, Loader2, Paperclip, SearchCheck, Send, Square } from "lucide-react";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { Toggle } from "../ui/toggle";
@@ -46,6 +46,8 @@ interface ChatComposerProps {
   onPaste?: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   onAttachFiles?: () => void;
   attachDisabled?: boolean;
+  /** Attach a document (PDF, Word…) to send with the message; the agent reads it with its document tools. */
+  onAttachDocuments?: () => void;
   /** Files dropped on the composer. Setting it turns the composer into a drop target. */
   onDropFiles?: (data: DataTransfer) => void;
   imageAction?: ComposerImageAction;
@@ -68,6 +70,7 @@ export function ChatComposer({
   onPaste,
   onAttachFiles,
   attachDisabled = false,
+  onAttachDocuments,
   onDropFiles,
   imageAction,
   deepResearchAction,
@@ -144,6 +147,21 @@ export function ChatComposer({
                 className={styles.roundIconButton}
               >
                 <Paperclip className={styles.buttonIcon} />
+              </Button>
+            )}
+
+            {onAttachDocuments && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={onAttachDocuments}
+                disabled={disabled || isSubmitting}
+                aria-label="Attach a document"
+                title="Attach a document (PDF, Word, slides, spreadsheet)"
+                className={styles.roundIconButton}
+              >
+                <FileUp className={styles.buttonIcon} />
               </Button>
             )}
 

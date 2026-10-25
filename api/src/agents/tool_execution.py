@@ -1,4 +1,4 @@
-"""Tool execution policy: timeouts, error shape, and prompt staleness.
+"""Tool execution policy: what may run, timeouts, error shape, and prompt staleness.
 
 The registry knows how to run a tool. This decides what happens when it takes
 too long or raises, and reports when a tool has invalidated the system prompt.
@@ -8,22 +8,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextvars import ContextVar
 from typing import Any
 
 from src.agents.runtime_state import AgentTurnState
-from src.agents.tool_runtime import ToolExecutionOutcome, ToolRegistry
+from src.agents.tool_runtime import ToolCategory, ToolExecutionOutcome, ToolRegistry
+from src.agents.tool_runtime.current_call import current_tool_call_id
 
 log = logging.getLogger(__name__)
 
-#: The id of the tool call being run, the same `tool_call_id` the call's audit record keeps, so a tool can file
-#: what it produces under it. A context variable, not turn state: a turn runs several tools at once.
-current_tool_call_id: ContextVar[str | None] = ContextVar("current_tool_call_id", default=None)
-
-
 class ToolExecutionRouter:
-    def __init__(self, registry: ToolRegistry):
+    def __init__(self, registry: ToolRegistry, *, offered: set[ToolCategory]):
         self._registry = registry
+        #: The categories the turn told the model about: a tool outside them doesn't run, whatever the model asks.
+        self._offered = offered
 
     async def execute(
         self,
@@ -37,6 +34,8 @@ class ToolExecutionRouter:
         call = current_tool_call_id.set(tool_use_id)
         try:
             tool = self._registry.get(tool_name)
+            if tool.spec.category not in self._offered:
+                return ToolExecutionOutcome(result=f"Error: '{tool_name}' isn't available in this conversation.", success=False)
             run = tool.run(tool_input, state)
             if tool.spec.timeout_seconds:
                 result = await asyncio.wait_for(run, timeout=tool.spec.timeout_seconds)

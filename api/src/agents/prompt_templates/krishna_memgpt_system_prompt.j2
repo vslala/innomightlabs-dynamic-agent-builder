@@ -20,17 +20,11 @@ ANCHOR_STOP: Once the task is fully complete and no further tool call is require
 
 {% include "krishna_memgpt/sections/memory_tools.j2" %}
 
-{% if kb_count > 0 %}
-{% include "krishna_memgpt/sections/knowledge_base.j2" %}
-{% endif %}
+{# The sections of the tool families offered this turn, in their order (krishna_memgpt_families.py) #}
+{% for section in tool_sections %}
+{{ section }}
 
-{% if enabled_skills %}
-{% include "krishna_memgpt/sections/skills.j2" %}
-{% endif %}
-
-{% if enabled_mcp_connections %}
-{% include "krishna_memgpt/sections/mcp_connectors.j2" %}
-{% endif %}
+{% endfor %}
 
 {% if capacity_warnings %}
 {% include "krishna_memgpt/sections/memory_warning.j2" %}

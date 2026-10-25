@@ -18,37 +18,35 @@ export type CrawlJobStatus =
 export type CrawlSourceType = "sitemap" | "url";
 
 // =============================================================================
-// Content Upload
+// Documents
 // =============================================================================
 
-export const KB_UPLOAD_ALLOWED_EXTENSIONS = [
-  ".txt",
-  ".md",
-  ".csv",
-  ".json",
-  ".py",
-  ".js",
-  ".ts",
-  ".tsx",
-  ".jsx",
-  ".java",
-  ".go",
-  ".rs",
-  ".rb",
-  ".php",
-  ".html",
-  ".css",
-  ".xml",
-  ".yaml",
-  ".yml",
-  ".sh",
-  ".sql",
-  ".c",
-  ".cpp",
-  ".h",
-];
+export type DocumentOwnerKind = "knowledge_base" | "conversation";
 
-export const KB_UPLOAD_MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB per file
+/** pending, parsing and indexing are in flight; `deleting` is on its way out. */
+export type DocumentStatus = "pending" | "parsing" | "indexing" | "ready" | "failed" | "deleting";
+
+/** A file uploaded to a knowledge base or a conversation, read (and, for a knowledge base, indexed) in the background. */
+export interface KnowledgeDocument {
+  document_id: string;
+  owner_kind: DocumentOwnerKind;
+  owner_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  metadata: string;
+  source_url: string;
+  status: DocumentStatus;
+  parser: string;
+  page_count: number;
+  table_count: number;
+  text_chars: number;
+  /** Why it failed, fit to show. */
+  error: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export type CrawlStepType =
   | "JOB_STARTED"
@@ -138,29 +136,6 @@ export interface KnowledgeBase {
   created_at: string;
   updated_at: string;
   access: KnowledgeBaseAccess;
-}
-
-export interface ContentUploadResponse {
-  kb_id: string;
-  filename: string;
-  chunk_count: number;
-  vector_count: number;
-  total_pages: number;
-  total_chunks: number;
-  total_vectors: number;
-}
-
-export interface ContentUploadItem {
-  upload_id: string;
-  kb_id: string;
-  filename: string;
-  content_type?: string | null;
-  size_bytes: number;
-  metadata?: string | null;
-  chunk_count: number;
-  vector_count: number;
-  created_by: string;
-  created_at: string;
 }
 
 export interface PaginatedResponse<T> {

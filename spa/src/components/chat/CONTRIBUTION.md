@@ -7,6 +7,7 @@ These are dashboard/builder chat surfaces. They do not own the entire SSE lifecy
 - `ChatStreamRenderer.tsx`: message/stream/activity presentation using `buildChatStreamRenderPlan` from `packages/chat-stream-renderer/src`.
 - `ChatComposer.tsx` and module CSS: controlled textarea, attachment/image/research/debug actions, send/stop UI.
 - `AttachmentChip`, `TokenUsageIndicator`: attachment and usage display.
+- `DocumentChip`: a conversation document (PDF, Word…) with its reading status and a remove button. The composer's `onAttachDocuments` opens the picker; the page owns the documents through `useConversationDocuments`.
 - `ToolActivityCard`, `ToolActivitySummary`, `toolActivityFormat`: detailed versus compact tool display.
 - `IlaWorking`, `ilaStatus`, `useHeldLabel`: Ila's live status line. `ilaStatus` words the tool she is running (from its name and arguments, never a page id) or "Thinking" between tools, and nothing once the turn ends; `useHeldLabel` keeps each line up long enough to read (`MIN_SHOWN_MS`). It is one line in the widget's "current tool, then gone" manner, styled like ChatGPT and Claude, not a list; her tools are never listed (`showsToolActivity`). A new Ila tool gets a phrase in `TOOL_PHRASES`; one without falls back to "Working on it".
 - `ChatFormRenderer`, `SubmittedFormMessage`, `submittedFormParser`: interactive chat questions and saved answer presentation.

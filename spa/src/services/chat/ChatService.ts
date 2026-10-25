@@ -3,9 +3,10 @@
  */
 
 import type {
-  Attachment,
   GenerateImageRequest,
   GenerateImageResponse,
+  OutgoingMessage,
+  SendMessageRequest,
   SSEEvent,
 } from "../../types/message";
 import { chatPath } from "../builder/ila";
@@ -129,38 +130,19 @@ class ChatService {
    *
    * @param agentId - The agent to send the message to
    * @param conversationId - The conversation context
-   * @param content - The message text content
-   * @param attachments - Optional file attachments to include
-   * @param imageIds - Images already uploaded to the conversation (`uploadImage`) to send with the message
-   * @param deepResearch - Whether to enable gated research workspace tools
+   * @param message - The text, and what goes with it (attachments, uploaded images and documents)
    * @param options - Stream event handlers
    */
   async sendMessage(
     agentId: string,
     conversationId: string,
-    content: string,
-    attachments: Attachment[] | undefined,
-    imageIds: string[],
-    deepResearch: boolean,
+    message: OutgoingMessage,
     options: ChatStreamOptions
   ): Promise<void> {
     const { onEvent, onError, onComplete, onTurnStarted, onConflict, signal } = options;
 
     const url = `${this.baseUrl}${chatPath(agentId, conversationId)}/send-message`;
-
-    // Build request body with optional attachments
-    const body: { content: string; attachments?: Attachment[]; image_ids?: string[]; deep_research?: boolean } = {
-      content,
-    };
-    if (attachments && attachments.length > 0) {
-      body.attachments = attachments;
-    }
-    if (imageIds.length > 0) {
-      body.image_ids = imageIds;
-    }
-    if (deepResearch) {
-      body.deep_research = true;
-    }
+    const body = sendMessageBody(message);
 
     try {
       const response = await fetch(url, {
@@ -353,3 +335,14 @@ function sleep(ms: number): Promise<void> {
 
 // Singleton instance
 export const chatService = new ChatService();
+
+/** The request body: only the parts the message has, so a server that predates one sees the request it knows. */
+export function sendMessageBody({ content, attachments, imageIds, references, deepResearch }: OutgoingMessage): SendMessageRequest {
+  return {
+    content,
+    ...(attachments?.length ? { attachments } : {}),
+    ...(imageIds?.length ? { image_ids: imageIds } : {}),
+    ...(references?.length ? { references: references.map(({ kind, id }) => ({ kind, id })) } : {}),
+    ...(deepResearch ? { deep_research: true } : {}),
+  };
+}

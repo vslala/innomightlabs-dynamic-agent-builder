@@ -9,7 +9,7 @@ import { AccordionPanel, MarkdownRenderer } from "../ui";
 import { SubmittedFormMessage } from "./SubmittedFormMessage";
 import { isSubmittedFormMessage } from "./submittedFormParser";
 import { authHeaders } from "../../services/http";
-import type { AttachmentInfo, Message, MessageCanvasArtifact, MessageImage, ToolActivity } from "../../types/message";
+import type { AttachmentInfo, Message, MessageCanvasArtifact, MessageImage, MessageReference, ToolActivity } from "../../types/message";
 
 interface ChatStreamRendererProps {
   messages: Message[];
@@ -23,8 +23,8 @@ interface ChatStreamRendererProps {
   onExpandCanvas?: (canvas: MessageCanvasArtifact) => void;
 }
 
-function renderAttachments(role: Message["role"], attachments?: AttachmentInfo[]) {
-  if (!attachments?.length) {
+function renderAttachments(role: Message["role"], attachments?: AttachmentInfo[], references?: MessageReference[]) {
+  if (!attachments?.length && !references?.length) {
     return null;
   }
 
@@ -41,13 +41,16 @@ function renderAttachments(role: Message["role"], attachments?: AttachmentInfo[]
           : "1px solid var(--border-subtle)",
       }}
     >
-      {attachments.map((attachment, index) => (
+      {attachments?.map((attachment, index) => (
         <AttachmentChip
           key={`${attachment.filename}-${index}`}
           filename={attachment.filename}
           size={attachment.size}
           readonly
         />
+      ))}
+      {references?.map((reference) => (
+        <AttachmentChip key={`${reference.kind}-${reference.id}`} filename={reference.label || reference.kind} readonly />
       ))}
     </div>
   );
@@ -440,7 +443,7 @@ export function ChatStreamRenderer({
                 {renderImages(msg.image_attachments)}
                 {renderImages(msg.images)}
                 {renderCanvases(msg.canvases, onExpandCanvas)}
-                {renderAttachments(msg.role, msg.attachments)}
+                {renderAttachments(msg.role, msg.attachments, msg.references)}
               </div>
             </div>
           );

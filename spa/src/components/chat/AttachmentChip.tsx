@@ -3,13 +3,14 @@ import { Button } from "../ui/button";
 
 interface AttachmentChipProps {
   filename: string;
-  size: number;
+  /** Left out for a file the message points at (a document), whose size isn't on the message. */
+  size?: number;
   onRemove?: () => void;
   readonly?: boolean;
 }
 
 /**
- * Displays an attachment as a compact chip with filename and size.
+ * Displays an attachment as a compact chip with filename and, when known, size.
  * In edit mode (readonly=false), shows a remove button.
  */
 export function AttachmentChip({
@@ -48,9 +49,11 @@ export function AttachmentChip({
       >
         {filename}
       </span>
-      <span style={{ color: "var(--text-muted, #707080)" }}>
-        ({formatSize(size)})
-      </span>
+      {size !== undefined && (
+        <span style={{ color: "var(--text-muted, #707080)" }}>
+          ({formatSize(size)})
+        </span>
+      )}
       {!readonly && onRemove && (
         <Button
           type="button"

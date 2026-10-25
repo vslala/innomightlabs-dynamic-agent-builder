@@ -9,6 +9,9 @@ from .models import (
 from .repository import ConversationRepository
 from .router import router
 
+# Registers a conversation's documents as the "document" message reference kind
+from . import documents  # noqa: F401,E402
+
 __all__ = [
     "Conversation",
     "ConversationResponse",

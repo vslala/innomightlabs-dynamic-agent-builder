@@ -80,9 +80,10 @@ class KnowledgeBaseService:
         1. Deletes the Pinecone namespace (all vectors). If that can't be done it stops: nothing else is deleted,
            the result is `retryable`, and the KB is as it was. Chunks are what record that vectors exist, so deleting
            them first would leave vectors nothing could find to delete.
-        2. Deletes all content chunks, and the pages that list them, from DynamoDB
-        3. Unlinks the KB from all agents, and forgets its shares
-        4. Marks the KB as deleted with a TTL for auto-expiration (30 days)
+        2. Deletes its documents (S3, then their rows); if that fails it stops, retryable, like the vectors
+        3. Deletes all content chunks, and the pages that list them, from DynamoDB
+        4. Unlinks the KB from all agents, and forgets its shares
+        5. Marks the KB as deleted with a TTL for auto-expiration (30 days)
 
         The KB record itself remains for 30 days to handle orphan cleanup,
         then DynamoDB TTL auto-deletes it. Callers have found the KB and
@@ -104,6 +105,19 @@ class KnowledgeBaseService:
             log.error(f"Failed to delete Pinecone namespace for KB {kb_id}: {e}", exc_info=True)
         if not result.vectors_deleted:
             result.error = "The knowledge base's vectors couldn't be deleted, so nothing was deleted. Try again."
+            result.retryable = True
+            return result
+
+        try:
+            # Its documents (originals and readings in S3, then their rows) before the chunks: stop if they can't go,
+            # so no file outlives its knowledge base
+            from src.documents.service import get_document_service
+            from src.knowledge.documents import owner_of
+
+            get_document_service().delete_all(owner_of(kb))
+        except Exception as e:
+            log.error(f"Failed to delete the documents of KB {kb_id}: {e}", exc_info=True)
+            result.error = "The knowledge base's files couldn't be deleted. Try again."
             result.retryable = True
             return result
 
@@ -147,6 +161,7 @@ class KnowledgeBaseService:
         filename: str,
         content: str,
         metadata: Optional[str] = None,
+        source_url: Optional[str] = None,
     ) -> UploadIngestResult:
         """
         Ingest uploaded text content using the crawler chunking pipeline.
@@ -156,11 +171,12 @@ class KnowledgeBaseService:
             filename: Original filename
             content: Text content
             metadata: Optional metadata to include in context
+            source_url: The page's address; an upload's own (`file://{kb_id}/{filename}`) by default
 
         Returns:
             UploadIngestResult with chunk and vector counts, and what the knowledge base holds after it
         """
-        source_url = f"file://{kb.kb_id}/{filename}"
+        source_url = source_url or f"file://{kb.kb_id}/{filename}"
         metadata_text = (metadata or "").strip()
         title = f"{filename} — {metadata_text}" if metadata_text else filename
         content_to_chunk = f"Metadata:\n{metadata_text}\n\n{content}" if metadata_text else content
@@ -193,6 +209,24 @@ class KnowledgeBaseService:
         total_pages, total_chunks = held(pages.values())
         return UploadIngestResult(
             chunk_count=len(chunk_data_list), vector_count=embedded, total_pages=total_pages, total_chunks=total_chunks
+        )
+
+    def remove_page(self, kb: KnowledgeBase, url: str, *, reason: str) -> None:
+        """Take one page out of the knowledge base (its chunks, then its vectors) and recount what it holds."""
+        from src.crawler.page_index import PageIndex, held
+        from src.vectorstore import get_embeddings_service, get_pinecone_client
+
+        index = PageIndex(
+            kb.kb_id, vectors=get_pinecone_client(validate=True), embeddings=get_embeddings_service(), chunks=self.chunk_repo
+        )
+        pages = index.load()
+        page = pages.get(url)
+        if page is None:
+            return
+        pages[url] = index.remove(page, reason=reason, job_id="")
+        total_pages, total_chunks = held(pages.values())
+        self.kb_repo.update_stats(
+            kb.account_id, kb.kb_id, total_pages=total_pages, total_chunks=total_chunks, total_vectors=total_chunks
         )
 
     def _delete_pinecone_namespace(self, kb_id: str) -> bool:

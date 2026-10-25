@@ -21,6 +21,12 @@ Endpoints:
         GET    /knowledge-bases/{kb_id}/crawl-jobs/{job_id}/steps      Get audit log
         GET    /knowledge-bases/{kb_id}/crawl-jobs/{job_id}/pages      Get crawled pages
 
+    Documents (read and indexed in the background, see docs/LLD-documents.md):
+        POST   /knowledge-bases/{kb_id}/content-upload                   Upload a file (202, a pending document)
+        GET    /knowledge-bases/{kb_id}/documents                        List documents (a page, newest first)
+        GET    /knowledge-bases/{kb_id}/documents/{document_id}          Get a document's status
+        POST   /knowledge-bases/{kb_id}/documents/{document_id}/retry    Read a failed document again
+        DELETE /knowledge-bases/{kb_id}/documents/{document_id}          Delete it (page, then file, then record)
     Search:
         POST   /knowledge-bases/{kb_id}/search     Search knowledge base content
         POST   /agents/{agent_id}/knowledge-search Search across agent's linked KBs
@@ -36,7 +42,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, B
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer
 from typing import Annotated, Optional
-import os
 import logging
 import asyncio
 import json
@@ -59,9 +64,7 @@ from src.knowledge.models import (
     StartCrawlJobRequest,
     CrawlStepResponse,
     CrawledPageResponse,
-    ContentUploadResponse,
     ContentUploadItemResponse,
-    ContentUpload,
     KnowledgePageCounts,
     KnowledgePageDetail,
     KnowledgePageResponse,
@@ -82,18 +85,19 @@ from src.knowledge.schemas import (
     get_content_upload_form_schema,
     get_crawl_config_form,
     get_create_knowledge_base_form,
-    CONTENT_UPLOAD_ALLOWED_EXTENSIONS,
 )
 from src.knowledge.service import get_knowledge_base_service, KnowledgeBaseService
 from src.knowledge.crawl_launch import CrawlAlreadyRunning, create_crawl_job, launch_crawl
 from src.knowledge.run_state import CrawlJobStateService
-from src.vectorstore.pinecone_client import VectorStoreError
 from src.common.pagination import Paginated
+from src.documents.models import DocumentReadError, DocumentResponse, DocumentStatus
+from src.documents.service import get_document_service
+from src.documents.uploads import read_upload, take_upload_slot
+from src.documents.worker import launch as launch_document
+from src.knowledge.documents import owner_of
 from src.exceptions import GENERIC_ERROR_MESSAGE
 
 log = logging.getLogger(__name__)
-
-MAX_CONTENT_UPLOAD_BYTES = 5 * 1024 * 1024
 
 # Security scheme for Swagger UI
 security = HTTPBearer()
@@ -941,20 +945,18 @@ async def kb_content_upload(
 
 @router.post(
     "/{kb_id}/content-upload",
-    response_model=ContentUploadResponse,
-    status_code=status.HTTP_201_CREATED,
+    response_model=DocumentResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def upload_kb_content(
-    request: Request,
     principal: Annotated[Principal, Depends(get_principal)],
     kb_id: str,
     kb_repo: Annotated[KnowledgeBaseRepository, Depends(get_kb_repository)],
-    upload_repo: Annotated[ContentUploadRepository, Depends(get_content_upload_repository)],
-    service: Annotated[KnowledgeBaseService, Depends(get_kb_service)],
+    background_tasks: BackgroundTasks,
     attachment: UploadFile = File(...),
     metadata: Optional[str] = Form(default=None),
-) -> ContentUploadResponse:
-    """Upload a text-based file and ingest it into the knowledge base."""
+) -> DocumentResponse:
+    """Upload a file to the knowledge base. It is read and indexed in the background: poll its document for status."""
     from src.config import settings
 
     knowledge_base = require_kb(principal, kb_id, "knowledge:Update", kb_repo)
@@ -965,69 +967,77 @@ async def upload_kb_content(
             detail="Vector store is not configured. Set PINECONE_API_KEY, PINECONE_HOST, and PINECONE_INDEX."
         )
 
-    filename = attachment.filename or ""
-    ext = os.path.splitext(filename)[1].lower()
-    if ext not in CONTENT_UPLOAD_ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"File type '{ext or 'unknown'}' not allowed")
-
-    raw_bytes = await attachment.read()
-    if len(raw_bytes) > MAX_CONTENT_UPLOAD_BYTES:
-        raise HTTPException(status_code=400, detail="File exceeds 5MB limit")
-
+    take_upload_slot(knowledge_base.account_id)
+    data = await read_upload(attachment)
     try:
-        content = raw_bytes.decode("utf-8")
-    except UnicodeDecodeError:
-        content = raw_bytes.decode("utf-8", errors="replace")
-
-    try:
-        ingest_result = await service.ingest_text_content(
-            kb=knowledge_base,
-            filename=filename,
-            content=content,
-            metadata=metadata,
-        )
-    except VectorStoreError as e:
-        log.error(f"Couldn't index {filename} into KB {knowledge_base.kb_id}: {e}")
-        raise HTTPException(status_code=503, detail=KNOWLEDGE_SEARCH_UNAVAILABLE) from e
-
-    upload_record = upload_repo.save(
-        ContentUpload(
-            kb_id=knowledge_base.kb_id,
+        document = get_document_service().submit(
+            owner_of(knowledge_base),
+            attachment.filename or "",
+            data,
             created_by=principal.user_id,
-            filename=filename,
-            content_type=attachment.content_type,
-            size_bytes=len(raw_bytes),
-            metadata=metadata,
-            chunk_count=ingest_result.chunk_count,
-            vector_count=ingest_result.vector_count,
+            content_type=attachment.content_type or "",
+            metadata=(metadata or "").strip(),
         )
+    except DocumentReadError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if document.status == DocumentStatus.PENDING:
+        launch_document(document, background_tasks)
+    log.info(f"Accepted document {document.document_id} for KB {knowledge_base.kb_id}: {len(data)} bytes")
+    return DocumentResponse.of(document)
+
+
+@router.get("/{kb_id}/documents", response_model=Paginated[DocumentResponse])
+async def list_kb_documents(
+    kb: Annotated[KnowledgeBase, Depends(can_read_kb)],
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: Optional[str] = Query(default=None, description="The next_cursor of the previous page"),
+) -> Paginated[DocumentResponse]:
+    """The knowledge base's documents, newest first, a page at a time. The cursor is how many came before."""
+    documents = sorted(get_document_service().documents(owner_of(kb)), key=lambda d: d.created_at, reverse=True)
+    start = int(cursor) if cursor and cursor.isdigit() else 0
+    page = documents[start:start + limit]
+    has_more = start + limit < len(documents)
+    return Paginated[DocumentResponse](
+        items=[DocumentResponse.of(document) for document in page],
+        next_cursor=str(start + limit) if has_more else None,
+        has_more=has_more,
     )
 
-    total_pages, total_chunks = ingest_result.total_pages, ingest_result.total_chunks
-    total_vectors = total_chunks
 
-    kb_repo.update_stats(
-        knowledge_base.account_id,
-        knowledge_base.kb_id,
-        total_pages=total_pages,
-        total_chunks=total_chunks,
-        total_vectors=total_vectors,
-    )
+def _kb_document(kb: KnowledgeBase, document_id: str):
+    document = get_document_service().get(owner_of(kb), document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return document
 
-    log.info(
-        f"Uploaded content to KB {knowledge_base.kb_id}: {upload_record.filename} "
-        f"chunks={ingest_result.chunk_count} vectors={ingest_result.vector_count}"
-    )
 
-    return ContentUploadResponse(
-        kb_id=knowledge_base.kb_id,
-        filename=upload_record.filename,
-        chunk_count=ingest_result.chunk_count,
-        vector_count=ingest_result.vector_count,
-        total_pages=total_pages,
-        total_chunks=total_chunks,
-        total_vectors=total_vectors,
-    )
+@router.get("/{kb_id}/documents/{document_id}", response_model=DocumentResponse)
+async def get_kb_document(kb: Annotated[KnowledgeBase, Depends(can_read_kb)], document_id: str) -> DocumentResponse:
+    return DocumentResponse.of(_kb_document(kb, document_id))
+
+
+@router.post("/{kb_id}/documents/{document_id}/retry", response_model=DocumentResponse, status_code=status.HTTP_202_ACCEPTED)
+async def retry_kb_document(
+    kb: Annotated[KnowledgeBase, Depends(can_update_kb)], document_id: str, background_tasks: BackgroundTasks
+) -> DocumentResponse:
+    """Read a failed document again from the file already stored."""
+    document = _kb_document(kb, document_id)
+    if document.status != DocumentStatus.FAILED:
+        raise HTTPException(status_code=409, detail=f"The document is {document.status.value}, not failed")
+    document = get_document_service().retry(document)
+    launch_document(document, background_tasks)
+    return DocumentResponse.of(document)
+
+
+@router.delete("/{kb_id}/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_kb_document(kb: Annotated[KnowledgeBase, Depends(can_update_kb)], document_id: str) -> None:
+    """Delete a document: its page (chunks, vectors) leaves the knowledge base first, then the file and its reading."""
+    document = _kb_document(kb, document_id)
+    try:
+        get_document_service().delete(document)
+    except Exception as e:
+        log.error(f"Couldn't delete document {document_id} of KB {kb.kb_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=503, detail="The document couldn't be deleted. Try again.") from e
 
 
 @router.get(

@@ -48,6 +48,7 @@ from src.iam.dependencies import get_owner, get_principal
 from src.iam.principal import Principal
 from src.llm.events import SSEEvent, SSEEventType
 from src.messages.models import Attachment, MAX_FILES, MAX_TOTAL_SIZE
+from src.messages.references import ReferenceRequest, attach_references
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import ActorKind
 from src.exceptions import GENERIC_ERROR_MESSAGE
@@ -72,6 +73,8 @@ class SendMessageRequest(BaseModel):
     attachments: list[dict[str, Any]] | None = None
     #: Images uploaded to this conversation (`POST /conversations/{id}/images`) and sent with the message.
     image_ids: list[str] = Field(default_factory=list)
+    #: What else the message points at, by kind: documents uploaded with `POST /conversations/{id}/documents`.
+    references: list[ReferenceRequest] = Field(default_factory=list)
 
     @field_validator("attachments")
     @classmethod
@@ -241,10 +244,12 @@ async def count_attached(
     the list because it costs a few queries per agent: the page loads first and filters by it once it arrives."""
     # Each worker thread builds its own repository: boto3 resources are cached per thread
     agents = [agent for agent, _ in visible_agents(principal, repo)]
-    counts = await asyncio.gather(
-        *(asyncio.to_thread(lambda agent_id=agent.agent_id: AgentRepository().count_attached(agent_id)) for agent in agents)
-    )
+    counts = await asyncio.gather(*(asyncio.to_thread(_count_attached, agent.agent_id) for agent in agents))
     return {agent.agent_id: AgentAttachedCounts(**attached) for agent, attached in zip(agents, counts)}
+
+
+def _count_attached(agent_id: str) -> dict[str, int]:
+    return AgentRepository().count_attached(agent_id)
 
 
 @router.get("/update-schema/{agent_id}", response_model=form_models.Form, response_model_exclude_none=True)
@@ -527,12 +532,14 @@ async def send_message(
         actor_id=target.caller.user_id,
         image_ids=body.image_ids,
     )
+    references = await asyncio.to_thread(attach_references, target.conversation, body.references)
     running = start_turn(
         agent=target.agent,
         conversation=target.conversation,
         user_message=body.content,
         attachments=cast(list[Attachment], body.attachments or []),
         images=images,
+        references=references,
         # The agent runs as its owner (their provider keys, skills and connections); the caller is
         # who speaks, and whose memory it keeps
         owner_email=owner_of(target.agent).email,

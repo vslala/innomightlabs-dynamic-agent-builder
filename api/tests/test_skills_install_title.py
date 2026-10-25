@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.agents.models import Agent
+from src.agents.architectures.krishna_memgpt_prompt import skills_section
 from src.agents.repository import AgentRepository
 from src.skills.service import SkillRuntimeService
 from tests.mock_data import TEST_USER_EMAIL, agent_fields
@@ -105,9 +106,9 @@ def test_the_agent_reads_each_installs_title_and_description(test_client, auth_h
     _install(test_client, auth_headers, agent.agent_id, title="Company blog", description="Search our blog posts.")
     runtime = SkillRuntimeService()
 
-    prompt = runtime.build_system_prompt_addendum(runtime.list_enabled(agent.agent_id))
-    assert "- wordpress_search: Company blog - Search our blog posts. (skill_id: wordpress_search)" in prompt
+    prompt = skills_section(runtime.list_enabled(agent.agent_id))
+    assert "- wordpress_search: Company blog - Search our blog posts." in prompt
 
     test_client.patch(f"/agents/{agent.agent_id}/skills/wordpress_search", headers=auth_headers, json={"description": ""})
-    prompt = runtime.build_system_prompt_addendum(runtime.list_enabled(agent.agent_id))
-    assert "- wordpress_search: Company blog (skill_id: wordpress_search)" in prompt
+    prompt = skills_section(runtime.list_enabled(agent.agent_id))
+    assert "- wordpress_search: Company blog\n" in prompt

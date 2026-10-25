@@ -27,7 +27,7 @@ from src.scheduler.models import (
 )
 from src.scheduler.repository import ScheduleRunAlreadyExists, SchedulerRepository
 from src.scheduler import runtime as scheduler_runtime_module
-from src.scheduler.runtime import CRAWL_JOB_REAPER_ID, DREAM_RUN_REAPER_ID, SchedulerRuntime
+from src.scheduler.runtime import CRAWL_JOB_REAPER_ID, DOCUMENT_REAPER_ID, DREAM_RUN_REAPER_ID, SchedulerRuntime
 from src.scheduler.service import SchedulerService
 from tests.mock_data import TEST_USER_EMAIL, agent_fields, conversation_fields, schedule_fields
 from tests.mock_data import test_owner as _test_owner
@@ -232,6 +232,20 @@ async def test_scheduler_runtime_registers_global_crawl_job_reaper(dynamodb_tabl
     await runtime.start()
     try:
         assert runtime.scheduler.get_job(CRAWL_JOB_REAPER_ID) is not None
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_reaper_that_starts_late_still_runs(dynamodb_table):
+    """Reapers fall due together and block the loop in turn; APScheduler's default 1 s grace would skip the late ones."""
+    runtime = SchedulerRuntime(repository=SchedulerRepository())
+
+    await runtime.start()
+    try:
+        reapers = [job for job in runtime.scheduler.get_jobs() if job.id.startswith("internal:")]
+        assert DOCUMENT_REAPER_ID in {job.id for job in reapers}
+        assert all(job.misfire_grace_time == job.trigger.interval.total_seconds() for job in reapers)
     finally:
         await runtime.stop()
 

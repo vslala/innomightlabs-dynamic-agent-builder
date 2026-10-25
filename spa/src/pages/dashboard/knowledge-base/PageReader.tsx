@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Copy, ExternalLink, FileText, Maximize2, MessageCircleQuestion, Minimize2 } from "lucide-react";
-import { AlertBanner, Button, InlineEmptyState, LoadingState, StatusBadge } from "../../../components/ui";
+import { AlertBanner, Button, InlineEmptyState, LoadingState, MarkdownRenderer, StatusBadge } from "../../../components/ui";
 import { knowledgeApiService } from "../../../services/knowledge";
 import type { KnowledgePageDetail, PageChunk } from "../../../types/knowledge";
 import { chunkLevel, shortAddress } from "./knowledgePageDetail";
@@ -291,9 +291,14 @@ export function PageReader({ kbId, url, refreshKey, highlight, chunkId, onOpenPa
                 {page.chunks.map((chunk) => (
                   <section key={chunk.chunk_id}>
                     {chunk.section_heading && <h3>{chunk.section_heading}</h3>}
-                    <p>
-                      <Marked text={chunk.content} phrase={highlight} />
-                    </p>
+                    {/* Marking a phrase needs the plain text; otherwise the chunk reads as the Markdown it is */}
+                    {highlight ? (
+                      <p>
+                        <Marked text={chunk.content} phrase={highlight} />
+                      </p>
+                    ) : (
+                      <MarkdownRenderer content={chunk.content} className={styles.markdown} />
+                    )}
                   </section>
                 ))}
               </article>

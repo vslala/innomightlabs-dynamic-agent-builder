@@ -52,6 +52,14 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN /app/.venv/bin/playwright install --with-deps --only-shell chromium \
   && rm -rf /var/lib/apt/lists/*
 
+# Docling's models for /v1/documents/parse, fetched at build so a request never downloads them (the runner's home is a
+# private /tmp directory, and the network may be closed). heron_101 is the layout model the parser uses, so it is fetched
+# by name; tableformer reads tables and RapidOCR (torch, Docling's choice on Linux without onnxruntime) reads scans.
+ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models
+RUN /app/.venv/bin/docling-tools models download tableformer rapidocr --rapidocr-backend-lang torch:ch -o "$DOCLING_ARTIFACTS_PATH" \
+  && /app/.venv/bin/docling-tools models download-hf-repo docling-project/docling-layout-heron-101 -o "$DOCLING_ARTIFACTS_PATH" \
+  && chmod -R a+rX "$DOCLING_ARTIFACTS_PATH"
+
 COPY main.py ./
 COPY src ./src
 COPY mcp_packages ./mcp_packages

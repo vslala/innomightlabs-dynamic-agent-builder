@@ -22,6 +22,7 @@ from src.memory import (
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.vectorstore.search import get_search_service
 from src.vision.analysis import ImageReader
+from src.messages.references import recall_line
 from src.vision.context import recalled_generated_image_line, recalled_image_line
 
 log = logging.getLogger(__name__)
@@ -66,6 +67,19 @@ def normalize_block_name(block_name: str) -> str:
     return block_name
 
 
+def uploaded_document_note(source_url: str) -> str:
+    """For a hit from a file uploaded to a knowledge base (`file://{kb_id}/{filename}`): it is one slice of a stored
+    document, which the document tools read in bounded parts."""
+    if not source_url.startswith("file://"):
+        return ""
+    kb_id, _, filename = source_url.removeprefix("file://").partition("/")
+    return (
+        f"    Document: a slice of the uploaded file '{filename}' (knowledge_base_id {kb_id}). For totals, counts, "
+        "filters or anything spread across the file, use the document tools (list_documents, describe_document, then "
+        "query_table or read_section) instead of piecing it together from search results.\n"
+    )
+
+
 class NativeToolHandler:
     """
     Handler for executing native memory tools.
@@ -75,6 +89,9 @@ class NativeToolHandler:
 
     RECALL_PAGE_SIZE = 10
     KB_SEARCH_MAX_RESULTS = 10
+    #: Chunks are capped at a few hundred words (`crawler/chunking`): a shorter preview cut a table's chunk to its header
+    #: and a handful of rows.
+    KB_SEARCH_PREVIEW_CHARS = 2000
     MEMORY_TOOL_PREFIXES = ("core_memory_", "archival_memory_")
     DEFAULT_WAIT_SECONDS = 20
     MAX_WAIT_SECONDS = 600
@@ -438,6 +455,7 @@ class NativeToolHandler:
             lines.append(f"[{timestamp}] {role_label}: {content_preview}")
             lines.extend(f"    {recalled_image_line(image)}" for image in msg.image_attachments)
             lines.extend(f"    {recalled_generated_image_line(image)}" for image in msg.images)
+            lines.extend(f"    {recall_line(reference)}" for reference in msg.references)
 
         if page < total_pages:
             lines.append(f"\n(Use page={page + 1} to see older messages)")
@@ -479,13 +497,14 @@ class NativeToolHandler:
             lines = [f'Knowledge Base Search Results for "{query}":\n']
 
             for i, result in enumerate(results, start=1):
-                content_preview = result.content[:500]
-                if len(result.content) > 500:
+                content_preview = result.content[: self.KB_SEARCH_PREVIEW_CHARS]
+                if len(result.content) > self.KB_SEARCH_PREVIEW_CHARS:
                     content_preview += "..."
 
                 lines.append(
                     f"[{i}] (Score: {result.score:.2f}) {result.page_title}\n"
                     f"    Source: {result.source_url}\n"
+                    f"{uploaded_document_note(result.source_url)}"
                     f"    Content: {content_preview}\n"
                 )
 

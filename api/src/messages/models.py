@@ -162,6 +162,17 @@ class MessageCanvasArtifactResponse(BaseModel):
     open_url: str | None = None
 
 
+class MessageReference(BaseModel):
+    """Something the user attached that lives elsewhere (a document): the message holds the pointer, never the content.
+
+    Each kind is a strategy in `messages/references.py`, which says how it is attached, shown and recalled."""
+
+    kind: str
+    id: str
+    #: Shown without a lookup: the filename, say.
+    label: str = ""
+
+
 class MessageResponse(BaseModel):
     """Response model for message."""
 
@@ -171,6 +182,7 @@ class MessageResponse(BaseModel):
     content: str
     attachments: list[AttachmentResponse] = Field(default_factory=list)
     image_attachments: list[ImageAttachmentResponse] = Field(default_factory=list)
+    references: list[MessageReference] = Field(default_factory=list)
     images: list[MessageImageResponse] = Field(default_factory=list)
     canvases: list[MessageCanvasArtifactResponse] = Field(default_factory=list)
     created_at: datetime
@@ -186,6 +198,7 @@ class Message(BaseModel):
     content: str
     attachments: list[Attachment] = Field(default_factory=list)
     image_attachments: list[ImageAttachment] = Field(default_factory=list)
+    references: list[MessageReference] = Field(default_factory=list)
     images: list[MessageImage] = Field(default_factory=list)
     canvases: list[MessageCanvasArtifact] = Field(default_factory=list)
     kind: MessageKind = MessageKind.CHAT
@@ -219,43 +232,28 @@ class Message(BaseModel):
             item["attachments"] = [att.model_dump() for att in self.attachments]
         if self.image_attachments:
             item["image_attachments"] = [img.model_dump(mode="json") for img in self.image_attachments]
+        if self.references:
+            item["references"] = [reference.model_dump() for reference in self.references]
         if self.images:
-            item["images"] = [
-                img.model_dump(mode="json")
-                for img in self.images
-            ]
+            item["images"] = [img.model_dump(mode="json") for img in self.images]
         if self.canvases:
-            item["canvases"] = [
-                canvas.model_dump(mode="json")
-                for canvas in self.canvases
-            ]
+            item["canvases"] = [canvas.model_dump(mode="json") for canvas in self.canvases]
         return item
 
     @classmethod
     def from_dynamo_item(cls, item: dict[str, Any]) -> "Message":
         """Create Message from DynamoDB item."""
-        attachments = [
-            Attachment(**att) for att in item.get("attachments", [])
-        ]
-        image_attachments = [
-            ImageAttachment(**img) for img in item.get("image_attachments", [])
-        ]
-        images = [
-            MessageImage(**img) for img in item.get("images", [])
-        ]
-        canvases = [
-            MessageCanvasArtifact(**canvas) for canvas in item.get("canvases", [])
-        ]
         return cls(
             message_id=item["message_id"],
             conversation_id=item["conversation_id"],
             created_by=item.get("created_by", ""),
             role=item["role"],
             content=item["content"],
-            attachments=attachments,
-            image_attachments=image_attachments,
-            images=images,
-            canvases=canvases,
+            attachments=[Attachment(**att) for att in item.get("attachments", [])],
+            image_attachments=[ImageAttachment(**img) for img in item.get("image_attachments", [])],
+            references=[MessageReference(**reference) for reference in item.get("references", [])],
+            images=[MessageImage(**img) for img in item.get("images", [])],
+            canvases=[MessageCanvasArtifact(**canvas) for canvas in item.get("canvases", [])],
             # Rows written before the AUDIT# split have no `kind`.
             kind=MessageKind(item.get("kind", MessageKind.CHAT.value)),
             created_at=datetime.fromisoformat(item["created_at"]),
@@ -283,6 +281,7 @@ class Message(BaseModel):
                 )
                 for img in self.image_attachments
             ],
+            references=list(self.references),
             images=[
                 MessageImageResponse(
                     image_id=img.image_id,

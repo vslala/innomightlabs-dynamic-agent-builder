@@ -11,7 +11,7 @@ from pydantic import HttpUrl
 from src.agents.models import Agent
 from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_execution import ToolExecutionRouter
-from src.agents.tool_runtime import NativeToolContext, build_default_tool_registry
+from src.agents.tool_runtime import NativeToolContext, ToolCategory, build_default_tool_registry
 from src.connectors.mcp.client import MCP_SESSION_HEADER, StreamableHTTPMCPClient
 from src.connectors.mcp.models import (
     AgentMCPConnection,
@@ -616,7 +616,8 @@ async def test_tool_execution_router_dispatches_mcp_tools() -> None:
             skill_runtime=FakeSkillRuntime(),
             native_tools=FakeNativeTools(),
             mcp_runtime=service,
-        )
+        ),
+        offered={ToolCategory.MCP},
     )
     state = AgentTurnState(
         owner_email="owner@example.com",

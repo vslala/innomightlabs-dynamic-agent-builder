@@ -180,6 +180,10 @@ class BedrockEmbeddings:
         return list(await asyncio.gather(*(embed_with_semaphore(text) for text in texts)))
 
 
+#: Texts per `/api/embed` request: small enough that a CPU-only Ollama answers each well inside its timeout.
+OLLAMA_EMBED_BATCH_SIZE = 16
+
+
 class OllamaEmbeddings:
     """Generate embeddings through Ollama's local HTTP API."""
 
@@ -211,35 +215,43 @@ class OllamaEmbeddings:
         normalize: bool = True,
         max_concurrent: int = 5,
     ) -> list[EmbeddingResult]:
-        del max_concurrent  # Ollama performs batching inside a single request.
+        del max_concurrent  # Ollama batches inside a request; requests go one at a time.
         if not texts:
             return []
         if not normalize:
             raise ValueError("Ollama embeddings are always normalized")
 
+        results: list[EmbeddingResult] = []
+        async with httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            # A large page or document is hundreds of chunks: one request for all of them outlasts the timeout on a
+            # CPU-only Ollama, so they go in batches, each well inside it.
+            for start in range(0, len(texts), OLLAMA_EMBED_BATCH_SIZE):
+                results.extend(await self._embed_batch(client, texts[start:start + OLLAMA_EMBED_BATCH_SIZE]))
+        return results
+
+    async def _embed_batch(self, client: httpx.AsyncClient, texts: list[str]) -> list[EmbeddingResult]:
         request_body = {
             "model": self.model,
             "input": texts,
             "dimensions": self.dimension,
             "truncate": True,
         }
-        async with httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=self.timeout_seconds,
-            transport=self.transport,
-        ) as client:
-            # A sleeping Ollama service can refuse connections or return gateway errors.
-            for attempt in range(4):
-                try:
-                    response = await client.post("/api/embed", json=request_body)
-                    response.raise_for_status()
-                    break
-                except (httpx.ConnectError, httpx.HTTPStatusError) as exc:
-                    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code not in (502, 503, 504):
-                        raise
-                    if attempt == 3:
-                        raise
-                    await asyncio.sleep(2 ** attempt)
+        # A sleeping Ollama service can refuse connections or return gateway errors.
+        for attempt in range(4):
+            try:
+                response = await client.post("/api/embed", json=request_body)
+                response.raise_for_status()
+                break
+            except (httpx.ConnectError, httpx.HTTPStatusError) as exc:
+                if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code not in (502, 503, 504):
+                    raise
+                if attempt == 3:
+                    raise
+                await asyncio.sleep(2 ** attempt)
 
         response_body = response.json()
         embeddings = response_body.get("embeddings")

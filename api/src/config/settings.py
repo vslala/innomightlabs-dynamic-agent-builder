@@ -128,6 +128,19 @@ class Settings:
     #: A crawled page that comes back with HTML and no text is rendered in the CLI runner's browser.
     crawler_browser_fallback: bool = False
     crawler_browser_timeout_seconds: int = 20
+    #: How long a Docling read in the CLI runner may take (`documents/parsers.py`). Without a runner, only text, HTML
+    #: and a PDF's own text layer can be read.
+    document_parser_timeout_seconds: int = 300
+    #: Uploaded documents and their parsed output (docs/LLD-documents.md).
+    documents_bucket: str = "innomightlabs-documents"
+    documents_region: str = "us-east-1"
+    document_max_bytes: int = 25 * 1024 * 1024
+    #: A worker holds a document this long; a lapsed lease is put back by the reaper, up to document_max_attempts.
+    document_lease_seconds: int = 10 * 60
+    document_max_attempts: int = 3
+    document_reaper_interval_seconds: int = 5 * 60
+    #: How often conversation uploads never sent with a message are looked for (they are removed after a day).
+    unsent_document_sweep_interval_seconds: int = 60 * 60
     crawl_job_reaper_interval_seconds: int = 5 * 60
     #: A blueprint apply not saved for this long was interrupted; the reaper puts back what it did.
     blueprint_apply_stale_timeout_seconds: int = 15 * 60
@@ -588,6 +601,14 @@ class Settings:
             ),
             crawler_browser_fallback=os.getenv("CRAWLER_BROWSER_FALLBACK", "false").lower() == "true",
             crawler_browser_timeout_seconds=int(os.getenv("CRAWLER_BROWSER_TIMEOUT_SECONDS", "20")),
+            document_parser_timeout_seconds=int(os.getenv("DOCUMENT_PARSER_TIMEOUT_SECONDS", "300")),
+            documents_bucket=os.getenv("DOCUMENTS_BUCKET", "innomightlabs-documents"),
+            documents_region=os.getenv("DOCUMENTS_REGION", "us-east-1"),
+            document_max_bytes=int(os.getenv("DOCUMENT_MAX_BYTES", str(25 * 1024 * 1024))),
+            document_lease_seconds=int(os.getenv("DOCUMENT_LEASE_SECONDS", "600")),
+            document_max_attempts=int(os.getenv("DOCUMENT_MAX_ATTEMPTS", "3")),
+            document_reaper_interval_seconds=int(os.getenv("DOCUMENT_REAPER_INTERVAL_SECONDS", "300")),
+            unsent_document_sweep_interval_seconds=int(os.getenv("UNSENT_DOCUMENT_SWEEP_INTERVAL_SECONDS", "3600")),
             crawl_job_reaper_interval_seconds=int(
                 os.getenv("CRAWL_JOB_REAPER_INTERVAL_SECONDS", "300")
             ),

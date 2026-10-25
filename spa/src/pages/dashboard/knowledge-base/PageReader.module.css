@@ -328,6 +328,17 @@ a.address:hover {
   color: var(--text-secondary);
 }
 
+/* A chunk as Markdown: wide tables scroll inside the article instead of stretching it */
+.markdown {
+  margin: 0 0 var(--space-3);
+  color: var(--text-secondary);
+  overflow-x: auto;
+}
+
+.markdown p {
+  white-space: normal;
+}
+
 mark {
   padding: 0 2px;
   border-radius: 3px;

@@ -13,6 +13,7 @@ from src.agents.tool_runtime.handlers import (
     run_native_tool,
     run_skill_tool,
 )
+from src.agents.tool_runtime.core_skills import core_skill_tools
 from src.agents.tool_runtime.mcp import MCP_CALL_TOOL_SPEC, MCP_LIST_TOOLS_SPEC
 from src.agents.tool_runtime.registry import ToolRegistry
 from src.agents.tool_runtime.skills import SKILL_TOOL_SPECS
@@ -35,6 +36,7 @@ def build_default_tool_registry(
             *_bind(SKILL_TOOL_SPECS, skill),
             BoundTool(MCP_LIST_TOOLS_SPEC, partial(list_mcp_tools, mcp_runtime)),
             BoundTool(MCP_CALL_TOOL_SPEC, partial(call_mcp_tool, mcp_runtime)),
+            *core_skill_tools(),
         ]
     )
 

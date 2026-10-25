@@ -5,7 +5,7 @@ import { Button, EmptyState, LoadingState, Tabs, TabsContent, TabsList, TabsTrig
 import { Inline, Page, PageHeader } from "../../components/layout";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { knowledgeApiService } from "../../services/knowledge";
-import type { ContentUploadResponse, CrawlJob, KnowledgeBase } from "../../types/knowledge";
+import type { CrawlJob, KnowledgeBase } from "../../types/knowledge";
 import styles from "./KnowledgeBaseDetail.module.css";
 import { EditKnowledgeBaseDialog } from "./knowledge-base/EditKnowledgeBaseDialog";
 import { KnowledgeAsk } from "./knowledge-base/KnowledgeAsk";
@@ -45,6 +45,8 @@ export function KnowledgeBaseDetail() {
   const [crawlDialogOpen, setCrawlDialogOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploadsRefreshKey, setUploadsRefreshKey] = useState(0);
+  // Bumped when a document finishes indexing or is deleted, so the pages show what the index holds now
+  const [indexChangedKey, setIndexChangedKey] = useState(0);
   const [askRequest, setAskRequest] = useState<{ question: string; at: number } | null>(null);
 
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -188,17 +190,16 @@ export function KnowledgeBaseDetail() {
     go({ tab: "runs" });
   };
 
-  const handleUploaded = (totals: ContentUploadResponse) => {
-    setKb((previous) =>
-      previous
-        ? { ...previous, total_pages: totals.total_pages, total_chunks: totals.total_chunks, total_vectors: totals.total_vectors }
-        : previous
-    );
-    setUploadsRefreshKey((key) => key + 1);
-  };
+  // Files were accepted: they're read in the background, and the totals change only once each is indexed
+  const handleUploaded = () => setUploadsRefreshKey((key) => key + 1);
 
-  // Changes when a crawl starts or ends, so the pages show what the index holds now
-  const pagesRefreshKey = `${crawlJobs.map((job) => `${job.job_id}:${job.status}`).join(",")}:${uploadsRefreshKey}`;
+  const handleIndexChanged = useCallback(() => {
+    void loadKnowledgeBase();
+    setIndexChangedKey((key) => key + 1);
+  }, [loadKnowledgeBase]);
+
+  // Changes when a crawl starts or ends or a document is indexed, so the pages show what the index holds now
+  const pagesRefreshKey = `${crawlJobs.map((job) => `${job.job_id}:${job.status}`).join(",")}:${indexChangedKey}`;
   const { pages, truncated, error: pagesError } = useKnowledgePages(kbId ?? "", pagesRefreshKey);
 
   const summary = useMemo(() => {
@@ -362,6 +363,7 @@ export function KnowledgeBaseDetail() {
             loadingOlder={loadingOlderJobs}
             expandedJobId={expandedJobId}
             uploadsRefreshKey={uploadsRefreshKey}
+            onIndexChanged={handleIndexChanged}
             onExpand={setExpandedJobId}
             onLoadOlder={loadOlderJobs}
             onCancel={handleCancelCrawl}

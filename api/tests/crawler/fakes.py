@@ -6,6 +6,7 @@
 - `crawl()`: a whole crawl job, discovery to completion, over the pages the site links to (`site.linked`).
 """
 
+import asyncio
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import AsyncIterator
@@ -32,7 +33,7 @@ def read_response(url: str, response: httpx.Response) -> Fetched:
     """What the extractor makes of the response a fetch of `url` ended on, without going to the network."""
     page = page_from_response(response)
     content = extract_content(page.url, page.html) if readable(url, page) else None
-    return ContentExtractor()._outcome(url, PageFetch(page, content))
+    return asyncio.run(ContentExtractor()._outcome(url, PageFetch(page, content)))
 
 
 def paragraphs(count: int, *, edit: int | None = None, topic: str = "plans, seats and billing") -> str:

@@ -494,14 +494,6 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
             # Check if adding this paragraph would exceed max
             would_exceed = current_word_count + para_word_count > paragraph_max_words
             
-            # Semantic boundary detection
-            is_topic_shift = False
-            if current_parts and would_exceed:
-                is_topic_shift = self._detect_topic_shift(
-                    current_parts[-1] if current_parts else "", 
-                    para
-                )
-            
             # Flush current chunk if needed
             if current_parts and would_exceed:
                 # Build chunk with smart overlap
@@ -599,7 +591,12 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
         
         for sentence in reversed(previous_sentences):
             sentence_words = len(sentence.split())
-            
+
+            # A "sentence" many times the overlap is a block with no full stops (a group of table rows): carrying it
+            # over would repeat the whole previous chunk, so each chunk would hold every one before it
+            if sentence_words > target_words * 3:
+                break
+
             # Stop if we'd significantly exceed target (allow 20% buffer)
             if word_count > 0 and word_count + sentence_words > target_words * 1.2:
                 break
@@ -615,36 +612,6 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
             return ""
         
         return " ".join(selected_sentences).strip()
-
-    def _detect_topic_shift(self, prev_para: str, next_para: str) -> bool:
-        """
-        Detect if there's a significant topic shift between paragraphs.
-        
-        Heuristics:
-        - Lexical overlap (shared significant words)
-        - Entity continuity
-        - Transitional phrases
-        """
-        if not prev_para or not next_para:
-            return False
-        
-        # Extract significant words (>4 chars, not common)
-        common_words = {'that', 'this', 'with', 'from', 'have', 'been', 'were', 'their', 
-                       'which', 'would', 'there', 'could', 'about', 'other', 'these'}
-        
-        prev_words = {w.lower() for w in prev_para.split() if len(w) > 4 and w.lower() not in common_words}
-        next_words = {w.lower() for w in next_para.split() if len(w) > 4 and w.lower() not in common_words}
-        
-        if not prev_words or not next_words:
-            return False
-        
-        # Calculate Jaccard similarity
-        intersection = len(prev_words & next_words)
-        union = len(prev_words | next_words)
-        similarity = intersection / union if union > 0 else 0
-        
-        # Low similarity suggests topic shift
-        return similarity < 0.15
 
     def _extract_key_entities(self, text: str) -> Set[str]:
         """
@@ -724,6 +691,11 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
                     normalized.append(" ".join(current_merge).strip())
                     current_merge = []
                     current_word_count = 0
+                # A table too big for one chunk becomes groups of rows, each under its header: one search hit is
+                # then a readable slice of it, not an embedding of the first few rows of thousands
+                if self._is_table(p) and word_count > paragraph_max_words:
+                    normalized.extend(self._split_table(p, paragraph_max_words))
+                    continue
                 # Add special structure as-is
                 normalized.append(p)
                 continue
@@ -788,6 +760,32 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
         
         return False
 
+    @staticmethod
+    def _is_table(text: str) -> bool:
+        """A Markdown table: every line a row between pipes."""
+        lines = [line.strip() for line in text.strip().split("\n")]
+        return len(lines) >= 2 and all(line.startswith("|") and line.endswith("|") for line in lines)
+
+    def _split_table(self, table: str, max_words: int) -> List[str]:
+        """Rows in groups of at most `max_words` words, each group under the table's header row (and its separator)."""
+        lines = [line.strip() for line in table.strip().split("\n")]
+        header = lines[:2] if len(lines) > 1 and re.fullmatch(r"\|(\s*:?-+:?\s*\|)+", lines[1]) else lines[:1]
+        header_words = self._count_words("\n".join(header))
+        budget = max(1, max_words - header_words)
+        groups: List[str] = []
+        rows: List[str] = []
+        words = 0
+        for row in lines[len(header):]:
+            row_words = self._count_words(row)
+            if rows and words + row_words > budget:
+                groups.append("\n".join(header + rows))
+                rows, words = [], 0
+            rows.append(row)
+            words += row_words
+        if rows:
+            groups.append("\n".join(header + rows))
+        return groups or ["\n".join(header)]
+
     def _split_large_paragraph(self, paragraph: str) -> List[str]:
         """
         Split a large paragraph into smaller chunks at sentence boundaries.
@@ -839,11 +837,14 @@ class EnhancedHierarchicalChunking(ChunkingStrategy):
         
         for sentence in sentences:
             sentence_words = len(sentence.split())
-            if word_count + sentence_words > max_words and result:
-                break
+            if word_count + sentence_words > max_words:
+                if result:
+                    break
+                # One "sentence" over the limit (a table has no full stops): cut it, rather than keep all of it
+                return self._truncate_to_words(sentence, max_words)
             result.append(sentence)
             word_count += sentence_words
-        
+
         return " ".join(result).strip() if result else self._truncate_to_words(text, max_words)
 
     def _cfg(self, name: str, default):

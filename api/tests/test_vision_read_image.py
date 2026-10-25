@@ -7,7 +7,8 @@ from typing import Any
 
 import pytest
 
-from src.agents.architectures.krishna_memgpt import _tool_categories_for
+from src.agents.architectures.krishna_memgpt_families import TOOL_FAMILIES
+from src.agents.tool_runtime.families import active_families
 from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_runtime.contexts import NativeToolContext
 from src.agents.tool_runtime.specs import ToolCategory
@@ -267,8 +268,11 @@ class TestOfferingTheTool:
         )
 
     def test_the_image_category_is_offered_only_when_the_turn_can_read_images(self) -> None:
-        assert ToolCategory.IMAGE not in _tool_categories_for(self._state(False))
-        assert ToolCategory.IMAGE in _tool_categories_for(self._state(True))
+        def offered(state: AgentTurnState) -> set[ToolCategory]:
+            return {family.category for family in active_families(TOOL_FAMILIES, state)}
+
+        assert ToolCategory.IMAGE not in offered(self._state(False))
+        assert ToolCategory.IMAGE in offered(self._state(True))
 
     def test_read_image_is_declared_in_the_image_category_only(self) -> None:
         categories = {spec.name: spec.category for spec in NATIVE_TOOL_SPECS}

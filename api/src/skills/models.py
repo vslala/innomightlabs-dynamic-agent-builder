@@ -125,6 +125,9 @@ class SkillManifest(BaseModel):
     #: The skill acts with the owner's own access (their machine, accounts or agents), so it
     #: never runs for anyone else, whatever the owner chooses.
     owner_only: bool = False
+    #: Served as core tools by a tool family (`agents/tool_runtime/core_skills.py`), never installed: kept out of
+    #: the catalog, installs and automations.
+    core: bool = False
 
     @property
     def runs_only_for_owner(self) -> bool:

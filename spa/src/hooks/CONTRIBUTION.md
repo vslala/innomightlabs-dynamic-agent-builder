@@ -9,6 +9,7 @@ This directory holds reusable React lifecycle/state logic; page-specific hooks c
 | `useArtifactHtml.ts` | Gated authenticated text fetch; loading/loaded/failed discriminated state |
 | `useCanManageSettings.ts` | Settings-control visibility through SettingsAccessService |
 | `useFileAttachments.ts` | Chat attachment validation, reading, Excel conversion, and state |
+| `useConversationDocuments.ts` | The composer's documents: uploads not yet sent, upload, remove, `takeForSending()` (the message's references), and a 3 s poll only while one is still being read |
 
 ## Flow and extension
 

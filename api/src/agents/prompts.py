@@ -39,3 +39,8 @@ def render_system_prompt(template_name: str, **context: Any) -> str:
         )
         .strip()
     )
+
+
+def render_prompt_section(template_name: str, **context: Any) -> str:
+    """One section of a system prompt, rendered on its own: what a tool family adds while it is offered."""
+    return _env.get_template(template_name).render(**context).strip()

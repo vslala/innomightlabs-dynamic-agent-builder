@@ -100,6 +100,14 @@ export interface MessageCanvasArtifact {
   open_url?: string | null;
 }
 
+/** Something a message points at that lives elsewhere (a document the user attached); never its content. */
+export interface MessageReference {
+  kind: string;
+  id: string;
+  /** Shown without a lookup: the filename. */
+  label?: string;
+}
+
 export interface Message {
   message_id: string;
   conversation_id: string;
@@ -108,6 +116,8 @@ export interface Message {
   attachments?: AttachmentInfo[];
   /** Images the user sent (as opposed to `images`, which the agent generated). */
   image_attachments?: ImageAttachmentInfo[];
+  /** What the user attached that lives elsewhere: documents, read by the agent's document tools. */
+  references?: MessageReference[];
   images?: MessageImage[];
   canvases?: MessageCanvasArtifact[];
   created_at: string;
@@ -213,6 +223,20 @@ export interface SendMessageRequest {
   content: string;
   attachments?: Attachment[];
   image_ids?: string[];
+  references?: Pick<MessageReference, "kind" | "id">[];
+  deep_research?: boolean;
+}
+
+/** A message on its way to the agent, in the composer's terms. */
+export interface OutgoingMessage {
+  content: string;
+  attachments?: Attachment[];
+  /** Images already uploaded to the conversation (`uploadImage`). */
+  imageIds?: string[];
+  /** Documents already uploaded to the conversation (`uploadDocument`), and anything else the message points at. */
+  references?: MessageReference[];
+  /** Enable the gated research workspace tools. */
+  deepResearch?: boolean;
 }
 
 export interface GenerateImageRequest {

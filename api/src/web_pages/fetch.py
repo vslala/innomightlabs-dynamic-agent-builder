@@ -42,6 +42,8 @@ class Page:
     #: The site's validators for this fetch. A page read in a browser has none: see `fetch_page`.
     etag: Optional[str] = None
     last_modified: Optional[str] = None
+    #: The bytes of an answer that isn't HTML (a PDF a site links to), for a caller that reads files; empty for HTML.
+    body: bytes = b""
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,7 @@ def page_from_response(response: httpx.Response) -> Page:
         html=response.text if "text/html" in content_type else "",
         etag=response.headers.get("etag"),
         last_modified=response.headers.get("last-modified"),
+        body=b"" if "text/html" in content_type else response.content,
     )
 
 

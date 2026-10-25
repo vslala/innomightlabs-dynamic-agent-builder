@@ -53,6 +53,28 @@ async def test_ollama_provider_batches_texts_and_preserves_order() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ollama_provider_sends_many_texts_in_batches_and_keeps_their_order() -> None:
+    from src.vectorstore.embeddings import OLLAMA_EMBED_BATCH_SIZE
+
+    batches: list[list[str]] = []
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        texts = json.loads(request.content)["input"]
+        batches.append(texts)
+        return httpx.Response(200, json={"embeddings": [[float(text), 0.0, 0.0] for text in texts]})
+
+    provider = OllamaEmbeddings(
+        base_url="http://ollama.test", model="m", dimension=3, transport=httpx.MockTransport(handle_request)
+    )
+    texts = [str(n) for n in range(OLLAMA_EMBED_BATCH_SIZE * 2 + 3)]
+
+    results = await provider.embed_texts_async(texts)
+
+    assert [len(batch) for batch in batches] == [OLLAMA_EMBED_BATCH_SIZE, OLLAMA_EMBED_BATCH_SIZE, 3]
+    assert [result.embedding[0] for result in results] == [float(n) for n in range(len(texts))]
+
+
+@pytest.mark.asyncio
 async def test_ollama_provider_reports_single_input_token_count() -> None:
     def handle_request(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(

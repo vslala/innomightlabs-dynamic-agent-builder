@@ -6,6 +6,7 @@ import pytest
 from src.crawler.extractor import ContentExtractor, FetchOutcome
 from src.web_pages.fetch import same_site
 from tests.crawler.fakes import read_response
+from tests.documents_support import pdf_with_text
 
 URL = "https://example.com/pricing"
 PAGE = "<html><head><title>Pricing</title></head><body><main><p>Seats cost ten pounds a month.</p></main></body></html>"
@@ -41,8 +42,27 @@ def test_a_page_with_no_text_is_a_failed_read_not_an_empty_page():
     assert answered(200, body="<html><body><nav>Menu</nav></body></html>").outcome is FetchOutcome.FAILED
 
 
-def test_a_page_that_isnt_html_is_a_failed_read():
-    assert answered(200, body="%PDF-1.7", content_type="application/pdf").outcome is FetchOutcome.FAILED
+def test_a_page_that_isnt_html_or_a_document_is_a_failed_read():
+    fetched = answered(200, body="PK", content_type="application/zip")
+
+    assert fetched.outcome is FetchOutcome.FAILED and fetched.reason == "not HTML (application/zip)"
+
+
+def test_a_linked_pdf_is_read_as_a_page(monkeypatch):
+    monkeypatch.setattr("src.documents.parsers.settings.cli_runner_base_url", "")
+    response = httpx.Response(200, content=pdf_with_text("Seats cost ten pounds"), headers={"content-type": "application/pdf"},
+                              request=httpx.Request("GET", "https://example.com/files/price-list.pdf"))
+
+    fetched = read_response("https://example.com/files/price-list.pdf", response)
+
+    assert fetched.outcome is FetchOutcome.OK and fetched.url == "https://example.com/files/price-list.pdf"
+    assert fetched.content.title == "price-list.pdf" and "ten pounds" in fetched.content.full_text
+
+
+def test_a_document_that_cant_be_read_is_a_failed_read():
+    fetched = answered(200, body="%PDF-1.7", content_type="application/pdf")
+
+    assert fetched.outcome is FetchOutcome.FAILED and fetched.reason.startswith("couldn't read the file")
 
 
 def test_a_redirect_within_the_site_reads_the_page_it_led_to():

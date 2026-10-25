@@ -86,7 +86,7 @@ def _router(**overrides) -> tuple[ToolExecutionRouter, dict[str, Any]]:
         "mcp_runtime": FakeMCPRuntime(),
         **overrides,
     }
-    return ToolExecutionRouter(build_default_tool_registry(**runtimes)), runtimes
+    return ToolExecutionRouter(build_default_tool_registry(**runtimes), offered=set(ToolCategory)), runtimes
 
 
 # --- what the registry declares ------------------------------------------------
@@ -327,9 +327,25 @@ async def test_a_tool_that_outruns_its_timeout_reports_the_timeout():
         ]
     )
 
-    outcome = await ToolExecutionRouter(registry).execute(
+    outcome = await ToolExecutionRouter(registry, offered=set(ToolCategory)).execute(
         tool_name="slow_tool", tool_input={}, tool_use_id="tool-1", state=_state()
     )
 
     assert outcome.success is False
     assert "timed out" in outcome.result
+
+
+async def test_a_tool_the_turn_didnt_offer_doesnt_run():
+    ran = []
+
+    async def handler(tool_name, tool_input, state) -> str:
+        ran.append(tool_name)
+        return "ran"
+
+    registry = ToolRegistry([BoundTool(ToolSpec({"name": "read_image", "parameters": {"type": "object"}}, ToolCategory.IMAGE), handler)])
+
+    outcome = await ToolExecutionRouter(registry, offered={ToolCategory.NATIVE}).execute(
+        tool_name="read_image", tool_input={}, tool_use_id="tool-1", state=_state()
+    )
+
+    assert outcome.success is False and "isn't available" in outcome.result and ran == []

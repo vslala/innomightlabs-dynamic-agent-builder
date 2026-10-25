@@ -7,6 +7,7 @@ This is a small shared frontend foundation, not a business-service layer.
 - `utils.ts`: `cn` (clsx plus tailwind-merge) and compact number formatting.
 - `theme.ts`: AppTheme, stored-theme validation/default, root application, persistence.
 - `agentIcons.tsx`: deterministic Lucide icon selection from agent names.
+- `documents.ts`: document status labels/badges, the in-flight (poll or stop) rule, "newly ready" detection, and which dropped chat files only the documents path can take. Shared by the knowledge-base documents list and the chat composer; tests in `documents.test.ts`.
 
 ## Flow and extension
 

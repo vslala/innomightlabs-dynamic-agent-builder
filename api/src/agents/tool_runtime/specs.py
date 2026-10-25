@@ -13,9 +13,10 @@ from src.agents.runtime_state import AgentTurnState
 
 
 class ToolCategory(str, Enum):
-    """Decides whether a tool's definition is offered to the model this turn.
+    """Decides whether a tool's definition is offered to the model this turn, and whether it may run.
 
-    An agent with no skills installed should not be told about skill tools.
+    An agent with no skills installed should not be told about skill tools. Which categories a turn offers is its
+    architecture's tool families (`tool_runtime/families.py`).
     """
 
     NATIVE = "native"
@@ -26,6 +27,8 @@ class ToolCategory(str, Enum):
     BUILDER = "builder"
     #: `read_image`: offered only when the conversation holds an image and image input is available.
     IMAGE = "image"
+    #: Reading uploaded documents: offered when the conversation references one or a knowledge base is linked.
+    DOCUMENT = "document"
 
 
 #: Runs one tool call and returns the result text for the model.

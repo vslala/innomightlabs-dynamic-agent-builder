@@ -46,7 +46,9 @@ passes it to `start_turn(architecture=...)`. Its prompt lives in `prompt_templat
 
 **How:**
 1. Add or update a Jinja section template under `prompt_templates/krishna_memgpt/sections/`.
-2. Include it from `krishna_memgpt_system_prompt.j2`, guarded by `{% if ... %}` when the section is optional.
+2. A section that comes with a set of tools belongs to their tool family: render it in a function in
+   `krishna_memgpt_prompt.py` (`knowledge_base_section`) and set it as the family's `prompt_section`. Other sections
+   are included from `krishna_memgpt_system_prompt.j2`, guarded by `{% if ... %}` when optional.
 3. If the section needs new typed data, populate it once in the orchestrator and pass it through `build_krishna_memgpt_system_prompt`.
 
 **Rule:** templates render already-loaded typed data. Avoid network calls, DB reads, and Python-side formatting helpers for prompt layout.
@@ -78,11 +80,16 @@ A turn moves through named steps (`Step`: ask the model, run tools, summarise, d
 `run_agentic_tool_loop` changes step, and what a model call leads to is the pure function `next_step_after_call`.
 To change when the loop summarises or stops, change that function and its table test in `tests/test_agentic_loop.py`.
 
-### D) Tool routing + tool error policy
-**File:** `../../agents/tool_execution.py`
+### D) Tool families, routing and tool error policy
+**Files:** `krishna_memgpt_families.py`, `../../agents/tool_runtime/families.py`, `../../agents/tool_execution.py`
+
+A turn offers the tool categories of its active families (`TOOL_FAMILIES`), and only those may run: the
+`ToolExecutionRouter` is built with the same `offered` set. A family is active when the conversation holds a message
+reference of a kind in its `triggered_by` (`messages/references.py`), or when its `when(state)` holds. Its
+`prompt_section` is rendered only while it is active. Design: `docs/LLD-message-references-and-tool-families.md`.
 
 **Use this seam when:**
-- You add a new tool category (native vs skills vs other)
+- You add a new tool category: a `ToolCategory`, its specs bound in `tool_runtime/factory.py`, one family entry
 - You want to standardize tool error outputs
 - You want to change when a tool's outcome asks for a prompt refresh
 
@@ -132,6 +139,13 @@ If a tool mutates core memory, the model must not operate on stale memory.
 1. Add `prompt_templates/krishna_memgpt/sections/my_section.j2`
 2. Include it from `prompt_templates/krishna_memgpt_system_prompt.j2`
 3. If it needs data, add a typed argument to `build_krishna_memgpt_system_prompt` and populate it once in `krishna_memgpt.py`
+
+### Example: tools that load when a message points at something
+1. A reference kind: a class with `kind`, `attach`, `describe` and `recall_line`, registered with
+   `messages.references.register` when its module is imported (`conversations/documents.py`)
+2. A `ToolCategory` and its tools (native specs, or a core skill: `core: true` in a manifest)
+3. A family: `ToolFamily(ToolCategory.X, triggered_by=frozenset({"x"}), prompt_section=...)` in `TOOL_FAMILIES`
+4. The client sends `references: [{kind, id}]` with the message
 
 ### Example: add a new tool that updates memory
 1. Implement tool logic (native tool handler)

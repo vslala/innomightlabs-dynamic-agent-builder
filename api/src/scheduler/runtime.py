@@ -33,6 +33,8 @@ TOOL_JOB_REAPER_ID = "internal:stale-tool-job-reaper"
 WIDGET_GUEST_CLOSER_ID = "internal:widget-guest-session-closer"
 BLUEPRINT_APPLY_REAPER_ID = "internal:interrupted-blueprint-apply-reaper"
 LEAD_EVENT_DISPATCHER_ID = "internal:lead-event-dispatcher"
+DOCUMENT_REAPER_ID = "internal:stale-document-reaper"
+UNSENT_DOCUMENT_SWEEP_ID = "internal:unsent-document-sweep"
 
 
 class SchedulerRuntime:
@@ -67,6 +69,8 @@ class SchedulerRuntime:
             (self._close_ended_guest_sessions, settings.widget_guest_sweep_interval_seconds, WIDGET_GUEST_CLOSER_ID),
             (self._recover_blueprint_applies, settings.blueprint_apply_reaper_interval_seconds, BLUEPRINT_APPLY_REAPER_ID),
             (self._dispatch_lead_events, settings.lead_event_dispatch_interval_seconds, LEAD_EVENT_DISPATCHER_ID),
+            (self._requeue_stale_documents, settings.document_reaper_interval_seconds, DOCUMENT_REAPER_ID),
+            (self._sweep_unsent_documents, settings.unsent_document_sweep_interval_seconds, UNSENT_DOCUMENT_SWEEP_ID),
         ):
             self.scheduler.add_job(
                 reaper,
@@ -75,6 +79,9 @@ class SchedulerRuntime:
                 replace_existing=True,
                 coalesce=True,
                 max_instances=1,
+                # Reapers fall due together and most scan DynamoDB on the loop, so one can start seconds late.
+                # APScheduler's default grace (1 s) skips such a run outright; a late sweep beats a missed one.
+                misfire_grace_time=interval_seconds,
             )
         self.scheduler.start()
         self._started = True
@@ -147,6 +154,26 @@ class SchedulerRuntime:
 
         # In this thread, not another: starting a run schedules a task on this event loop.
         self._reap("lead event", LeadEventDispatcher().dispatch_due)
+
+    async def _requeue_stale_documents(self) -> None:
+        from src.documents.worker import requeue_stale
+
+        try:
+            failed_count = await requeue_stale()
+            if failed_count:
+                log.warning("Marked %s stale document(s) as failed", failed_count)
+        except Exception:
+            log.exception("Failed to reap stale documents")
+
+    async def _sweep_unsent_documents(self) -> None:
+        from src.conversations.documents import sweep_unsent
+
+        try:
+            removed = await asyncio.to_thread(sweep_unsent)
+            if removed:
+                log.info("Removed %s document(s) uploaded to a conversation and never sent", removed)
+        except Exception:
+            log.exception("Failed to sweep unsent documents")
 
     async def _close_ended_guest_sessions(self) -> None:
         from src.widget.guest_closer import GuestSessionCloser

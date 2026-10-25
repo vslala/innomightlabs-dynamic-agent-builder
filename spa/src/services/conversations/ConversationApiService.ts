@@ -11,6 +11,7 @@ import type {
 } from "../../types/conversation";
 import type { Message } from "../../types/message";
 import type { UploadedLeadFile } from "../../types/leads";
+import type { KnowledgeDocument } from "../../types/knowledge";
 import type { UploadedImage } from "../../../packages/image-attachments/src";
 
 class ConversationApiService {
@@ -77,6 +78,27 @@ class ConversationApiService {
     const form = new FormData();
     form.append("file", file);
     return httpClient.postForm<UploadedImage>(`/conversations/${conversationId}/images`, form);
+  }
+
+  /**
+   * Upload a document (PDF, Word, slides, a spreadsheet, text) to send with the next message: send its id as a
+   * `document` reference. The API accepts it (202) and reads it in the background; one never sent is removed after a
+   * day.
+   */
+  async uploadDocument(conversationId: string, file: File): Promise<KnowledgeDocument> {
+    const form = new FormData();
+    form.append("file", file);
+    return httpClient.postForm<KnowledgeDocument>(`/conversations/${conversationId}/documents`, form);
+  }
+
+  /** The conversation's documents (a plain list, not paginated); `unsent`: only those not yet sent with a message. */
+  async listDocuments(conversationId: string, options: { unsent?: boolean } = {}): Promise<KnowledgeDocument[]> {
+    const query = options.unsent ? "?unsent=true" : "";
+    return httpClient.get<KnowledgeDocument[]>(`/conversations/${conversationId}/documents${query}`);
+  }
+
+  async deleteDocument(conversationId: string, documentId: string): Promise<void> {
+    await httpClient.delete(`/conversations/${conversationId}/documents/${documentId}`);
   }
 
   /** Upload a file into a lead form's field while trying the form in chat; its id becomes the field's answer. */

@@ -161,6 +161,12 @@ variable "conversation_media_bucket" {
   default     = "innomightlabs-conversations-meta"
 }
 
+variable "documents_bucket" {
+  description = "Private S3 bucket for uploaded documents and their parsed output"
+  type        = string
+  default     = "innomightlabs-documents"
+}
+
 variable "conversation_media_presign_ttl_seconds" {
   description = "TTL in seconds for generated conversation media presigned URLs"
   type        = number

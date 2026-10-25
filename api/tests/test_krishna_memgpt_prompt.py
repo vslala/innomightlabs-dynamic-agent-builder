@@ -1,6 +1,10 @@
 from datetime import datetime, timezone
 
-from src.agents.architectures.krishna_memgpt_prompt import build_krishna_memgpt_system_prompt
+from src.agents.architectures.krishna_memgpt_prompt import (
+    build_krishna_memgpt_system_prompt,
+    knowledge_base_section,
+    skills_section,
+)
 from src.agents.models import MemoryCapacityWarning
 from src.memory.snapshot import (
     CoreMemoryBlockDefSnapshot,
@@ -60,8 +64,6 @@ def test_krishna_memgpt_prompt_omits_optional_sections_when_data_absent():
     prompt = build_krishna_memgpt_system_prompt(
         agent_persona="Persona",
         core_memory=_core_memory_snapshot(),
-        kb_count=0,
-        enabled_skills=[],
         capacity_warnings=[],
     )
 
@@ -90,9 +92,8 @@ def test_krishna_memgpt_prompt_renders_optional_sections_when_data_present():
     prompt = build_krishna_memgpt_system_prompt(
         agent_persona="Persona",
         core_memory=_core_memory_snapshot(),
-        kb_count=2,
-        enabled_skills=[skill],
         capacity_warnings=[warning],
+        tool_sections=[knowledge_base_section(2), skills_section([skill])],
     )
 
     assert "<knowledge_base>" in prompt

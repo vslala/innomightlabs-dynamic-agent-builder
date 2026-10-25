@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from src.accounts.owner import Owner
 import src.form_models as form_models
 from src.agents.tool_audit import ToolCallAuditMessage
-from src.agents.tool_execution import current_tool_call_id
+from src.agents.tool_runtime.current_call import current_tool_call_id
 from src.agents.tool_runtime.jobs import ToolJobService
 from src.messages.models import Message
 from src.connectors.service import ConnectorService, connector_id_for_provider, get_connector_service
@@ -38,6 +38,7 @@ from src.skills.models import (
 )
 from src.skills.oauth_providers import get_skill_oauth_provider
 from src.skills.registry import SkillRegistry, get_skill_registry, is_secret_input
+from src.skills.runtime_context import action_context, as_tool_result
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
 
 
@@ -470,30 +471,6 @@ class SkillRuntimeService:
             raise ValueError(f"Skill '{requested_id}' is not installed/enabled for this agent")
         return installed
 
-    def build_system_prompt_addendum(self, enabled_skills: list[AgentSkill]) -> str:
-        if not enabled_skills:
-            return ""
-
-        lines = [
-            "<installed_skills>",
-            "You can use skills to perform specialized tasks.",
-            "Use load_skill(skill_id) before execute_skill_action when you need exact instructions or action schema.",
-            "When calling execute_skill_action, put every action parameter inside the nested arguments object.",
-            "If a skill exposes form fields with enums or fixed literals, use those exact values instead of HTML input types or synonyms.",
-            "Do not claim that you sent, rendered, showed, or displayed a form unless you actually call execute_skill_action for that form in the same turn.",
-            "If you want to give narrative text and then show a form, still make the tool call in that same turn. Narrative text alone does not render UI.",
-            "When a skill offers both a built-in default form and a custom-form action, use the custom-form action whenever the requested fields or choices are not exactly the built-in default form.",
-            "For long-running skill actions, call execute_skill_action with async: true.",
-            "When an async skill job starts, do not finish the response after queued/running status. Use wait, then check_tool_job, and repeat until the job succeeds or fails.",
-        ]
-        for skill in enabled_skills:
-            about = f"{skill.skill_name} - {skill.skill_description}" if skill.skill_description else skill.skill_name
-            lines.append(f"- {skill.installed_skill_id or skill.skill_id}: {about} (skill_id: {skill.skill_id})")
-            for item in self._build_usage_context(skill):
-                lines.append(f"  {item['label']}: {item['value']}")
-        lines.append("</installed_skills>")
-        return "\n".join(lines)
-
     async def handle_tool_call(
         self,
         *,
@@ -562,21 +539,20 @@ class SkillRuntimeService:
 
             installed = self._resolve_usable_skill(agent_id, installed_skill_id, actor_kind)
 
-            context = {
-                "agent_id": agent_id,
-                "installed_skill_id": installed.installed_skill_id or installed.skill_id,
-                "skill_id": installed.skill_id,
-                "account_id": account_id,
-                "owner_id": owner_id,
-                "owner_email": owner_email,
-                "actor_email": actor_email,
-                "actor_id": actor_id,
-                "actor_kind": actor_kind.value,
-                "conversation_id": conversation_id,
-                "user_message_id": user_message_id,
-                # Kept on an async job's context too, so the action still knows its call when it runs later.
-                "tool_call_id": current_tool_call_id.get(),
-            }
+            context = action_context(
+                skill_id=installed.skill_id,
+                installed_skill_id=installed.installed_skill_id or installed.skill_id,
+                agent_id=agent_id,
+                account_id=account_id,
+                owner_id=owner_id,
+                owner_email=owner_email,
+                actor_email=actor_email,
+                actor_id=actor_id,
+                actor_kind=actor_kind,
+                conversation_id=conversation_id,
+                user_message_id=user_message_id,
+                tool_call_id=current_tool_call_id.get(),
+            )
             if run_async:
                 job = self.tool_job_service.start_skill_action_job(
                     account_id=account_id,
@@ -602,9 +578,7 @@ class SkillRuntimeService:
                 config=config,
                 context=context,
             )
-            if isinstance(result, str):
-                return result
-            return json.dumps(result, ensure_ascii=True)
+            return as_tool_result(result)
 
         raise ValueError(f"Unknown skill runtime tool: {tool_name}")
 

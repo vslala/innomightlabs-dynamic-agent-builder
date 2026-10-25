@@ -253,6 +253,25 @@ owner_only: true
 The policy is enforced twice: non-owners are never told about a skill they can't use, and
 `execute_skill_action` refuses it if they call it anyway.
 
+### `core`
+
+Optional boolean, default `false`.
+
+A core skill is never installed. Its actions become core tools, one tool per action, named after it,
+with its `input_schema`. A tool family offers them when its trigger holds, and the `system_prompt`
+comes with them. Core skills are kept out of the catalog, out of installs and out of automations:
+`SkillRegistry.list()` and `get()` don't return them; `core()` does.
+
+```yaml
+core: true
+```
+
+Add the skill to `CORE_SKILL_CATEGORIES` in `src/agents/tool_runtime/core_skills.py` with its
+`ToolCategory`, and add a family for that category in
+`src/agents/architectures/krishna_memgpt_families.py`. Actions run with the same `context` an
+installed skill gets, and with an empty `config`. `documents` is a core skill. Design:
+`docs/LLD-message-references-and-tool-families.md`.
+
 ### `automation`
 
 Optional object. Controls whether the skill is generally available as automation actions.

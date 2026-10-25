@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from src.accounts.owner import Owner
-from src.messages.models import Attachment
+from src.messages.models import Attachment, MessageReference
 from src.skills.models import ActorKind, AgentSkill, LoadedSkillRuntimeResponse
 from src.vision.models import ImageRef
 
@@ -54,3 +54,5 @@ class AgentTurnState:
     images: dict[str, ImageRef] = field(default_factory=dict)
     #: Whether this turn may offer `read_image`: the conversation has an image and the account allows reading it.
     image_input_available: bool = False
+    #: Every reference the conversation's messages hold, by kind: what turns tool families on.
+    references: dict[str, list[MessageReference]] = field(default_factory=dict)

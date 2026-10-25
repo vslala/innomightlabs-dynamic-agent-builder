@@ -3,6 +3,7 @@
  *
  * Handles all API communication for Knowledge Base features including:
  * - Knowledge Base CRUD
+ * - Documents (uploaded files, read and indexed in the background)
  * - Crawl Job management
  * - Search
  */
@@ -22,8 +23,7 @@ import type {
   KnowledgePageDetail,
   KnowledgePageState,
   SearchResponse,
-  ContentUploadResponse,
-  ContentUploadItem,
+  KnowledgeDocument,
   PaginatedResponse,
 } from "../../types/knowledge";
 
@@ -102,35 +102,53 @@ class KnowledgeApiService {
   }
 
   /**
-   * Upload a single content file to a knowledge base
+   * Upload one file to a knowledge base. The API accepts it (202) as a pending document and reads and indexes it
+   * in the background; poll the document (or the list) for its status.
    */
   async uploadContentFile(
     kbId: string,
     payload: { metadata?: string; file: File }
-  ): Promise<ContentUploadResponse> {
+  ): Promise<KnowledgeDocument> {
     const formData = new FormData();
     formData.append("attachment", payload.file);
     if (payload.metadata) {
       formData.append("metadata", payload.metadata);
     }
-    return httpClient.postForm<ContentUploadResponse>(
+    return httpClient.postForm<KnowledgeDocument>(
       `/knowledge-bases/${kbId}/content-upload`,
       formData
     );
   }
 
   /**
-   * List content uploads for a knowledge base
+   * A page of the knowledge base's documents, newest first
    */
-  async listContentUploads(
+  async listDocuments(
     kbId: string,
     limit = 10,
     cursor?: string | null
-  ): Promise<PaginatedResponse<ContentUploadItem>> {
-    const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
-    return httpClient.get<PaginatedResponse<ContentUploadItem>>(
-      `/knowledge-bases/${kbId}/uploads?limit=${limit}${cursorParam}`
-    );
+  ): Promise<PaginatedResponse<KnowledgeDocument>> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.set("cursor", cursor);
+    return httpClient.get<PaginatedResponse<KnowledgeDocument>>(`/knowledge-bases/${kbId}/documents?${params}`);
+  }
+
+  async getDocument(kbId: string, documentId: string): Promise<KnowledgeDocument> {
+    return httpClient.get<KnowledgeDocument>(`/knowledge-bases/${kbId}/documents/${documentId}`);
+  }
+
+  /**
+   * Read a failed document again from the stored file (409 unless it failed)
+   */
+  async retryDocument(kbId: string, documentId: string): Promise<KnowledgeDocument> {
+    return httpClient.post<KnowledgeDocument>(`/knowledge-bases/${kbId}/documents/${documentId}/retry`);
+  }
+
+  /**
+   * Delete a document and its page from the index (503 means try again)
+   */
+  async deleteDocument(kbId: string, documentId: string): Promise<void> {
+    await httpClient.delete(`/knowledge-bases/${kbId}/documents/${documentId}`);
   }
 
   /**

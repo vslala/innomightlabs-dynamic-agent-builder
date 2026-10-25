@@ -4,7 +4,6 @@ Unit tests for the chunking module.
 
 import pytest
 from src.crawler.chunking import (
-    ChunkingStrategy,
     ChunkingConfig,
     ContentChunkData,
     HierarchicalChunking,
@@ -264,3 +263,34 @@ class TestGetChunkingStrategy:
         config = ChunkingConfig(paragraph_max_words=100)
         strategy = get_chunking_strategy("hierarchical", config)
         assert strategy.config.paragraph_max_words == 100
+
+
+def _sheet(rows: int) -> str:
+    header = "| FirstName | Surname | FixDate | Opposition | Score |\n| --- | --- | --- | --- | --- |"
+    body = "\n".join(f"| Player{n} | Surname{n} | {n % 28 + 1} May 2026 | Club {n % 9} CC | {n % 97} |" for n in range(rows))
+    return f"{header}\n{body}"
+
+
+def test_a_large_table_is_chunked_in_row_groups_each_under_its_header():
+    from src.crawler.chunking import get_chunking_strategy
+
+    chunks = get_chunking_strategy("hierarchical").chunk(
+        content=_sheet(600), source_url="file://kb/batting.xlsx", page_title="batting.xlsx"
+    )
+    rows = [chunk for chunk in chunks if chunk.level == 2]
+
+    assert len(rows) > 10, "one chunk per group of rows, not the whole table"
+    assert all(chunk.content.split("\n")[0].startswith("| FirstName |") for chunk in rows)
+    assert all(len(chunk.content.split()) <= 400 for chunk in chunks), "no chunk carries the whole table"
+    found = [chunk for chunk in rows if "| Player599 |" in chunk.content]
+    assert len(found) >= 1, "the last row is in a chunk too"
+
+
+def test_the_overview_of_a_table_is_capped():
+    from src.crawler.chunking import get_chunking_strategy
+
+    overview = get_chunking_strategy("hierarchical").chunk(
+        content=_sheet(600), source_url="file://kb/batting.xlsx", page_title="batting.xlsx"
+    )[0]
+
+    assert overview.level == 0 and len(overview.content.split()) <= 300

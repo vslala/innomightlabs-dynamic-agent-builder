@@ -13,8 +13,7 @@ import {
 import { Stack } from "../../../components/layout";
 import { SchemaForm } from "../../../components/forms";
 import { knowledgeApiService } from "../../../services/knowledge";
-import { KB_UPLOAD_ALLOWED_EXTENSIONS, KB_UPLOAD_MAX_FILE_SIZE } from "../../../types/knowledge";
-import type { ContentUploadResponse } from "../../../types/knowledge";
+import { HttpError } from "../../../services/http/client";
 import type { FormSchema, FormValue } from "../../../types/form";
 import styles from "./dialogs.module.css";
 
@@ -22,28 +21,22 @@ interface UploadContentDialogProps {
   kbId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Files went in: the totals the knowledge base has now. */
-  onUploaded: (totals: ContentUploadResponse) => void;
+  /** At least one file was accepted: it's being read in the background, so the documents list should look again. */
+  onUploaded: () => void;
 }
 
-function extensionOf(filename: string): string {
-  const at = filename.lastIndexOf(".");
-  return at >= 0 ? filename.slice(at).toLowerCase() : "";
-}
-
-function problemWith(files: File[]): string | null {
-  for (const file of files) {
-    const extension = extensionOf(file.name);
-    if (!KB_UPLOAD_ALLOWED_EXTENSIONS.includes(extension)) return `File type '${extension || "unknown"}' is not supported.`;
-    if (file.size > KB_UPLOAD_MAX_FILE_SIZE) return `${file.name} exceeds 5MB per file limit.`;
-  }
-  return null;
+/** The file types the server reads, as its upload form says: ".csv .md .pdf …". */
+function acceptedTypes(schema: FormSchema | null): string {
+  const accept = schema?.form_inputs.find((input) => input.input_type === "file_upload")?.attr?.accept ?? "";
+  return accept.split(",").filter(Boolean).join(" ");
 }
 
 export function UploadContentDialog({ kbId, open, onOpenChange, onUploaded }: UploadContentDialogProps) {
   const [schema, setSchema] = useState<FormSchema | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // One line per file the server refused, with its reason (unsupported type, too large, rate limited)
+  const [refusals, setRefusals] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [formKey, setFormKey] = useState(0);
@@ -61,34 +54,49 @@ export function UploadContentDialog({ kbId, open, onOpenChange, onUploaded }: Up
       .finally(() => setLoading(false));
   }, [open, schema, kbId]);
 
+  const clearMessages = () => {
+    setError(null);
+    setRefusals([]);
+    setNotice(null);
+  };
+
+  // The server decides what it can read and how big a file may be; its refusals are shown per file
   const upload = async (data: Record<string, FormValue>) => {
     const metadata = typeof data.metadata === "string" ? data.metadata.trim() : "";
     const attachment = data.attachment;
     const files = attachment instanceof FileList ? Array.from(attachment) : Array.isArray(attachment) ? attachment : [];
 
+    clearMessages();
     if (files.length === 0) return setError("Select at least one file to upload.");
-    const problem = problemWith(files);
-    if (problem) return setError(problem);
 
     setUploading(true);
-    setError(null);
-    setNotice(null);
-    let uploaded = 0;
-    let last: ContentUploadResponse | null = null;
-    try {
-      for (const file of files) {
-        last = await knowledgeApiService.uploadContentFile(kbId, { file, metadata: metadata || undefined });
-        uploaded += 1;
+    let accepted = 0;
+    const refused: string[] = [];
+    for (const [index, file] of files.entries()) {
+      try {
+        await knowledgeApiService.uploadContentFile(kbId, { file, metadata: metadata || undefined });
+        accepted += 1;
+      } catch (err: unknown) {
+        console.error("Error uploading content:", err);
+        refused.push(`${file.name}: ${err instanceof Error ? err.message : "Upload failed."}`);
+        // Rate limited: the rest would be refused the same way
+        if (err instanceof HttpError && err.status === 429) {
+          const rest = files.slice(index + 1).map((skipped) => skipped.name);
+          if (rest.length > 0) refused.push(`Not sent: ${rest.join(", ")}`);
+          break;
+        }
       }
-      setNotice(`Uploaded ${uploaded} file${uploaded === 1 ? "" : "s"} successfully.`);
+    }
+    setUploading(false);
+    setRefusals(refused);
+    if (accepted > 0) {
+      setNotice(
+        `${accepted} file${accepted === 1 ? " was" : "s were"} accepted and ${accepted === 1 ? "is" : "are"} being read in the background. ` +
+          "Each shows in Documents, and its pages join the knowledge base once it's ready."
+      );
+      // Cleared so submitting again doesn't send the accepted files twice
       setFormKey((key) => key + 1);
-      if (last) onUploaded(last);
-    } catch (err: unknown) {
-      console.error("Error uploading content:", err);
-      setError(err instanceof Error ? err.message : "Failed to upload content. Please try again.");
-      if (last) onUploaded(last);
-    } finally {
-      setUploading(false);
+      onUploaded();
     }
   };
 
@@ -97,20 +105,22 @@ export function UploadContentDialog({ kbId, open, onOpenChange, onUploaded }: Up
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next);
-        if (!next) {
-          setError(null);
-          setNotice(null);
-        }
+        if (!next) clearMessages();
       }}
     >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Upload content</DialogTitle>
-          <DialogDescription>Upload text-based files (max 5MB per file). Multiple files upload one by one.</DialogDescription>
+          <DialogDescription>
+            Upload documents (up to 25 MB each). Files are sent one by one, then read and indexed in the background.
+          </DialogDescription>
         </DialogHeader>
         <Stack gap="md" className={styles.fields}>
-          <p className={styles.hint}>Supported: {KB_UPLOAD_ALLOWED_EXTENSIONS.join(" ")}</p>
+          {acceptedTypes(schema) && <p className={styles.hint}>Supported: {acceptedTypes(schema)}</p>}
           {error && <AlertBanner message={error} variant="error" />}
+          {refusals.map((refusal) => (
+            <AlertBanner key={refusal} message={refusal} variant="error" />
+          ))}
           {notice && <AlertBanner message={notice} variant="success" />}
           {loading ? (
             <LoadingState className={styles.loading} size="default" />

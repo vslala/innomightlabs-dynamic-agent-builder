@@ -33,7 +33,7 @@ from src.builder.tools import build_builder_tool_registry
 from src.config import settings
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
-from src.messages.models import Attachment, ImageAttachment, Message
+from src.messages.models import Attachment, ImageAttachment, Message, MessageReference
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.repository import ProviderSettingsRepository, get_provider_settings_repository
 from src.skills.models import ActorKind
@@ -50,6 +50,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 ARCHITECTURE_NAME = "vishwakarma"
+#: Ila is offered only her builder tools, and only they may run.
+BUILDER_TOOLS = {ToolCategory.BUILDER}
 
 
 class VishwakarmaArchitecture(AgentArchitecture):
@@ -95,6 +97,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
         actor_kind: ActorKind,
         attachments: list[Attachment] | None = None,
         images: list[ImageAttachment] | None = None,
+        references: list[MessageReference] | None = None,
         api_key_id: str | None = None,
     ) -> AsyncIterator[SSEEvent]:
         # 1. Preflight: the session this conversation builds in.
@@ -131,6 +134,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
             role="user",
             content=user_message,
             attachments=state.attachments,
+            references=references or [],
         )
         self.message_repo.save(user_msg)
         state.user_message_id = user_msg.message_id
@@ -164,9 +168,9 @@ class VishwakarmaArchitecture(AgentArchitecture):
             provider=provider_session.provider,
             context=context,
             credentials=provider_session.credentials,
-            tools=self.tool_registry.definitions_for_categories({ToolCategory.BUILDER}),
+            tools=self.tool_registry.definitions_for_categories(BUILDER_TOOLS),
             model=state.model_name,
-            tool_router=ToolExecutionRouter(self.tool_registry),
+            tool_router=ToolExecutionRouter(self.tool_registry, offered=BUILDER_TOOLS),
             state=state,
         ):
             if isinstance(item, TurnComplete):

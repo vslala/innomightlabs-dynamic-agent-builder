@@ -19,6 +19,8 @@ src/knowledge/
                   in-process); shared by the routes, blueprints and recrawl
   recrawl.py      recrawl(): read a KB's site again with its last settings; the `knowledge_base` skill's action
   run_state.py    CrawlJobStateService: the crawl lease (hold, release), heartbeat and stale-job failing
+  documents.py    The KB's follow-up for `src/documents/`: index a read document as a page, take the page out before
+                  the document is deleted; owner_of(kb)
 ```
 
 ## Conventions
@@ -36,6 +38,10 @@ src/knowledge/
   - Agent link: `pk=Agent#{agent_id}`, `sk=KnowledgeBase#{kb_id}`, `gsi2_pk=KnowledgeBase#{kb_id}`, `gsi2_sk=Agent#{agent_id}` (the reverse lookup uses index `gsi2`).
 - Access: every route gets its KB from a dependency in `router.py` built with `kb_with(action)`: `can_describe_kb`, `can_read_kb`, `can_update_kb`, `can_crawl_kb`, `can_delete_kb` (actions `knowledge:Describe|Get|Update|Crawl|Delete`, defined in `src/iam/actions.py`; share roles in `src/iam/shares.py`). Creation checks `knowledge:Create`. A KB the caller cannot see is 404, one they can see but not act on is 403. KBs are private to their owner unless shared; admins see metadata only (`KnowledgeBaseAccess`: owner, shared, admin).
 - An agent searches only KBs `readable_by_agent` returns: the link outlives a share, so reads are checked against the agent owner each time.
+- Uploads are documents (`src/documents/`, docs/LLD-documents.md): `POST .../content-upload` stores the file and answers
+  202; it is read and indexed in the background, and `GET .../documents` shows its status. A document is the page
+  `file://{kb_id}/{filename}`. Deleting a document takes its page out first (`KnowledgeBaseService.remove_page`).
+  `ContentUpload` rows (`GET .../uploads`) are history from before documents; new uploads don't write them.
 - Delete is soft: status `DELETED`, 30-day `ttl` (`SOFT_DELETE_TTL_DAYS`). **The vectors go first, and if they can't be
   deleted nothing else is** (`DeleteResult.retryable`, 503 from the route, the KB stays as it was): chunks are what
   record that vectors exist, so deleting them first leaves vectors nothing can find. Pinecone not being configured

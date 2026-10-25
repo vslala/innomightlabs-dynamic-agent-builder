@@ -8,7 +8,7 @@ import pytest
 from boto3.dynamodb.conditions import Key
 from pydantic import ValidationError
 
-from src.agents.architectures.krishna_memgpt_prompt import build_krishna_memgpt_system_prompt
+from src.agents.architectures.krishna_memgpt_prompt import mcp_section
 from src.connectors.mcp.client import MCPClientError
 from src.connectors.mcp.disclaimer import DISCLAIMER_VERSION
 from src.connectors.mcp.models import (
@@ -300,10 +300,8 @@ async def test_the_owner_keeps_every_tool_whatever_is_shared():
 def test_outsiders_are_told_the_connectors_belong_to_someone_else():
     connection = type("Connection", (), {"mcp_id": "m", "name": "Jira"})()
 
-    shared = build_krishna_memgpt_system_prompt(
-        agent_persona="Persona", enabled_mcp_connections=[connection], mcp_shared_by_owner=True
-    )
-    owned = build_krishna_memgpt_system_prompt(agent_persona="Persona", enabled_mcp_connections=[connection])
+    shared = mcp_section([connection], shared_by_owner=True)
+    owned = mcp_section([connection])
 
     assert "run with the agent owner's account" in shared
     assert "run with the agent owner's account" not in owned

@@ -3,7 +3,7 @@ Knowledge Base and Crawl Job form schemas.
 """
 
 from src.form_models import Form, FormInput, FormInputType, SelectOption
-from src.messages.models import ALLOWED_EXTENSIONS as CONTENT_UPLOAD_ALLOWED_EXTENSIONS
+from src.documents.parsers import accepted_extensions
 from src.knowledge.models import MAX_CRAWL_DEPTH, MAX_CRAWL_PAGES, KnowledgeBase
 
 
@@ -17,9 +17,6 @@ SOURCE_TYPE_OPTIONS = [
 CHUNKING_STRATEGY_OPTIONS = [
     SelectOption(value="hierarchical", label="Hierarchical (Recommended)"),
 ]
-
-CONTENT_UPLOAD_ACCEPT = ",".join(sorted(CONTENT_UPLOAD_ALLOWED_EXTENSIONS))
-
 
 def get_crawl_config_form(kb_id: str) -> Form:
     """
@@ -195,7 +192,8 @@ def get_content_upload_form_schema(kb: KnowledgeBase) -> Form:
                 name="attachment",
                 label="Attachment",
                 attr={
-                    "accept": CONTENT_UPLOAD_ACCEPT,
+                    # What can be read depends on whether the CLI runner (Docling) is configured, so it's asked each time
+                    "accept": ",".join(sorted(accepted_extensions())),
                     "multiple": "true",
                 },
             )

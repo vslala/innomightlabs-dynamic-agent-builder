@@ -100,7 +100,7 @@ def test_skill_install_update_and_uninstall_flow(test_client, auth_headers, dyna
 
     agent = _create_agent_for_user(TEST_USER_EMAIL)
 
-    schema_resp = test_client.get(f"/skills/wordpress_search/install-schema", headers=auth_headers)
+    schema_resp = test_client.get("/skills/wordpress_search/install-schema", headers=auth_headers)
     assert schema_resp.status_code == 200
     schema = schema_resp.json()
     field_names = [field["name"] for field in schema["form_inputs"]]
@@ -719,10 +719,6 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
     assert loaded_payload["actions"][0]["name"] == "invoke"
     assert loaded_payload["actions"][0]["description"]
     assert loaded_payload["actions"][0]["schema"]["required"] == ["prompt_template"]
-    prompt_addendum = SkillRuntimeService().build_system_prompt_addendum(
-        SkillRuntimeService().list_enabled(source_agent.agent_id)
-    )
-    assert "Use when: Use for lead summaries that need a specialist agent." in prompt_addendum
 
 
 def test_agent_invocation_install_schema_hydrates_agent_options(test_client, auth_headers, dynamodb_table):

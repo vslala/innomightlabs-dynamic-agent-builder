@@ -15,7 +15,7 @@ import {
 } from "../../../components/ui";
 import type { CrawlJob, CrawlJobStatus } from "../../../types/knowledge";
 import { formatDate, formatDuration } from "./knowledgeFormat";
-import { KnowledgeUploads } from "./KnowledgeUploads";
+import { KnowledgeDocuments } from "./KnowledgeDocuments";
 import styles from "./KnowledgeRuns.module.css";
 
 interface KnowledgeRunsProps {
@@ -27,6 +27,7 @@ interface KnowledgeRunsProps {
   loadingOlder: boolean;
   expandedJobId: string | null;
   uploadsRefreshKey: number;
+  onIndexChanged: () => void;
   onExpand: (jobId: string | null) => void;
   onLoadOlder: () => void;
   onCancel: (jobId: string) => void;
@@ -56,7 +57,7 @@ function outcomes(job: CrawlJob): { label: string; tone: "changed" | "same" | "r
 
 const TONE_CLASS = { changed: "toneChanged", same: "toneSame", removed: "toneRemoved", failed: "toneFailed" } as const;
 
-/** Every crawl, newest first, and the files uploaded. */
+/** Every crawl, newest first, and the documents uploaded. */
 export function KnowledgeRuns({
   kbId,
   jobs,
@@ -66,6 +67,7 @@ export function KnowledgeRuns({
   loadingOlder,
   expandedJobId,
   uploadsRefreshKey,
+  onIndexChanged,
   onExpand,
   onLoadOlder,
   onCancel,
@@ -212,7 +214,7 @@ export function KnowledgeRuns({
         )}
       </section>
 
-      <KnowledgeUploads kbId={kbId} refreshKey={uploadsRefreshKey} />
+      <KnowledgeDocuments kbId={kbId} refreshKey={uploadsRefreshKey} onIndexChanged={onIndexChanged} />
     </div>
   );
 }

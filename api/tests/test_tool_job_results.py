@@ -12,7 +12,8 @@ from botocore.exceptions import ClientError
 
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
-from src.agents.tool_execution import ToolExecutionRouter, current_tool_call_id
+from src.agents.tool_execution import ToolExecutionRouter
+from src.agents.tool_runtime.current_call import current_tool_call_id
 from src.agents.tool_runtime import BoundTool, ToolCategory, ToolRegistry, ToolSpec
 from src.agents.tool_runtime.jobs import ToolJob, ToolJobRepository, ToolJobStatus
 from src.agents.tool_runtime.jobs.repository import INLINE_RESULT_MAX_BYTES
@@ -165,7 +166,7 @@ async def test_each_concurrent_tool_call_sees_its_own_id():
         return "ok"
 
     spec = ToolSpec({"name": "probe", "description": "", "parameters": {"type": "object"}}, ToolCategory.BUILDER)
-    router = ToolExecutionRouter(ToolRegistry([BoundTool(spec, handler)]))
+    router = ToolExecutionRouter(ToolRegistry([BoundTool(spec, handler)]), offered={ToolCategory.BUILDER})
     await asyncio.gather(
         router.execute(tool_name="probe", tool_input={"name": "a"}, tool_use_id="toolu_a", state=None),
         router.execute(tool_name="probe", tool_input={"name": "b"}, tool_use_id="toolu_b", state=None),

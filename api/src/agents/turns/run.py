@@ -26,7 +26,7 @@ from src.llm.events import SSEEvent, SSEEventType
 if TYPE_CHECKING:
     from src.agents.models import Agent
     from src.conversations.models import Conversation
-    from src.messages.models import Attachment, ImageAttachment
+    from src.messages.models import Attachment, ImageAttachment, MessageReference
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +60,7 @@ class TurnRequest:
     actor_kind: ActorKind
     api_key_id: str | None = None
     images: list["ImageAttachment"] | None = None
+    references: list["MessageReference"] | None = None
     #: Runs the turn instead of the agent's own architecture, for agents that aren't in the
     #: factory (Ila, the solution builder).
     architecture: AgentArchitecture | None = None
@@ -77,6 +78,7 @@ def start_turn(
     actor_kind: ActorKind,
     api_key_id: str | None = None,
     images: list["ImageAttachment"] | None = None,
+    references: list["MessageReference"] | None = None,
     architecture: AgentArchitecture | None = None,
 ) -> RunningTurn:
     now = datetime.now(timezone.utc)
@@ -106,6 +108,7 @@ def start_turn(
                 actor_kind=actor_kind,
                 api_key_id=api_key_id,
                 images=images,
+                references=references,
                 architecture=architecture,
             ),
         )
@@ -154,6 +157,7 @@ async def _drive_turn(
             actor_kind=request.actor_kind,
             attachments=request.attachments,
             images=request.images,
+            references=request.references,
             api_key_id=request.api_key_id,
         ):
             transcript.record(event)
