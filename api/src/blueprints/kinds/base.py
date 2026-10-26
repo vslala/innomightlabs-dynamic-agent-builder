@@ -103,6 +103,8 @@ class ApplyContext:
     background_tasks: Optional[BackgroundTasks] = None
     #: Resources created, updated or kept so far, by name, so references resolve to real ids.
     applied: dict[str, AppliedResource] = field(default_factory=dict)
+    #: Automations left off because a step acts for the owner and waits on their approval.
+    awaiting_consent: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

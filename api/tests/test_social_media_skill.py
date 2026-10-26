@@ -195,3 +195,26 @@ async def test_an_unknown_network_or_account_is_an_error(dynamodb_table, linkedi
         await publish(network="myspace")
     with pytest.raises(ValueError, match="No connected social account"):
         await publish(accounts=["nope"])
+
+
+@pytest.mark.asyncio
+async def test_the_consent_preview_shows_the_post_and_where_it_goes_or_why_not(dynamodb_table, linkedin):
+    """The person approves this before `publish` runs (docs/LLD-action-consent.md)."""
+    connect("Ada Lovelace")
+    connect("Old Page", external_id="member-2", expires_in=timedelta(days=-1))
+
+    preview = await actions.publish_preview({"text": "Hello LinkedIn", "overrides": {"linkedin": "Longer"}}, {}, context())
+
+    text, targets, overrides = preview["blocks"]
+    assert text == {"kind": "text", "label": "Post", "value": "Hello LinkedIn", "format": "plain", "argument": "text"}
+    by_label = {target["label"]: target for target in targets["items"]}
+    assert by_label["Linkedin · Ada Lovelace"]["will_run"] is True
+    assert by_label["Linkedin · Old Page"]["will_run"] is False and by_label["Linkedin · Old Page"]["reason"]
+    assert overrides["items"] == [{"label": "linkedin", "value": "Longer", "argument": None}]
+    assert linkedin.requests == []
+
+
+def test_publish_asks_the_person_first_and_lets_them_edit_the_text():
+    publish_action = get_skill_registry().get("social_media").manifest.find_action("publish")
+    assert publish_action.consent is not None
+    assert publish_action.consent.editable == ["text"] and publish_action.consent.preview == "actions:publish_preview"

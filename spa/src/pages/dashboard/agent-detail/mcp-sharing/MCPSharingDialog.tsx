@@ -42,6 +42,8 @@ export function MCPSharingDialog({ connection, onClose, onSaved }: MCPSharingDia
   const [draft, setDraft] = useState<SharingDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Tools the owner chose to be asked about first: nobody they share with can use them
+  const [ownerOnly, setOwnerOnly] = useState<Set<string>>(new Set());
 
   const show = (loaded: MCPSharingView) => {
     setView(loaded);
@@ -53,6 +55,10 @@ export function MCPSharingDialog({ connection, onClose, onSaved }: MCPSharingDia
       .getAgentMCPSharing(agentId, mcpId)
       .then(show)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load sharing."));
+    connectorApiService
+      .getMCPToolPolicy(mcpId)
+      .then((policy) => policy.chosen && setOwnerOnly(new Set(policy.tools.filter((tool) => tool.asks_first).map((tool) => tool.name))))
+      .catch(() => undefined);
   }, [agentId, mcpId]);
 
   const update = (changes: Partial<SharingDraft>) => setDraft((current) => current && { ...current, ...changes });
@@ -135,6 +141,7 @@ export function MCPSharingDialog({ connection, onClose, onSaved }: MCPSharingDia
                       <ToolAllowlist
                         catalog={view.catalog}
                         selected={draft.tools}
+                        ownerOnly={ownerOnly}
                         onChange={(tools) => update({ tools })}
                         onRefresh={refreshTools}
                       />

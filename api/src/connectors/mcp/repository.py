@@ -7,7 +7,7 @@ from typing import Optional
 from boto3.dynamodb.conditions import Key
 
 from src.config import settings
-from src.connectors.mcp.models import AgentMCPConnection, MCPConnection, MCPToolCatalog
+from src.connectors.mcp.models import AgentMCPConnection, MCPConnection, MCPToolCatalog, MCPToolPolicy
 from src.db import get_dynamodb_resource
 
 log = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ class MCPConnectionRepository:
         self.table.delete_item(
             Key={"pk": f"Account#{account_id}", "sk": f"MCPToolCatalog#{mcp_id}"}
         )
+        self.table.delete_item(Key={"pk": f"Account#{account_id}", "sk": f"MCPToolPolicy#{mcp_id}"})
         log.info("Deleted MCP connection %s in account %s", mcp_id, account_id)
 
     def save_tool_catalog(self, catalog: MCPToolCatalog) -> MCPToolCatalog:
@@ -63,6 +64,14 @@ class MCPConnectionRepository:
         )
         item = response.get("Item")
         return MCPToolCatalog.from_dynamo_item(item) if item else None
+
+    def find_tool_policy(self, account_id: str, mcp_id: str) -> Optional[MCPToolPolicy]:
+        item = self.table.get_item(Key={"pk": f"Account#{account_id}", "sk": f"MCPToolPolicy#{mcp_id}"}).get("Item")
+        return MCPToolPolicy.from_dynamo_item(item) if item else None
+
+    def save_tool_policy(self, policy: MCPToolPolicy) -> MCPToolPolicy:
+        self.table.put_item(Item=policy.to_dynamo_item())
+        return policy
 
     def save_agent_connection(self, link: AgentMCPConnection) -> AgentMCPConnection:
         existing = self.find_agent_connection(link.agent_id, link.mcp_id)

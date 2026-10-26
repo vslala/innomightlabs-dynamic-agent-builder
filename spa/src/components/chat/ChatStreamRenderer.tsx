@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ExternalLink, Image as ImageIcon, Loader2, User, Wrench } from "lucide-react";
 import { buildChatStreamRenderPlan } from '../../../packages/chat-stream-renderer/src';
 import { AttachmentChip } from "./AttachmentChip";
@@ -8,8 +8,18 @@ import { ToolActivitySummary } from "./ToolActivitySummary";
 import { AccordionPanel, MarkdownRenderer } from "../ui";
 import { SubmittedFormMessage } from "./SubmittedFormMessage";
 import { isSubmittedFormMessage } from "./submittedFormParser";
+import { ConsentDecisionMessage } from "./consent/ConsentDecisionMessage";
+import { isConsentDecisionMessage } from "./consent/consentDecisionParser";
 import { authHeaders } from "../../services/http";
-import type { AttachmentInfo, Message, MessageCanvasArtifact, MessageImage, MessageReference, ToolActivity } from "../../types/message";
+import type {
+  AttachmentInfo,
+  Message,
+  MessageCanvasArtifact,
+  MessageConsent,
+  MessageImage,
+  MessageReference,
+  ToolActivity,
+} from "../../types/message";
 
 interface ChatStreamRendererProps {
   messages: Message[];
@@ -21,6 +31,8 @@ interface ChatStreamRendererProps {
   extraNode?: React.ReactNode;
   debugToolActivity?: boolean;
   onExpandCanvas?: (canvas: MessageCanvasArtifact) => void;
+  /** The card for a consent a message raised; the page owns their state, since a card is decided from it. */
+  renderConsent?: (consent: MessageConsent) => React.ReactNode;
 }
 
 function renderAttachments(role: Message["role"], attachments?: AttachmentInfo[], references?: MessageReference[]) {
@@ -275,6 +287,7 @@ export function ChatStreamRenderer({
   extraNode: customExtraNode,
   debugToolActivity = false,
   onExpandCanvas,
+  renderConsent,
 }: ChatStreamRendererProps) {
   const renderAvatar = (role: Message["role"]) => {
     if (role === "assistant") {
@@ -401,6 +414,7 @@ export function ChatStreamRenderer({
         if (item.kind === "message") {
           const msg = item.message;
           const isFormSubmission = msg.role === "user" && isSubmittedFormMessage(msg);
+          const isConsentDecision = isConsentDecisionMessage(msg);
           return (
             <div
               key={item.key}
@@ -433,6 +447,8 @@ export function ChatStreamRenderer({
                   <div style={msg.images?.length || msg.image_attachments?.length ? { marginBottom: "0.25rem" } : undefined}>
                     {isFormSubmission ? (
                       <SubmittedFormMessage message={msg} />
+                    ) : isConsentDecision ? (
+                      <ConsentDecisionMessage message={msg} />
                     ) : msg.role === "assistant" ? (
                       <MarkdownRenderer content={msg.content} />
                     ) : (
@@ -443,6 +459,9 @@ export function ChatStreamRenderer({
                 {renderImages(msg.image_attachments)}
                 {renderImages(msg.images)}
                 {renderCanvases(msg.canvases, onExpandCanvas)}
+                {msg.consents?.map((consent) => (
+                  <Fragment key={consent.consent_id}>{renderConsent?.(consent)}</Fragment>
+                ))}
                 {renderAttachments(msg.role, msg.attachments, msg.references)}
               </div>
             </div>

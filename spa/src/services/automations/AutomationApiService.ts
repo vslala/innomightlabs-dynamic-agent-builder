@@ -21,6 +21,7 @@ import type {
   UpdateAutomationRequest,
   UpdateAutomationTriggerRequest,
 } from "../../types/automation";
+import type { StepConsentState } from "../../types/consent";
 import type { FormSchema } from "../../types/form";
 
 class AutomationApiService {
@@ -53,6 +54,24 @@ class AutomationApiService {
 
   async getActionCatalog(automationId: string): Promise<AutomationActionCatalogResponse> {
     return httpClient.get<AutomationActionCatalogResponse>(`/automations/${automationId}/action-catalog`);
+  }
+
+  /** The steps that act for the owner, what each does, and whether it is approved as it is now. */
+  async listStepConsents(automationId: string): Promise<StepConsentState[]> {
+    return httpClient.get<StepConsentState[]>(`/automations/${automationId}/consents`);
+  }
+
+  /** Approve a step exactly as the owner saw it (`fingerprint`); 409 when it changed since. */
+  async approveStep(
+    automationId: string,
+    nodeId: string,
+    body: { fingerprint: string; granted_actions?: string[] }
+  ): Promise<StepConsentState> {
+    return httpClient.put<StepConsentState>(`/automations/${automationId}/nodes/${nodeId}/consent`, body);
+  }
+
+  async revokeStep(automationId: string, nodeId: string): Promise<void> {
+    await httpClient.delete(`/automations/${automationId}/nodes/${nodeId}/consent`);
   }
 
   async listSkills(automationId: string): Promise<AutomationSkillResponse[]> {

@@ -29,12 +29,19 @@ CODE_MIME_TYPES = {
 
 
 VIDEO_MIME_TYPES = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime"}
+#: The raster formats an image artifact may be, by extension, and the format Pillow reads them as.
+IMAGE_FORMATS = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".webp": "WEBP", ".gif": "GIF"}
+IMAGE_MIME_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
 
 
 def infer_mime_type(artifact_type: ArtifactType, filename: str, override: str | None) -> str:
+    suffix = PurePath(filename).suffix.lower()
+    # Never the agent's choice: a video or an image is shown inline, so it can't be labelled as something a browser
+    # would run. Its validator has already checked the bytes are what the extension says.
     if artifact_type == "video":
-        # Never the agent's choice: a video is served inline, so it can't be labelled as something a browser would run.
-        return VIDEO_MIME_TYPES.get(PurePath(filename).suffix.lower(), "application/octet-stream")
+        return VIDEO_MIME_TYPES.get(suffix, "application/octet-stream")
+    if artifact_type == "image":
+        return IMAGE_MIME_TYPES.get(suffix, "application/octet-stream")
     if override:
         return override.strip()
     if artifact_type == "html_report":
@@ -48,6 +55,9 @@ def infer_mime_type(artifact_type: ArtifactType, filename: str, override: str | 
     if artifact_type == "code":
         return _code_mime_type(filename)
     guessed = mimetypes.guess_type(filename)[0]
+    if artifact_type == "file" and guessed and not guessed.startswith("text/"):
+        # A PDF or a picture saved as a plain file is downloaded as what it is, not as text
+        return guessed
     if guessed and guessed.startswith("text/"):
         return _with_charset(guessed)
     if guessed in {"application/json", "application/xml", "application/yaml"}:

@@ -263,3 +263,18 @@ export interface SocialAccount {
   last_error: string | null;
   created_at: string;
 }
+
+/** Which of a connection's tools ask the agent's owner before they run (docs/LLD-action-consent.md). */
+export interface MCPToolPolicy {
+  tools: {
+    name: string;
+    title?: string | null;
+    read_only: boolean;
+    destructive: boolean;
+    asks_first: boolean;
+  }[];
+  /** False while it is the default: the tools the server marks destructive ask. */
+  chosen: boolean;
+  /** When the tools were last listed; without a listing there is nothing to choose from. */
+  fetched_at?: string | null;
+}

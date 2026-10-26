@@ -250,6 +250,14 @@ def skill_page(variant: SkillVariant, ready: bool = True) -> Page:
         body += [f"`available_to`: {AVAILABLE_TO_DESCRIPTION}", ""]
     else:
         body += ["Only the owner can use it, so it takes no `available_to`.", ""]
+    asking = [action.name for action in manifest.actions if action.consent]
+    if asking:
+        body += [
+            f"These actions ask the person to approve the exact call first: {', '.join(f'`{name}`' for name in asking)}. "
+            "In an automation, a step that runs one is approved when it is built; an agent step that will take one lists "
+            "it in `allow`.",
+            "",
+        ]
     body += _settings_section(variant)
     rows = skill_config_rows(variant)
     body += ["### Settings (`config`)", *(markdown_table(rows) if rows else ["None."]), ""]

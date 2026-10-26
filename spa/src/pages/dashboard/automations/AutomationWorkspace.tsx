@@ -52,6 +52,7 @@ import { RunsDrawer, type DrawerHeight } from "./components/RunsDrawer";
 import { TestPanel } from "./components/TestPanel";
 import { WorkspaceTopBar } from "./components/WorkspaceTopBar";
 import type { AutomationDraft } from "./hooks/useAutomationDraft";
+import { useStepConsents } from "./hooks/useStepConsents";
 import type { AutomationRunsState } from "./hooks/useAutomationRuns";
 import type { WorkspaceParams } from "./hooks/useWorkspaceParams";
 
@@ -297,6 +298,8 @@ export function AutomationWorkspace({
     [draft, runs, update]
   );
 
+  const stepConsents = useStepConsents(draft.graph, draft.saveState, draft.flush);
+
   const chainValue = useMemo<ChainContextValue | null>(() => {
     if (!draft.graph || !draft.chain) return null;
     return {
@@ -336,8 +339,9 @@ export function AutomationWorkspace({
         draft.apply(stopLane(draft.graph, conditionNodeId, label));
       },
       onEditTriggers: draft.refreshGraph,
+      stepConsents,
     };
-  }, [draft, expandedNodeId, gateway, insert, requestDelete, runs, toggleExpand]);
+  }, [draft, expandedNodeId, gateway, insert, requestDelete, runs, stepConsents, toggleExpand]);
 
   if (draft.loading) return <LoadingState />;
   if (draft.loadError || !draft.graph || !draft.chain || !chainValue) {

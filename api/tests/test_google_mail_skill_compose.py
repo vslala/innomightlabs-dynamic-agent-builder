@@ -52,7 +52,7 @@ def gmail(monkeypatch):
     [
         ("create_draft", {}, "POST", "/drafts"),
         ("update_draft", {"draft_id": "draft-1"}, "PUT", "/drafts/draft-1"),
-        ("send", {"confirmed": True}, "POST", "/messages/send"),
+        ("send", {}, "POST", "/messages/send"),
     ],
 )
 def test_compose_mime_and_payload(gmail, action, extra, method, path):
@@ -94,7 +94,7 @@ def test_plain_text_bcc_only_draft(gmail):
 
 def test_send_draft_uses_draft_id_only(gmail):
     calls, _, _ = gmail
-    result = asyncio.run(actions.send_draft({"draft_id": "r-draft_1", "confirmed": True}, {}, {}))
+    result = asyncio.run(actions.send_draft({"draft_id": "r-draft_1"}, {}, {}))
     assert "succeeded" in result
     assert str(calls[0].url).endswith("/drafts/send")
     assert json.loads(calls[0].content) == {"id": "r-draft_1"}
@@ -131,23 +131,19 @@ def test_invalid_compose_rejected_before_credentials(gmail, change):
 
 
 @pytest.mark.parametrize("action", ["send", "send_draft"])
-@pytest.mark.parametrize("confirmation", [None, False, "true", 1, "false", 0])
-def test_send_requires_explicit_boolean_confirmation(gmail, action, confirmation):
-    calls, _, token = gmail
+def test_a_stray_confirmed_from_an_older_conversation_is_ignored(gmail, action):
+    """The person approves the send itself now; `confirmed` is gone, but old conversations may still pass it."""
+    calls, _, _ = gmail
     arguments = dict(COMPOSE) if action == "send" else {"draft_id": "draft-1"}
-    if confirmation is not None:
-        arguments["confirmed"] = confirmation
-    with pytest.raises(ValueError):
-        asyncio.run(getattr(actions, action)(arguments, {}, {}))
-    token.assert_not_awaited()
-    assert calls == []
+    asyncio.run(getattr(actions, action)({**arguments, "confirmed": True}, {}, {}))
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize("action", ["update_draft", "send_draft"])
 @pytest.mark.parametrize("draft_id", ["", "../messages/send", "a?x=1", "a\r\nb", "a" * 201])
 def test_invalid_draft_id_has_no_network(gmail, action, draft_id):
     calls, _, token = gmail
-    arguments = {**COMPOSE, "draft_id": draft_id} if action == "update_draft" else {"draft_id": draft_id, "confirmed": True}
+    arguments = {**COMPOSE, "draft_id": draft_id} if action == "update_draft" else {"draft_id": draft_id}
     with pytest.raises(ValueError):
         asyncio.run(getattr(actions, action)(arguments, {}, {}))
     token.assert_not_awaited()
@@ -159,11 +155,11 @@ def test_invalid_draft_id_has_no_network(gmail, action, draft_id):
 def test_google_error_does_not_echo_sensitive_response(gmail, action, status):
     calls, responses, _ = gmail
     responses.append(httpx.Response(status, json={"error": {"message": "private@example.com secret-body" * 1000}}))
-    arguments: dict[str, Any] = {**COMPOSE, "confirmed": True} if action == "send" else dict(COMPOSE)
+    arguments: dict[str, Any] = dict(COMPOSE)
     if action == "update_draft":
         arguments["draft_id"] = "draft-1"
     elif action == "send_draft":
-        arguments = {"draft_id": "draft-1", "confirmed": True}
+        arguments = {"draft_id": "draft-1"}
     with pytest.raises(RuntimeError) as exc:
         asyncio.run(getattr(actions, action)(arguments, {}, {}))
     assert str(status) in str(exc.value)
@@ -183,7 +179,7 @@ def test_uncertain_send_not_retried_and_error_is_safe(gmail, response):
     calls, responses, _ = gmail
     responses.append(response)
     with pytest.raises(RuntimeError) as exc:
-        asyncio.run(actions.send({**COMPOSE, "confirmed": True}, {}, {}))
+        asyncio.run(actions.send(dict(COMPOSE), {}, {}))
     assert "private@example.com" not in str(exc.value)
     assert "secret-body" not in str(exc.value)
     assert "retry" in str(exc.value)
@@ -206,7 +202,34 @@ def test_registry_compose_schemas_and_draft_alias(gmail):
         schema = declared[name].input_schema
         assert schema["additionalProperties"] is False
         assert declared[name].handler == f"actions:{name}"
-        if name in ("send", "send_draft"):
-            assert "confirmed" in schema["required"]
-            assert schema["properties"]["confirmed"]["enum"] == [True]
+        assert "confirmed" not in schema["properties"]
+        # Sending acts for the person, so it asks them first; drafts can be undone, so they don't
+        assert (declared[name].consent is not None) == (name in ("send", "send_draft"))
     assert "draft" in declared["create_draft"].aliases
+
+
+def test_send_preview_is_the_email_and_keeps_the_body_with_its_html(gmail):
+    preview = asyncio.run(actions.send_preview(dict(COMPOSE), {}, {}))
+    email = preview["blocks"][0]
+    assert email["kind"] == "email"
+    assert email["to"] == COMPOSE["to"] and email["bcc"] == COMPOSE["bcc"]
+    assert email["subject"] == COMPOSE["subject"] and email["html_body"] == COMPOSE["html_body"]
+    # Editing the plain body alone would send an HTML version that still says the old thing
+    assert preview["editable"] == ["subject"]
+    plain = {key: value for key, value in COMPOSE.items() if key != "html_body"}
+    assert asyncio.run(actions.send_preview(plain, {}, {}))["editable"] == ["subject", "body"]
+
+
+def test_send_draft_preview_reads_the_draft_as_gmail_holds_it(gmail):
+    calls, responses, _ = gmail
+    body = base64.urlsafe_b64encode("See you there".encode()).decode()
+    responses.append(httpx.Response(200, json={"message": {"payload": {
+        "mimeType": "text/plain",
+        "headers": [{"name": "To", "value": '"Zoë, Team" <zoe@example.com>, b@example.com'}, {"name": "Subject", "value": "Friday"}],
+        "body": {"data": body},
+    }}}))
+    preview = asyncio.run(actions.send_draft_preview({"draft_id": "draft-1"}, {}, {}))
+    email = preview["blocks"][0]
+    assert str(calls[0].url).split("?")[0].endswith("/drafts/draft-1")
+    assert email["to"] == ["Zoë, Team <zoe@example.com>", "b@example.com"]
+    assert email["subject"] == "Friday" and email["body"] == "See you there"

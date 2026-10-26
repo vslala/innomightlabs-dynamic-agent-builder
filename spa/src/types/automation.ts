@@ -125,6 +125,8 @@ export interface AutomationActionCatalogItem {
   disabled_reason?: string | null;
   install_schema?: import("./form").FormSchema | null;
   connectors: AutomationSkillConnector[];
+  /** Set when the action acts for the owner: a step running it asks for their approval when it is set up. */
+  consent?: { title: string; warning?: string | null } | null;
 }
 
 export interface AutomationActionCatalogResponse {

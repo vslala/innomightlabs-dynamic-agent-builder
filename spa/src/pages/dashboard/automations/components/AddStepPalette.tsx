@@ -99,6 +99,7 @@ export function AddStepPalette({
                   icon={<StepIcon kind={iconFor(item)} />}
                   title={actionTitle(item)}
                   description={item.description}
+                  trailing={item.consent ? <StatusBadge status="info" label="asks for approval" /> : undefined}
                   onSelect={() => onChoose({ kind: "action", item })}
                 />
               ))}

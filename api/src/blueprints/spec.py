@@ -19,6 +19,7 @@ from src.form_models import FormInput
 from src.knowledge.models import MAX_CRAWL_DEPTH, MAX_CRAWL_PAGES
 from src.leads.models import visitor_input
 from src.skills.models import ActorKind
+from src.skills.registry import get_skill_registry
 
 API_VERSION = "innomight/v2"
 
@@ -350,6 +351,12 @@ class StepSpec(Strict):
     arguments: dict[str, Any] = Field(
         default_factory=dict, description="The action's arguments. Values may use smart values."
     )
+    allow: list[str] = Field(
+        default_factory=list,
+        description="Agent steps only: the actions that ask the person first (`skill.action`, such as "
+        "`social_media.publish`) this step's agent will take on its own. List every one it will use: the person "
+        "approves them when the automation is built, and the agent can take no others.",
+    )
 
     @model_validator(mode="after")
     def _agent_or_skill(self) -> "StepSpec":
@@ -361,6 +368,14 @@ class StepSpec(Strict):
             raise ValueError("Asking an agent needs both `agent` and `prompt`")
         if runs_skill and (self.skill is None or self.action is None):
             raise ValueError("Running a skill action needs both `skill` and `action`")
+        if self.allow and not asks_agent:
+            raise ValueError("Only a step that asks an agent can `allow` actions")
+        for entry in self.allow:
+            skill, _, action = entry.partition(".")
+            loaded = get_skill_registry().get(skill)
+            found = loaded.manifest.find_action(action) if loaded else None
+            if found is None or found.consent is None:
+                raise ValueError(f"`allow` takes actions that ask the person first, as skill.action; '{entry}' isn't one")
         return self
 
 
@@ -378,7 +393,8 @@ def _trigger_as_written(value: Any) -> dict[str, Any]:
 
 def _steps_as_written(steps: list[Any]) -> list[dict[str, Any]]:
     plain = [step.model_dump(exclude_none=True) if isinstance(step, BaseModel) else dict(step) for step in steps]
-    return [{key: value for key, value in step.items() if value not in ({}, None)} for step in plain]
+    # `allow` is what the consent card offers, not what the step stores, so it is never a difference
+    return [{key: value for key, value in step.items() if value not in ({}, None) and key != "allow"} for step in plain]
 
 
 class AutomationSpec(ResourceBase):

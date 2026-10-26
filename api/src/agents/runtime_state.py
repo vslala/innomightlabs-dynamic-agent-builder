@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from src.accounts.owner import Owner
+from src.consent.models import ConsentScope
 from src.messages.models import Attachment, MessageReference
 from src.skills.models import ActorKind, AgentSkill, LoadedSkillRuntimeResponse
 from src.vision.models import ImageRef
@@ -37,6 +38,8 @@ class AgentTurnState:
     #: The agent's account and owner: the member the turn runs as (`owner_email` is theirs too)
     account_id: str = ""
     owner_id: str = ""
+    #: Who is there to approve an action that needs consent: the person in a chat, an automation step's grants, nobody.
+    consent_scope: ConsentScope = field(default_factory=ConsentScope.interactive)
 
     @property
     def owner(self) -> Owner:

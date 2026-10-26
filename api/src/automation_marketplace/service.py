@@ -45,6 +45,7 @@ from src.automations.models import (
     AutomationStatus,
 )
 from src.automations.repository import AutomationRepository
+from src.automations.validation import GraphValidationMode
 from src.form_options import FormOptionsContext, hydrate_form_options
 from src.form_models import Form, FormInput, FormInputType
 
@@ -193,7 +194,10 @@ class AutomationMarketplaceService:
                 installed=installed,
                 import_inputs=resolved_request.import_inputs,
             )
-            self.automation_service.validate_graph(nodes, edges, [], owner, saved_automation.automation_id)
+            # An import is a draft: its new owner approves the steps that act for them when they set it up
+            self.automation_service.validate_graph(
+                nodes, edges, [], owner, saved_automation.automation_id, mode=GraphValidationMode.STRICT
+            )
             self.automation_repository.save_graph(saved_automation.automation_id, nodes, edges, [])
         except Exception:
             self._rollback_import(saved_automation, installed, owner)

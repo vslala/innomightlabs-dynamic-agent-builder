@@ -12,7 +12,9 @@ from src.artifacts.models import ArtifactType
 MAX_ARTIFACT_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024
 MAX_METADATA_JSON_BYTES = 8 * 1024
-UPLOADABLE_ARTIFACT_TYPES = {"html_report", "csv", "markdown", "json", "text", "code", "file", "video"}
+UPLOADABLE_ARTIFACT_TYPES = {"html_report", "csv", "markdown", "json", "text", "code", "file", "image", "video"}
+#: Types whose bytes are not text, so content sent inline as base64 isn't held to UTF-8 (their validator checks it).
+BINARY_ARTIFACT_TYPES = {"image", "video"}
 #: Types too large or not text to send in a message: they are uploaded from a file in the workspace.
 WORKSPACE_ONLY_ARTIFACT_TYPES = {"video"}
 
@@ -61,10 +63,12 @@ class UploadFileRequest(BaseModel):
             body = base64.b64decode(str(self.base64_content or ""), validate=True)
         except (binascii.Error, ValueError) as exc:
             raise ValueError("base64_content must be valid base64") from exc
+        if self.artifact_type in BINARY_ARTIFACT_TYPES:
+            return body
         try:
             body.decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise ValueError("Decoded base64_content must be UTF-8 text for upload_file v1") from exc
+            raise ValueError("Decoded base64_content must be UTF-8 text, except for an image") from exc
         return body
 
 

@@ -28,7 +28,9 @@ def turn_error_message(exc: Exception, actor_kind: ActorKind) -> str:
     return str(exc) if actor_kind == ActorKind.OWNER else client_error_message(exc)
 
 if TYPE_CHECKING:
+    from src.agents.agentic_loop import TurnResume
     from src.agents.models import Agent
+    from src.consent.models import ConsentScope
     from src.conversations.models import Conversation
     from src.messages.models import Attachment, ImageAttachment, MessageReference
 
@@ -80,6 +82,8 @@ class AgentArchitecture(ABC):
         images: list["ImageAttachment"] | None = None,
         references: list["MessageReference"] | None = None,
         api_key_id: str | None = None,
+        consent_scope: "ConsentScope | None" = None,
+        resume: "TurnResume | None" = None,
     ) -> AsyncIterator["SSEEvent"]:
         """
         Handle a user message and stream SSE events.
@@ -100,6 +104,8 @@ class AgentArchitecture(ABC):
             images: Images the user sent with the message, already uploaded; see src/vision
             references: What the message points at (documents), already attached; see src/messages/references.py
             api_key_id: The public API secret key the turn runs under, if any (usage attribution)
+            consent_scope: Who can approve an action that needs consent; the person in the chat by default
+            resume: Carry on a turn that paused for the person's decision (`user_message` is the decision)
 
         Yields:
             SSEEvent objects for streaming to the client
@@ -118,6 +124,8 @@ class AgentArchitecture(ABC):
                 images=images,
                 references=references,
                 api_key_id=api_key_id,
+                consent_scope=consent_scope,
+                resume=resume,
             ):
                 failed = failed or event.event_type == SSEEventType.ERROR
                 yield event
@@ -143,6 +151,8 @@ class AgentArchitecture(ABC):
         images: list["ImageAttachment"] | None = None,
         references: list["MessageReference"] | None = None,
         api_key_id: str | None = None,
+        consent_scope: "ConsentScope | None" = None,
+        resume: "TurnResume | None" = None,
     ) -> AsyncIterator["SSEEvent"]:
         """Stream one turn's content events. Errors may simply be raised.
 
@@ -162,6 +172,7 @@ class AgentArchitecture(ABC):
         actor_kind: "ActorKind",
         attachments: list["Attachment"] | None = None,
         api_key_id: str | None = None,
+        consent_scope: "ConsentScope | None" = None,
     ) -> AgentInvocationResult:
         """
         Handle a user message and return a buffered invocation result.
@@ -182,6 +193,7 @@ class AgentArchitecture(ABC):
             actor_kind=actor_kind,
             attachments=attachments,
             api_key_id=api_key_id,
+            consent_scope=consent_scope,
         ):
             result.add(event)
 

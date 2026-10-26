@@ -3,10 +3,12 @@ scope, so an agent can't name another conversation's or account's image."""
 
 from __future__ import annotations
 
+import mimetypes
 from dataclasses import dataclass
 from typing import Any
 
 from src.accounts.owner import member_partition
+from src.artifacts.models import Artifact
 from src.artifacts.repository import ArtifactRepository
 from src.artifacts.service import run_artifact_holder
 from src.artifacts.storage import ArtifactStorage
@@ -47,8 +49,8 @@ def _find(ref: str, context: dict[str, Any]) -> str:
     holder_account, holder_user = run_artifact_holder(context)
     artifact = ArtifactRepository().find_by_id(member_partition(holder_account, holder_user), ref)
     if artifact:
-        if artifact.artifact_type != "image":
-            raise ValueError(f"{ref} is not an image")
+        if not _is_picture(artifact):
+            raise ValueError(f"{ref} is not an image. Save a picture with upload_file as artifact_type image.")
         return artifact.s3_key
 
     conversation_id = str(context.get("conversation_id") or "").strip()
@@ -61,6 +63,15 @@ def _find(ref: str, context: dict[str, Any]) -> str:
                 if image.image_id == ref:
                     return image.s3_key
     raise ValueError(f"No image {ref} in this conversation")
+
+
+def _is_picture(artifact: Artifact) -> bool:
+    """An image artifact, or a picture saved as a plain file before images had their own type. Whether it can really
+    be read is checked when it is prepared for the network."""
+    if artifact.artifact_type == "image":
+        return True
+    guessed = mimetypes.guess_type(artifact.filename)[0] or ""
+    return artifact.artifact_type == "file" and guessed.startswith("image/") and guessed != "image/svg+xml"
 
 
 def _strings(value: Any, name: str) -> list[str]:

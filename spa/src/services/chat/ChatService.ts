@@ -2,6 +2,7 @@
  * Chat Service - handles SSE streaming for agent conversations.
  */
 
+import type { ConsentDecision, ConsentRequest } from "../../types/consent";
 import type {
   GenerateImageRequest,
   GenerateImageResponse,
@@ -139,10 +140,36 @@ class ChatService {
     message: OutgoingMessage,
     options: ChatStreamOptions
   ): Promise<void> {
-    const { onEvent, onError, onComplete, onTurnStarted, onConflict, signal } = options;
-
     const url = `${this.baseUrl}${chatPath(agentId, conversationId)}/send-message`;
-    const body = sendMessageBody(message);
+    await this.streamTurn(url, sendMessageBody(message), options);
+  }
+
+  /** Every consent card in the conversation, and where each stands: what the chat shows after a reload. */
+  async listConsents(agentId: string, conversationId: string): Promise<ConsentRequest[]> {
+    const response = await fetch(`${this.baseUrl}${chatPath(agentId, conversationId)}/consents`, {
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return (await response.json()) as ConsentRequest[];
+  }
+
+  /** Approve (perhaps with edits, or always) or reject a card; the turn that carries on from it streams back. */
+  async decideConsent(
+    agentId: string,
+    conversationId: string,
+    consentId: string,
+    decision: ConsentDecision,
+    options: ChatStreamOptions
+  ): Promise<void> {
+    const url = `${this.baseUrl}${chatPath(agentId, conversationId)}/consents/${encodeURIComponent(consentId)}/decision`;
+    await this.streamTurn(url, decision, options);
+  }
+
+  /** POST something that starts a turn, then stream that turn's events. */
+  private async streamTurn(url: string, body: unknown, options: ChatStreamOptions): Promise<void> {
+    const { onEvent, onError, onComplete, onTurnStarted, onConflict, signal } = options;
 
     try {
       const response = await fetch(url, {

@@ -17,7 +17,8 @@ from pydantic import BaseModel, ConfigDict
 
 from src.config import settings
 from src.llm.events import SSEEvent, SSEEventType
-from src.messages.models import MessageCanvasArtifact
+from src.consent.payloads import CONSENT_REQUEST
+from src.messages.models import MessageCanvasArtifact, MessageConsent
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,8 @@ class InterpretedToolResult:
 
     event: SSEEvent | None = None
     canvas: MessageCanvasArtifact | None = None
+    #: A consent card the assistant message keeps, so it is still there after a reload.
+    consent: MessageConsent | None = None
     #: Used as the assistant's reply when the model itself produced no text.
     fallback_text: str | None = None
 
@@ -86,6 +89,21 @@ class ConnectRequest:
                 content=str(connect.get("title") or "Connect an account"),
                 connect=connect,
             )
+        )
+
+
+class ConsentRequested:
+    """An action waiting on the person's yes: the chat shows its card, and the message keeps it."""
+
+    def interpret(self, payload: dict[str, Any]) -> InterpretedToolResult | None:
+        consent = payload.get("consent")
+        if payload.get("type") != CONSENT_REQUEST or not isinstance(consent, dict):
+            return None
+        title = str(consent.get("title") or "Approve this action")
+        return InterpretedToolResult(
+            event=SSEEvent(event_type=SSEEventType.CONSENT_REQUEST, content=title, consent=consent),
+            consent=MessageConsent(consent_id=str(consent["consent_id"]), title=title),
+            fallback_text="Please review this before I go ahead.",
         )
 
 
@@ -176,6 +194,7 @@ class AuthRequiredCredential:
 INTERPRETERS: list[ToolResultInterpreter] = [
     UiFormRender(),
     ConnectRequest(),
+    ConsentRequested(),
     CanvasArtifact(),
     AttachedCanvas(),
     AuthRequiredCredential(),

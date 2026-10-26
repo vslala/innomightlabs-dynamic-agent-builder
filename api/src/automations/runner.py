@@ -23,10 +23,10 @@ from src.automations.models import (
     AutomationRun,
     AutomationRunStatus,
     AutomationRunNodeResult,
-    AutomationSkill,
     AutomationTrigger,
     AutomationTriggerType,
 )
+from src.automations.consent import AutomationConsentService
 from src.automations.repository import AutomationRepository
 from src.automations.run_state import (
     AUTOMATION_RUN_HEARTBEAT_INTERVAL_SECONDS,
@@ -35,6 +35,7 @@ from src.automations.run_state import (
 from src.automations.errors import AutomationValidationError
 from src.automations.service import AutomationGraph, AutomationService
 from src.automations.smart_values import SmartValueResolver
+from src.consent.models import ConsentScope
 from src.conversations.models import AutomationConversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import recorded_events
@@ -101,6 +102,7 @@ class AutomationRunner:
         self.skill_service = skill_service or get_skill_service()
         self.connector_service = connector_service or get_connector_service()
         self.run_state = run_state or AutomationRunStateService(self.automation_repo)
+        self.consent = AutomationConsentService(repo=self.automation_repo, skill_registry=self.skill_service.registry)
         self._node_executors: dict[AutomationNodeType, NodeExecutor] = {
             AutomationNodeType.START: self._execute_start_node,
             AutomationNodeType.CONDITION: self._execute_condition_node,
@@ -366,6 +368,7 @@ class AutomationRunner:
 
         prompt = self._render_template(node.config["prompt_template"], run.context)
         architecture = get_agent_architecture(agent.agent_architecture)
+        consent = self.consent.consent_for(ctx.automation.automation_id, node)
         invocation = await _await_with_heartbeat(
             architecture.handle_message_buffered(
                 agent=agent,
@@ -375,6 +378,11 @@ class AutomationRunner:
                 actor_email=owner.email,
                 actor_id=owner.email,
                 actor_kind=ActorKind.OWNER if agent.owner_id == owner.user_id else ActorKind.MEMBER,
+                # Nobody watches a run: the agent may take only what the owner allowed this step (or always allows)
+                consent_scope=ConsentScope.automation_step(
+                    consent.granted_actions if consent else [],
+                    f"automation:{ctx.automation.automation_id}/{node.node_id}",
+                ),
             ),
             heartbeat=lambda: self.run_state.heartbeat(run, current_node_id=node.node_id),
         )
@@ -429,7 +437,7 @@ class AutomationRunner:
             )
 
         try:
-            enabled = self._resolve_automation_skill(
+            enabled = self.automation_repo.resolve_skill(
                 automation.automation_id,
                 installed_skill_id=installed_skill_id,
                 skill_id=skill_id,
@@ -459,6 +467,8 @@ class AutomationRunner:
             )
 
         arguments = self._render_smart_values(deepcopy(raw_arguments), run.context)
+        # The owner's consent for this step as it is now, for an action that acts for them (or an agent step)
+        consent = self.consent.consent_for(automation.automation_id, node)
         executed_input = {
             "installed_skill_id": enabled.installed_skill_id or enabled.skill_id,
             "skill_id": enabled.skill_id,
@@ -484,6 +494,11 @@ class AutomationRunner:
                         "automation_node_id": node.node_id,
                         "orchestrator_type": "automation",
                         "orchestrator_id": automation.automation_id,
+                        **(
+                            {"consent_grant": consent.grant, "preconsented_actions": consent.granted_actions}
+                            if consent
+                            else {}
+                        ),
                     },
                 ),
                 heartbeat=lambda: self.run_state.heartbeat(run, current_node_id=node.node_id),
@@ -537,38 +552,6 @@ class AutomationRunner:
             input_data=input_data,
             error=error,
         )
-
-    def _resolve_automation_skill(
-        self,
-        automation_id: str,
-        *,
-        installed_skill_id: str,
-        skill_id: str,
-    ) -> AutomationSkill | None:
-        if installed_skill_id:
-            installed = self.automation_repo.find_skill(automation_id, installed_skill_id)
-            if installed:
-                return installed
-
-        if not skill_id:
-            return None
-
-        installed = self.automation_repo.find_skill(automation_id, skill_id)
-        if installed:
-            return installed
-
-        matches = [
-            item
-            for item in self.automation_repo.list_skills(automation_id)
-            if item.skill_id == skill_id
-        ]
-        if len(matches) == 1:
-            return matches[0]
-        if len(matches) > 1:
-            raise ValueError(
-                f"Skill '{skill_id}' has multiple installed instances. Use installed_skill_id."
-            )
-        return None
 
     def _select_trigger(
         self, triggers: list[AutomationTrigger], trigger_id: str | None

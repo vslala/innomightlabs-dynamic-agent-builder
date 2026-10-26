@@ -6,6 +6,9 @@ import time
 from typing import Any, Optional
 
 from src.agents.repository import AgentRepository
+from src.consent.models import mcp_key
+from src.consent.repository import ConsentRepository
+from src.skills.registry import ConsentMissingError
 from src.connectors.mcp.client import MCPClientError, StreamableHTTPMCPClient, _sanitize_response_text
 from src.connectors.mcp.disclaimer import DISCLAIMER_VERSION, sharing_disclaimer
 from src.connectors.mcp.models import (
@@ -34,6 +37,7 @@ from src.connectors.mcp.models import (
     MCPStdioPackageResponse,
     MCPStdioStoredConfig,
     MCPToolCatalog,
+    MCPToolPolicy,
     MCPToolCatalogResponse,
     MCPTransport,
     validate_stdio_auth,
@@ -413,6 +417,40 @@ class MCPConnectorService:
         if not agent:
             raise ValueError("Agent not found")
         self.repository.delete_agent_connection(agent_id, mcp_id)
+        # "Always allow" was for this connection on this agent: linking it again asks again
+        ConsentRepository().forget_standing_starting(agent_id, mcp_key(mcp_id, ""))
+
+    def tool_policy(self, account_id: str, mcp_id: str) -> tuple[MCPToolPolicy, MCPToolCatalog | None]:
+        """Which of the connection's tools ask the person first: theirs to choose, or the default from the catalog."""
+        catalog = self.repository.find_tool_catalog(account_id, mcp_id)
+        policy = self.repository.find_tool_policy(account_id, mcp_id) or MCPToolPolicy.default(account_id, mcp_id, catalog)
+        return policy, catalog
+
+
+    def set_tool_policy(self, account_id: str, mcp_id: str, tools: list[str], *, by: str) -> MCPToolPolicy:
+        self._require_connection(account_id, mcp_id)
+        catalog = self.repository.find_tool_catalog(account_id, mcp_id)
+        if catalog is None:
+            raise ValueError("List the connector's tools before choosing which ask first")
+        unknown = set(tools) - catalog.tool_names()
+        if unknown:
+            raise ValueError(f"These tools are not offered by the connector: {', '.join(sorted(unknown))}")
+        return self.repository.save_tool_policy(
+            MCPToolPolicy(account_id=account_id, mcp_id=mcp_id, consent_required_tools=sorted(set(tools)), updated_by=by)
+        )
+
+    def consent_tools(self, *, account_id: str, agent_id: str) -> list[tuple[str, str, str]]:
+        """(consent key, tool title, connection name) for each tool of the agent's connections that asks first."""
+        found = []
+        for link in self.repository.list_agent_connections(agent_id):
+            connection = self.repository.find_connection(account_id, link.mcp_id)
+            if link.account_id != account_id or not link.enabled or not connection or not connection.enabled:
+                continue
+            policy, catalog = self.tool_policy(account_id, link.mcp_id)
+            for tool in catalog.tools if catalog else []:
+                if policy.asks(tool.name):
+                    found.append((mcp_key(link.mcp_id, tool.name), tool.title or tool.name, connection.name))
+        return found
 
     def list_agent_connections(
         self,
@@ -521,7 +559,9 @@ class MCPConnectorService:
                     {
                         "mcp_id": connection.mcp_id,
                         "name": connection.name,
-                        "tools": link.offered_tools(caller.actor_kind, listed),
+                        "tools": link.offered_tools(
+                            caller.actor_kind, listed, self.tool_policy(account_id, connection.mcp_id)[0].keeps_from_outsiders
+                        ),
                     }
                 )
             except Exception as exc:
@@ -552,15 +592,20 @@ class MCPConnectorService:
         mcp_id: str,
         tool_name: str,
         arguments: dict[str, Any],
+        consent_grant: str | None = None,
     ) -> dict[str, Any]:
+        """`consent_grant`: the recorded consent a tool that asks first runs under (docs/LLD-action-consent.md)."""
         runtime = self._runtime_connections(account_id=account_id, agent_id=agent_id, caller=caller, mcp_id=mcp_id)
         not_enabled = f"MCP connector '{mcp_id}' is not enabled for this agent"
         if not runtime:
             raise ValueError(not_enabled)
         link, connection = runtime[0]
+        policy, _ = self.tool_policy(account_id, mcp_id)
         # An unshared tool gets the same answer as a missing connector, so nobody can probe what exists.
-        if not link.allows(caller.actor_kind, tool_name):
+        if not link.allows(caller.actor_kind, tool_name, policy.keeps_from_outsiders):
             raise ValueError(not_enabled)
+        if caller.actor_kind == ActorKind.OWNER and policy.asks(tool_name) and not consent_grant:
+            raise ConsentMissingError(f"'{tool_name}' needs the person's consent, and none was recorded")
 
         started = time.monotonic()
         error: str | None = None

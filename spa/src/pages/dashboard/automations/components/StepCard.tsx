@@ -33,6 +33,7 @@ import { AutomationJsonEditor } from "./AutomationJsonEditor";
 import { useChain } from "./chainContext";
 import { RunStatusBadge } from "./RunStatusBadge";
 import { StepDataPanel } from "./StepDataPanel";
+import { StepConsentPanel } from "./StepConsentPanel";
 import { StepIcon } from "./StepIcon";
 
 export function StepCard({ node }: { node: AutomationNode }) {
@@ -52,7 +53,10 @@ export function StepCard({ node }: { node: AutomationNode }) {
     readOnly,
     resultsByNodeId,
     runContext,
+    stepConsents,
   } = chain;
+  const consent = stepConsents.byNodeId.get(node.node_id);
+  const awaitingApproval = Boolean(consent && consent.required && consent.state !== "granted");
 
   const expanded = expandedNodeId === node.node_id;
   const summary = describeStep(node, catalog);
@@ -113,6 +117,7 @@ export function StepCard({ node }: { node: AutomationNode }) {
         </Button>
 
         <div className="chain-card__badges">
+          {awaitingApproval && <span className="chain-card__approval">Needs your approval</span>}
           {issues.length > 0 && (
             <span className="chain-card__issue" title={issues.map((issue) => issue.message).join("\n")}>
               <AlertTriangle className="h-3.5 w-3.5" />
@@ -303,6 +308,15 @@ export function StepCard({ node }: { node: AutomationNode }) {
                   />
                 )}
               </div>
+            )}
+
+            {consent && (
+              <StepConsentPanel
+                consent={consent}
+                readOnly={readOnly}
+                onApprove={(granted) => stepConsents.approve(node.node_id, granted)}
+                onRevoke={() => stepConsents.revoke(node.node_id)}
+              />
             )}
 
             {issues.length > 0 && (

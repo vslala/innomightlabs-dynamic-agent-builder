@@ -25,6 +25,9 @@ class SSEEventType(str, Enum):
     UI_FORM_RENDER = "UI_FORM_RENDER"
     # An account the person connects in their browser (a sign-in popup), shown as a card.
     CONNECT_REQUEST = "CONNECT_REQUEST"
+    # An action waiting on the person's consent, shown as a card; then the same card with what they decided.
+    CONSENT_REQUEST = "CONSENT_REQUEST"
+    CONSENT_UPDATED = "CONSENT_UPDATED"
 
     # Canvas artifact events (agent-authored interactive HTML rendered inline in chat)
     CANVAS_ARTIFACT_READY = "CANVAS_ARTIFACT_READY"
@@ -86,6 +89,9 @@ class SSEEvent(BaseModel):
     image_width: Optional[int] = None
     image_height: Optional[int] = None
     images: Optional[list[dict]] = None
+
+    # CONSENT_REQUEST / CONSENT_UPDATED: the card (ConsentRequestResponse)
+    consent: Optional[dict] = None
 
     # Canvas artifact events
     canvas_artifact_id: Optional[str] = None

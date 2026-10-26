@@ -15,6 +15,7 @@ import type {
   MCPSharingView,
   MCPStdioPackage,
   MCPToolCatalog,
+  MCPToolPolicy,
   SocialAccount,
   SocialNetwork,
   UpdateAgentMCPConnectionRequest,
@@ -130,6 +131,17 @@ class ConnectorApiService {
 
   async refreshMCPToolCatalog(mcpId: string): Promise<MCPToolCatalog> {
     return httpClient.post<MCPToolCatalog>(`/connectors/mcp/${mcpId}/tools/refresh`, {});
+  }
+
+  /** Which of the connection's tools ask the agent's owner before they run. */
+  async getMCPToolPolicy(mcpId: string): Promise<MCPToolPolicy> {
+    return httpClient.get<MCPToolPolicy>(`/connectors/mcp/${mcpId}/tool-policy`);
+  }
+
+  async setMCPToolPolicy(mcpId: string, consentRequiredTools: string[]): Promise<MCPToolPolicy> {
+    return httpClient.put<MCPToolPolicy>(`/connectors/mcp/${mcpId}/tool-policy`, {
+      consent_required_tools: consentRequiredTools,
+    });
   }
 }
 

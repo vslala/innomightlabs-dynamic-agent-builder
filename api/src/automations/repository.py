@@ -10,6 +10,7 @@ from boto3.dynamodb.conditions import Key
 
 from src.automations.models import (
     Automation,
+    AutomationConsent,
     AutomationEdge,
     AutomationNode,
     AutomationRun,
@@ -304,6 +305,38 @@ class AutomationRepository:
         )
         item = response.get("Item")
         return AutomationSkill.from_dynamo_item(item) if item else None
+
+    def find_consent(self, automation_id: str, node_id: str) -> Optional[AutomationConsent]:
+        item = self.table.get_item(Key={"pk": f"Automation#{automation_id}", "sk": f"Consent#{node_id}"}).get("Item")
+        return AutomationConsent.from_dynamo_item(item) if item else None
+
+    def save_consent(self, consent: AutomationConsent) -> AutomationConsent:
+        self.table.put_item(Item=consent.to_dynamo_item())
+        return consent
+
+    def delete_consent(self, automation_id: str, node_id: str) -> None:
+        self.table.delete_item(Key={"pk": f"Automation#{automation_id}", "sk": f"Consent#{node_id}"})
+
+    def resolve_skill(self, automation_id: str, *, installed_skill_id: str, skill_id: str) -> Optional[AutomationSkill]:
+        """The install a step names: by its installed id, else the one install of its skill (ambiguous is an error)."""
+        if installed_skill_id:
+            installed = self.find_skill(automation_id, installed_skill_id)
+            if installed:
+                return installed
+
+        if not skill_id:
+            return None
+
+        installed = self.find_skill(automation_id, skill_id)
+        if installed:
+            return installed
+
+        matches = [item for item in self.list_skills(automation_id) if item.skill_id == skill_id]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ValueError(f"Skill '{skill_id}' has multiple installed instances. Use installed_skill_id.")
+        return None
 
     def list_skills(self, automation_id: str) -> list[AutomationSkill]:
         response = self.table.query(

@@ -7,6 +7,7 @@ from src.connectors.social.models import SocialAccount
 from src.connectors.social.networks import network_for
 from src.connectors.social.publisher import PublishRequest, SocialPublisher
 from src.connectors.social.repository import SocialAccountRepository
+from src.consent.preview import FieldsBlock, ImagesBlock, PreviewField, PreviewImage, PreviewTarget, TargetsBlock, TextBlock
 from src.skills.runtime_context import account_of
 
 from .images import load_images, resolve_images
@@ -44,6 +45,32 @@ async def publish(arguments: dict[str, Any], config: dict[str, Any], context: di
         reasons = "; ".join(f"{target['network']}: {target.get('detail') or target['status']}" for target in result["targets"])
         raise RuntimeError(f"Nothing was posted. {reasons}")
     return result
+
+
+async def publish_preview(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """What the person approves before `publish`: the post, its images, and which accounts it goes to, or why not."""
+    del config
+    text = str(arguments.get("text") or "").strip()
+    images = resolve_images(arguments, context)
+    overrides = _overrides(arguments)
+    plans = SocialPublisher().plan(
+        account_of(context), text, selection=arguments.get("accounts", "all"), network=_network(arguments),
+        overrides=overrides, image_count=len(images),
+    )
+    blocks: list[Any] = [TextBlock(label="Post", value=text, argument="text")]
+    if images:
+        blocks.append(ImagesBlock(items=[PreviewImage(s3_key=image.s3_key, alt_text=image.alt_text or None) for image in images]))
+    blocks.append(TargetsBlock(items=[
+        PreviewTarget(
+            label=f"{plan.account.network.capitalize()} · {plan.account.handle}",
+            will_run=plan.ok,
+            reason=None if plan.ok else (plan.detail or plan.reason),
+        )
+        for plan in plans
+    ]))
+    if overrides:
+        blocks.append(FieldsBlock(label="Different text for", items=[PreviewField(label=key, value=value) for key, value in overrides.items()]))
+    return {"blocks": [block.model_dump() for block in blocks]}
 
 
 def _post_id(context: dict[str, Any]) -> str:

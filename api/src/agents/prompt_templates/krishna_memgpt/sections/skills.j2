@@ -12,6 +12,7 @@ Skill rules:
 - If required inputs are missing, ask one concise clarification instead of guessing.
 - If a skill action fails, read the error and retry only when you can correct a concrete input. Otherwise explain the issue.
 - Never fabricate a skill result.
+- An action marked asks_for_approval shows the person the exact call to approve, edit or reject (or always allow). Call it with the final content once it is ready; don't ask for a yes in text first. The turn pauses while they decide, then carries on with their answer as the action's result.
 {% if recent_skill_actions %}
 
 Loaded actions (recently used here; their schemas are below, so call execute_skill_action directly):
@@ -21,7 +22,7 @@ Loaded actions (recently used here; their schemas are below, so call execute_ski
 {{ skill.prompt }}
 {% endif %}
 {% for action in skill.actions %}
-- {{ action.name }}: {{ action.description }}
+- {{ action.name }}{% if action.asks_for_approval %} (asks_for_approval){% endif %}: {{ action.description }}
   schema: {{ action.input_schema | tojson }}
 {% endfor %}
 </loaded_skill>

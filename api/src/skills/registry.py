@@ -19,6 +19,10 @@ from src.skills.models import LoadedSkill, SkillActionManifest, SkillManifest
 log = logging.getLogger(__name__)
 
 
+class ConsentMissingError(PermissionError):
+    """A consent-required action reached its handler with no recorded consent: a path that skipped the gate."""
+
+
 class SkillRegistry:
     """Filesystem-backed skill registry loaded from src/skills/*/manifest.yml."""
 
@@ -119,6 +123,39 @@ class SkillRegistry:
         config: dict[str, Any],
         context: dict[str, Any],
     ) -> Any:
+        loaded, action = self.find_action(skill_id, action_name)
+
+        # Lightweight required-field check from JSON schema. The schema rides along in the
+        # error so an agent that skipped load_skill can correct itself in one retry.
+        required_fields = action.input_schema.get("required", [])
+        for field_name in required_fields:
+            if field_name not in arguments:
+                raise ValueError(
+                    f"Missing required action argument: {field_name}. {_schema_hint(action)}"
+                )
+
+        # Whoever sets the grant has already checked it (the consent gate, a decided card, an approved automation
+        # step). This only catches a path that never asked.
+        if action.consent is not None and not context.get("consent_grant"):
+            raise ConsentMissingError(f"'{skill_id}.{action.name}' needs the person's consent, and none was recorded")
+
+        return await self._call(loaded.folder_name, action.handler, arguments, config, context)
+
+    async def preview_action(
+        self,
+        skill_id: str,
+        action_name: str,
+        arguments: dict[str, Any],
+        config: dict[str, Any],
+        context: dict[str, Any],
+    ) -> Any:
+        """Run the action's consent preview handler: what the person will be shown, with the call's own arguments."""
+        loaded, action = self.find_action(skill_id, action_name)
+        if action.consent is None or action.consent.preview is None:
+            raise ValueError(f"'{skill_id}.{action.name}' has no consent preview")
+        return await self._call(loaded.folder_name, action.consent.preview, arguments, config, context)
+
+    def find_action(self, skill_id: str, action_name: str) -> tuple[LoadedSkill, SkillActionManifest]:
         loaded = self.get(skill_id) or self.core(skill_id)
         if not loaded:
             raise ValueError(f"Unknown skill: {skill_id}")
@@ -130,17 +167,12 @@ class SkillRegistry:
             ]
             hint = f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
             raise ValueError(f"Skill '{skill_id}' has no action '{action_name}'.{hint}")
+        return loaded, action
 
-        # Lightweight required-field check from JSON schema. The schema rides along in the
-        # error so an agent that skipped load_skill can correct itself in one retry.
-        required_fields = action.input_schema.get("required", [])
-        for field_name in required_fields:
-            if field_name not in arguments:
-                raise ValueError(
-                    f"Missing required action argument: {field_name}. {_schema_hint(action)}"
-                )
-
-        func = self._resolve_handler(loaded.folder_name, action.handler)
+    async def _call(
+        self, folder_name: str, handler: str, arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]
+    ) -> Any:
+        func = self._resolve_handler(folder_name, handler)
         result = func(arguments=arguments, config=config, context=context)
         if inspect.isawaitable(result):
             return await result

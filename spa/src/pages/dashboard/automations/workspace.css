@@ -377,6 +377,47 @@
   padding: var(--space-3);
 }
 
+.chain-card__approval {
+  border: 1px solid var(--warning);
+  border-radius: 999px;
+  color: var(--warning);
+  font-size: 0.6875rem;
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+}
+
+.chain-card__consent {
+  background: var(--surface-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.chain-card__consent-head {
+  align-items: center;
+  color: var(--text-primary);
+  display: flex;
+  font-size: 0.8125rem;
+  gap: var(--space-2);
+}
+
+.chain-card__consent-head small {
+  color: var(--text-muted);
+}
+
+.chain-card__consent-error {
+  color: var(--warning);
+  font-size: 0.8125rem;
+  margin: 0;
+}
+
+.chain-card__consent-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 .chain-card__setup strong {
   color: var(--text-primary);
   display: block;

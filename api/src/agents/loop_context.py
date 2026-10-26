@@ -41,6 +41,16 @@ def tool_use_block(tool_event: Any) -> dict[str, Any]:
     return {"toolUse": tool_use}
 
 
+def with_tool_result(exchange: list[dict[Any, Any]], tool_use_id: str, result: str) -> list[dict[Any, Any]]:
+    """The exchange with one call's result replaced: how a paused turn learns what the person decided."""
+    for message in reversed(exchange):
+        for index, block in enumerate(message.get("content", [])):
+            if isinstance(block, dict) and block.get("toolResult", {}).get("toolUseId") == tool_use_id:
+                message["content"][index] = tool_result_block(tool_use_id, result)
+                return exchange
+    raise ValueError(f"The exchange has no result for tool call {tool_use_id}")
+
+
 def tool_result_block(tool_use_id: str, result: str) -> dict[str, Any]:
     return {
         "toolResult": {

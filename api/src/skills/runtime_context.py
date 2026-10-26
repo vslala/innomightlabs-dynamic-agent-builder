@@ -23,9 +23,10 @@ def action_context(
     conversation_id: str,
     user_message_id: Optional[str],
     tool_call_id: Optional[str],
+    consent_grant: Optional[str] = None,
 ) -> dict[str, Any]:
     """The context every skill action runs with, installed or core: who it runs for, where, and for which call."""
-    return {
+    context = {
         "agent_id": agent_id,
         "installed_skill_id": installed_skill_id,
         "skill_id": skill_id,
@@ -40,6 +41,10 @@ def action_context(
         # Kept on an async job's context too, so the action still knows its call when it runs later.
         "tool_call_id": tool_call_id,
     }
+    if consent_grant:
+        # What lets a consent-required action through the registry (docs/LLD-action-consent.md)
+        context["consent_grant"] = consent_grant
+    return context
 
 
 def as_tool_result(result: Any) -> str:

@@ -52,6 +52,11 @@ class TurnTranscript:
                 return
             await arrival.wait()
 
+    async def as_sse(self, *, after_sequence: int = 0) -> AsyncIterator[str]:
+        """`follow`, as SSE frames whose `id` is the sequence a reconnecting client resumes after."""
+        async for sequence, event in self.follow(after_sequence=after_sequence):
+            yield f"id: {sequence}\n{event.to_sse()}"
+
     def _blank_superseded_partials(self) -> None:
         for index, event in enumerate(self.events):
             # Only image previews: other events the runtime may drop are not payloads to compact.

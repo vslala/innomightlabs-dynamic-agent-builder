@@ -17,11 +17,13 @@ const RISKS: Record<ToolRisk, { title: string; hint: string }> = {
 interface ToolAllowlistProps {
   catalog: MCPToolCatalog;
   selected: string[];
+  /** Tools that ask the owner first: theirs alone, so they can't be shared. */
+  ownerOnly?: ReadonlySet<string>;
   onChange: (tools: string[]) => void;
   onRefresh: () => Promise<void>;
 }
 
-export function ToolAllowlist({ catalog, selected, onChange, onRefresh }: ToolAllowlistProps) {
+export function ToolAllowlist({ catalog, selected, ownerOnly = new Set(), onChange, onRefresh }: ToolAllowlistProps) {
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const groups = groupTools(catalog.tools, query);
@@ -59,7 +61,7 @@ export function ToolAllowlist({ catalog, selected, onChange, onRefresh }: ToolAl
       )}
 
       {groups.map(({ risk, tools }) => {
-        const names = tools.map((tool) => tool.name);
+        const names = tools.map((tool) => tool.name).filter((name) => !ownerOnly.has(name));
         const allSelected = names.every((name) => selected.includes(name));
         return (
           <section key={risk} className={styles.group} data-risk={risk}>
@@ -86,7 +88,8 @@ export function ToolAllowlist({ catalog, selected, onChange, onRefresh }: ToolAl
                 <li key={tool.name}>
                   <label className={styles.tool}>
                     <Checkbox
-                      checked={selected.includes(tool.name)}
+                      checked={selected.includes(tool.name) && !ownerOnly.has(tool.name)}
+                      disabled={ownerOnly.has(tool.name)}
                       onChange={() => onChange(toggled(selected, tool.name))}
                     />
                     <span className={styles.toolText}>
@@ -95,6 +98,9 @@ export function ToolAllowlist({ catalog, selected, onChange, onRefresh }: ToolAl
                         <code>{tool.name}</code>
                       </span>
                       {tool.description && <span className={styles.toolDescription}>{tool.description}</span>}
+                      {ownerOnly.has(tool.name) && (
+                        <span className={styles.toolDescription}>Asks you first, so only you can use it.</span>
+                      )}
                     </span>
                   </label>
                 </li>

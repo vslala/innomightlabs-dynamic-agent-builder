@@ -9,6 +9,7 @@ and `TurnComplete`.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import time
 from dataclasses import dataclass, field, replace
@@ -56,6 +57,11 @@ STOPPED_MESSAGES: dict[str, str] = {
     "max_tokens": "The model reached its output limit before it could answer. Try asking for a shorter answer.",
     "content_filter": "The model's provider blocked this response with its content filter.",
 }
+#: What a call gets when an earlier call in the same batch stopped for the person: it may depend on what they decide.
+SKIPPED_FOR_CONSENT = ToolExecutionOutcome(
+    result='{"ok": false, "skipped": "Not run: waiting for the person to approve an earlier action in this turn."}',
+    success=False,
+)
 ASYNC_JOB_TIMEOUT_MESSAGE = (
     "Async tool job is still running after the maximum in-turn wait time. "
     "The response was not completed because the agent has not received the final tool result."
@@ -80,8 +86,29 @@ class TurnComplete:
     stop_reason: str = "end_turn"
 
 
+@dataclass(frozen=True)
+class TurnPaused:
+    """A tool stopped for the person's decision (a consent card), so the turn pauses here.
+
+    `exchange` is everything the turn added to the model's context, exactly as the model saw it: what the turn carries
+    on from once the person decides. `tool_use_id` is the call waiting on them.
+    """
+
+    exchange: list[dict[Any, Any]]
+    tool_use_id: str
+
+
+@dataclass(frozen=True)
+class TurnResume:
+    """Carry on a paused turn: its exchange, with the waiting call's result now filled in."""
+
+    exchange: list[dict[Any, Any]]
+    #: The paused turn's reply. It is the card in the chat; the resumed context leaves it out, as the exchange holds it.
+    paused_reply_id: str
+
+
 #: Everything `run_agentic_tool_loop` can yield.
-LoopYield = SSEEvent | PromptRefreshNeeded | TurnComplete
+LoopYield = SSEEvent | PromptRefreshNeeded | TurnPaused | TurnComplete
 
 
 class LLMProvider(Protocol):
@@ -129,6 +156,8 @@ class Step(Enum):
     SUMMARISE = auto()
     DONE = auto()
     STOPPED = auto()
+    #: Waiting on the person; the turn carries on later from its exchange.
+    PAUSED = auto()
 
 
 @dataclass
@@ -164,11 +193,13 @@ async def run_agentic_tool_loop(
     tool_router: ToolRouter,
     state: AgentTurnState,
     token_usage_service: Optional[TokenUsageRecorder] = None,
+    resume_exchange: Optional[list[dict[Any, Any]]] = None,
 ) -> AsyncIterator[LoopYield]:
     """Call the model, run whatever tools it asks for, repeat until it answers.
 
     The caller owns persisting the assistant message; everything streamed here
-    is ready to hand to a client as-is.
+    is ready to hand to a client as-is. `resume_exchange` carries on a paused
+    turn: its exchange, ending in the tool results the person's decision completed.
     """
     turn = _Turn(
         provider=provider,
@@ -179,12 +210,18 @@ async def run_agentic_tool_loop(
         tool_router=tool_router,
         state=state,
         usage_service=token_usage_service or TokenUsageService(),
+        exchange_start=len(context),
     )
+    if resume_exchange:
+        # A copy: the nudge below rides on its last message, and the caller's exchange is theirs
+        context.extend(copy.deepcopy(resume_exchange))
+        turn.tools_ran = True
+        turn.nudge(POST_TOOL_CONTINUATION_PROMPT)
     step, call = Step.ASK_MODEL, _ModelCall()
     summary_prompt = FINAL_SUMMARY_PROMPT
 
     with use_turn_runtime(turn.runtime):
-        while step not in (Step.DONE, Step.STOPPED):
+        while step not in (Step.DONE, Step.STOPPED, Step.PAUSED):
             match step:
                 case Step.ASK_MODEL if turn.model_calls >= MAX_TOOL_ITERATIONS:
                     # A long run that hits the limit still tells the user what it did.
@@ -198,7 +235,7 @@ async def run_agentic_tool_loop(
                 case Step.RUN_TOOLS:
                     async for item in turn.run_tools(call):
                         yield item
-                    step = Step.ASK_MODEL
+                    step = Step.PAUSED if turn.paused_on else Step.ASK_MODEL
                 case Step.SUMMARISE:
                     # With tools off, the only thing the model can do is answer.
                     turn.nudge(summary_prompt)
@@ -211,6 +248,8 @@ async def run_agentic_tool_loop(
         if step is Step.STOPPED:
             yield SSEEvent(event_type=SSEEventType.ERROR, content=STOPPED_MESSAGES[call.stop_reason])
             return
+        if step is Step.PAUSED and turn.paused_on:
+            yield TurnPaused(exchange=turn.take_exchange(), tool_use_id=turn.paused_on)
 
     yield TurnComplete(full_text=turn.full_text, stop_reason=call.stop_reason)
 
@@ -227,11 +266,15 @@ class _Turn:
     tool_router: ToolRouter
     state: AgentTurnState
     usage_service: TokenUsageRecorder
+    #: Where this turn's own messages start in `context`, after the system prompt, history and the user's message.
+    exchange_start: int
     runtime: AgentTurnRuntime = field(default_factory=AgentTurnRuntime)
 
     model_calls: int = 0
     full_text: str = ""
     tools_ran: bool = False
+    #: The call the person has to decide on before the turn can go on.
+    paused_on: str | None = None
     #: The one instruction riding on the latest tool results, so the context never fills with copies.
     _nudge: tuple[dict[Any, Any], dict[str, str]] | None = None
 
@@ -284,10 +327,15 @@ class _Turn:
         tool_results: list[dict[str, Any]] = []
         refresh_prompt = False
         for tool_event in call.tool_calls:
-            task = asyncio.create_task(self._execute_and_settle(tool_event))
-            async for event in self.runtime.stream_while(task):
-                yield event
-            outcome = task.result()
+            if self.paused_on:
+                outcome = SKIPPED_FOR_CONSENT
+            else:
+                task = asyncio.create_task(self._execute_and_settle(tool_event))
+                async for event in self.runtime.stream_while(task):
+                    yield event
+                outcome = task.result()
+                if outcome.ends_turn:
+                    self.paused_on = tool_event.tool_use_id
 
             refresh_prompt = refresh_prompt or outcome.refresh_prompt
             yield _tool_call_result_event(tool_event, outcome)
@@ -295,10 +343,19 @@ class _Turn:
 
         append_user_tool_results(self.context, tool_results)
         self.tools_ran = True
-        self.nudge(POST_TOOL_CONTINUATION_PROMPT)
+        if not self.paused_on:
+            self.nudge(POST_TOOL_CONTINUATION_PROMPT)
 
         if refresh_prompt:
             yield PromptRefreshNeeded()
+
+    def take_exchange(self) -> list[dict[Any, Any]]:
+        """This turn's messages without the instruction riding on them: what a resumed turn starts from."""
+        if self._nudge is not None:
+            message, block = self._nudge
+            message["content"].remove(block)
+            self._nudge = None
+        return copy.deepcopy(self.context[self.exchange_start :])
 
     def nudge(self, text: str) -> None:
         """Put `text` on the latest tool results, taking it off wherever it rode before."""

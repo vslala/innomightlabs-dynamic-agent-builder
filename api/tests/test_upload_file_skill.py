@@ -325,3 +325,59 @@ def test_runner_refusals_are_explained(dynamodb_table, monkeypatch):
 def test_video_mime_types_follow_the_extension():
     assert infer_mime_type("video", "a.webm", None) == "video/webm"
     assert infer_mime_type("video", "a.MOV", "text/html") == "video/quicktime"
+
+
+def _picture(format: str = "PNG") -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    out = BytesIO()
+    Image.new("RGB", (40, 20), (200, 30, 30)).save(out, format)
+    return out.getvalue()
+
+
+def _image_arguments(filename: str, body: bytes, **overrides) -> dict:
+    return {
+        "artifact_type": "image",
+        "title": "Launch graphic",
+        "filename": filename,
+        "base64_content": base64.b64encode(body).decode("ascii"),
+        **overrides,
+    }
+
+
+def test_a_picture_is_saved_as_an_image_labelled_by_what_it_is(dynamodb_table, monkeypatch):
+    _create_media_bucket()
+    monkeypatch.setattr("src.artifacts.storage.settings.conversation_media_bucket", "innomightlabs-conversations-meta")
+
+    # Binary base64 is fine for an image, and the agent can't label it as something else
+    result = upload_file(_image_arguments("launch.webp", _picture("WEBP"), mime_type="text/html"), {}, _context())
+
+    assert result["artifact_type"] == "image"
+    assert result["mime_type"] == "image/webp"
+
+
+@pytest.mark.parametrize(
+    ("filename", "body", "message"),
+    [
+        ("launch.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>", "Render it to PNG"),
+        ("launch.bmp", _picture("BMP"), "must end with"),
+        ("launch.png", _picture("JPEG"), "a JPEG image, not png"),
+        ("launch.png", b"not a picture at all", "not an image"),
+    ],
+)
+def test_only_a_real_picture_of_the_named_format_is_saved_as_an_image(dynamodb_table, monkeypatch, filename, body, message):
+    with pytest.raises(ValueError, match=message):
+        upload_file(_image_arguments(filename, body), {}, _context())
+
+
+def test_text_artifacts_still_take_only_text():
+    with pytest.raises(ValueError, match="UTF-8 text"):
+        UploadFileRequest(artifact_type="text", title="t", filename="t.txt", base64_content=base64.b64encode(b"\xff\xfe").decode())
+
+
+def test_a_plain_file_is_labelled_by_its_extension_not_as_text():
+    assert infer_mime_type("file", "report.pdf", None) == "application/pdf"
+    assert infer_mime_type("file", "photo.jpg", None) == "image/jpeg"
+    assert infer_mime_type("file", "notes.txt", None) == "text/plain; charset=utf-8"

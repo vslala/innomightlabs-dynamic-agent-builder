@@ -9,19 +9,19 @@ An architecture with memory capabilities:
 """
 
 import logging
-from collections import Counter
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, AsyncIterator, Iterator
+from typing import TYPE_CHECKING, Any, AsyncIterator
 
-from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete, run_agentic_tool_loop
+from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete, TurnPaused, TurnResume, run_agentic_tool_loop
 from src.agents.instructions import MacroContext, expand_instructions
 from src.agents.models import MemoryCapacityWarning
 from src.agents.provider_session import open_provider_session
 from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_audit import ToolCallAuditLog
 from src.agents.tool_execution import ToolExecutionRouter
-from src.agents.tool_results import interpret_tool_result
 from src.agents.tool_runtime import build_default_tool_registry
+from src.agents.turn_outputs import TurnOutputs
+from src.consent.gate import ConsentGate, McpTools, SkillActions
+from src.consent.models import ConsentScope
 from src.agents.tool_runtime.families import ToolFamily, active_families, prompt_sections
 from src.connectors.mcp.service import MCPConnectorService
 from src.knowledge.access import readable_by_agent
@@ -30,7 +30,7 @@ from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
 from src.memory import MemoryRepository
 from src.memory.snapshot import CoreMemorySnapshot
-from src.messages.models import Attachment, ImageAttachment, Message, MessageCanvasArtifact, MessageReference
+from src.messages.models import Attachment, ImageAttachment, Message, MessageReference
 from src.messages.references import reference_tags, references_by_kind
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.settings.repository import get_provider_settings_repository
@@ -92,6 +92,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             mcp_runtime=self.mcp_connector_service,
         )
         self.conversation_strategy = FixedWindowStrategy(max_words=max_context_words)
+        self.consent_gate = ConsentGate([SkillActions(self.skill_runtime), McpTools(self.mcp_connector_service)])
 
     @property
     def name(self) -> str:
@@ -111,6 +112,8 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         images: list[ImageAttachment] | None = None,
         references: list[MessageReference] | None = None,
         api_key_id: str | None = None,
+        consent_scope: ConsentScope | None = None,
+        resume: TurnResume | None = None,
     ) -> AsyncIterator[SSEEvent]:
         """
         Handle a user message with memory-augmented conversation.
@@ -127,6 +130,8 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             images: Images the user sent with the message, already uploaded (read through `read_image`)
             references: What the message points at (documents), already attached by their kinds
             api_key_id: The public API secret key the turn runs under, if any
+            consent_scope: Who can approve an action that needs consent; the person in this chat by default
+            resume: Carry on a turn that paused for the person's decision; `user_message` is that decision
 
         Yields:
             SSEEvent objects for streaming to the client
@@ -145,6 +150,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             conversation_context=conversation.context,
             account_id=agent.account_id,
             owner_id=agent.owner_id,
+            consent_scope=consent_scope or ConsentScope.interactive(),
         )
 
         state.linked_kb_ids = self._get_linked_kb_ids(agent)
@@ -200,7 +206,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         state.image_input_available = bool(state.images) and image_input_availability(agent).available
         state.references = references_by_kind(all_messages)
         history = self.conversation_strategy.build_context(
-            all_messages,
+            _without_paused_reply(all_messages, resume, user_msg),
             session_timeout_minutes=agent.session_timeout_minutes,
             reference_tags=reference_tags(conversation, state.references),
         )
@@ -224,7 +230,7 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
         )
 
         tools = self.tool_registry.definitions_for_categories(offered)
-        tool_router = ToolExecutionRouter(self.tool_registry, offered=offered)
+        tool_router = ToolExecutionRouter(self.tool_registry, offered=offered, consent=self.consent_gate)
 
         outputs = TurnOutputs()
         audit = ToolCallAuditLog(
@@ -241,10 +247,14 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             model=state.model_name,
             tool_router=tool_router,
             state=state,
+            resume_exchange=resume.exchange if resume else None,
         ):
             if isinstance(item, TurnComplete):
                 outputs.full_text = item.full_text
                 outputs.stop_reason = item.stop_reason
+                continue
+            if isinstance(item, TurnPaused):
+                outputs.paused = item
                 continue
 
             if isinstance(item, PromptRefreshNeeded):
@@ -261,31 +271,13 @@ class KrishnaMemGPTArchitecture(AgentArchitecture):
             if item.event_type == SSEEventType.ERROR:
                 return
 
-        assistant_text = outputs.assistant_text
-        if not assistant_text.strip():
-            return
-
-        # Substituted text has not been streamed yet; the model's own has.
-        if not outputs.full_text.strip():
-            yield SSEEvent(
-                event_type=SSEEventType.AGENT_RESPONSE_TO_USER,
-                content=assistant_text,
-            )
-
-        assistant_msg = Message(
+        for event in outputs.save_reply(
+            self.message_repo,
             conversation_id=conversation.conversation_id,
-            created_by=actor_email,
-            role="assistant",
-            content=assistant_text,
-            canvases=outputs.canvases,
-        )
-        self.message_repo.save(assistant_msg)
-        yield SSEEvent(
-            event_type=SSEEventType.ASSISTANT_MESSAGE_SAVED,
-            content="Assistant message saved",
-            message_id=assistant_msg.message_id,
-        )
-
+            actor_email=actor_email,
+            model_name=state.model_name,
+        ):
+            yield event
 
     def _build_memory_prompt(
         self,
@@ -375,63 +367,9 @@ def _capacity_warnings(snapshot: CoreMemorySnapshot) -> list[MemoryCapacityWarni
     ]
 
 
-#: Why the model gave no summary, in words the user (and the next turn) can act on.
-WHY_NO_SUMMARY = {
-    "max_tokens": "the model reached its output limit before it could write a summary",
-    "content_filter": "the provider's content filter blocked the summary",
-}
-
-
-@dataclass
-class TurnOutputs:
-    """What the architecture accumulates while the loop streams."""
-
-    full_text: str = ""
-    stop_reason: str = "end_turn"
-    canvases: list[MessageCanvasArtifact] = field(default_factory=list)
-    #: Wording to use when the model itself produced no text.
-    fallback_text: str | None = None
-    #: How often each tool ran this turn, by the name the user sees.
-    tool_runs: Counter[str] = field(default_factory=Counter)
-    failed_tool_runs: int = 0
-    #: A tool already answered the user on its own -- a generated image, say --
-    #: so silence from the model is not a failure.
-    answered_without_text: bool = False
-
-    def absorb(self, event: SSEEvent) -> Iterator[SSEEvent]:
-        """Take what this event contributes, yielding any events it implies."""
-        if event.event_type == SSEEventType.IMAGE_GENERATION_COMPLETE:
-            self.answered_without_text = True
-        elif event.event_type == SSEEventType.TOOL_CALL_RESULT:
-            self.tool_runs[event.display_tool_name or event.tool_name or "tool"] += 1
-            if event.success is False:
-                self.failed_tool_runs += 1
-            for interpreted in interpret_tool_result(event.content):
-                if interpreted.canvas:
-                    self.canvases.append(interpreted.canvas)
-                self.fallback_text = self.fallback_text or interpreted.fallback_text
-                if interpreted.event:
-                    yield interpreted.event
-
-    @property
-    def assistant_text(self) -> str:
-        """What to persist as the assistant's reply, substituting if it said nothing."""
-        if self.full_text.strip():
-            return self.full_text
-        if self.fallback_text:
-            return self.fallback_text
-        if self.tool_runs and not self.answered_without_text:
-            return self.record_of_tool_runs()
-        return ""
-
-    def record_of_tool_runs(self) -> str:
-        """Saved when the model could not answer, so the next turn still knows what already ran."""
-        count = sum(self.tool_runs.values())
-        calls = "1 tool call" if count == 1 else f"{count} tool calls"
-        runs = ", ".join(name if times == 1 else f"{name} ×{times}" for name, times in self.tool_runs.most_common())
-        failed = f"; {self.failed_tool_runs} failed" if self.failed_tool_runs else ""
-        why = WHY_NO_SUMMARY.get(self.stop_reason, "I couldn't write a summary of them")
-        return (
-            f"I ran {calls} ({runs}{failed}), but {why}. "
-            "Ask me to summarise what was done; I won't run them again unless you ask."
-        )
+def _without_paused_reply(messages: list[Message], resume: TurnResume | None, decision: Message) -> list[Message]:
+    """A resumed turn's history: its paused reply and the person's decision are the card, and its exchange says both."""
+    if resume is None:
+        return messages
+    left_out = {resume.paused_reply_id, decision.message_id}
+    return [message for message in messages if message.message_id not in left_out]

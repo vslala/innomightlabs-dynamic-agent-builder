@@ -5,6 +5,7 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPBearer
+from pydantic import BaseModel, Field
 
 from src.accounts.owner import Owner
 from src.automations.dispatch import invoke_automation_run_async
@@ -44,6 +45,7 @@ from src.automations.triggers.schemas import (
 from src.automations.repository import AutomationRepository
 from src.automations.runner import AutomationRunner
 from src.automations.run_state import AutomationRunStateService
+from src.automations.consent import StepChangedError, StepConsentState
 from src.automations.errors import AutomationNotFoundError, AutomationValidationError
 from src.automations.service import AutomationService
 from src.common.pagination import Paginated
@@ -85,6 +87,8 @@ def get_automation_runner(
 def translate_error(exc: Exception) -> HTTPException:
     if isinstance(exc, AutomationNotFoundError):
         return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, StepChangedError):
+        return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, (AutomationValidationError, SchedulerValidationError)):
         # A schedule trigger's timing the scheduler refuses (a one-time moment already past) is the person's to fix.
         return HTTPException(status_code=422, detail=str(exc))
@@ -163,6 +167,69 @@ async def get_graph(
         return service.get_graph(automation_id, owner_of_automation(automation)).to_response()
     except Exception as exc:
         raise translate_error(exc) from exc
+
+
+class StepConsentRequest(BaseModel):
+    """The step as the owner saw it, and for an agent step the actions they allow it."""
+
+    fingerprint: str
+    granted_actions: list[str] = Field(default_factory=list)
+
+
+@router.get("/{automation_id}/consents", response_model=list[StepConsentState])
+async def list_step_consents(
+    automation_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Get"))],
+    service: Annotated[AutomationService, Depends(get_automation_service)],
+) -> list[StepConsentState]:
+    """The steps that act for the owner, what each would do, and whether the owner approved it as it is now."""
+    try:
+        graph = service.get_graph(automation_id, owner_of_automation(automation))
+        return service.consent.states(automation_id, graph.nodes)
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.put("/{automation_id}/nodes/{node_id}/consent", response_model=StepConsentState)
+async def approve_step(
+    automation_id: str,
+    node_id: str,
+    body: StepConsentRequest,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
+    caller: Annotated[Owner, Depends(get_owner)],
+    service: Annotated[AutomationService, Depends(get_automation_service)],
+) -> StepConsentState:
+    """The owner approves a step exactly as they saw it (409 when it has changed since)."""
+    step = _owners_step(automation, node_id, caller, service)
+    try:
+        service.consent.grant(
+            automation_id, step, fingerprint=body.fingerprint, granted_actions=body.granted_actions, owner=caller,
+            via="editor",
+        )
+        return service.consent.states(automation_id, [step])[0]
+    except Exception as exc:
+        raise translate_error(exc) from exc
+
+
+@router.delete("/{automation_id}/nodes/{node_id}/consent", status_code=204)
+async def revoke_step(
+    automation_id: str,
+    node_id: str,
+    automation: Annotated[Automation, Depends(automation_with("automations:Update"))],
+    caller: Annotated[Owner, Depends(get_owner)],
+    service: Annotated[AutomationService, Depends(get_automation_service)],
+) -> None:
+    service.consent.revoke(automation_id, _owners_step(automation, node_id, caller, service))
+
+
+def _owners_step(automation: Automation, node_id: str, caller: Owner, service: AutomationService):
+    # The automation acts as its owner, so only they can say what it may do for them
+    if automation.owner_id != caller.user_id:
+        raise HTTPException(status_code=403, detail="Only the automation's owner can approve what it does")
+    step = service.repo.find_node(automation.automation_id, node_id)
+    if step is None:
+        raise HTTPException(status_code=404, detail="Step not found")
+    return step
 
 
 @router.get("/{automation_id}/action-catalog", response_model=AutomationActionCatalogResponse)

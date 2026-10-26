@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBearer
+from pydantic import BaseModel
 
 from src.connectors.mcp.models import (
     AgentMCPConnectionResponse,
@@ -171,6 +173,70 @@ async def refresh_mcp_tool_catalog(
     except MCPClientError as error:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
     return MCPToolCatalogResponse(tools=catalog.tools, fetched_at=catalog.fetched_at)
+
+
+class MCPToolPolicyTool(BaseModel):
+    name: str
+    title: str | None = None
+    read_only: bool = False
+    destructive: bool = False
+    #: Calling it shows the owner the exact call to approve first (docs/LLD-action-consent.md).
+    asks_first: bool
+
+
+class MCPToolPolicyResponse(BaseModel):
+    tools: list[MCPToolPolicyTool]
+    #: False while it is the default: the tools the server marks destructive ask.
+    chosen: bool
+    #: When the tools were last listed; without a listing there is nothing to choose from.
+    fetched_at: datetime | None = None
+
+
+class MCPToolPolicyRequest(BaseModel):
+    consent_required_tools: list[str]
+
+
+def _policy_response(service: MCPConnectorService, account_id: str, mcp_id: str) -> MCPToolPolicyResponse:
+    policy, catalog = service.tool_policy(account_id, mcp_id)
+    return MCPToolPolicyResponse(
+        tools=[
+            MCPToolPolicyTool(
+                name=tool.name, title=tool.title, read_only=tool.read_only, destructive=tool.destructive,
+                asks_first=policy.asks(tool.name),
+            )
+            for tool in (catalog.tools if catalog else [])
+        ],
+        chosen=policy.chosen,
+        fetched_at=catalog.fetched_at if catalog else None,
+    )
+
+
+@router.get("/connectors/mcp/{mcp_id}/tool-policy", response_model=MCPToolPolicyResponse)
+async def get_mcp_tool_policy(
+    principal: Member,
+    mcp_id: str,
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> MCPToolPolicyResponse:
+    """Which of the connection's tools ask the agent's owner before they run."""
+    try:
+        service.get_connection(principal.account_id, mcp_id)
+        return _policy_response(service, principal.account_id, mcp_id)
+    except ValueError as error:
+        raise _not_found_from_value_error(error) from error
+
+
+@router.put("/connectors/mcp/{mcp_id}/tool-policy", response_model=MCPToolPolicyResponse)
+async def set_mcp_tool_policy(
+    principal: Manager,
+    mcp_id: str,
+    body: MCPToolPolicyRequest,
+    service: Annotated[MCPConnectorService, Depends(get_mcp_connector_service)],
+) -> MCPToolPolicyResponse:
+    try:
+        service.set_tool_policy(principal.account_id, mcp_id, body.consent_required_tools, by=principal.user_id)
+        return _policy_response(service, principal.account_id, mcp_id)
+    except ValueError as error:
+        raise _not_found_from_value_error(error) from error
 
 
 @router.get("/connectors/mcp/{mcp_id}/forms/settings", response_model=Form)

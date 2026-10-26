@@ -63,8 +63,9 @@ class _FakeAutomationService:
         nodes, edges, triggers = self.repo.get_graph(automation_id)
         return SimpleNamespace(automation=automation, nodes=nodes, edges=edges, triggers=triggers)
 
-    def validate_graph(self, nodes, edges, triggers, owner, automation_id=None):
+    def validate_graph(self, nodes, edges, triggers, owner, automation_id=None, mode=None):
         del nodes, edges, triggers, owner, automation_id
+        self.validated_mode = mode
 
     def validate_skill_config(
         self,

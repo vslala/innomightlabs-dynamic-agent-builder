@@ -27,12 +27,13 @@ from src.agents.schemas import get_create_agent_form
 from src.agents.service import validate_provider_model
 from src.agents.turns import ConversationTurn, ConversationTurnRepository, ConversationTurnResponse
 from src.agents.turns import live_transcript, start_turn, stop_turn
-from src.agents.turns.transcript import TurnTranscript
 from src.builder.ila import ILA_AGENT_ID, GREETING, ila_agent, ila_architecture
 from src.builder.connections import start_connection
 from src.builder.models import BuilderSession, BuilderSessionResponse, CreateBuilderSessionRequest
 from src.builder.repository import BuilderSessionRepository
 from src.common.sse import sse_response
+from src.consent.models import ConsentDecisionRequest, ConsentRequestResponse
+from src.consent.router import decide_and_carry_on, list_conversation_consents
 from src.connectors.mcp.service import get_mcp_connector_service
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
@@ -84,11 +85,6 @@ def resolve_build_turn(turn_id: str, target: Annotated[BuildTarget, Depends(reso
     if not turn or turn.conversation_id != target.conversation.conversation_id:
         raise HTTPException(status_code=404, detail="Turn not found")
     return turn
-
-
-async def _stream(transcript: TurnTranscript, *, after_sequence: int):
-    async for sequence, event in transcript.follow(after_sequence=after_sequence):
-        yield f"id: {sequence}\n{event.to_sse()}"
 
 
 @router.get("/session-form", response_model=form_models.Form, response_model_exclude_none=True)
@@ -163,9 +159,35 @@ async def send_message(
         actor_kind=ActorKind.OWNER,
         architecture=ila_architecture(),
     )
-    response = sse_response(_stream(running.transcript, after_sequence=0))
+    response = sse_response(running.transcript.as_sse())
     response.headers["X-Turn-Id"] = running.turn.turn_id
     return response
+
+
+@router.get("/{conversation_id}/consents")
+async def list_consents(target: Annotated[BuildTarget, Depends(resolve_build)]) -> list[ConsentRequestResponse]:
+    """The consent cards in Ila's chat, such as the steps of an automation she built, and where each stands."""
+    return list_conversation_consents(target.conversation.conversation_id, ila_agent(target.session).agent_id)
+
+
+@router.post("/{conversation_id}/consents/{consent_id}/decision")
+async def decide(
+    request: Request,
+    consent_id: str,
+    body: ConsentDecisionRequest,
+    target: Annotated[BuildTarget, Depends(resolve_build)],
+):
+    """As an agent chat's decision: record it, then Ila carries on from the card."""
+    user_email: str = request.state.user_email
+    return decide_and_carry_on(
+        consent_id,
+        body,
+        agent=ila_agent(target.session),
+        conversation=target.conversation,
+        caller=get_owner(request),
+        owner_email=user_email,
+        architecture=ila_architecture(),
+    )
 
 
 @router.post("/{conversation_id}/connect", response_model=ConnectResponse)
@@ -197,7 +219,7 @@ async def stream_turn_events(turn: Annotated[ConversationTurn, Depends(resolve_b
     transcript = live_transcript(turn.turn_id)
     if transcript is None:
         raise HTTPException(status_code=410, detail="This response is no longer available.")
-    return sse_response(_stream(transcript, after_sequence=after_sequence))
+    return sse_response(transcript.as_sse(after_sequence=after_sequence))
 
 
 @router.post("/{conversation_id}/turns/{turn_id}/stop", status_code=204)

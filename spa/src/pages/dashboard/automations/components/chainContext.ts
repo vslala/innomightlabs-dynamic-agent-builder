@@ -16,6 +16,7 @@ import type { ChainLaneLabel } from "../chain/chainModel";
 import type { ChainGateway } from "./chainGateway";
 import type { ChainStepType, NodePatch } from "../chain/chainOperations";
 import type { ChainIssue } from "../chain/chainValidation";
+import type { StepConsents } from "../hooks/useStepConsents";
 
 export interface ChainContextValue {
   graph: AutomationGraphResponse;
@@ -41,6 +42,8 @@ export interface ChainContextValue {
   onStopLane: (conditionNodeId: string, label: ChainLaneLabel) => void;
   /** Reload the graph after a trigger changed, since triggers persist on their own. */
   onEditTriggers: () => Promise<void>;
+  /** The owner's approval of the steps that act for them. */
+  stepConsents: StepConsents;
 }
 
 export const ChainContext = createContext<ChainContextValue | null>(null);

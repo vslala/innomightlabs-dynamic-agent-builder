@@ -614,6 +614,51 @@ actions:
       owner_scoped_arguments: [agent_id]
 ```
 
+### `consent`
+
+Optional. Declare it on an action that acts for the person outside the platform: publishing, sending, paying,
+deleting. The platform then shows the person the exact call before it runs (see
+[docs/LLD-action-consent.md](../../../docs/LLD-action-consent.md)):
+
+- **In chat**, the call becomes a card the person can approve, edit, always allow or reject, and the turn pauses until
+  they decide. What runs is the stored call plus their edits, never something the model writes again.
+- **In an automation**, a step running the action is approved once, when it is set up, and runs on its own after
+  that, until the step changes.
+- **Anyone but the owner** (widget visitors, guests, `/v1`, A2A, shared members) is never offered the action.
+- **The registry refuses to run it** without a recorded consent, whichever path calls it.
+
+Schema:
+
+```yaml
+consent:
+  title: Publish to social media          # the card's heading, and what "Always allow" names
+  warning: Public and permanent.          # optional, shown on the card
+  editable: [text]                        # optional: arguments the person may change before approving
+  preview: actions:publish_preview        # optional: what the card shows (default: every argument)
+```
+
+`editable` names top-level `input_schema` properties; a manifest naming any other is rejected at load.
+
+A preview handler has the action handler's signature and gets the same arguments, config and context. It returns
+`{"blocks": [...]}`, built from `src/consent/preview.py`: `text`, `email`, `images` (by S3 key; the card gets URLs),
+`targets`, `fields`, `grants`, `code` and `warning`. It may also return `editable` to narrow the manifest's list for
+this call (Gmail drops `body` when there is an HTML body). It must not change anything, and if it raises, the card
+falls back to the default preview.
+
+Example from `google_mail.send`:
+
+```yaml
+  - name: send
+    consent:
+      title: Send an email
+      warning: It is sent from your Gmail as soon as you approve.
+      editable: [subject, body]
+      preview: actions:send_preview
+```
+
+Don't add a `confirmed` argument or "ask the user first" prompt text: the consent replaces both. Tell the model what
+the action does; the platform tells it that the action asks first.
+
 ### `lifecycle`
 
 Optional action-level lifecycle hooks. Current runtime support is focused on `delete`.
@@ -1104,6 +1149,7 @@ Before adding a skill:
 - Add an `action_form` for any action exposed to automations.
 - Disable automation at skill or action level when the behavior is agent-only.
 - Add lifecycle hooks when the skill creates external resources that need cleanup.
+- Declare `consent` on any action that acts for the person outside the platform (posts, sends, pays, deletes).
 - Validate arguments in `models.py`; do not rely only on manifest schema.
 - Add tests for registry load, install validation, and action behavior.
 
@@ -1116,5 +1162,6 @@ Before adding a skill:
 - Renaming `id`, action names, or form field names after users have installed the skill.
 - Marking a secret as optional but not `secret`.
 - Relying only on prompt instructions instead of validating in action code.
+- Asking for approval in the prompt or with a `confirmed` argument instead of declaring `consent`.
 - Exposing an action to automations when it depends on current conversation context.
 - Adding global router code for behavior that belongs in `api_router`.

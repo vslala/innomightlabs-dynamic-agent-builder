@@ -62,6 +62,8 @@ class ToolExecutionOutcome:
     success: bool
     #: The tool may have changed what the system prompt shows (core memory), so rebuild it before the next call.
     refresh_prompt: bool = False
+    #: The person has to decide before anything else happens (a consent card), so the turn pauses after this call.
+    ends_turn: bool = False
 
 
 @dataclass(frozen=True)

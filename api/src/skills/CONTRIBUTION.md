@@ -261,6 +261,7 @@ Add focused tests for each new skill:
 - action argument validation
 - successful action behavior with mocked third-party calls
 - third-party API failure behavior
+- for an action that declares `consent`: its preview handler, and that it is in the consent list of `tests/test_consent.py`
 - OAuth start/callback behavior when applicable
 - token refresh behavior when applicable
 

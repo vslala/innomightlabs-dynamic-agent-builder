@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import ValidationError
 
 from src.accounts.owner import Owner
 import src.form_models as form_models
 from src.agents.tool_audit import ToolCallAuditMessage
-from src.agents.tool_runtime.current_call import current_tool_call_id
+from src.agents.tool_runtime.current_call import current_consent_grant, current_tool_call_id
 from src.agents.tool_runtime.jobs import ToolJobService
 from src.messages.models import Message
 from src.connectors.service import ConnectorService, connector_id_for_provider, get_connector_service
@@ -40,6 +40,11 @@ from src.skills.oauth_providers import get_skill_oauth_provider
 from src.skills.registry import SkillRegistry, get_skill_registry, is_secret_input
 from src.skills.runtime_context import action_context, as_tool_result
 from src.skills.repository import AgentSkillRepository, get_agent_skill_repository
+from src.consent.models import SkillActionSubject, skill_key
+from src.consent.repository import ConsentRepository
+
+if TYPE_CHECKING:
+    from src.consent.models import ConsentRequest
 
 
 def _resolved_description(given: str | None, existing: AgentSkill | None, manifest: SkillManifest) -> str:
@@ -310,6 +315,8 @@ class SkillService:
                 },
             )
         deleted = self.repository.delete(agent_id, installed_skill_id)
+        # "Always allow" was for this install: a reinstall asks again
+        ConsentRepository().forget_standing_starting(agent_id, skill_key(installed_skill_id, ""))
         if disconnect_oauth:
             loaded = self.registry.get(existing.skill_id) if existing else self.registry.get(installed_skill_id)
             oauth_provider_name = loaded.manifest.oauth_provider_name if loaded and loaded.manifest.requires_oauth else None
@@ -498,11 +505,12 @@ class SkillRuntimeService:
             if not loaded:
                 raise ValueError(f"Skill '{installed.skill_id}' is not available")
 
+            manifest = loaded.manifest.as_seen_by(actor_kind)
             payload = self._build_loaded_skill_runtime_payload(
                 installed,
-                loaded.manifest,
+                manifest,
                 DisclosureRequest(
-                    manifest=loaded.manifest,
+                    manifest=manifest,
                     actions=tool_input.get("actions") or None,
                     query=tool_input.get("query") or None,
                 ),
@@ -552,6 +560,7 @@ class SkillRuntimeService:
                 conversation_id=conversation_id,
                 user_message_id=user_message_id,
                 tool_call_id=current_tool_call_id.get(),
+                consent_grant=current_consent_grant.get(),
             )
             if run_async:
                 job = self.tool_job_service.start_skill_action_job(
@@ -581,6 +590,75 @@ class SkillRuntimeService:
             return as_tool_result(result)
 
         raise ValueError(f"Unknown skill runtime tool: {tool_name}")
+
+    def action_needing_consent(
+        self, agent_id: str, requested_id: str, action_name: str, actor_kind: ActorKind
+    ) -> tuple[AgentSkill, SkillActionManifest] | None:
+        """The install and action a call names, when that action needs the person's consent.
+
+        A call that names nothing usable is not the consent gate's to answer: it runs, and fails as it always has.
+        """
+        try:
+            installed = self._resolve_usable_skill(agent_id, requested_id, actor_kind)
+            _, action = self.skill_service.registry.find_action(installed.skill_id, action_name)
+        except ValueError:
+            return None
+        return (installed, action) if action.consent else None
+
+    def consent_actions(self, agent_id: str) -> list[tuple[str, AgentSkill, SkillActionManifest]]:
+        """Every action of the agent's enabled skills that needs consent, by its consent key."""
+        found = []
+        for installed in self.list_enabled(agent_id):
+            loaded = self.skill_service.registry.get(installed.skill_id)
+            for action in loaded.manifest.actions if loaded else []:
+                if action.consent:
+                    found.append((skill_key(installed.installed_skill_id or installed.skill_id, action.name), installed, action))
+        return found
+
+    async def preview_action(
+        self, installed: AgentSkill, action: SkillActionManifest, arguments: dict[str, Any], context: dict[str, Any]
+    ) -> Any:
+        """Run the action's preview handler with the install's config, as the action itself would run."""
+        return await self.skill_service.registry.preview_action(
+            skill_id=installed.skill_id,
+            action_name=action.name,
+            arguments=arguments,
+            config=self.repository.get_runtime_config(installed),
+            context=context,
+        )
+
+    async def run_consented(self, request: "ConsentRequest") -> str:
+        """Run the call the person approved, with their edits, as the agent's owner, under that approval.
+
+        Always synchronous, whatever the model asked: the person is waiting for the result.
+        """
+        subject = request.subject
+        if not isinstance(subject, SkillActionSubject):
+            raise ValueError("Not a skill action")
+        installed = self._resolve_usable_skill(request.agent_id, subject.installed_skill_id, ActorKind.OWNER)
+        context = action_context(
+            skill_id=installed.skill_id,
+            installed_skill_id=installed.installed_skill_id or installed.skill_id,
+            agent_id=request.agent_id,
+            account_id=request.account_id,
+            owner_id=request.owner_id,
+            owner_email=request.owner_email,
+            actor_email=request.actor_email,
+            actor_id=request.actor_id,
+            actor_kind=ActorKind.OWNER,
+            conversation_id=request.conversation_id,
+            user_message_id=request.user_message_id,
+            tool_call_id=request.tool_use_id,
+            consent_grant=f"consent:{request.consent_id}",
+        )
+        result = await self.skill_service.registry.execute_action(
+            skill_id=installed.skill_id,
+            action_name=subject.action,
+            arguments=request.arguments_to_run,
+            config=self.repository.get_runtime_config(installed),
+            context=context,
+        )
+        return as_tool_result(result)
 
     def recent_actions(
         self,
@@ -617,14 +695,7 @@ class SkillRuntimeService:
             LoadedSkillRuntimeResponse(
                 skill_id=installed_skill_id,
                 prompt=self._build_loaded_skill_prompt(skill, manifest),
-                actions=[
-                    LoadedSkillRuntimeAction(
-                        name=action.name,
-                        description=action.description,
-                        input_schema=action.input_schema,
-                    )
-                    for action in actions
-                ],
+                actions=[LoadedSkillRuntimeAction.of(action) for action in actions],
             )
             for installed_skill_id, (skill, manifest, actions) in picked.items()
         ]
@@ -692,14 +763,7 @@ class SkillRuntimeService:
         return LoadedSkillRuntimeResponse(
             skill_id=installed.installed_skill_id or installed.skill_id,
             prompt=self._build_loaded_skill_prompt(installed, manifest),
-            actions=[
-                LoadedSkillRuntimeAction(
-                    name=action.name,
-                    description=action.description,
-                    input_schema=action.input_schema,
-                )
-                for action in disclosed.actions
-            ],
+            actions=[LoadedSkillRuntimeAction.of(action) for action in disclosed.actions],
             action_index=(
                 {
                     group: [LoadedSkillRuntimeActionSummary(name=name, summary=summary) for name, summary in entries]

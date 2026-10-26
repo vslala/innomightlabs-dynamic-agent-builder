@@ -162,6 +162,13 @@ class MessageCanvasArtifactResponse(BaseModel):
     open_url: str | None = None
 
 
+class MessageConsent(BaseModel):
+    """A consent card the message raised. The card's state lives on its request (docs/LLD-action-consent.md)."""
+
+    consent_id: str
+    title: str
+
+
 class MessageReference(BaseModel):
     """Something the user attached that lives elsewhere (a document): the message holds the pointer, never the content.
 
@@ -185,6 +192,7 @@ class MessageResponse(BaseModel):
     references: list[MessageReference] = Field(default_factory=list)
     images: list[MessageImageResponse] = Field(default_factory=list)
     canvases: list[MessageCanvasArtifactResponse] = Field(default_factory=list)
+    consents: list[MessageConsent] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -201,6 +209,7 @@ class Message(BaseModel):
     references: list[MessageReference] = Field(default_factory=list)
     images: list[MessageImage] = Field(default_factory=list)
     canvases: list[MessageCanvasArtifact] = Field(default_factory=list)
+    consents: list[MessageConsent] = Field(default_factory=list)
     kind: MessageKind = MessageKind.CHAT
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -238,6 +247,8 @@ class Message(BaseModel):
             item["images"] = [img.model_dump(mode="json") for img in self.images]
         if self.canvases:
             item["canvases"] = [canvas.model_dump(mode="json") for canvas in self.canvases]
+        if self.consents:
+            item["consents"] = [consent.model_dump() for consent in self.consents]
         return item
 
     @classmethod
@@ -254,6 +265,7 @@ class Message(BaseModel):
             references=[MessageReference(**reference) for reference in item.get("references", [])],
             images=[MessageImage(**img) for img in item.get("images", [])],
             canvases=[MessageCanvasArtifact(**canvas) for canvas in item.get("canvases", [])],
+            consents=[MessageConsent(**consent) for consent in item.get("consents", [])],
             # Rows written before the AUDIT# split have no `kind`.
             kind=MessageKind(item.get("kind", MessageKind.CHAT.value)),
             created_at=datetime.fromisoformat(item["created_at"]),
@@ -304,5 +316,6 @@ class Message(BaseModel):
                 )
                 for canvas in self.canvases
             ],
+            consents=list(self.consents),
             created_at=self.created_at,
         )

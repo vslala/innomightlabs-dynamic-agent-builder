@@ -217,6 +217,8 @@ async def test_mcp_tools_reach_their_own_handlers():
             "mcp_id": "atlassian",
             "tool_name": "search",
             "arguments": {"q": "x"},
+            # No consent was asked for, so none is carried
+            "consent_grant": None,
         }
     ]
 

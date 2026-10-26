@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
@@ -483,6 +483,55 @@ class MCPToolCatalog(BaseModel):
         return cls.model_validate(item)
 
 
+class MCPToolPolicy(BaseModel):
+    """Which of a connection's tools ask the person before they run (docs/LLD-action-consent.md).
+
+    Without one, the tools the server marks destructive ask the owner in their own chats; with no catalog to tell,
+    none do until the person lists the tools and chooses. Kept apart from the catalog, which is rewritten whenever it
+    is refreshed.
+    """
+
+    account_id: str
+    mcp_id: str
+    consent_required_tools: list[str] = Field(default_factory=list)
+    #: False for the default, made from the catalog rather than chosen by the person.
+    chosen: bool = True
+    updated_by: Optional[str] = None
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @classmethod
+    def default(cls, account_id: str, mcp_id: str, catalog: Optional["MCPToolCatalog"]) -> "MCPToolPolicy":
+        return cls(
+            account_id=account_id,
+            mcp_id=mcp_id,
+            consent_required_tools=[tool.name for tool in catalog.tools if tool.destructive] if catalog else [],
+            chosen=False,
+        )
+
+    def asks(self, tool_name: str) -> bool:
+        return tool_name in self.consent_required_tools
+
+    def keeps_from_outsiders(self, tool_name: str) -> bool:
+        """A tool the person chose to be asked about is theirs alone. One that asks only by default stays with whoever
+        they shared it with: sharing it was their choice."""
+        return self.chosen and self.asks(tool_name)
+
+    @property
+    def pk(self) -> str:
+        return f"Account#{self.account_id}"
+
+    @property
+    def sk(self) -> str:
+        return f"MCPToolPolicy#{self.mcp_id}"
+
+    def to_dynamo_item(self) -> dict[str, Any]:
+        return {**self.model_dump(mode="json"), "pk": self.pk, "sk": self.sk, "entity_type": "MCPToolPolicy"}
+
+    @classmethod
+    def from_dynamo_item(cls, item: dict[str, Any]) -> "MCPToolPolicy":
+        return cls.model_validate({k: v for k, v in item.items() if k not in {"pk", "sk", "entity_type"}})
+
+
 class MCPSharingConsent(BaseModel):
     accepted_by: str
     accepted_at: datetime
@@ -668,14 +717,17 @@ class AgentMCPConnection(BaseModel):
             return True
         return actor_kind in self.sharing.available_to
 
-    def allows(self, actor_kind: ActorKind, tool_name: str) -> bool:
+    def allows(self, actor_kind: ActorKind, tool_name: str, owners_only: Callable[[str], bool] = lambda _: False) -> bool:
+        """`owners_only`: tools the owner chose to be asked about first, which nobody else may use."""
         if actor_kind == ActorKind.OWNER:
             return True
-        return self.usable_by(actor_kind) and tool_name in self.sharing.allowed_tools
+        return self.usable_by(actor_kind) and tool_name in self.sharing.allowed_tools and not owners_only(tool_name)
 
-    def offered_tools(self, actor_kind: ActorKind, listed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def offered_tools(
+        self, actor_kind: ActorKind, listed: list[dict[str, Any]], owners_only: Callable[[str], bool] = lambda _: False
+    ) -> list[dict[str, Any]]:
         """The live tools this actor may call. A tool the server adds later stays the owner's until shared."""
-        return [tool for tool in listed if self.allows(actor_kind, tool.get("name", ""))]
+        return [tool for tool in listed if self.allows(actor_kind, tool.get("name", ""), owners_only)]
 
     def shared(
         self, request: MCPSharingUpdateRequest, catalog: Optional[MCPToolCatalog], *, by: str

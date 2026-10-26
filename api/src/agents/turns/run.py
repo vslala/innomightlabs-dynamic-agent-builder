@@ -11,7 +11,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Protocol
 
 from src.agents.architectures import get_agent_architecture
 from src.agents.architectures.base import AgentArchitecture, turn_error_message
@@ -24,6 +24,7 @@ from src.conversations.repository import ConversationRepository
 from src.llm.events import SSEEvent, SSEEventType
 
 if TYPE_CHECKING:
+    from src.agents.agentic_loop import TurnResume
     from src.agents.models import Agent
     from src.conversations.models import Conversation
     from src.messages.models import Attachment, ImageAttachment, MessageReference
@@ -47,6 +48,22 @@ _running: dict[str, RunningTurn] = {}
 
 
 @dataclass(frozen=True)
+class TurnInput:
+    """What a turn starts from: the user's message, and a paused turn to carry on, if it is one."""
+
+    user_message: str
+    resume: "TurnResume | None" = None
+
+
+class TurnPrelude(Protocol):
+    """The platform's part of a turn, done before the agent's: running what the person just approved."""
+
+    async def run(self, emit: Callable[[SSEEvent], None]) -> TurnInput:
+        """Emit what it does as the turn's own events; return what the agent's part starts from."""
+        ...
+
+
+@dataclass(frozen=True)
 class TurnRequest:
     """Everything a detached turn needs, all of it resolved before it starts."""
 
@@ -64,6 +81,8 @@ class TurnRequest:
     #: Runs the turn instead of the agent's own architecture, for agents that aren't in the
     #: factory (Ila, the solution builder).
     architecture: AgentArchitecture | None = None
+    #: Runs first and decides the user message (a consent decision); `user_message` is then unused.
+    prelude: TurnPrelude | None = None
 
 
 def start_turn(
@@ -80,6 +99,7 @@ def start_turn(
     images: list["ImageAttachment"] | None = None,
     references: list["MessageReference"] | None = None,
     architecture: AgentArchitecture | None = None,
+    prelude: TurnPrelude | None = None,
 ) -> RunningTurn:
     now = datetime.now(timezone.utc)
     turn = ConversationTurn(
@@ -110,6 +130,7 @@ def start_turn(
                 images=images,
                 references=references,
                 architecture=architecture,
+                prelude=prelude,
             ),
         )
     )
@@ -147,10 +168,11 @@ async def _drive_turn(
 
     try:
         architecture = request.architecture or get_agent_architecture(request.agent.agent_architecture)
+        turn_input = await request.prelude.run(transcript.record) if request.prelude else TurnInput(request.user_message)
         async for event in architecture.handle_message(  # pyright: ignore[reportGeneralTypeIssues]
             agent=request.agent,
             conversation=request.conversation,
-            user_message=request.user_message,
+            user_message=turn_input.user_message,
             owner_email=request.owner_email,
             actor_email=request.actor_email,
             actor_id=request.actor_id,
@@ -159,6 +181,7 @@ async def _drive_turn(
             images=request.images,
             references=request.references,
             api_key_id=request.api_key_id,
+            resume=turn_input.resume,
         ):
             transcript.record(event)
             if event.event_type == SSEEventType.USER_MESSAGE_SAVED:

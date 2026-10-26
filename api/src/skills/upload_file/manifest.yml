@@ -7,6 +7,8 @@ system_prompt: |
   Provide exactly one of text_content, base64_content or workspace_path.
   Use workspace_path (a path in this conversation's workspace, such as one browser_studio wrote) for a video, with
   artifact_type video and a filename ending .mp4, .webm or .mov. Videos can be up to 100 MB; other files 10 MB.
+  Use image for a picture (PNG, JPEG, WebP or GIF) from the workspace (workspace_path) or as base64_content: its
+  artifact_id can be posted with social_media. An SVG must be rendered to PNG first.
   Use html_report only for complete, safe HTML documents.
   Use csv, markdown, json, text, or code for text-based artifacts.
   Keep files under the maximum supported size.
@@ -21,7 +23,7 @@ actions:
       properties:
         artifact_type:
           type: string
-          enum: [html_report, csv, markdown, json, text, code, file, video]
+          enum: [html_report, csv, markdown, json, text, code, file, image, video]
           description: Artifact category for listing, validation, and display.
         title:
           type: string
@@ -37,7 +39,7 @@ actions:
           description: Text content to save. Use for HTML, CSV, Markdown, JSON, text, and code.
         base64_content:
           type: string
-          description: Base64-encoded content. Decoded content must be UTF-8 text in v1.
+          description: Base64-encoded content. Decoded content must be UTF-8 text, except for an image.
         workspace_path:
           type: string
           description: Path of a file in this conversation's workspace to upload instead of sending its content. Required for video.
@@ -67,6 +69,8 @@ actions:
               value: code
             - label: File
               value: file
+            - label: Image
+              value: image
             - label: Video (from workspace)
               value: video
         - input_type: text

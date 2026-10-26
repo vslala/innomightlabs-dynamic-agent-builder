@@ -7,6 +7,7 @@ from typing import Any, cast
 
 from src.agents.models import Agent
 from src.agents.repository import AgentRepository
+from src.consent.models import ConsentScope
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.scheduler.repository import SchedulerRepository
@@ -623,9 +624,11 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
             actor_id,
             actor_kind,
             attachments=None,
+            consent_scope=None,
         ):
             captured.update(
                 {
+                    "consent_scope": consent_scope,
                     "agent_id": agent.agent_id,
                     "conversation_id": conversation.conversation_id,
                     "user_message": user_message,
@@ -690,6 +693,8 @@ def test_agent_invocation_runs_as_agent_skill(test_client, auth_headers, dynamod
         "actor_email": TEST_USER_EMAIL,
         "actor_id": TEST_USER_EMAIL,
         "attachments": None,
+        # Nobody sees the invoked agent's conversation, so it never asks; the calling agent asks for itself
+        "consent_scope": ConsentScope.unattended(),
     }
     assert len(captured_repositories) == 1
     assert captured_repositories[0].__class__.__name__ == "InMemoryMessageRepository"

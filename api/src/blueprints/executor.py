@@ -88,6 +88,7 @@ def apply_blueprint(
         name: DeploymentOutput(value=_fill_outputs(output.value, ctx.applied), description=output.description)
         for name, output in blueprint.outputs.items()
     }
+    deployment.awaiting_consent = ctx.awaiting_consent
     deployment.status = DeploymentStatus.APPLIED
     return repository.save(deployment)
 

@@ -172,3 +172,44 @@ async def test_check_counts_the_images_against_the_limit(media, linkedin):
     assert result["targets"][0]["can_post"] is True
     accounts = await actions.accounts({}, {}, context())
     assert accounts["accounts"][0]["max_images"] == 20
+
+
+def saved_artifact(s3, *, artifact_type: str, filename: str, data: bytes) -> str:
+    """A file the agent saved with upload_file: bytes in S3, an artifact record for the member."""
+    from src.artifacts.models import Artifact
+    from src.artifacts.repository import ArtifactRepository
+
+    key = f"accounts/{ACCOUNT_ID}/members/{OWNER_ID}/artifacts/{filename}"
+    s3.put_object(Bucket=BUCKET, Key=key, Body=data)
+    artifact = Artifact(account_id=ACCOUNT_ID, user_id=OWNER_ID, artifact_type=artifact_type, title=filename,
+                        filename=filename, mime_type="application/octet-stream", s3_key=key, size_bytes=len(data))
+    ArtifactRepository().save(artifact)
+    return artifact.artifact_id
+
+
+def webp() -> bytes:
+    out = io.BytesIO()
+    Image.new("RGB", (120, 60), (0, 0, 255)).save(out, "WEBP")
+    return out.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_a_picture_saved_as_an_artifact_is_posted_whatever_its_format(media, linkedin):
+    connect()
+    image = saved_artifact(media, artifact_type="image", filename="launch.webp", data=webp())
+    # Saved before images had their own artifact type
+    legacy = saved_artifact(media, artifact_type="file", filename="older.webp", data=webp())
+
+    result = await actions.publish({"text": "Launch", "images": [image, legacy]}, {}, context())
+
+    assert result["status"] == "published"
+    assert [Image.open(io.BytesIO(upload)).format for upload in linkedin.uploads] == ["JPEG", "JPEG"]
+
+
+@pytest.mark.asyncio
+async def test_an_artifact_that_is_not_a_picture_is_refused_with_how_to_fix_it(media, linkedin):
+    connect()
+    notes = saved_artifact(media, artifact_type="file", filename="notes.txt", data=b"hello")
+    with pytest.raises(ValueError, match="artifact_type image"):
+        await actions.publish({"text": "Oops", "images": [notes]}, {}, context())
+    assert not linkedin.requests

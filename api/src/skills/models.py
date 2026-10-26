@@ -65,6 +65,22 @@ class SkillActionAutomationConfig(BaseModel):
     reference_arguments: dict[str, str] = Field(default_factory=dict)
 
 
+class SkillActionConsent(BaseModel):
+    """The action acts for the person outside the platform, so it runs only with their consent.
+
+    See docs/LLD-action-consent.md.
+    """
+
+    #: The card's heading, and the name of what "Always allow" allows.
+    title: str
+    warning: Optional[str] = None
+    #: Arguments the person may change before approving. Each is a top-level `input_schema` property.
+    editable: list[str] = Field(default_factory=list)
+    #: `module:function` with the action handler's signature, returning a ConsentPreview. Without one the card
+    #: shows every argument.
+    preview: Optional[str] = None
+
+
 class ActionDisclosureMode(str, Enum):
     """How much of a skill's action catalog load_skill shows the agent up front."""
 
@@ -84,7 +100,16 @@ class SkillActionManifest(BaseModel):
     action_form: Optional[form_models.Form] = None
     automation: SkillActionAutomationConfig = Field(default_factory=SkillActionAutomationConfig)
     lifecycle: SkillLifecycleManifest = Field(default_factory=SkillLifecycleManifest)
+    consent: Optional[SkillActionConsent] = None
     handler: str
+
+    @model_validator(mode="after")
+    def _editable_are_arguments(self) -> "SkillActionManifest":
+        if self.consent:
+            unknown = set(self.consent.editable) - set(self.input_schema.get("properties", {}))
+            if unknown:
+                raise ValueError(f"consent.editable names arguments '{self.name}' doesn't have: {sorted(unknown)}")
+        return self
 
     def automation_input_schema(self) -> dict[str, Any]:
         """The input schema an automation step is held to: the agent-facing schema plus the
@@ -138,6 +163,12 @@ class SkillManifest(BaseModel):
         """The action with this name or alias."""
         return next((action for action in self.actions if action.answers_to(name)), None)
 
+    def as_seen_by(self, actor_kind: ActorKind) -> "SkillManifest":
+        """Actions that need consent are the owner's alone, so anyone else is never told about them."""
+        if actor_kind == ActorKind.OWNER:
+            return self
+        return self.model_copy(update={"actions": [action for action in self.actions if action.consent is None]})
+
 
 @dataclass
 class LoadedSkill:
@@ -185,6 +216,17 @@ class LoadedSkillRuntimeAction(BaseModel):
     name: str
     description: str
     input_schema: dict[str, Any] = Field(default_factory=dict, serialization_alias="schema")
+    #: Calling it shows the person the exact call to approve first (docs/LLD-action-consent.md).
+    asks_for_approval: bool = False
+
+    @classmethod
+    def of(cls, action: SkillActionManifest) -> "LoadedSkillRuntimeAction":
+        return cls(
+            name=action.name,
+            description=action.description,
+            input_schema=action.input_schema,
+            asks_for_approval=action.consent is not None,
+        )
 
 
 class LoadedSkillRuntimeActionSummary(BaseModel):

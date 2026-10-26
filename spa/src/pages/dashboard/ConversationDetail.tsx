@@ -44,13 +44,22 @@ import { agentApiService, type AgentResponse } from "../../services/agents/Agent
 import { agentDisplayName, isIla, showsToolActivity } from "../../services/builder/ila";
 import { connectedMessage } from "../../services/builder/connect";
 import { ConnectAccountCard, type ConnectRequestPayload } from "../../components/chat/ConnectAccountCard";
+import { ConsentCard } from "../../components/chat/consent/ConsentCard";
 import { IlaWorking } from "../../components/chat/IlaWorking";
 import { ilaStatus } from "../../components/chat/ilaStatus";
 import { chatService, type ActiveTurn } from "../../services/chat";
 import { authService } from "../../services/auth";
+import type { ConsentDecision, ConsentRequest } from "../../types/consent";
 import type { ConversationResponse } from "../../types/conversation";
 import type { FormSchema } from "../../types/form";
-import { SSEEventType, type Message, type MessageCanvasArtifact, type SSEEvent, type ToolActivity } from "../../types/message";
+import {
+  SSEEventType,
+  type Message,
+  type MessageCanvasArtifact,
+  type MessageConsent,
+  type SSEEvent,
+  type ToolActivity,
+} from "../../types/message";
 import styles from "./Conversation.module.css";
 
 interface ConversationNavigationState {
@@ -94,6 +103,8 @@ export function ConversationDetail() {
   const [activeForm, setActiveForm] = useState<{ form: FormSchema; submitLabel?: string; leadForm?: string } | null>(null);
   const [pendingFormLabel, setPendingFormLabel] = useState<string | null>(null);
   const [activeConnect, setActiveConnect] = useState<ConnectRequestPayload | null>(null);
+  // Consent cards by id, as they stand now: messages say which they raised, this says what became of them
+  const [consents, setConsents] = useState<Record<string, ConsentRequest>>({});
   const [chatError, setChatError] = useState<string | null>(null);
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
   const [liveTokenUsage, setLiveTokenUsage] = useState<LiveTokenUsageUpdate | null>(null);
@@ -118,6 +129,7 @@ export function ConversationDetail() {
   const renderedFormRef = useRef(false);
   const assistantMessageSavedRef = useRef(false);
   const pendingCanvasArtifactsRef = useRef<MessageCanvasArtifact[]>([]);
+  const pendingConsentsRef = useRef<MessageConsent[]>([]);
   const initialMessageSentRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
@@ -152,6 +164,7 @@ export function ConversationDetail() {
       setMessagesCursor(messagesData.next_cursor);
       setHasMoreMessages(messagesData.has_more);
       setInitialMessagesLoaded(true);
+      void loadConsents(conversationData.agent_id, conversationId);
     } catch (err) {
       setError("Failed to load conversation. It may not exist or you don't have access.");
       console.error("Error loading conversation:", err);
@@ -159,6 +172,17 @@ export function ConversationDetail() {
       setLoading(false);
     }
   };
+
+  const loadConsents = async (agentId: string, id: string) => {
+    try {
+      const cards = await chatService.listConsents(agentId, id);
+      setConsents(Object.fromEntries(cards.map((card) => [card.consent_id, card])));
+    } catch (err) {
+      console.error("Failed to load the conversation's approvals:", err);
+    }
+  };
+
+  const keepConsent = (card: ConsentRequest) => setConsents((current) => ({ ...current, [card.consent_id]: card }));
 
   // Load older messages (for infinite scroll up)
   const loadOlderMessages = async () => {
@@ -413,6 +437,7 @@ export function ConversationDetail() {
     renderedFormRef.current = false;
     assistantMessageSavedRef.current = false;
     pendingCanvasArtifactsRef.current = [];
+    pendingConsentsRef.current = [];
   };
 
   const finishTurn = () => {
@@ -478,6 +503,17 @@ export function ConversationDetail() {
 
       case SSEEventType.CONNECT_REQUEST:
         if (event.connect) setActiveConnect(event.connect);
+        break;
+
+      case SSEEventType.CONSENT_REQUEST:
+        if (event.consent) {
+          keepConsent(event.consent);
+          pendingConsentsRef.current.push({ consent_id: event.consent.consent_id, title: event.consent.title });
+        }
+        break;
+
+      case SSEEventType.CONSENT_UPDATED:
+        if (event.consent) keepConsent(event.consent);
         break;
 
       case SSEEventType.CANVAS_ARTIFACT_READY:
@@ -588,6 +624,7 @@ export function ConversationDetail() {
           const canvases = pendingCanvasArtifactsRef.current.length
             ? pendingCanvasArtifactsRef.current
             : undefined;
+          const raisedConsents = pendingConsentsRef.current.length ? pendingConsentsRef.current : undefined;
           setMessages((prev) =>
             prev.some((m) => m.message_id === assistantMessageId)
               ? prev
@@ -599,6 +636,7 @@ export function ConversationDetail() {
                     role: "assistant",
                     content,
                     canvases,
+                    consents: raisedConsents,
                     created_at: new Date().toISOString(),
                   },
                 ]
@@ -613,6 +651,7 @@ export function ConversationDetail() {
           void recoverMissingAssistantMessage(ctx.conversationId, event.message_id);
         }
         pendingCanvasArtifactsRef.current = [];
+        pendingConsentsRef.current = [];
         break;
 
       case SSEEventType.STREAM_COMPLETE:
@@ -836,6 +875,69 @@ export function ConversationDetail() {
           finishTurn();
         },
       }
+    );
+  };
+
+  // The person's decision on a card: the turn that carries on from it streams back like a message's
+  const handleDecideConsent = async (card: ConsentRequest, decision: ConsentDecision) => {
+    if (!conversation || isSending) return;
+    setIsSending(true);
+    resetTurnUiState();
+
+    const edited = Object.keys(decision.edits ?? {});
+    const userMsg: Message = {
+      message_id: `temp-${Date.now()}`,
+      conversation_id: conversation.conversation_id,
+      role: "user",
+      // Shaped like the line the API saves, so it shows the same until that arrives
+      content:
+        `<consent_decision consent_id="${card.consent_id}" action=${JSON.stringify(card.title)} ` +
+        `decision="${decision.decision === "approve" ? "approved" : "rejected"}"` +
+        `${edited.length ? ` edited="${edited.join(",")}"` : ""}${decision.always ? ' always="true"' : ""}>\n</consent_decision>`,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    streamAbortRef.current?.abort();
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+    const ctx: TurnEventContext = {
+      conversationId: conversation.conversation_id,
+      optimisticUserMessageId: userMsg.message_id,
+      imageLabel: "",
+      finish: finishTurn,
+    };
+
+    let refused: Error | null = null;
+    await chatService.decideConsent(conversation.agent_id, conversation.conversation_id, card.consent_id, decision, {
+      onEvent: (event) => applyTurnEvent(event, ctx),
+      signal: controller.signal,
+      onTurnStarted: (turnId) => setActiveTurnId(turnId),
+      onConflict: (runningTurnId) => {
+        setMessages((prev) => prev.filter((m) => m.message_id !== userMsg.message_id));
+        void attachToTurn(runningTurnId, "");
+      },
+      onError: (err) => {
+        refused = err;
+        setMessages((prev) => prev.filter((m) => m.message_id !== userMsg.message_id));
+        finishTurn();
+      },
+      onComplete: () => finishTurn(),
+    });
+    // The card shows why it didn't go through, and can be decided again
+    if (refused) throw refused;
+  };
+
+  const renderConsent = (raised: MessageConsent) => {
+    const card = consents[raised.consent_id];
+    if (!card) return null;
+    return (
+      <ConsentCard
+        consent={card}
+        agentName={currentAgent?.agent_name}
+        disabled={isSending}
+        onDecide={(decision) => handleDecideConsent(card, decision)}
+      />
     );
   };
 
@@ -1268,6 +1370,7 @@ export function ConversationDetail() {
                   userPicture={userInfo?.picture}
                   userName={userInfo?.name}
                   onExpandCanvas={setExpandedCanvas}
+                  renderConsent={renderConsent}
                   extraNode={
                     <>
                       {ilaWorkingStatus && <IlaWorking label={ilaWorkingStatus} />}

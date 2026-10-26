@@ -1,5 +1,7 @@
 """Automation domain models and API schemas."""
 
+import hashlib
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
@@ -234,6 +236,11 @@ class AutomationSkillResponse(BaseModel):
     connectors: list[AutomationSkillConnectorResponse] = Field(default_factory=list)
 
 
+class AutomationActionConsentResponse(BaseModel):
+    title: str
+    warning: Optional[str] = None
+
+
 class AutomationActionCatalogItemResponse(BaseModel):
     action_type: AutomationActionType = AutomationActionType.SKILL_ACTION
     skill_id: str
@@ -250,6 +257,8 @@ class AutomationActionCatalogItemResponse(BaseModel):
     disabled_reason: Optional[str] = None
     install_schema: Optional[dict[str, Any]] = None
     connectors: list[AutomationSkillConnectorResponse] = Field(default_factory=list)
+    #: Set when the action acts for the owner: a step running it asks for their approval when it is set up.
+    consent: Optional[AutomationActionConsentResponse] = None
 
 
 class AutomationActionCatalogResponse(BaseModel):
@@ -817,3 +826,57 @@ class AutomationRunNodeResult(BaseModel):
 
     def to_response(self) -> AutomationRunNodeResultResponse:
         return AutomationRunNodeResultResponse(**self.model_dump())
+
+
+#: The step config that decides what a step does: change any of it and the owner's consent no longer applies.
+CONSENT_FINGERPRINT_FIELDS = ("action_type", "installed_skill_id", "skill_id", "action", "arguments", "agent_id", "prompt_template")
+
+
+def step_fingerprint(config: dict[str, Any]) -> str:
+    """What the owner consented to, as a hash of the raw templates (before smart values are filled in)."""
+    material = {name: config.get(name) for name in CONSENT_FINGERPRINT_FIELDS}
+    return hashlib.sha256(json.dumps(material, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+class AutomationConsent(BaseModel):
+    """The owner's consent for one step, valid while the step's config still has this fingerprint.
+
+    Kept beside the graph, not in the node's config: an edit replaces config wholesale, a published template copies it
+    and a blueprint rebuilds it, and none of them may carry the owner's yes along. See docs/LLD-action-consent.md.
+    """
+
+    automation_id: str
+    node_id: str
+    fingerprint: str
+    #: An agent step's consent-required actions the agent may take without asking. Empty for a skill action step.
+    granted_actions: list[str] = Field(default_factory=list)
+    #: What the owner was shown when they consented, for the record.
+    preview: dict[str, Any] = Field(default_factory=dict)
+    granted_by: str
+    granted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    #: Where they gave it: the editor's step, or a card in Ila's chat.
+    via: Literal["editor", "chat"] = "editor"
+
+    def covers(self, config: dict[str, Any]) -> bool:
+        return self.fingerprint == step_fingerprint(config)
+
+    @property
+    def grant(self) -> str:
+        """What a consent-required action run by this step carries through the skill registry."""
+        return f"automation:{self.automation_id}/{self.node_id}"
+
+    @property
+    def pk(self) -> str:
+        return f"Automation#{self.automation_id}"
+
+    @property
+    def sk(self) -> str:
+        return f"Consent#{self.node_id}"
+
+    def to_dynamo_item(self) -> dict[str, Any]:
+        return {**self.model_dump(mode="json"), "pk": self.pk, "sk": self.sk, "entity_type": "AutomationConsent"}
+
+    @classmethod
+    def from_dynamo_item(cls, item: dict[str, Any]) -> "AutomationConsent":
+        payload = convert_decimals(dict(item))
+        return cls.model_validate({k: v for k, v in payload.items() if k not in {"pk", "sk", "entity_type"}})

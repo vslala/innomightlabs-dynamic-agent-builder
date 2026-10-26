@@ -1,6 +1,6 @@
 """What gets saved as the assistant's reply when the model itself said nothing."""
 
-from src.agents.architectures.krishna_memgpt import TurnOutputs
+from src.agents.turn_outputs import TurnOutputs
 from src.llm.events import SSEEvent, SSEEventType
 
 

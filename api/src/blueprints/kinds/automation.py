@@ -9,9 +9,10 @@ several triggers can't be written that way, so a blueprint never changes one; it
 import re
 from dataclasses import dataclass, replace
 from uuid import uuid4
-from typing import Any, ClassVar, Mapping, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Mapping, Optional
 
 from src.accounts.owner import Owner
+from src.automations.consent import AutomationConsentService, ConsentRequiredError
 from src.automations.errors import AutomationNotFoundError
 from src.automations.models import (
     Automation,
@@ -30,6 +31,8 @@ from src.automations.models import (
 from src.automations.repository import AutomationRepository
 from src.automations.service import AutomationService
 from src.automations.triggers.models import LeadCapturedTriggerConfig, ScheduleTriggerConfig
+from src.consent.models import AutomationStepRef
+from src.consent.preview import ConsentPreview
 from src.blueprints.commands import Command, Reversibility, Undo, Use, undo_action
 from src.blueprints.issues import BlueprintIssue
 from src.blueprints.kinds.agent import install_key, skill_config
@@ -59,6 +62,10 @@ from src.blueprints.spec import (
     lead_form_slug,
 )
 from src.automations.aliases import RESERVED_ALIASES
+
+if TYPE_CHECKING:
+    from src.blueprints.models import Deployment
+    from src.blueprints.validator import ValidatedBlueprint
 
 TEMPLATE = re.compile(r"\{\{\s*(.*?)\s*\}\}")
 STEP_REFERENCE = re.compile(r"\bsteps\.([A-Za-z0-9_]+)")
@@ -451,8 +458,13 @@ class SetAutomationStatus(Command):
         return Undo("restore_automation_status", {"automation_id": current.automation_id, "status": current.status.value})
 
     def run(self, ctx: ApplyContext) -> None:
+        automation_id = ctx.applied[self.resource].id
         status = AutomationStatus.ACTIVE if self.active else AutomationStatus.DISABLED
-        _service().update_automation(ctx.applied[self.resource].id, UpdateAutomationRequest(status=status), ctx.owner)
+        try:
+            _service().update_automation(automation_id, UpdateAutomationRequest(status=status), ctx.owner)
+        except ConsentRequiredError:
+            # Built, but off until the owner approves what its steps do for them: Ila asks, and turns it on after
+            ctx.awaiting_consent.append(automation_id)
 
 
 @undo_action("restore_automation_status")
@@ -584,6 +596,12 @@ class AutomationKind(ManagedKind[AutomationSpec]):
             "a step `skill: knowledge_base`, `action: recrawl`, `arguments: {knowledge_base_id: <the KnowledgeBase's name "
             "in this blueprint, or its id>}`. It re-reads with the settings the site was last read with, and only what "
             "changed is re-embedded, so a weekly or daily schedule is cheap. The knowledge base must have been crawled once.",
+            "### Steps that act for the person\n\n"
+            "Some actions ask the person first, such as publishing a post or sending an email (each skill's page lists "
+            "them). An automation runs them on its own, so the person approves them when you build it: a step that runs "
+            "one is shown to them on a card after you apply, and the automation stays off until they approve. An agent "
+            "step whose agent will take such actions lists them in `allow` (`allow: [social_media.publish]`), so the "
+            "card shows them ticked; the agent can take no others. Don't promise it is running until they approve.",
         ]
 
     def references(self, name: str, spec: AutomationSpec) -> list[Reference]:
@@ -774,3 +792,36 @@ class AutomationKind(ManagedKind[AutomationSpec]):
         return f"Create the automation '{spec.title}', started {starts}, with {len(spec.steps)} step(s)" + (
             "" if spec.enabled else ", left as a draft"
         )
+
+
+@dataclass(frozen=True)
+class StepAwaitingConsent:
+    """A step a deploy built that acts for the owner and waits on their approval (docs/LLD-action-consent.md)."""
+
+    automation_title: str
+    step_name: str
+    ref: AutomationStepRef
+    preview: ConsentPreview
+
+
+def steps_awaiting_consent(validated: "ValidatedBlueprint", deployment: "Deployment") -> list[StepAwaitingConsent]:
+    """The steps of this deploy's automations to put on one consent card, each as the owner would approve it.
+
+    A step that acts for the owner unless approved as it is, and an agent step the blueprint `allow`s actions for.
+    """
+    service = AutomationConsentService()
+    repository = AutomationRepository()
+    waiting_on = set(deployment.awaiting_consent)
+    found = []
+    for name, spec in validated.blueprint.resources.items():
+        deployed = deployment.resources.get(name)
+        if not isinstance(spec, AutomationSpec) or deployed is None:
+            continue
+        nodes, _, _ = repository.get_graph(deployed.id)
+        allow = {step.name: step.allow for step in spec.steps if step.allow}
+        names = {node.node_id: node.name for node in nodes}
+        found += [
+            StepAwaitingConsent(spec.title, names.get(ref.node_id, ref.node_id), ref, preview)
+            for ref, preview in service.awaiting(deployed.id, nodes, allow, activate=deployed.id in waiting_on)
+        ]
+    return found

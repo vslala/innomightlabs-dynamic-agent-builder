@@ -36,11 +36,15 @@ class GraphValidationMode(str, Enum):
     ids, start/final boundaries, resolvable edge endpoints, trigger references,
     reachability, and acyclicity -- but defers per-node config semantics so a
     half-configured step can still be saved. ``STRICT`` additionally validates
-    node configuration and is required before an automation can run.
+    node configuration, which an active automation's saved graph always passes.
+    ``RUNNABLE`` is STRICT plus the owner's consent for every step that acts for
+    them, as it is now: required before an automation goes live or runs, but not
+    to save, since the owner can only approve a step once it is saved.
     """
 
     DRAFT = "draft"
     STRICT = "strict"
+    RUNNABLE = "runnable"
 
 
 @dataclass(frozen=True)
@@ -213,9 +217,14 @@ class SkillActionValidator:
                 )
 
 
+#: Raises unless every step that acts for the owner has their consent for what it does now.
+ConsentCheck = Callable[[str, list[AutomationNode]], None]
+
+
 class AutomationGraphValidator:
-    def __init__(self, node_policies: list[NodeValidationPolicy]):
+    def __init__(self, node_policies: list[NodeValidationPolicy], consent_check: ConsentCheck | None = None):
         self._node_policies = {policy.node_type: policy for policy in node_policies}
+        self._consent_check = consent_check
 
     def validate(
         self,
@@ -253,6 +262,9 @@ class AutomationGraphValidator:
             if not policy:
                 raise AutomationValidationError(f"Unsupported node type: {node.type}")
             policy.validate(node, ctx)
+        # Last, so a step that lacks consent is reported only once everything else would run
+        if mode is GraphValidationMode.RUNNABLE and self._consent_check is not None:
+            self._consent_check(ctx.automation_id, nodes)
 
     def validate_trigger(
         self,

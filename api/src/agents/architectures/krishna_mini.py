@@ -23,7 +23,9 @@ from src.skills.models import ActorKind
 from .base import AgentArchitecture
 
 if TYPE_CHECKING:
+    from src.agents.agentic_loop import TurnResume
     from src.agents.models import Agent
+    from src.consent.models import ConsentScope
     from src.conversations.models import Conversation
 
 log = logging.getLogger(__name__)
@@ -72,10 +74,13 @@ class KrishnaMiniArchitecture(AgentArchitecture):
         images: list[ImageAttachment] | None = None,
         references: list[MessageReference] | None = None,
         api_key_id: str | None = None,
+        consent_scope: "ConsentScope | None" = None,
+        resume: "TurnResume | None" = None,
     ) -> AsyncIterator[SSEEvent]:
         """One LLM call, streamed. `actor_id` is unused: Krishna Mini has no memory, and it
         records no token usage, so `api_key_id` is unused too. It has no tools, so `actor_kind`
-        is unused as well, and it can't read images: `images` is unused (see `vision.policy`). `references` are saved on
+        is unused as well, and so are `consent_scope` and `resume` (nothing it does needs consent, so it never pauses); it
+        can't read images: `images` is unused (see `vision.policy`). `references` are saved on
         the message, for the conversation's history; it has no tools to read them."""
         user_msg = Message(
             conversation_id=conversation.conversation_id,

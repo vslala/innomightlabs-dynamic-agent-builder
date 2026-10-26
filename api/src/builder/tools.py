@@ -32,7 +32,10 @@ from src.builder.models import BuilderSession
 from src.builder.plan_gates import PLAN_GATES, PlanAttempt
 from src.builder.requirements import REQUIREMENTS
 from src.builder.repository import BuilderSessionRepository
+from src.builder.step_consent import step_consent_card
 from src.config import settings
+from src.consent.payloads import consent_request_payload
+from src.consent.repository import ConsentRepository
 from src.knowledge.repository import CrawlJobRepository
 from src.messages.repositories import MessageRepository, get_message_repository
 from src.skills.lead_capture.actions import render_custom_form
@@ -327,7 +330,7 @@ class BuilderTools:
         canvas = save_blueprint_canvas(
             drawing_for(validated, plan, stage="built", plan_id=plan_id, deployment=deployment), state
         )
-        return json.dumps({
+        built = {
             **({"canvas": canvas} if canvas else {}),
             "applied": True,
             **({"removed": deployment.removed} if deployment.removed else {}),
@@ -337,7 +340,16 @@ class BuilderTools:
                 "Tell the person what you built, give each output with its description, and walk them through "
                 "testing it. Call get_build_status if they ask whether it's ready."
             ),
-        })
+        }
+        card = step_consent_card(validated, deployment, state)
+        if card is None:
+            return json.dumps(built)
+        # Steps that act for the person wait on their yes, asked here as the editor would; the turn pauses on it
+        consents = ConsentRepository()
+        return json.dumps({**json.loads(consent_request_payload(card, consents)), **built, "next": (
+            "The person approves what the automation's steps do for them on the card. Once they have, tell them "
+            "what you built and how to try it."
+        )})
 
     async def add_to_draft(self, tool_name: str, tool_input: dict[str, Any], state: AgentTurnState) -> str:
         session = self._session(state)

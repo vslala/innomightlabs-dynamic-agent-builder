@@ -15,6 +15,38 @@ export interface ChangeLogEntry {
 
 export const changeLogEntries: ChangeLogEntry[] = [
   {
+    date: "2026-10-26",
+    title: "Approve what your agents do for you",
+    summary:
+      "Before an agent posts, sends an email or runs a tool that changes things, it shows you exactly what it will do. Approve it, edit it, reject it, or always allow it.",
+    items: [
+      {
+        title: "Approval cards in chat",
+        description:
+          "When an agent is about to publish a post or send an email, you see the exact text, images, recipients and accounts first. Approve it as it is, change the text, or reject it with a reason, and the agent carries on from your answer.",
+        category: "new",
+      },
+      {
+        title: "Always allow",
+        description:
+          "Approve once with Always allow and the agent stops asking for that action, in chat and when it runs on a schedule. Switch it back any time on the agent's Skills or MCP Tools page.",
+        category: "new",
+      },
+      {
+        title: "Automations ask once, when you build them",
+        description:
+          "A step that posts or sends for you asks for your approval when you add it, in the editor or in Ila's chat, then runs on its own. If you change the step, it asks again. If you have an automation that posts or sends email, open it and approve that step once so it keeps running.",
+        category: "improved",
+      },
+      {
+        title: "MCP tools that ask first",
+        description:
+          "Tools a server marks as destructive now ask you before they run, and you can choose which tools ask from the connector's settings.",
+        category: "new",
+      },
+    ],
+  },
+  {
     date: "2026-10-25",
     title: "Documents in chats and knowledge bases",
     summary:

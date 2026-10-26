@@ -158,6 +158,11 @@ class Settings:
     chat_turn_reaper_interval_seconds: int = 5 * 60
     tool_job_reaper_interval_seconds: int = 5 * 60
     chat_turn_transcript_grace_seconds: int = 120
+    # Action consent. See docs/LLD-action-consent.md.
+    #: How long a consent card in a chat can still be approved.
+    consent_decision_window_hours: int = 24
+    #: An approved call still running after this died with its process; its card says the outcome is unknown.
+    consent_running_stale_seconds: int = 10 * 60
     # Widget guest sessions: email-only visitors whose chat is archived, emailed and deleted when
     # their session ends. See docs/LLD-widget-guest-sessions.md.
     #: Guest session length when the agent's session timeout is 0 (no timeout).

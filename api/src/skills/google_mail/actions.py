@@ -4,6 +4,7 @@ import base64
 import re
 from email import policy
 from email.message import EmailMessage
+from email.utils import getaddresses
 from html.parser import HTMLParser
 from typing import Any, TypeVar
 
@@ -11,6 +12,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from src.config import settings
+from src.consent.preview import EmailBlock
 from src.crypto import decrypt, encrypt
 from src.settings.models import ProviderSettings
 from src.settings.repository import ProviderSettingsRepository
@@ -19,7 +21,6 @@ from src.skills.google_mail.models import (
     GoogleMailBatchMessageRequest,
     GoogleMailCredentials,
     GoogleMailComposeRequest,
-    GoogleMailSendRequest,
     GoogleMailSendDraftRequest,
     GoogleMailUpdateDraftRequest,
     GoogleMailMessageRequest,
@@ -42,7 +43,13 @@ def _validate_compose_request(model: type[RequestModel], arguments: dict[str, An
         return model.model_validate(arguments)
     except ValueError:
         # Do not reflect recipient addresses or message content in tool errors.
-        raise ValueError("Invalid Gmail compose arguments; check recipients, headers, draft_id and confirmation.") from None
+        raise ValueError("Invalid Gmail compose arguments; check recipients, headers and draft_id.") from None
+
+
+def _sendable(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Sends no longer take `confirmed` (the person approves the send itself), but a conversation that began before
+    that may still pass it."""
+    return {name: value for name, value in arguments.items() if name != "confirmed"}
 
 
 def _encode_message(request: GoogleMailComposeRequest) -> str:
@@ -102,7 +109,7 @@ async def update_draft(arguments: dict[str, Any], config: dict[str, Any], contex
 
 async def send(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> str:
     del config
-    request = _validate_compose_request(GoogleMailSendRequest, arguments)
+    request = _validate_compose_request(GoogleMailComposeRequest, _sendable(arguments))
     raw = _encode_message(request)
     return await _write_mail(
         method="POST", url=f"{GMAIL_MESSAGES_API}/send", payload={"raw": raw},
@@ -112,11 +119,50 @@ async def send(arguments: dict[str, Any], config: dict[str, Any], context: dict[
 
 async def send_draft(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> str:
     del config
-    request = _validate_compose_request(GoogleMailSendDraftRequest, arguments)
+    request = _validate_compose_request(GoogleMailSendDraftRequest, _sendable(arguments))
     return await _write_mail(
         method="POST", url=f"{GMAIL_DRAFTS_API}/send", payload={"id": request.draft_id},
         context=context, label="Gmail send draft",
     )
+
+
+async def send_preview(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """The email as it will be sent. Its body can't be edited beside an HTML version, which would still say the old."""
+    del config, context
+    request = _validate_compose_request(GoogleMailComposeRequest, _sendable(arguments))
+    block = EmailBlock(
+        to=request.to, cc=request.cc, bcc=request.bcc, subject=request.subject, body=request.body,
+        html_body=request.html_body, arguments={"subject": "subject", "body": "body"},
+    )
+    return {
+        "blocks": [block.model_dump()],
+        "editable": ["subject"] if request.html_body is not None else ["subject", "body"],
+    }
+
+
+async def send_draft_preview(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """The draft as Gmail holds it now, which is what sending it sends."""
+    del config
+    request = _validate_compose_request(GoogleMailSendDraftRequest, _sendable(arguments))
+    access_token = await _get_access_token(context)
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.get(
+            f"{GMAIL_DRAFTS_API}/{request.draft_id}", params={"format": "full"}, headers=_headers(access_token),
+        )
+    if not response.is_success:
+        raise RuntimeError(f"Gmail draft request failed ({response.status_code}).")
+    message = response.json().get("message") or {}
+    payload: dict[str, Any] = message["payload"] if isinstance(message.get("payload"), dict) else {}
+    headers = _extract_headers(payload)
+
+    def mailboxes(header: str) -> list[str]:
+        return [f"{name} <{address}>" if name else address for name, address in getaddresses([headers.get(header, "")]) if address]
+
+    block = EmailBlock(
+        to=mailboxes("to"), cc=mailboxes("cc"), bcc=mailboxes("bcc"),
+        subject=headers.get("subject", ""), body=_extract_body(payload),
+    )
+    return {"blocks": [block.model_dump()]}
 
 
 class GoogleMailError(Exception):

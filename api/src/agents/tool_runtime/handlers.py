@@ -9,6 +9,7 @@ from src.agents.runtime_state import AgentTurnState
 from src.connectors.mcp.models import MCPCaller
 from src.skills.models import ActorKind
 from src.agents.tool_runtime.contexts import NativeToolContext
+from src.agents.tool_runtime.current_call import current_consent_grant
 
 
 class SkillRuntime(Protocol):
@@ -60,6 +61,7 @@ class MCPRuntime(Protocol):
         mcp_id: str,
         tool_name: str,
         arguments: dict[str, Any],
+        consent_grant: str | None = None,
     ) -> dict[str, Any]:
         ...
 
@@ -128,6 +130,7 @@ async def call_mcp_tool(
         mcp_id=tool_input["mcp_id"],
         tool_name=tool_input["tool_name"],
         arguments=tool_input["arguments"],
+        consent_grant=current_consent_grant.get(),
     )
     return _json_result(result)
 

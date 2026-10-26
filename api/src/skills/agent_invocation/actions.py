@@ -4,6 +4,7 @@ from typing import Any
 
 from src.agents.access import owner_of, usable_agent
 from src.agents.architectures import get_agent_architecture
+from src.consent.models import ConsentScope
 from src.conversations.models import Conversation
 from src.conversations.repository import ConversationRepository
 from src.llm.events import recorded_events
@@ -55,6 +56,7 @@ async def invoke(
         actor_email=actor_email,
         actor_id=actor_id,
         actor_kind=actor_kind,
+        consent_scope=_consent_scope(context),
     )
 
     if not invocation.success:
@@ -92,6 +94,17 @@ async def invoke(
             message_ids=message_ids,
         )
     return {"response_text": invocation.response_text, "message_ids": message_ids}
+
+
+def _consent_scope(context: dict[str, Any]) -> ConsentScope:
+    """Nobody sees the invoked agent's conversation, so it never asks. In an automation it may take what the owner
+    allowed this step; called from a chat, the calling agent makes those calls itself, through its own consent."""
+    if not _for_automation(context):
+        return ConsentScope.unattended()
+    return ConsentScope.automation_step(
+        context.get("preconsented_actions") or [],
+        f"automation:{context.get('automation_id')}/{context.get('automation_node_id')}",
+    )
 
 
 def _for_automation(context: dict[str, Any]) -> bool:

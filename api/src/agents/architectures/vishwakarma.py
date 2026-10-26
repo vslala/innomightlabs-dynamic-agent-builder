@@ -18,12 +18,13 @@ it explicitly. See docs/LLD-solution-blueprints.md.
 import logging
 from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
-from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete, run_agentic_tool_loop
+from src.agents.agentic_loop import PromptRefreshNeeded, TurnComplete, TurnPaused, TurnResume, run_agentic_tool_loop
 from src.agents.provider_session import open_provider_session
 from src.agents.runtime_state import AgentTurnState
 from src.agents.tool_audit import ToolCallAuditLog
 from src.agents.tool_execution import ToolExecutionRouter
 from src.agents.tool_runtime import ToolCategory, ToolRegistry
+from src.agents.turn_outputs import TurnOutputs
 from src.agents.book import Book, pages_in_view
 from src.blueprints.book import blueprint_book
 from src.builder.models import BuilderSession
@@ -31,6 +32,7 @@ from src.builder.repository import BuilderSessionRepository
 from src.builder.requirements import absorb_answers
 from src.builder.tools import build_builder_tool_registry
 from src.config import settings
+from src.consent.models import ConsentScope
 from src.llm.conversation_strategy import FixedWindowStrategy
 from src.llm.events import SSEEvent, SSEEventType
 from src.messages.models import Attachment, ImageAttachment, Message, MessageReference
@@ -40,7 +42,6 @@ from src.skills.models import ActorKind
 from src.skills.service import SkillService
 
 from .base import AgentArchitecture
-from .krishna_memgpt import TurnOutputs
 from .vishwakarma_prompt import build_vishwakarma_system_prompt
 
 if TYPE_CHECKING:
@@ -99,6 +100,8 @@ class VishwakarmaArchitecture(AgentArchitecture):
         images: list[ImageAttachment] | None = None,
         references: list[MessageReference] | None = None,
         api_key_id: str | None = None,
+        consent_scope: ConsentScope | None = None,
+        resume: TurnResume | None = None,
     ) -> AsyncIterator[SSEEvent]:
         # 1. Preflight: the session this conversation builds in.
         session = self.sessions.find(agent.owner_partition, conversation.conversation_id)
@@ -126,6 +129,7 @@ class VishwakarmaArchitecture(AgentArchitecture):
             conversation_context=conversation.context,
             account_id=agent.account_id,
             owner_id=agent.owner_id,
+            consent_scope=consent_scope or ConsentScope.interactive(),
         )
 
         user_msg = Message(
@@ -146,8 +150,12 @@ class VishwakarmaArchitecture(AgentArchitecture):
         )
 
         # 2. Context, then the prompt: the book's index and open pages, the rules and the draft.
+        messages = self.message_repo.find_by_conversation(conversation.conversation_id)
+        if resume:
+            # The paused reply and the decision are the card; the exchange carries the turn itself
+            messages = [m for m in messages if m.message_id not in {resume.paused_reply_id, user_msg.message_id}]
         history = self.conversation_strategy.build_context(
-            self.message_repo.find_by_conversation(conversation.conversation_id),
+            messages,
             session_timeout_minutes=agent.session_timeout_minutes,
         )
         book = self._book(state)
@@ -172,10 +180,14 @@ class VishwakarmaArchitecture(AgentArchitecture):
             model=state.model_name,
             tool_router=ToolExecutionRouter(self.tool_registry, offered=BUILDER_TOOLS),
             state=state,
+            resume_exchange=resume.exchange if resume else None,
         ):
             if isinstance(item, TurnComplete):
                 outputs.full_text = item.full_text
                 outputs.stop_reason = item.stop_reason
+                continue
+            if isinstance(item, TurnPaused):
+                outputs.paused = item
                 continue
             if isinstance(item, PromptRefreshNeeded):
                 # Opening pages, planning or building changed what the prompt shows. A new book too: what it read
@@ -192,26 +204,14 @@ class VishwakarmaArchitecture(AgentArchitecture):
             if item.event_type == SSEEventType.ERROR:
                 return
 
-        # 4. Persist the reply.
-        assistant_text = outputs.assistant_text
-        if not assistant_text.strip():
-            return
-        if not outputs.full_text.strip():
-            yield SSEEvent(event_type=SSEEventType.AGENT_RESPONSE_TO_USER, content=assistant_text)
-        assistant_msg = Message(
+        # 4. Persist the reply, with the blueprint drawings Ila's tools made and any card waiting on the person.
+        for event in outputs.save_reply(
+            self.message_repo,
             conversation_id=conversation.conversation_id,
-            created_by=actor_email,
-            role="assistant",
-            content=assistant_text,
-            # The blueprint drawings Ila's tools made; kept on the message so they survive a reload.
-            canvases=outputs.canvases,
-        )
-        self.message_repo.save(assistant_msg)
-        yield SSEEvent(
-            event_type=SSEEventType.ASSISTANT_MESSAGE_SAVED,
-            content="Assistant message saved",
-            message_id=assistant_msg.message_id,
-        )
+            actor_email=actor_email,
+            model_name=state.model_name,
+        ):
+            yield event
 
     def _book(self, state: AgentTurnState) -> Book:
         """The book for the person building: which skills they can use, and their account's pages."""

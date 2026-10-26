@@ -24,6 +24,7 @@ from src.connectors.mcp.models import (
     MCPOAuthCredentials,
     MCPOAuthProviderConfig,
     MCPToolCatalog,
+    MCPToolPolicy,
     MCPToolCallRequest,
 )
 from src.connectors.mcp.oauth import (
@@ -52,6 +53,7 @@ class FakeMCPRepository:
         self.connections: dict[tuple[str, str], MCPConnection] = {}
         self.agent_connections: dict[tuple[str, str], AgentMCPConnection] = {}
         self.catalogs: dict[tuple[str, str], MCPToolCatalog] = {}
+        self.policies: dict[tuple[str, str], MCPToolPolicy] = {}
 
     def save_tool_catalog(self, catalog: MCPToolCatalog) -> MCPToolCatalog:
         self.catalogs[(catalog.account_id, catalog.mcp_id)] = catalog
@@ -59,6 +61,13 @@ class FakeMCPRepository:
 
     def find_tool_catalog(self, account_id: str, mcp_id: str) -> MCPToolCatalog | None:
         return self.catalogs.get((account_id, mcp_id))
+
+    def find_tool_policy(self, account_id: str, mcp_id: str) -> MCPToolPolicy | None:
+        return self.policies.get((account_id, mcp_id))
+
+    def save_tool_policy(self, policy: MCPToolPolicy) -> MCPToolPolicy:
+        self.policies[(policy.account_id, policy.mcp_id)] = policy
+        return policy
 
     def save_connection(self, connection: MCPConnection) -> MCPConnection:
         self.connections[(connection.account_id, connection.mcp_id)] = connection

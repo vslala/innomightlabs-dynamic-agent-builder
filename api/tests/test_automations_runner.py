@@ -38,6 +38,7 @@ class SuccessfulArchitecture(AgentArchitecture):
         actor_kind: ActorKind,
         attachments=None,
         api_key_id=None,
+        consent_scope=None,
     ) -> AsyncIterator[SSEEvent]:
         yield SSEEvent(
             event_type=SSEEventType.USER_MESSAGE_SAVED,
@@ -69,6 +70,7 @@ class FailingArchitecture(AgentArchitecture):
         actor_kind: ActorKind,
         attachments=None,
         api_key_id=None,
+        consent_scope=None,
     ) -> AsyncIterator[SSEEvent]:
         yield SSEEvent(event_type=SSEEventType.ERROR, content="provider failed")
 

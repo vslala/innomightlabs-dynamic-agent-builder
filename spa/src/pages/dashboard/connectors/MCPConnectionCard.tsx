@@ -4,6 +4,7 @@ import { Button, StatusBadge } from "../../../components/ui";
 import type { MCPConnection, MCPProvider, MCPSetupState } from "../../../types/connectors";
 import styles from "./ConnectorCatalog.module.css";
 import { MCPRuntimeStatus } from "./MCPRuntimeStatus";
+import { MCPToolConsent } from "./MCPToolConsent";
 
 const SETUP_BADGES: Record<MCPSetupState, { status: "active" | "warning" | "info"; label: string }> = {
   ready: { status: "active", label: "Ready" },
@@ -72,6 +73,7 @@ export function MCPConnectionCard({
           }
         />
       )}
+      <MCPToolConsent mcpId={connection.mcp_id} canManage={canManage} />
       {canManage && (
         <div className={styles.actions}>
           {connection.auth_type === "oauth" && (

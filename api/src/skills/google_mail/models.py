@@ -6,7 +6,7 @@ from email import policy
 from email.parser import HeaderParser
 from typing import Annotated, Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StringConstraints, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 
 class GoogleMailCredentials(BaseModel):
@@ -102,27 +102,10 @@ class GoogleMailUpdateDraftRequest(GoogleMailComposeRequest):
     draft_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,200}$")]
 
 
-class GoogleMailSendRequest(GoogleMailComposeRequest):
-    confirmed: StrictBool
-
-    @field_validator("confirmed")
-    @classmethod
-    def require_confirmation(cls, value: bool) -> bool:
-        if value is not True:
-            raise ValueError("sending requires confirmed: true after user approval")
-        return value
-
-
 class GoogleMailSendDraftRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     draft_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,200}$")]
-    confirmed: StrictBool
-
-    @field_validator("confirmed")
-    @classmethod
-    def require_confirmation(cls, value: bool) -> bool:
-        return GoogleMailSendRequest.require_confirmation(value)
 
 
 class GoogleMailSearchRequest(BaseModel):

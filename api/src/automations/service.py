@@ -13,6 +13,7 @@ from src.automations.models import (
     AutomationActionType,
     AutomationRun,
     AutomationActionCatalogItemResponse,
+    AutomationActionConsentResponse,
     AutomationActionCatalogResponse,
     AutomationEdge,
     AutomationGraphResponse,
@@ -41,6 +42,7 @@ from src.automations.models import (
     UpdateAutomationTriggerRequest,
 )
 from src.automations.aliases import assign_missing_aliases
+from src.automations.consent import AutomationConsentService
 from src.automations.errors import AutomationNotFoundError, AutomationValidationError
 from src.automations.repository import AutomationRepository
 from src.automations.smart_values import SmartValueResolver
@@ -60,6 +62,7 @@ from src.crypto import encrypt
 from src.form_options import FormOptionsContext, hydrate_form_options
 from src.skills.identity import installed_skill_id_for
 from src.skills.lifecycle import SkillLifecycleRunner
+from src.skills.models import SkillActionManifest
 from src.skills.registry import SkillRegistry, get_skill_registry
 from src.automations.triggers.service import AutomationTriggerLifecycleService
 
@@ -106,13 +109,15 @@ class AutomationService:
                 resolve_skill=self._resolve_automation_skill_for_validation,
             ),
         ]
+        self.consent = AutomationConsentService(repo=self.repo, skill_registry=self.skill_registry)
         self.graph_validator = AutomationGraphValidator(
             node_policies=[
                 StartNodeValidationPolicy(),
                 FinalNodeValidationPolicy(),
                 ConditionNodeValidationPolicy(),
                 ActionNodeValidationPolicy(action_validators),
-            ]
+            ],
+            consent_check=self.consent.require,
         )
 
     def create_automation(
@@ -619,8 +624,9 @@ class AutomationService:
         triggers: list[AutomationTrigger],
         owner: Owner,
         automation_id: str | None = None,
-        mode: GraphValidationMode = GraphValidationMode.STRICT,
+        mode: GraphValidationMode = GraphValidationMode.RUNNABLE,
     ) -> None:
+        """Runnable by default: what going live and every run check. Saves pass their own mode (`_save_mode`)."""
         self.graph_validator.validate(nodes, edges, triggers, owner, automation_id, mode=mode)
 
     def preview_smart_values(
@@ -822,6 +828,7 @@ class AutomationService:
                         enabled=enabled.enabled,
                         disabled_reason=disabled_reason,
                         connectors=connector_statuses,
+                        consent=_catalog_consent(action),
                     )
                 )
         for loaded in self.skill_registry.list():
@@ -872,6 +879,7 @@ class AutomationService:
                         disabled_reason=disabled_reason,
                         install_schema=install_form,
                         connectors=connector_statuses,
+                        consent=_catalog_consent(action),
                     )
                 )
         return AutomationActionCatalogResponse(actions=actions)
@@ -1067,3 +1075,8 @@ class AutomationService:
             owner=owner,
             allow_auto_enable=allow_auto_enable,
         )
+
+
+def _catalog_consent(action: SkillActionManifest) -> AutomationActionConsentResponse | None:
+    consent = action.consent
+    return AutomationActionConsentResponse(title=consent.title, warning=consent.warning) if consent else None

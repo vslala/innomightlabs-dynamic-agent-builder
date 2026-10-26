@@ -17,6 +17,7 @@ import { connectorApiService } from "../../../services/connectors";
 import type { AgentMCPConnection, MCPConnection } from "../../../types/connectors";
 import { MCPSharingDialog } from "./mcp-sharing/MCPSharingDialog";
 import { SharingSummary } from "./mcp-sharing/SharingSummary";
+import { AlwaysAllowSettings } from "./AlwaysAllowSettings";
 import { useAgentDetailContext } from "./types";
 
 export function AgentMCPToolsPage() {
@@ -94,6 +95,12 @@ export function AgentMCPToolsPage() {
       </PanelHeader>
       <PanelBody>
         {error && <div style={{ color: "var(--error)", fontSize: "0.875rem", marginBottom: "1rem" }}>{error}</div>}
+        {/* Keyed on the enabled connectors, so enabling or disabling one lists its tools again */}
+        <AlwaysAllowSettings
+          key={agentConnections.map((connection) => connection.mcp_id).join(",")}
+          agentId={agent.agent_id}
+          keyPrefix="mcp:"
+        />
 
         {mcpConnections.length === 0 ? (
           <div

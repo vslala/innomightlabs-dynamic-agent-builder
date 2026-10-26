@@ -2,6 +2,7 @@
  * Message types matching backend API.
  */
 
+import type { ConsentRequest } from "./consent";
 import type { FormSchema } from "./form";
 
 export type MessageRole = "user" | "assistant" | "system";
@@ -120,7 +121,14 @@ export interface Message {
   references?: MessageReference[];
   images?: MessageImage[];
   canvases?: MessageCanvasArtifact[];
+  /** Consent cards the message raised; each card's state is fetched with `listConsents`. */
+  consents?: MessageConsent[];
   created_at: string;
+}
+
+export interface MessageConsent {
+  consent_id: string;
+  title: string;
 }
 
 /**
@@ -136,6 +144,9 @@ export const SSEEventType = {
   UI_FORM_RENDER: "UI_FORM_RENDER",
   // An account to connect in a sign-in popup (Ila's builds), shown as a card.
   CONNECT_REQUEST: "CONNECT_REQUEST",
+  // An action waiting on the person's consent, shown as a card; then the same card with what they decided.
+  CONSENT_REQUEST: "CONSENT_REQUEST",
+  CONSENT_UPDATED: "CONSENT_UPDATED",
   USER_MESSAGE_SAVED: "USER_MESSAGE_SAVED",
   ASSISTANT_MESSAGE_SAVED: "ASSISTANT_MESSAGE_SAVED",
   STREAM_COMPLETE: "STREAM_COMPLETE",
@@ -166,6 +177,8 @@ export interface SSEEvent {
   lead_form?: string;
   // CONNECT_REQUEST
   connect?: { provider: string; title: string; description: string; conversation_id: string };
+  // CONSENT_REQUEST / CONSENT_UPDATED
+  consent?: ConsentRequest;
   // Tool call event fields. tool_call_id correlates a TOOL_CALL_START with
   // its TOOL_CALL_RESULT -- tool_name alone isn't unique when the same tool
   // is called more than once in a turn.

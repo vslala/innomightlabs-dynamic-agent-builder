@@ -31,6 +31,7 @@ import { installedSkillValues, splitInstallIdentity } from "./skillInstallIdenti
 import { SkillSharingBadge } from "./SkillSharingBadge";
 import { useAgentDetailContext } from "./types";
 import "./AgentSkillsPage.css";
+import { AlwaysAllowSettings } from "./AlwaysAllowSettings";
 
 
 function getMissingRequiredConnectors(skill: SkillCatalogItem): SkillConnectorStatus[] {
@@ -592,6 +593,7 @@ export function AgentSkillsPage() {
           </TabsContent>
 
           <TabsContent value="installed" className="agent-skills-page__content">
+            <AlwaysAllowSettings agentId={agent.agent_id} keyPrefix="skill:" />
             {loadingSkills ? (
               <LoadingState />
             ) : installedSkills.length === 0 ? (

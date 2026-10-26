@@ -87,6 +87,8 @@ class Deployment(BaseModel):
     outputs: dict[str, DeploymentOutput] = Field(default_factory=dict)
     #: What was taken away, in plain words, in the order it happened.
     removed: list[str] = Field(default_factory=list)
+    #: Automations it would have turned on, left off until the owner approves the steps that act for them.
+    awaiting_consent: list[str] = Field(default_factory=list)
     #: Every command run so far, written before it runs, so an interrupted apply can still be put back.
     journal: list[JournalEntry] = Field(default_factory=list)
     #: Past the commit point: everything that can be undone has run, and only what can't is left.
