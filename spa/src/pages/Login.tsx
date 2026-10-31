@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/auth';
 import { httpClient } from '../services/http';
+import { platform } from '../platform';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { Input } from '../components/ui/input';
@@ -24,13 +25,9 @@ export function Login() {
     }
   }, [isAuthenticated, navigate]);
 
-  const handleGoogleLogin = () => {
-    window.location.href = `${import.meta.env.VITE_API_BASE_URL}/auth/google`;
-  };
+  const handleGoogleLogin = () => void platform().auth.begin('google');
 
-  const handleEmailLogin = () => {
-    window.location.href = `${import.meta.env.VITE_API_BASE_URL}/auth/cognito`;
-  };
+  const handleEmailLogin = () => void platform().auth.begin('cognito');
 
   const handleLocalAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,7 +42,7 @@ export function Login() {
         { skipAuth: true }
       );
 
-      localStorage.setItem('auth_token', response.token);
+      await platform().tokens.save({ accessToken: response.token });
       navigate('/dashboard');
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'response' in err) {
@@ -60,7 +57,7 @@ export function Login() {
               { skipAuth: true }
             );
 
-            localStorage.setItem('auth_token', loginResponse.token);
+            await platform().tokens.save({ accessToken: loginResponse.token });
             navigate('/dashboard');
             return;
           } catch (loginErr: unknown) {

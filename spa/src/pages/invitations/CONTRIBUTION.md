@@ -4,10 +4,10 @@
 
 ## Flow and ownership
 
-- `continuation.ts` captures/removes a fragment token, retains it only in same-tab sessionStorage, and builds OAuth links with a nonredeemable hash context. No localStorage draft or raw-token query parameters.
+- `continuation.ts` captures/removes a fragment token, retains it only in same-tab sessionStorage. Sign-in buttons pass the nonredeemable hash context to `platform().auth.begin(provider, { invitation })`. No localStorage draft or raw-token query parameters.
 - `AcceptInvitationPage.tsx` previews via POST, offers Google/Cognito sign-in, and requires an explicit accept action after authentication. Backend verified-email matching is authoritative. A 401 clears auth and returns to sign-in options without abandoning the pending invitation.
 - `acceptInvitation.ts` awaits membership acceptance and server account selection before clearing the token or navigating. It must not change local account context before server selection succeeds; failed selection is safely retryable.
-- `loginHandoff.ts` ensures invitation continuation precedes checkout/dashboard navigation after the usual session-code redemption.
+- `loginHandoff.ts` redeems the code with `platform().auth.complete(code)` and ensures invitation continuation precedes checkout/dashboard navigation.
 - `Invitations.module.css` owns local token-based presentation. Use shared Button and semantic headings/status/error content.
 
 ## Hosting security boundary

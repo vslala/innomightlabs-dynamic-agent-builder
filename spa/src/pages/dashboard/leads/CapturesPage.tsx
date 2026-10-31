@@ -23,6 +23,7 @@ import { CaptureDetail } from "./CaptureDetail";
 import { leadsErrorMessage } from "./errors";
 import { captureHeadline, filtersFromSearch, formatWhen, searchFromFilters } from "./leads";
 import styles from "./Leads.module.css";
+import { platform } from "../../../platform";
 
 const ALL = "all";
 
@@ -117,7 +118,7 @@ export function CapturesPage() {
             <Lock aria-hidden="true" /> {page.locked_count} more lead{page.locked_count === 1 ? "" : "s"} came in after your
             plan's monthly limit. They are kept, and you'll see them once you upgrade.
           </AlertDescription>
-          <LinkButton to="/pricing" size="sm">Upgrade</LinkButton>
+          {platform().commerce.canSellSubscriptions && <LinkButton to="/pricing" size="sm">Upgrade</LinkButton>}
         </Alert>
       )}
       {error && <Alert variant="error"><AlertDescription>{error}</AlertDescription></Alert>}

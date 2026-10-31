@@ -25,6 +25,7 @@ import { FieldGroup, Grid, Inline, PageBody, Stack } from "../../components/layo
 import { SchemaForm } from "../../components/forms";
 import type { FormSchema, FormValue } from "../../types/form";
 import { ConfirmationDialog } from "../../components/ui/confirmation-dialog";
+import { DeleteAccountCard } from "./DeleteAccountCard";
 import { authService } from "../../services/auth";
 import { httpClient } from "../../services/http";
 import {
@@ -46,6 +47,7 @@ import { getStoredTheme, setStoredTheme, type AppTheme } from "../../lib/theme";
 import { useCanManageSettings } from "../../hooks/useCanManageSettings";
 import { ImageReadingSettingsCard } from "./ImageReadingSettingsCard";
 import styles from "./Settings.module.css";
+import { platform } from "../../platform";
 
 type SubscriptionStatus = {
   tier: string;
@@ -612,7 +614,10 @@ export function Settings() {
                   {formatBillingPeriod(subscription?.current_period_start, subscription?.current_period_end)}
                 </span>
               </Inline>
-              {subscription?.cancel_at_period_end ? (
+              {!platform().commerce.canSellSubscriptions ? (
+                // The store apps neither sell nor point to the sale (App Store 3.1.3(b)); a web plan still applies.
+                <p className={styles.downgradeHint}>Plans are managed on the InnoMight website.</p>
+              ) : subscription?.cancel_at_period_end ? (
                 <AlertBanner
                   variant="warning"
                   message={
@@ -856,6 +861,8 @@ export function Settings() {
       </Card>
 
       <ImageReadingSettingsCard />
+
+      {userInfo && <DeleteAccountCard email={userInfo.email} />}
 
       {/* Cancel Subscription Confirmation Dialog */}
       <ConfirmationDialog

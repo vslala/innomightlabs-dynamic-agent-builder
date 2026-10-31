@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import styles from './RateLimitBanner.module.css';
+import { platform } from '../platform';
 
 interface RateLimitDetail {
   message: string;
@@ -30,9 +31,11 @@ export function RateLimitBanner() {
     <div className={styles.banner}>
       <div className={styles.content}>
         <span>{detail.message}</span>
-        <a href={detail.upgradeUrl || '/pricing'} className={styles.link}>
-          Upgrade plan
-        </a>
+        {platform().commerce.canSellSubscriptions && (
+          <a href={detail.upgradeUrl || '/pricing'} className={styles.link}>
+            Upgrade plan
+          </a>
+        )}
       </div>
       <Button
         type="button"

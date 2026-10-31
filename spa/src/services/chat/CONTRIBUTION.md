@@ -4,7 +4,7 @@
 
 ## Contracts
 
-- Direct fetch uses the configured API base plus `authHeaders()` (bearer and `X-Account-Id`). It does not run HTTP-client token-refresh, login-redirect or rate-limit interception; preserve this distinction when handling failures.
+- Direct fetch goes through `authorizedFetch()` (bearer, `X-Account-Id`, one refresh-and-retry on 401). It does not run the HTTP client's login redirect or rate-limit interception; preserve this distinction when handling failures.
 - `sendMessage(agentId, conversationId, message: OutgoingMessage, options)` uses `chatPath()` for Ila/agent routing. `sendMessageBody()` builds the request with only the parts the message has (attachments, `image_ids`, `references`). Image generation remains on agent-specific paths.
 - `X-Turn-Id` reaches `onTurnStarted` before events. A 409 with `detail.turn_id` reaches `onConflict` when supplied: attach rather than resend and create duplicate work.
 - Abort cancels the browser read, not the detached backend turn. Explicit `stopTurn()` POST stops it; 404 there is accepted as already finished.

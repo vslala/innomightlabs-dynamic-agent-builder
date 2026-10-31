@@ -66,6 +66,18 @@ export function appendOnce(messages: Message[], message: Message): Message[] {
 }
 
 /**
+ * The transcript after a resync: the newest page from the server (oldest first) appended where it is new.
+ * Optimistic `temp-` messages go, because the page holds their saved copies. Unchanged input comes back as is.
+ */
+export function mergeLatestPage(current: Message[], latest: Message[]): Message[] {
+  const saved = current.filter((message) => !message.message_id.startsWith("temp-"));
+  const known = new Set(saved.map((message) => message.message_id));
+  const arrived = latest.filter((message) => !known.has(message.message_id));
+  if (arrived.length === 0 && saved.length === current.length) return current;
+  return [...saved, ...arrived];
+}
+
+/**
  * What a submitted chat form sends: a readable block the transcript shows as a card (see submittedFormParser),
  * then the field ids the agent matches against the form it asked.
  */

@@ -25,6 +25,8 @@
   min-height: 0;
   overflow-y: auto;
   padding: var(--dashboard-gutter);
+  /* Clear the home indicator; env() is zero unless the page draws under it */
+  padding-bottom: calc(var(--dashboard-gutter) + env(safe-area-inset-bottom));
 }
 
 .dashboard-layout__main--full-bleed {

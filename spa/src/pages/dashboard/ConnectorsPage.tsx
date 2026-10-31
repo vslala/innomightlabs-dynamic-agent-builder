@@ -11,6 +11,7 @@ import styles from "./connectors/ConnectorCatalog.module.css";
 import { ConnectorDetailsDialog } from "./connectors/ConnectorDetailsDialog";
 import { CustomMCPDialog } from "./connectors/CustomMCPDialog";
 import { connectorsTabFromSearch, returnToConnectors, type ConnectorsTab } from "./connectors/connectorUrls";
+import { platform } from "../../platform";
 import { connectionIcon } from "./connectors/connectionIcon";
 import { SchemaFormDialog } from "./connectors/SchemaFormDialog";
 import { SocialAccountsTab } from "./connectors/social/SocialAccountsTab";
@@ -107,7 +108,7 @@ export function ConnectorsPage() {
     setError(null);
     try {
       const response = await connectorApiService.startConnector(connector.connect_path, { return_to: returnToConnectors() });
-      window.location.href = response.authorize_url;
+      await platform().links.openAuthPage(response.authorize_url);
     } catch (err) {
       console.error("Error starting connector OAuth:", err);
       setError(`Failed to start ${connector.display_name} connection.`);
@@ -121,7 +122,7 @@ export function ConnectorsPage() {
       return_to: returnToConnectors(),
     });
     if (response.authorize_url) {
-      window.location.assign(response.authorize_url);
+      await platform().links.openAuthPage(response.authorize_url);
       return;
     }
     setInstalling(null);
@@ -155,7 +156,7 @@ export function ConnectorsPage() {
     setMCPError(null);
     try {
       const response = await connectorApiService.startMCPOAuth(connection.mcp_id, { return_to: returnToConnectors() });
-      window.location.href = response.authorize_url;
+      await platform().links.openAuthPage(response.authorize_url);
     } catch (err) {
       console.error("Error starting MCP OAuth:", err);
       setMCPError(err instanceof Error ? err.message : "Failed to start MCP OAuth.");

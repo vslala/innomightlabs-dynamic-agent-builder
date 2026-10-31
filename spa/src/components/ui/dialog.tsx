@@ -31,7 +31,6 @@ const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(styles.content, className)}
       style={{
-        padding: "var(--dialog-padding)",
         display: "flex",
         flexDirection: "column",
         gap: "var(--space-6)",
@@ -42,16 +41,7 @@ const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close
-        style={{
-          position: "absolute",
-          right: "1rem",
-          top: "1rem",
-          borderRadius: "0.25rem",
-          opacity: 0.7,
-          transition: "opacity 0.2s",
-        }}
-      >
+      <DialogPrimitive.Close className={styles.close}>
         <X style={{ height: "1rem", width: "1rem", color: "var(--text-muted)" }} />
         <span className={styles.srOnly}>Close</span>
       </DialogPrimitive.Close>
@@ -87,9 +77,6 @@ const DialogFooter = ({
   <div
     className={cn(styles.footer, className)}
     style={{
-      display: "flex",
-      flexDirection: "row",
-      justifyContent: "flex-end",
       gap: "var(--space-3)",
       marginTop: "var(--space-2)",
       ...style,

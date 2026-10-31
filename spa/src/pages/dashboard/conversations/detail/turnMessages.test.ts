@@ -10,6 +10,7 @@ import {
   formSubmissionContent,
   generatedImageMessage,
   liveTokenUsageFrom,
+  mergeLatestPage,
   partialImageDataUrl,
 } from "./turnMessages";
 
@@ -66,6 +67,24 @@ describe("appendOnce", () => {
 
   it("adds a new message at the end", () => {
     expect(appendOnce([message], { message_id: "m2" } as Message).map((m) => m.message_id)).toEqual(["m1", "m2"]);
+  });
+});
+
+describe("mergeLatestPage", () => {
+  const ids = (messages: Message[]) => messages.map((m) => m.message_id);
+  const msg = (message_id: string) => ({ message_id }) as Message;
+
+  it("keeps the same list when nothing changed while away", () => {
+    const current = [msg("m1"), msg("m2")];
+    expect(mergeLatestPage(current, [msg("m1"), msg("m2")])).toBe(current);
+  });
+
+  it("appends the reply that finished while away, keeping older pages already loaded", () => {
+    expect(ids(mergeLatestPage([msg("m0"), msg("m1"), msg("m2")], [msg("m1"), msg("m2"), msg("m3")]))).toEqual(["m0", "m1", "m2", "m3"]);
+  });
+
+  it("replaces an optimistic message with its saved copy", () => {
+    expect(ids(mergeLatestPage([msg("m1"), msg("temp-1")], [msg("m1"), msg("m2"), msg("m3")]))).toEqual(["m1", "m2", "m3"]);
   });
 });
 

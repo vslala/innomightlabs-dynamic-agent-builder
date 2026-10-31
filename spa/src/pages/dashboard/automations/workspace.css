@@ -211,6 +211,7 @@
 }
 
 .chain-connector:hover .chain-connector__button,
+.chain-connector:focus-within .chain-connector__button,
 .chain-connector__button:focus-visible {
   border-color: var(--gradient-start);
   color: var(--gradient-start);
@@ -671,6 +672,14 @@
 .chain-output-tree__insert:focus-visible {
   color: var(--gradient-start);
   opacity: 1;
+}
+
+/* Touch screens have no hover: the insert and add-step buttons are always shown */
+@media (hover: none) {
+  .chain-connector__button,
+  .chain-output-tree__insert {
+    opacity: 1;
+  }
 }
 
 .chain-output-tree__truncated {

@@ -2,34 +2,32 @@
  * HTTP Client with authentication interceptor.
  *
  * This client:
- * 1. Automatically attaches Authorization header to all requests
- * 2. Intercepts responses for refreshed tokens (X-Refreshed-Token header)
- * 3. Updates localStorage with new tokens when received
- * 4. Redirects to login on authentication failures
+ * 1. Attaches the platform's access token and the active account to every request
+ * 2. On a 401, asks the platform for a fresh token and retries once (the web has none, so it signs out)
+ * 3. Redirects home when the session is gone
  */
 
-const AUTH_TOKEN_KEY = "auth_token";
-const REFRESHED_TOKEN_HEADER = "x-refreshed-token";
-// The account requests act in. Each tab keeps its own choice; the API also remembers the last one used.
-const ACTIVE_ACCOUNT_KEY = "active_account_id";
+import { platform } from "../../platform";
+
+// The account requests act in. The API also remembers the last one used.
 const ACCOUNT_HEADER = "X-Account-Id";
 
 export function getActiveAccountId(): string | null {
-  return localStorage.getItem(ACTIVE_ACCOUNT_KEY);
+  return platform().storage.get("active_account_id");
 }
 
 export function setActiveAccountId(accountId: string | null): void {
   if (accountId) {
-    localStorage.setItem(ACTIVE_ACCOUNT_KEY, accountId);
+    platform().storage.set("active_account_id", accountId);
   } else {
-    localStorage.removeItem(ACTIVE_ACCOUNT_KEY);
+    platform().storage.remove("active_account_id");
   }
 }
 
-/** The headers every signed-in request carries, for the few calls that use fetch directly (streams, blobs). */
+/** The headers every signed-in request carries. */
 export function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
-  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const token = platform().tokens.accessToken();
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
@@ -37,6 +35,25 @@ export function authHeaders(): Record<string, string> {
   if (accountId) {
     headers[ACCOUNT_HEADER] = accountId;
   }
+  return headers;
+}
+
+/**
+ * `fetch` with the signed-in headers, for the calls that can't use the client (streams, blobs, raw HTML).
+ * A 401 gets one retry with a refreshed token; the response is returned either way, so callers keep their
+ * own error handling.
+ */
+export async function authorizedFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const send = () => fetch(input, { ...init, headers: { ...headersRecord(init.headers), ...authHeaders() } });
+  const response = await send();
+  if (response.status !== 401) return response;
+  return (await platform().tokens.refresh()) ? send() : response;
+}
+
+/** Plain-object headers keep their spelling, so a caller's `Content-Type` replaces the default one. */
+function headersRecord(headers: HeadersInit | undefined): Record<string, string> {
+  if (!headers) return {};
+  if (headers instanceof Headers || Array.isArray(headers)) return Object.fromEntries(new Headers(headers).entries());
   return headers;
 }
 
@@ -56,25 +73,9 @@ class HttpClient {
     this.baseUrl = config.baseUrl;
   }
 
-  private setAuthToken(token: string): void {
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
-  }
-
-  private removeAuthToken(): void {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
-  }
-
-  private handleRefreshedToken(response: Response): void {
-    const newToken = response.headers.get(REFRESHED_TOKEN_HEADER);
-    if (newToken) {
-      console.log("Received refreshed token, updating localStorage");
-      this.setAuthToken(newToken);
-    }
-  }
-
-  private handleAuthError(redirectOnAuthError: boolean): void {
-    this.removeAuthToken();
-    // Redirect to login page
+  private async handleAuthError(redirectOnAuthError: boolean): Promise<void> {
+    // Only the credential goes: the account choice and any invitation continuation survive a re-login.
+    await platform().tokens.clear();
     if (redirectOnAuthError && window.location.pathname !== "/") {
       window.location.href = "/";
     }
@@ -87,29 +88,27 @@ class HttpClient {
     const { skipAuth = false, redirectOnAuthError = true, headers: customHeaders, ...restOptions } = options;
 
     const isFormData = restOptions.body instanceof FormData;
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
-      ...customHeaders,
+      ...headersRecord(customHeaders),
     };
-
-    if (!skipAuth) {
-      Object.assign(headers, authHeaders());
-    }
 
     const url = `${this.baseUrl}${endpoint}`;
 
     try {
-      const response = await fetch(url, {
+      const send = () => fetch(url, {
         ...restOptions,
-        headers,
+        headers: skipAuth ? headers : { ...headers, ...authHeaders() },
       });
+      let response = await send();
 
-      // Check for refreshed token in response headers
-      this.handleRefreshedToken(response);
+      // An expired access token: refresh once and retry (native); the web has no refresh, so it signs out.
+      if (response.status === 401 && !skipAuth && await platform().tokens.refresh()) {
+        response = await send();
+      }
 
-      // Handle authentication errors
       if (response.status === 401) {
-        this.handleAuthError(redirectOnAuthError);
+        await this.handleAuthError(redirectOnAuthError);
         throw new HttpError(401, "Unauthorized - Please login again");
       }
 

@@ -92,6 +92,13 @@
   --field-gap: var(--space-2);
 }
 
+/* Fingers, not pointers: Apple's 44pt minimum. Button size "icon" and small controls read this. */
+@media (pointer: coarse) {
+  :root {
+    --control-height-sm: 2.75rem;
+  }
+}
+
 :root[data-theme="light"] {
   --gradient-start: #0c66e4;
   --gradient-start-rgb: 12, 102, 228;

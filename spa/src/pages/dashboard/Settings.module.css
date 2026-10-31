@@ -141,3 +141,9 @@
 .mutedText {
   @apply m-0 text-sm leading-normal text-[var(--text-muted)];
 }
+
+.deleteAccountField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}

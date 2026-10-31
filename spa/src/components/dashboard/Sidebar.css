@@ -134,6 +134,13 @@
     transition: transform 220ms ease, visibility 0s linear 220ms;
   }
 
+  /* The drawer runs the full screen height: keep its brand and footer clear of the notch and home indicator */
+  .dashboard-sidebar__inner {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+
   .dashboard-sidebar--open {
     visibility: visible;
     transform: none;

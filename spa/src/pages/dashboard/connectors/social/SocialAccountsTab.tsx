@@ -7,6 +7,7 @@ import type { SocialAccount, SocialNetwork } from "../../../../types/connectors"
 import catalog from "../ConnectorCatalog.module.css";
 import { ConnectorIcon } from "../ConnectorIcon";
 import { returnToConnectors } from "../connectorUrls";
+import { platform } from "../../../../platform";
 import { accountNote, connectionOutcome } from "./socialAccounts";
 import styles from "./SocialAccountsTab.module.css";
 
@@ -86,7 +87,7 @@ export function SocialAccountsTab({ canManage }: { canManage: boolean }) {
       const response = await connectorApiService.startSocialConnection(network.key, {
         return_to: returnToConnectors("social"),
       });
-      window.location.href = response.authorize_url;
+      await platform().links.openAuthPage(response.authorize_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to start the ${network.display_name} sign-in.`);
       setBusyKey(null);

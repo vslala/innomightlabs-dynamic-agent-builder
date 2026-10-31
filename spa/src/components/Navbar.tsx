@@ -5,6 +5,7 @@ import { authService } from '../services/auth';
 import { FEATURES } from '../routes/features';
 import logo from '../assets/brand/innomightlabs-logo.png';
 import styles from './Navbar.module.css';
+import { platform } from '../platform';
 
 export function Navbar() {
   const [featuresOpen, setFeaturesOpen] = useState(false);
@@ -54,7 +55,7 @@ export function Navbar() {
             {FEATURES.map(feature => <NavLink key={feature.path} to={feature.path} className={navClass} onClick={close}><span>{feature.title}<small>{feature.description}</small></span></NavLink>)}
           </div>}
         </div>
-        <NavLink to="/pricing" className={navClass} onClick={close}>Pricing</NavLink>
+        {platform().commerce.canSellSubscriptions && <NavLink to="/pricing" className={navClass} onClick={close}>Pricing</NavLink>}
         <NavLink to="/downloads" className={navClass} onClick={close}>Downloads</NavLink>
         <NavLink to="/docs/quick-start" className={navClass} onClick={close}>Docs</NavLink>
         <NavLink to="/contact" className={navClass} onClick={close}>Contact</NavLink>

@@ -34,10 +34,6 @@ export function captureInvitationToken(
   }
 }
 
-export function invitationLoginUrl(provider: "google" | "cognito", loginContext: string, baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"): string {
-  return `${baseUrl.replace(/\/$/, "")}/auth/${provider}?invitation=${encodeURIComponent(loginContext)}`;
-}
-
 export function isInvitationContinuation(params: URLSearchParams): boolean {
   return params.get("invitation") === "1";
 }

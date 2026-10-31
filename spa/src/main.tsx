@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { applyTheme, getStoredTheme } from './lib/theme'
+import { initPlatform } from './platform'
 
 const env = import.meta.env;
 console.log(`Loaded environment variables:
@@ -14,8 +15,11 @@ console.log(`Loaded environment variables:
 
 applyTheme(getStoredTheme());
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+// Tokens, storage and links come from the platform, so it is ready before anything renders.
+void initPlatform().then(() => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+})

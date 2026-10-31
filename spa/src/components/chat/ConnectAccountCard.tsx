@@ -4,6 +4,7 @@ import { Plug } from "lucide-react";
 import { Button } from "../ui";
 import { builderApiService } from "../../services/builder/BuilderApiService";
 import { connectOutcome } from "../../services/builder/connect";
+import { platform } from "../../platform";
 import styles from "./ConnectAccountCard.module.css";
 
 export interface ConnectRequestPayload {
@@ -63,8 +64,8 @@ export function ConnectAccountCard({
         finish();
         return;
       }
-      const popup = window.open(authorize_url, "innomight-connect", "popup,width=520,height=720");
-      if (!popup) setFallbackUrl(authorize_url);
+      const opened = await platform().links.openAuthPage(authorize_url, { popup: true });
+      if (!opened) setFallbackUrl(authorize_url);
       setStage("signing_in");
     } catch (e) {
       setStage("failed");

@@ -59,8 +59,10 @@ import {
   formSubmissionContent,
   generatedImageMessage,
   liveTokenUsageFrom,
+  mergeLatestPage,
   partialImageDataUrl,
 } from "./conversations/detail/turnMessages";
+import { useAppResume } from "../../hooks/useAppResume";
 import parts from "./conversations/detail/ConversationParts.module.css";
 import styles from "./Conversation.module.css";
 
@@ -249,6 +251,28 @@ export function ConversationDetail() {
 
   // Reattach to a turn still running for this conversation — covers navigating
   // back and a full page refresh identically, since both start from scratch here.
+  // Back from the background (a phone locks, another tab): the stream may have died meanwhile. A turn still
+  // running is followed again unless this page is still following it (followTurn retries a dropped stream);
+  // otherwise the newest page brings in what finished, and approvals decided elsewhere.
+  const resyncAfterResume = async () => {
+    if (!conversation || !initialMessagesLoaded) return;
+    const { agent_id, conversation_id } = conversation;
+    try {
+      const active = await chatService.getActiveTurn(agent_id, conversation_id);
+      if (active?.status === "running") {
+        if (!(isSending && activeTurnId === active.turn_id)) void attachToTurn(active.turn_id, "");
+        return;
+      }
+      if (isSending) finishTurn();
+      const latest = await conversationApiService.getMessages(conversation_id, MESSAGES_PAGE_SIZE);
+      setMessages((current) => mergeLatestPage(current, latest.items.reverse()));
+      void loadConsents(agent_id, conversation_id);
+    } catch (err) {
+      console.error("Failed to resync the conversation:", err);
+    }
+  };
+  useAppResume(() => void resyncAfterResume());
+
   useEffect(() => {
     if (!conversation || !initialMessagesLoaded) return;
     let cancelled = false;

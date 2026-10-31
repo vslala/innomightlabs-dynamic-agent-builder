@@ -6,7 +6,7 @@ This directory owns the conversation cloud, the classic sidebar list and the fir
 
 ## Layout and flow
 
-`../Conversations.tsx` shows the conversations in one of two views, switched by `ConversationViewToggle.tsx` (Cloud, the default, or Classic). The choice is remembered in `localStorage` (`conversationView.ts`; anything but a saved "classic" means the cloud, and blocked storage is tolerated). The search text and the composer's contents are shared, so switching views loses nothing.
+`../Conversations.tsx` shows the conversations in one of two views, switched by `ConversationViewToggle.tsx` (Cloud, the default, or Classic). The choice is remembered in `platform().storage` under `conversations:view` (`conversationView.ts`; anything but a saved "classic" means the cloud, and the platform tolerates blocked storage). The search text and the composer's contents are shared, so switching views loses nothing.
 
 - **Cloud:** a column with a count, the toggle and search, the conversation cloud (it takes all the space left), and the composer docked at the bottom (`docked`, without its heading).
 - **Classic:** from 1024px, two columns: `ConversationSidebar.tsx` (search, new conversation, delete, agent labels; the toggle sits in its header) beside the composer centred under its heading. Below that it is one column like a messaging inbox: the list fills the screen and scrolls, and the composer is docked under it without its heading (`ONE_COLUMN_QUERY` in `../Conversations.tsx`, kept in step with `Conversations.module.css`). Touch screens have no hover, so the delete button is always visible there.

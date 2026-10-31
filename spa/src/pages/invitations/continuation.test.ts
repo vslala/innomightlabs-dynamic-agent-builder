@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { captureInvitationToken, invitationLoginUrl, isInvitationContinuation, PENDING_INVITATION_KEY } from "./continuation";
+import { captureInvitationToken, isInvitationContinuation, PENDING_INVITATION_KEY } from "./continuation";
 
 function browser() {
   const location = { pathname: "/invitations/accept", search: "", hash: "#token=secret%2Btoken" };
@@ -46,15 +46,6 @@ describe("invitation continuation", () => {
     expect(location.hash).toBe("");
   });
 
-  it("links directly to both providers with only the preview hash context", () => {
-    for (const provider of ["google", "cognito"] as const) {
-      const url = new URL(invitationLoginUrl(provider, "sha256-context", "https://api.example.com/"));
-      expect(url.pathname).toBe(`/auth/${provider}`);
-      expect([...url.searchParams.entries()]).toEqual([["invitation", "sha256-context"]]);
-      expect(url.hash).toBe("");
-      expect(url.href).not.toContain("secret+token");
-    }
-  });
   it("captures the one-use callback invitation marker independently of checkout", () => {
     expect(isInvitationContinuation(new URLSearchParams("code=one-use&invitation=1"))).toBe(true);
     expect(isInvitationContinuation(new URLSearchParams("code=one-use"))).toBe(false);

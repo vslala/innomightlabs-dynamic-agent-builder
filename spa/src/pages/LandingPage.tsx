@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { StoryIcon, StoryPage, storyClasses } from '../components/story/StoryPage';
 import { HomeAgents, HomeGoals, HomeHeroDemo, HomeJourney, HomeLeadsDemo, HomeNightDemo } from './homeDemos';
 import styles from './LandingPage.module.css';
+import { platform } from '../platform';
 
 const cx = storyClasses(styles);
 const PARTS = [
@@ -46,7 +47,7 @@ export function LandingPage() {
       <div className={cx('head rv centered')}><span className={cx('eyebrow')}>Everything in one place</span><h2>And the parts that make it work.</h2></div>
       <div className={cx('box rv')}>{PARTS.map(([icon, label]) => <div key={label} className={cx('bx')}><StoryIcon name={icon} />{label}</div>)}</div>
       <div className={cx('final-space')} />
-      <div className={cx('final rv')}><h2>Your AI team is<br /><span className={cx('grad')}>one conversation away.</span></h2><p className={cx('lead')}>Start free. Tell Ila about your business, and have something working before your coffee gets cold.</p><div className={cx('cta')}><Link className={cx('btn')} to="/login">Start building free</Link><Link className={cx('btn ghost')} to="/pricing">See pricing</Link></div></div>
+      <div className={cx('final rv')}><h2>Your AI team is<br /><span className={cx('grad')}>one conversation away.</span></h2><p className={cx('lead')}>Start free. Tell Ila about your business, and have something working before your coffee gets cold.</p><div className={cx('cta')}><Link className={cx('btn')} to="/login">Start building free</Link>{platform().commerce.canSellSubscriptions && <Link className={cx('btn ghost')} to="/pricing">See pricing</Link>}</div></div>
       <div className={cx('next')}>{FEATURES.map(([route, icon, title, detail]) => <Link key={route} to={`/features/${route}`}><span className={cx('ic')}><StoryIcon name={icon} /></span><div><b>{title}</b><small>{detail}</small></div><span className={cx('go')}><StoryIcon name="right" /></span></Link>)}</div>
     </div></section>
   </StoryPage>;

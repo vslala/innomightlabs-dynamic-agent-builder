@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | 📝 Proposed |
+| Status | 🚧 In progress (Phase 0 built and tested locally; the real-data phone audit is pending; Phases 1–4 not started) |
 | Owner | InnomightLabs SPA + API |
 | Last reviewed | 2026-10-31 |
 | Depends on | [LLD-async-chat-turns](../api/docs/LLD-async-chat-turns.md), [LLD-action-consent](LLD-action-consent.md), [LLD-shared-accounts-and-iam](LLD-shared-accounts-and-iam.md), [LLD-mcp-connector-machinery](LLD-mcp-connector-machinery.md) |
@@ -31,6 +31,67 @@
 >   ad tracking, and no purchase flow in the app until we choose in-app billing.
 >
 > Phase 0 is all web work. It improves the site on phones for everyone and ships before any app exists.
+
+## Implementation notes
+
+Phase 0 is built and tested locally. Start here; the design below is unchanged except where these notes say.
+
+**Built:**
+- **The seam, with the web adapter only** (`spa/src/platform/`: `types.ts`, `index.ts`, `api.ts`, `web/`,
+  `testing.ts`, `testSetup.ts`, `CONTRIBUTION.md`). `main.tsx` renders once `initPlatform()` resolves.
+- **Callers moved onto the ports:**
+  - `Login.tsx` and the invitation page use `auth.begin`; `loginHandoff.ts` uses `auth.complete`.
+  - `services/auth` reads `tokens`, and `logout()` is async through `auth.end()`.
+  - The HTTP client reads `tokens` and `storage`, and retries a 401 once after `tokens.refresh()`. The dead
+    `X-Refreshed-Token` read is gone.
+  - `authorizedFetch` serves `ChatService`, `useArtifactHtml` and the chat image fetch.
+  - Connect flows use `links.returnTo` and `links.openAuthPage`: `connectorUrls.ts`, `ConnectorsPage`,
+    `SocialAccountsTab`, `AgentSkillsPage`, and `ConnectAccountCard` with `{ popup: true }`.
+  - `conversationView.ts` uses `storage`.
+- **Purchase links gated on `commerce.canSellSubscriptions`:** Navbar, Footer, Hero, the landing CTA,
+  `RateLimitBanner`, `CapturesPage` and the Settings billing card. On the web nothing changes.
+- **Boundaries enforced:** ESLint `no-restricted-imports` (section 1 rules), and a `platform` check in
+  `yarn design:audit` that fails the audit. The design warnings stay warning-only.
+- **Resync on resume:** `hooks/useAppResume.ts`, and `ConversationDetail`'s `resyncAfterResume`. A running
+  turn is followed again unless the page is still following it (`followTurn` already retries a dropped
+  stream). Otherwise the newest page is merged with `mergeLatestPage` (which drops `temp-` messages) and the
+  approvals are reloaded.
+- **Account deletion:** `pages/dashboard/DeleteAccountCard.tsx`. The person types their email
+  (case-insensitive) before `DELETE /users/me`, then is signed out.
+- **The `pendingCheckout` fix:** `pages/pendingCheckout.ts` owns the intent and its ten-minute lifetime for
+  both `Pricing` and `LoginSuccess`. An intent saved without a timestamp is dropped.
+- **Section 7:**
+  - the coarse-pointer `--control-height-sm`;
+  - hover-only actions also show on touch and on focus (icon cards, KB cards, the automation chain's add and
+    insert buttons). `ArtifactsPage` needed nothing: its hover reveal applies only to fine pointers at 1280px+;
+  - safe areas in the header, the drawer and the main gutter (the header grows by the top inset);
+  - phone dialogs as bottom sheets. Width overrides use `!important`, because callers size the desktop card
+    inline. The footer's inline row direction and the close button's inline styles moved into the CSS module;
+  - `manifest.webmanifest` and the icons (rendered from the brand logo), with their `index.html` tags. No
+    service worker.
+
+**Departures from the design:**
+- **`links.openAuthPage` resolves to a boolean.** False means a blocked popup, so the chat card can still
+  offer its "open it in a new tab" link.
+- **`initPlatform()` has only the web branch.** Phase 1 adds the `VITE_PLATFORM === "native"` branch with the
+  adapter. `main.tsx` uses `initPlatform().then(render)` rather than a top-level `await`, which keeps the
+  build target unchanged.
+- **A 401 that refresh can't fix keeps today's web behaviour:** `tokens.clear()`, the account choice kept,
+  and a redirect to `/`. It doesn't call `auth.end()` and go to `/login`: revoking a device whose refresh
+  already failed achieves nothing.
+- **`continuation.ts`'s `invitationLoginUrl` became the web adapter's `loginUrl`.** The invitation page's
+  sign-in links are buttons calling `auth.begin(provider, { invitation })`.
+- **Tests run against the real web adapter** (`testSetup.ts`), so existing tests that stub `localStorage` are
+  unchanged. New tests use `createFakePlatform`.
+- **One audit exception:** Settings' OpenAI tab keeps `window.open`. That flow ends on a page whose URL the
+  person copies, so it never returns to the app.
+
+**Not done yet:**
+- **Still to check:** the real-data audit at 390px, each long-form dialog as a sheet (agent create, skill
+  install, lead form editor), and the automation editor on phones.
+- **Not migrated:** the `target="_blank"` image and canvas links (`ChatStreamRenderer`, `CanvasSidePanel`) are
+  not on `links.openExternal` or `files.saveOrShare` yet. They work on the web; they move with the native
+  adapter in Phase 1.
 
 ## Context and problem
 

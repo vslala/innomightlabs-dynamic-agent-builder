@@ -19,7 +19,13 @@
   @apply h-7 w-7 text-[var(--text-inverse)];
 }
 .actions {
-  @apply flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity;
+  @apply flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity;
+}
+/* Touch screens have no hover, so the actions are always shown */
+@media (hover: none) {
+  .actions {
+    @apply opacity-100;
+  }
 }
 .title {
   @apply font-semibold text-lg text-[var(--text-primary)] mb-2 group-hover:text-[var(--gradient-start)] transition-colors;

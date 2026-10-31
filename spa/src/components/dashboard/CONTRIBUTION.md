@@ -36,6 +36,8 @@ One breakpoint, 900px, shared by `DashboardLayout.tsx` (`COMPACT_QUERY`), `Sideb
   - Its parent must be a flex column, not a one-column grid: a grid item can only stick within its own row.
   - That column needs `align-items: stretch`. The desktop rule says `start`, which sizes the bar to its content (the whole tab list), widens the page and makes it pan sideways.
   Scroll the active tab into view.
+- **Safe areas.** The header pads by `env(safe-area-inset-top)` (and the side insets below 900px), the drawer by the top, bottom and left insets, and `.dashboard-layout__main` adds `env(safe-area-inset-bottom)` to its bottom gutter. Full-bleed pages own their own insets (the conversation top bar and dock). The insets are zero in a browser unless the page sets `viewport-fit=cover` (the app shell does), so keep them on any new fixed or edge-to-edge chrome.
+- **Touch.** On coarse pointers `--control-height-sm` is 2.75rem (44px), so `size="icon"` and small buttons meet the touch minimum. Row actions revealed on hover must also show under `@media (hover: none)` and on `:focus-within`.
 - Use `100dvh`, not only `100vh`, for full-height shells: mobile browsers' address bars change the viewport height.
 - Check keyboard and narrow-screen usability (about 390px wide) before extending the shell. A screenshot is not enough to catch sideways overflow: compare the scroll area's `scrollWidth` with its `clientWidth` at 390px (`.dashboard-layout__main`); they must be equal.
 

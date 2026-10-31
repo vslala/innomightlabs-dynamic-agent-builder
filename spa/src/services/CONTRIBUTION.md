@@ -7,7 +7,7 @@
 - Keep singleton services and explicit request/response types beside the domain; reuse `src/types/` where already authoritative. Export through the existing barrel when one exists; do not add a facade just for uniformity.
 - Ordinary dashboard JSON requests use `http/httpClient`: API base URL, bearer token, active-account header, refreshed tokens, errors and redirects belong there. Backend IAM remains authoritative; an ID or an `access` label is not permission.
 - Public pricing and downloads deliberately use `skipAuth`. This suppresses both bearer and account headers, not the client's response interception.
-- `chat/` uses direct `fetch` for SSE and image requests, with `authHeaders()` for bearer/account context. It does not inherit HTTP-client refresh/redirect/error handling. `subscription/` is a separate waitlist transport with a local-storage default.
+- `chat/` uses `authorizedFetch` for SSE and image requests (bearer/account context and refresh-and-retry). It does not inherit the HTTP client's redirect/error handling. `subscription/` is a separate waitlist transport with a local-storage default.
 - Schema-backed flows return `FormSchema` for `SchemaForm`; pass values through rather than duplicating backend security/credential validation. Multipart uploads use `postForm`, never a manually supplied boundary.
 - Services do not own CSS, React state or rendering. Keep those in consuming pages/components. Widget visitor authentication belongs in `embed/app` or `widget`, not dashboard auth.
 

@@ -8,6 +8,7 @@ import { httpClient } from '../services/http';
 import type { PricingResponse } from '../types/pricing';
 import { Button } from '../components/ui/button';
 import styles from './Pricing.module.css';
+import { savePendingCheckout } from './pendingCheckout';
 
 type BillingCycle = 'monthly' | 'annual';
 
@@ -63,10 +64,7 @@ export function Pricing() {
       const user = authService.getUserFromToken();
       if (!user) {
         // Store checkout intent so we can complete it after login
-        sessionStorage.setItem('pendingCheckout', JSON.stringify({
-          planKey,
-          billingCycle
-        }));
+        savePendingCheckout(planKey, billingCycle);
 
         // Redirect to login page where user can choose between Google or Email
         navigate('/login');

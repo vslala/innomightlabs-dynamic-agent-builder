@@ -1,13 +1,14 @@
 import { Link } from 'react-router-dom';
 import { FEATURES } from '../routes/features';
 import styles from './Footer.module.css';
+import { platform } from '../platform';
 
 export function Footer() {
   return <footer className={styles.footer}>
     <nav className={styles.container} aria-label="Footer navigation">
       <Link to="/">Home</Link>
       {FEATURES.map(feature => <Link key={feature.path} to={feature.path}>{feature.title}</Link>)}
-      <Link to="/pricing">Pricing</Link>
+      {platform().commerce.canSellSubscriptions && <Link to="/pricing">Pricing</Link>}
       <Link to="/docs/quick-start">Docs</Link>
       <Link to="/whats-new">What's New</Link>
       <Link to="/legal/privacy">Privacy Policy</Link>

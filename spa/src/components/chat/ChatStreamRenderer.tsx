@@ -11,7 +11,7 @@ import { SubmittedFormMessage } from "./SubmittedFormMessage";
 import { isSubmittedFormMessage } from "./submittedFormParser";
 import { ConsentDecisionMessage } from "./consent/ConsentDecisionMessage";
 import { isConsentDecisionMessage } from "./consent/consentDecisionParser";
-import { authHeaders } from "../../services/http";
+import { authorizedFetch } from "../../services/http";
 import { cn } from "../../lib/utils";
 import type {
   AttachmentInfo,
@@ -98,9 +98,7 @@ function ImagePreview({ image }: { image: MessageImage }) {
           return;
         }
 
-        const response = await fetch(image.url, {
-          headers: authHeaders(),
-        });
+        const response = await authorizedFetch(image.url);
 
         if (!response.ok) {
           throw new Error(`Image request failed with ${response.status}`);

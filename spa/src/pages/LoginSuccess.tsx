@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { redeemLoginSession } from './invitations/loginHandoff';
 import { pricingService } from '../services/pricing';
+import { takePendingCheckout } from './pendingCheckout';
 import { isInvitationContinuation } from './invitations/continuation';
 import { Button } from '../components/ui/button';
 import styles from './LoginSuccess.module.css';
@@ -10,12 +11,6 @@ interface UserInfo {
   email: string;
   name: string;
   picture: string;
-}
-
-interface PendingCheckout {
-  planKey: string;
-  billingCycle: string;
-  timestamp: number;
 }
 
 export function LoginSuccess() {
@@ -66,27 +61,11 @@ export function LoginSuccess() {
         };
         setUserInfo(userInfo);
 
-        // Check for pending checkout
-        const pendingCheckoutStr = sessionStorage.getItem('pendingCheckout');
-        if (pendingCheckoutStr) {
-          const pendingCheckout: PendingCheckout = JSON.parse(pendingCheckoutStr);
-
-          // Check if checkout is still valid (within 10 minutes)
-          const tenMinutes = 10 * 60 * 1000;
-          if (Date.now() - pendingCheckout.timestamp < tenMinutes) {
-            // Update message to reflect checkout flow
-            setRedirectMessage('Completing your checkout...');
-
-            // Clear the pending checkout
-            sessionStorage.removeItem('pendingCheckout');
-
-            // Complete the checkout flow
-            completeCheckout(pendingCheckout.planKey, pendingCheckout.billingCycle, userInfo.email);
-            return;
-          } else {
-            // Checkout expired, clear it
-            sessionStorage.removeItem('pendingCheckout');
-          }
+        const pendingCheckout = takePendingCheckout();
+        if (pendingCheckout) {
+          setRedirectMessage('Completing your checkout...');
+          completeCheckout(pendingCheckout.planKey, pendingCheckout.billingCycle, userInfo.email);
+          return;
         }
 
         // No pending checkout, redirect to dashboard after short delay

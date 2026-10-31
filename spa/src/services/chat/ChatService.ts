@@ -11,7 +11,7 @@ import type {
   SSEEvent,
 } from "../../types/message";
 import { chatPath } from "../builder/ila";
-import { authHeaders } from "../http";
+import { authorizedFetch } from "../http";
 
 const TURN_ID_HEADER = "X-Turn-Id";
 const FOLLOW_TURN_MAX_ATTEMPTS = 3;
@@ -63,11 +63,10 @@ class ChatService {
   ): Promise<GenerateImageResponse> {
     const url = `${this.baseUrl}/agents/${agentId}/${conversationId}/generate-image`;
 
-    const response = await fetch(url, {
+    const response = await authorizedFetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(),
       },
       body: JSON.stringify(request),
     });
@@ -91,11 +90,10 @@ class ChatService {
     const url = `${this.baseUrl}/agents/${agentId}/${conversationId}/generate-image-stream`;
 
     try {
-      const response = await fetch(url, {
+      const response = await authorizedFetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...authHeaders(),
         },
         body: JSON.stringify(request),
         signal,
@@ -146,9 +144,7 @@ class ChatService {
 
   /** Every consent card in the conversation, and where each stands: what the chat shows after a reload. */
   async listConsents(agentId: string, conversationId: string): Promise<ConsentRequest[]> {
-    const response = await fetch(`${this.baseUrl}${chatPath(agentId, conversationId)}/consents`, {
-      headers: authHeaders(),
-    });
+    const response = await authorizedFetch(`${this.baseUrl}${chatPath(agentId, conversationId)}/consents`);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -172,11 +168,10 @@ class ChatService {
     const { onEvent, onError, onComplete, onTurnStarted, onConflict, signal } = options;
 
     try {
-      const response = await fetch(url, {
+      const response = await authorizedFetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...authHeaders(),
         },
         body: JSON.stringify(body),
         signal,
@@ -220,9 +215,7 @@ class ChatService {
 
   /** The turn still running for this conversation, if any — for reattaching on mount. */
   async getActiveTurn(agentId: string, conversationId: string): Promise<ActiveTurn | null> {
-    const response = await fetch(`${this.baseUrl}${chatPath(agentId, conversationId)}/turns/active`, {
-      headers: authHeaders(),
-    });
+    const response = await authorizedFetch(`${this.baseUrl}${chatPath(agentId, conversationId)}/turns/active`);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -250,8 +243,7 @@ class ChatService {
       const url = `${this.baseUrl}${chatPath(agentId, conversationId)}/turns/${turnId}/events?after_sequence=${afterSequence}`;
 
       try {
-        const response = await fetch(url, {
-          headers: authHeaders(),
+        const response = await authorizedFetch(url, {
           signal,
         });
 
@@ -285,11 +277,10 @@ class ChatService {
 
   /** Stop an in-progress turn. A 404 means it already finished — not an error. */
   async stopTurn(agentId: string, conversationId: string, turnId: string): Promise<void> {
-    const response = await fetch(
+    const response = await authorizedFetch(
       `${this.baseUrl}${chatPath(agentId, conversationId)}/turns/${turnId}/stop`,
       {
         method: "POST",
-        headers: authHeaders(),
       }
     );
 

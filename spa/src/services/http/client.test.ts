@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { httpClient, HttpError } from "./client";
+import { authorizedFetch, httpClient, HttpError } from "./client";
+import { platform, setPlatformForTests } from "../../platform";
+import { createFakePlatform } from "../../platform/testing";
+
+// The web adapter the test setup installed; tests that swap in a fake put it back.
+const webPlatform = platform();
 
 const values = new Map<string, string>();
 const location = { pathname: "/invitations/accept", href: "/invitations/accept" };
@@ -26,7 +31,7 @@ beforeEach(() => {
     }
   });
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); setPlatformForTests(webPlatform); });
 function respond(body: unknown, status = 200, headers?: HeadersInit) {
   const fetcher = vi.fn().mockResolvedValue(new Response(status === 204 ? null : JSON.stringify(body), { status, headers }));
   vi.stubGlobal("fetch", fetcher);
@@ -80,19 +85,43 @@ describe("shared HTTP interceptors", () => {
     });
   });
 
-  it("skipAuth omits identity/account headers but still processes refresh before errors", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    const fetcher = respond({ detail: { message: "Try later" } }, 503, { "x-refreshed-token": "refreshed-test-token" });
+  it("skipAuth omits identity/account headers", async () => {
+    const fetcher = respond({ detail: { message: "Try later" } }, 503);
     await expect(httpClient.post("/test", {}, { skipAuth: true })).rejects.toMatchObject({ status: 503, message: "Try later" });
-    expect(values.get("auth_token")).toBe("refreshed-test-token");
     expect(fetcher.mock.calls[0][1].headers).toEqual({ "Content-Type": "application/json" });
   });
 
+  it("retries a 401 once with the token the platform refreshed", async () => {
+    let token = "expired";
+    setPlatformForTests(createFakePlatform({
+      tokens: { accessToken: () => token, refresh: async () => (token = "fresh"), save: async () => {}, clear: async () => {} },
+    }));
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true })));
+    vi.stubGlobal("fetch", fetcher);
+    expect(await httpClient.get("/test")).toEqual({ ok: true });
+    expect(fetcher.mock.calls.map((call) => call[1].headers.Authorization)).toEqual(["Bearer expired", "Bearer fresh"]);
+  });
+
+  it("authorizedFetch carries the headers and retries a 401 after a refresh", async () => {
+    let token = "expired";
+    setPlatformForTests(createFakePlatform({
+      tokens: { accessToken: () => token, refresh: async () => (token = "fresh"), save: async () => {}, clear: async () => {} },
+    }));
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 401 }))
+      .mockResolvedValueOnce(new Response("ok"));
+    vi.stubGlobal("fetch", fetcher);
+    const response = await authorizedFetch("https://api.test/stream", { method: "POST", headers: { "Content-Type": "application/json" } });
+    expect(response.status).toBe(200);
+    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer fresh" } });
+  });
+
   it("401 removes only auth, redirects home, and leaves invitation continuation intact", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
     const pending = new Map([["pendingInvitationToken", "pending-secret"]]);
     vi.stubGlobal("sessionStorage", { getItem: (key: string) => pending.get(key) });
-    respond({ detail: { message: "Expired" } }, 401, { "x-refreshed-token": "refreshed-test-token" });
+    respond({ detail: { message: "Expired" } }, 401);
     await expect(httpClient.get("/test")).rejects.toMatchObject({ status: 401, message: "Unauthorized - Please login again" });
     expect(values.has("auth_token")).toBe(false);
     expect(values.get("active_account_id")).toBe("account-1");

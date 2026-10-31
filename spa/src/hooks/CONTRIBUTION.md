@@ -6,6 +6,7 @@ This directory holds reusable React lifecycle/state logic; page-specific hooks c
 
 | File | Behavior |
 | --- | --- |
+| `useAppResume.ts` | Runs the latest handler when the tab or app returns to the foreground (`platform().lifecycle.onResume`) |
 | `useArtifactHtml.ts` | Gated authenticated text fetch; loading/loaded/failed discriminated state |
 | `useCanManageSettings.ts` | Settings-control visibility through SettingsAccessService |
 | `useFileAttachments.ts` | Chat attachment validation, reading, Excel conversion, and state |
@@ -13,7 +14,7 @@ This directory holds reusable React lifecycle/state logic; page-specific hooks c
 
 ## Flow and extension
 
-`useArtifactHtml(contentUrl, enabled)` waits for a URL and enabled flag, resets to loading when fetching, and calls fetch with `authHeaders()`. It suppresses stale state updates with an active flag on cleanup, but does not abort the request. Consumers supply backend content-proxy URLs; do not pass arbitrary third-party URLs that would receive auth headers. HTML sandboxing belongs to the canvas consumer, not this hook. This direct authenticated raw-text fetch is an existing exception to the normal service/httpClient path.
+`useArtifactHtml(contentUrl, enabled)` waits for a URL and enabled flag, resets to loading when fetching, and calls `authorizedFetch()`. It suppresses stale state updates with an active flag on cleanup, but does not abort the request. Consumers supply backend content-proxy URLs; do not pass arbitrary third-party URLs that would receive auth headers. HTML sandboxing belongs to the canvas consumer, not this hook. This direct authenticated raw-text fetch is an existing exception to the normal service/httpClient path.
 
 `useCanManageSettings()` returns undefined while loading, the API's `can_manage` on success, and true on lookup failure. That fail-open behavior only exposes controls; it is not permission enforcement. The API must still authorize mutations.
 

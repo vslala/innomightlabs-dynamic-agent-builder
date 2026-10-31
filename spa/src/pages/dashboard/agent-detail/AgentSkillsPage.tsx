@@ -32,6 +32,7 @@ import { SkillSharingBadge } from "./SkillSharingBadge";
 import { useAgentDetailContext } from "./types";
 import "./AgentSkillsPage.css";
 import { AlwaysAllowSettings } from "./AlwaysAllowSettings";
+import { platform } from "../../../platform";
 
 
 function getMissingRequiredConnectors(skill: SkillCatalogItem): SkillConnectorStatus[] {
@@ -300,11 +301,11 @@ export function AgentSkillsPage() {
       setConnectingSkillId(selectedSkill.skill_id);
       setInstallSkillError(null);
       try {
-        const returnTo = `${window.location.origin}/dashboard/agents/${agent.agent_id}/skills`;
+        const returnTo = platform().links.returnTo(`/dashboard/agents/${agent.agent_id}/skills`);
         const response = await connectorApiService.startConnector(missingConnector.connect_path, {
           return_to: returnTo,
         });
-        window.location.href = response.authorize_url;
+        await platform().links.openAuthPage(response.authorize_url);
       } catch (err: unknown) {
         setInstallSkillError(err instanceof Error ? err.message : `Failed to connect ${missingConnector.provider_name}`);
         setConnectingSkillId(null);
@@ -319,13 +320,13 @@ export function AgentSkillsPage() {
     setConnectingSkillId(selectedSkill.skill_id);
     setInstallSkillError(null);
     try {
-      const returnTo = `${window.location.origin}/dashboard/agents/${agent.agent_id}/skills`;
+      const returnTo = platform().links.returnTo(`/dashboard/agents/${agent.agent_id}/skills`);
       const response = await skillApiService.startSkillOAuth(selectedSkill.oauth_start_path, {
         agent_id: agent.agent_id,
         skill_id: selectedSkill.skill_id,
         return_to: returnTo,
       });
-      window.location.href = response.authorize_url;
+      await platform().links.openAuthPage(response.authorize_url);
     } catch (err: unknown) {
       setInstallSkillError(err instanceof Error ? err.message : `Failed to connect ${selectedSkill.oauth_provider_name ?? selectedSkill.name}`);
       setConnectingSkillId(null);
@@ -433,14 +434,14 @@ export function AgentSkillsPage() {
     setConnectingSkillId(installedSkillId);
     setConfigSkillError(null);
     try {
-      const returnTo = `${window.location.origin}/dashboard/agents/${agent.agent_id}/skills`;
+      const returnTo = platform().links.returnTo(`/dashboard/agents/${agent.agent_id}/skills`);
       const response = await skillApiService.startA2ARemoteOAuth({
         agent_id: agent.agent_id,
         installed_skill_id: installedSkillId,
         target_origin: configCredentialOrigin,
         return_to: returnTo,
       });
-      window.location.href = response.authorize_url;
+      await platform().links.openAuthPage(response.authorize_url);
     } catch (err: unknown) {
       setConfigSkillError(err instanceof Error ? err.message : "Failed to start Agent2Agent OAuth");
       setConnectingSkillId(null);

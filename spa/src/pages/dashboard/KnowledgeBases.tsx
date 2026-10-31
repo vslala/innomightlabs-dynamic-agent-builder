@@ -141,7 +141,7 @@ export function KnowledgeBases() {
                       <div className="h-14 w-14 rounded-xl bg-[var(--button-primary-bg)] flex items-center justify-center">
                         <Database className="h-7 w-7 text-white" />
                       </div>
-                      <Inline gap="xs" className="opacity-0 transition-opacity group-hover:opacity-100">
+                      <Inline gap="xs" className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
                         <Link to={`/dashboard/knowledge-bases/${kb.kb_id}`}>
                           <Button variant="ghost" size="icon">
                             <Settings className="h-4 w-4" />

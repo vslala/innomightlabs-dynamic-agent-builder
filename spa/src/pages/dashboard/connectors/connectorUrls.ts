@@ -1,6 +1,8 @@
+import { platform } from "../../../platform";
+
 /** Where provider and MCP OAuth flows return after sign-in; `tab` picks the Connectors tab they land on. */
 export function returnToConnectors(tab?: "social"): string {
-  return `${window.location.origin}/dashboard/connectors${tab ? `?tab=${tab}` : ""}`;
+  return platform().links.returnTo(`/dashboard/connectors${tab ? `?tab=${tab}` : ""}`);
 }
 
 export type ConnectorsTab = "mcp" | "social";

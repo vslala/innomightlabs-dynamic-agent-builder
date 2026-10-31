@@ -1,6 +1,7 @@
 import { Cpu, ShieldCheck, Undo2 } from 'lucide-react';
 import { IlaDemo } from './landing/IlaDemo';
 import styles from './Hero.module.css';
+import { platform } from '../platform';
 
 const promises = [
   { icon: ShieldCheck, text: 'You approve every plan' },
@@ -37,7 +38,7 @@ export function Hero() {
           </p>
 
           <div className={styles.cta}>
-            <a href="/pricing" className={styles.primaryBtn}>
+            <a href={platform().commerce.canSellSubscriptions ? "/pricing" : "/login"} className={styles.primaryBtn}>
               Start building free
             </a>
             <a href="#how-it-works" className={styles.secondaryBtn}>

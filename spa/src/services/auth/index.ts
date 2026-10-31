@@ -2,9 +2,8 @@
  * Authentication service for managing user auth state.
  */
 
+import { platform } from "../../platform";
 import { httpClient, setActiveAccountId } from "../http";
-
-const AUTH_TOKEN_KEY = "auth_token";
 
 export interface UserInfo {
   userId: string;
@@ -25,24 +24,17 @@ export interface TokenPayload {
 
 class AuthService {
   /**
-   * Get the current auth token from localStorage.
+   * The current access token, from the platform (localStorage on the web, memory in the app).
    */
   getToken(): string | null {
-    return localStorage.getItem(AUTH_TOKEN_KEY);
+    return platform().tokens.accessToken();
   }
 
   /**
-   * Set the auth token in localStorage.
-   */
-  setToken(token: string): void {
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
-  }
-
-  /**
-   * Remove the auth token from localStorage.
+   * Forget the session on this device: the token and the active-account choice.
    */
   removeToken(): void {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
+    void platform().tokens.clear();
     setActiveAccountId(null);
   }
 
@@ -105,19 +97,12 @@ class AuthService {
   }
 
   /**
-   * Logout the user - clears token and redirects to home.
+   * Sign out: ends the session where the platform has one, forgets the account choice, goes home.
    */
-  logout(): void {
-    this.removeToken();
+  async logout(): Promise<void> {
+    await platform().auth.end();
+    setActiveAccountId(null);
     window.location.href = "/";
-  }
-
-  /**
-   * Get the Google OAuth login URL.
-   */
-  getGoogleLoginUrl(): string {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-    return `${apiBaseUrl}/auth/google`;
   }
 
   /**

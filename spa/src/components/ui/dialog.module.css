@@ -6,6 +6,38 @@
 
 .content {
   @apply fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] border border-[var(--border-default)] bg-[var(--surface-page)] shadow-xl duration-200 rounded-xl;
+  padding: var(--dialog-padding);
+}
+
+/* Phones: a bottom sheet within thumb reach, scrolling when the form is taller than the screen */
+@media (max-width: 639px) {
+  .content {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    /* Callers size the desktop card inline or with their own class; the sheet always spans the screen */
+    width: auto !important;
+    max-width: none !important;
+    max-height: 90dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    translate: none;
+    border-bottom: 0;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    padding: var(--space-6) var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom));
+  }
+}
+
+.close {
+  @apply absolute right-2 top-2 inline-flex items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--gradient-start);
+  outline-offset: 2px;
 }
 
 .header {
@@ -13,7 +45,14 @@
 }
 
 .footer {
-  @apply flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2;
+  @apply flex flex-col-reverse sm:flex-row sm:justify-end;
+}
+
+/* Phones: the actions stack full width, the primary one nearest the thumb */
+@media (max-width: 639px) {
+  .footer > * {
+    width: 100%;
+  }
 }
 
 .title {

@@ -5,7 +5,8 @@ import { authService } from "../../services/auth";
 import { HttpError } from "../../services/http";
 import { invitationService, invitationErrorMessage, type InvitationPreview } from "../../services/iam/invitations";
 import { acceptInvitation } from "./acceptInvitation";
-import { captureInvitationToken, invitationLoginUrl } from "./continuation";
+import { captureInvitationToken } from "./continuation";
+import { platform } from "../../platform";
 import styles from "./Invitations.module.css";
 
 export function AcceptInvitationPage() {
@@ -77,8 +78,8 @@ export function AcceptInvitationPage() {
           </> : <>
             <p>Sign in with {preview.email} to continue. You will confirm acceptance after signing in.</p>
             <div className={styles.actions}>
-              <Button asChild><a href={invitationLoginUrl("google", preview.login_context)}>Continue with Google</a></Button>
-              <Button asChild variant="outline"><a href={invitationLoginUrl("cognito", preview.login_context)}>Continue with Cognito</a></Button>
+              <Button type="button" onClick={() => { void platform().auth.begin("google", { invitation: preview.login_context }); }}>Continue with Google</Button>
+              <Button type="button" variant="outline" onClick={() => { void platform().auth.begin("cognito", { invitation: preview.login_context }); }}>Continue with Cognito</Button>
             </div>
           </>)}
         </>}
