@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { SearchInput } from "../../components/ui/search-input";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
 import { agentDisplayName } from "../../services/builder/ila";
@@ -18,6 +19,9 @@ import {
 } from "./conversations/ConversationStartComposer";
 import styles from "./Conversations.module.css";
 
+/** Below Tailwind's lg the classic view is one column, the list above a docked composer. Keep in step with Conversations.module.css. */
+const ONE_COLUMN_QUERY = "(max-width: 1023px)";
+
 export function Conversations() {
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<ConversationResponse[]>([]);
@@ -33,6 +37,7 @@ export function Conversations() {
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const oneColumn = useMediaQuery(ONE_COLUMN_QUERY);
 
   const loadData = async () => {
     try {
@@ -145,7 +150,7 @@ export function Conversations() {
       debugEnabled={debugEnabled}
       creating={creating}
       error={error}
-      docked={view === "cloud"}
+      docked={view === "cloud" || oneColumn}
       onAgentChange={(agentId) => {
         setSelectedAgentId(agentId);
         const nextAgent = agents.find((agent) => agent.agent_id === agentId);

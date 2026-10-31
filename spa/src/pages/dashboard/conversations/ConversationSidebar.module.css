@@ -1,11 +1,11 @@
 @reference "tailwindcss";
 
 .sidebar {
-  @apply box-border flex h-full min-h-0 flex-col border-r border-[var(--border-subtle)] bg-white/[0.018] p-6;
+  @apply box-border flex min-h-0 flex-1 flex-col bg-white/[0.018] px-4 pt-4 md:px-8 md:pt-6 lg:h-full lg:border-r lg:border-[var(--border-subtle)] lg:p-6;
 }
 
 .header {
-  @apply pb-8;
+  @apply pb-4 lg:pb-8;
 }
 
 .headerTop {
@@ -21,7 +21,7 @@
 }
 
 .searchWrap {
-  @apply relative mt-5;
+  @apply relative mt-4 lg:mt-5;
 }
 
 .searchIcon {
@@ -34,7 +34,7 @@
 }
 
 .listInner {
-  @apply flex min-w-0 flex-col gap-3 pr-2;
+  @apply flex min-w-0 flex-col gap-2 lg:gap-3 lg:pr-2;
 }
 
 .emptyState {
@@ -42,7 +42,7 @@
 }
 
 .card {
-  @apply box-border flex min-w-0 flex-col gap-3 rounded-xl border border-[var(--border-subtle)] p-5 text-left transition-colors hover:border-[var(--border-default)] hover:bg-white/[0.03];
+  @apply box-border flex min-w-0 flex-col gap-2 rounded-xl border border-[var(--border-subtle)] px-4 py-3 text-left lg:gap-3 lg:p-5 transition-colors hover:border-[var(--border-default)] hover:bg-white/[0.03];
 }
 
 .cardTopRow {
@@ -70,7 +70,7 @@
 }
 
 .deleteButton {
-  @apply h-6 w-6 rounded-md text-red-300 opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-200 group-hover:opacity-100;
+  @apply h-6 w-6 rounded-md text-red-300 opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-200 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100;
 }
 
 .cardTitle {

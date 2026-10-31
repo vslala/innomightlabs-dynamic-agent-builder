@@ -2,6 +2,7 @@ import { ExternalLink, X } from "lucide-react";
 
 import { useArtifactHtml } from "../../hooks/useArtifactHtml";
 import type { MessageCanvasArtifact } from "../../types/message";
+import { Button } from "../ui/button";
 import { CanvasPlaceholder } from "./CanvasPlaceholder";
 import styles from "./CanvasSidePanel.module.css";
 
@@ -23,13 +24,20 @@ export function CanvasSidePanel({ canvas, onClose }: CanvasSidePanelProps) {
         <div className={styles.panelActions}>
           {canvas.open_url && (
             <a href={canvas.open_url} target="_blank" rel="noreferrer" className={styles.openLink}>
-              <ExternalLink style={{ height: "0.875rem", width: "0.875rem" }} />
+              <ExternalLink />
               Open full page
             </a>
           )}
-          <button type="button" onClick={onClose} aria-label="Close canvas panel" className={styles.closeButton}>
-            <X style={{ height: "1rem", width: "1rem" }} />
-          </button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            aria-label="Close canvas panel"
+            className={styles.closeButton}
+          >
+            <X className={styles.closeIcon} />
+          </Button>
         </div>
       </div>
       <div className={styles.panelBody}>

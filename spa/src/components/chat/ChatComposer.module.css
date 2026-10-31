@@ -1,88 +1,170 @@
-@reference "tailwindcss";
+/* Mobile first: one pill-shaped row on phones; wider screens get the input above a row of actions. */
 
 .composer {
-  @apply w-[min(100%,58rem)] mx-auto shrink-0 pt-4 px-5 pb-6;
+  width: 100%;
+  flex-shrink: 0;
 }
 
 .composerInner {
-  @apply flex flex-col gap-4 min-h-[7.25rem] p-[1.125rem] border border-[var(--border-subtle)] rounded-2xl bg-[var(--bg-secondary)] shadow-[0_10px_30px_rgba(0,0,0,0.16)];
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 24px;
+  background: var(--bg-secondary);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  transition: border-color 0.15s ease;
+}
+
+.composerInner:focus-within {
+  border-color: var(--border-strong);
 }
 
 .composerInner[data-dragging] {
-  @apply border-dashed border-[var(--gradient-start)];
+  border-style: dashed;
+  border-color: var(--gradient-start);
+}
+
+.attachments {
+  display: flex;
+  gap: 8px;
+  padding: 4px 4px 0;
+  /* One swipeable strip, so many attachments never push the input off screen */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.attachments::-webkit-scrollbar {
+  display: none;
+}
+
+.attachments > * {
+  flex-shrink: 0;
+}
+
+.phoneTopRow {
+  display: flex;
+  min-width: 0;
+  padding: 2px 4px 0;
+}
+
+.phoneRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
 }
 
 .composerControls {
-  @apply flex items-center justify-between gap-4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
 }
 
+/* In a narrow column the agent picker and send button wrap under the actions instead of spilling out */
 .composerActions {
-  @apply flex items-center gap-2 min-w-0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.composerActions:last-child {
+  margin-left: auto;
 }
 
 .rightActions {
-  @apply min-w-44 max-w-64;
+  min-width: 11rem;
+  max-width: 16rem;
 }
 
 .roundIconButton {
-  @apply shrink-0 h-9 w-9 rounded-full;
+  flex-shrink: 0;
+  border-radius: 999px;
 }
 
-.composerInput {
-  @apply w-full min-h-11 max-h-40 resize-none overflow-auto border-0 rounded-none bg-transparent text-[var(--text-primary)] caret-[var(--text-primary)] py-0.5 px-1 shadow-none leading-normal;
+.composerInner .composerInput {
+  /* Read by the Textarea's inline padding, which a class cannot override */
+  --composer-input-py: 8px;
+  --composer-input-px: 4px;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  max-height: 10rem;
+  resize: none;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  caret-color: var(--text-primary);
+  box-shadow: none;
+  /* 16px stops iOS Safari zooming the page when the input takes focus */
+  font-size: 1rem;
+  line-height: 1.5;
 }
 
-.composerInput::placeholder {
-  @apply text-[var(--text-muted)];
+.composerInner .composerInput::placeholder {
+  color: var(--text-muted);
 }
 
-.composerInput:focus,
-.composerInput:focus-visible {
-  @apply outline-none shadow-none;
+.composerInner .composerInput:focus,
+.composerInner .composerInput:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .debugToggle {
-  @apply min-h-9 px-3 py-0 text-[0.8125rem];
+  min-height: 2.25rem;
+  padding: 0 12px;
+  font-size: 0.8125rem;
 }
 
 .sendButton {
-  @apply shrink-0 h-[2.625rem] w-[2.625rem] rounded-full p-0;
+  flex-shrink: 0;
+  border-radius: 999px;
 }
 
 .buttonIcon {
-  @apply h-4 w-4;
+  height: 1rem;
+  width: 1rem;
 }
 
 .sendSpinner {
-  @apply h-4 w-4 animate-spin;
+  height: 1rem;
+  width: 1rem;
+  animation: spin 1s linear infinite;
 }
 
-@media (max-width: 640px) {
-  .composer {
-    padding: 0.875rem 0.75rem 1rem;
-  }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
+.notice {
+  padding: 6px 12px 0;
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
+@media (min-width: 641px) {
   .composerInner {
-    padding: 1rem;
+    gap: 12px;
+    padding: 14px 14px 12px;
+    border-radius: 20px;
   }
 
-  .composerControls {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 0.75rem;
+  .attachments {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    padding: 0;
   }
 
-  .composerActions {
-    justify-content: space-between;
-    width: 100%;
-  }
-
-  .rightActions {
-    min-width: 0;
-    flex: 1;
-  }
-
-  .debugToggle span {
-    display: none;
+  .composerInner .composerInput {
+    --composer-input-py: 2px;
+    min-height: 2.75rem;
   }
 }

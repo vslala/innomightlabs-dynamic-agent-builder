@@ -5,7 +5,7 @@
 These are dashboard/builder chat surfaces. They do not own the entire SSE lifecycle, persistence, or turn cancellation; consuming pages and services supply the transcript, stream state, and callbacks. The embeddable widget lives in `spa/embed/`.
 
 - `ChatStreamRenderer.tsx`: message/stream/activity presentation using `buildChatStreamRenderPlan` from `packages/chat-stream-renderer/src`.
-- `ChatComposer.tsx` and module CSS: controlled textarea, attachment/document/image/debug actions, send/stop UI.
+- `ChatComposer.tsx` and module CSS: controlled textarea, attachment/document/image/debug actions, send/stop UI. Up to 640px it is one pill-shaped row (`+` menu, input, send) with `rightActions` above the input and `statusIndicator` hidden; wider screens get the input above a row of inline actions. `attachments` renders chips inside the composer (a swipeable strip on phones) and `notice` a line under it.
 - `AttachmentChip`, `TokenUsageIndicator`: attachment and usage display.
 - `DocumentChip`: a conversation document (PDF, Word…) with its reading status and a remove button. The composer's `onAttachDocuments` opens the picker; the page owns the documents through `useConversationDocuments`.
 - `ToolActivityCard`, `ToolActivitySummary`, `toolActivityFormat`: detailed versus compact tool display.
@@ -18,7 +18,7 @@ These are dashboard/builder chat surfaces. They do not own the entire SSE lifecy
 
 A parent updates `messages`, `streamingContent`, tool activities, and status. `ChatStreamRenderer` builds a shared render plan, then renders Markdown, attachments, images, canvases, submitted forms, and extra nodes. Change shared ordering/deduplication rules in the shared renderer package rather than duplicating them here; verify other renderer consumers too.
 
-The composer receives `value`, `onChange`, and `onSubmit`. Enter without Shift invokes `onSubmit`; Shift+Enter leaves a newline. The parent must guard submission validity and running-turn state: disabled button logic is not a universal keyboard submission guard. During submission, `stopAction` replaces the send action with stop; the callback performs cancellation elsewhere. Textarea height is measured dynamically and capped at 160px.
+The composer receives `value`, `onChange`, and `onSubmit`. Enter without Shift invokes `onSubmit`; Shift+Enter leaves a newline. On touch screens (`pointer: coarse`) Enter is always a newline and the send button sends, as in messaging apps, and Enter while an IME is composing never sends. The parent must guard submission validity and running-turn state: disabled button logic is not a universal keyboard submission guard. During submission, `stopAction` replaces the send action with stop; the callback performs cancellation elsewhere. Textarea height is measured dynamically and capped at 160px.
 
 Chat forms submit trimmed, nonempty `{ field_id, label, value }` answers, not the `Record<string, FormValue>` used by settings `SchemaForm`. Choice checkboxes can encode multiple choices as comma-separated text. Preserve this distinction; do not assume upload/key-value settings field support here.
 
@@ -28,7 +28,7 @@ Canvases fetch authenticated raw HTML through `useArtifactHtml`. Inline previews
 
 ## CSS and accessibility
 
-Newer surfaces have local `.module.css`; the transcript and some older cards still use inline styles/utilities. Reuse `ui` and shared tokens for new controls and static styling. Existing raw canvas buttons are not a reason to bypass primitives in new code. Keep icon action labels, iframe titles, keyboard submission behavior, readable errors, and non-color tool status cues. Check composer controls at the 640px breakpoint and long transcript content in both themes.
+Newer surfaces, including the transcript (`ChatStreamRenderer.module.css`), have local `.module.css`; some older cards still use inline styles/utilities. The transcript's saved messages are memoised rows (`MessageRow`): a streamed chunk re-renders the streaming reply, not every message, so pass stable callbacks and don't rebuild message objects that have not changed. Reuse `ui` and shared tokens for new controls and static styling. Existing raw canvas buttons are not a reason to bypass primitives in new code. Keep icon action labels, iframe titles, keyboard submission behavior, readable errors, and non-color tool status cues. Check composer controls at the 640px breakpoint and long transcript content in both themes.
 
 ## Verification
 

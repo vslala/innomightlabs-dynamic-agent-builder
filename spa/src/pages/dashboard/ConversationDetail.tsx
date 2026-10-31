@@ -1,29 +1,24 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { MessageSquare, ChevronLeft, Pencil, Trash2, Bot, Loader2, Maximize2, Minimize2, Image as ImageIcon } from "lucide-react";
+import { ArrowDown, ChevronLeft, Loader2, MessageSquare } from "lucide-react";
 import { ChatFormRenderer, type FormAnswer } from "../../components/chat/ChatFormRenderer";
-import { AttachmentChip } from "../../components/chat/AttachmentChip";
-import { ImageAttachmentChip } from "../../components/chat/ImageAttachmentChip";
-import { DocumentChip } from "../../components/chat/DocumentChip";
 import { CanvasSidePanel } from "../../components/chat/CanvasSidePanel";
 import { ChatComposer } from "../../components/chat/ChatComposer";
 import { TokenUsageIndicator, type LiveTokenUsageUpdate } from "../../components/chat/TokenUsageIndicator";
 import { ChatStreamRenderer } from "../../components/chat/ChatStreamRenderer";
+import { COMPACT_QUERY } from "../../components/dashboard/breakpoints";
 import { featureFlags } from "../../config/featureFlags";
 import { useFileAttachments } from "../../hooks/useFileAttachments";
 import { useConversationImages } from "../../hooks/useConversationImages";
 import { useConversationDocuments } from "../../hooks/useConversationDocuments";
-import { CHAT_DOCUMENT_EXTENSIONS, documentStatusLabel, isInFlight, readsOnlyAsDocument } from "../../lib/documents";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { useStickToBottom } from "../../hooks/useStickToBottom";
+import { CHAT_DOCUMENT_EXTENSIONS, readsOnlyAsDocument } from "../../lib/documents";
+import { cn } from "../../lib/utils";
 import { ALLOWED_EXTENSIONS } from "../../types/message";
-import {
-  Card,
-  CardContent,
-} from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
+import { ConfirmationDialog } from "../../components/ui/confirmation-dialog";
 import { FileInput } from "../../components/ui/file-input";
-import { Input } from "../../components/ui/input";
-import { Textarea } from "../../components/ui/textarea";
-import { Label } from "../../components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -32,13 +27,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../components/ui/select";
 import { conversationApiService } from "../../services/conversations";
 import { agentApiService, type AgentResponse } from "../../services/agents/AgentApiService";
 import { agentDisplayName, isIla, showsToolActivity } from "../../services/builder/ila";
@@ -60,6 +48,20 @@ import {
   type SSEEvent,
   type ToolActivity,
 } from "../../types/message";
+import { ConversationTopBar } from "./conversations/detail/ConversationTopBar";
+import { ComposerAttachments } from "./conversations/detail/ComposerAttachments";
+import { EditConversationDialog, type ConversationEdits } from "./conversations/detail/EditConversationDialog";
+import { GenerateImageDialog } from "./conversations/detail/GenerateImageDialog";
+import { StreamingImagePreview, type StreamingImage } from "./conversations/detail/StreamingImagePreview";
+import {
+  appendOnce,
+  consentDecisionContent,
+  formSubmissionContent,
+  generatedImageMessage,
+  liveTokenUsageFrom,
+  partialImageDataUrl,
+} from "./conversations/detail/turnMessages";
+import parts from "./conversations/detail/ConversationParts.module.css";
 import styles from "./Conversation.module.css";
 
 interface ConversationNavigationState {
@@ -70,6 +72,11 @@ interface ConversationNavigationState {
   debug?: boolean;
 }
 
+const MESSAGES_PAGE_SIZE = 20;
+/** Scrolled this close to the top, the next page of older messages loads. */
+const LOAD_OLDER_THRESHOLD_PX = 50;
+const CONVERSATIONS_PATH = "/dashboard/conversations";
+
 export function ConversationDetail() {
   const { conversationId } = useParams<{ conversationId: string }>();
   const navigate = useNavigate();
@@ -79,17 +86,11 @@ export function ConversationDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // User info for displaying profile picture
-  const userInfo = authService.getUserFromToken();
+  // Decoded once: the token does not change while the page is open, and this renders on every streamed chunk
+  const [userInfo] = useState(() => authService.getUserFromToken());
+  const compact = useMediaQuery(COMPACT_QUERY);
 
-  // Edit mode
   const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editAgentId, setEditAgentId] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Delete dialog
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -115,14 +116,9 @@ export function ConversationDetail() {
   const [debugEnabled, setDebugEnabled] = useState(
     () => Boolean((location.state as ConversationNavigationState | null)?.debug)
   );
-  const [imagePrompt, setImagePrompt] = useState("");
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [streamingImagePreview, setStreamingImagePreview] = useState<{
-    prompt: string;
-    dataUrl: string | null;
-    status: string;
-  } | null>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [streamingImagePreview, setStreamingImagePreview] = useState<StreamingImage | null>(null);
+  const transcript = useStickToBottom();
   const streamingContentRef = useRef("");
   const latestImagePreviewDataUrlRef = useRef<string | null>(null);
   const hadToolCallsRef = useRef(false);
@@ -155,7 +151,7 @@ export function ConversationDetail() {
       const [conversationData, agentsData, messagesData] = await Promise.all([
         conversationApiService.getConversation(conversationId),
         agentApiService.listAgents(),
-        conversationApiService.getMessages(conversationId, 20),
+        conversationApiService.getMessages(conversationId, MESSAGES_PAGE_SIZE),
       ]);
       setConversation(conversationData);
       setAgents(agentsData);
@@ -190,14 +186,10 @@ export function ConversationDetail() {
 
     setIsLoadingMessages(true);
     try {
-      const messagesData = await conversationApiService.getMessages(
-        conversationId,
-        20,
-        messagesCursor
-      );
+      const messagesData = await conversationApiService.getMessages(conversationId, MESSAGES_PAGE_SIZE, messagesCursor);
 
       // Save scroll position to restore after prepending
-      const container = messagesContainerRef.current;
+      const container = transcript.scrollElement.current;
       const previousScrollHeight = container?.scrollHeight || 0;
 
       // Prepend older messages (reverse them for display order)
@@ -208,8 +200,7 @@ export function ConversationDetail() {
       // Restore scroll position after DOM update
       requestAnimationFrame(() => {
         if (container) {
-          const newScrollHeight = container.scrollHeight;
-          container.scrollTop = newScrollHeight - previousScrollHeight;
+          container.scrollTop = container.scrollHeight - previousScrollHeight;
         }
       });
     } catch (err) {
@@ -219,21 +210,20 @@ export function ConversationDetail() {
     }
   };
 
-  // Handle scroll for infinite scroll up
   const handleScroll = () => {
-    const container = messagesContainerRef.current;
+    transcript.onScroll();
+    const container = transcript.scrollElement.current;
     if (!container || isLoadingMessages || !hasMoreMessages) return;
-
-    // Load more when scrolled near the top (within 50px)
-    if (container.scrollTop < 50) {
-      loadOlderMessages();
+    if (container.scrollTop < LOAD_OLDER_THRESHOLD_PX) {
+      void loadOlderMessages();
     }
   };
 
+  // A first page too short to scroll can never be scrolled up, so the older ones load on their own
   useEffect(() => {
     if (!initialMessagesLoaded || isLoadingMessages || !hasMoreMessages) return;
 
-    const container = messagesContainerRef.current;
+    const container = transcript.scrollElement.current;
     if (!container) return;
 
     if (container.scrollHeight <= container.clientHeight + 8) {
@@ -297,7 +287,7 @@ export function ConversationDetail() {
     }
 
     initialMessageSentRef.current = true;
-    navigate(`/dashboard/conversations/${conversation.conversation_id}`, {
+    navigate(`${CONVERSATIONS_PATH}/${conversation.conversation_id}`, {
       replace: true,
       state: null,
     });
@@ -312,7 +302,18 @@ export function ConversationDetail() {
     }
   }, [conversation, initialMessagesLoaded, isGeneratingImage, isSending, location.state, navigate]);
 
-  const getAgentName = (agentId: string): string => agentDisplayName(agents, agentId);
+  // Full screen is a desktop affordance; on compact screens the conversation already fills the screen
+  const expanded = isExpanded && !compact;
+
+  useEffect(() => {
+    if (!expanded) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsExpanded(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [expanded]);
+
   const isIlaConversation = isIla(conversation?.agent_id);
   // Ila shows the tool she's running as one line instead of a list, then the next; it steps aside once her reply streams in.
   const ilaWorkingStatus = isIlaConversation ? ilaStatus(toolActivities, isSending && !streamingContent) : null;
@@ -324,49 +325,9 @@ export function ConversationDetail() {
   const images = useConversationImages(conversationId, conversation?.agent_id);
   const documents = useConversationDocuments(conversationId);
 
-  const formatDate = (dateString: string): string => {
-    return new Date(dateString).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const handleStartEdit = () => {
-    if (!conversation) return;
-    setEditTitle(conversation.title);
-    setEditDescription(conversation.description || "");
-    setEditAgentId(conversation.agent_id);
-    setIsEditing(true);
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    setError(null);
-  };
-
-  const handleUpdate = async () => {
-    if (!conversationId || !editTitle.trim() || !editAgentId) return;
-
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      const updated = await conversationApiService.updateConversation(conversationId, {
-        title: editTitle.trim(),
-        description: editDescription.trim() || undefined,
-        agent_id: editAgentId,
-      });
-      setConversation(updated);
-      setIsEditing(false);
-    } catch (err) {
-      setError("Failed to update conversation. Please try again.");
-      console.error("Error updating conversation:", err);
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleUpdate = async (edits: ConversationEdits) => {
+    if (!conversationId) return;
+    setConversation(await conversationApiService.updateConversation(conversationId, edits));
   };
 
   const handleDelete = async () => {
@@ -375,53 +336,12 @@ export function ConversationDetail() {
     setIsDeleting(true);
     try {
       await conversationApiService.deleteConversation(conversationId);
-      navigate("/dashboard/conversations");
+      navigate(CONVERSATIONS_PATH);
     } catch (err) {
       console.error("Error deleting conversation:", err);
       setIsDeleting(false);
     }
   };
-
-  // Scroll to bottom when new messages are added (not when loading older)
-  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior,
-    });
-  };
-
-  // Scroll to bottom on initial load
-  useEffect(() => {
-    if (initialMessagesLoaded) {
-      scrollToBottom("instant");
-    }
-  }, [initialMessagesLoaded]);
-
-  // Scroll to bottom when streaming content updates
-  useEffect(() => {
-    if (streamingContent) {
-      scrollToBottom();
-    }
-  }, [streamingContent]);
-
-  useEffect(() => {
-    if (messages.length > 0 && (isSending || isGeneratingImage)) {
-      scrollToBottom();
-    }
-  }, [messages.length, isGeneratingImage, isSending]);
-
-  // Handle Escape key to exit expanded mode
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isExpanded) {
-        setIsExpanded(false);
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isExpanded]);
 
   // Transient turn UI (streaming text, tool activity, forms, image preview) — not
   // the persisted message list, which loadData()/setMessages own separately.
@@ -446,6 +366,23 @@ export function ConversationDetail() {
     setActiveTurnId(null);
   };
 
+  const clearImagePreview = () => {
+    latestImagePreviewDataUrlRef.current = null;
+    setStreamingImagePreview(null);
+  };
+
+  const showPartialImage = (event: SSEEvent, prompt: string) => {
+    const dataUrl = partialImageDataUrl(event);
+    if (!dataUrl) return;
+    latestImagePreviewDataUrlRef.current = dataUrl;
+    setStreamingImagePreview({ prompt, dataUrl, status: "Painting preview..." });
+  };
+
+  const trackTokenUsage = (event: SSEEvent) => {
+    const usage = liveTokenUsageFrom(event);
+    if (usage) setLiveTokenUsage(usage);
+  };
+
   interface TurnEventContext {
     conversationId: string;
     /** The optimistic temp id to reconcile once the real user message is saved. */
@@ -463,9 +400,7 @@ export function ConversationDetail() {
       const page = await conversationApiService.getMessages(conversationId, 5);
       const recovered = page.items.find((m) => m.message_id === messageId);
       if (!recovered) return;
-      setMessages((prev) =>
-        prev.some((m) => m.message_id === messageId) ? prev : [...prev, recovered]
-      );
+      setMessages((prev) => appendOnce(prev, recovered));
     } catch (err) {
       console.error("Failed to recover a saved assistant message the stream did not deliver:", err);
     }
@@ -478,9 +413,7 @@ export function ConversationDetail() {
     switch (event.event_type) {
       case SSEEventType.LIFECYCLE_NOTIFICATION:
         setStatusMessage(event.content);
-        setStreamingImagePreview((prev) =>
-          prev ? { ...prev, status: event.content } : prev
-        );
+        setStreamingImagePreview((prev) => (prev ? { ...prev, status: event.content } : prev));
         break;
 
       case SSEEventType.AGENT_RESPONSE_TO_USER:
@@ -540,58 +473,24 @@ export function ConversationDetail() {
 
       case SSEEventType.IMAGE_GENERATION_PARTIAL:
         if (event.image_b64) {
-          const dataUrl = `data:${event.image_mime_type || "image/png"};base64,${event.image_b64}`;
-          latestImagePreviewDataUrlRef.current = dataUrl;
           setStatusMessage(null);
-          setStreamingImagePreview({
-            prompt: ctx.imageLabel || "Generated image",
-            dataUrl,
-            status: "Painting preview...",
-          });
+          showPartialImage(event, ctx.imageLabel || "Generated image");
         }
         break;
 
       case SSEEventType.IMAGE_GENERATION_COMPLETE:
-        {
-          const completedImages = event.images;
-          if (!completedImages || completedImages.length === 0) {
-            setStreamingImagePreview(null);
-            setStatusMessage(null);
-            break;
-          }
-
+        if (event.images?.length) {
           assistantMessageSavedRef.current = true;
-          const imageMessageId = event.message_id || `assistant-image-${Date.now()}`;
-          const previewDataUrl = latestImagePreviewDataUrlRef.current;
-          setMessages((prev) =>
-            prev.some((m) => m.message_id === imageMessageId)
-              ? prev
-              : [
-                  ...prev,
-                  {
-                    message_id: imageMessageId,
-                    conversation_id: ctx.conversationId,
-                    role: "assistant",
-                    content: `Generated image: ${ctx.imageLabel || "Generated image"}`,
-                    images: completedImages.map((image) => ({
-                      image_id: image.image_id,
-                      url: image.url,
-                      preview_data_url: previewDataUrl,
-                      filename: image.filename,
-                      mime_type: image.mime_type,
-                      size_bytes: image.size_bytes,
-                      width: image.width,
-                      height: image.height,
-                      prompt: image.prompt,
-                      revised_prompt: image.revised_prompt,
-                    })),
-                    created_at: new Date().toISOString(),
-                  },
-                ]
-          );
+          const message = generatedImageMessage({
+            messageId: event.message_id || `assistant-image-${Date.now()}`,
+            conversationId: ctx.conversationId,
+            prompt: ctx.imageLabel,
+            images: event.images,
+            previewDataUrl: latestImagePreviewDataUrlRef.current,
+          });
+          setMessages((prev) => appendOnce(prev, message));
         }
-        latestImagePreviewDataUrlRef.current = null;
-        setStreamingImagePreview(null);
+        clearImagePreview();
         setStatusMessage(null);
         break;
 
@@ -619,28 +518,16 @@ export function ConversationDetail() {
         if (streamingContentRef.current) {
           // Snapshot the refs now: React runs the updater later, after
           // STREAM_COMPLETE (often in the same chunk) has already cleared them.
-          const assistantMessageId = event.message_id || `assistant-${Date.now()}`;
-          const content = streamingContentRef.current;
-          const canvases = pendingCanvasArtifactsRef.current.length
-            ? pendingCanvasArtifactsRef.current
-            : undefined;
-          const raisedConsents = pendingConsentsRef.current.length ? pendingConsentsRef.current : undefined;
-          setMessages((prev) =>
-            prev.some((m) => m.message_id === assistantMessageId)
-              ? prev
-              : [
-                  ...prev,
-                  {
-                    message_id: assistantMessageId,
-                    conversation_id: ctx.conversationId,
-                    role: "assistant",
-                    content,
-                    canvases,
-                    consents: raisedConsents,
-                    created_at: new Date().toISOString(),
-                  },
-                ]
-          );
+          const message: Message = {
+            message_id: event.message_id || `assistant-${Date.now()}`,
+            conversation_id: ctx.conversationId,
+            role: "assistant",
+            content: streamingContentRef.current,
+            canvases: pendingCanvasArtifactsRef.current.length ? pendingCanvasArtifactsRef.current : undefined,
+            consents: pendingConsentsRef.current.length ? pendingConsentsRef.current : undefined,
+            created_at: new Date().toISOString(),
+          };
+          setMessages((prev) => appendOnce(prev, message));
         } else if (event.message_id) {
           // We have nothing accumulated to render, yet the backend says a
           // message was saved -- almost always because an earlier event (often
@@ -664,9 +551,8 @@ export function ConversationDetail() {
           setIncompleteResponse(true);
         }
         streamingContentRef.current = "";
-        latestImagePreviewDataUrlRef.current = null;
         setStreamingContent("");
-        setStreamingImagePreview(null);
+        clearImagePreview();
         ctx.finish();
         break;
 
@@ -674,7 +560,7 @@ export function ConversationDetail() {
         hadToolCallsRef.current = true;
         if (event.tool_name) {
           const activity: ToolActivity = {
-            id: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
             timestamp: new Date(),
             tool_call_id: event.tool_call_id,
             tool_name: event.tool_name,
@@ -716,27 +602,26 @@ export function ConversationDetail() {
         break;
 
       case SSEEventType.TOKEN_USAGE_UPDATE:
-        if (event.llm_model) {
-          setLiveTokenUsage({
-            llm_model: event.llm_model,
-            prompt_tokens: event.prompt_tokens ?? 0,
-            completion_tokens: event.completion_tokens ?? 0,
-            total_tokens: event.total_tokens ?? 0,
-            call_count: event.call_count ?? 0,
-          });
-        }
+        trackTokenUsage(event);
         break;
 
       case SSEEventType.ERROR:
         setChatError(event.content);
-        latestImagePreviewDataUrlRef.current = null;
-        setStreamingImagePreview(null);
+        clearImagePreview();
         ctx.finish();
         break;
 
       default:
         break;
     }
+  };
+
+  /** Starts reading a new stream, abandoning (not stopping) any earlier one. */
+  const startStream = () => {
+    streamAbortRef.current?.abort();
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+    return controller.signal;
   };
 
   // Reattach to a turn that is still running (or just finished) server-side —
@@ -749,10 +634,6 @@ export function ConversationDetail() {
     setActiveTurnId(turnId);
     setIsSending(true);
 
-    streamAbortRef.current?.abort();
-    const controller = new AbortController();
-    streamAbortRef.current = controller;
-
     const ctx: TurnEventContext = {
       conversationId: conversation.conversation_id,
       optimisticUserMessageId: "",
@@ -762,14 +643,12 @@ export function ConversationDetail() {
 
     await chatService.followTurn(conversation.agent_id, conversation.conversation_id, turnId, {
       onEvent: (event) => applyTurnEvent(event, ctx),
-      signal: controller.signal,
+      signal: startStream(),
       onError: (err) => {
         setChatError(err.message);
         finishTurn();
       },
-      onComplete: () => {
-        finishTurn();
-      },
+      onComplete: finishTurn,
     });
   };
 
@@ -787,7 +666,13 @@ export function ConversationDetail() {
     Boolean(inputValue.trim()) || attachments.length > 0 || images.readyImageIds.length > 0 || documents.documents.length > 0;
   const uploadsInProgress = images.isUploading || images.hasFailed || documents.uploading.length > 0;
 
-  // Handle sending a message
+  /** Shows the person's message straight away and follows the transcript to it. */
+  const addOptimisticMessage = async (message: Message) => {
+    setMessages((prev) => [...prev, message]);
+    transcript.scrollToBottom();
+    await nextAnimationFrame();
+  };
+
   const handleSendMessage = async (
     messageOverride?: string,
     optimisticUserContent?: string,
@@ -833,13 +718,8 @@ export function ConversationDetail() {
       created_at: new Date().toISOString(),
     };
     if (!isRetryMessage) {
-      setMessages((prev) => [...prev, userMsg]);
-      await nextAnimationFrame();
+      await addOptimisticMessage(userMsg);
     }
-
-    streamAbortRef.current?.abort();
-    const controller = new AbortController();
-    streamAbortRef.current = controller;
 
     const ctx: TurnEventContext = {
       conversationId: conversation.conversation_id,
@@ -859,8 +739,8 @@ export function ConversationDetail() {
       },
       {
         onEvent: (event) => applyTurnEvent(event, ctx),
-        signal: controller.signal,
-        onTurnStarted: (turnId) => setActiveTurnId(turnId),
+        signal: startStream(),
+        onTurnStarted: setActiveTurnId,
         onConflict: (runningTurnId) => {
           if (!isRetryMessage) {
             setMessages((prev) => prev.filter((m) => m.message_id !== userMsg.message_id));
@@ -871,9 +751,7 @@ export function ConversationDetail() {
           setChatError(err.message);
           finishTurn();
         },
-        onComplete: () => {
-          finishTurn();
-        },
+        onComplete: finishTurn,
       }
     );
   };
@@ -884,23 +762,16 @@ export function ConversationDetail() {
     setIsSending(true);
     resetTurnUiState();
 
-    const edited = Object.keys(decision.edits ?? {});
     const userMsg: Message = {
       message_id: `temp-${Date.now()}`,
       conversation_id: conversation.conversation_id,
       role: "user",
-      // Shaped like the line the API saves, so it shows the same until that arrives
-      content:
-        `<consent_decision consent_id="${card.consent_id}" action=${JSON.stringify(card.title)} ` +
-        `decision="${decision.decision === "approve" ? "approved" : "rejected"}"` +
-        `${edited.length ? ` edited="${edited.join(",")}"` : ""}${decision.always ? ' always="true"' : ""}>\n</consent_decision>`,
+      content: consentDecisionContent(card, decision),
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, userMsg]);
+    transcript.scrollToBottom();
 
-    streamAbortRef.current?.abort();
-    const controller = new AbortController();
-    streamAbortRef.current = controller;
     const ctx: TurnEventContext = {
       conversationId: conversation.conversation_id,
       optimisticUserMessageId: userMsg.message_id,
@@ -911,8 +782,8 @@ export function ConversationDetail() {
     let refused: Error | null = null;
     await chatService.decideConsent(conversation.agent_id, conversation.conversation_id, card.consent_id, decision, {
       onEvent: (event) => applyTurnEvent(event, ctx),
-      signal: controller.signal,
-      onTurnStarted: (turnId) => setActiveTurnId(turnId),
+      signal: startStream(),
+      onTurnStarted: setActiveTurnId,
       onConflict: (runningTurnId) => {
         setMessages((prev) => prev.filter((m) => m.message_id !== userMsg.message_id));
         void attachToTurn(runningTurnId, "");
@@ -922,7 +793,7 @@ export function ConversationDetail() {
         setMessages((prev) => prev.filter((m) => m.message_id !== userMsg.message_id));
         finishTurn();
       },
-      onComplete: () => finishTurn(),
+      onComplete: finishTurn,
     });
     // The card shows why it didn't go through, and can be decided again
     if (refused) throw refused;
@@ -955,32 +826,12 @@ export function ConversationDetail() {
 
   const handleFormSubmit = async (answers: FormAnswer[]) => {
     if (!activeForm) return;
-
     const label = activeForm.form.form_name;
     setPendingFormLabel(label);
-
-    const lines: string[] = [];
-    lines.push(`<form_submission label="${label}">`);
-
-    for (const answer of answers) {
-      const displayValue = answer.value.replace(/\n/g, "\\n");
-      lines.push(`- ${answer.label}: ${displayValue}`);
-    }
-
-    lines.push(`</form_submission>`);
-    lines.push("");
-    lines.push("Fields:");
-
-    for (const answer of answers) {
-      const value = answer.value.replace(/\n/g, " ");
-      lines.push(`- ${answer.field_id}="${value}"`);
-    }
-
-    await handleSendMessage(lines.join("\n"), `Submitted: ${label}`);
+    await handleSendMessage(formSubmissionContent(label, answers), `Submitted: ${label}`);
   };
 
-  const handleGenerateImage = async (promptOverride?: string) => {
-    const promptValue = promptOverride ?? imagePrompt;
+  const handleGenerateImage = async (promptValue: string) => {
     if (!conversation || !promptValue.trim() || isGeneratingImage) return;
 
     const prompt = promptValue.trim();
@@ -993,10 +844,12 @@ export function ConversationDetail() {
       dataUrl: null,
       status: "Starting image generation...",
     });
-    setImagePrompt("");
-    setIsImageDialogOpen(false);
+    transcript.scrollToBottom();
 
-    let userMessageId: string | null = null;
+    const stopGenerating = () => {
+      clearImagePreview();
+      setIsGeneratingImage(false);
+    };
     let assistantMessageId: string | null = null;
 
     try {
@@ -1011,11 +864,10 @@ export function ConversationDetail() {
           onEvent: (event) => {
             switch (event.event_type) {
               case SSEEventType.USER_MESSAGE_SAVED:
-                userMessageId = event.message_id || null;
                 setMessages((prev) => [
                   ...prev,
                   {
-                    message_id: userMessageId || `image-user-${Date.now()}`,
+                    message_id: event.message_id || `image-user-${Date.now()}`,
                     conversation_id: conversation.conversation_id,
                     role: "user",
                     content: prompt,
@@ -1026,21 +878,11 @@ export function ConversationDetail() {
 
               case SSEEventType.IMAGE_GENERATION_STARTED:
               case SSEEventType.LIFECYCLE_NOTIFICATION:
-                setStreamingImagePreview((prev) =>
-                  prev ? { ...prev, status: event.content } : prev
-                );
+                setStreamingImagePreview((prev) => (prev ? { ...prev, status: event.content } : prev));
                 break;
 
               case SSEEventType.IMAGE_GENERATION_PARTIAL:
-                if (event.image_b64) {
-                  const dataUrl = `data:${event.image_mime_type || "image/png"};base64,${event.image_b64}`;
-                  latestImagePreviewDataUrlRef.current = dataUrl;
-                  setStreamingImagePreview({
-                    prompt,
-                    dataUrl,
-                    status: "Painting preview...",
-                  });
-                }
+                showPartialImage(event, prompt);
                 break;
 
               case SSEEventType.ASSISTANT_MESSAGE_SAVED:
@@ -1048,59 +890,30 @@ export function ConversationDetail() {
                 break;
 
               case SSEEventType.IMAGE_GENERATION_COMPLETE:
-                if (event.images && event.images.length > 0) {
-                  const completedImages = event.images;
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      message_id: assistantMessageId || event.message_id || `assistant-image-${Date.now()}`,
-                      conversation_id: conversation.conversation_id,
-                      role: "assistant",
-                      content: `Generated image: ${prompt}`,
-                      images: completedImages.map((image) => ({
-                        image_id: image.image_id,
-                        url: image.url,
-                        preview_data_url: latestImagePreviewDataUrlRef.current,
-                        filename: image.filename,
-                        mime_type: image.mime_type,
-                        size_bytes: image.size_bytes,
-                        width: image.width,
-                        height: image.height,
-                        prompt: image.prompt,
-                        revised_prompt: image.revised_prompt,
-                      })),
-                      created_at: new Date().toISOString(),
-                    },
-                  ]);
+                if (event.images?.length) {
+                  const message = generatedImageMessage({
+                    messageId: assistantMessageId || event.message_id || `assistant-image-${Date.now()}`,
+                    conversationId: conversation.conversation_id,
+                    prompt,
+                    images: event.images,
+                    previewDataUrl: latestImagePreviewDataUrlRef.current,
+                  });
+                  setMessages((prev) => [...prev, message]);
                 }
-                latestImagePreviewDataUrlRef.current = null;
-                setStreamingImagePreview(null);
+                clearImagePreview();
                 break;
 
               case SSEEventType.TOKEN_USAGE_UPDATE:
-                if (event.llm_model) {
-                  setLiveTokenUsage({
-                    llm_model: event.llm_model,
-                    prompt_tokens: event.prompt_tokens ?? 0,
-                    completion_tokens: event.completion_tokens ?? 0,
-                    total_tokens: event.total_tokens ?? 0,
-                    call_count: event.call_count ?? 0,
-                  });
-                }
+                trackTokenUsage(event);
                 break;
 
               case SSEEventType.ERROR:
                 setChatError(event.content);
-                latestImagePreviewDataUrlRef.current = null;
-                setStreamingImagePreview(null);
-                setIsGeneratingImage(false);
+                stopGenerating();
                 break;
 
               case SSEEventType.STREAM_COMPLETE:
-                latestImagePreviewDataUrlRef.current = null;
-                setStreamingImagePreview(null);
-                setIsGeneratingImage(false);
-                requestAnimationFrame(() => scrollToBottom());
+                stopGenerating();
                 break;
 
               default:
@@ -1109,9 +922,7 @@ export function ConversationDetail() {
           },
           onError: (err) => {
             setChatError(err.message);
-            latestImagePreviewDataUrlRef.current = null;
-            setStreamingImagePreview(null);
-            setIsGeneratingImage(false);
+            stopGenerating();
           },
           onComplete: () => {
             setIsGeneratingImage(false);
@@ -1120,9 +931,7 @@ export function ConversationDetail() {
       );
     } catch (err) {
       setChatError(err instanceof Error ? err.message : String(err));
-      latestImagePreviewDataUrlRef.current = null;
-      setStreamingImagePreview(null);
-      setIsGeneratingImage(false);
+      stopGenerating();
     } finally {
       setStatusMessage(null);
     }
@@ -1139,6 +948,8 @@ export function ConversationDetail() {
     if (text.length > 0) void addFiles(text);
   };
 
+  const backToConversations = () => navigate(CONVERSATIONS_PATH);
+
   if (loading) {
     return (
       <div className={styles.loadingPanel}>
@@ -1149,222 +960,67 @@ export function ConversationDetail() {
 
   if (error && !conversation) {
     return (
-      <div className={styles.notFoundShell}>
-        <div className={styles.notFoundHeader}>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/dashboard/conversations")}
-          >
-            <ChevronLeft style={{ height: "1.25rem", width: "1.25rem" }} />
-          </Button>
-          <h1 className={styles.notFoundTitle}>
-            Conversation Not Found
-          </h1>
+      <div className={styles.notFound}>
+        <Button variant="ghost" size="icon" onClick={backToConversations} aria-label="Back to conversations">
+          <ChevronLeft className={styles.notFoundBack} />
+        </Button>
+        <div className={styles.notFoundBody}>
+          <MessageSquare className={styles.notFoundIcon} />
+          <h1 className={styles.notFoundTitle}>Conversation not found</h1>
+          <p className={styles.notFoundMessage}>{error}</p>
+          <Button onClick={backToConversations}>Back to Conversations</Button>
         </div>
-        <Card>
-          <CardContent className={styles.notFoundCardContent}>
-            <div className={styles.notFoundBody}>
-              <MessageSquare className={styles.notFoundIcon} />
-              <p className={styles.notFoundMessage}>{error}</p>
-              <Button onClick={() => navigate("/dashboard/conversations")}>
-                Back to Conversations
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     );
   }
 
   if (!conversation) return null;
 
+  const isEmpty = messages.length === 0 && !streamingContent && !statusMessage && !streamingImagePreview;
+  const hasAttachments =
+    attachments.length > 0 || images.images.length > 0 || documents.documents.length > 0 || documents.uploading.length > 0;
+  const composerNotice = attachmentError || images.error || documents.error;
+
   return (
-    <div className={styles.pageRow}>
-    <div className={styles.shell}>
-      <div className={styles.header}>
-        <div className={styles.headerMain}>
-          <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard/conversations")}>
-            <ChevronLeft style={{ height: "1.25rem", width: "1.25rem" }} />
-          </Button>
-          <div className={styles.conversationIcon}>
-            <MessageSquare className={styles.conversationIconSvg} />
-          </div>
-          <div className={styles.headerText}>
-            <div className={styles.titleRow}>
-              <h1 className={styles.title}>
-                {conversation.title}
-              </h1>
-              {supportsImageGeneration && (
-                <span className={styles.imageBadge}>
-                  <ImageIcon className={styles.badgeIcon} />
-                  Images
-                </span>
+    <div className={cn(styles.page, expanded && styles.expanded)}>
+      <ConversationTopBar
+        title={conversation.title}
+        agentName={agentDisplayName(agents, conversation.agent_id)}
+        description={conversation.description}
+        supportsImages={supportsImageGeneration}
+        debugEnabled={debugEnabled}
+        expanded={compact ? undefined : isExpanded}
+        onBack={backToConversations}
+        onEdit={() => setIsEditing(true)}
+        onDelete={() => setIsDeleteDialogOpen(true)}
+        onDebugChange={setDebugEnabled}
+        onExpandedChange={setIsExpanded}
+      />
+
+      <div className={styles.body}>
+        <div className={styles.chat}>
+          <div ref={transcript.scrollRef} onScroll={handleScroll} className={styles.messages}>
+            <div ref={transcript.contentRef} className={styles.thread}>
+              {isLoadingMessages && (
+                <div className={styles.olderNotice} role="status">
+                  <Loader2 className={styles.inlineSpinner} />
+                  Loading older messages...
+                </div>
               )}
-            </div>
-            <div className={styles.metaRow}>
-              <span className={styles.metaItem}>
-                <Bot className={styles.metaIcon} />
-                {getAgentName(conversation.agent_id)}
-              </span>
-              <span>Created {formatDate(conversation.created_at)}</span>
-              {conversation.description && (
-                <span className={styles.description}>
-                  {conversation.description}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
 
-        <div className={styles.actions}>
-          <Button variant="ghost" size="icon" onClick={handleStartEdit} title="Edit conversation">
-            <Pencil style={{ height: "1rem", width: "1rem" }} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={styles.dangerButton}
-            onClick={() => setIsDeleteDialogOpen(true)}
-            title="Delete conversation"
-          >
-            <Trash2 style={{ height: "1rem", width: "1rem" }} />
-          </Button>
-        </div>
-      </div>
-
-      {error && (
-        <div style={{
-          padding: "0.75rem 1rem",
-          borderRadius: "0.5rem",
-          backgroundColor: "rgba(239, 68, 68, 0.1)",
-          border: "1px solid rgba(239, 68, 68, 0.2)",
-          color: "#f87171",
-          fontSize: "0.875rem",
-        }}>
-          {error}
-        </div>
-      )}
-
-      {/* Fullscreen backdrop overlay */}
-      {isExpanded && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "#0a0a0f",
-            zIndex: 49,
-          }}
-        />
-      )}
-
-      <Card style={{
-        display: "flex",
-        flexDirection: "column",
-        flex: isExpanded ? undefined : 1,
-        height: isExpanded ? "100vh" : undefined,
-        minHeight: 0,
-        overflow: "hidden",
-        border: "none",
-        boxShadow: "none",
-        background: "transparent",
-        ...(isExpanded ? {
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 50,
-          maxWidth: "100%",
-          borderRadius: 0,
-          margin: 0,
-          background: "#050506",
-        } : {}),
-      }}>
-        <div style={{
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          width: "min(100%, 56rem)",
-          margin: "0 auto",
-          padding: "0.25rem 0 0.5rem",
-          backgroundColor: "transparent",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
-            <span>{messages.length} messages</span>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsExpanded(!isExpanded)}
-            title={isExpanded ? "Exit fullscreen" : "Expand to fullscreen"}
-          >
-            {isExpanded ? (
-              <Minimize2 style={{ height: "1.125rem", width: "1.125rem" }} />
-            ) : (
-              <Maximize2 style={{ height: "1.125rem", width: "1.125rem" }} />
-            )}
-          </Button>
-        </div>
-        <CardContent style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: 0, overflow: "hidden" }}>
-          {/* Messages Area */}
-          <div
-            ref={messagesContainerRef}
-            onScroll={handleScroll}
-            className={styles.messagesPane}
-          >
-            {/* Loading indicator for older messages */}
-            {isLoadingMessages && (
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "0.5rem",
-                color: "var(--text-muted)",
-                fontSize: "0.875rem",
-              }}>
-                <Loader2 style={{ height: "1rem", width: "1rem", marginRight: "0.5rem", animation: "spin 1s linear infinite" }} />
-                Loading older messages...
-              </div>
-            )}
-
-            {/* Load more indicator when there are more messages */}
-            {hasMoreMessages && !isLoadingMessages && messages.length > 0 && (
-              <div style={{
-                textAlign: "center",
-                padding: "0.5rem",
-                color: "var(--text-muted)",
-                fontSize: "0.75rem",
-              }}>
-                Scroll up for older messages
-              </div>
-            )}
-
-            {messages.length === 0 && !streamingContent && !statusMessage ? (
-              <div style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                color: "var(--text-muted)",
-              }}>
-                <MessageSquare style={{ height: "3rem", width: "3rem", marginBottom: "1rem", opacity: 0.5 }} />
-                <p style={{ marginBottom: "0.5rem" }}>No messages yet</p>
-                <p style={{ fontSize: "0.875rem" }}>
-                  Send a message{supportsImageGeneration ? " or generate an image" : ""} to start the conversation
-                </p>
-              </div>
-            ) : (
-              <>
+              {isEmpty ? (
+                <div className={styles.emptyState}>
+                  <MessageSquare className={styles.emptyIcon} />
+                  <p className={styles.emptyTitle}>No messages yet</p>
+                  <p className={styles.emptySubtitle}>
+                    Send a message{supportsImageGeneration ? " or generate an image" : ""} to start the conversation
+                  </p>
+                </div>
+              ) : (
                 <ChatStreamRenderer
                   messages={messages}
                   streamingContent={streamingContent}
-                  toolActivities={showsToolActivity(conversation?.agent_id, featureFlags.showToolActivity) ? toolActivities : []}
+                  toolActivities={showsToolActivity(conversation.agent_id, featureFlags.showToolActivity) ? toolActivities : []}
                   debugToolActivity={debugEnabled}
                   statusMessage={isIlaConversation ? null : statusMessage}
                   userPicture={userInfo?.picture}
@@ -1372,37 +1028,22 @@ export function ConversationDetail() {
                   onExpandCanvas={setExpandedCanvas}
                   renderConsent={renderConsent}
                   extraNode={
-                    <>
-                      {ilaWorkingStatus && <IlaWorking label={ilaWorkingStatus} />}
-                      {activeConnect && (
-                        <ConnectAccountCard
-                          request={activeConnect}
-                          disabled={isSending}
-                          onConnected={() => {
-                            const title = activeConnect.title;
-                            setActiveConnect(null);
-                            void handleSendMessage(connectedMessage(title));
-                          }}
-                        />
-                      )}
-                      {activeForm && (
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "0.75rem",
-                            alignItems: "flex-start",
-                          }}
-                        >
-                          <div style={{
-                            display: "none",
-                          }} />
-                          <div style={{
-                            width: "100%",
-                            padding: "0.75rem 1rem",
-                            borderRadius: "0.875rem",
-                            backgroundColor: "rgba(255, 255, 255, 0.055)",
-                            color: "var(--text-primary)",
-                          }}>
+                    (ilaWorkingStatus || activeConnect || activeForm || pendingFormLabel || streamingImagePreview) && (
+                      <>
+                        {ilaWorkingStatus && <IlaWorking label={ilaWorkingStatus} />}
+                        {activeConnect && (
+                          <ConnectAccountCard
+                            request={activeConnect}
+                            disabled={isSending}
+                            onConnected={() => {
+                              const title = activeConnect.title;
+                              setActiveConnect(null);
+                              void handleSendMessage(connectedMessage(title));
+                            }}
+                          />
+                        )}
+                        {activeForm && (
+                          <div className={parts.panel}>
                             <ChatFormRenderer
                               form={activeForm.form}
                               submitLabel={activeForm.submitLabel}
@@ -1412,212 +1053,47 @@ export function ConversationDetail() {
                               uploadFile={uploadLeadFileFor(activeForm.leadForm)}
                             />
                           </div>
-                        </div>
-                      )}
-
-                      {pendingFormLabel && (
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "0.75rem",
-                            alignItems: "flex-start",
-                          }}
-                        >
-                          <div style={{
-                            display: "none",
-                          }} />
-                          <div style={{
-                            padding: "0.75rem 1rem",
-                            borderRadius: "0.875rem",
-                            backgroundColor: "rgba(255, 255, 255, 0.055)",
-                            color: "var(--text-secondary)",
-                            fontSize: "0.875rem",
-                          }}>
-                            Captured "{pendingFormLabel}". Processing...
-                          </div>
-                        </div>
-                      )}
-
-                      {streamingImagePreview && (
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "0.75rem",
-                            alignItems: "flex-start",
-                          }}
-                        >
-                          <div style={{
-                            display: "none",
-                          }} />
-                          <div style={{
-                            width: "100%",
-                            padding: "0.875rem",
-                            borderRadius: "0.875rem",
-                            backgroundColor: "rgba(255, 255, 255, 0.055)",
-                            color: "var(--text-primary)",
-                          }}>
-                            <div style={{ fontWeight: 650, marginBottom: "0.75rem" }}>
-                              Generating image: {streamingImagePreview.prompt}
-                            </div>
-                            <div style={{
-                              minHeight: "18rem",
-                              borderRadius: "0.75rem",
-                              border: "1px solid var(--border-subtle)",
-                              backgroundColor: "var(--bg-tertiary)",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              overflow: "hidden",
-                              position: "relative",
-                            }}>
-                              {streamingImagePreview.dataUrl ? (
-                                <img
-                                  src={streamingImagePreview.dataUrl}
-                                  alt={streamingImagePreview.prompt}
-                                  style={{
-                                    width: "100%",
-                                    maxHeight: "34rem",
-                                    objectFit: "contain",
-                                    animation: "fade-in 250ms ease-out",
-                                  }}
-                                />
-                              ) : (
-                                <div style={{
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  alignItems: "center",
-                                  gap: "0.75rem",
-                                  color: "var(--text-muted)",
-                                }}>
-                                  <Loader2 style={{ height: "1.5rem", width: "1.5rem", animation: "spin 1s linear infinite" }} />
-                                  <span>{streamingImagePreview.status}</span>
-                                </div>
-                              )}
-                              {streamingImagePreview.dataUrl && (
-                                <div style={{
-                                  position: "absolute",
-                                  left: 0,
-                                  right: 0,
-                                  bottom: 0,
-                                  padding: "0.75rem 1rem",
-                                  background: "linear-gradient(to top, rgba(0,0,0,0.62), rgba(0,0,0,0))",
-                                  color: "white",
-                                  fontSize: "0.875rem",
-                                }}>
-                                  {streamingImagePreview.status}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </>
+                        )}
+                        {pendingFormLabel && (
+                          <div className={parts.pending}>Captured "{pendingFormLabel}". Processing...</div>
+                        )}
+                        {streamingImagePreview && <StreamingImagePreview image={streamingImagePreview} />}
+                      </>
+                    )
                   }
                 />
-              </>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* Error message */}
-          {chatError && (
-            <div style={{
-              margin: "0 1rem",
-              padding: "0.75rem",
-              borderRadius: "0.5rem",
-              backgroundColor: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid rgba(239, 68, 68, 0.2)",
-              color: "#f87171",
-              fontSize: "0.875rem",
-            }}>
-              {chatError}
-            </div>
-          )}
-
-          {/* Incomplete response warning with retry */}
-          {incompleteResponse && (
-            <div style={{
-              margin: "0 1rem",
-              padding: "0.75rem",
-              borderRadius: "0.5rem",
-              backgroundColor: "rgba(245, 158, 11, 0.1)",
-              border: "1px solid rgba(245, 158, 11, 0.2)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "0.75rem",
-            }}>
-              <span style={{ color: "#f59e0b", fontSize: "0.875rem" }}>
-                The agent processed your request but didn't finish responding.
-              </span>
+          <div className={styles.dock}>
+            {!transcript.atBottom && (
               <Button
-                size="sm"
-                variant="outline"
-                onClick={handleRetry}
-                disabled={isSending}
-                style={{ flexShrink: 0 }}
+                variant="secondary"
+                size="icon"
+                onClick={() => transcript.scrollToBottom("smooth")}
+                aria-label="Jump to latest message"
+                className={styles.jumpButton}
               >
-                {isSending ? "Retrying..." : "Retry"}
+                <ArrowDown className={styles.jumpIcon} />
               </Button>
-            </div>
-          )}
+            )}
 
-          {/* Attachment chips display */}
-          {attachments.length > 0 && (
-            <div className={styles.attachments}>
-              {attachments.map((att, idx) => (
-                <AttachmentChip
-                  key={idx}
-                  filename={att.filename}
-                  size={att.size}
-                  onRemove={() => removeAttachment(idx)}
-                />
-              ))}
-            </div>
-          )}
+            {chatError && (
+              <div className={styles.errorNotice} role="alert">
+                {chatError}
+              </div>
+            )}
 
-          {/* Image chips: thumbnails, uploading as soon as they are added */}
-          {images.images.length > 0 && (
-            <div className={styles.attachments}>
-              {images.images.map((image) => (
-                <ImageAttachmentChip
-                  key={image.localId}
-                  image={image}
-                  onRemove={() => images.removeImage(image.localId)}
-                  onRetry={() => images.retryImage(image.localId)}
-                />
-              ))}
-            </div>
-          )}
+            {incompleteResponse && (
+              <div className={styles.retryNotice} role="status">
+                <span className={styles.retryText}>The agent processed your request but didn't finish responding.</span>
+                <Button size="sm" variant="outline" onClick={handleRetry} disabled={isSending} className={styles.retryButton}>
+                  {isSending ? "Retrying..." : "Retry"}
+                </Button>
+              </div>
+            )}
 
-          {/* Documents to send with the message: read in the background, then the agent reads them with its document tools */}
-          {(documents.documents.length > 0 || documents.uploading.length > 0) && (
-            <div className={styles.attachments}>
-              {documents.documents.map((attached) => (
-                <DocumentChip
-                  key={attached.document_id}
-                  filename={attached.filename}
-                  label={documentStatusLabel(attached.status, attached.error)}
-                  state={attached.status === "failed" ? "failed" : isInFlight(attached.status) ? "busy" : "ready"}
-                  error={attached.error}
-                  onRemove={() => void documents.removeDocument(attached)}
-                />
-              ))}
-              {documents.uploading.map((upload) => (
-                <DocumentChip key={upload.localId} filename={upload.filename} label="Uploading" state="busy" />
-              ))}
-            </div>
-          )}
-
-          {/* Attachment error */}
-          {(attachmentError || images.error || documents.error) && (
-            <div className={styles.attachmentError}>
-              {attachmentError || images.error || documents.error}
-            </div>
-          )}
-
-          {/* Input Area */}
-          <div>
-            {/* Hidden file input */}
             <FileInput
               ref={fileInputRef}
               multiple
@@ -1639,14 +1115,24 @@ export function ConversationDetail() {
 
             <ChatComposer
               value={inputValue}
+              placeholder={`Message ${agentDisplayName(agents, conversation.agent_id)}`}
               onChange={setInputValue}
               onSubmit={() => handleSendMessage()}
               onPaste={images.onPaste}
               onDropFiles={(data) => handleFiles(Array.from(data.files))}
               isSubmitting={isSending}
-              statusIndicator={
-                <TokenUsageIndicator agentId={conversation.agent_id} liveUsage={liveTokenUsage} />
+              attachments={
+                hasAttachments && (
+                  <ComposerAttachments
+                    files={attachments}
+                    onRemoveFile={removeAttachment}
+                    images={images}
+                    documents={documents}
+                  />
+                )
               }
+              notice={composerNotice}
+              statusIndicator={<TokenUsageIndicator agentId={conversation.agent_id} liveUsage={liveTokenUsage} />}
               submitDisabled={!composerHasContent || isSending || uploadsInProgress}
               onAttachFiles={() => fileInputRef.current?.click()}
               onAttachDocuments={() => documentInputRef.current?.click()}
@@ -1659,138 +1145,40 @@ export function ConversationDetail() {
                     }
                   : undefined
               }
-              debugAction={{
-                enabled: debugEnabled,
-                disabled: isGeneratingImage,
-                onChange: setDebugEnabled,
-              }}
-              stopAction={
-                activeTurnId ? { onStop: () => void handleStopTurn() } : undefined
-              }
+              stopAction={activeTurnId ? { onStop: () => void handleStopTurn() } : undefined}
             />
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      <Dialog open={isEditing} onOpenChange={(open) => open ? handleStartEdit() : handleCancelEdit()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Conversation</DialogTitle>
-            <DialogDescription>
-              Update the conversation title, description, or assigned agent.
-            </DialogDescription>
-          </DialogHeader>
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <Label htmlFor="title">Title *</Label>
-              <Input
-                id="title"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-              />
-            </div>
+        {expandedCanvas && <CanvasSidePanel canvas={expandedCanvas} onClose={() => setExpandedCanvas(null)} />}
+      </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                rows={4}
-              />
-            </div>
+      <EditConversationDialog
+        conversation={conversation}
+        agents={agents}
+        open={isEditing}
+        onOpenChange={setIsEditing}
+        onSave={handleUpdate}
+      />
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <Label htmlFor="agent">Agent *</Label>
-              <Select value={editAgentId} onValueChange={setEditAgentId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an agent" />
-                </SelectTrigger>
-                <SelectContent>
-                  {agents.map((agent) => (
-                    <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                      {agent.agent_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={handleCancelEdit} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleUpdate}
-              disabled={!editTitle.trim() || !editAgentId || isSubmitting}
-            >
-              {isSubmitting ? "Saving..." : "Save Changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmationDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        title="Delete Conversation"
+        description={`Are you sure you want to delete "${conversation.title}"? This action cannot be undone and all messages will be lost.`}
+        confirmText="Delete Conversation"
+        variant="destructive"
+        loading={isDeleting}
+        loadingText="Deleting..."
+        onConfirm={handleDelete}
+      />
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Conversation</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete "{conversation.title}"?
-              This action cannot be undone and all messages will be lost.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsDeleteDialogOpen(false)}
-              disabled={isDeleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={isDeleting}
-            >
-              {isDeleting ? "Deleting..." : "Delete Conversation"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isImageDialogOpen} onOpenChange={setIsImageDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Generate Image</DialogTitle>
-            <DialogDescription>
-              Describe the image this agent should create.
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            value={imagePrompt}
-            onChange={(e) => setImagePrompt(e.target.value)}
-            placeholder="A clean product hero image for..."
-            rows={5}
-            disabled={isGeneratingImage}
-          />
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsImageDialogOpen(false)}
-              disabled={isGeneratingImage}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => handleGenerateImage()}
-              disabled={!imagePrompt.trim() || isGeneratingImage}
-            >
-              {isGeneratingImage ? "Generating..." : "Generate"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <GenerateImageDialog
+        open={isImageDialogOpen}
+        onOpenChange={setIsImageDialogOpen}
+        generating={isGeneratingImage}
+        onGenerate={(prompt) => void handleGenerateImage(prompt)}
+      />
 
       <Dialog open={images.unavailableOpen} onOpenChange={images.setUnavailableOpen}>
         <DialogContent>
@@ -1803,10 +1191,6 @@ export function ConversationDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-    {expandedCanvas && (
-      <CanvasSidePanel canvas={expandedCanvas} onClose={() => setExpandedCanvas(null)} />
-    )}
     </div>
   );
 }

@@ -108,19 +108,6 @@ export function ConversationStartComposer({
         </div>
       )}
 
-      {files.length > 0 && (
-        <div className={styles.attachments}>
-          {files.map((file) => (
-            <AttachmentChip
-              key={`${file.name}-${file.size}-${file.lastModified}`}
-              filename={file.name}
-              size={file.size}
-              onRemove={() => onFileRemoved(file)}
-            />
-          ))}
-        </div>
-      )}
-
       <FileInput
         ref={fileInputRef}
         multiple
@@ -147,6 +134,17 @@ export function ConversationStartComposer({
         placeholder={mode === "image" ? "Describe the image you want" : "Ask anything"}
         onChange={onPromptChange}
         onSubmit={onSubmit}
+        attachments={
+          files.length > 0 &&
+          files.map((file) => (
+            <AttachmentChip
+              key={`${file.name}-${file.size}-${file.lastModified}`}
+              filename={file.name}
+              size={file.size}
+              onRemove={() => onFileRemoved(file)}
+            />
+          ))
+        }
         onDropFiles={mode === "image" ? undefined : (data) => onFilesAdded(Array.from(data.files))}
         onAttachFiles={mode === "image" ? undefined : () => fileInputRef.current?.click()}
         onAttachDocuments={mode === "image" ? undefined : () => documentInputRef.current?.click()}

@@ -12,12 +12,13 @@
   @apply flex h-full min-h-0 flex-col overflow-y-auto bg-[var(--bg-dark)];
 }
 
+/* Mobile first: the list fills the screen and scrolls, the composer docks under it. From lg, two columns. */
 .classicLayout {
-  @apply grid h-full grid-cols-1 bg-[var(--bg-dark)] lg:grid-cols-[28rem_minmax(0,1fr)];
+  @apply flex h-full min-h-0 flex-col bg-[var(--bg-dark)] lg:grid lg:grid-cols-[28rem_minmax(0,1fr)];
 }
 
 .main {
-  @apply flex min-w-0 items-center justify-center px-8 py-16 lg:px-16 xl:px-24;
+  @apply shrink-0 px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-6 lg:flex lg:min-w-0 lg:items-center lg:justify-center lg:px-8 lg:py-16 xl:px-16;
 }
 
 .top {

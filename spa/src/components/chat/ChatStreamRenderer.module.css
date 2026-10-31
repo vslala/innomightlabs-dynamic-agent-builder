@@ -1,0 +1,238 @@
+/* Mobile first: the narrow layout is the base, wider screens add room in the media query at the end. */
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+}
+
+.userRow {
+  flex-direction: row-reverse;
+}
+
+.avatar {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+}
+
+.avatar svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.bubble {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
+.assistant {
+  width: 100%;
+  font-size: 1rem;
+  line-height: 1.68;
+}
+
+.user {
+  width: fit-content;
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 20px 20px 6px 20px;
+  background: var(--surface-control-hover);
+  font-size: 1rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* A message with images takes the full width so the pictures have room */
+.withImages {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 14px;
+}
+
+.assistant.withImages {
+  padding: 8px 0;
+}
+
+.content + * {
+  margin-top: 4px;
+}
+
+.cursor {
+  display: inline-block;
+  width: 0.5rem;
+  height: 1rem;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--gradient-start);
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.images {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.imageFrame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.imagePlaceholder {
+  min-height: 16rem;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.imagePlaceholder svg {
+  width: 2rem;
+  height: 2rem;
+}
+
+.imagePlaceholderTitle {
+  margin-bottom: 4px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.imagePlaceholderText {
+  max-width: 28rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  animation: spin 1s linear infinite;
+}
+
+.smallSpinner {
+  width: 1rem;
+  height: 1rem;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.image {
+  display: block;
+  width: 100%;
+  max-height: 34rem;
+  object-fit: contain;
+}
+
+.imageOpen {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+}
+
+.imageOpen svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.activityTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.activityTitle svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.activityCount {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.activityList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.extra {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+@media (min-width: 641px) {
+  .avatar {
+    display: flex;
+  }
+
+  .user {
+    max-width: min(72%, 42rem);
+    font-size: 0.975rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor {
+    animation: none;
+  }
+}

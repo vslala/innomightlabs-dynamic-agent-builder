@@ -14,7 +14,7 @@ This module supplies signed-in chrome, not resource CRUD pages.
 
 `ProtectedRoute` validates the session outside this shell. DashboardLayout reads the user from the token and supplies `{ user }` through the Outlet context. Its exact title map and nested-path checks are presentation only; routes are declared in `src/App.tsx`. Add navigation/title treatment alongside a new page where appropriate, not a second route table.
 
-Conversations and matching automation workspace routes are full-bleed. The automation matcher excludes `marketplace`; settings temporarily controls body overflow and HTML overscroll and restores prior values on cleanup. Preserve `min-height: 0` and overflow ownership when changing flex layouts—nested workspaces depend on contained scrolling.
+Conversations, a single conversation, and matching automation workspace routes are full-bleed. Below 900px a single conversation also hides the dashboard header: its own top bar has the back button, like a messaging app (`breakpoints.ts`). The automation matcher excludes `marketplace`; settings temporarily controls body overflow and HTML overscroll and restores prior values on cleanup. Preserve `min-height: 0` and overflow ownership when changing flex layouts—nested workspaces depend on contained scrolling.
 
 AccountSwitcher loads memberships, selects the service's current account, pins this tab's active account id for HTTP, and offers active memberships. Switching calls the service and performs `window.location.assign("/dashboard")` so previous-account data does not remain onscreen. Do not replace this with a cosmetic selection unless data invalidation is handled deliberately. The UI role label is not authorization.
 

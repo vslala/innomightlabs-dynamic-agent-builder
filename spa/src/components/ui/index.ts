@@ -4,6 +4,7 @@ export * from "./checkbox";
 export * from "./link-button";
 export * from "./card";
 export * from "./dialog";
+export * from "./dropdown-menu";
 export * from "./file-input";
 export * from "./input";
 export * from "./search-input";

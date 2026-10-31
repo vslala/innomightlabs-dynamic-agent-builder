@@ -2,12 +2,14 @@
 
 This directory owns the conversation cloud, the classic sidebar list and the first-message composer used by `../Conversations.tsx`. Routes and API orchestration stay in the parent screens; active chat belongs to `../ConversationDetail.tsx` and `src/components/chat/`.
 
+`detail/` holds the conversation page's parts: `ConversationTopBar` (back, title, agent, and a menu with edit, tool details, full screen on wide screens, delete), the edit and image dialogs, `ComposerAttachments`, `StreamingImagePreview`, and `turnMessages.ts`, the pure builders for messages the page adds optimistically (tested in `turnMessages.test.ts`). The page keeps the turn and stream state. It is mobile first: on screens up to 900px the dashboard header steps aside (`isConversationThread` in `src/components/dashboard/breakpoints.ts`) so the top bar, transcript and docked composer fill the screen. `src/hooks/useStickToBottom.ts` follows new content only while the reader is at the bottom and shows a jump-to-latest button otherwise.
+
 ## Layout and flow
 
 `../Conversations.tsx` shows the conversations in one of two views, switched by `ConversationViewToggle.tsx` (Cloud, the default, or Classic). The choice is remembered in `localStorage` (`conversationView.ts`; anything but a saved "classic" means the cloud, and blocked storage is tolerated). The search text and the composer's contents are shared, so switching views loses nothing.
 
 - **Cloud:** a column with a count, the toggle and search, the conversation cloud (it takes all the space left), and the composer docked at the bottom (`docked`, without its heading).
-- **Classic:** the original two-column screen: `ConversationSidebar.tsx` (search, new conversation, delete, agent labels; the toggle sits in its header) beside the composer centred under its heading.
+- **Classic:** from 1024px, two columns: `ConversationSidebar.tsx` (search, new conversation, delete, agent labels; the toggle sits in its header) beside the composer centred under its heading. Below that it is one column like a messaging inbox: the list fills the screen and scrolls, and the composer is docked under it without its heading (`ONE_COLUMN_QUERY` in `../Conversations.tsx`, kept in step with `Conversations.module.css`). Touch screens have no hover, so the delete button is always visible there.
 
 The page loads conversations and agents, filters by the search text, creates the conversation and navigates with the first message, and owns delete (both views call back).
 

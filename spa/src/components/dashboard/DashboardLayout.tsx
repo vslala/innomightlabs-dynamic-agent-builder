@@ -6,6 +6,7 @@ import { OAuthReturn } from "./OAuthReturn";
 import { AgentQuickSwitcher } from "./AgentQuickSwitcher";
 import { cn } from "../../lib/utils";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { COMPACT_QUERY, isConversationThread } from "./breakpoints";
 import { authService, type UserInfo } from "../../services/auth";
 import "./DashboardLayout.css";
 
@@ -23,8 +24,6 @@ const pageTitles: Record<string, string> = {
   "/dashboard/settings": "Settings",
 };
 
-/** Below this width the sidebar is a drawer. Keep in step with the 900px rules in Sidebar.css and Header.css. */
-const COMPACT_QUERY = "(max-width: 900px)";
 const NAVIGATION_ID = "dashboard-navigation";
 
 const AUTOMATION_WORKSPACE_PATTERN = /^\/dashboard\/automations\/(?!marketplace)[^/]+(\/(triggers|runs|analytics))?$/;
@@ -35,10 +34,11 @@ function isAutomationWorkspace(pathname: string): boolean {
 
 export function DashboardLayout() {
   const location = useLocation();
-  // The automation workspace and the conversation view draw their own chrome
+  // The automation workspace and the conversation views draw their own chrome
   // edge to edge, so the dashboard drops its content padding for them.
+  const conversationThread = isConversationThread(location.pathname);
   const isFullBleedPage =
-    location.pathname === "/dashboard/conversations" || isAutomationWorkspace(location.pathname);
+    location.pathname === "/dashboard/conversations" || conversationThread || isAutomationWorkspace(location.pathname);
   const isSettingsPage = location.pathname === "/dashboard/settings";
 
   const compact = useMediaQuery(COMPACT_QUERY);
@@ -49,6 +49,8 @@ export function DashboardLayout() {
     setDrawerPath(null);
   }
   const drawerOpen = compact && drawerPath === location.pathname;
+  // On compact screens a conversation's own top bar (with its back button) replaces the dashboard header
+  const showHeader = !(compact && conversationThread);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
   const sidebar = useRef<HTMLElement>(null);
@@ -138,6 +140,9 @@ export function DashboardLayout() {
       }
       return "Automation Builder";
     }
+    if (conversationThread) {
+      return "Conversation";
+    }
     if (location.pathname.startsWith("/dashboard/artifacts/")) {
       return "Artifact";
     }
@@ -157,15 +162,17 @@ export function DashboardLayout() {
       )}
       {/* While the drawer is open, nothing behind it can be reached by keyboard or screen reader */}
       <div className="dashboard-layout__body" inert={drawerOpen}>
-        <Header
-          ref={menuButton}
-          title={getTitle()}
-          user={user || undefined}
-          navigationId={NAVIGATION_ID}
-          navigationOpen={drawerOpen}
-          onMenuClick={() => setDrawerPath(location.pathname)}
-          onSwitcherClick={() => setSwitcherOpen(true)}
-        />
+        {showHeader && (
+          <Header
+            ref={menuButton}
+            title={getTitle()}
+            user={user || undefined}
+            navigationId={NAVIGATION_ID}
+            navigationOpen={drawerOpen}
+            onMenuClick={() => setDrawerPath(location.pathname)}
+            onSwitcherClick={() => setSwitcherOpen(true)}
+          />
+        )}
         <main
           className={cn(
             "dashboard-layout__main",

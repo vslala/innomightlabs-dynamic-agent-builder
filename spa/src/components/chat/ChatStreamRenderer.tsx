@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, memo, useEffect, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { ExternalLink, Image as ImageIcon, Loader2, User, Wrench } from "lucide-react";
 import { buildChatStreamRenderPlan } from '../../../packages/chat-stream-renderer/src';
 import { AttachmentChip } from "./AttachmentChip";
@@ -11,6 +12,7 @@ import { isSubmittedFormMessage } from "./submittedFormParser";
 import { ConsentDecisionMessage } from "./consent/ConsentDecisionMessage";
 import { isConsentDecisionMessage } from "./consent/consentDecisionParser";
 import { authHeaders } from "../../services/http";
+import { cn } from "../../lib/utils";
 import type {
   AttachmentInfo,
   Message,
@@ -20,6 +22,7 @@ import type {
   MessageReference,
   ToolActivity,
 } from "../../types/message";
+import styles from "./ChatStreamRenderer.module.css";
 
 interface ChatStreamRendererProps {
   messages: Message[];
@@ -28,31 +31,29 @@ interface ChatStreamRendererProps {
   statusMessage?: string | null;
   userPicture?: string;
   userName?: string;
-  extraNode?: React.ReactNode;
+  extraNode?: ReactNode;
   debugToolActivity?: boolean;
   onExpandCanvas?: (canvas: MessageCanvasArtifact) => void;
   /** The card for a consent a message raised; the page owns their state, since a card is decided from it. */
-  renderConsent?: (consent: MessageConsent) => React.ReactNode;
+  renderConsent?: (consent: MessageConsent) => ReactNode;
 }
 
-function renderAttachments(role: Message["role"], attachments?: AttachmentInfo[], references?: MessageReference[]) {
+// AccordionPanel takes styles, not classes; kept here so they are not rebuilt every render
+const ACTIVITY_PANEL_STYLE: CSSProperties = {
+  margin: "0.5rem 0",
+  borderRadius: "0.75rem",
+  borderColor: "var(--border-default)",
+  backgroundColor: "var(--surface-subtle)",
+};
+const ACTIVITY_BODY_STYLE: CSSProperties = { padding: "0 0.75rem 0.75rem" };
+
+function Attachments({ attachments, references }: { attachments?: AttachmentInfo[]; references?: MessageReference[] }) {
   if (!attachments?.length && !references?.length) {
     return null;
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "0.25rem",
-        marginTop: "0.5rem",
-        paddingTop: "0.5rem",
-        borderTop: role === "user"
-          ? "1px solid rgba(255,255,255,0.2)"
-          : "1px solid var(--border-subtle)",
-      }}
-    >
+    <div className={styles.attachments}>
       {attachments?.map((attachment, index) => (
         <AttachmentChip
           key={`${attachment.filename}-${index}`}
@@ -97,7 +98,6 @@ function ImagePreview({ image }: { image: MessageImage }) {
           return;
         }
 
-        
         const response = await fetch(image.url, {
           headers: authHeaders(),
         });
@@ -134,30 +134,11 @@ function ImagePreview({ image }: { image: MessageImage }) {
 
   if (!displayUrl) {
     return (
-      <div
-        style={{
-          minHeight: "16rem",
-          borderRadius: "0.75rem",
-          border: "1px solid var(--border-subtle)",
-          backgroundColor: "var(--bg-tertiary)",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "0.75rem",
-          padding: "1.5rem",
-          color: "var(--text-muted)",
-          textAlign: "center",
-        }}
-      >
-        <ImageIcon style={{ height: "2rem", width: "2rem", color: "var(--text-muted)" }} />
-        <div style={{ maxWidth: "28rem" }}>
-          <div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: "0.25rem" }}>
-            Image preview unavailable
-          </div>
-          <div style={{ fontSize: "0.875rem", lineHeight: 1.5 }}>
-            The image file could not be loaded. It may still be processing or unavailable in storage.
-          </div>
+      <div className={cn(styles.imageFrame, styles.imagePlaceholder)}>
+        <ImageIcon />
+        <div className={styles.imagePlaceholderText}>
+          <div className={styles.imagePlaceholderTitle}>Image preview unavailable</div>
+          The image file could not be loaded. It may still be processing or unavailable in storage.
         </div>
       </div>
     );
@@ -165,65 +146,24 @@ function ImagePreview({ image }: { image: MessageImage }) {
 
   if (!objectUrl) {
     return (
-      <div
-        style={{
-          minHeight: "16rem",
-          borderRadius: "0.75rem",
-          border: "1px solid var(--border-subtle)",
-          backgroundColor: "var(--bg-tertiary)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--text-muted)",
-        }}
-      >
-        <Loader2 style={{ height: "1.5rem", width: "1.5rem", animation: "spin 1s linear infinite" }} />
+      <div className={cn(styles.imageFrame, styles.imagePlaceholder)}>
+        <Loader2 className={styles.spinner} />
       </div>
     );
   }
 
   return (
-    <a
-      href={displayUrl}
-      target="_blank"
-      rel="noreferrer"
-      title={label}
-      style={{
-        display: "block",
-        borderRadius: "0.75rem",
-        overflow: "hidden",
-        border: "1px solid var(--border-subtle)",
-        backgroundColor: "var(--bg-tertiary)",
-        position: "relative",
-      }}
-    >
+    <a href={displayUrl} target="_blank" rel="noreferrer" title={label} className={styles.imageFrame}>
       <img
         src={displayUrl}
         alt={label}
+        loading="lazy"
+        decoding="async"
         onError={() => setFailed(true)}
-        style={{
-          display: "block",
-          width: "100%",
-          maxHeight: "34rem",
-          objectFit: "contain",
-          backgroundColor: "#101018",
-        }}
+        className={styles.image}
       />
-      <span
-        style={{
-          position: "absolute",
-          right: "0.75rem",
-          top: "0.75rem",
-          width: "2rem",
-          height: "2rem",
-          borderRadius: "999px",
-          backgroundColor: "rgba(0, 0, 0, 0.55)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <ExternalLink style={{ height: "1rem", width: "1rem", color: "white" }} />
+      <span className={styles.imageOpen}>
+        <ExternalLink />
       </span>
     </a>
   );
@@ -244,37 +184,115 @@ function requiresAuthenticatedFetch(url: string): boolean {
   }
 }
 
-function renderImages(images?: MessageImage[]) {
+function Images({ images }: { images?: MessageImage[] }) {
   if (!images?.length) {
     return null;
   }
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
-        gap: "0.75rem",
-        marginTop: "0.875rem",
-      }}
-    >
+    <div className={styles.images}>
       {images.map((image) => <ImagePreview key={image.image_id} image={image} />)}
     </div>
   );
 }
 
-function renderCanvases(canvases?: MessageCanvasArtifact[], onExpandCanvas?: (canvas: MessageCanvasArtifact) => void) {
-  if (!canvases?.length) {
-    return null;
+function UserAvatar({ picture, name }: { picture?: string; name?: string }) {
+  if (picture) {
+    return <img src={picture} alt={name || "User"} className={styles.avatar} />;
+  }
+  return (
+    <div className={styles.avatar} aria-hidden="true">
+      <User />
+    </div>
+  );
+}
+
+interface MessageRowProps {
+  message: Message;
+  userPicture?: string;
+  userName?: string;
+  onExpandCanvas?: (canvas: MessageCanvasArtifact) => void;
+  renderConsent?: (consent: MessageConsent) => ReactNode;
+}
+
+function MessageRowView({ message, userPicture, userName, onExpandCanvas, renderConsent }: MessageRowProps) {
+  const isUser = message.role === "user";
+  const hasImages = Boolean(message.images?.length);
+
+  return (
+    <div className={cn(styles.row, isUser && styles.userRow)}>
+      {isUser && <UserAvatar picture={userPicture} name={userName} />}
+      <div className={cn(styles.bubble, isUser ? styles.user : styles.assistant, hasImages && styles.withImages)}>
+        {message.content && (
+          <div className={styles.content}>
+            {isUser && isSubmittedFormMessage(message) ? (
+              <SubmittedFormMessage message={message} />
+            ) : isConsentDecisionMessage(message) ? (
+              <ConsentDecisionMessage message={message} />
+            ) : isUser ? (
+              message.content
+            ) : (
+              <MarkdownRenderer content={message.content} />
+            )}
+          </div>
+        )}
+        <Images images={message.image_attachments} />
+        <Images images={message.images} />
+        {message.canvases?.map((canvas) => (
+          <InlineCanvasCard key={canvas.artifact_id} canvas={canvas} onExpand={onExpandCanvas ?? noop} />
+        ))}
+        {message.consents?.map((consent) => (
+          <Fragment key={consent.consent_id}>{renderConsent?.(consent)}</Fragment>
+        ))}
+        <Attachments attachments={message.attachments} references={message.references} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A saved message only renders again when it changes, so a streaming reply re-renders itself and not the whole
+ * transcript. `renderConsent` is rebuilt by the page on every render; only a message that raised a consent needs it.
+ */
+const MessageRow = memo(
+  MessageRowView,
+  (previous, next) =>
+    previous.message === next.message &&
+    previous.userPicture === next.userPicture &&
+    previous.userName === next.userName &&
+    previous.onExpandCanvas === next.onExpandCanvas &&
+    (!next.message.consents?.length || previous.renderConsent === next.renderConsent),
+);
+
+function noop() {}
+
+function ToolActivityList({ activities, debug }: { activities: ToolActivity[]; debug: boolean }) {
+  if (!debug) {
+    return <ToolActivitySummary activities={activities} />;
   }
 
-  return canvases.map((canvas) => (
-    <InlineCanvasCard
-      key={canvas.artifact_id}
-      canvas={canvas}
-      onExpand={onExpandCanvas ?? (() => {})}
-    />
-  ));
+  return (
+    <AccordionPanel
+      defaultOpen={false}
+      title={
+        <span className={styles.activityTitle}>
+          <Wrench />
+          Agent Activity
+        </span>
+      }
+      trailing={
+        <span className={styles.activityCount}>
+          {activities.length} {activities.length === 1 ? "step" : "steps"}
+        </span>
+      }
+      style={ACTIVITY_PANEL_STYLE}
+      bodyStyle={ACTIVITY_BODY_STYLE}
+    >
+      <div className={styles.activityList}>
+        {activities.map((activity) => <ToolActivityCard key={activity.id} activity={activity} />)}
+      </div>
+    </AccordionPanel>
+  );
 }
 
 export function ChatStreamRenderer({
@@ -284,223 +302,58 @@ export function ChatStreamRenderer({
   statusMessage,
   userPicture,
   userName,
-  extraNode: customExtraNode,
+  extraNode,
   debugToolActivity = false,
   onExpandCanvas,
   renderConsent,
 }: ChatStreamRendererProps) {
-  const renderAvatar = (role: Message["role"]) => {
-    if (role === "assistant") {
-      return null;
-    }
-
-    if (role === "user" && userPicture) {
-      return (
-        <img
-          src={userPicture}
-          alt={userName || "User"}
-          style={{
-            width: "2rem",
-            height: "2rem",
-            borderRadius: "50%",
-            flexShrink: 0,
-            objectFit: "cover",
-            opacity: 0.9,
-          }}
-        />
-      );
-    }
-
-    return (
-      <div
-        style={{
-          width: "2rem",
-          height: "2rem",
-          borderRadius: "50%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          backgroundColor: "rgba(255, 255, 255, 0.12)",
-        }}
-      >
-        <User style={{ height: "1rem", width: "1rem", color: "rgba(255, 255, 255, 0.86)" }} />
-      </div>
-    );
-  };
-
-  const extraNode = (
-    <>
-      {toolActivities.length > 0 && (
-        debugToolActivity ? (
-          <AccordionPanel
-            defaultOpen={false}
-            title={
-              <span
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  fontSize: "0.75rem",
-                  fontWeight: 600,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                <Wrench style={{ height: "0.875rem", width: "0.875rem" }} />
-                Agent Activity
-              </span>
-            }
-            trailing={
-              <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>
-                {toolActivities.length} {toolActivities.length === 1 ? "step" : "steps"}
-              </span>
-            }
-            style={{
-              margin: "0.5rem 0",
-              borderRadius: "0.75rem",
-              borderColor: "var(--border-default)",
-              backgroundColor: "var(--surface-subtle)",
-            }}
-            bodyStyle={{ padding: "0 0.75rem 0.75rem" }}
-          >
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.5rem",
-              }}
-            >
-              {toolActivities.map((activity) => <ToolActivityCard key={activity.id} activity={activity} />)}
-            </div>
-          </AccordionPanel>
-        ) : (
-          <ToolActivitySummary activities={toolActivities} />
-        )
-      )}
-
-      {statusMessage && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "0.5rem",
-            padding: "0.5rem",
-            color: "var(--text-muted)",
-            fontSize: "0.875rem",
-          }}
-        >
-          <Loader2 style={{ height: "1rem", width: "1rem", animation: "spin 1s linear infinite" }} />
-          {statusMessage}
-        </div>
-      )}
-
-      {customExtraNode}
-    </>
-  );
-
   const plan = buildChatStreamRenderPlan({
     messages,
     getMessageKey: (message) => message.message_id,
     streamingContent,
-    hasExtraNode: toolActivities.length > 0 || Boolean(statusMessage) || Boolean(customExtraNode),
+    hasExtraNode: toolActivities.length > 0 || Boolean(statusMessage) || Boolean(extraNode),
   });
 
   return (
     <>
       {plan.map((item) => {
         if (item.kind === "message") {
-          const msg = item.message;
-          const isFormSubmission = msg.role === "user" && isSubmittedFormMessage(msg);
-          const isConsentDecision = isConsentDecisionMessage(msg);
           return (
-            <div
+            <MessageRow
               key={item.key}
-              style={{
-                display: "flex",
-                gap: msg.role === "user" ? "0.75rem" : 0,
-                alignItems: "flex-start",
-                flexDirection: msg.role === "user" ? "row-reverse" : "row",
-                width: "100%",
-              }}
-            >
-              {renderAvatar(msg.role)}
-              <div
-                style={{
-                  width: msg.role === "assistant" || msg.images?.length ? "100%" : "fit-content",
-                  maxWidth: msg.role === "assistant" || msg.images?.length ? "100%" : "min(72%, 42rem)",
-                  padding: msg.role === "assistant"
-                    ? msg.images?.length ? "0.5rem 0" : 0
-                    : "0.8rem 1rem",
-                  borderRadius: msg.images?.length ? "0.875rem" : "1.25rem",
-                  backgroundColor: msg.role === "user" ? "#2a2a2d" : "transparent",
-                  color: msg.role === "user" ? "white" : "var(--text-primary)",
-                  wordBreak: "break-word",
-                  lineHeight: msg.role === "assistant" ? "1.68" : "1.5",
-                  fontSize: msg.role === "assistant" ? "1rem" : "0.975rem",
-                  ...(msg.role === "user" ? { whiteSpace: "pre-wrap" as const } : {}),
-                }}
-              >
-                {msg.content && (
-                  <div style={msg.images?.length || msg.image_attachments?.length ? { marginBottom: "0.25rem" } : undefined}>
-                    {isFormSubmission ? (
-                      <SubmittedFormMessage message={msg} />
-                    ) : isConsentDecision ? (
-                      <ConsentDecisionMessage message={msg} />
-                    ) : msg.role === "assistant" ? (
-                      <MarkdownRenderer content={msg.content} />
-                    ) : (
-                      msg.content
-                    )}
-                  </div>
-                )}
-                {renderImages(msg.image_attachments)}
-                {renderImages(msg.images)}
-                {renderCanvases(msg.canvases, onExpandCanvas)}
-                {msg.consents?.map((consent) => (
-                  <Fragment key={consent.consent_id}>{renderConsent?.(consent)}</Fragment>
-                ))}
-                {renderAttachments(msg.role, msg.attachments, msg.references)}
-              </div>
-            </div>
+              message={item.message}
+              userPicture={userPicture}
+              userName={userName}
+              onExpandCanvas={onExpandCanvas}
+              renderConsent={renderConsent}
+            />
           );
         }
 
         if (item.kind === "streaming") {
           return (
-            <div key={item.key} style={{ display: "flex", alignItems: "flex-start", width: "100%" }}>
-              <div
-                style={{
-                  width: "100%",
-                  padding: 0,
-                  borderRadius: 0,
-                  backgroundColor: "transparent",
-                  color: "var(--text-primary)",
-                  wordBreak: "break-word",
-                  lineHeight: "1.68",
-                  fontSize: "1rem",
-                }}
-              >
+            <div key={item.key} className={styles.row}>
+              <div className={cn(styles.bubble, styles.assistant)}>
                 <MarkdownRenderer content={item.content} isStreaming />
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: "0.5rem",
-                    height: "1rem",
-                    marginLeft: "0.125rem",
-                    backgroundColor: "var(--gradient-start)",
-                    animation: "blink 1s infinite",
-                  }}
-                />
+                <span className={styles.cursor} aria-hidden="true" />
               </div>
             </div>
           );
         }
 
         if (item.kind === "extra") {
-          return <div key={item.key}>{extraNode}</div>;
+          return (
+            <div key={item.key} className={styles.extra}>
+              {toolActivities.length > 0 && <ToolActivityList activities={toolActivities} debug={debugToolActivity} />}
+              {statusMessage && (
+                <div className={styles.status} role="status">
+                  <Loader2 className={styles.smallSpinner} />
+                  {statusMessage}
+                </div>
+              )}
+              {extraNode}
+            </div>
+          );
         }
 
         return null;

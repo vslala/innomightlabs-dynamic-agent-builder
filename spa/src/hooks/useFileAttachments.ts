@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react";
-import * as XLSX from "xlsx";
 import type { Attachment } from "../types/message";
 import {
   ALLOWED_EXTENSIONS,
@@ -143,34 +142,20 @@ function readFileAsText(file: File): Promise<string> {
 }
 
 /**
- * Read an Excel file and convert all sheets to CSV format.
+ * Read an Excel file and convert all sheets to CSV format. The spreadsheet library is large, so it loads the first time
+ * someone attaches a spreadsheet rather than with every chat.
  */
-function readExcelAsCSV(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array" });
-
-        // Convert each sheet to CSV and combine
-        const csvParts: string[] = [];
-        for (const sheetName of workbook.SheetNames) {
-          const sheet = workbook.Sheets[sheetName];
-          const csv = XLSX.utils.sheet_to_csv(sheet);
-          if (workbook.SheetNames.length > 1) {
-            csvParts.push(`--- Sheet: ${sheetName} ---\n${csv}`);
-          } else {
-            csvParts.push(csv);
-          }
-        }
-
-        resolve(csvParts.join("\n\n"));
-      } catch (err) {
-        reject(new Error("Failed to parse Excel file"));
-      }
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsArrayBuffer(file);
-  });
+async function readExcelAsCSV(file: File): Promise<string> {
+  const [XLSX, buffer] = await Promise.all([import("xlsx"), file.arrayBuffer()]);
+  try {
+    const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+    // Convert each sheet to CSV and combine
+    const csvParts = workbook.SheetNames.map((sheetName) => {
+      const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+      return workbook.SheetNames.length > 1 ? `--- Sheet: ${sheetName} ---\n${csv}` : csv;
+    });
+    return csvParts.join("\n\n");
+  } catch {
+    throw new Error("Failed to parse Excel file");
+  }
 }
