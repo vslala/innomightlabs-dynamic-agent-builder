@@ -7,13 +7,13 @@ from typing import Any, Optional, cast
 import httpx
 import stripe
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
 
 from src.payments.stripe.models import (
     CheckoutRequest,
     CheckoutResponse,
     InvoicePeriod,
     PriceInfo,
+    PricingAddon,
     PricingFaq,
     PricingResponse,
     PricingTier,
@@ -261,8 +261,7 @@ def validate_checkout_request(user_email: str, plan_key: str) -> Optional[str]:
             f"Visit Settings to manage your subscription."
         )
 
-    # Define tier hierarchy
-    tier_order = {"free": 0, "starter": 1, "pro": 2, "enterprise": 3}
+    tier_order = {tier.key: rank for rank, tier in enumerate(get_pricing_config().tiers)}
     current_tier = tier_order.get(current_plan, 0)
     requested_tier = tier_order.get(plan_key, 0)
 
@@ -290,21 +289,36 @@ async def get_pricing():
         PricingTier(
             name=t.name, badge=t.badge, description=t.description, prices=t.prices,
             planKey=t.key if t.stripe_price_ids else None, ctaLabel=t.cta.label,
-            ctaHref=t.cta.href, highlighted=t.highlighted, features=t.features
+            ctaHref=t.cta.href, highlighted=t.highlighted, features=t.features, limits=t.limits,
         )
         for t in config.tiers
     ]
-    
-    faqs = [
-        PricingFaq(question="Do annual plans include a discount?",
-                   answer="Yes. Annual billing saves 17%, equivalent to two months free."),
-        PricingFaq(question="Can I change plans later?",
-                   answer="Absolutely. Upgrade or downgrade anytime from your dashboard."),
-        PricingFaq(question="What happens if I exceed my limits?",
-                   answer="You'll be prompted to upgrade. No overages - your usage is capped at your plan limits."),
+    addons = [
+        PricingAddon(
+            name=a.name, price=a.price, period=a.period, description=a.description,
+            features=a.features, ctaLabel=a.cta.label, ctaHref=a.cta.href,
+        )
+        for a in config.addons
     ]
-    
-    return PricingResponse(tiers=tiers, faqs=faqs)
+
+    faqs = [
+        PricingFaq(question="Who pays for the AI?",
+                   answer="You connect your own AI account (OpenAI, Anthropic, Google Gemini or AWS Bedrock) and "
+                          "your provider bills you directly, at their price. We never mark up AI usage."),
+        PricingFaq(question="Is every feature in every plan?",
+                   answer="Yes. Ila, agents, knowledge bases, lead capture, automations, connectors and the website "
+                          "widget are in every plan. Plans differ in how much you can run and the support you get."),
+        PricingFaq(question="Do annual plans include a discount?",
+                   answer="Yes. Annual billing is ten months' price for twelve: two months free."),
+        PricingFaq(question="What happens if I reach a limit?",
+                   answer="Nothing is charged automatically. Usage stops at your plan's limit and we suggest an upgrade."),
+        PricingFaq(question="Can I change plans later?",
+                   answer="Yes. Upgrade from this page at any time, or change or cancel your plan from Settings."),
+        PricingFaq(question="Can you set it up for me?",
+                   answer="Yes. The done-with-you setup builds your first solution with you and connects it to your tools."),
+    ]
+
+    return PricingResponse(tiers=tiers, addons=addons, faqs=faqs)
 
 @router.post("/checkout", response_model=CheckoutResponse)
 async def create_checkout_session(payload: CheckoutRequest, request: Request):

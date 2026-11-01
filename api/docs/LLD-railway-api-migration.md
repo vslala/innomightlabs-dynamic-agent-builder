@@ -2,6 +2,16 @@
 
 Date: 2026-05-24
 
+## Deployment notes — 2026-10-31
+
+Ollama-only production deployment `524c93cb-f7dd-4291-8232-34d4aadb1b8c` succeeded.
+The previous active deployment's resolved manifest had Serverless disabled; the new manifest has
+`sleepApplication=true`. The image default and service variable now set `OLLAMA_KEEP_ALIVE=1m`.
+A private-network smoke request returned a 1024-dimensional vector, and `/api/ps` showed the
+model loaded immediately afterward and no loaded models after 75 idle seconds. Full-container
+idle sleep/wake remains to be observed; the one-minute model unload is verified. No API or other
+service deployment was performed.
+
 ## Implementation notes — 2026-10-22
 
 **Rollout pending:** local implementation passed the full API suite (2820 passed, 1 skipped).
@@ -14,8 +24,10 @@ The private `ollama-embeddings` service supplies `qwen3-embedding:0.6b` vectors 
 content and semantic-search queries. Its `ollama-embeddings/railway.toml` now enables Railway
 Serverless (`deploy.sleepApplication = true`): after roughly 5–10 minutes without network activity,
 the container sleeps and the next private-network request wakes it. The model is baked into the
-image, with no persistent volume or model download on wake. `OLLAMA_KEEP_ALIVE=-1` retains the
-model only while the container runs; it does not disable Railway's network-based idle detection.
+image, with no persistent volume or model download on wake. `OLLAMA_KEEP_ALIVE=1m` unloads the
+model after one minute without requests, retaining it across embedding batches but releasing its
+memory between bursts. This is independent of Railway's network-based idle detection; container
+sleep releases the remaining memory. Reloading the same model requires no re-indexing.
 
 `OllamaEmbeddings.embed_texts_async` retries only connection errors and HTTP 502/503/504, with
 four attempts and 1/2/4 second async backoffs. Permanent HTTP errors, timeouts, invalid vectors,

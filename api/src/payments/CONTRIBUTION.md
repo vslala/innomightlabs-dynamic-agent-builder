@@ -23,7 +23,8 @@ src/payments/
 
 - **Keys.** Subscription: `pk=User#{email}`, `sk=Subscription#{subscription_id}`. Webhook dedupe: `pk=sk=WebhookEvent#{event_id}`. Payments are keyed by email, not account; billing stays per person (KAN-86).
 - **Active subscription.** `get_active_for_user` picks the newest by `updated_at` among statuses `active`, `trialing`, `past_due` whose `current_period_end` has not passed. No active subscription means tier `free`.
-- **Pricing config.** The file is chosen by the `ENVIRONMENT` env var (default `dev`; `local` aliases `dev`). Every environment file must define the same tier keys (`free`, `starter`, `pro`, `enterprise`) and `limits` (`agents`, `messages_per_month`, `kb_pages`, `memory_blocks`; `0` is unlimited). Only `stripe_price_ids` and `stripe_product_id` differ per environment: dev and uat use test-mode Stripe ids, prod uses live ones. Edit all three files together and never copy ids across environments.
+- **Pricing config.** The file is chosen by the `ENVIRONMENT` env var (default `dev`; `local` aliases `dev`). Every environment file must define the same tier keys (`free`, `business`, `growth`, `enterprise`, smallest first: the order is the upgrade path) and `limits` (`agents`, `messages_per_month`, `kb_pages`, `memory_blocks`; `0` is unlimited). Only `stripe_price_ids` and `stripe_product_id` differ per environment: dev and uat use test-mode Stripe ids, prod uses live ones. Edit all three files together and never copy ids across environments.
+- **Add-ons.** `addons` lists one-off services (the done-with-you setup) shown on the pricing page beside the plans. They have no Stripe ids: their CTA goes to the contact form.
 - **Plan lookup.** `get_price_id(plan_key, billing_cycle)` reads `stripe_price_ids` from the config; the webhook reads `plan_key` and `billing_cycle` back from subscription metadata set at checkout. `settings.stripe_price_*` in `config/settings.py` have no readers in `src/`.
 - **Env vars.** `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET` are in `Settings`; set them in Railway and Terraform, never in the JSON. `StripeClient` / `StripeService` raise 500 "Stripe not configured" without the secret key.
 - **Webhook rules.** The signature is verified with `stripe.Webhook.construct_event`. Dedupe first (`has_processed`), run the handler, and `mark_processed` only on success; on any exception return 500 so Stripe retries. Handlers must therefore be idempotent. Invoice events can arrive in the old (`invoice.subscription`) or new (`invoice.parent.subscription_details`) shape; `invoice_payment` objects are resolved by fetching the invoice.
@@ -48,9 +49,9 @@ sequenceDiagram
 
 ## How to add a plan or tier limit
 
-1. Create the product and prices in Stripe (test mode for dev/uat, live for prod).
-2. Add the tier, or the new `limits` field, to all three JSON files. A new limit field also goes into `PricingTierLimits` in `pricing_config.py`.
-3. If the tier order matters, update `tier_order` in `validate_checkout_request`.
+1. Add the tier, or the new `limits` field, to all three JSON files, leaving `stripe_price_ids` empty for a new tier. A new limit field also goes into `PricingTierLimits` in `pricing_config.py`.
+2. Run `uv run scripts/stripe_pricing_sync.py` from `api/` with the `{DEV,UAT,PROD}_STRIPE_SECRET_KEY` variables loaded. For each environment it finds or creates the product and a price per billing cycle from the `prices` labels (`£1,490` is 1490), then writes the ids back into the file. Changing a price label creates a new Stripe price; the old one is left as it is. `--dry-run` only skips writing the file: it still creates missing products and prices in Stripe. `--import-existing` is the read-only mode. The currency comes from `STRIPE_CURRENCY` (default `gbp`); the deploy hook in `terraform/lambda.tf` sets `gbp`, so keep the labels in pounds.
+3. Place the tier in size order: `validate_checkout_request` reads upgrades and downgrades from the file order.
 4. Enforce a new limit in `src/rate_limits/service.py` and `middleware.py`.
 5. Extend `tests/test_pricing_config.py` if a new environment or required field is introduced.
 

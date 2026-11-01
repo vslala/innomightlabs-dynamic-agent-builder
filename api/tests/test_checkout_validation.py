@@ -23,7 +23,7 @@ def test_checkout_requires_authentication(test_client):
     """Unauthenticated users cannot access checkout."""
     response = test_client.post(
         "/payments/stripe/checkout",
-        json={"planKey": "starter", "billingCycle": "monthly"}
+        json={"planKey": "business", "billingCycle": "monthly"}
     )
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     detail = response.json()["detail"]
@@ -31,72 +31,72 @@ def test_checkout_requires_authentication(test_client):
 
 
 def test_checkout_rejects_duplicate_plan(test_client, auth_headers, dynamodb_table):
-    """User with active 'starter' plan cannot purchase 'starter' again."""
+    """User with active 'business' plan cannot purchase 'business' again."""
     from src.payments.subscriptions import Subscription, SubscriptionRepository
 
-    # Setup: Create active starter subscription
+    # Setup: Create active business subscription
     repo = SubscriptionRepository()
     repo.upsert(Subscription(
         subscription_id="sub_123",
         user_email=TEST_USER_EMAIL,
         status="active",
-        plan_name="starter",
+        plan_name="business",
         current_period_end=str(int(time.time()) + 86400 * 30)  # 30 days future
     ))
 
-    # Test: Attempt to purchase starter again
+    # Test: Attempt to purchase business again
     response = test_client.post(
         "/payments/stripe/checkout",
-        json={"planKey": "starter", "billingCycle": "monthly"},
+        json={"planKey": "business", "billingCycle": "monthly"},
         headers=auth_headers
     )
 
     # Assert: Blocked with helpful message
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     detail = response.json()["detail"]
-    assert "already have an active starter subscription" in detail
+    assert "already have an active business subscription" in detail
     assert "Settings" in detail
 
 
 def test_checkout_rejects_downgrade(test_client, auth_headers, dynamodb_table):
-    """User with 'pro' plan cannot purchase 'starter' plan via checkout."""
+    """User with 'growth' plan cannot purchase 'business' plan via checkout."""
     from src.payments.subscriptions import Subscription, SubscriptionRepository
 
-    # Setup: Create active pro subscription
+    # Setup: Create active growth subscription
     repo = SubscriptionRepository()
     repo.upsert(Subscription(
-        subscription_id="sub_pro",
+        subscription_id="sub_growth",
         user_email=TEST_USER_EMAIL,
         status="active",
-        plan_name="pro",
+        plan_name="growth",
         current_period_end=str(int(time.time()) + 86400 * 30)
     ))
 
-    # Test: Attempt to purchase starter (downgrade)
+    # Test: Attempt to purchase business (downgrade)
     response = test_client.post(
         "/payments/stripe/checkout",
-        json={"planKey": "starter", "billingCycle": "monthly"},
+        json={"planKey": "business", "billingCycle": "monthly"},
         headers=auth_headers
     )
 
     # Assert: Blocked with downgrade message
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     detail = response.json()["detail"]
-    assert "downgrade from pro to starter" in detail.lower()
+    assert "downgrade from growth to business" in detail.lower()
     assert "Settings" in detail
 
 
 def test_checkout_allows_upgrade(test_client, auth_headers, dynamodb_table, monkeypatch):
-    """User with 'starter' plan can purchase 'pro' plan (upgrade)."""
+    """User with 'business' plan can purchase 'growth' plan (upgrade)."""
     from src.payments.subscriptions import Subscription, SubscriptionRepository
 
-    # Setup: Create active starter subscription
+    # Setup: Create active business subscription
     repo = SubscriptionRepository()
     repo.upsert(Subscription(
-        subscription_id="sub_starter",
+        subscription_id="sub_business",
         user_email=TEST_USER_EMAIL,
         status="active",
-        plan_name="starter",
+        plan_name="business",
         current_period_end=str(int(time.time()) + 86400 * 30)
     ))
 
@@ -107,10 +107,10 @@ def test_checkout_allows_upgrade(test_client, auth_headers, dynamodb_table, monk
     from src.payments.stripe.router import StripeClient
     monkeypatch.setattr(StripeClient, "post", mock_stripe_post)
 
-    # Test: Purchase pro plan (upgrade)
+    # Test: Purchase growth plan (upgrade)
     response = test_client.post(
         "/payments/stripe/checkout",
-        json={"planKey": "pro", "billingCycle": "monthly"},
+        json={"planKey": "growth", "billingCycle": "monthly"},
         headers=auth_headers
     )
 
@@ -128,10 +128,10 @@ def test_checkout_allows_no_active_subscription(test_client, auth_headers, dynam
     from src.payments.stripe.router import StripeClient
     monkeypatch.setattr(StripeClient, "post", mock_stripe_post)
 
-    # Test: Purchase starter with no existing subscription
+    # Test: Purchase business with no existing subscription
     response = test_client.post(
         "/payments/stripe/checkout",
-        json={"planKey": "starter", "billingCycle": "monthly"},
+        json={"planKey": "business", "billingCycle": "monthly"},
         headers=auth_headers
     )
 
@@ -149,7 +149,7 @@ def test_checkout_allows_expired_resubscribe(test_client, auth_headers, dynamodb
         subscription_id="sub_expired",
         user_email=TEST_USER_EMAIL,
         status="active",
-        plan_name="starter",
+        plan_name="business",
         current_period_end=str(int(time.time()) - 86400)  # 1 day ago (expired)
     ))
 
@@ -163,7 +163,7 @@ def test_checkout_allows_expired_resubscribe(test_client, auth_headers, dynamodb
     # Test: Resubscribe to same plan
     response = test_client.post(
         "/payments/stripe/checkout",
-        json={"planKey": "starter", "billingCycle": "monthly"},
+        json={"planKey": "business", "billingCycle": "monthly"},
         headers=auth_headers
     )
 

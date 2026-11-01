@@ -35,9 +35,23 @@ class PricingTierConfig(BaseModel):
     stripe_price_ids: dict[str, str]
 
 
+class PricingAddonConfig(BaseModel):
+    """A one-off service sold beside the plans, bought by getting in touch rather than at checkout."""
+
+    key: str
+    name: str
+    price: str
+    period: str
+    description: str
+    features: list[str]
+    cta: PricingTierCTA
+
+
 class PricingConfig(BaseModel):
+    """Tiers are listed from smallest to largest; that order is the upgrade path."""
+
     tiers: list[PricingTierConfig]
-    addons: list[dict]
+    addons: list[PricingAddonConfig]
     updated_at: Optional[str] = None
 
 

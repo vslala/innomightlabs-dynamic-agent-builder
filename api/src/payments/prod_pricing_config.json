@@ -4,8 +4,8 @@
       "key": "free",
       "name": "Free",
       "prices": {
-        "monthly": "$0",
-        "annual": "$0"
+        "monthly": "£0",
+        "annual": "£0"
       },
       "stripe_price_ids": {
         "monthly": "price_1SsQp394EtooRMivbzMTeQNB",
@@ -13,18 +13,18 @@
       },
       "stripe_product_id": "prod_Tq73m5gIfPKCSm",
       "badge": "Free forever",
-      "description": "Get started with core memory features for personal projects.",
+      "description": "Try it on your own business, for as long as you like.",
       "cta": {
-        "label": "Start Free",
-        "href": "/#waitlist"
+        "label": "Start free",
+        "href": "/login"
       },
       "highlighted": false,
       "features": [
         "1 agent",
         "100 messages / month",
-        "10 KB pages",
+        "10 knowledge base pages",
+        "1 lead form, 25 leads / month",
         "5 memory blocks",
-        "25 leads / month",
         "Community support"
       ],
       "limits": {
@@ -37,75 +37,67 @@
       }
     },
     {
-      "key": "starter",
-      "name": "Starter",
+      "key": "business",
+      "name": "Business",
       "prices": {
-        "monthly": "$5",
-        "annual": "$50"
+        "monthly": "£49",
+        "annual": "£490"
       },
-      "stripe_price_ids": {
-        "monthly": "price_1TcCrO94EtooRMivXLm59ljh",
-        "annual": "price_1TcCrP94EtooRMivEMTuqG0n"
-      },
-      "stripe_product_id": "prod_Tq73AZs1qHJ7Kp",
-      "badge": "For growing teams",
-      "description": "Scale your first production agents with more capacity.",
-      "cta": {
-        "label": "Start with Starter",
-        "href": "/#waitlist"
-      },
-      "highlighted": false,
-      "features": [
-        "3 agents",
-        "10,000 messages / month",
-        "100 KB pages",
-        "20 memory blocks",
-        "500 leads / month",
-        "Email support"
-      ],
-      "limits": {
-        "agents": 3,
-        "messages_per_month": 10000,
-        "kb_pages": 100,
-        "memory_blocks": 20,
-        "lead_forms": 5,
-        "lead_captures_per_month": 500
-      }
-    },
-    {
-      "key": "pro",
-      "name": "Pro",
-      "prices": {
-        "monthly": "$20",
-        "annual": "$200"
-      },
-      "stripe_price_ids": {
-        "monthly": "price_1TcCrQ94EtooRMiv0vcdDpSQ",
-        "annual": "price_1TcCrQ94EtooRMivIajQtUrL"
-      },
-      "stripe_product_id": "prod_Tq73M8h2pzSKoq",
+      "stripe_price_ids": {},
       "badge": "Most popular",
-      "description": "Everything you need for serious agent workflows.",
+      "description": "For a small business putting AI to work every day.",
       "cta": {
-        "label": "Go Pro",
-        "href": "/#waitlist"
+        "label": "Choose Business",
+        "href": "/login"
       },
       "highlighted": true,
       "features": [
-        "10 agents",
-        "50,000 messages / month",
-        "1,000 KB pages",
-        "Unlimited memory blocks",
-        "5,000 leads / month",
-        "Priority support"
+        "5 agents",
+        "10,000 messages / month",
+        "500 knowledge base pages",
+        "10 lead forms, 1,000 leads / month",
+        "Unlimited memory",
+        "Email support"
       ],
       "limits": {
-        "agents": 10,
-        "messages_per_month": 50000,
-        "kb_pages": 1000,
+        "agents": 5,
+        "messages_per_month": 10000,
+        "kb_pages": 500,
         "memory_blocks": 0,
-        "lead_forms": 25,
-        "lead_captures_per_month": 5000
+        "lead_forms": 10,
+        "lead_captures_per_month": 1000
+      }
+    },
+    {
+      "key": "growth",
+      "name": "Growth",
+      "prices": {
+        "monthly": "£149",
+        "annual": "£1,490"
+      },
+      "stripe_price_ids": {},
+      "badge": "For growing teams",
+      "description": "For teams running several solutions across the business.",
+      "cta": {
+        "label": "Choose Growth",
+        "href": "/login"
+      },
+      "highlighted": false,
+      "features": [
+        "20 agents",
+        "50,000 messages / month",
+        "5,000 knowledge base pages",
+        "Unlimited lead forms, 10,000 leads / month",
+        "Unlimited memory",
+        "Priority support and an onboarding call"
+      ],
+      "limits": {
+        "agents": 20,
+        "messages_per_month": 50000,
+        "kb_pages": 5000,
+        "memory_blocks": 0,
+        "lead_forms": 0,
+        "lead_captures_per_month": 10000
       }
     },
     {
@@ -117,19 +109,17 @@
       },
       "stripe_price_ids": {},
       "badge": "Custom",
-      "description": "Dedicated support and limitless scale for large teams.",
+      "description": "Custom limits, invoicing and a named contact for larger organisations.",
       "cta": {
-        "label": "Contact Sales",
+        "label": "Talk to us",
         "href": "/contact?type=sales"
       },
       "highlighted": false,
       "features": [
-        "Unlimited agents",
-        "Unlimited messages",
-        "Unlimited KB pages",
-        "Unlimited memory blocks",
-        "Unlimited leads",
-        "Dedicated support"
+        "Limits sized to you",
+        "Invoicing and purchase orders",
+        "A named contact",
+        "Help with security reviews"
       ],
       "limits": {
         "agents": 0,
@@ -141,6 +131,23 @@
       }
     }
   ],
-  "addons": [],
-  "updated_at": "2025-01-01"
+  "addons": [
+    {
+      "key": "setup",
+      "name": "Done-with-you setup",
+      "price": "£499",
+      "period": "one-off",
+      "description": "We build your first solution with you, connect it to your tools and show your team how to run it, so it is working from day one.",
+      "features": [
+        "A working solution, built with you",
+        "Connected to your website and tools",
+        "A walkthrough for your team"
+      ],
+      "cta": {
+        "label": "Book a setup",
+        "href": "/contact?type=sales"
+      }
+    }
+  ],
+  "updated_at": "2026-11-01"
 }

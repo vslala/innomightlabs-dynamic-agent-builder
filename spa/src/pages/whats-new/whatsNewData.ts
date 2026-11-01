@@ -15,6 +15,32 @@ export interface ChangeLogEntry {
 
 export const changeLogEntries: ChangeLogEntry[] = [
   {
+    date: "2026-11-01",
+    title: "Simpler plans, with every feature in each one",
+    summary:
+      "Three plans instead of four: Free, Business and Growth. Every plan gets the whole platform; they differ only in how much you run and the support you get.",
+    items: [
+      {
+        title: "Business and Growth replace Starter and Pro",
+        description:
+          "Business (£49 a month) runs 5 agents and 10,000 messages a month. Growth (£149 a month) runs 20 agents and 50,000 messages, with priority support and an onboarding call. Annual billing gives two months free.",
+        category: "new",
+      },
+      {
+        title: "Done-with-you setup",
+        description:
+          "Want help getting started? We build your first solution with you, connect it to your tools and show your team how to run it.",
+        category: "new",
+      },
+      {
+        title: "A clearer pricing page",
+        description:
+          "See what every plan includes, compare each plan's limits side by side, and read why your AI usage is billed by your own provider at cost.",
+        category: "improved",
+      },
+    ],
+  },
+  {
     date: "2026-10-26",
     title: "Approve what your agents do for you",
     summary:

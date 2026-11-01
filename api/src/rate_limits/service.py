@@ -35,7 +35,7 @@ class RateLimitService:
         Get user's subscription tier.
 
         Returns:
-            'free', 'starter', 'pro', or 'enterprise'
+            A tier key from the pricing config, such as 'free' or 'business'
         """
         subscription = self.subscription_repo.get_active_for_user(user_email)
 

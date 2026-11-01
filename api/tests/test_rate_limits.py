@@ -93,10 +93,10 @@ def test_agent_limit_respects_latest_paid_plan(test_client, auth_headers, dynamo
     )
     repo.upsert(
         Subscription(
-            subscription_id="sub-starter",
+            subscription_id="sub-business",
             user_email=TEST_USER_EMAIL,
             status="active",
-            plan_name="starter",
+            plan_name="business",
         )
     )
 

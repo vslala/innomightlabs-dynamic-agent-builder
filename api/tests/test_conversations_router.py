@@ -382,7 +382,7 @@ class TestConversationsRouter:
                 subscription_id="sub-test-pro",
                 user_email=TEST_USER_EMAIL,
                 status="active",
-                plan_name="pro",
+                plan_name="growth",
             )
         )
         # Create a second agent

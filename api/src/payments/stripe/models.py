@@ -2,6 +2,8 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from ..pricing_config import PricingTierLimits
+
 
 class PricingTier(BaseModel):
     name: str
@@ -13,6 +15,16 @@ class PricingTier(BaseModel):
     ctaHref: str
     highlighted: bool = False
     features: list[str]
+    limits: PricingTierLimits
+
+class PricingAddon(BaseModel):
+    name: str
+    price: str
+    period: str
+    description: str
+    features: list[str]
+    ctaLabel: str
+    ctaHref: str
 
 class PricingFaq(BaseModel):
     question: str
@@ -20,6 +32,7 @@ class PricingFaq(BaseModel):
 
 class PricingResponse(BaseModel):
     tiers: list[PricingTier]
+    addons: list[PricingAddon]
     faqs: list[PricingFaq]
 
 class CheckoutRequest(BaseModel):
