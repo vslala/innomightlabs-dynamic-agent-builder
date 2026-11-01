@@ -13,13 +13,24 @@ reaches it at `http://${{ollama-embeddings.RAILWAY_PRIVATE_DOMAIN}}:11434`.
 
 ## Idle sleep
 
-`railway.toml` enables Railway Serverless (`deploy.sleepApplication = true`). After roughly
+`railway.toml` requests Railway Serverless (`deploy.sleepApplication = true`). Also enable
+Serverless on the production Railway service. Verify the resolved deployment manifest, not just
+the local file or dashboard toggle: the deploy script rejects successful or unchanged deployments
+whose manifest does not enable sleep, and does not record a new fingerprint for them. A redeploy
+of an old deployment can retain its old resolved configuration; upload fresh source with
+`railway up ollama-embeddings --path-as-root` using the production project/environment/service
+flags to apply the current settings. This rollout must target Ollama only.
+
+After roughly
 5–10 minutes without network activity, Railway sleeps the container; the API's next private-network
 request wakes it. This applies to crawler content embeddings **and** knowledge-base search query
 embeddings. Do not add periodic requests that keep the service awake.
 
-The model stays loaded while the container runs (`OLLAMA_KEEP_ALIVE=-1`), but sleep releases the
-container's memory. The model is baked into the image and does not need downloading on wake.
+The model unloads after one minute without embedding requests (`OLLAMA_KEEP_ALIVE=1m`), releasing
+model memory while Ollama stays running. This retains the model across crawler batches without
+keeping it in RAM indefinitely. Railway sleep separately releases the entire container's memory.
+The next request reloads the same model from the image; no download or re-indexing is needed.
+A Railway service variable can override the image default; keep it at `1m` when deploying.
 The API retries connection failures and HTTP 502/503/504 up to four attempts with 1, 2, and 4 second
 backoffs to tolerate cold starts; other failures are not retried. Changing the sleep setting requires
 a deployment, not just a settings update. Verify a real embedding request after an idle period when

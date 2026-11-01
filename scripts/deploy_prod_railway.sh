@@ -105,6 +105,21 @@ latest_deployment() {
     python3 -c 'import json, sys; d = json.load(sys.stdin); print(d[0]["id"], d[0]["status"]) if d else print("", "")' 2>/dev/null || true
 }
 
+verify_ollama_serverless() {
+  railway deployment list \
+    --service "$RAILWAY_OLLAMA_SERVICE" \
+    --environment "$RAILWAY_ENVIRONMENT" \
+    --json --limit 1 |
+    python3 -c '
+import json, sys
+deployments = json.load(sys.stdin)
+deployment = deployments[0] if deployments else {}
+sleep = deployment.get("meta", {}).get("serviceManifest", {}).get("deploy", {}).get("sleepApplication")
+if deployment.get("status") != "SUCCESS" or sleep is not True:
+    sys.exit("Error: latest Ollama deployment is not successful with serverless enabled. Enable Serverless on the Railway service and deploy fresh source; an unchanged fingerprint alone does not verify configuration.")
+'
+}
+
 # Uploads the service, waits for the new deployment to go live, then records its fingerprint. A build or health check
 # that fails records nothing, so the next run tries again instead of skipping a broken service.
 deploy_service() {
@@ -131,6 +146,9 @@ deploy_service() {
     if [[ -n "$id" && "$id" != "${before:-}" ]]; then
       case "$status" in
         SUCCESS)
+          if [[ "$service_name" == "$RAILWAY_OLLAMA_SERVICE" ]]; then
+            verify_ollama_serverless || return 1
+          fi
           railway variable set \
             --project "$RAILWAY_PROJECT_ID" \
             --service "$service_name" \
@@ -266,8 +284,17 @@ if [[ "$deploy_ollama" == "true" ]]; then
 fi
 
 if [[ "$DEPLOY_CLI_RUNNER" == "true" && -z "$cli_runner_shared_token" ]]; then
-  cli_runner_shared_token="$(generate_cli_runner_shared_token)"
-  echo "CLI_RUNNER_SHARED_TOKEN was not set. Generated a new production sidecar token for this deployment."
+  # Reuse the deployed secret so unchanged runs keep the same service fingerprints.
+  # Lookup failures must abort rather than silently rotate a working secret.
+  cli_runner_shared_token="$(railway variable list \
+    --project "$RAILWAY_PROJECT_ID" \
+    --service "$RAILWAY_CLI_RUNNER_SERVICE" \
+    --environment "$RAILWAY_ENVIRONMENT" \
+    --json | python3 -c 'import json, sys; print(json.load(sys.stdin).get("CLI_RUNNER_SHARED_TOKEN", ""))')"
+  if [[ -z "$cli_runner_shared_token" ]]; then
+    cli_runner_shared_token="$(generate_cli_runner_shared_token)"
+    echo "CLI_RUNNER_SHARED_TOKEN was not set locally or in Railway. Generated an initial production sidecar token."
+  fi
 fi
 
 url_for() {
@@ -537,6 +564,8 @@ if [[ "${ollama_changed:-false}" == "true" ]]; then
   echo "Deploying private Ollama embedding service to Railway..."
   deploy_service "$RAILWAY_OLLAMA_SERVICE" "$OLLAMA_DIR" "$ollama_fingerprint" \
     "prod ollama embeddings deploy from scripts/deploy_prod_railway.sh"
+elif [[ "$deploy_ollama" == "true" ]]; then
+  verify_ollama_serverless
 fi
 
 if [[ "$deploy_api" == "true" ]]; then

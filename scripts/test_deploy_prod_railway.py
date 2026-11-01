@@ -49,6 +49,9 @@ elif args[0] == "up":
     state["deployments"][service] = [{
         "id": str(len(state["uploads"])),
         "status": "SUCCESS",
+        "meta": {"serviceManifest": {"deploy": {
+            "sleepApplication": not bool(os.environ.get("MOCK_SLEEP_DISABLED")),
+        }}},
     }]
 else:
     raise AssertionError(args)
@@ -167,6 +170,23 @@ class DeployProductionTests(unittest.TestCase):
                 (self.root / directory / "app.txt").write_text("changed\n")
                 self.successful_deploy()
                 self.assertEqual(self.state()["uploads"][before:], [service])
+
+    def test_disabled_sleep_does_not_record_ollama_fingerprint(self) -> None:
+        result = self.deploy(MOCK_SLEEP_DISABLED="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("serverless enabled", result.stderr)
+        self.assertNotIn("DEPLOYED_FINGERPRINT", self.state()["variables"]["ollama-embeddings"])
+        self.assertNotIn("InnomightLabs API", self.state()["uploads"])
+
+    def test_unchanged_files_do_not_hide_sleep_configuration_drift(self) -> None:
+        self.successful_deploy()
+        state = self.state()
+        state["deployments"]["ollama-embeddings"][0]["meta"]["serviceManifest"]["deploy"]["sleepApplication"] = False
+        self.save_state(state)
+        result = self.deploy()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("serverless enabled", result.stderr)
+        self.assertEqual(self.state()["uploads"], SERVICES)
 
     def test_force_deploy_still_redeploys_all_services(self) -> None:
         self.successful_deploy()

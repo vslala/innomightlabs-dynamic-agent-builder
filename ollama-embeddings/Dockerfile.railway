@@ -19,7 +19,7 @@ RUN ollama serve & \
 
 # Railway private networking is IPv6, so listen on every interface rather than Ollama's localhost default.
 ENV OLLAMA_HOST=[::]:11434
-# Keep the model loaded so searches don't pay a reload after idle periods.
-ENV OLLAMA_KEEP_ALIVE=-1
+# Reuse the model across embedding batches, but release its memory between bursts.
+ENV OLLAMA_KEEP_ALIVE=1m
 
 EXPOSE 11434
