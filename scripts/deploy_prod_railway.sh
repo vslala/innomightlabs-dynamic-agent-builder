@@ -565,7 +565,8 @@ if [[ "${ollama_changed:-false}" == "true" ]]; then
   deploy_service "$RAILWAY_OLLAMA_SERVICE" "$OLLAMA_DIR" "$ollama_fingerprint" \
     "prod ollama embeddings deploy from scripts/deploy_prod_railway.sh"
 elif [[ "$deploy_ollama" == "true" ]]; then
-  verify_ollama_serverless
+  # A failed sleep rollout must not block unrelated API changes while the previous container runs.
+  echo "Skipping unchanged Ollama service; serverless verification applies only to new Ollama deployments."
 fi
 
 if [[ "$deploy_api" == "true" ]]; then

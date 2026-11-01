@@ -178,15 +178,26 @@ class DeployProductionTests(unittest.TestCase):
         self.assertNotIn("DEPLOYED_FINGERPRINT", self.state()["variables"]["ollama-embeddings"])
         self.assertNotIn("InnomightLabs API", self.state()["uploads"])
 
-    def test_unchanged_files_do_not_hide_sleep_configuration_drift(self) -> None:
+    def test_unchanged_ollama_drift_does_not_block_api_deployment(self) -> None:
         self.successful_deploy()
         state = self.state()
         state["deployments"]["ollama-embeddings"][0]["meta"]["serviceManifest"]["deploy"]["sleepApplication"] = False
         self.save_state(state)
-        result = self.deploy()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("serverless enabled", result.stderr)
-        self.assertEqual(self.state()["uploads"], SERVICES)
+        (self.root / "api" / "app.txt").write_text("changed\n")
+        result = self.successful_deploy()
+        self.assertIn("Skipping unchanged Ollama service", result.stdout)
+        self.assertEqual(self.state()["uploads"], SERVICES + ["InnomightLabs API"])
+
+    def test_failed_ollama_attempt_does_not_block_api_or_redeploy_unchanged_services(self) -> None:
+        self.successful_deploy()
+        state = self.state()
+        state["deployments"]["ollama-embeddings"].insert(0, {"id": "failed-sleep-rollout", "status": "FAILED"})
+        self.save_state(state)
+        (self.root / "api" / "app.txt").write_text("changed\n")
+        self.successful_deploy()
+        self.assertEqual(self.state()["uploads"], SERVICES + ["InnomightLabs API"])
+        self.successful_deploy()
+        self.assertEqual(self.state()["uploads"], SERVICES + ["InnomightLabs API"])
 
     def test_force_deploy_still_redeploys_all_services(self) -> None:
         self.successful_deploy()

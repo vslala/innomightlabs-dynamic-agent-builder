@@ -43,7 +43,11 @@
         "monthly": "£49",
         "annual": "£490"
       },
-      "stripe_price_ids": {},
+      "stripe_price_ids": {
+        "monthly": "price_1UWzuA9vlzhgFql1Zv4RIooZ",
+        "annual": "price_1UWzuA9vlzhgFql1gy2oGJPH"
+      },
+      "stripe_product_id": "prod_VY66dnBFcVDAUu",
       "badge": "Most popular",
       "description": "For a small business putting AI to work every day.",
       "cta": {
@@ -75,7 +79,11 @@
         "monthly": "£149",
         "annual": "£1,490"
       },
-      "stripe_price_ids": {},
+      "stripe_price_ids": {
+        "monthly": "price_1UWzuB9vlzhgFql1mgJvEIib",
+        "annual": "price_1UWzuB9vlzhgFql1os6TOs7Y"
+      },
+      "stripe_product_id": "prod_VY660UhedB6NYf",
       "badge": "For growing teams",
       "description": "For teams running several solutions across the business.",
       "cta": {
