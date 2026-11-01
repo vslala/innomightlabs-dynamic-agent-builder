@@ -9,7 +9,7 @@ from src.iam.service import IamService
 from src.iam.shares import ShareRepository
 from src.identity import IdentityRepository
 from src.knowledge.access import readable_by_agent
-from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL, TEST_USER_EMAIL_2, user_id_for
+from tests.mock_data import AGENT_CREATE_REQUEST, TEST_USER_EMAIL, TEST_USER_EMAIL_2, set_up_bedrock, user_id_for
 from tests.oauth_handoff import owner_headers
 
 ADMIN_EMAIL, ALICE_EMAIL, BOB_EMAIL = TEST_USER_EMAIL, TEST_USER_EMAIL_2, "someone-else@example.com"
@@ -26,6 +26,7 @@ def account(dynamodb_table) -> str:
         dynamodb_table.put_item(Item=Member(account_id=created.account_id, user_id=identity.user_id,
                                             email=email, name=identity.name).to_dynamo_item())
         IamService().attach(created.account_id, user_id_for(ADMIN_EMAIL), "member", identity.user_id, "MemberAccess")
+    set_up_bedrock(created.account_id)
     return created.account_id
 
 

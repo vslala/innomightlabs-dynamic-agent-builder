@@ -34,6 +34,11 @@ class FormOptionsContext:
     cache: dict[str, object] = field(default_factory=dict)
 
 
+#: Sources whose options are complete even when there are none. Other sources can come back empty because a
+#: listing failed, so an empty list accepts any value; no configured provider means none can be chosen.
+COMPLETE_OPTION_SOURCES = frozenset({FormOptionSourceType.AGENT_MODEL_PROVIDERS})
+
+
 class FormOptionsResolver(Protocol):
     def resolve(self, context: FormOptionsContext) -> list[SelectOption]:
         ...
@@ -80,7 +85,7 @@ def validate_form_options(
         if input_def.options_filter:
             options = input_def.options_filter.apply(options, values)
         allowed = {option.value for option in options}
-        if allowed and str(value) not in allowed:
+        if (allowed or source.type in COMPLETE_OPTION_SOURCES) and str(value) not in allowed:
             raise ValueError(f"Invalid value for {input_def.name}")
 
 
@@ -141,7 +146,7 @@ class AgentModelChoices:
 
 
 def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
-    from src.llm.models import PROVIDER_MODEL_SOURCES, models_service
+    from src.llm.models import PROVIDER_MODEL_SOURCES, ModelInfo
 
     cached = context.cache.get("agent_model_choices")
     if isinstance(cached, AgentModelChoices):
@@ -149,11 +154,10 @@ def _load_agent_model_choices(context: FormOptionsContext) -> AgentModelChoices:
 
     repo = context.provider_settings_repository or get_provider_settings_repository()
 
-    # Bedrock is always offered; every other provider appears once the account has
-    # configured it. A provider whose model listing fails is still offered, so a
-    # transient outage doesn't silently drop it from the picker.
-    providers = ["Bedrock"]
-    catalog = [("Bedrock", model) for model in models_service.get_bedrock_models()]
+    # A provider appears once the account has configured it. One whose model listing
+    # fails is still offered, so a transient outage doesn't silently drop it from the picker.
+    providers: list[str] = []
+    catalog: list[tuple[str, ModelInfo]] = []
 
     for source in PROVIDER_MODEL_SOURCES:
         provider_settings = repo.find_by_provider(context.owner.account_id, source.provider_name)

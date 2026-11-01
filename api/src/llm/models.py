@@ -70,32 +70,24 @@ class ModelsService:
         "claude-3-opus": "Claude 3 Opus",
     }
 
-    def get_bedrock_models(
-        self,
-        access_key: Optional[str] = None,
-        secret_key: Optional[str] = None,
-    ) -> list[ModelInfo]:
-        """
-        Fetch available Claude models from Bedrock.
+    def get_bedrock_models(self, provider_settings: ProviderSettings) -> list[ModelInfo]:
+        """The Claude models the account's AWS keys can use."""
+        credentials = json.loads(decrypt(provider_settings.encrypted_credentials))
+        return self.list_bedrock_models(credentials["access_key"], credentials["secret_key"])
 
-        Args:
-            access_key: AWS access key (optional, uses default credentials if not provided)
-            secret_key: AWS secret key (optional)
+    def list_bedrock_models(self, access_key: str, secret_key: str) -> list[ModelInfo]:
+        """Claude models on Bedrock for these AWS keys, best first, or a fallback list when listing fails.
 
-        Returns:
-            List of available model information
+        Always the account's own keys: the server's AWS identity is not a Bedrock account anyone configured.
         """
         try:
             # Create Bedrock client (not bedrock-runtime)
-            client_kwargs = {
-                "service_name": "bedrock",
-                "region_name": self.REGION,
-            }
-            if access_key and secret_key:
-                client_kwargs["aws_access_key_id"] = access_key
-                client_kwargs["aws_secret_access_key"] = secret_key
-
-            client = boto3.client(**client_kwargs)  # type: ignore[call-overload]
+            client = boto3.client(
+                service_name="bedrock",
+                region_name=self.REGION,
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+            )
 
             # List foundation models, filtering for Anthropic
             response = client.list_foundation_models(
@@ -510,9 +502,12 @@ class ProviderModelSource:
     load_models: Callable[[ProviderSettings], list[ModelInfo]]
 
 
-#: Providers whose model list depends on user-configured settings. Bedrock is
-#: absent because it is always offered and needs no per-user credentials.
+#: Every provider, offered only once the account has configured it.
 PROVIDER_MODEL_SOURCES: tuple[ProviderModelSource, ...] = (
+    ProviderModelSource(
+        "Bedrock",
+        lambda provider_settings: models_service.get_bedrock_models(provider_settings=provider_settings),
+    ),
     ProviderModelSource(
         "Anthropic",
         lambda provider_settings: models_service.get_anthropic_models(provider_settings=provider_settings),

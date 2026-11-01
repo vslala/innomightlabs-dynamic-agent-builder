@@ -174,3 +174,15 @@ class LeadsPlan:
 
     def get_account_limits(self, account_id: str) -> PricingTierLimits:
         return self.limits
+
+
+def set_up_bedrock(account_id: str) -> None:
+    """Bedrock configured in the account, so it can create agents: only a configured provider is offered."""
+    import json
+
+    from src.crypto import encrypt
+    from src.settings.models import ProviderSettings
+    from src.settings.repository import ProviderSettingsRepository
+
+    keys = encrypt(json.dumps({"access_key": "AKIATEST", "secret_key": "secret"}))
+    ProviderSettingsRepository().save(ProviderSettings(account_id=account_id, provider_name="Bedrock", encrypted_credentials=keys))

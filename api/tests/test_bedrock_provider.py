@@ -94,7 +94,7 @@ def test_bedrock_provider_normalizes_function_tools() -> None:
 
 async def test_bedrock_provider_yields_usage_event_from_metadata(monkeypatch) -> None:
     provider = BedrockProvider()
-    monkeypatch.setattr(provider, "get_model_id", lambda model=None: "test-model-id")
+    monkeypatch.setattr(provider, "get_model_id", lambda *args: "test-model-id")
 
     class FakeBedrockRuntimeClient:
         def converse_stream(self, **kwargs):

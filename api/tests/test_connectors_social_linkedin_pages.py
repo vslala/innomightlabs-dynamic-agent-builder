@@ -33,7 +33,7 @@ class FakeLinkedIn:
         self.requests.append(request)
         path = request.url.path
         if path.endswith("/accessToken"):
-            return httpx.Response(200, json={"access_token": "page-token", "expires_in": 5184000, "scope": "r_organization_admin,w_organization_social"})
+            return httpx.Response(200, json={"access_token": "page-token", "expires_in": 5184000, "scope": "rw_organization_admin,w_organization_social"})
         if path == "/rest/organizationAcls":
             return httpx.Response(200, json={"elements": [
                 {"organization": f"urn:li:organization:{page}", "role": role, "state": "APPROVED"} for page, role in self.roles]})
@@ -89,7 +89,8 @@ def test_the_pages_sign_in_asks_for_the_page_scopes_with_its_own_app(test_client
                              headers=owner_headers())
     query = parse_qs(urlparse(start.json()["authorize_url"]).query)
     assert query["client_id"] == ["pages-id"]
-    assert query["scope"] == ["r_organization_admin w_organization_social"]
+    assert query["scope"] == [LinkedInPagesNetwork.scopes]
+    assert {"rw_organization_admin", "w_organization_social"} <= set(LinkedInPagesNetwork.scopes.split())
 
 
 def test_one_sign_in_connects_every_page_the_member_can_post_as(test_client, linkedin):

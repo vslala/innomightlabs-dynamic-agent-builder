@@ -107,9 +107,11 @@ class TestProviderModelSourceRegistry:
     def test_lookup_is_case_insensitive(self):
         assert find_model_source("ollama") is find_model_source("Ollama")
 
-    def test_bedrock_is_not_a_configurable_source(self):
-        # Bedrock is always offered and needs no per-user provider settings.
-        assert find_model_source("Bedrock") is None
+    def test_bedrock_is_a_configurable_source_like_the_rest(self):
+        source = find_model_source("Bedrock")
+
+        assert source is not None
+        assert source.provider_name == "Bedrock"
 
     def test_unknown_providers_have_no_source(self):
         assert find_model_source("Nope") is None

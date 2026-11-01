@@ -55,11 +55,11 @@ class BedrockProvider(LLMProvider):
     # Bedrock region (eu-west-2 per project config)
     REGION = "eu-west-2"
 
-    def get_model_id(self, model_name: Optional[str] = None) -> str:
+    def get_model_id(self, access_key: str, secret_key: str, model_name: Optional[str] = None) -> str:
         """
         Get the Bedrock model ID for a given model name.
 
-        Fetches available models from Bedrock and finds the matching model ID.
+        Fetches the models these keys can use and finds the matching model ID.
         Falls back to default model if not found.
         """
         from src.llm.models import models_service
@@ -68,7 +68,7 @@ class BedrockProvider(LLMProvider):
             model_name = DEFAULT_MODEL_NAME
 
         # Fetch available models and find matching one
-        available_models = models_service.get_bedrock_models()
+        available_models = models_service.list_bedrock_models(access_key, secret_key)
 
         for model in available_models:
             if model.model_name == model_name:
@@ -80,7 +80,7 @@ class BedrockProvider(LLMProvider):
             return available_models[0].model_id
 
         # Last resort fallback - must be a model that exists in eu-west-2
-        log.warning(f"No models available, using hardcoded default")
+        log.warning("No models available, using hardcoded default")
         return "anthropic.claude-3-7-sonnet-20250219-v1:0"
 
     async def stream_response(
@@ -102,13 +102,12 @@ class BedrockProvider(LLMProvider):
         Yields:
             LLMEvent objects for text, tool_use, or stop
         """
-        model_id = self.get_model_id(model)
-        # Extract credentials
         access_key = credentials.get("access_key")
         secret_key = credentials.get("secret_key")
 
         if not access_key or not secret_key:
             raise ValueError("Missing required credentials: 'access_key' and 'secret_key'")
+        model_id = self.get_model_id(access_key, secret_key, model)
 
         client = boto3.client(
             service_name="bedrock-runtime",

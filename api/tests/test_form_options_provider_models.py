@@ -62,16 +62,57 @@ def openai_api_configured(test_client: TestClient, auth_headers: dict, monkeypat
     assert response.status_code == 201
 
 
+@pytest.fixture
+def bedrock_configured(test_client: TestClient, auth_headers: dict, without_bedrock):
+    response = test_client.post(
+        "/settings/providers/Bedrock", json={"access_key": "AKIAOWN", "secret_key": "own-secret"}, headers=auth_headers
+    )
+    assert response.status_code == 201
+
+
+def _form_field(test_client: TestClient, auth_headers: dict, name: str) -> dict:
+    form = test_client.get("/agents/supported-models", headers=auth_headers).json()
+    return next(field for field in form["form_inputs"] if field["name"] == name)
+
+
 class TestAgentForm:
     def test_model_options_carry_their_provider(
-        self, test_client: TestClient, auth_headers: dict, openai_api_configured
+        self, test_client: TestClient, auth_headers: dict, openai_api_configured, bedrock_configured
     ):
-        form = test_client.get("/agents/supported-models", headers=auth_headers).json()
-
-        model_field = next(field for field in form["form_inputs"] if field["name"] == "agent_model")
+        model_field = _form_field(test_client, auth_headers, "agent_model")
         groups = {(option["value"], option["group"]) for option in model_field["options"]}
         assert {("gpt-5.5", "OpenAIAPI"), ("gpt-4.1", "OpenAIAPI"), (BEDROCK_MODEL, "Bedrock")} <= groups
         assert model_field["options_filter"] == {"field": "agent_provider"}
+
+    def test_bedrock_is_offered_only_once_it_is_set_up(
+        self, test_client: TestClient, auth_headers: dict, openai_api_configured, without_bedrock
+    ):
+        providers = [option["value"] for option in _form_field(test_client, auth_headers, "agent_provider")["options"]]
+        models = {option["group"] for option in _form_field(test_client, auth_headers, "agent_model")["options"]}
+
+        assert providers == ["OpenAIAPI"]
+        assert "Bedrock" not in models
+
+    def test_bedrock_models_are_listed_with_the_accounts_keys(
+        self, test_client: TestClient, auth_headers: dict, bedrock_configured, monkeypatch
+    ):
+        clients: list[dict] = []
+        monkeypatch.setattr("src.llm.models.boto3.client", lambda **kwargs: clients.append(kwargs) or _NoListing())
+
+        _form_field(test_client, auth_headers, "agent_model")
+
+        assert clients and clients[0]["aws_access_key_id"] == "AKIAOWN"
+        assert clients[0]["aws_secret_access_key"] == "own-secret"
+
+    def test_models_route_lists_nothing_for_an_unconfigured_bedrock(
+        self, test_client: TestClient, auth_headers: dict, without_bedrock
+    ):
+        assert test_client.get("/llm/models/Bedrock", headers=auth_headers).json() == []
+
+
+class _NoListing:
+    def list_foundation_models(self, **kwargs):
+        raise RuntimeError("no Bedrock in tests")
 
 
 class TestAgentPairValidation:
@@ -98,8 +139,13 @@ class TestAgentPairValidation:
     def test_rejects_a_provider_that_is_not_set_up(self, test_client: TestClient, auth_headers: dict):
         assert self._create(test_client, auth_headers, "Gemini", "gemini-2.5-flash").status_code == 400
 
+    def test_rejects_any_provider_when_none_is_set_up(
+        self, test_client: TestClient, auth_headers: dict, without_bedrock
+    ):
+        assert self._create(test_client, auth_headers, "Bedrock", BEDROCK_MODEL).status_code == 400
+
     def test_switching_provider_without_a_matching_model_is_rejected(
-        self, test_client: TestClient, auth_headers: dict, openai_api_configured
+        self, test_client: TestClient, auth_headers: dict, openai_api_configured, bedrock_configured
     ):
         agent_id = self._create(test_client, auth_headers, "Bedrock", BEDROCK_MODEL).json()["agent_id"]
 
@@ -108,7 +154,7 @@ class TestAgentPairValidation:
         assert response.status_code == 400
 
     def test_switching_provider_and_model_together_is_saved(
-        self, test_client: TestClient, auth_headers: dict, openai_api_configured
+        self, test_client: TestClient, auth_headers: dict, openai_api_configured, bedrock_configured
     ):
         agent_id = self._create(test_client, auth_headers, "Bedrock", BEDROCK_MODEL).json()["agent_id"]
 

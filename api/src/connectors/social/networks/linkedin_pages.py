@@ -34,7 +34,22 @@ class LinkedInPagesNetwork(LinkedInNetwork):
     description = "Post as a company page you administer."
     shares_grant = True
     app = "linked_in_pages"
-    scopes = "r_organization_admin w_organization_social"
+    #: Every scope the Pages app is granted. LinkedIn refuses a scope the app doesn't hold before sign-in
+    #: (`unauthorized_scope_error`): it grants `rw_organization_admin`, for instance, not `r_organization_admin`.
+    scopes = " ".join((
+        "r_member_postAnalytics",
+        "r_organization_followers",
+        "r_organization_social",
+        "rw_organization_admin",
+        "r_organization_social_feed",
+        "w_member_social",
+        "r_member_profileAnalytics",
+        "w_organization_social",
+        "r_basicprofile",
+        "w_organization_social_feed",
+        "w_member_social_feed",
+        "r_1st_connections_size",
+    ))
 
     async def complete(self, code: str, code_verifier: str) -> list[ConnectedProfile]:
         async with httpx.AsyncClient(transport=self._transport, timeout=TIMEOUT_SECONDS) as client:

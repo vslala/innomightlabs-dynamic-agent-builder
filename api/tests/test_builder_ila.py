@@ -270,7 +270,7 @@ def test_session_form_offers_the_persons_providers(test_client, auth_headers, ac
     assert "Bedrock" in [option["value"] for option in provider["options"]]
 
 
-def test_starting_a_session_needs_a_provider_that_is_set_up(test_client, auth_headers, dynamodb_table):
+def test_starting_a_session_needs_a_provider_that_is_set_up(test_client, auth_headers, without_bedrock):
     response = test_client.post("/builder/sessions", headers=auth_headers, json={"agent_provider": "Bedrock"})
     assert response.status_code == 400
     assert "Provider Configuration" in response.json()["detail"]

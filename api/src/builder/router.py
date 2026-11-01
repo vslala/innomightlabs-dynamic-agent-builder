@@ -41,7 +41,6 @@ from src.form_options import FormOptionsContext, hydrate_form_options
 from src.messages.models import Message
 from src.messages.repositories import get_message_repository
 from src.settings.access import settings_manager
-from src.settings.repository import get_provider_settings_repository
 from src.skills.models import ActorKind
 
 log = logging.getLogger(__name__)
@@ -106,11 +105,10 @@ async def create_session(request: Request, body: CreateBuilderSessionRequest) ->
     try:
         validate_provider_model(owner, body.agent_provider, model)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Choose a provider and model your account has set up.")
-    if not get_provider_settings_repository().find_by_provider(owner.account_id, body.agent_provider):
         raise HTTPException(
             status_code=400,
-            detail=f"An account admin needs to set up {body.agent_provider} in Settings > Provider Configuration first.",
+            detail="Choose a provider and model your account has set up. An account admin sets providers up in "
+            "Settings > Provider Configuration.",
         )
 
     conversation = ConversationRepository().save(Conversation(

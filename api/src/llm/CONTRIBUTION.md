@@ -48,9 +48,9 @@ encrypted in `ProviderSettings` (`src/settings`), decrypted by `load_provider_cr
 `PROVIDER_SCHEMAS`. A typo in one is a runtime `ValueError` or a provider that silently never lists models.
 
 **Model catalogs.** `ModelsService` has one `get_<provider>_models` per provider returning `ModelInfo`.
-`PROVIDER_MODEL_SOURCES` is the single list of providers that need user settings; `form_options.py` (agent forms) and
-`router.py` both iterate it, so a provider is picked up everywhere by adding one entry. Bedrock is always offered and
-is special-cased. A catalog method must fall back (static list or configured `settings.openai_models`) instead of
+`PROVIDER_MODEL_SOURCES` is the single list of providers, each offered only once the account has configured it;
+`form_options.py` (agent forms) and `router.py` both iterate it, so a provider is picked up everywhere by adding one
+entry. Bedrock is no exception: its catalog lists with the account's AWS keys, never the server's own AWS identity. A catalog method must fall back (static list or configured `settings.openai_models`) instead of
 failing the form: `form_options` still offers the provider if listing raises, but an empty picker is a bad experience.
 The Codex catalog is cached per account for `OPENAI_CATALOG_TTL_SECONDS`. Filtering rules for the OpenAI API list
 (`OPENAI_API_NON_CHAT_MARKERS` etc.) record what the live API refused and when it was checked; update the date when

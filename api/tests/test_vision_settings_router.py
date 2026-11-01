@@ -9,7 +9,7 @@ from src.iam.service import IamService
 from src.identity import IdentityRepository
 from src.llm.models import ModelInfo
 from src.vision.repository import VisionSettingsRepository
-from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, account_for, user_id_for
+from tests.mock_data import TEST_USER_EMAIL, TEST_USER_EMAIL_2, account_for, set_up_bedrock, user_id_for
 from tests.oauth_handoff import owner_headers
 
 ADMIN_EMAIL, MEMBER_EMAIL = TEST_USER_EMAIL, TEST_USER_EMAIL_2
@@ -35,6 +35,7 @@ def team(dynamodb_table) -> str:
         Item=Member(account_id=created.account_id, user_id=member.user_id, email=MEMBER_EMAIL, name=member.name).to_dynamo_item()
     )
     IamService().attach(created.account_id, user_id_for(ADMIN_EMAIL), "member", member.user_id, "MemberAccess")
+    set_up_bedrock(created.account_id)
     return created.account_id
 
 

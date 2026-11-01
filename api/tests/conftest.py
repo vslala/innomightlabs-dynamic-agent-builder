@@ -26,6 +26,7 @@ from tests.mock_data import (
     DYNAMODB_TABLE_SCHEMA,
     TEST_USER_EMAIL,
     SEEDED_EMAILS,
+    set_up_bedrock,
     user_id_for,
 )
 
@@ -53,7 +54,8 @@ def dynamodb_table(mock_aws_context):
     # Wait for table to be active
     table.meta.client.get_waiter('table_exists').wait(TableName=DYNAMODB_TABLE_NAME)
     # Owner tokens are only accepted for users that exist, and every user has their personal account,
-    # which requests act in when they don't name one.
+    # which requests act in when they don't name one. Each account has Bedrock set up, so it can create agents:
+    # only a provider an account has configured is offered (`without_bedrock` takes it away).
     from src.accounts import AccountService, personal_account_id
     from src.identity import Identity, IdentityRepository
 
@@ -62,7 +64,17 @@ def dynamodb_table(mock_aws_context):
             Identity(email=email, name="Test User", user_id=user_id_for(email), email_verified=True)
         )
         AccountService().create_account(identity, "Personal", account_id=personal_account_id(identity.user_id))
+        set_up_bedrock(personal_account_id(identity.user_id))
     return table
+
+
+@pytest.fixture
+def without_bedrock(dynamodb_table):
+    """The test user's account with no Bedrock set up."""
+    from src.settings.repository import ProviderSettingsRepository
+    from tests.mock_data import account_for
+
+    ProviderSettingsRepository().delete(account_for(TEST_USER_EMAIL), "Bedrock")
 
 
 @pytest.fixture
