@@ -15,6 +15,7 @@ const MCP_HOST_ICONS: Record<string, string> = {
   "learn.microsoft.com": "microsoft_learn",
   "mcp.exa.ai": "exa",
   "huggingface.co": "hugging_face",
+  "mcp.slack.com": "slack",
 };
 
 /** Recognize hand-added providers without changing their install or authorization behavior. */

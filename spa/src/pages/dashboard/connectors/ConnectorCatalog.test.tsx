@@ -64,6 +64,7 @@ describe("connector catalog", () => {
       ["Microsoft Learn", "https://learn.microsoft.com/api/mcp", "microsoft_learn"],
       ["Exa", "https://mcp.exa.ai/mcp", "exa"],
       ["Hugging Face", "https://huggingface.co/mcp", "hugging_face"],
+      ["Slack", "https://mcp.slack.com/mcp", "slack"],
       ["Private server", "https://custom.example/mcp", "server"],
     ];
     const connections = custom.map(([name, server_url], index) => ({

@@ -20,6 +20,7 @@ describe("MCP connection icons", () => {
     ["https://learn.microsoft.com/api/mcp", "microsoft_learn"],
     ["https://mcp.exa.ai/mcp", "exa"],
     ["https://huggingface.co/mcp", "hugging_face"],
+    ["https://mcp.slack.com/mcp", "slack"],
   ])("recognizes %s as %s", (server_url, icon) => {
     expect(connectionIcon({ server_url })).toBe(icon);
   });
