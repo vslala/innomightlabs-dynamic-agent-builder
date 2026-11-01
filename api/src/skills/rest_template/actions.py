@@ -19,7 +19,7 @@ from src.skills.rest_template.helper import (
     transport_error_response,
 )
 from src.skills.rest_template.models import RestPostRequest, RestRequest
-from src.skills.rest_template.security import PlatformDestinationGuard
+from src.skills.rest_template.security import refuse_unnamed_destinations
 
 
 async def get(arguments: dict[str, Any], config: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -49,7 +49,6 @@ def _validate(
 
 async def _send_request(method: str, request: RestRequest, secrets: AgentSecrets) -> dict[str, Any]:
     started = time.perf_counter()
-    guard = PlatformDestinationGuard()
     origin = httpx.URL(request.url).copy_with(path="/", query=None, fragment=None)
 
     async def drop_secret_headers_across_origins(outgoing: httpx.Request) -> None:
@@ -62,8 +61,7 @@ async def _send_request(method: str, request: RestRequest, secrets: AgentSecrets
     try:
         async with outbound.async_client(
             timeout=request.timeout_seconds,
-            destination_check=guard.check_addresses,
-            event_hooks={"request": [guard.check_request, drop_secret_headers_across_origins]},
+            event_hooks={"request": [refuse_unnamed_destinations, drop_secret_headers_across_origins]},
         ) as client:
             response = await client.request(method, request.url, **_request_kwargs(request))
     except httpx.TimeoutException:

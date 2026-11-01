@@ -4,7 +4,7 @@
 | --- | --- |
 | Status | ✅ Implemented (local validation complete; deployment pending) |
 | Owner | InnomightLabs API |
-| Last reviewed | 2026-10-23 |
+| Last reviewed | 2026-11-01 |
 | Depends on | Skill audience policy; protected outbound HTTP transport |
 
 Original design date: 2026-06-17.
@@ -23,16 +23,16 @@ These notes supersede the original unrestricted-URL proposal and HTTP client ske
 ### Protected outbound requests
 
 - Protection is always enforced for REST GET and POST, including owner calls and automation calls; sharing never bypasses it.
-- Block `innomightlabs.com` and all its subdomains, the hosts of configured platform URLs, and the IP addresses resolved for those protected hosts. DNS inventory includes the apex, `www`, `api`, `cdn`, and hosts from `API_BASE_URL`, `FRONTEND_URL`, and `WIDGET_CDN_URL`. `REST_TEMPLATE_BLOCKED_IP_RANGES` is a comma-separated IP/CIDR denylist (default empty) for additional infrastructure/origin addresses not exposed by those answers; IPv4-mapped IPv6 entries are normalized. It is loaded through `api/src/config/settings.py` and passed through `scripts/deploy_prod_railway.sh`.
-- Apply destination checks at the socket connection boundary and pin connections to validated DNS answers, preventing a later DNS lookup from rebinding the destination. Check every redirect hop under the same policy. Disable proxies, including environment-derived proxies, so they cannot bypass destination validation.
-- Fail closed when a protected host cannot be resolved: do not silently continue with an incomplete protected-address set.
-- Denying resolved platform IPs can also deny unrelated sites sharing the same CDN IP. This collateral blocking is an explicit limitation. DNS cannot automatically discover every undisclosed origin IP; known additional origins require the explicit IP/CIDR denylist.
-- The unrestricted URL language and bare `httpx.AsyncClient` example below are historical design context, not authorization to bypass this transport policy. `api/src/skills/rest_template/security.py` supplies the request and socket checks; `api/src/common/outbound.py` accepts an optional async destination check without changing other clients' policy. Custom Host overrides are refused. Protected DNS lookups run under a shared five-second deadline. `api/tests/test_rest_template_security.py` covers hostname variants, IP/alias and mixed DNS answers, IPv6, explicit CIDRs, configured platform URLs, DNS failure, real-transport redirects, and permitted external requests.
+- **A destination is named by a domain, never by an IP address.** `api/src/skills/rest_template/security.py` refuses a URL whose host is an IP address in any form the resolver accepts: IPv4, IPv6 (with or without a zone), IPv4-mapped IPv6, and the legacy integer, hex and short forms (`134744072`, `0x8.8.8.8`, `8.8.2056`). It runs as an httpx request hook, so it checks the first request and every redirect hop before DNS or a socket.
+- InnomightLabs domains are allowed (2026-11-01). An automation may call a platform webhook, chain another automation or ping the API. This replaces the earlier platform denylist: the `innomightlabs.com` suffix block, the DNS inventory of platform hosts and their addresses, and `REST_TEMPLATE_BLOCKED_IP_RANGES` are removed, from settings and from `scripts/deploy_prod_railway.sh`.
+- The public-internet guard in `api/src/common/outbound.py` still applies underneath. Internal names (`localhost`, `.internal`, `.local`) are refused, and so is a domain that resolves to any non-public address. The connection is pinned to the checked address, so DNS rebinding cannot slip through, and environment proxies are ignored. Its `destination_check` hook existed only for the platform denylist and is removed.
+- Custom Host overrides are still refused, so the request goes to the host its URL shows.
+- `api/tests/test_rest_template_security.py` covers IP-address hosts in every form (refused before DNS), domain names that only look numeric, allowed platform domains, a domain resolving to a private address, Host overrides, redirects to an IP address over the real transport, and permitted external requests.
 
 ### Rollout and validation
 
 - Deploy the API, then explicitly enable Visitors and/or Guests for the installed skill in the agent's skill settings. No SPA change or automatic audience migration is needed.
-- Before deployment, populate `REST_TEMPLATE_BLOCKED_IP_RANGES` with known origin addresses absent from the DNS inventory. DNS cannot enumerate arbitrary subdomains or hidden origins. Shared-CDN address blocking is deliberately conservative.
+- `REST_TEMPLATE_BLOCKED_IP_RANGES` is no longer read; it can be deleted from the Railway service.
 - Full API suite passed locally: 2,873 passed, 1 skipped. Additional mapped-IP denylist regressions were subsequently added and validated with the focused security suite. Ruff and targeted mypy passed. No production deployment or live widget verification was performed.
 
 ## Summary
